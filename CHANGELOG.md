@@ -108,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Only a comment's author can change or delete it, and only you can add or take off your reactions.** Comments, posts and reactions always carry the person who wrote them as their author. Moderators still take comments down and clear reactions, and an import still keeps the authors it maps.
 - **Join requests are seen only by whoever asked and the people who answer them.** Other members of the community no longer see who asked to join an initiative.
 - **A gallery without a cover shows its newest pictures again.**
+- **Signing in as someone else in the same browser starts clean.** The previous account's notifications and other cached data no longer show for a moment under the new account.
 - **The project task table keeps its rows current.** A task's checklist progress, a swapped assignee and its blocker count now update in the table as they change, as they already did on the board.
 - **The task tables' Columns menu names its columns** ("Start date", "Comments") instead of showing their internal names.
 - **A "New device signed in" prompt about a device that is gone can be cleared.** When the device it named had signed out or been removed, Verify and Not mine both failed with "That device is not set up for encrypted messages" and the prompt stayed. It now goes away on its own, and either button closes it.
