@@ -14,7 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.event_outbox import EventOutbox
-from app.services.content_sockets import sockets
+from app.services.content_sockets import RoomKey, guild_room, initiative_room, sockets
 from app.testing.sockets import FakeWebSocket, settle, watch_events_bus
 from app.services.tenant import room_sink
 from app.testing import (
@@ -388,16 +388,34 @@ async def _age_the_log(session: AsyncSession, guild_id: int) -> None:
     await session.commit()
 
 
+def _seated(guild_id: int, *initiative_ids: int) -> frozenset[RoomKey]:
+    """The rooms an events-bus socket is given: its guild's, and each initiative's."""
+    return frozenset(
+        {guild_room(guild_id), *(initiative_room(guild_id, i) for i in initiative_ids)}
+    )
+
+
 async def test_a_socket_that_missed_something_is_told_so(session, acting_user):
-    """The one question a reconnect asks, answered on the socket's own session."""
+    """The one question a reconnect asks: whether its rooms were sent anything.
+
+    Asked of the rooms rather than of what the person may open, so a change the
+    room would have carried says so even where the person's sharing has gone.
+    Somebody outside the initiative hears only the guild's own.
+    """
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    member, outside = _seated(a.guild.id, a.initiative.id), _seated(a.guild.id)
     await _age_the_log(session, a.guild.id)
 
-    assert await room_sink.missed_while_away(session, 5) is False
+    assert await room_sink.missed_while_away(a.guild.id, member, 5) is False
 
     await create_task(session, a.project)
 
-    assert await room_sink.missed_while_away(session, 5) is True
+    assert await room_sink.missed_while_away(a.guild.id, member, 5) is True
+    assert await room_sink.missed_while_away(a.guild.id, outside, 5) is False
+
+    await create_tag(session, a.guild)
+
+    assert await room_sink.missed_while_away(a.guild.id, outside, 5) is True
 
 
 async def test_a_change_older_than_the_gap_is_not_news(session, acting_user):
@@ -406,7 +424,8 @@ async def test_a_change_older_than_the_gap_is_not_news(session, acting_user):
     await create_task(session, a.project)
     await _age_the_log(session, a.guild.id)
 
-    assert await room_sink.missed_while_away(session, 5) is False
+    seated = _seated(a.guild.id, a.initiative.id)
+    assert await room_sink.missed_while_away(a.guild.id, seated, 5) is False
 
 
 async def test_a_long_enough_gap_is_answered_without_reading(session, acting_user):
@@ -414,10 +433,9 @@ async def test_a_long_enough_gap_is_answered_without_reading(session, acting_use
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
     await _age_the_log(session, a.guild.id)
 
-    assert (
-        await room_sink.missed_while_away(session, room_sink.CATCHUP_MAX_SECONDS + 1)
-        is True
-    )
+    seated = _seated(a.guild.id, a.initiative.id)
+    away = room_sink.CATCHUP_MAX_SECONDS + 1
+    assert await room_sink.missed_while_away(a.guild.id, seated, away) is True
 
 
 async def test_a_new_member_hears_the_initiative_without_reconnecting(
