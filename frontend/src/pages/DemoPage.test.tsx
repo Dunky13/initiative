@@ -196,7 +196,7 @@ describe("the demo page", () => {
     expect(redeemed).not.toHaveBeenCalled();
   });
 
-  it("says a copy that could not be filled failed, and stops waiting on it", async () => {
+  it("says a copy that could not be filled failed, and starts the link again instead", async () => {
     const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
     server.use(
       http.get(COPY, () => HttpResponse.json({ community_id: 9, ready: false, failed: true }))
@@ -209,5 +209,9 @@ describe("the demo page", () => {
     expect(await screen.findByText(/couldn't be set up/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
     expect(mounted.state.location.pathname).not.toBe("/c/9");
+
+    // The link this page was opened with starts a copy of its own instead.
+    await userEvent.click(screen.getByRole("button", { name: "Start a new demo" }));
+    expect(await screen.findByRole("button", { name: "Start the demo" })).toBeInTheDocument();
   });
 });

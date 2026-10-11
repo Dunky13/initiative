@@ -65,6 +65,8 @@ export const DemoPage = () => {
   const [email, setEmail] = useState("");
   const [timedOut, setTimedOut] = useState(false);
   const [redeemed, setRedeemed] = useState<Awaited<ReturnType<typeof redeemDemoLink>> | null>(null);
+  // Leaving a copy that could not be filled, for the link this page was opened with.
+  const [replacing, setReplacing] = useState(false);
   const emailId = useId();
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export const DemoPage = () => {
   }, []);
 
   const live = copy !== null && new Date(copy.expiresAt).getTime() > Date.now();
-  const destination = landing ?? (live ? (copy?.communityId ?? null) : null);
+  const destination = landing ?? (live && !replacing ? (copy?.communityId ?? null) : null);
 
   const filling = useReadDemoCopy({
     query: {
@@ -160,7 +162,22 @@ export const DemoPage = () => {
                   : t("demo.slow")}
             </CardDescription>
           </CardHeader>
-          {failed ? null : (
+          {failed ? (
+            token ? (
+              <CardContent>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setRedeemed(null);
+                    setLanding(null);
+                    setReplacing(true);
+                  }}
+                >
+                  {t("demo.startAgain")}
+                </Button>
+              </CardContent>
+            ) : null
+          ) : (
             <CardContent>
               <Button
                 className="w-full"
