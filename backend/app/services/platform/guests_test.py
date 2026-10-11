@@ -16,6 +16,7 @@ from app.models.platform.guild import CommunityRole, GuildInvite, GuildMembershi
 from app.models.platform.notification import Notification, NotificationType
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.guest_invite_grant import GuestInviteGrant
+from app.schemas.platform.guild import CommunityInviteGrant
 from app.models.tenant.initiative import InitiativeMember
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.services import cross_guild
@@ -700,12 +701,12 @@ async def test_an_item_archived_since_is_skipped_and_the_rest_given(
         created_by=a.user.id,
         guest_days=7,
         grants=[
-            GuestInviteGrant(initiative_id=initiative_id),
-            GuestInviteGrant(
+            CommunityInviteGrant(initiative_id=initiative_id),
+            CommunityInviteGrant(
                 initiative_id=initiative_id,
                 resource_type=Tool.project,
                 resource_id=project_id,
-                level=ResourceAccessLevel.read,
+                level="read",
             ),
         ],
     )
@@ -745,7 +746,7 @@ async def test_an_invite_naming_an_archived_initiative_is_withdrawn(
         guild_id=a.guild.id,
         created_by=a.user.id,
         guest_days=7,
-        grants=[GuestInviteGrant(initiative_id=a.initiative.id)],
+        grants=[CommunityInviteGrant(initiative_id=a.initiative.id)],
     )
     a.initiative.archived_at = datetime.now(timezone.utc)
     session.add(a.initiative)
