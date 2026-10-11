@@ -853,6 +853,43 @@ describe("TaskEditPage", () => {
     expect(written[0]).toEqual({ values: [{ property_id: 9, value: "High" }], merge: true });
     // All properties leaves out the one placed on its own.
     await waitFor(() => expect(screen.getAllByRole("group", { name: /^risk$/i })).toHaveLength(1));
+
+    // Held, it can be cleared, staying on the page.
+    await userEvent.click(within(risk).getByRole("button", { name: /^clear$/i }));
+    await waitFor(() => expect(written).toHaveLength(2));
+    expect(written[1]).toEqual({ values: [{ property_id: 9, value: null }], merge: true });
+  });
+
+  it("says when a placed property could not be loaded, and loads it again", async () => {
+    let fail = true;
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        fail
+          ? new HttpResponse(null, { status: 500 })
+          : HttpResponse.json([
+              buildPropertyDefinition({ id: 9, name: "Risk", type: PropertyType.text }),
+            ])
+      ),
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "task",
+                updated_at: "2026-10-01T12:00:00.000Z",
+                definition: { side: [{ type: "field", props: { field: "property:9" } }] },
+              },
+            ],
+          })
+        )
+      )
+    );
+    renderTaskPage();
+
+    expect(await screen.findByText(/couldn't load this property/i)).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await fieldNamed(/^risk$/i)).toBeInTheDocument();
   });
 
   it("reports duplicate progress on the trigger once the menu closes", async () => {

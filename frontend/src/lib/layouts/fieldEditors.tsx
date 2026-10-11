@@ -187,11 +187,12 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
   placed = false,
 }: PropertiesProps<I, P> & {
   property: PropertySummary;
-  /** Placed on the layout on its own: it stays when emptied, so it has no
-   *  button to take it off the item. */
+  /** Placed on the layout on its own: it stays when emptied, so its button
+   *  clears its value (a checkbox has no empty to click back to) rather than
+   *  taking it off the item. */
   placed?: boolean;
 }) => {
-  const { t } = useTranslation("properties");
+  const { t } = useTranslation(["properties", "common"]);
   const save = useItemFieldSave(kind, id, property.name);
   const saved = normalizePropertyValue(property);
   const edit = (value: unknown): ItemEdit<I, P> => ({
@@ -222,15 +223,15 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
       changed={draft.changed}
       keys={draft.keys}
       action={
-        placed ? undefined : (
+        placed && isEmptyPropertyValue(saved) ? undefined : (
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground"
-            onClick={remove}
+            onClick={placed ? () => draft.edit(null) : remove}
             disabled={readOnly}
-            aria-label={t("remove")}
+            aria-label={placed ? t("common:clear") : t("remove")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -260,13 +261,25 @@ export const PlacedPropertyField = <I extends { properties: PropertySummary[] },
   propertyId,
   ...props
 }: PropertiesProps<I, P> & { propertyId: number }) => {
-  const { data: definitions } = useProperties({
+  const { t } = useTranslation(["properties", "common"]);
+  const definitions = useProperties({
     initiativeId: props.initiativeId ?? undefined,
     enabled: props.initiativeId !== null,
   });
-  const definition = definitions?.find((each) => each.id === propertyId);
+  const definition = definitions.data?.find((each) => each.id === propertyId);
   const held = props.properties.find((each) => each.property_id === propertyId);
   const property = held ?? (definition ? propertyStubFromDefinition(definition) : undefined);
+  // Not loaded is not deleted: an editor is told, and can ask again.
+  if (!property && definitions.isError && !props.readOnly) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground text-sm">
+        <span>{t("loadError")}</span>
+        <Button type="button" variant="link" size="sm" onClick={() => void definitions.refetch()}>
+          {t("common:tryAgain")}
+        </Button>
+      </div>
+    );
+  }
   if (!property) return null;
   if (props.readOnly) {
     if (isEmptyPropertyValue(property.value)) return null;
