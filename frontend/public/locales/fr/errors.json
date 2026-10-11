@@ -743,5 +743,6 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "Ce dossier est introuvable, ou vous ne pouvez pas l'ouvrir.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "On ne peut pas demander d'accès pour un dossier de ce type.",
   "ACCESS_GRANT_CASE_CLOSED": "Ce dossier est clos.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté.",
+  "ACTIVITY_TOOL_NEEDS_ITS_ID": "Indiquez l'outil et lequel pour restreindre le fil."
 }
