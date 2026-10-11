@@ -17,6 +17,7 @@ import {
   buildPage,
   buildProject,
   buildProjectTaskStatus,
+  buildPropertyDefinition,
   buildPropertySummary,
   buildTask,
   buildToolLayoutSet,
@@ -798,6 +799,60 @@ describe("TaskEditPage", () => {
     await waitFor(() => expect(written).toHaveLength(2));
     expect(written[1]).toEqual({ values: [], removed: [6], merge: true });
     expect(sent).toHaveLength(0);
+  });
+
+  it("draws a property the layout places on its own, saving it there", async () => {
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([
+          buildPropertyDefinition({ id: 9, name: "Risk", type: PropertyType.text }),
+        ])
+      ),
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "task",
+                updated_at: "2026-10-01T12:00:00.000Z",
+                definition: {
+                  side: [{ type: "field", props: { field: "property:9" } }, { type: "properties" }],
+                },
+              },
+            ],
+          })
+        )
+      )
+    );
+    // The task has no value for it yet.
+    const { task } = renderTaskPage();
+    const written: { values: { property_id: number; value: unknown }[] }[] = [];
+    server.use(
+      communityHttp.put("/properties/:target/:entityId", async ({ request }) => {
+        const body = (await request.json()) as (typeof written)[number];
+        written.push(body);
+        task.properties = [
+          buildPropertySummary({
+            property_id: 9,
+            name: "Risk",
+            type: PropertyType.text,
+            value: body.values[0]?.value,
+          }),
+        ];
+        return HttpResponse.json(task.properties);
+      })
+    );
+
+    const risk = await fieldNamed(/^risk$/i);
+    // Placed, it stays when emptied, so it has nothing to take it off the task.
+    expect(within(risk).queryByRole("button", { name: /remove/i })).not.toBeInTheDocument();
+    await userEvent.type(within(risk).getByRole("textbox"), "High");
+    await userEvent.tab();
+
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(written[0]).toEqual({ values: [{ property_id: 9, value: "High" }], merge: true });
+    // All properties leaves out the one placed on its own.
+    await waitFor(() => expect(screen.getAllByRole("group", { name: /^risk$/i })).toHaveLength(1));
   });
 
   it("reports duplicate progress on the trigger once the menu closes", async () => {

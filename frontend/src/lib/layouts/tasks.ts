@@ -79,24 +79,30 @@ export const taskFields = (
       value: (task) => task.blocked_by_open_count || null,
     }),
     builtin({ id: "tags", kind: "tags", value: (task) => task.tags }),
-    ...namePropertyColumns(definitions).map(
-      ({ definition, label }): FieldDef => ({
-        id: propertyFieldId(definition.id),
-        kind: "property",
-        source: "property",
-        label,
-        hideable: true,
-        icon: iconForPropertyType(definition.type),
-        value: (task) => {
-          const summary = task.properties?.find((s) => s.property_id === definition.id);
-          return summary && !isEmptyPropertyValue(summary.value) ? summary : null;
-        },
-      })
-    ),
+    ...propertyFields(definitions, (task, id) => {
+      const summary = task.properties?.find((s) => s.property_id === id);
+      return summary && !isEmptyPropertyValue(summary.value) ? summary : null;
+    }),
     ...plugins,
   ];
   return new Map(fields.map((field) => [field.id, field]));
 };
+
+/** One field per property the initiative defines, two that share a name told
+ *  apart in their labels; `read` reads one's value off an item. */
+export const propertyFields = (
+  definitions: PropertyDefinitionRead[],
+  read: (item: Parameters<FieldDef["value"]>[0], definitionId: number) => unknown
+): FieldDef[] =>
+  namePropertyColumns(definitions).map(({ definition, label }) => ({
+    id: propertyFieldId(definition.id),
+    kind: "property",
+    source: "property",
+    label,
+    hideable: true,
+    icon: iconForPropertyType(definition.type),
+    value: (item) => read(item, definition.id),
+  }));
 
 const field = (id: string): LayoutNode => ({ type: "field", props: { field: id } });
 

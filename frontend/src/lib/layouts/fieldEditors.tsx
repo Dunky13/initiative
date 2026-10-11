@@ -42,6 +42,7 @@ import {
   useItemFieldSave,
 } from "@/hooks/useFieldSave";
 import { usePastedImages } from "@/hooks/usePastedImages";
+import { useProperties } from "@/hooks/useProperties";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
@@ -155,6 +156,17 @@ type PropertiesProps<I extends { properties: PropertySummary[] }, P> = {
   canOpen: { tool: Tool; id: number | null | undefined };
 };
 
+/** The item's properties with `property` as it reads after `value`, added
+ *  where the item has none of it yet. */
+const withValue = (
+  properties: PropertySummary[],
+  property: PropertySummary,
+  value: unknown
+): PropertySummary[] =>
+  properties.some((p) => p.property_id === property.property_id)
+    ? properties.map((p) => (p.property_id === property.property_id ? showing(p, value) : p))
+    : [...properties, showing(property, value)];
+
 /** How a value reads on the item until the server says: a person's own
  *  summary while they are still the one named. */
 const showing = (property: PropertySummary, value: unknown): PropertySummary => ({
@@ -172,17 +184,19 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
   initiativeId,
   canOpen,
   property,
-}: PropertiesProps<I, P> & { property: PropertySummary }) => {
+  placed = false,
+}: PropertiesProps<I, P> & {
+  property: PropertySummary;
+  /** Placed on the layout on its own: it stays when emptied, so it has no
+   *  button to take it off the item. */
+  placed?: boolean;
+}) => {
   const { t } = useTranslation("properties");
   const save = useItemFieldSave(kind, id, property.name);
   const saved = normalizePropertyValue(property);
   const edit = (value: unknown): ItemEdit<I, P> => ({
     properties: { values: [{ property_id: property.property_id, value }] },
-    shows: {
-      properties: properties.map((p) =>
-        p.property_id === property.property_id ? showing(p, value) : p
-      ),
-    } as Partial<I>,
+    shows: { properties: withValue(properties, property, value) } as Partial<I>,
   });
   const draft = useFieldDraft(
     saved,
@@ -208,17 +222,19 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
       changed={draft.changed}
       keys={draft.keys}
       action={
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground"
-          onClick={remove}
-          disabled={readOnly}
-          aria-label={t("remove")}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        placed ? undefined : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            onClick={remove}
+            disabled={readOnly}
+            aria-label={t("remove")}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )
       }
     >
       <PropertyInput
@@ -235,11 +251,45 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
 };
 
 /** An item's custom properties, each saved on its own, and adding one. */
-export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
-  props: PropertiesProps<I, P>
-) => {
+/**
+ * One property placed on the layout on its own: drawn whether or not the item
+ * has a value for it yet, and saved on its own. A reader sees it only where it
+ * holds a value; a property since deleted draws nothing.
+ */
+export const PlacedPropertyField = <I extends { properties: PropertySummary[] }, P>({
+  propertyId,
+  ...props
+}: PropertiesProps<I, P> & { propertyId: number }) => {
+  const { data: definitions } = useProperties({
+    initiativeId: props.initiativeId ?? undefined,
+    enabled: props.initiativeId !== null,
+  });
+  const definition = definitions?.find((each) => each.id === propertyId);
+  const held = props.properties.find((each) => each.property_id === propertyId);
+  const property = held ?? (definition ? propertyStubFromDefinition(definition) : undefined);
+  if (!property) return null;
+  if (props.readOnly) {
+    if (isEmptyPropertyValue(property.value)) return null;
+    return (
+      <div className="space-y-1">
+        <p className="font-medium text-sm">{property.name}</p>
+        <PropertyValueCell summary={property} variant="cell" />
+      </div>
+    );
+  }
+  return <PropertyField {...props} property={property} placed />;
+};
+
+export const PropertiesField = <I extends { properties: PropertySummary[] }, P>({
+  except,
+  ...props
+}: PropertiesProps<I, P> & {
+  /** Properties the layout places on their own, which are not repeated here. */
+  except?: ReadonlySet<number>;
+}) => {
   const { t } = useTranslation("properties");
   const { kind, id, properties, readOnly, initiativeId } = props;
+  const listed = except ? properties.filter((each) => !except.has(each.property_id)) : properties;
   const label = t("title");
   const save = useItemFieldSave(kind, id, label);
   const add = (definition: PropertyDefinitionRead) => {
@@ -251,7 +301,7 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
       } as Partial<I>,
     });
   };
-  const sorted = [...properties].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...listed].sort((a, b) => a.name.localeCompare(b.name));
   // A reader sees each value as it reads anywhere else: a link opens.
   if (readOnly) {
     return (
@@ -292,7 +342,7 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
       )}
       <AddPropertyButton
         initiativeId={initiativeId ?? 0}
-        currentPropertyIds={properties.map((p) => p.property_id)}
+        currentPropertyIds={[...listed.map((p) => p.property_id), ...(except ?? [])]}
         onAdd={add}
         disabled={readOnly || !initiativeId}
       />
