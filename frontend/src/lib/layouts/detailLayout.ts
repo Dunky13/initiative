@@ -92,15 +92,16 @@ export interface DetailLayoutSpec {
   /** Whether a part edits a field: taken off, the field is hidden. */
   editsAField: (node: LayoutNode) => boolean;
   /** The detail as one tree to edit by path: the detail, holding its header,
-   *  main and side in that order. */
-  root: (stored: StoredRegions | null | undefined) => LayoutNode;
+   *  main and side in that order. `more` is what a shipped side draws after
+   *  its own: the placed plug-ins'. */
+  root: (stored: StoredRegions | null | undefined, more?: LayoutNode[]) => LayoutNode;
   /**
    * The detail from a stored layout: each region as stored, or as shipped where
    * the layout leaves it out. A stored part carries no `order`: where it falls
    * on one column is worked out here, so a detail laid out anew still reads as
    * the shipped one does on a phone.
    */
-  tree: (stored: StoredRegions | null | undefined) => LayoutNode;
+  tree: (stored: StoredRegions | null | undefined, more?: LayoutNode[]) => LayoutNode;
 }
 
 /**
@@ -141,10 +142,13 @@ export const detailLayoutSpec = ({
     });
   };
 
-  const regionsOf = (stored: StoredRegions | null | undefined): Record<Region, LayoutNode[]> => ({
+  const regionsOf = (
+    stored: StoredRegions | null | undefined,
+    more: LayoutNode[] = []
+  ): Record<Region, LayoutNode[]> => ({
     header: stored?.header ?? shipped.header,
     main: stored?.main ?? shipped.main,
-    side: stored?.side ?? shipped.side,
+    side: stored?.side ?? [...shipped.side, ...more],
   });
 
   return {
@@ -157,15 +161,15 @@ export const detailLayoutSpec = ({
       shippedNodes.filter((node) => node.type === "field").map((node) => String(node.props?.field))
     ),
     editsAField,
-    root: (stored) => {
-      const regions = regionsOf(stored);
+    root: (stored, more) => {
+      const regions = regionsOf(stored, more);
       return {
         type: "layout",
         children: LAYOUT_REGIONS.map((region) => ({ type: region, children: regions[region] })),
       };
     },
-    tree: (stored) => {
-      const regions = regionsOf(stored);
+    tree: (stored, more) => {
+      const regions = regionsOf(stored, more);
       return {
         type: "layout",
         children: [

@@ -11,6 +11,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 
 import type { FieldDef } from "./fields";
+import { MAX_PLUGIN_PARTS } from "./plugins";
 import { TASK_CARD, TASK_COLUMNS } from "./tasks";
 import type { LayoutNode } from "./tree";
 
@@ -207,9 +208,6 @@ export const HOLDERS = new Set(["card", "stack", "section", "header", "main", "s
 
 /** How long a section's title may be, as the server allows. */
 export const MAX_TITLE_LENGTH = 100;
-
-/** How many parts of one install a tree may place, as the server allows. */
-export const MAX_PLUGIN_PARTS = 3;
 
 /** The parts of an install a tree can still place: each once, and none past
  *  {@link MAX_PLUGIN_PARTS}. */

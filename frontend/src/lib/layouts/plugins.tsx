@@ -154,6 +154,23 @@ export const usePluginsOnItems = (
 /** A plug-in field's id in a view: by install and key, as the server checks it. */
 export const pluginFieldId = (install: number, key: string) => `plugin:${install}:${key}`;
 
+/** How many parts of one install a tree may place, as the server allows. */
+export const MAX_PLUGIN_PARTS = 3;
+
+/** What a task's page draws of the plug-ins until its layout is saved: each
+ *  install's fields, then its parts up to {@link MAX_PLUGIN_PARTS}, as it
+ *  declares them. */
+export const shippedPluginParts = (plugins: ReadonlyMap<number, PluginOnItems>): LayoutNode[] =>
+  [...plugins.values()].flatMap(({ id, fields, parts }) => [
+    ...[...fields.keys()].map((key) => ({
+      type: "field",
+      props: { field: pluginFieldId(id, key) },
+    })),
+    ...[...parts.keys()]
+      .slice(0, MAX_PLUGIN_PARTS)
+      .map((part) => ({ type: "plugin", props: { plugin: id, part } })),
+  ]);
+
 const pluginValue = (values: PluginValueSummary[] | undefined, install: number, key: string) =>
   values?.find((value) => value.plugin_id === install && value.key === key)?.value ?? null;
 
