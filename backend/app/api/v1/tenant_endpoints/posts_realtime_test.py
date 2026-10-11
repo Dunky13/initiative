@@ -16,6 +16,8 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.post import Post
 from app.services.content_sockets import sockets
@@ -30,7 +32,6 @@ from app.testing import (
     create_post,
     create_user,
     lexical_body,
-    route_session_to_guild,
 )
 
 
@@ -293,7 +294,8 @@ async def test_the_scheduler_tells_the_room_when_a_draft_comes_due(
     post_id, guild_id, initiative_id = post.id, guild.id, initiative.id
 
     async with _Room(guild_id, initiative_id) as room:
-        await route_session_to_guild(session, guild_id)
+        # As the scheduler routes it: the community, on the system engine.
+        await set_rls_context(session, SystemGuild(guild_id))
         assert await publish_due_posts(session, now=datetime.now(timezone.utc)) == [
             post_id
         ]
