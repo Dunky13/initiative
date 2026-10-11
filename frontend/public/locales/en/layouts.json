@@ -152,6 +152,7 @@
     "rowHelp": "Puts what it holds side by side."
   },
   "boxWith": "Box with {{name}}",
+  "newField": "New field",
   "fieldsGroup": "Fields",
   "panels": "Panels",
   "fromProperty": "Property",

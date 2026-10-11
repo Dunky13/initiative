@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Make a new field from the layout editor.** **Add** has a **New field** group listing every kind of property. Pick one, name it (and give a select its options), and it's created as one of the initiative's properties and placed right where you were adding, on a card, a table or an item's page. Adding a property to an item uses the same form.
 - **A community's home page leads with its comments.** The row of tool circles and the table under it are gone from the community's home page; a single **Comments** circle shows the latest comments from across the community in their place. To browse everything of one kind across your communities, use My Tools.
 - **Place a property on its own on a task's or an event's page.** The layout editor's **Add** lists each of the initiative's properties for an item's page, as it already did for cards and tables. A property placed there shows with its name and editor on every item, whether or not it has a value yet, and saves on its own; **All properties** leaves it out so it isn't shown twice.
 - **Add in the layout editor shows what you can build.** It opens with a search box and the layout blocks first: an **Accordion** (a titled section that opens and closes; you name it by typing as it's added), a **Box** that groups what it holds, and a **Row** that puts things side by side. Below them, every field is in one list, with where each comes from, and then the panels: the item's own and each plug-in's.
