@@ -46,9 +46,9 @@ only part of this that is.
 Both are scoped to the guilds this process actually holds a socket for, so a
 deployment with nobody connected reads nothing.
 
-A socket that has just come back asks the log one more question, on its own
-session rather than this process's: whether anything happened in the gap it
-was gone for. Neither path above covers that — a hint reaches whoever is
+A socket that has just come back asks the log one more question, of the rooms
+it was just seated in: whether anything happened in them in the gap it was gone
+for. Neither path above covers that — a hint reaches whoever is
 listening at the time, and the sweep sends to rooms, not to arrivals.
 """
 
@@ -58,7 +58,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlmodel import select
+from sqlalchemy import or_
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import cohorts
@@ -66,7 +67,7 @@ from app.db.event_capture import OUTBOX_CHANNEL
 from app.db.session import set_rls_context
 from app.models.tenant.event_outbox import EventOutbox
 from app.models.tenant.initiative import InitiativeMember
-from app.services.content_sockets import guild_room, initiative_room, sockets
+from app.services.content_sockets import RoomKey, guild_room, initiative_room, sockets
 from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
@@ -250,23 +251,39 @@ async def _rows_of_transaction(session: AsyncSession, txn_id: int) -> list[Event
     )
 
 
-async def missed_while_away(session: AsyncSession, away_seconds: float) -> bool:
-    """Whether anything this session may read changed during a socket's gap.
+async def missed_while_away(
+    guild_id: int, rooms: frozenset[RoomKey], away_seconds: float
+) -> bool:
+    """Whether the rooms a socket has just been seated in were sent anything
+    during its gap.
 
-    Asked by a socket that has just come back, on its own RLS-scoped session,
-    so the log answers for that subscriber and nobody else. The answer is one
-    bit because that is all the question has: a reconnect carries no record of
-    which rows went past, and the frame it turns into says as much.
+    Asked by a socket that has just come back, of the log as the fan-out reads
+    it: the guild's own rows, and those of the initiatives among its rooms. So a
+    change the socket's person can no longer open, such as the one that ended
+    their sharing, still says it is behind. The answer is one bit because that
+    is all the question has: a reconnect carries no record of which rows went
+    past, and the frame it turns into says as much.
     """
     if away_seconds > CATCHUP_MAX_SECONDS:
         return True
     cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=away_seconds + CATCHUP_SLACK_SECONDS
     )
-    rows = await session.exec(
-        select(EventOutbox.id).where(EventOutbox.occurred_at > cutoff).limit(1)
-    )
-    return rows.first() is not None
+    initiatives = [key[2] for key in rooms if key == initiative_room(guild_id, key[2])]
+    async with cohorts.system_session(guild_id) as session:
+        await set_rls_context(session, SystemGuild(guild_id))
+        rows = await session.exec(
+            select(EventOutbox.id)
+            .where(
+                EventOutbox.occurred_at > cutoff,
+                or_(
+                    col(EventOutbox.initiative_id).is_(None),
+                    col(EventOutbox.initiative_id).in_(initiatives),
+                ),
+            )
+            .limit(1)
+        )
+        return rows.first() is not None
 
 
 async def deliver(payload: str) -> None:

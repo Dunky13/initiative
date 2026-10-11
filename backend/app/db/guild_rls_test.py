@@ -438,7 +438,7 @@ _NO_SINGLE_PARENT = {
     # entity_access, which asks each end's own entry here.
     "relationships": "source and target must both clear it, whatever they are",
     # No sharing leg at all — see the registry for each.
-    "event_outbox": "the change log is no tool's own table",
+    "event_outbox": "names its tool in dac_tool",
     "plugin_event_outbox": "the events plug-ins emit are no tool's own table",
     "property_definitions": "initiative configuration, not a tool's content",
     "resource_grants": "sharing itself; resource_access reads this table",
