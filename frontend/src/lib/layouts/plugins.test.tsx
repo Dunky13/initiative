@@ -9,6 +9,7 @@ import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
 import type { TaskListRead } from "@/api/generated/initiativeAPI.schemas";
 import {
+  fieldsInParts,
   pluginFieldId,
   pluginFields,
   pluginsOnItems,
@@ -115,54 +116,33 @@ describe("a plug-in on a task's page", () => {
     const side = (stored: Parameters<typeof TASK_LAYOUT.root>[0]) =>
       TASK_LAYOUT.root(stored, more).children?.[2]?.children;
 
-    // ci.url is shown in the builds part, so not on its own as well.
     expect(more).toEqual([
       { type: "field", props: { field: pluginFieldId(3, "ci.state") } },
+      { type: "field", props: { field: pluginFieldId(3, "ci.url") } },
       { type: "plugin", props: { plugin: 3, part: "builds" } },
     ]);
-    expect(side(null)?.slice(-2)).toEqual(more);
+    expect(side(null)?.slice(-3)).toEqual(more);
     // A saved side holds what it holds.
     expect(side({ header: [], main: [], side: [] })).toEqual([]);
   });
 
-  it("leaves a field on its own unless a part it draws shows it, at any depth", () => {
-    const field = (key: string) => ({
-      key,
-      name: { en: key },
-      kind: "text" as const,
-      on: ["task"],
+  it("draws a field once where a part it draws shows it, at any depth", () => {
+    const plugins = pluginsOnItems([install], 7);
+    const page = (...side: LayoutNode[]): LayoutNode => ({
+      type: "layout",
+      children: [{ type: "side", children: side }],
     });
-    const part = (id: string, tree: LayoutNode) => ({ id, name: { en: id }, on: ["task"], tree });
-    const empty: LayoutNode = { type: "stack" };
-    const plugin = {
-      id: 3,
-      name: "CI",
-      fields: new Map([
-        ["deep", field("deep")],
-        ["late", field("late")],
-      ]),
-      parts: new Map([
-        [
-          "one",
-          part("one", {
-            type: "section",
-            children: [{ type: "stack", children: [{ type: "value", props: { field: "deep" } }] }],
-          }),
-        ],
-        ["two", part("two", empty)],
-        ["three", part("three", empty)],
-        // Past the limit, so not drawn: the field it shows stays on its own.
-        ["four", part("four", { type: "field", props: { field: "late" } })],
-      ]),
-      actions: new Map(),
-    };
+    const builds = { type: "plugin", props: { plugin: 3, part: "builds" } };
 
-    expect(shippedPluginParts(new Map([[3, plugin]]))).toEqual([
-      { type: "field", props: { field: pluginFieldId(3, "late") } },
-      { type: "plugin", props: { plugin: 3, part: "one" } },
-      { type: "plugin", props: { plugin: 3, part: "two" } },
-      { type: "plugin", props: { plugin: 3, part: "three" } },
-    ]);
+    // The builds part shows ci.url inside its section.
+    expect(fieldsInParts(page({ type: "section", children: [builds] }), plugins)).toEqual(
+      new Set([pluginFieldId(3, "ci.url")])
+    );
+    // Taken off, or not offered to the reader, a part hides nothing.
+    expect(fieldsInParts(page(), plugins)).toEqual(new Set());
+    expect(
+      fieldsInParts(page(builds), pluginsOnItems([{ ...install, item_parts: [] }], 7))
+    ).toEqual(new Set());
   });
 });
 
