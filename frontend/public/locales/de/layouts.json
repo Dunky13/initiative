@@ -152,6 +152,7 @@
     "rowHelp": "Stellt nebeneinander, was sie enthält."
   },
   "boxWith": "Box mit {{name}}",
+  "newField": "Neues Feld",
   "fieldsGroup": "Felder",
   "panels": "Bereiche",
   "fromProperty": "Eigenschaft",

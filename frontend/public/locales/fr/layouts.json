@@ -152,6 +152,7 @@
     "rowHelp": "Place côte à côte ce qu'elle contient."
   },
   "boxWith": "Boîte avec {{name}}",
+  "newField": "Nouveau champ",
   "fieldsGroup": "Champs",
   "panels": "Panneaux",
   "fromProperty": "Propriété",

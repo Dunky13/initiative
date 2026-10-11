@@ -385,16 +385,22 @@ export const LayoutEditor = ({
     plugins,
     openDetail?.words.parts
   );
-  const choices = current
+  const listed = current
     ? listChoices(current, fields, pickerPlugins, translate)
     : detail && openDetail
       ? detailChoices(detail, openDetail, fields, pickerPlugins, translate)
       : { fields: [], plugins: [], parts: [] };
+  // Wherever a field can be placed, a new one can be made: a property of the
+  // initiative's, placed where Add was opened.
+  const choices =
+    current?.kind === "calendar" || (!current && !detail)
+      ? listed
+      : { ...listed, newField: initiativeId };
   const addersAt = (place?: Place): Adders =>
     current?.kind === "table"
-      ? { onField: (field) => edits.addColumn(field.id, place?.index), onPart: noop, onNode: noop }
+      ? { onField: (id) => edits.addColumn(id, place?.index), onPart: noop, onNode: noop }
       : {
-          onField: (field) => edits.addPart({ type: "field", props: { field: field.id } }, place),
+          onField: (id) => edits.addPart({ type: "field", props: { field: id } }, place),
           onPart: (plugin, part) =>
             edits.addPart({ type: "plugin", props: { plugin, part } }, place),
           onNode: (node) => edits.addPart(node, place),

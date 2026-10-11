@@ -152,6 +152,7 @@
     "rowHelp": "Pone lado a lado lo que contiene."
   },
   "boxWith": "Caja con {{name}}",
+  "newField": "Campo nuevo",
   "fieldsGroup": "Campos",
   "panels": "Paneles",
   "fromProperty": "Propiedad",

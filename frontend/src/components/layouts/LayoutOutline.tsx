@@ -30,7 +30,10 @@ import {
 import { type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { PropertyType as PropertyTypeValue } from "@/api/generated/initiativeAPI.schemas";
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
+import { NewPropertyForm, PROPERTY_TYPES } from "@/components/properties/NewPropertyForm";
+import { iconForPropertyType } from "@/components/properties/propertyTypeIcons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -53,7 +56,7 @@ import {
   type Selection,
   sameSelection,
 } from "@/lib/layouts/draft";
-import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
+import { type FieldDef, LAYOUT_NAMESPACES, propertyFieldId } from "@/lib/layouts/fields";
 import type { PluginOnItems } from "@/lib/layouts/plugins";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import { cn } from "@/lib/utils";
@@ -113,11 +116,18 @@ export const accordionTitle = (translate: TranslateFn) => translate("layouts:blo
 
 /** What Add offers where something is added: the fields, each plug-in's
  *  parts, and the other parts. */
-export type AddChoices = { fields: FieldDef[]; plugins: PickerPlugin[]; parts: PickerPart[] };
+export type AddChoices = {
+  fields: FieldDef[];
+  plugins: PickerPlugin[];
+  parts: PickerPart[];
+  /** The initiative a new field is made in, where one can be placed. */
+  newField?: number;
+};
 
 /** What a pick in the Add picker does. */
 export type Adders = {
-  onField: (field: FieldDef) => void;
+  /** A field by its id: one listed, or a property just made. */
+  onField: (id: string) => void;
   onPart: (plugin: number, part: string) => void;
   onNode: (node: LayoutNode) => void;
 };
@@ -670,7 +680,7 @@ const matches = (query: string, ...shown: (string | undefined)[]) =>
  *  the panels, the tool's and each plug-in's. A search narrows all of it.
  *  Opened from the outline's Add, or from a point on the canvas. */
 export const AddPicker = ({
-  choices: { fields, plugins, parts },
+  choices: { fields, plugins, parts, newField },
   labelOf,
   adders: { onField, onPart, onNode },
   locked,
@@ -685,12 +695,17 @@ export const AddPicker = ({
   trigger?: ReactNode;
   onOpenChange?: (open: boolean) => void;
 }) => {
-  const { t } = useTranslation(["projects", "layouts"]);
+  const { t } = useTranslation(["projects", "layouts", "properties"]);
   const [open, setOpenState] = useState(false);
   const [search, setSearch] = useState("");
+  // The kind of field being made, while its form is open.
+  const [making, setMaking] = useState<PropertyTypeValue | null>(null);
   const setOpen = (next: boolean) => {
     setOpenState(next);
-    if (!next) setSearch("");
+    if (!next) {
+      setSearch("");
+      setMaking(null);
+    }
     onOpenChange?.(next);
   };
   const query = search.trim().toLocaleLowerCase();
@@ -712,9 +727,16 @@ export const AddPicker = ({
       ),
     }))
     .filter((plugin) => plugin.parts.length > 0);
+  const typeName = (type: PropertyTypeValue) => t(`properties:types.${type}`);
+  const newTypes =
+    newField === undefined ? [] : PROPERTY_TYPES.filter((type) => matches(query, typeName(type)));
   const offers =
-    parts.length + fields.length + plugins.reduce((count, each) => count + each.parts.length, 0);
-  const found = blocks.length + shownFields.length + panels.length + pluginPanels.length;
+    parts.length +
+    fields.length +
+    (newField === undefined ? 0 : PROPERTY_TYPES.length) +
+    plugins.reduce((count, each) => count + each.parts.length, 0);
+  const found =
+    blocks.length + newTypes.length + shownFields.length + panels.length + pluginPanels.length;
   // A pick leaves focus where adding put it (a new accordion's title), rather
   // than back on Add; closing without one returns it there.
   const picked = useRef(false);
@@ -742,90 +764,115 @@ export const AddPicker = ({
           picked.current = false;
         }}
       >
-        <div className="relative mb-2">
-          <Search
-            className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
+        {making !== null && newField !== undefined ? (
+          <NewPropertyForm
+            initiativeId={newField}
+            type={making}
+            name={search.trim()}
+            onCreated={(created) => pick(() => onField(propertyFieldId(created.id)))}
+            onCancel={() => setMaking(null)}
           />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={t("layouts:search")}
-            aria-label={t("layouts:search")}
-            className="pl-8"
-            autoFocus
-          />
-        </div>
-        {blocks.length > 0 ? (
-          <PickerGroup heading={t("layouts:layoutParts")}>
-            <div className="grid grid-cols-fill-24/3 gap-1">
-              {blocks.map((part) => {
-                const Icon = part.icon;
-                return (
-                  <button
-                    key={part.label}
-                    type="button"
-                    className="flex flex-col items-center gap-1 rounded-md border p-2 text-center text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                    title={part.description}
-                    onClick={() => pick(() => onNode(part.node))}
-                  >
-                    {Icon ? (
-                      <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                    ) : null}
-                    <span>{part.label}</span>
-                    {part.description ? (
-                      <span className="text-muted-foreground text-xs">{part.description}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
+        ) : (
+          <>
+            <div className="relative mb-2">
+              <Search
+                className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("layouts:search")}
+                aria-label={t("layouts:search")}
+                className="pl-8"
+                autoFocus
+              />
             </div>
-          </PickerGroup>
-        ) : null}
-        {shownFields.length > 0 ? (
-          <PickerGroup heading={t("layouts:fieldsGroup")}>
-            {shownFields.map((field) => {
-              const Icon = field.icon;
-              return (
-                <PickerItem
-                  key={field.id}
-                  note={sourceOf(field)}
-                  onClick={() => pick(() => onField(field))}
-                >
-                  {Icon ? (
-                    <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  ) : null}
-                  {labelOf(field)}
-                </PickerItem>
-              );
-            })}
-          </PickerGroup>
-        ) : null}
-        {panels.length > 0 ? (
-          <PickerGroup heading={t("layouts:panels")}>
-            {panels.map((part) => (
-              <PickerItem key={part.label} onClick={() => pick(() => onNode(part.node))}>
-                {part.label}
-              </PickerItem>
+            {blocks.length > 0 ? (
+              <PickerGroup heading={t("layouts:layoutParts")}>
+                <div className="grid grid-cols-fill-24/3 gap-1">
+                  {blocks.map((part) => {
+                    const Icon = part.icon;
+                    return (
+                      <button
+                        key={part.label}
+                        type="button"
+                        className="flex flex-col items-center gap-1 rounded-md border p-2 text-center text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                        title={part.description}
+                        onClick={() => pick(() => onNode(part.node))}
+                      >
+                        {Icon ? (
+                          <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                        ) : null}
+                        <span>{part.label}</span>
+                        {part.description ? (
+                          <span className="text-muted-foreground text-xs">{part.description}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PickerGroup>
+            ) : null}
+            {newTypes.length > 0 ? (
+              <PickerGroup heading={t("layouts:newField")}>
+                {newTypes.map((type) => {
+                  const Icon = iconForPropertyType(type);
+                  return (
+                    <PickerItem key={type} onClick={() => setMaking(type)}>
+                      <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      {typeName(type)}
+                    </PickerItem>
+                  );
+                })}
+              </PickerGroup>
+            ) : null}
+            {shownFields.length > 0 ? (
+              <PickerGroup heading={t("layouts:fieldsGroup")}>
+                {shownFields.map((field) => {
+                  const Icon = field.icon;
+                  return (
+                    <PickerItem
+                      key={field.id}
+                      note={sourceOf(field)}
+                      onClick={() => pick(() => onField(field.id))}
+                    >
+                      {Icon ? (
+                        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      ) : null}
+                      {labelOf(field)}
+                    </PickerItem>
+                  );
+                })}
+              </PickerGroup>
+            ) : null}
+            {panels.length > 0 ? (
+              <PickerGroup heading={t("layouts:panels")}>
+                {panels.map((part) => (
+                  <PickerItem key={part.label} onClick={() => pick(() => onNode(part.node))}>
+                    {part.label}
+                  </PickerItem>
+                ))}
+              </PickerGroup>
+            ) : null}
+            {pluginPanels.map((plugin) => (
+              <PickerGroup key={`plugin:${plugin.id}`} heading={plugin.name}>
+                {plugin.parts.map((part) => (
+                  <PickerItem
+                    key={`part:${part.id}`}
+                    description={part.description}
+                    onClick={() => pick(() => onPart(plugin.id, part.id))}
+                  >
+                    {part.name}
+                  </PickerItem>
+                ))}
+              </PickerGroup>
             ))}
-          </PickerGroup>
-        ) : null}
-        {pluginPanels.map((plugin) => (
-          <PickerGroup key={`plugin:${plugin.id}`} heading={plugin.name}>
-            {plugin.parts.map((part) => (
-              <PickerItem
-                key={`part:${part.id}`}
-                description={part.description}
-                onClick={() => pick(() => onPart(plugin.id, part.id))}
-              >
-                {part.name}
-              </PickerItem>
-            ))}
-          </PickerGroup>
-        ))}
-        {found === 0 ? (
-          <p className="px-2 py-3 text-muted-foreground text-sm">{t("layouts:noMatches")}</p>
-        ) : null}
+            {found === 0 ? (
+              <p className="px-2 py-3 text-muted-foreground text-sm">{t("layouts:noMatches")}</p>
+            ) : null}
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );

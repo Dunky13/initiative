@@ -533,6 +533,37 @@ describe("LayoutEditor", () => {
       expect(JSON.stringify(saved("task"))).not.toContain('"order"');
     });
 
+    it("makes a new field of the kind picked and places it", async () => {
+      const made: Record<string, unknown>[] = [];
+      server.use(
+        communityHttp.post("/property-definitions/", async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          made.push(body);
+          return HttpResponse.json(
+            buildPropertyDefinition({ id: 31, name: String(body.name), type: "number" })
+          );
+        })
+      );
+      const { user } = editor("task");
+
+      await user.click(
+        await within(await outline()).findByRole("button", { name: "Side", pressed: false })
+      );
+      await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
+      const picker = await screen.findByRole("dialog", { name: "Add" });
+      await user.click(within(picker).getByRole("button", { name: /^number$/i }));
+      await user.type(within(picker).getByLabelText(/property name/i), "Budget");
+      await user.click(within(picker).getByRole("button", { name: /^create$/i }));
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect(made).toEqual([expect.objectContaining({ name: "Budget", type: "number" })]);
+      expect((saved("task")?.side as LayoutNode[] | undefined)?.at(-1)).toEqual({
+        type: "field",
+        props: { field: "property:31" },
+      });
+    });
+
     it("places a property on its own", async () => {
       const { user } = editor("task");
 
