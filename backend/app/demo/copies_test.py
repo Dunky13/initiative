@@ -16,7 +16,7 @@ from app.core.messages import DemoMessages, GuildMessages
 from app.db import cohorts
 from app.demo import accounts, copies, pitches
 from app.models.platform.auth_session import AuthSession
-from app.models.platform.demo import DemoSandbox, DemoSandboxState
+from app.models.platform.demo import DemoSandbox, DemoSandboxState, LinkState
 from app.models.platform.guild import (
     CommunityRole,
     CommunityStatus,
@@ -896,3 +896,18 @@ async def test_a_link_from_the_api_reports_its_opening_and_its_leads(
     )
     assert revoked.status_code == 204
     assert (await read())["state"] == "expired"
+
+
+def test_a_used_up_link_says_so_though_it_ended_then():
+    now = datetime.now(timezone.utc)
+    link = GuildInvite(
+        code_hash="x",
+        guild_id=1,
+        created_by=None,
+        max_uses=1,
+        uses=1,
+        expires_at=now,
+    )
+    assert pitches.link_state(link, now) is LinkState.used_up
+    link.max_uses = None
+    assert pitches.link_state(link, now) is LinkState.expired
