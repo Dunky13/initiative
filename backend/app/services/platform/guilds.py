@@ -89,6 +89,13 @@ class NotAGuestError(CodedError):
     status_code = 404
 
 
+class GuestTimeEndedError(CodedError):
+    """Raised when somebody whose time as a guest has just ended joins again
+    before the sweep has removed their old membership."""
+
+    status_code = 409
+
+
 class CommunityJoinError(CodedError):
     """Raised when a guild cannot be joined from the community directory."""
 
@@ -563,6 +570,21 @@ async def _guest_days(session: AsyncSession, *, guild_id: int, days: int) -> int
     return min(limit for limit in limits if limit is not None)
 
 
+async def _refuse_ended_guest(
+    session: AsyncSession, *, guild_id: int, user_id: int
+) -> None:
+    """Refuse a join by somebody whose guest membership has ended and not yet
+    been removed. Joining would return that membership unchanged; the sweep
+    removes it, and what it carried, within minutes."""
+    membership = await get_membership(session, guild_id=guild_id, user_id=user_id)
+    if (
+        membership is not None
+        and membership.guest_until is not None
+        and membership.guest_until <= datetime.now(timezone.utc)
+    ):
+        raise GuestTimeEndedError(GuildMessages.GUEST_TIME_ENDED)
+
+
 async def extend_guest(
     session: AsyncSession,
     *,
@@ -580,6 +602,10 @@ async def extend_guest(
         raise NotAGuestError(GuildMessages.NOT_A_GUEST)
     before = membership.guest_until
     days = await _guest_days(session, guild_id=guild_id, days=days)
+    if before <= datetime.now(timezone.utc):
+        # An ended guest no longer counts against the cap, so bringing one back
+        # takes a place as a new guest does.
+        await _assert_guest_capacity(session, guild_id=guild_id)
     membership.guest_until = datetime.now(timezone.utc) + timedelta(days=days)
     session.add(membership)
     await session.flush()
@@ -2251,6 +2277,7 @@ async def redeem_invite_for_user(
     if await is_listed_in_directory(session, guild_id=invite.guild_id):
         await assert_age_confirmed(session, user=user)
 
+    await _refuse_ended_guest(session, guild_id=invite.guild_id, user_id=user.id)
     guest_until = None
     if invite.guest_days is not None:
         days = await _guest_days(
@@ -2630,6 +2657,7 @@ async def join_community_guild(
     # Asked before the seat is taken, so the box is what joins rather than
     # something checked once they are already in.
     await assert_age_confirmed(session, user=user)
+    await _refuse_ended_guest(session, guild_id=guild_id, user_id=user.id)
     # Capacity is enforced inside ensure_membership, which is also where a
     # repeat join short-circuits to the existing membership.
     await ensure_membership(

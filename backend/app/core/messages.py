@@ -249,6 +249,7 @@ class GuildMessages:
     COMMUNITY_GUEST_LIMIT_REACHED = "COMMUNITY_GUEST_LIMIT_REACHED"
     COMMUNITY_GUESTS_DISABLED = "COMMUNITY_GUESTS_DISABLED"
     NOT_A_GUEST = "NOT_A_GUEST"
+    GUEST_TIME_ENDED = "GUEST_TIME_ENDED"
     # Asked to join a guild that is not listed in the community directory (or
     # is no longer active). Reported as a 404 — an unlisted guild has published
     # nothing, its existence at a given id included.

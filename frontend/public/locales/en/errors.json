@@ -38,6 +38,7 @@
   "COMMUNITY_GUEST_LIMIT_REACHED": "This community has reached its guest limit. Ask an operator to raise it.",
   "COMMUNITY_GUESTS_DISABLED": "Guests are turned off on this server.",
   "NOT_A_GUEST": "This person isn't a guest here.",
+  "GUEST_TIME_ENDED": "Your time as a guest here has just ended. Try again in a few minutes.",
   "CANNOT_CHANGE_OWN_ROLE": "Cannot change your own community role",
   "USER_NOT_FOUND_IN_COMMUNITY": "User not found in community",
   "COMMUNITY_ROLE_NOT_ASSIGNABLE": "That community role can't be assigned.",

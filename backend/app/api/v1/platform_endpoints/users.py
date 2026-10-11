@@ -322,7 +322,8 @@ async def list_users(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=GuildMessages.COMMUNITY_ADMIN_REQUIRED,
         )
-    base = users_service.guild_members(
+    narrow = users_service.guild_guests if guests else users_service.guild_members
+    base = narrow(
         select(
             MemberProfile,
             GuildMembership.role,
@@ -332,10 +333,7 @@ async def list_users(
             GuildMembership.guest_until,
         ),
         guild_id=guild_context.guild_id,
-        guests=guests,
     )
-    if guests:
-        base = base.where(GuildMembership.guest_until.is_not(None))
     closest = None
     if search and (term := search.strip()):
         matches, closest = users_service.member_match(term)

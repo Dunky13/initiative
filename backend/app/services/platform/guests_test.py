@@ -11,7 +11,7 @@ from app.core.messages import GuildMessages
 from app.core.tools import Tool
 from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
-from app.models.platform.guild import CommunityRole, GuildMembership
+from app.models.platform.guild import CommunityRole, GuildInvite, GuildMembership
 from app.models.platform.notification import Notification, NotificationType
 from app.models.platform.user_profile_view import MemberProfile
 from app.services import cross_guild
@@ -508,3 +508,63 @@ async def test_an_admin_lists_extends_and_makes_a_guest_a_member(
     again = await client.patch(guests_url, json={"days": 5}, headers=a.headers)
     assert again.status_code == 404
     assert again.json()["detail"] == GuildMessages.NOT_A_GUEST
+
+
+@pytest.mark.parametrize(("max_guests", "brought_back"), [(None, True), (1, False)])
+async def test_bringing_back_an_ended_guest_takes_a_place(
+    session, max_guests, brought_back
+):
+    guild = await create_guild(session, max_guests=max_guests)
+    await _platform(session)
+    ended = await create_guest(session, guild, ends_in=-HOUR)
+    await create_guest(session, guild)
+    admin_id, guild_id, ended_id = guild.created_by, guild.id, ended.id
+
+    extend = guilds_service.extend_guest(
+        session, guild_id=guild_id, user_id=ended_id, days=3, actor_user_id=admin_id
+    )
+
+    if brought_back:
+        assert (await extend).guest_until > datetime.now(timezone.utc)
+    else:
+        with pytest.raises(guilds_service.GuildCapacityError):
+            await extend
+
+
+async def test_an_ended_guest_spends_no_invite_before_the_sweep(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin)
+    await _platform(session)
+    ended = await create_guest(session, a.guild, ends_in=-HOUR)
+    invite, code = await guilds_service.create_guild_invite(
+        session, guild_id=a.guild.id, created_by=a.user.id, guest_days=7
+    )
+    await session.commit()
+    invite_id = invite.id
+
+    response = await client.post(
+        "/api/v1/communities/invite/accept",
+        json={"code": code},
+        headers=get_auth_headers(ended),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == GuildMessages.GUEST_TIME_ENDED
+    session.expire_all()
+    assert (await session.get(GuildInvite, invite_id)).uses == 0
+
+
+async def test_admins_see_their_guests_while_guests_are_off(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin)
+    await _platform(session, guests_enabled=False)
+    guest = await create_guest(session, a.guild)
+    guest_id = guest.id
+
+    listed = await client.get(
+        a.g("/users/"), params={"guests": True}, headers=a.headers
+    )
+
+    assert [row["id"] for row in listed.json()["items"]] == [guest_id], listed.text

@@ -43,6 +43,7 @@
   "COMMUNITY_GUEST_LIMIT_REACHED": "Esta comunidad ha alcanzado su límite de invitados. Pide a un operador que lo aumente.",
   "COMMUNITY_GUESTS_DISABLED": "Los invitados están desactivados en este servidor.",
   "NOT_A_GUEST": "Esta persona no es invitada aquí.",
+  "GUEST_TIME_ENDED": "Tu tiempo como invitado aquí acaba de terminar. Inténtalo de nuevo en unos minutos.",
   "CANNOT_CHANGE_OWN_ROLE": "No puedes cambiar tu propio rol de comunidad",
   "USER_NOT_FOUND_IN_COMMUNITY": "Usuario no encontrado en la comunidad",
   "COMMUNITY_ROLE_NOT_ASSIGNABLE": "Ese rol de comunidad no se puede asignar.",

@@ -1028,13 +1028,24 @@ def guild_members(statement: _S, *, guild_id: int, guests: bool = False) -> _S:
     :func:`visible_to_other_people` leaves out left out here too. A statement
     that selects no profile column names ``MemberProfile`` in ``select_from``.
     """
+    return _in_guild(
+        statement,
+        guild_id,
+        live_membership_clause() if guests else GuildMembership.guest_until.is_(None),
+    )
+
+
+def guild_guests(statement: _S, *, guild_id: int) -> _S:
+    """``statement`` narrowed to one community's guests, as
+    :func:`guild_members` narrows it to its members: every guest membership,
+    whether or not it admits its holder now, for the people who run them."""
+    return _in_guild(statement, guild_id, GuildMembership.guest_until.is_not(None))
+
+
+def _in_guild(statement: _S, guild_id: int, rows: ColumnElement[bool]) -> _S:
     return statement.join(
         GuildMembership, GuildMembership.user_id == MemberProfile.id
-    ).where(
-        GuildMembership.guild_id == guild_id,
-        live_membership_clause() if guests else GuildMembership.guest_until.is_(None),
-        visible_to_other_people(),
-    )
+    ).where(GuildMembership.guild_id == guild_id, rows, visible_to_other_people())
 
 
 async def _reach(user_ids: List[int]) -> tuple[dict[int, str], set[int]]:
