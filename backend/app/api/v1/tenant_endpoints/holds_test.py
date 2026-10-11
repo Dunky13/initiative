@@ -646,3 +646,39 @@ async def test_a_platform_hold_settles_the_community_its_case_is_about(
     await set_rls_context(session, SystemGuild(operations["guild"].id))
     assert (await _subject(session, unnamed.task_id))["subject_guild_id"] == guild.id
     await set_rls_context(session, Unattributed())
+
+
+async def test_holding_a_case_in_the_operations_community_under_itself(
+    client, session, operations
+):
+    """The case's own task, held for the platform and worked on that same
+    case: the write that stamps it is made under the case's lock, not
+    waiting on it."""
+    import asyncio
+
+    from app.core.intake import IntakeStream
+    from app.services.platform.intake import open_case
+
+    ops_guild = operations["guild"]
+    case = await open_case(IntakeStream.moderation, title="Hold me")
+    assert case is not None
+    moderator = await _moderator(session, ops_guild)
+
+    response = await asyncio.wait_for(
+        client.post(
+            f"/api/v1/c/{ops_guild.id}/holds",
+            json={
+                "target_type": "task",
+                "target_id": case.task_id,
+                "reason": "legal_request",
+                "case_task_id": case.task_id,
+            },
+            headers=get_auth_headers(moderator),
+        ),
+        timeout=20,
+    )
+    assert response.status_code == 201, response.text
+    await set_rls_context(session, SystemGuild(ops_guild.id))
+    held = (await session.exec(select(Task).where(Task.id == case.task_id))).one()
+    assert held.held_at is not None
+    await set_rls_context(session, Unattributed())

@@ -906,14 +906,19 @@ async def claim_subject_guild(task_id: int, guild_id: int) -> ClaimOutcome:
 
 
 @asynccontextmanager
-async def case_locked(task_id: int) -> AsyncIterator[None]:
+async def case_locked(task_id: int) -> AsyncIterator[Optional[AsyncSession]]:
     """Hold case ``task_id``'s task locked for as long as the block runs, as
     the evidence retention sweep locks it: what the block commits elsewhere
     about the case — a hold naming it — is there before the sweep decides
-    the case's files."""
+    the case's files.
+
+    Yields the session holding the lock, routed into the operations
+    community, so a write there that would touch the locked task is made on
+    it rather than waiting on it; ``None`` where there is no operations
+    community. Committing that session lets the lock go."""
     operations = await configured_operations_guild_id()
     if operations is None:
-        yield
+        yield None
         return
     async with cohorts.system_session(operations) as session:
         await set_rls_context(session, SystemGuild(operations))
@@ -923,7 +928,7 @@ async def case_locked(task_id: int) -> AsyncIterator[None]:
             .with_for_update()
         )
         try:
-            yield
+            yield session
         finally:
             await session.rollback()
 

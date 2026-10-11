@@ -53,7 +53,7 @@ from app.db.guild_standing import GuildContext
 from app.db.base import MODELS_BY_TABLE
 from app.db.query import ids_in
 from app.db.request_context import SystemGuild
-from app.db.session import raise_flag, set_rls_context
+from app.db.session import raise_flag, routed_guild_id, set_rls_context
 from app.db.soft_delete_filter import select_including_deleted
 from app.models.tenant._mixins import HoldMixin, hold_models
 from app.models.tenant.content_hold import ContentHold
@@ -414,7 +414,7 @@ async def place(
         if naming and request.case_task_id is not None
         else nullcontext()
     )
-    async with keeping:
+    async with keeping as locked:
         if naming and request.case_task_id is not None:
             # A case's holds sit in the community it is about: that is where
             # the keeping of its files looks for them.
@@ -422,7 +422,19 @@ async def place(
                 raise HoldError(
                     HoldMessages.CASE_OTHER_COMMUNITY, status.HTTP_400_BAD_REQUEST
                 )
-        async with cohorts.system_session(guild_id) as system:
+        # Holding something in the operations community itself — the case's
+        # own task, or what holds it — is written on the session that holds
+        # the case's lock, rather than waiting on it.
+        shared = (
+            locked
+            if locked is not None and routed_guild_id(locked) == guild_id
+            else None
+        )
+        async with (
+            nullcontext(shared)
+            if shared is not None
+            else cohorts.system_session(guild_id)
+        ) as system:
             await set_rls_context(system, SystemGuild(guild_id))
             await _community_stays(system, guild_id)
             # Writing the hold columns of archived or trashed rows is a write to
@@ -474,6 +486,10 @@ async def place(
             )
             await system.commit()
             await system.refresh(hold)
+            if shared is not None:
+                # The lock's session is let go after this, which would
+                # expire what it loaded.
+                system.expunge(hold)
 
     await _note_on_case(
         case_task_id,
