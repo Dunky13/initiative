@@ -13,8 +13,8 @@ lifted while they are written, and restored.
 The downgrade drops the two columns, and the policies rendered on them with
 them; the next boot renders the read policy the older revision expects.
 
-Revision ID: 20261011_0502
-Revises: 20261011_0501
+Revision ID: 20261011_0503
+Revises: 20261011_0502
 Create Date: 2026-10-11
 """
 
@@ -23,8 +23,8 @@ from alembic import op
 
 from app.db.guild_migrations import run_for_each_guild_schema
 
-revision = "20261011_0502"
-down_revision = "20261011_0501"
+revision = "20261011_0503"
+down_revision = "20261011_0502"
 branch_labels = None
 depends_on = None
 
