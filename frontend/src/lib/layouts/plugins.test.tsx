@@ -124,6 +124,46 @@ describe("a plug-in on a task's page", () => {
     // A saved side holds what it holds.
     expect(side({ header: [], main: [], side: [] })).toEqual([]);
   });
+
+  it("leaves a field on its own unless a part it draws shows it, at any depth", () => {
+    const field = (key: string) => ({
+      key,
+      name: { en: key },
+      kind: "text" as const,
+      on: ["task"],
+    });
+    const part = (id: string, tree: LayoutNode) => ({ id, name: { en: id }, on: ["task"], tree });
+    const empty: LayoutNode = { type: "stack" };
+    const plugin = {
+      id: 3,
+      name: "CI",
+      fields: new Map([
+        ["deep", field("deep")],
+        ["late", field("late")],
+      ]),
+      parts: new Map([
+        [
+          "one",
+          part("one", {
+            type: "section",
+            children: [{ type: "stack", children: [{ type: "value", props: { field: "deep" } }] }],
+          }),
+        ],
+        ["two", part("two", empty)],
+        ["three", part("three", empty)],
+        // Past the limit, so not drawn: the field it shows stays on its own.
+        ["four", part("four", { type: "field", props: { field: "late" } })],
+      ]),
+      actions: new Map(),
+    };
+
+    expect(shippedPluginParts(new Map([[3, plugin]]))).toEqual([
+      { type: "field", props: { field: pluginFieldId(3, "late") } },
+      { type: "plugin", props: { plugin: 3, part: "one" } },
+      { type: "plugin", props: { plugin: 3, part: "two" } },
+      { type: "plugin", props: { plugin: 3, part: "three" } },
+    ]);
+  });
 });
 
 describe("a plug-in on a card", () => {

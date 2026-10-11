@@ -954,22 +954,13 @@ async def show_on_saved_details(
 ) -> None:
     """Show the install's fields, then its parts, on the saved task details of
     these initiatives, as it declares them: what placing it does. A field one
-    of the parts it shows already shows is not added on its own. After an
+    of its shown parts already shows is not added on its own. After an
     upgrade, ``previous`` is the definition it replaced, and only what that
-    did not declare is added. Once added, one a manager takes off stays off."""
-    parts = _on_tasks(plugin.definition, "parts", "id")[
-        : tool_layouts_service.MAX_PLUGIN_PARTS
-    ]
-    in_parts = {key for part in parts for key in _fields_in_tree(part.get("tree"))}
-
-    def arriving(block: str, id_key: str) -> list[str]:
-        had = {entry[id_key] for entry in _on_tasks(previous, block, id_key)}
-        return [
-            entry[id_key]
-            for entry in _on_tasks(plugin.definition, block, id_key)
-            if entry[id_key] not in had
-        ]
-
+    did not show is added. Once added, one a manager takes off stays off."""
+    fields = _on_tasks(plugin.definition, "fields", "key")
+    parts = _on_tasks(plugin.definition, "parts", "id")
+    before = {entry["key"]: entry for entry in _on_tasks(previous, "fields", "key")}
+    parts_before = {entry["id"] for entry in _on_tasks(previous, "parts", "id")}
     await tool_layouts_service.add_to_saved_details(
         session,
         initiative_ids,
@@ -977,16 +968,36 @@ async def show_on_saved_details(
             *(
                 {
                     "type": "field",
-                    "props": {"field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"},
+                    "props": {
+                        "field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{field['key']}"
+                    },
                 }
-                for key in arriving("fields", "key")
-                if key not in in_parts
+                for field in fields
+                if not _shown_in_parts(parts, field)
+                and (
+                    field["key"] not in before
+                    or _shown_in_parts(
+                        _on_tasks(previous, "parts", "id"), before[field["key"]]
+                    )
+                )
             ),
             *(
-                {"type": "plugin", "props": {"plugin": plugin.id, "part": part}}
-                for part in arriving("parts", "id")
+                {"type": "plugin", "props": {"plugin": plugin.id, "part": part["id"]}}
+                for part in parts
+                if part["id"] not in parts_before
             ),
         ],
+    )
+
+
+def _shown_in_parts(parts: list[dict], field: dict) -> bool:
+    """Whether one of the parts a task's page shows, up to the limit, shows
+    ``field`` wherever the field itself is offered: its tree shows it, and it
+    asks no connection the field does not."""
+    return any(
+        field["key"] in set(_fields_in_tree(part.get("tree")))
+        and part.get("requires") in (None, field.get("requires"))
+        for part in parts[: tool_layouts_service.MAX_PLUGIN_PARTS]
     )
 
 
