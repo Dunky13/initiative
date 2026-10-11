@@ -4,11 +4,14 @@
  * stored as. What a layout leaves out is not shown.
  */
 
+import { createContext } from "react";
+
 import type {
   DetailLayoutDefinitionInput,
   DetailLayoutRead,
 } from "@/api/generated/initiativeAPI.schemas";
 
+import { PROPERTY_FIELD_PREFIX } from "./fields";
 import type { LayoutNode } from "./tree";
 
 /** A detail's regions, in the order a detail holds them. */
@@ -18,6 +21,19 @@ export type Region = (typeof LAYOUT_REGIONS)[number];
 
 /** A detail layout's regions, as stored: one it leaves out is drawn as shipped. */
 export type StoredRegions = Partial<Record<Region, LayoutNode[] | null>>;
+
+/** The properties a detail places on their own, by definition id: All
+ *  properties leaves them out. */
+export const placedProperties = (root: LayoutNode): Set<number> =>
+  new Set(
+    nodesIn(root.children ?? [])
+      .map((node) => String(node.props?.field ?? ""))
+      .filter((field) => field.startsWith(PROPERTY_FIELD_PREFIX))
+      .map((field) => Number(field.slice(PROPERTY_FIELD_PREFIX.length)))
+  );
+
+/** What the detail being drawn places on its own, for All properties. */
+export const PlacedProperties = createContext<ReadonlySet<number>>(new Set());
 
 /** A part of a detail's column, and where it falls once the detail is one column. */
 export const at = (order: number, node: LayoutNode): LayoutNode => ({

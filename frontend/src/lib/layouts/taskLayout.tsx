@@ -64,11 +64,17 @@ import {
   isAnonymizedUser,
 } from "@/lib/userDisplay";
 
-import type { StoredRegions } from "./detailLayout";
+import { PlacedProperties, placedProperties, type StoredRegions } from "./detailLayout";
 import { indexPaths } from "./draft";
 import { FieldFrame, useFieldDraft } from "./editing";
-import { DescriptionField, PropertiesField, TagsField, TitleField } from "./fieldEditors";
-import { type FieldKind, useProjectLayoutEnv } from "./fields";
+import {
+  DescriptionField,
+  PlacedPropertyField,
+  PropertiesField,
+  TagsField,
+  TitleField,
+} from "./fieldEditors";
+import { type FieldKind, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
 import { PluginFieldOnDetail, PluginPartView, pluginFields, usePluginsOnItems } from "./plugins";
 import { TASK_LAYOUT, taskFields } from "./tasks";
 import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
@@ -412,9 +418,11 @@ const TaskRecurrenceEditor = ({ task, label }: EditorProps) => {
   );
 };
 
-/** The task's custom properties, each saved on its own, and adding one. */
+/** The task's custom properties, each saved on its own, and adding one;
+ *  those the layout places on their own are drawn there instead. */
 const PropertiesEditor = ({ task }: { task: TaskRead }) => {
   const { readOnly, initiativeId } = useTaskLayout();
+  const placed = useContext(PlacedProperties);
   return (
     <PropertiesField
       kind={TASK_SAVES}
@@ -423,6 +431,23 @@ const PropertiesEditor = ({ task }: { task: TaskRead }) => {
       readOnly={readOnly}
       initiativeId={initiativeId}
       canOpen={{ tool: Tool.project, id: task.project_id }}
+      except={placed}
+    />
+  );
+};
+
+/** One property the layout places on its own. */
+const PropertyEditor = ({ task, propertyId }: { task: TaskRead; propertyId: number }) => {
+  const { readOnly, initiativeId } = useTaskLayout();
+  return (
+    <PlacedPropertyField
+      kind={TASK_SAVES}
+      id={task.id}
+      properties={task.properties}
+      readOnly={readOnly}
+      initiativeId={initiativeId}
+      canOpen={{ tool: Tool.project, id: task.project_id }}
+      propertyId={propertyId}
     />
   );
 };
@@ -553,7 +578,15 @@ const Comments = ({ task }: { task: TaskRead }) => {
 const TASK_PARTS: Parts<TaskRead> = {
   ...LAYOUT_PARTS,
   field: (node, task, view) => {
-    const field = view.fields.get(String(node.props?.field));
+    const id = String(node.props?.field);
+    // A property is the initiative's, found by its id rather than in the
+    // fields the page names.
+    if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
+      return (
+        <PropertyEditor task={task} propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))} />
+      );
+    }
+    const field = view.fields.get(id);
     if (!field) return null;
     // A plug-in's value is the plug-in's to change.
     if (field.source === "plugin") return <PluginFieldOnDetail field={field} item={task} />;
@@ -602,6 +635,7 @@ export const TaskLayoutView = ({
   );
   const env = useProjectLayoutEnv(taskHref);
   const tree = useMemo(() => TASK_LAYOUT.tree(layout), [layout]);
+  const placed = useMemo(() => placedProperties(tree), [tree]);
   const plugins = usePluginsOnItems(context.initiativeId);
   // The detail's labels are the fields' own.
   const view = useMemo<LayoutContext>(
@@ -617,7 +651,9 @@ export const TaskLayoutView = ({
   return (
     // Another task's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${task.id}`} value={context}>
-      {renderNode(tree, task, view, TASK_PARTS)}
+      <PlacedProperties.Provider value={placed}>
+        {renderNode(tree, task, view, TASK_PARTS)}
+      </PlacedProperties.Provider>
     </DetailContext.Provider>
   );
 };

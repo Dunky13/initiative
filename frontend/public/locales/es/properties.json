@@ -5,6 +5,7 @@
   "saving": "Guardando…",
   "saved": "Guardado",
   "remove": "Eliminar propiedad",
+  "loadError": "No se pudo cargar esta propiedad.",
   "types": {
     "text": "Texto",
     "number": "Número",

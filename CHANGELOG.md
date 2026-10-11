@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Place a property on its own on a task's or an event's page.** The layout editor's **Add** lists each of the initiative's properties for an item's page, as it already did for cards and tables. A property placed there shows with its name and editor on every item, whether or not it has a value yet, and saves on its own; **All properties** leaves it out so it isn't shown twice.
 - **Add in the layout editor shows what you can build.** It opens with a search box and the layout blocks first: an **Accordion** (a titled section that opens and closes; you name it by typing as it's added), a **Box** that groups what it holds, and a **Row** that puts things side by side. Below them, every field is in one list, with where each comes from, and then the panels: the item's own and each plug-in's.
 - **A task embed can be sorted.** Its author picks the order in the embed's settings, as a layout preset does, and anyone reading can sort its table by a column. Ticking a task done in My Tasks also takes one step now.
 - **An invite link is shown once, when you make it.** Copy it then: the invites list in a community's settings now shows each invite's uses and end, without its link. Links handed out before still work.
