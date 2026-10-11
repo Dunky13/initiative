@@ -608,7 +608,10 @@ async def extend_guest(
     actor_user_id: int,
 ) -> GuildMembership:
     """End ``user_id``'s time as a guest ``days`` from now, held to the same
-    limits as a new guest's. Raises ``NotAGuestError`` unless they are one."""
+    limits as a new guest's. Raises ``NotAGuestError`` unless they are one.
+    Nobody sets their own end."""
+    if actor_user_id == user_id:
+        raise CodedError(GuildMessages.CANNOT_CHANGE_OWN_ROLE)
     membership = await get_membership(
         session, guild_id=guild_id, user_id=user_id, for_update=True
     )
@@ -644,7 +647,9 @@ async def make_guest_a_member(
 ) -> GuildMembership:
     """Make a guest a member: their time no longer ends and they take a seat,
     so the member cap applies. Raises ``NotAGuestError`` unless they are a
-    guest."""
+    guest. Nobody makes themselves a member."""
+    if actor_user_id == user_id:
+        raise CodedError(GuildMessages.CANNOT_CHANGE_OWN_ROLE)
     membership = await get_membership(
         session, guild_id=guild_id, user_id=user_id, for_update=True
     )

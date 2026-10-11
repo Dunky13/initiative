@@ -15,6 +15,7 @@ from app.models.platform.auth_session import AuthSession
 from app.models.platform.demo import DemoSandbox, DemoSandboxState
 from app.models.platform.guild import (
     CommunityRole,
+    CommunityStatus,
     Guild,
     GuildInvite,
     GuildMembership,
@@ -402,3 +403,80 @@ async def test_the_pool_loop_cleans_up_once_a_day(monkeypatch):
     monkeypatch.setattr(copies, "_cleaned_at", a_day_ago)
     await copies.pool_pass()
     assert len(runs) == 2
+
+
+@pytest.mark.parametrize("swept_first", [False, True])
+async def test_a_copy_ends_a_day_after_its_claim_whatever_its_guest_holds(
+    pitch, client, session, swept_first
+):
+    """Its guest's end moved out, or its guest row already taken by the guest
+    sweep: the copy and the visitor's account still go when the day is up."""
+    link, _bea, _source = pitch
+    copy_id = await copies.build_copy()
+    _opened, _headers, me = await _open(client, await link())
+    membership = (
+        await session.exec(
+            select(GuildMembership).where(
+                GuildMembership.guild_id == copy_id,
+                GuildMembership.user_id == me["id"],
+            )
+        )
+    ).one()
+    if swept_first:
+        await session.delete(membership)
+    else:
+        membership.guest_until = datetime.now(timezone.utc) + timedelta(days=30)
+        session.add(membership)
+    await session.commit()
+
+    await copies.expire_copies(
+        datetime.now(timezone.utc) + timedelta(days=pitches.COPY_DAYS, minutes=1)
+    )
+
+    session.expire_all()
+    assert await session.get(Guild, copy_id) is None
+    assert await session.get(User, me["id"]) is None
+
+
+async def test_a_pitch_no_longer_active_opens_nothing(pitch, client, session):
+    link, _bea, source = pitch
+    token = await link()
+    await copies.build_copy()
+    guild = await session.get(Guild, source)
+    guild.status = CommunityStatus.deleted.value
+    session.add(guild)
+    await session.commit()
+
+    response = await client.post(REDEEM, json={"token": token})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == DemoMessages.DEMO_LINK_NOT_FOUND
+
+
+async def test_a_link_used_up_ends_then(pitch, client, session):
+    """So the daily cleanup counts from its last opening."""
+    _link, _bea, source = pitch
+    invite, token = await pitches.make_link(session, pitch_id=source, max_redemptions=1)
+    await session.commit()
+    invite_id = invite.id
+    await copies.build_copy()
+
+    await _open(client, token)
+
+    session.expire_all()
+    ended = await session.get(GuildInvite, invite_id)
+    assert ended is not None and ended.expires_at <= datetime.now(timezone.utc)
+
+
+async def test_a_visitor_neither_extends_nor_promotes_itself(pitch, client, session):
+    link, _bea, _source = pitch
+    copy_id = await copies.build_copy()
+    _opened, headers, me = await _open(client, await link(CommunityRole.admin))
+    guest_url = f"/api/v1/communities/{copy_id}/guests/{me['id']}"
+
+    extended = await client.patch(guest_url, json={"days": 30}, headers=headers)
+    promoted = await client.post(f"{guest_url}/member", headers=headers)
+
+    for response in (extended, promoted):
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == GuildMessages.CANNOT_CHANGE_OWN_ROLE

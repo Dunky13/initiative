@@ -2,7 +2,8 @@
 
 The demo deployment's one table, ``demo_sandboxes``: communities built for the
 pool, and the visitors' copies once claimed, each with the invite that opened
-it. A visitor is a guest of their copy, so a copy ends when its guest does.
+it and the visitor's account. A visitor is a guest of their copy, so a copy
+ends when its guest does, or a day after it was claimed.
 Empty on every deployment not started with ``DEMO_MODE``.
 
 app_admin-only: RLS enabled and forced with no policies, and the schema's
@@ -35,7 +36,9 @@ def upgrade() -> None:
         sa.Column("invite_id", sa.Integer(), nullable=True),
         sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("import_job_id", sa.Integer(), nullable=True),
+        sa.Column("visitor_id", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["visitor_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(
             ["invite_id"], ["guild_invites.id"], ondelete="SET NULL"
         ),

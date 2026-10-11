@@ -59,3 +59,10 @@ class DemoSandbox(SQLModel, table=True):
     )
     #: The import filling the copy, in the copy's own schema.
     import_job_id: Optional[int] = Field(default=None)
+    #: The account made for the visitor, deleted with the copy.
+    visitor_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ),
+    )

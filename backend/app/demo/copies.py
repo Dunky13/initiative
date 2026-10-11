@@ -161,8 +161,12 @@ async def redeem(session: AsyncSession, token: str) -> Redemption:
             sandbox.invite_id = link.id
             sandbox.claimed_at = now
             sandbox.import_job_id = job_id
+            sandbox.visitor_id = visitor_id
             session.add(sandbox)
             link.uses += 1
+            if link.max_uses is not None and link.uses >= link.max_uses:
+                # Used up, it ends now: the cleanup counts from when it did.
+                link.expires_at = min(link.expires_at or now, now)
             session.add(link)
             # The job is committed only once the claim is.
             await session.commit()
@@ -187,6 +191,9 @@ async def _live(session: AsyncSession, link: GuildInvite | None) -> GuildInvite:
         or not guilds_service.invite_is_active(link)
         or not await pitches.is_pitch(session, link.guild_id)
     ):
+        raise LinkNotLive
+    pitch = await session.get(Guild, link.guild_id)
+    if pitch is None or pitch.status != CommunityStatus.active.value:
         raise LinkNotLive
     return link
 
@@ -299,17 +306,22 @@ async def pool_pass() -> None:
 
 
 async def expire_copies(now: datetime) -> None:
-    """Delete every copy with no guest whose time is left, and then its guests'
-    accounts, with no retention window."""
+    """Delete every copy claimed :data:`pitches.COPY_DAYS` ago, or with no
+    guest whose time is left, and then its guests' accounts, with no retention
+    window."""
     async with cohorts.system_session(None) as session:
         await set_rls_context(session, Unattributed())
         due = (
             await session.exec(
                 select(DemoSandbox.guild_id).where(
                     DemoSandbox.state == DemoSandboxState.live,
-                    ~exists().where(
-                        GuildMembership.guild_id == DemoSandbox.guild_id,
-                        GuildMembership.guest_until > now,
+                    or_(
+                        DemoSandbox.claimed_at
+                        <= now - timedelta(days=pitches.COPY_DAYS),
+                        ~exists().where(
+                            GuildMembership.guild_id == DemoSandbox.guild_id,
+                            GuildMembership.guest_until > now,
+                        ),
                     ),
                 )
             )
@@ -326,8 +338,8 @@ async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
     """Delete the copy's guest accounts, each taking its record with it, and
     then the community. Marked deleted first, which closes it to its visitors
     and lets its seat holder go. A step that fails leaves the copy recorded for
-    the next pass. A guest the expiry sweep took out first is left to the
-    daily cleanup."""
+    the next pass. The visitor's account is the one the copy recorded, so one
+    the guest sweep has already taken out of it is found too."""
     guild = await session.get(Guild, guild_id)
     if guild is None:
         return
@@ -336,14 +348,15 @@ async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
         guild.status_changed_at = datetime.now(timezone.utc)
         session.add(guild)
         await session.commit()
-    visitors = (
-        await session.exec(
-            select(GuildMembership.user_id).where(
-                GuildMembership.guild_id == guild_id,
-                GuildMembership.guest_until.is_not(None),
-            )
+    guests = await session.exec(
+        select(GuildMembership.user_id).where(
+            GuildMembership.guild_id == guild_id,
+            GuildMembership.guest_until.is_not(None),
         )
-    ).all()
+    )
+    sandbox = await session.get(DemoSandbox, guild_id)
+    recorded = [sandbox.visitor_id] if sandbox and sandbox.visitor_id else []
+    visitors = {*guests.all(), *recorded}
     for user_id in visitors:
         await users_service.hard_delete_user(session, user_id, actor_user_id=None)
     await session.refresh(guild)
