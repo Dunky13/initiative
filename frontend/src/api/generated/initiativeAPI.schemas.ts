@@ -649,6 +649,7 @@ export interface AppConfig {
   community_age_gate_enabled: boolean;
   direct_messages_enabled: boolean;
   guests_enabled: boolean;
+  engagement_ranking_enabled: boolean;
   cookie_consent_enabled: boolean;
   light_accent_color: string;
   dark_accent_color: string;
@@ -2252,6 +2253,7 @@ export interface CommunityAuthPolicyUpdate {
 export interface CommunityAuthSettingsRead {
   auth_options: CommunityAuthOption[];
   auth_policy: CommunityAuthPolicyRead;
+  guest_auth_policy: CommunityAuthPolicyRead;
   enforce_compliance_session: boolean;
   require_second_factor: boolean;
   allow_push_notifications: boolean;
@@ -2274,6 +2276,7 @@ export interface CommunityAuthSettingsRead {
  */
 export interface CommunityAuthSettingsUpdate {
   auth_policy?: CommunityAuthPolicyUpdate | null;
+  guest_auth_policy?: CommunityAuthPolicyUpdate | null;
   enforce_compliance_session?: boolean | null;
   require_second_factor?: boolean | null;
   allow_push_notifications?: boolean | null;
@@ -7240,6 +7243,7 @@ export interface OperatorUserRead {
   week_starts_on: number;
   time_format: string;
   recent_tabs_limit: number;
+  count_toward_engagement_ranking: boolean;
   timezone: string;
   event_reminder_minutes_before: number | null;
   last_overdue_notification_at: string | null;
@@ -10366,6 +10370,7 @@ export interface UserRead {
   week_starts_on: number;
   time_format: string;
   recent_tabs_limit: number;
+  count_toward_engagement_ranking: boolean;
   timezone: string;
   event_reminder_minutes_before: number | null;
   last_overdue_notification_at: string | null;
@@ -10400,6 +10405,7 @@ export interface UserSelfUpdate {
   week_starts_on?: number | null;
   time_format?: string | null;
   recent_tabs_limit?: number | null;
+  count_toward_engagement_ranking?: boolean | null;
   timezone?: string | null;
   event_reminder_minutes_before?: number | null;
   color_theme?: string | null;
