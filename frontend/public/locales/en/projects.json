@@ -365,10 +365,8 @@
     "noTasks": "This project has no tasks yet. Add one to see its detail here.",
     "empty": "Empty",
     "dropHere": "Drop here",
-    "section": "Section",
-    "sectionWith": "Section with {{name}}",
     "sectionTitle": "Title",
-    "startFolded": "Start folded",
+    "startFolded": "Start closed",
     "hiddenHelp": "Every task's detail can show this. Taken off, it is hidden, and Add puts it back.",
     "parts": {
       "header": "Header",
@@ -446,7 +444,22 @@
       "descending": "Descending",
       "full": "A layout offers at most {{count}} presets. Remove one to add another."
     },
-    "calendarListHelp": "How the initiative's calendar lists its events and tasks. Its presets are where people can start from."
+    "calendarListHelp": "How the initiative's calendar lists its events and tasks. Its presets are where people can start from.",
+    "blocks": {
+      "accordion": "Accordion",
+      "accordionHelp": "A titled section that opens and closes.",
+      "box": "Box",
+      "boxHelp": "Groups what it holds, with a border.",
+      "row": "Row",
+      "rowHelp": "Puts what it holds side by side."
+    },
+    "boxWith": "Box with {{name}}",
+    "fieldsGroup": "Fields",
+    "panels": "Panels",
+    "fromProperty": "Property",
+    "search": "Search",
+    "noMatches": "Nothing matches.",
+    "sectionHelp": "With a title it opens and closes; without one it's a box."
   },
   "presets": {
     "label": "Presets",

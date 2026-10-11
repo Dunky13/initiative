@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Add in the layout editor shows what you can build.** It opens with a search box and the layout blocks first: an **Accordion** (a titled section that opens and closes; you name it by typing as it's added), a **Box** that groups what it holds, and a **Row** that puts things side by side. Below them, every field is in one list, with where each comes from, and then the panels: the item's own and each plug-in's.
 - **A task embed can be sorted.** Its author picks the order in the embed's settings, as a layout preset does, and anyone reading can sort its table by a column. Ticking a task done in My Tasks also takes one step now.
 - **An invite link is shown once, when you make it.** Copy it then: the invites list in a community's settings now shows each invite's uses and end, without its link. Links handed out before still work.
 - **Smart chips keep up as things change.** A chip, a `[[ ]]` link and an embed show a change the moment it is made, for everyone looking, instead of up to a minute later. Ticking a task's box in a document shows at once and takes one step, and a chip whose reading turns at a set time, like a due date passing, changes at that moment. A long document asks only about what is new or has changed.

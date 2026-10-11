@@ -365,10 +365,8 @@
     "noTasks": "Ce projet n'a encore aucune tâche. Ajoutez-en une pour voir son détail ici.",
     "empty": "Vide",
     "dropHere": "Déposer ici",
-    "section": "Section",
-    "sectionWith": "Section avec {{name}}",
     "sectionTitle": "Titre",
-    "startFolded": "Repliée au départ",
+    "startFolded": "Commencer fermée",
     "hiddenHelp": "Le détail de chaque tâche peut afficher ceci. Retiré, il est masqué, et Ajouter le remet.",
     "parts": {
       "header": "En-tête",
@@ -446,7 +444,22 @@
       "descending": "Décroissant",
       "full": "Une disposition propose au plus {{count}} préréglages. Retirez-en un pour en ajouter un autre."
     },
-    "calendarListHelp": "Comment le calendrier de l'initiative présente ses événements et ses tâches. Ses préréglages sont les points de départ proposés à chacun."
+    "calendarListHelp": "Comment le calendrier de l'initiative présente ses événements et ses tâches. Ses préréglages sont les points de départ proposés à chacun.",
+    "blocks": {
+      "accordion": "Accordéon",
+      "accordionHelp": "Une section titrée qui s'ouvre et se ferme.",
+      "box": "Boîte",
+      "boxHelp": "Regroupe ce qu'elle contient, avec une bordure.",
+      "row": "Ligne",
+      "rowHelp": "Place côte à côte ce qu'elle contient."
+    },
+    "boxWith": "Boîte avec {{name}}",
+    "fieldsGroup": "Champs",
+    "panels": "Panneaux",
+    "fromProperty": "Propriété",
+    "search": "Rechercher",
+    "noMatches": "Aucun résultat.",
+    "sectionHelp": "Avec un titre, elle s'ouvre et se ferme ; sans titre, c'est une boîte."
   },
   "presets": {
     "label": "Préréglages",

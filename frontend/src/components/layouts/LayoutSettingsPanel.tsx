@@ -365,12 +365,16 @@ const SectionSettings = ({
     onChange({ ...node, props: value === undefined ? rest : { ...rest, [key]: value } });
   };
   return (
-    <Panel heading={t("layoutEditor.section")}>
+    // Titled, it is an accordion that opens and closes; untitled, a box.
+    <Panel heading={t(title ? "layoutEditor.blocks.accordion" : "layoutEditor.blocks.box")}>
+      <p className="text-muted-foreground text-sm">{t("layoutEditor.sectionHelp")}</p>
       <div className="space-y-2">
         <Label htmlFor="section-title">{t("layoutEditor.sectionTitle")}</Label>
         <CommittedInput
           id="section-title"
           value={title}
+          // An accordion just added is named by typing over its title.
+          autoSelect={title === t("layoutEditor.blocks.accordion")}
           optional
           onCommit={(next) => {
             const { title: _title, collapsed: _collapsed, ...rest } = props;
@@ -404,15 +408,19 @@ const CommittedInput = ({
   id,
   value,
   optional = false,
+  autoSelect = false,
   onCommit,
 }: {
   id: string;
   value: string;
   optional?: boolean;
+  /** Focused with its text selected when it appears. */
+  autoSelect?: boolean;
   onCommit: (value: string) => void;
 }) => {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
+
   const commit = () => {
     const trimmed = text.trim();
     if (trimmed === value || (!trimmed && !optional)) setText(value);
@@ -422,6 +430,8 @@ const CommittedInput = ({
     <Input
       id={id}
       value={text}
+      autoFocus={autoSelect}
+      onFocus={autoSelect ? (event) => event.currentTarget.select() : undefined}
       maxLength={MAX_TITLE_LENGTH}
       onChange={(event) => setText(event.target.value)}
       onBlur={commit}

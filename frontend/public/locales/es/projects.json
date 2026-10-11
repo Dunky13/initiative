@@ -365,10 +365,8 @@
     "noTasks": "Este proyecto aún no tiene tareas. Añade una para ver su detalle aquí.",
     "empty": "Vacío",
     "dropHere": "Soltar aquí",
-    "section": "Sección",
-    "sectionWith": "Sección con {{name}}",
     "sectionTitle": "Título",
-    "startFolded": "Empezar plegada",
+    "startFolded": "Empezar cerrada",
     "hiddenHelp": "El detalle de cada tarea puede mostrar esto. Si se quita, queda oculto, y Añadir lo devuelve.",
     "parts": {
       "header": "Encabezado",
@@ -446,7 +444,22 @@
       "descending": "Descendente",
       "full": "Un diseño ofrece como máximo {{count}} ajustes predefinidos. Quita uno para añadir otro."
     },
-    "calendarListHelp": "Cómo el calendario de la iniciativa muestra sus eventos y tareas. Sus ajustes predefinidos son puntos de partida para todos."
+    "calendarListHelp": "Cómo el calendario de la iniciativa muestra sus eventos y tareas. Sus ajustes predefinidos son puntos de partida para todos.",
+    "blocks": {
+      "accordion": "Acordeón",
+      "accordionHelp": "Una sección con título que se abre y se cierra.",
+      "box": "Caja",
+      "boxHelp": "Agrupa lo que contiene, con un borde.",
+      "row": "Fila",
+      "rowHelp": "Pone lado a lado lo que contiene."
+    },
+    "boxWith": "Caja con {{name}}",
+    "fieldsGroup": "Campos",
+    "panels": "Paneles",
+    "fromProperty": "Propiedad",
+    "search": "Buscar",
+    "noMatches": "No hay coincidencias.",
+    "sectionHelp": "Con título se abre y se cierra; sin él es una caja."
   },
   "presets": {
     "label": "Ajustes predefinidos",
