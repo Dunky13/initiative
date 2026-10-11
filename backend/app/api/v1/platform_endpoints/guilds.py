@@ -74,7 +74,6 @@ from app.models.platform.guild_image import (
     GuildImageVariant,
 )
 from app.models.platform.user import User, UserStatus
-from app.models.tenant.guest_invite_grant import GuestInviteGrant
 from app.schemas.platform.billing import BillingPortalHandoffResponse
 from app.schemas.platform.guild import (
     DirectoryCommunityPage,
@@ -1390,7 +1389,7 @@ async def create_community_invite(
         max_uses=invite_in.max_uses,
         invitee_email=invite_in.invitee_email,
         guest_days=invite_in.guest_days,
-        grants=[GuestInviteGrant(**grant.model_dump()) for grant in invite_in.grants],
+        grants=invite_in.grants,
         actor_user_id=current_user.id,
     )
     await session.commit()

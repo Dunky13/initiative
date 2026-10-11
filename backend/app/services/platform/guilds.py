@@ -46,6 +46,8 @@ from app.models.platform.access_grant import AccessGrant, AccessGrantPurpose
 from app.models.platform.guild_administration import GuildAdministration
 from app.models.platform.notification import NotificationType
 from app.models.tenant.guest_invite_grant import GuestInviteGrant
+from app.models.tenant.resource_grant import ResourceAccessLevel
+from app.schemas.platform.guild import CommunityInviteGrant
 from app.models.tenant.guild_setting import GuildSetting
 from app.models.platform.user import User, UserStatus
 from app.services import audit as audit_service
@@ -1550,7 +1552,7 @@ async def create_guild_invite(
     max_uses: int | None = 1,
     invitee_email: str | None = None,
     guest_days: int | None = None,
-    grants: Sequence[GuestInviteGrant] = (),
+    grants: Sequence[CommunityInviteGrant] = (),
     actor_user_id: int | None = None,
 ) -> tuple[GuildInvite, str]:
     """Mint an invite, and return it with its code, which is not kept.
@@ -1589,9 +1591,15 @@ async def create_guild_invite(
     )
     session.add(invite)
     await session.flush()
-    for grant in grants:
+    for asked in grants:
+        grant = GuestInviteGrant(
+            invite_id=cast(int, invite.id),
+            initiative_id=asked.initiative_id,
+            resource_type=asked.resource_type,
+            resource_id=asked.resource_id,
+            level=ResourceAccessLevel(asked.level) if asked.level else None,
+        )
         await _assert_grantable(session, grant)
-        grant.invite_id = cast(int, invite.id)
         session.add(grant)
     await session.flush()
     if actor_user_id is not None:
