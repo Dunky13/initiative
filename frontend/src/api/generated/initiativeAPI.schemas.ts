@@ -1443,10 +1443,14 @@ export interface TaskListRead {
   plugin_values: PluginValueSummary[];
 }
 
-export interface CalendarEntriesResponse {
-  events: CalendarEventSummary[];
-  tasks: TaskListRead[];
-  task_occurrences: TaskListRead[];
+export interface ProjectCan {
+  edit: boolean;
+  contribute: boolean;
+  delete: boolean;
+  share: boolean;
+  export: boolean;
+  unarchive: boolean;
+  configure: boolean;
 }
 
 /**
@@ -1460,6 +1464,246 @@ export interface UserPublic {
   avatar_url: string | null;
   status: UserStatus;
   display_name: string | null;
+}
+
+/**
+ * An installed plug-in that owns a resource, or may be handed one: the
+ * install's id, its name in this community, and its listing's picture.
+ */
+export interface OwnerPluginSummary {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+}
+
+/**
+ * An initiative as something else names it: enough to label and link it.
+ *
+ * What a project, a file or a task carries about the initiative it is in.
+ * The initiative's own read is :class:`InitiativeRead`.
+ */
+export interface InitiativeSummary {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+export interface ProjectTaskSummary {
+  total: number;
+  completed: number;
+}
+
+export interface ProjectRead {
+  archived_at: string | null;
+  can: ProjectCan;
+  id: number;
+  initiative_id: number;
+  community_id: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  comments_enabled: boolean;
+  tags: TagSummary[];
+  properties: PropertySummary[];
+  grants: ResourceGrantSchema[];
+  name: string;
+  description: string | null;
+  icon: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  owner_id: number | null;
+  is_template: boolean;
+  pinned_at: string | null;
+  owner: UserPublic | null;
+  owner_plugin: OwnerPluginSummary | null;
+  initiative: InitiativeSummary | null;
+  is_favorited: boolean;
+  last_viewed_at: string | null;
+  task_summary: ProjectTaskSummary;
+  task_statuses: TaskStatusRead[];
+}
+
+/**
+ * What the caller may do to one of a tool's rows
+ * (``permissions.client_access``).
+ */
+export interface ToolCan {
+  edit: boolean;
+  contribute: boolean;
+  delete: boolean;
+  share: boolean;
+  export: boolean;
+  unarchive: boolean;
+}
+
+/**
+ * How a profile is dressed: a banner, a frame, trophies under it.
+ *
+ * Every value is an **id naming a catalog entry**, never an image. The client
+ * resolves an id to artwork it already ships, so a decorated profile takes up
+ * none of a guild's upload allowance. An id this deployment's catalog doesn't
+ * know simply renders nothing, which is what lets a profile keep wearing
+ * something the store stopped offering.
+ *
+ * ``extra="forbid"``: the set of things a profile can wear is this list, and
+ * a client sending a key that isn't here is told so rather than having it
+ * quietly stored and never rendered.
+ */
+export interface ProfileDecorationsOutput {
+  banner: string | null;
+  frame: string | null;
+  /** @maxItems 2 */
+  frame_tint: string[];
+  /** @maxItems 6 */
+  trophies: string[];
+  grad_year: number | null;
+}
+
+/**
+ * How a person appears to everyone else.
+ *
+ * Both halves of one idea, which is why it is one enum: what a person picks
+ * for themselves, and what a reader of their name is shown. The picked value
+ * is a standing preference on the account; the shown value is that preference
+ * narrowed by what the process can see — whether they have Initiative open at
+ * all, and whether anyone has touched it lately — which is decided in one
+ * place (``app.services.platform.presence``).
+ *
+ * ``idle`` is the one a person may either pick or be given: left on
+ * ``online``, an account that goes quiet is shown it anyway, and picking it
+ * outright is how someone says they would rather look that way regardless.
+ *
+ * Not to be confused with ``UserStatus`` (the account's standing, which is not
+ * the account holder's to write) or ``custom_status`` (the line they wrote).
+ */
+export type Presence = (typeof Presence)[keyof typeof Presence];
+
+export const Presence = {
+  online: "online",
+  idle: "idle",
+  busy: "busy",
+  offline: "offline",
+} as const;
+
+/**
+ * Who wrote a comment.
+ *
+ * An address never reaches a guild, so there is none here; the handle names
+ * the author, and ``display_name`` is the name they set in this guild.
+ *
+ * It carries what a picture needs to be drawn the way it is drawn everywhere
+ * else — the decorations and how they are appearing — because a comment is
+ * one of the places a person appears at a size where both are legible.
+ * Neither is private: the same two are on the public profile.
+ */
+export interface CommentAuthor {
+  id: number;
+  username: string;
+  discriminator: number;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  profile_decorations?: ProfileDecorationsOutput;
+  /**
+   * How they appear, at the moment this was serialized.
+   *
+   * Computed rather than stamped by each endpoint: a comment author is
+   * built in nine places, and what a reader is shown is not a column
+   * anything could select — it is what the account picked narrowed by which
+   * sockets are open. So it is read where the shape is made rather than
+   * passed down to it.
+   */
+  readonly presence: Presence;
+}
+
+/**
+ * Who reacted, named the way comment authors are named.
+ */
+export interface ReactionUser {
+  id: number;
+  username: string;
+  discriminator: number;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
+/**
+ * One emoji on one target, and who chose it.
+ */
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+  users: ReactionUser[];
+}
+
+export interface PollOptionRead {
+  id: number;
+  text: string;
+  position: number;
+  vote_count: number | null;
+  voted_by_me: boolean;
+}
+
+export interface PollRead {
+  id: number;
+  question: string | null;
+  allows_multiple: boolean;
+  is_anonymous: boolean;
+  hide_results: boolean;
+  closes_at: string | null;
+  is_closed: boolean;
+  options: PollOptionRead[];
+  has_voted: boolean;
+  results_visible: boolean;
+  total_voters: number | null;
+  is_locked: boolean;
+}
+
+export type PostReadBody = { [key: string]: unknown };
+
+export interface PostRead {
+  archived_at: string | null;
+  can: ToolCan;
+  id: number;
+  initiative_id: number;
+  community_id: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  comments_enabled: boolean;
+  tags: TagSummary[];
+  properties: PropertySummary[];
+  grants: ResourceGrantSchema[];
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name: string;
+  author: CommentAuthor | null;
+  excerpt: string;
+  pinned_at: string | null;
+  pinned_by: number | null;
+  pin_expires_at: string | null;
+  is_pinned: boolean;
+  published_at: string | null;
+  scheduled_for: string | null;
+  is_published: boolean;
+  is_read: boolean;
+  read_count: number;
+  reactions_enabled: boolean;
+  comments_locked_at: string | null;
+  comment_count: number;
+  reactions: ReactionGroup[];
+  body: PostReadBody;
+  poll: PollRead | null;
+}
+
+export interface CalendarEntriesResponse {
+  events: CalendarEventSummary[];
+  tasks: TaskListRead[];
+  task_occurrences: TaskListRead[];
+  projects: ProjectRead[];
+  polls: PostRead[];
 }
 
 export type RSVPStatus = (typeof RSVPStatus)[keyof typeof RSVPStatus];
@@ -1597,19 +1841,6 @@ export interface CalendarFilterSpec {
   priorities?: TaskPriority[];
   /** @maxItems 5 */
   properties?: PresetPropertyFilter[];
-}
-
-/**
- * What the caller may do to one of a tool's rows
- * (``permissions.client_access``).
- */
-export interface ToolCan {
-  edit: boolean;
-  contribute: boolean;
-  delete: boolean;
-  share: boolean;
-  export: boolean;
-  unarchive: boolean;
 }
 
 export interface CalendarSummary {
@@ -1961,85 +2192,6 @@ export const CommentAudience = {
   filer: "filer",
 } as const;
 
-/**
- * How a profile is dressed: a banner, a frame, trophies under it.
- *
- * Every value is an **id naming a catalog entry**, never an image. The client
- * resolves an id to artwork it already ships, so a decorated profile takes up
- * none of a guild's upload allowance. An id this deployment's catalog doesn't
- * know simply renders nothing, which is what lets a profile keep wearing
- * something the store stopped offering.
- *
- * ``extra="forbid"``: the set of things a profile can wear is this list, and
- * a client sending a key that isn't here is told so rather than having it
- * quietly stored and never rendered.
- */
-export interface ProfileDecorationsOutput {
-  banner: string | null;
-  frame: string | null;
-  /** @maxItems 2 */
-  frame_tint: string[];
-  /** @maxItems 6 */
-  trophies: string[];
-  grad_year: number | null;
-}
-
-/**
- * How a person appears to everyone else.
- *
- * Both halves of one idea, which is why it is one enum: what a person picks
- * for themselves, and what a reader of their name is shown. The picked value
- * is a standing preference on the account; the shown value is that preference
- * narrowed by what the process can see — whether they have Initiative open at
- * all, and whether anyone has touched it lately — which is decided in one
- * place (``app.services.platform.presence``).
- *
- * ``idle`` is the one a person may either pick or be given: left on
- * ``online``, an account that goes quiet is shown it anyway, and picking it
- * outright is how someone says they would rather look that way regardless.
- *
- * Not to be confused with ``UserStatus`` (the account's standing, which is not
- * the account holder's to write) or ``custom_status`` (the line they wrote).
- */
-export type Presence = (typeof Presence)[keyof typeof Presence];
-
-export const Presence = {
-  online: "online",
-  idle: "idle",
-  busy: "busy",
-  offline: "offline",
-} as const;
-
-/**
- * Who wrote a comment.
- *
- * An address never reaches a guild, so there is none here; the handle names
- * the author, and ``display_name`` is the name they set in this guild.
- *
- * It carries what a picture needs to be drawn the way it is drawn everywhere
- * else — the decorations and how they are appearing — because a comment is
- * one of the places a person appears at a size where both are legible.
- * Neither is private: the same two are on the public profile.
- */
-export interface CommentAuthor {
-  id: number;
-  username: string;
-  discriminator: number;
-  display_name?: string | null;
-  avatar_url?: string | null;
-  profile_decorations?: ProfileDecorationsOutput;
-  /**
-   * How they appear, at the moment this was serialized.
-   *
-   * Computed rather than stamped by each endpoint: a comment author is
-   * built in nine places, and what a reader is shown is not a column
-   * anything could select — it is what the account picked narrowed by which
-   * sockets are open. So it is read where the shape is made rather than
-   * passed down to it.
-   */
-  readonly presence: Presence;
-}
-
 export interface CommentCreate {
   content: string;
   task_id?: number | null;
@@ -2055,27 +2207,6 @@ export interface CommentCreate {
   wiki_id?: number | null;
   parent_comment_id?: number | null;
   audience?: CommentAudience;
-}
-
-/**
- * Who reacted, named the way comment authors are named.
- */
-export interface ReactionUser {
-  id: number;
-  username: string;
-  discriminator: number;
-  display_name?: string | null;
-  avatar_url?: string | null;
-}
-
-/**
- * One emoji on one target, and who chose it.
- */
-export interface ReactionGroup {
-  emoji: string;
-  count: number;
-  reacted: boolean;
-  users: ReactionUser[];
 }
 
 /**
@@ -5085,28 +5216,6 @@ export interface FileCreate {
   content?: FileCreateContent;
   file_type?: FileCreateFileType;
   grants?: ResourceGrantSchema[];
-}
-
-/**
- * An initiative as something else names it: enough to label and link it.
- *
- * What a project, a file or a task carries about the initiative it is in.
- * The initiative's own read is :class:`InitiativeRead`.
- */
-export interface InitiativeSummary {
-  id: number;
-  name: string;
-  color: string | null;
-}
-
-/**
- * An installed plug-in that owns a resource, or may be handed one: the
- * install's id, its name in this community, and its listing's picture.
- */
-export interface OwnerPluginSummary {
-  id: number;
-  name: string;
-  avatar_url: string | null;
 }
 
 /**
@@ -8266,14 +8375,6 @@ export interface PluginWidgetCatalogResponse {
   items?: PluginWidgetCatalogEntry[];
 }
 
-export interface PollOptionRead {
-  id: number;
-  text: string;
-  position: number;
-  vote_count: number | null;
-  voted_by_me: boolean;
-}
-
 /**
  * One person on a poll's roster, named the way readers and reactors are.
  */
@@ -8300,21 +8401,6 @@ export interface PollOptionWrite {
    * @maxLength 200
    */
   text: string;
-}
-
-export interface PollRead {
-  id: number;
-  question: string | null;
-  allows_multiple: boolean;
-  is_anonymous: boolean;
-  hide_results: boolean;
-  closes_at: string | null;
-  is_closed: boolean;
-  options: PollOptionRead[];
-  has_voted: boolean;
-  results_visible: boolean;
-  total_voters: number | null;
-  is_locked: boolean;
 }
 
 /**
@@ -8381,45 +8467,6 @@ export interface PostCreate {
   grants?: ResourceGrantSchema[];
   scheduled_for?: string | null;
   poll?: PollWrite | null;
-}
-
-export type PostReadBody = { [key: string]: unknown };
-
-export interface PostRead {
-  archived_at: string | null;
-  can: ToolCan;
-  id: number;
-  initiative_id: number;
-  community_id: number;
-  created_by: number | null;
-  created_at: string;
-  updated_at: string;
-  comments_enabled: boolean;
-  tags: TagSummary[];
-  properties: PropertySummary[];
-  grants: ResourceGrantSchema[];
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  name: string;
-  author: CommentAuthor | null;
-  excerpt: string;
-  pinned_at: string | null;
-  pinned_by: number | null;
-  pin_expires_at: string | null;
-  is_pinned: boolean;
-  published_at: string | null;
-  scheduled_for: string | null;
-  is_published: boolean;
-  is_read: boolean;
-  read_count: number;
-  reactions_enabled: boolean;
-  comments_locked_at: string | null;
-  comment_count: number;
-  reactions: ReactionGroup[];
-  body: PostReadBody;
-  poll: PollRead | null;
 }
 
 export interface PostListResponse {
@@ -8546,16 +8593,6 @@ export interface ProjectActivityResponse {
   items: ProjectActivityEntry[];
 }
 
-export interface ProjectCan {
-  edit: boolean;
-  contribute: boolean;
-  delete: boolean;
-  share: boolean;
-  export: boolean;
-  unarchive: boolean;
-  configure: boolean;
-}
-
 export interface ProjectCreate {
   properties?: PropertyValueInput[];
   name: string;
@@ -8567,41 +8604,6 @@ export interface ProjectCreate {
   is_template?: boolean;
   template_id?: number | null;
   grants?: ResourceGrantSchema[];
-}
-
-export interface ProjectTaskSummary {
-  total: number;
-  completed: number;
-}
-
-export interface ProjectRead {
-  archived_at: string | null;
-  can: ProjectCan;
-  id: number;
-  initiative_id: number;
-  community_id: number;
-  created_by: number | null;
-  created_at: string;
-  updated_at: string;
-  comments_enabled: boolean;
-  tags: TagSummary[];
-  properties: PropertySummary[];
-  grants: ResourceGrantSchema[];
-  name: string;
-  description: string | null;
-  icon: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  owner_id: number | null;
-  is_template: boolean;
-  pinned_at: string | null;
-  owner: UserPublic | null;
-  owner_plugin: OwnerPluginSummary | null;
-  initiative: InitiativeSummary | null;
-  is_favorited: boolean;
-  last_viewed_at: string | null;
-  task_summary: ProjectTaskSummary;
-  task_statuses: TaskStatusRead[];
 }
 
 export interface ProjectListResponse {
@@ -12593,6 +12595,8 @@ export type ListCalendarEntriesParams = {
   tz?: string | null;
   include_events?: boolean;
   include_tasks?: boolean;
+  include_projects?: boolean;
+  include_polls?: boolean;
   start_after: string;
   start_before: string;
 };

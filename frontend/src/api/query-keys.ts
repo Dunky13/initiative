@@ -539,7 +539,8 @@ const toolCounts = (): Spec => ({ communityExact: ["/api/v1/tools/counts/by-init
  * Every list of one tool — its community-wide list and the cross-community `/me` twin
  * every tool has — and its page's counts, whose tag tree moves when a row's
  * tags do. A calendar's also reaches the events and entries views, which show
- * its name and colour. Not the sidebar's counts: changing what a row says
+ * its name and colour, and a project's or post's the entries, which show their
+ * dates. Not the sidebar's counts: changing what a row says
  * leaves those where they were.
  */
 const toolLists = (which: Tool): Spec => {
@@ -547,8 +548,10 @@ const toolLists = (which: Tool): Spec => {
     communityPrefix: [`/api/v1/tools/${which}/counts`],
   });
   if (which === Tool.calendar) return compose(lists, allCalendarEvents());
-  // An initiative's list of layouts names its projects, by name.
-  if (which === Tool.project) return compose(lists, initiativeLayouts());
+  // An initiative's list of layouts names its projects, by name. The entries
+  // carry projects by their dates and posts by their polls' closing.
+  if (which === Tool.project) return compose(lists, initiativeLayouts(), allCalendarEntries());
+  if (which === Tool.post) return compose(lists, allCalendarEntries());
   return lists;
 };
 
