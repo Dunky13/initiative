@@ -23,13 +23,17 @@ let authOptions: CommunityAuthOption[] = ["restrictions", "providers"];
 let canWriteSettings: boolean | undefined;
 // The deployment's billing portal; null on a self-hosted install.
 let billing: { url: string } | null = null;
+// Whether the deployment allows guests, and how many this community takes.
+let guestsEnabled = true;
+let maxGuests: number | null = null;
 
 // What the billing service said of the plan; undefined is "not asked".
 let summary: CommunityBillingSummaryRead | undefined;
 
 vi.mock(import("@/hooks/useAppConfig"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useAppConfig: () => ({ billing }) as unknown as ReturnType<typeof useAppConfigType>,
+  useAppConfig: () =>
+    ({ billing, guestsEnabled }) as unknown as ReturnType<typeof useAppConfigType>,
 }));
 vi.mock(import("@/hooks/useCommunityBillingSummary"), () => ({
   useCommunityBillingSummary: () =>
@@ -46,6 +50,7 @@ vi.mock(import("@/hooks/useCommunities"), async (importOriginal) => ({
         name: "Test Community",
         role: communityRole,
         auth_options: authOptions,
+        max_guests: maxGuests,
         can: communityCan(communityRole, {
           content: reachesContent,
           ...(canWriteSettings === undefined ? {} : { configure: canWriteSettings }),
@@ -83,7 +88,26 @@ describe("CommunitySettingsLayout", () => {
     authOptions = ["restrictions", "providers"];
     canWriteSettings = undefined;
     billing = null;
+    guestsEnabled = true;
+    maxGuests = null;
     summary = undefined;
+  });
+
+  it("offers Guests where the server allows guests and the community takes them", async () => {
+    render();
+    expect(await screen.findByRole("tab", { name: "Guests" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["the server does not allow guests", false, null],
+    ["the community takes none", true, 0],
+  ])("hides Guests where %s", async (_label, enabled, max) => {
+    guestsEnabled = enabled;
+    maxGuests = max;
+    render();
+
+    expect(await screen.findByRole("tab", { name: /users/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Guests" })).not.toBeInTheDocument();
   });
 
   it("puts Usage first for the seat, and keeps it from an ordinary admin", async () => {

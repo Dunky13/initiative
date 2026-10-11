@@ -615,5 +615,38 @@
       "apply": "Nahe zuerst zeigen",
       "clear": "Nicht mehr nach Ort sortieren"
     }
+  },
+  "guests": {
+    "invitesTitle": "Gast einladen",
+    "invitesDescription": "Erstelle einen Link für jemanden, der nur bestimmte Initiativen oder Elemente sehen soll, für eine festgelegte Anzahl von Tagen.",
+    "guestDaysLabel": "Tage, die der Gast bleibt",
+    "initiativesLabel": "Initiativen, denen der Gast beitritt",
+    "initiativesPlaceholder": "Keine",
+    "itemsLabel": "Elemente, die der Gast erhält",
+    "itemsHelp": "Suche nach einem Projekt, einer Datei oder einem anderen Element und wähle dann, ob der Gast es ansehen oder bearbeiten darf.",
+    "itemLevel": "Zugriff auf {{title}}",
+    "removeItem": "{{title}} entfernen",
+    "generateInvite": "Gasteinladung generieren",
+    "noActiveInvites": "Keine Gasteinladungen.",
+    "staysDays_one": "Bleibt {{count}} Tag",
+    "staysDays_other": "Bleibt {{count}} Tage",
+    "joinsInitiatives": "Tritt {{names}} bei",
+    "givesItems_one": "{{count}} Element",
+    "givesItems_other": "{{count}} Elemente",
+    "listTitle": "Gäste",
+    "listDescription": "Personen, die für eine festgelegte Anzahl von Tagen hier sind. Ein Gast belegt keinen Platz und sieht nur, was ihm seine Einladung gegeben hat.",
+    "loading": "Gäste werden geladen…",
+    "unableToLoad": "Gäste konnten nicht geladen werden.",
+    "noGuests": "Derzeit keine Gäste.",
+    "endsColumn": "Zeit endet",
+    "extend": "Verlängern",
+    "extendTitle": "Zeit von {{name}} verlängern",
+    "extendDescription": "Die Zeit als Gast endet in so vielen Tagen, oder früher, wenn die Community oder der Server weniger erlaubt.",
+    "extendDaysLabel": "Tage ab heute",
+    "extended": "Gastzeit verlängert.",
+    "extendError": "Die Zeit konnte nicht verlängert werden.",
+    "makeMember": "Zum Mitglied machen",
+    "madeMember": "Die Person ist jetzt Mitglied.",
+    "makeMemberError": "Die Person konnte nicht zum Mitglied gemacht werden."
   }
 }

@@ -33,7 +33,8 @@
       "security": "Sicherheit",
       "integrations": "Integrationen",
       "usage": "Nutzung",
-      "planAndUsage": "Tarif & Nutzung"
+      "planAndUsage": "Tarif & Nutzung",
+      "guests": "Gäste"
     },
     "tabBadge": {
       "paymentFailed": "Zahlung fehlgeschlagen",
@@ -1600,6 +1601,27 @@
       "askedByPlatform": "Ihr Server verlangt bereits von allen hier einen zweiten Faktor; es gibt nichts hinzuzufügen.",
       "saved": "Zweiter Faktor gespeichert.",
       "error": "Die Anforderung für den zweiten Faktor konnte nicht gespeichert werden."
+    },
+    "guestPolicy": {
+      "title": "Anmeldeanforderung für Gäste",
+      "description": "Lege fest, welche Anmeldung die Sitzung eines Gastes verwendet haben muss, bevor sie diese Community erreicht. Du musst sie nicht selbst erfüllen.",
+      "openHelp": "Jeder angemeldete Gast erreicht, was ihm gegeben wurde.",
+      "requiredHelp": "Gäste erreichen diese Community erst nach der Anmeldung über den ausgewählten Anbieter.",
+      "anyProviderHelp": "Gäste können über jeden Anbieter kommen, den diese Community eingerichtet hat. Eine Anmeldung anderswo auf dieser Installation zählt nicht.",
+      "requirePasskeyHelp": "Gäste müssen sich in dieser Sitzung mit einem Passkey angemeldet oder einen vorgelegt haben. Sie können ihn ohne Abmelden nachreichen.",
+      "saved": "Anmeldeanforderung für Gäste gespeichert",
+      "error": "Die Anmeldeanforderung für Gäste konnte nicht gespeichert werden",
+      "save": "Anmeldeanforderung für Gäste speichern"
+    },
+    "guestStay": {
+      "title": "Aufenthalt von Gästen",
+      "description": "Gasteinladungen und Verlängerungen laufen nie länger als das. Gäste, die schon da sind, behalten ihr Enddatum.",
+      "label": "Längster Aufenthalt eines Gastes (Tage)",
+      "hint_one": "Leer lassen, um das Limit des Servers von {{count}} Tag zu verwenden. Mehr kannst du auch nicht festlegen.",
+      "hint_other": "Leer lassen, um das Limit des Servers von {{count}} Tagen zu verwenden. Mehr kannst du auch nicht festlegen.",
+      "saved": "Längster Gastaufenthalt gespeichert",
+      "error": "Der längste Gastaufenthalt konnte nicht gespeichert werden",
+      "save": "Längsten Gastaufenthalt speichern"
     }
   },
   "authProviders": {
@@ -1822,7 +1844,16 @@
     "engagementRankingLabel": "Communities erlauben, Ergebnisse nach Beteiligung zu ordnen",
     "engagementRankingHelpText": "Ausgeschaltet ordnet keine Community auf diesem Server nach Beteiligung, unabhängig von ihrer eigenen Einstellung.",
     "engagementRankingEnabledToast": "Communities können Ergebnisse nach Beteiligung ordnen.",
-    "engagementRankingDisabledToast": "Die Ordnung nach Beteiligung ist für alle Communities ausgeschaltet."
+    "engagementRankingDisabledToast": "Die Ordnung nach Beteiligung ist für alle Communities ausgeschaltet.",
+    "guestsEnabledLabel": "Gäste erlauben",
+    "guestsEnabledHelpText": "Communities können Personen für eine festgelegte Anzahl von Tagen einladen. Gäste belegen keinen Platz und sehen nur, was ihnen gegeben wurde. Solange dies aus ist, kommt kein Gast hinein.",
+    "guestsEnabledToast": "Communities können Gäste haben.",
+    "guestsDisabledToast": "Gäste sind ausgeschaltet.",
+    "maxGuestDaysLabel": "Längster Aufenthalt eines Gastes (Tage)",
+    "maxGuestDaysHelpText": "Kein Gast bleibt länger als das, egal was eine Community einstellt.",
+    "maxGuestDaysSave": "Längsten Gastaufenthalt speichern",
+    "maxGuestDaysSaved_one": "Gäste bleiben höchstens {{count}} Tag.",
+    "maxGuestDaysSaved_other": "Gäste bleiben höchstens {{count}} Tage."
   },
   "account": {
     "passwordTitle": "Passwort",
