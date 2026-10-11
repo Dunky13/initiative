@@ -8,6 +8,7 @@ export { ownerCan, readerCan, writerCan } from "./can";
 export {
   buildComment,
   buildReactionGroup,
+  buildRecentActivityEntry,
   resetCounter as resetCommentCounter,
 } from "./comment.factory";
 export {

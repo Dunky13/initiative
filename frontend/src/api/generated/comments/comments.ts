@@ -28,6 +28,8 @@ import type {
   HTTPValidationError,
   ListCommentsParams,
   ReadCommentParams,
+  RecentActivityEntry,
+  RecentCommentsParams,
 } from "../initiativeAPI.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -257,6 +259,138 @@ export function useListComments<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListCommentsQueryOptions(communityId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Return the most recent comments across the guild.
+ *
+ * Only returns comments on parents the current user has DAC permission to
+ * view (direct user permission or role-based). Initiative-level filtering is
+ * handled by RLS on the joined parent tables.
+ * @summary Recent Comments
+ */
+export const recentComments = (
+  communityId: number,
+  params?: RecentCommentsParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<RecentActivityEntry[]>(
+    { url: `/api/v1/c/${communityId}/comments/recent`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getRecentCommentsQueryKey = (communityId: number, params?: RecentCommentsParams) => {
+  return [`/api/v1/c/${communityId}/comments/recent`, ...(params ? [params] : [])] as const;
+};
+
+export const getRecentCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof recentComments>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params?: RecentCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getRecentCommentsQueryKey(communityId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof recentComments>>> = ({ signal }) =>
+    recentComments(communityId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: communityId !== null && communityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type RecentCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof recentComments>>>;
+export type RecentCommentsQueryError = ErrorType<HTTPValidationError>;
+
+export function useRecentComments<
+  TData = Awaited<ReturnType<typeof recentComments>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: undefined | RecentCommentsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof recentComments>>,
+          TError,
+          Awaited<ReturnType<typeof recentComments>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useRecentComments<
+  TData = Awaited<ReturnType<typeof recentComments>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params?: RecentCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof recentComments>>,
+          TError,
+          Awaited<ReturnType<typeof recentComments>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useRecentComments<
+  TData = Awaited<ReturnType<typeof recentComments>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params?: RecentCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Recent Comments
+ */
+
+export function useRecentComments<
+  TData = Awaited<ReturnType<typeof recentComments>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params?: RecentCommentsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof recentComments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getRecentCommentsQueryOptions(communityId, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

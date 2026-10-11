@@ -15,6 +15,7 @@ import {
   buildPoll,
   buildPost,
   buildProject,
+  buildRecentActivityEntry,
   buildTask,
   buildUser,
   buildUserPublic,
@@ -97,6 +98,25 @@ function stubFeed(...entries: ReturnType<typeof buildActivityEntry>[]) {
     })
   );
   return asked;
+}
+
+/** One comment case: what the community holds, what was said, and where it
+ *  has to lead. */
+type CommentCase = [
+  label: string,
+  community: { initiative?: Record<string, boolean> },
+  entry: NonNullable<Parameters<typeof buildRecentActivityEntry>[0]>,
+  says: string,
+  href: string,
+];
+
+/** One comment in the community's feed, wherever it was left. */
+function stubRecentComment(overrides: Parameters<typeof buildRecentActivityEntry>[0]) {
+  server.use(
+    communityHttp.get("/comments/recent", () =>
+      HttpResponse.json([buildRecentActivityEntry(overrides)])
+    )
+  );
 }
 
 const renderHome = (search?: Record<string, unknown>) =>
@@ -273,6 +293,91 @@ describe("CommunityHomePage", () => {
     expect(screen.getByRole("link", { name: new RegExp(title) })).toHaveAttribute("href", href);
   });
 
+  // The Comments circle is the community's latest comments. Each names where
+  // the comment was left and leads straight back to it, on whichever surface
+  // that was — including one the community itself holds rather than an
+  // initiative.
+  it.each<CommentCase>([
+    [
+      "the community's latest comment on a task, to the task inside its project",
+      {},
+      {
+        comment_id: 11,
+        content: "Ready for the review",
+        entity_type: "task",
+        entity_id: 4,
+        entity_name: "Fuel check",
+        project_id: 1,
+        project_name: "Lunar Lander",
+        initiative_id: 5,
+      },
+      "on Fuel check in Lunar Lander",
+      "/c/1/i/5/projects/1/tasks/4",
+    ],
+    [
+      "a comment left on a tool entity, to that entity",
+      { initiative: { queues_enabled: true } },
+      {
+        comment_id: 12,
+        content: "Order looks wrong",
+        entity_type: "queue",
+        entity_id: 8,
+        entity_name: "Combat Order",
+        initiative_id: 5,
+      },
+      "on Combat Order",
+      "/c/1/i/5/queues/8",
+    ],
+    [
+      "a community-level calendar's comment, at the community route",
+      { initiative: { calendars_enabled: true } },
+      {
+        comment_id: 13,
+        content: "Moving this to Thursday",
+        entity_type: "calendar",
+        entity_id: 3,
+        entity_name: "Club Nights",
+        initiative_id: null,
+      },
+      "on Club Nights",
+      "/c/1/calendars/3",
+    ],
+  ])("links %s", async (_label, { initiative = {} }, entry, says, href) => {
+    stubInitiatives(initiative);
+    stubRecentComment(entry);
+
+    renderHome({ node: "comments" });
+
+    expect(await screen.findByText(says)).toBeInTheDocument();
+    expect(screen.getByText(String(entry.content))).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: new RegExp(String(entry.content)) })).toHaveAttribute(
+      "href",
+      href
+    );
+  });
+
+  it("shows the community's comments in the tray, under their circle", async () => {
+    stubInitiatives();
+    stubRecentComment({ content: "Still here" });
+
+    renderHome({ node: "comments" });
+
+    const rail = await screen.findByRole("navigation", { name: "Community activity" });
+    expect(within(rail).getByRole("link", { name: "Comments" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(await screen.findByText("Still here")).toBeInTheDocument();
+  });
+
+  it("says so when the community has no comments yet", async () => {
+    stubInitiatives();
+
+    renderHome({ node: "comments" });
+
+    expect(await screen.findByText("No comments yet")).toBeInTheDocument();
+  });
+
   it("opens a plug-in's settings from the address, where the reader answers what it asked", async () => {
     stubInitiatives();
     server.use(
@@ -329,15 +434,17 @@ describe("CommunityHomePage", () => {
     stubInitiatives();
     const asked = stubFeed();
 
-    renderHome({ node: "comments" });
+    renderHome({ node: "yours" });
 
     const rail = await screen.findByRole("navigation", { name: "Community activity" });
-    expect(within(rail).getByRole("link", { name: "Comments" })).toHaveAttribute(
+    expect(within(rail).getByRole("link", { name: "Yours" })).toHaveAttribute(
       "aria-current",
       "page"
     );
-    expect(await screen.findByText("Nobody has commented this week.")).toBeInTheDocument();
-    expect(asked).toEqual(["comments"]);
+    expect(
+      await screen.findByText("Nothing has happened to your things this week.")
+    ).toBeInTheDocument();
+    expect(asked).toEqual(["yours"]);
   });
 
   it("marks what changed since the reader's last visit as new", async () => {

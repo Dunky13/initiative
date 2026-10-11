@@ -106,6 +106,15 @@
       "spreadsheet": "Hoja de cálculo"
     }
   },
+  "recentComments": {
+    "noComments": "Aún no hay comentarios",
+    "loadError": "No se pudieron cargar los comentarios recientes. Inténtalo de nuevo más tarde.",
+    "unknownAuthor": "Desconocido",
+    "onEntity": "en {{entityName}}",
+    "inProject": "en {{projectName}}",
+    "readMore": "Leer más",
+    "showLess": "Mostrar menos"
+  },
   "comingUp": {
     "title": "Próximamente",
     "description": "Todo lo de la comunidad con fecha en los próximos siete días.",

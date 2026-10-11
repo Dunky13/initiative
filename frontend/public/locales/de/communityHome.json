@@ -106,6 +106,15 @@
       "spreadsheet": "Tabelle"
     }
   },
+  "recentComments": {
+    "noComments": "Noch keine Kommentare",
+    "loadError": "Neueste Kommentare konnten nicht geladen werden. Bitte später erneut versuchen.",
+    "unknownAuthor": "Unbekannt",
+    "onEntity": "zu {{entityName}}",
+    "inProject": "in {{projectName}}",
+    "readMore": "Mehr anzeigen",
+    "showLess": "Weniger anzeigen"
+  },
   "comingUp": {
     "title": "Demnächst",
     "description": "Alles in der Community mit einem Datum in den nächsten sieben Tagen.",

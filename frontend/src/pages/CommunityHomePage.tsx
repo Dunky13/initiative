@@ -20,6 +20,7 @@ import { CommunityActivityFeed } from "@/components/communityHome/CommunityActiv
 import { CommunityBannerBadges } from "@/components/communityHome/CommunityBannerBadges";
 import { CommunityComingUp } from "@/components/communityHome/CommunityComingUp";
 import { CommunityHomeEmptyState } from "@/components/communityHome/CommunityHomeEmptyState";
+import { CommunityRecentComments } from "@/components/communityHome/CommunityRecentComments";
 import { InitiativeDirectory } from "@/components/communityHome/InitiativeDirectory";
 import { CreateInitiativeWizard } from "@/components/initiatives/CreateInitiativeWizard";
 import { PageBanner } from "@/components/PageBanner";
@@ -36,7 +37,8 @@ import { readableTextShadow } from "@/lib/contrastColor";
 import { getItem, setItem } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
-/** The feed's views, in the rail's order; the first is the default. */
+/** The rail's circles, in order; the first is the default. All and Yours are
+ *  views of the activity feed; Comments shows the comments themselves. */
 const FEED_NODES = [
   { view: FeedView.all, icon: Activity },
   { view: FeedView.yours, icon: UserRound },
@@ -185,7 +187,11 @@ export function CommunityHomePage() {
                 align={banner.text_align}
               />
               <div className={cn("rounded-b-2xl p-3 sm:px-4 sm:pb-4", TRAY_SURFACE)}>
-                <CommunityActivityFeed view={view} lastVisit={lastVisit} />
+                {view === FeedView.comments ? (
+                  <CommunityRecentComments />
+                ) : (
+                  <CommunityActivityFeed view={view} lastVisit={lastVisit} />
+                )}
               </div>
             </div>
 
