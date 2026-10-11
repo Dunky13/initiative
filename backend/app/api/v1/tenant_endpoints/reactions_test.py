@@ -195,6 +195,28 @@ class TestReactionToggle:
         assert edited.status_code == 200, edited.text
         assert [g["emoji"] for g in edited.json()["reactions"]] == [THUMBS]
 
+    async def test_the_recent_feed_carries_reactions(
+        self, client, session, acting_user
+    ):
+        """The guild's activity feed is where reactions are most legible — a
+        comment that drew six of them should not read like a quiet one."""
+        a = await acting_user(
+            guild_role=CommunityRole.member, initiative=True, project=True
+        )
+        task = await create_task(session, a.project)
+        comment_id = await _comment_on_task(client, a, task.id)
+        await client.put(
+            a.g(f"/reactions/comment/{comment_id}"),
+            headers=a.headers,
+            json={"emoji": THUMBS},
+        )
+
+        feed = await client.get(a.g("/comments/recent"), headers=a.headers)
+        assert feed.status_code == 200, feed.text
+        [entry] = [e for e in feed.json() if e["comment_id"] == comment_id]
+        assert [g["emoji"] for g in entry["reactions"]] == [THUMBS]
+        assert entry["reactions"][0]["reacted"] is True
+
     async def test_a_duplicate_add_converges_instead_of_erroring(
         self, client, session, acting_user
     ):

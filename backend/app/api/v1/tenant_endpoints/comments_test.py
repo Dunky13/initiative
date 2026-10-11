@@ -254,6 +254,31 @@ class TestToolComments:
         assert body["task_id"] == task.id
         assert body["project_id"] == a.project.id
 
+    async def test_recent_carries_tool_comments(self, client, session, acting_user):
+        a = await acting_user(
+            guild_role=CommunityRole.member, initiative=True, project=True
+        )
+        queue = await _tool_entity(session, Tool.queue, a.initiative, a.user)
+        task = await create_task(session, a.project)
+
+        for payload in (
+            {"content": "On the queue", "queue_id": queue.id},
+            {"content": "On the task", "task_id": task.id},
+        ):
+            posted = await client.post(
+                a.g("/comments/"), headers=a.headers, json=payload
+            )
+            assert posted.status_code == 201, posted.text
+
+        recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+        assert recent.status_code == 200, recent.text
+        by_type = {e["entity_type"]: e for e in recent.json()}
+        assert by_type["queue"]["entity_id"] == queue.id
+        assert by_type["queue"]["entity_name"] == queue.name
+        assert by_type["queue"]["initiative_id"] == a.initiative.id
+        assert by_type["task"]["entity_id"] == task.id
+        assert by_type["task"]["project_id"] == a.project.id
+
 
 async def test_a_trashed_resource_reads_back_for_its_deleted_event(
     client, session, acting_user
@@ -419,6 +444,31 @@ async def test_a_thread_pages_by_conversation(client, session, acting_user):
     ]
 
 
+async def test_recent_drops_comments_of_a_disabled_tool(client, session, acting_user):
+    """Switching a tool off takes its threads out of the recent feed, exactly
+    as it takes the threads themselves away."""
+    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
+    queue = await _tool_entity(session, Tool.queue, a.initiative, a.user)
+
+    posted = await client.post(
+        a.g("/comments/"),
+        headers=a.headers,
+        json={"content": "Queue talk", "queue_id": queue.id},
+    )
+    assert posted.status_code == 201, posted.text
+
+    recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+    assert any(e["entity_type"] == "queue" for e in recent.json())
+
+    setattr(a.initiative, Tool.queue.view_permission, False)
+    session.add(a.initiative)
+    await session.commit()
+
+    recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+    assert recent.status_code == 200
+    assert not any(e["entity_type"] == "queue" for e in recent.json())
+
+
 def _detail_path(tool: Tool, entity_id: int) -> str:
     """The tool's own detail route — kebab plural, the one spelling every tool
     endpoint is registered under."""
@@ -474,6 +524,13 @@ class TestToolCommentSwitch:
         assert blocked.status_code == 403
         assert blocked.json()["detail"] == CommentMessages.COMMENTS_DISABLED
 
+        recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+        assert recent.status_code == 200
+        assert not any(
+            e["entity_type"] == tool.value and e["entity_id"] == entity.id
+            for e in recent.json()
+        )
+
         # Nothing was deleted: turning it back on restores the thread whole.
         on = await client.put(
             a.g(f"/tools/{tool.value}/{entity.id}/comments"),
@@ -522,6 +579,13 @@ class TestToolCommentSwitch:
         assert wiki_thread.json()["comments"] == []
         assert wiki_thread.json()["next_cursor"] is None
 
+        # The feed names the page, not the wiki it is filed in.
+        recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+        pages = [e for e in recent.json() if e["entity_type"] == "wiki_page"]
+        assert {e["entity_id"] for e in pages} == {rota.id, rules.id}
+        assert {e["entity_name"] for e in pages} == {"Rota", "Rules"}
+        assert all(e["initiative_id"] == a.initiative.id for e in pages)
+
     async def test_a_wiki_switch_governs_its_pages(self, client, session, acting_user):
         """Unlike a task, a page has no switch of its own — the wiki is where
         that choice is made, so it reaches the pages."""
@@ -555,6 +619,9 @@ class TestToolCommentSwitch:
             json={"content": "After", "wiki_page_id": page.id},
         )
         assert posted.status_code == 403
+
+        recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+        assert not [e for e in recent.json() if e["entity_type"] == "wiki_page"]
 
     async def test_a_page_thread_takes_the_wikis_sharing(
         self, client, session, acting_user
@@ -621,6 +688,9 @@ class TestToolCommentSwitch:
         )
         assert listed.status_code == 200
         assert [c["content"] for c in listed.json()["comments"]] == ["Still talking"]
+
+        recent = await client.get(a.g("/comments/recent"), headers=a.headers)
+        assert any(e["entity_type"] == "task" for e in recent.json())
 
     @pytest.mark.parametrize("tool", list(Tool))
     async def test_read_access_cannot_flip_the_switch(

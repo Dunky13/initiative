@@ -21,8 +21,8 @@ import type { QueryOpts } from "@/types/query";
 /** What each reaction target invalidates once its reactions move. */
 const INVALIDATE_BY_TARGET: Record<ReactionTarget, () => void> = {
   // The bar draws the reply itself, and the thread hears it as the comment's
-  // own change, so nothing else shows a comment's chips.
-  comment: () => undefined,
+  // own change, so only the community's feed — which shows the chips too — is left.
+  comment: () => void invalidate(q.recentComments()),
   // A post's chips ride along with the post, so the board and the post's own
   // page both have to hear it — which is what invalidating the whole list does.
   post: () => void invalidate(q.allPosts()),

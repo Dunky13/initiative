@@ -242,6 +242,8 @@ const fileVersions = (fileId: number): Spec => ({
 
 const allComments = (): Spec => ({ communityPrefix: ["/api/v1/comments"] });
 
+const recentComments = (): Spec => ({ communityPrefix: ["/api/v1/comments/recent"] });
+
 // ── Notifications (personal) ─────────────────────────────────────────────────
 
 const notifications = (): Spec => ({ personalPrefix: ["/api/v1/notifications"] });
@@ -700,6 +702,7 @@ export const q = {
   projectTaskStatuses,
   propertyHolder,
   pushSettings,
+  recentComments,
   recents,
   relationships,
   resolvedAISettings,
