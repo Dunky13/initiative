@@ -26,6 +26,7 @@ import { PageBanner } from "@/components/PageBanner";
 import { PluginSettingsDialog } from "@/components/plugins/PluginSettingsDialog";
 import { NodeRail, TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { liveInitiatives, useInitiativeAccess } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
@@ -47,16 +48,16 @@ const isFeedView = (value: unknown): value is FeedView =>
 
 /**
  * When the reader last opened this community's front page, read once as the
- * page opens, then moved to now. Kept on the device: it orders nothing and
- * nobody else needs it.
+ * page opens, then moved to now. Kept on the device, per account: it orders
+ * nothing and nobody else needs it.
  */
-const useLastVisit = (communityId: number): string | null => {
-  const key = `activity-last-visit:${communityId}`;
-  // Read again only for another community: moving it to now must not take the
-  // marks off the entries this visit is showing.
-  const lastVisit = useMemo(() => getItem(key), [key]);
+const useLastVisit = (userId: number | undefined, communityId: number): string | null => {
+  const key = userId === undefined ? null : `activity-last-visit:${userId}:${communityId}`;
+  // Read again only for another account or community: moving it to now must
+  // not take the marks off the entries this visit is showing.
+  const lastVisit = useMemo(() => (key ? getItem(key) : null), [key]);
   useEffect(() => {
-    void setItem(key, new Date().toISOString());
+    if (key) void setItem(key, new Date().toISOString());
   }, [key]);
   return lastVisit;
 };
@@ -73,7 +74,8 @@ export function CommunityHomePage() {
   };
   const view = isFeedView(search.node) ? search.node : FeedView.all;
   const communityId = useActiveCommunityId();
-  const lastVisit = useLastVisit(communityId);
+  const { user } = useAuth();
+  const lastVisit = useLastVisit(user?.id, communityId);
 
   const initiativesQuery = useInitiatives();
   const directoryQuery = useInitiativeDirectory();

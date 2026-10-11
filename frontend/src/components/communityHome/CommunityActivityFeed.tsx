@@ -10,6 +10,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { Activity } from "lucide-react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ActivityEntry, FeedView } from "@/api/generated/initiativeAPI.schemas";
@@ -106,7 +107,19 @@ interface CommunityActivityFeedProps {
 export const CommunityActivityFeed = ({ view, lastVisit }: CommunityActivityFeedProps) => {
   const { t } = useTranslation("communityHome");
   const feed = useActivityFeed({ view });
-  const entries = feed.data?.pages.flatMap((page) => page.items) ?? [];
+  // Each page is ranked afresh, so an item that moved up since the last one
+  // can come back on the next; it stays where it was first shown.
+  const entries = useMemo(() => {
+    const seen = new Set<string>();
+    return (feed.data?.pages ?? [])
+      .flatMap((page) => page.items)
+      .filter((entry) => {
+        const key = `${entry.entity_type}:${entry.entity_id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [feed.data]);
   const since = lastVisit ? Date.parse(lastVisit) : null;
 
   return (
@@ -125,7 +138,7 @@ export const CommunityActivityFeed = ({ view, lastVisit }: CommunityActivityFeed
               </div>
             ))}
           </div>
-        ) : feed.isError ? (
+        ) : feed.isError && entries.length === 0 ? (
           <p className="p-2 text-destructive text-sm">{t("feed.loadError")}</p>
         ) : entries.length === 0 ? (
           <div className="flex h-50 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
@@ -143,6 +156,9 @@ export const CommunityActivityFeed = ({ view, lastVisit }: CommunityActivityFeed
                 />
               ))}
             </ul>
+            {feed.isFetchNextPageError ? (
+              <p className="mt-2 px-2 text-destructive text-sm">{t("feed.loadError")}</p>
+            ) : null}
             {feed.hasNextPage ? (
               <Button
                 type="button"

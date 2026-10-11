@@ -342,7 +342,7 @@ describe("CommunityHomePage", () => {
 
   it("marks what changed since the reader's last visit as new", async () => {
     stubInitiatives();
-    await setItem("activity-last-visit:1", "2026-01-15T12:00:00.000Z");
+    await setItem(`activity-last-visit:${READER.id}:1`, "2026-01-15T12:00:00.000Z");
     stubFeed(
       buildActivityEntry({ title: "Since", entity_id: 1, latest: "2026-01-16T00:00:00.000Z" }),
       buildActivityEntry({ title: "Before", entity_id: 2, latest: "2026-01-14T00:00:00.000Z" })
@@ -354,6 +354,66 @@ describe("CommunityHomePage", () => {
     const before = screen.getByText("Before").closest("li") as HTMLElement;
     expect(within(since).getByText("New")).toBeInTheDocument();
     expect(within(before).queryByText("New")).not.toBeInTheDocument();
+  });
+
+  it("shows each item once across pages, which are ranked afresh", async () => {
+    stubInitiatives();
+    const pages = [
+      [
+        buildActivityEntry({ title: "First", entity_id: 1 }),
+        buildActivityEntry({ title: "Moved up", entity_id: 2 }),
+      ],
+      // Ranked afresh: what was on the first page can come back on the second.
+      [
+        buildActivityEntry({ title: "Moved up", entity_id: 2 }),
+        buildActivityEntry({ title: "Third", entity_id: 3 }),
+      ],
+    ];
+    server.use(
+      communityHttp.get("/activity/", ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get("page") ?? 1);
+        return HttpResponse.json({
+          items: pages[page - 1],
+          page,
+          page_size: 2,
+          has_next: page === 1,
+        });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderHome();
+    await screen.findByText("First");
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+
+    expect(await screen.findByText("Third")).toBeInTheDocument();
+    expect(screen.getAllByText("Moved up")).toHaveLength(1);
+  });
+
+  it("keeps the rows it has when the next page fails, with a way to try again", async () => {
+    stubInitiatives();
+    server.use(
+      communityHttp.get("/activity/", ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get("page") ?? 1);
+        if (page > 1) return new HttpResponse(null, { status: 500 });
+        return HttpResponse.json({
+          items: [buildActivityEntry({ title: "First", entity_id: 1 })],
+          page,
+          page_size: 1,
+          has_next: true,
+        });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderHome();
+    await user.click(await screen.findByRole("button", { name: "Show more" }));
+
+    expect(
+      await screen.findByText("Failed to load what's been happening. Please try again later.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("First")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show more" })).toBeEnabled();
   });
 
   it("lists everything dated this week under the initiatives, each leading to itself", async () => {
