@@ -124,6 +124,23 @@ def _property_values(op: FilterOp, value: Any, ctx: FieldContext) -> Any:
     )
 
 
+def _plugin_values(op: FilterOp, value: Any, ctx: FieldContext) -> Any:
+    """Filter tasks by a plug-in field's value.
+
+    ``value`` is a dict of ``{"field": "plugin:<install>:<key>", "value": <any>}``.
+    A field the person is not drawn contributes nothing, as an unknown
+    property does."""
+    # Local: the plug-in values service reads schemas that read this registry.
+    from app.services.tenant import plugin_metadata  # noqa: WPS433
+
+    if not isinstance(value, dict):
+        return None
+    field = ctx.plugin_fields.get(str(value.get("field")))
+    if field is None:
+        return None
+    return plugin_metadata.filter_clause(field, op, value.get("value"))
+
+
 def _date_group(ctx: SortContext) -> Any:
     """SQL CASE mirroring the frontend's ``getTaskDateStatus()``.
 
@@ -260,6 +277,16 @@ def _computed() -> tuple[FieldSpec, ...]:
             # control has to choose the property before it can offer values.
             # Until there is such a control, this is filterable by a stored
             # definition only — which is how the tasks page uses it.
+            offer=False,
+        ),
+        computed(
+            "plugin_values",
+            _plugin_values,
+            kind=ControlKind.property_value,
+            ops=_ANY_OP,
+            nullable=True,
+            # As a property filter: one field and a value for it, by a stored
+            # definition.
             offer=False,
         ),
     )

@@ -84,6 +84,21 @@ class PresetPropertyFilter(_Strict):
     value: Any = None
 
 
+class PresetPluginFilter(_Strict):
+    """A filter on a plug-in's field, ``plugin:<install id>:<key>``."""
+
+    field: str
+    op: FilterOp = FilterOp.eq
+    value: Any = None
+
+    @field_validator("field")
+    @classmethod
+    def _plugin_field(cls, value: str) -> str:
+        if not value.startswith(PLUGIN_FIELD_PREFIX):
+            raise ValueError("a plug-in field is 'plugin:<id>:<key>'")
+        return _named_field(value)
+
+
 class TaskFilterSpec(_Strict):
     """The task filters a preset holds, the shape every task list filters by.
     Unknown keys are refused."""
@@ -96,6 +111,9 @@ class TaskFilterSpec(_Strict):
     assignees: List[str] = Field(default_factory=list, max_length=MAX_ASSIGNEES)
     tag_ids: List[int] = Field(default_factory=list, max_length=MAX_TAG_IDS)
     properties: List[PresetPropertyFilter] = Field(
+        default_factory=list, max_length=MAX_PROPERTY_FILTERS
+    )
+    plugins: List[PresetPluginFilter] = Field(
         default_factory=list, max_length=MAX_PROPERTY_FILTERS
     )
     due: Optional[DueToken] = None

@@ -2,7 +2,7 @@ import { Plus, X } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type PropertyDefinitionRead, PropertyType } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyType } from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -14,7 +14,7 @@ import {
 import { useProperties } from "@/hooks/useProperties";
 import { cn } from "@/lib/utils";
 
-import { PropertyInput } from "./PropertyInput";
+import { PropertyInput, type PropertyInputProps } from "./PropertyInput";
 import { iconForPropertyType } from "./propertyTypeIcons";
 
 export interface PropertyFilterCondition {
@@ -23,9 +23,26 @@ export interface PropertyFilterCondition {
   value: unknown;
 }
 
+/** A filter on a plug-in's field, by its id (`plugin:<install>:<key>`). */
+export interface PluginFilterCondition {
+  field: string;
+  op: string;
+  value: unknown;
+}
+
+/** A plug-in field a list may be filtered by, as the type it compares like. */
+export interface PluginFilterField {
+  id: string;
+  name: string;
+  type: PropertyType;
+}
+
 export interface PropertyFilterProps {
   value: PropertyFilterCondition[];
-  onChange: (next: PropertyFilterCondition[]) => void;
+  /** Called with the property filters, and the plug-in fields' filters. */
+  onChange: (next: PropertyFilterCondition[], plugins: PluginFilterCondition[]) => void;
+  /** Plug-in fields offered beside the properties, and the filters on them. */
+  plugins?: { fields: PluginFilterField[]; value: PluginFilterCondition[] };
   /**
    * Initiative to scope the definitions to. Omit on global views
    * (union across every initiative the caller can see).
@@ -93,7 +110,7 @@ const useOpLabel = () => {
  * renders in a defined state. The backend treats "empty" conditions as
  * no-ops, so we don't need to coerce here — the user just edits the value.
  */
-const defaultValueForDefinition = (definition: PropertyDefinitionRead, op: BackendOp): unknown => {
+const defaultValueForDefinition = (definition: { type: PropertyType }, op: BackendOp): unknown => {
   if (op === "is_null") {
     return true;
   }
@@ -109,9 +126,25 @@ const defaultValueForDefinition = (definition: PropertyDefinitionRead, op: Backe
   }
 };
 
+/** One thing a filter row names: a property, or a plug-in's field. */
+type FilterOption = {
+  key: string;
+  name: string;
+  type: PropertyType;
+  /** What the value is entered as. */
+  input: PropertyInputProps["definition"];
+  /** A plug-in's value compares as text or as a number, never as one of many. */
+  plugin: boolean;
+};
+
+type FilterRow = { key: string; op: string; value: unknown };
+
+const PROPERTY_KEY = "property:";
+
 export const PropertyFilter = ({
   value,
   onChange,
+  plugins,
   initiativeId,
   maxFilters = DEFAULT_MAX_FILTERS,
   className,
@@ -124,67 +157,111 @@ export const PropertyFilter = ({
   // caches cross-page so we don't incur a request per component.
   const definitionsQuery = useProperties(initiativeId !== undefined ? { initiativeId } : undefined);
 
-  const eligibleDefinitions = useMemo(() => definitionsQuery.data ?? [], [definitionsQuery.data]);
+  const options = useMemo<FilterOption[]>(
+    () => [
+      ...(definitionsQuery.data ?? []).map((definition) => ({
+        key: `${PROPERTY_KEY}${definition.id}`,
+        name: definition.name,
+        type: definition.type,
+        input: definition,
+        plugin: false,
+      })),
+      ...(plugins?.fields ?? []).map((field) => ({
+        key: field.id,
+        name: field.name,
+        type: field.type,
+        input: { property_id: 0, name: field.name, type: field.type, options: null, value: null },
+        plugin: true,
+      })),
+    ],
+    [definitionsQuery.data, plugins?.fields]
+  );
 
-  const definitionsById = useMemo(() => {
-    const map = new Map<number, PropertyDefinitionRead>();
-    for (const definition of eligibleDefinitions) {
-      map.set(definition.id, definition);
-    }
-    return map;
-  }, [eligibleDefinitions]);
+  const optionsByKey = useMemo(
+    () => new Map(options.map((option) => [option.key, option])),
+    [options]
+  );
 
-  const usedPropertyIds = useMemo(() => new Set(value.map((entry) => entry.property_id)), [value]);
+  const rows = useMemo<FilterRow[]>(
+    () => [
+      ...value.map(({ property_id, op, value: entry }) => ({
+        key: `${PROPERTY_KEY}${property_id}`,
+        op,
+        value: entry,
+      })),
+      ...(plugins?.value ?? []).map(({ field, op, value: entry }) => ({
+        key: field,
+        op,
+        value: entry,
+      })),
+    ],
+    [value, plugins?.value]
+  );
+
+  const emit = useCallback(
+    (next: FilterRow[]) =>
+      onChange(
+        next
+          .filter((row) => row.key.startsWith(PROPERTY_KEY))
+          .map(({ key, op, value: entry }) => ({
+            property_id: Number(key.slice(PROPERTY_KEY.length)),
+            op,
+            value: entry,
+          })),
+        next
+          .filter((row) => !row.key.startsWith(PROPERTY_KEY))
+          .map(({ key, op, value: entry }) => ({ field: key, op, value: entry }))
+      ),
+    [onChange]
+  );
+
+  const opsFor = useCallback(
+    (option: FilterOption) =>
+      option.plugin
+        ? opsForType(option.type).filter((op) => op !== "in_")
+        : opsForType(option.type),
+    []
+  );
+
+  const used = useMemo(() => new Set(rows.map((row) => row.key)), [rows]);
 
   const handleAddFilter = useCallback(() => {
-    const firstAvailable = eligibleDefinitions.find(
-      (definition) => !usedPropertyIds.has(definition.id)
-    );
+    const firstAvailable = options.find((option) => !used.has(option.key));
     if (!firstAvailable) return;
-    const op = opsForType(firstAvailable.type)[0] ?? "eq";
-    onChange([
-      ...value,
-      {
-        property_id: firstAvailable.id,
-        op,
-        value: defaultValueForDefinition(firstAvailable, op),
-      },
+    const op = opsFor(firstAvailable)[0] ?? "eq";
+    emit([
+      ...rows,
+      { key: firstAvailable.key, op, value: defaultValueForDefinition(firstAvailable, op) },
     ]);
-  }, [eligibleDefinitions, usedPropertyIds, value, onChange]);
+  }, [options, used, rows, emit, opsFor]);
 
   const handleRemoveFilter = useCallback(
     (index: number) => {
-      onChange(value.filter((_, i) => i !== index));
+      emit(rows.filter((_, i) => i !== index));
     },
-    [value, onChange]
+    [rows, emit]
   );
 
   const handlePropertyChange = useCallback(
-    (index: number, nextPropertyId: number) => {
-      const nextDefinition = definitionsById.get(nextPropertyId);
-      if (!nextDefinition) return;
-      const op = opsForType(nextDefinition.type)[0] ?? "eq";
-      onChange(
-        value.map((entry, i) =>
-          i === index
-            ? {
-                property_id: nextDefinition.id,
-                op,
-                value: defaultValueForDefinition(nextDefinition, op),
-              }
-            : entry
+    (index: number, nextKey: string) => {
+      const next = optionsByKey.get(nextKey);
+      if (!next) return;
+      const op = opsFor(next)[0] ?? "eq";
+      emit(
+        rows.map((entry, i) =>
+          i === index ? { key: next.key, op, value: defaultValueForDefinition(next, op) } : entry
         )
       );
     },
-    [definitionsById, value, onChange]
+    [optionsByKey, rows, emit, opsFor]
   );
 
   const handleOpChange = useCallback(
     (index: number, nextOp: string) => {
-      const entry = value[index];
+      const entry = rows[index];
       if (!entry) return;
-      const definition = definitionsById.get(entry.property_id);
-      if (!definition) return;
+      const option = optionsByKey.get(entry.key);
+      if (!option) return;
       const normalized = isBackendOp(nextOp) ? nextOp : "eq";
       // Reset value shape when switching between scalar / array / null ops so
       // the input component isn't stuck with a non-matching draft.
@@ -194,47 +271,44 @@ export const PropertyFilter = ({
         entry.op === "in_" ||
         entry.op === "is_null";
       const nextValue = shouldResetValue
-        ? defaultValueForDefinition(definition, normalized)
+        ? defaultValueForDefinition(option, normalized)
         : entry.value;
-      onChange(
-        value.map((existing, i) =>
+      emit(
+        rows.map((existing, i) =>
           i === index ? { ...existing, op: normalized, value: nextValue } : existing
         )
       );
     },
-    [value, onChange, definitionsById]
+    [rows, emit, optionsByKey]
   );
 
   const handleValueChange = useCallback(
     (index: number, nextValue: unknown) => {
-      onChange(value.map((entry, i) => (i === index ? { ...entry, value: nextValue } : entry)));
+      emit(rows.map((entry, i) => (i === index ? { ...entry, value: nextValue } : entry)));
     },
-    [value, onChange]
+    [rows, emit]
   );
 
-  const canAddMore = value.length < maxFilters && eligibleDefinitions.length > usedPropertyIds.size;
+  const canAddMore = rows.length < maxFilters && options.length > used.size;
 
-  if (eligibleDefinitions.length === 0 && value.length === 0) {
+  if (options.length === 0 && rows.length === 0) {
     // Nothing to filter on — don't take up UI real estate.
     return null;
   }
 
   return (
     <div className={cn("space-y-2", className)}>
-      {value.length > 0 ? (
+      {rows.length > 0 ? (
         <ul className="flex flex-col gap-2">
-          {value.map((entry, index) => {
-            const definition = definitionsById.get(entry.property_id);
-            const ops = definition ? opsForType(definition.type) : ["eq"];
+          {rows.map((entry, index) => {
+            const definition = optionsByKey.get(entry.key);
+            const ops = definition ? opsFor(definition) : ["eq"];
             return (
-              <li
-                key={entry.property_id}
-                className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
-              >
+              <li key={entry.key} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                 <div className="min-w-0 flex-1 sm:w-40 sm:flex-none">
                   <Select
-                    value={String(entry.property_id)}
-                    onValueChange={(next) => handlePropertyChange(index, Number(next))}
+                    value={entry.key}
+                    onValueChange={(next) => handlePropertyChange(index, next)}
                   >
                     <SelectTrigger className="h-9 w-full" aria-label={t("filter.property")}>
                       {definition ? (
@@ -252,16 +326,14 @@ export const PropertyFilter = ({
                       )}
                     </SelectTrigger>
                     <SelectContent>
-                      {eligibleDefinitions.map((option) => {
+                      {options.map((option) => {
                         const Icon = iconForPropertyType(option.type);
                         return (
                           <SelectItem
-                            key={option.id}
-                            value={String(option.id)}
+                            key={option.key}
+                            value={option.key}
                             textValue={option.name}
-                            disabled={
-                              option.id !== entry.property_id && usedPropertyIds.has(option.id)
-                            }
+                            disabled={option.key !== entry.key && used.has(option.key)}
                           >
                             <div className="flex items-center gap-2">
                               <Icon className="h-4 w-4 shrink-0" />
@@ -294,7 +366,7 @@ export const PropertyFilter = ({
                 <div className="min-w-0 flex-1">
                   {definition && entry.op !== "is_null" ? (
                     <PropertyInput
-                      definition={definition}
+                      definition={definition.input}
                       value={entry.value}
                       onChange={(next) => handleValueChange(index, next)}
                     />

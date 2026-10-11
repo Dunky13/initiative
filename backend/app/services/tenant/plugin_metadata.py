@@ -20,8 +20,10 @@ from the vendored contract.
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from typing import (
     Any,
     Awaitable,
@@ -35,7 +37,7 @@ from typing import (
 
 from sqlalchemy import Table, and_, delete, exists, false, or_, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.messages import PluginChannelMessages, PluginMessages
@@ -46,21 +48,29 @@ from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.guild_standing import GuildContext, InstallContext
 from app.db.initiative_rls import governing_path
 from app.db.request_context import SystemGuild
-from app.db.session import require_actor_context, set_rls_context
+from app.db.session import guild_context, require_actor_context, set_rls_context
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import LOOKUP_LENGTH, PluginMetadata
 from app.models.tenant.plugin_placement import PluginPlacement
+from app.models.tenant.project import Project
+from app.models.tenant.property import PropertyType
 from app.models.tenant.task import Task
+from app.schemas.query import FilterOp
 from app.schemas.tenant.plugin_data import PluginValueSummary
+from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services.marketplace import contract
 from app.services.marketplace.manifest_values import is_metadata_key
 from app.services.tenant import guild_plugins, plugin_age
+from app.services.tenant import properties as properties_service
 from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = [
     "annotate_plugin_values",
     "drop_for_items",
+    "filter_clause",
+    "filter_fields",
     "find",
+    "forms",
     "read",
     "reconcile_shown",
     "shown_keys",
@@ -114,6 +124,52 @@ def _lookup(value: Any) -> Optional[str]:
     else:
         return None
     return text if len(text) <= LOOKUP_LENGTH else None
+
+
+def _epoch(text: str) -> Optional[float]:
+    """A date or datetime as seconds since the epoch: a date at midnight UTC,
+    a datetime without a zone in UTC. ``None`` for any other text."""
+    try:
+        if len(text) == 10:
+            day = date.fromisoformat(text)
+            moment = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+        else:
+            moment = datetime.fromisoformat(text)
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return moment.timestamp()
+
+
+def _number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def forms(value: Any) -> tuple[Optional[str], Optional[float]]:
+    """What a value is compared by: its words and its number
+    (:class:`~app.models.tenant.plugin_metadata.PluginMetadata`), from its
+    shape alone, so a version that changes a field's kind needs no rewrite."""
+    if isinstance(value, bool):
+        return None, 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return None, _number(value)
+    if isinstance(value, str):
+        return (value or None), _epoch(value)
+    if isinstance(value, dict):
+        words = next(
+            (
+                value[name]
+                for name in ("text", "url")
+                if isinstance(value.get(name), str) and value[name]
+            ),
+            None,
+        )
+        part, whole = _number(value.get("value")), _number(value.get("max"))
+        return words, part / whole if part is not None and whole else None
+    return None, None
 
 
 async def _readable(session: AsyncSession, kind: str, entity_id: int) -> bool:
@@ -266,20 +322,25 @@ async def write(
             )
         )
     now = datetime.now(timezone.utc)
-    written = [
-        {
-            "install_id": context.install_id,
-            "entity_type": kind,
-            "entity_id": entity_id,
-            "key": key,
-            "value": value,
-            "lookup": _lookup(value),
-            "shown": key in shown,
-            "updated_at": now,
-        }
-        for key, value in values.items()
-        if value is not None
-    ]
+    written = []
+    for key, value in values.items():
+        if value is None:
+            continue
+        text_form, number_form = forms(value)
+        written.append(
+            {
+                "install_id": context.install_id,
+                "entity_type": kind,
+                "entity_id": entity_id,
+                "key": key,
+                "value": value,
+                "lookup": _lookup(value),
+                "text_form": text_form,
+                "number_form": number_form,
+                "shown": key in shown,
+                "updated_at": now,
+            }
+        )
     if written:
         statement = insert(PluginMetadata).values(written)
         await session.exec(
@@ -288,6 +349,8 @@ async def write(
                 set_={
                     "value": statement.excluded.value,
                     "lookup": statement.excluded.lookup,
+                    "text_form": statement.excluded.text_form,
+                    "number_form": statement.excluded.number_form,
                     "shown": statement.excluded.shown,
                     "updated_at": statement.excluded.updated_at,
                 },
@@ -412,6 +475,162 @@ async def reconcile_shown(
     )
 
 
+class _Offered:
+    """Whether a reader is drawn an install's values in an initiative: it is
+    placed there with a role the reader holds (or the reader is the
+    community's admin), and the reader is old enough for it. Each pair is
+    decided once, and the reader's age read only if a plug-in asks for one."""
+
+    def __init__(self, context: GuildContext) -> None:
+        self._context = context
+        self._viewer: Optional[plugin_age.AgeViewer] = None
+        self._known: dict[tuple[int, int], bool] = {}
+
+    async def __call__(
+        self, install_id: int, initiative_id: int, roles: Any, minimum: Any
+    ) -> bool:
+        if (install_id, initiative_id) not in self._known:
+            old_enough = True
+            if minimum is not None:
+                self._viewer = self._viewer or await plugin_age.current_viewer(
+                    self._context.user_id
+                )
+                old_enough = plugin_age.age_allows(
+                    {"minimum_age": minimum}, self._viewer
+                )
+            self._known[(install_id, initiative_id)] = (
+                guild_plugins.surface_access(
+                    guild_plugins.ITEM_SURFACE,
+                    initiative_id=initiative_id,
+                    placement_role_ids=list(roles or ()),
+                    is_guild_admin=self._context.is_admin,
+                    member_role_ids=self._context.member_role_ids,
+                    age_allows=old_enough,
+                )
+                is guild_plugins.SurfaceAccess.open
+            )
+        return self._known[(install_id, initiative_id)]
+
+
+@dataclass(frozen=True)
+class FilterField:
+    """A plug-in field a reader may filter tasks by: its kind, and the
+    initiatives where they are drawn it."""
+
+    install_id: int
+    key: str
+    kind: str
+    initiatives: frozenset[int]
+
+
+async def filter_fields(
+    session: AsyncSession, field_ids: Collection[str]
+) -> dict[str, FilterField]:
+    """Of these ``plugin:<install>:<key>`` ids, the fields the reader may filter
+    tasks by: those declared on tasks by an install that is on, where
+    :func:`annotate_plugin_values` would draw them. A filter on any other
+    narrows nothing, so it tells nobody which tasks hold a value they are not
+    drawn. An installed plug-in and a guest are drawn none."""
+    context = guild_context(session)
+    wanted: dict[tuple[int, str], str] = {}
+    for field_id in field_ids:
+        install, _, key = field_id.removeprefix(PLUGIN_FIELD_PREFIX).partition(":")
+        if field_id.startswith(PLUGIN_FIELD_PREFIX) and install.isdigit() and key:
+            wanted[(int(install), key)] = field_id
+    if not wanted or context is None or context.guest:
+        return {}
+    rows = await session.exec(
+        select(
+            GuildPlugin.id,
+            GuildPlugin.definition,
+            PluginPlacement.initiative_id,
+            PluginPlacement.role_ids,
+        )
+        .join(PluginPlacement, PluginPlacement.install_id == GuildPlugin.id)
+        .where(
+            GuildPlugin.enabled.is_(True),
+            col(GuildPlugin.id).in_(sorted({install for install, _ in wanted})),
+        )
+    )
+    offered = _Offered(context)
+    reach: dict[tuple[int, str], set[int]] = defaultdict(set)
+    kinds: dict[tuple[int, str], str] = {}
+    for install_id, definition, initiative_id, roles in rows.all():
+        declared = definition.get("fields") if isinstance(definition, dict) else None
+        for field in declared if isinstance(declared, list) else ():
+            if not isinstance(field, dict) or "task" not in (field.get("on") or ()):
+                continue
+            pair = (install_id, str(field.get("key")))
+            if pair not in wanted:
+                continue
+            kinds[pair] = str(field.get("kind"))
+            if await offered(
+                install_id, initiative_id, roles, definition.get("minimum_age")
+            ):
+                reach[pair].add(initiative_id)
+    return {
+        wanted[pair]: FilterField(pair[0], pair[1], kinds[pair], frozenset(found))
+        for pair, found in reach.items()
+    }
+
+
+#: The kinds a filter compares by their words; every other by its number.
+_COMPARED_AS_TEXT = frozenset({"text", "link", "badge"})
+
+
+def filter_clause(field: FilterField, op: FilterOp, value: Any) -> Any:
+    """A task list's condition on one plug-in field: one probe of the task's
+    row by its key, on a task in an initiative where the reader is drawn the
+    field. ``None`` when the value cannot be compared."""
+    as_text = field.kind in _COMPARED_AS_TEXT
+    form = PluginMetadata.text_form if as_text else PluginMetadata.number_form
+
+    def held(*where: Any) -> Any:
+        return and_(
+            exists().where(
+                PluginMetadata.install_id == field.install_id,
+                PluginMetadata.entity_type == "task",
+                PluginMetadata.entity_id == Task.id,
+                PluginMetadata.key == field.key,
+                PluginMetadata.shown.is_(True),
+                *where,
+            ),
+            col(Task.project_id).in_(
+                select(Project.id).where(
+                    col(Project.initiative_id).in_(sorted(field.initiatives))
+                )
+            ),
+        )
+
+    if op == FilterOp.is_null:
+        try:
+            empty = (
+                value
+                if isinstance(value, bool)
+                else properties_service.normalize_is_null_value(value)
+            )
+        except ValueError:
+            return None
+        present = held(form.is_not(None))
+        return ~present if empty else present
+    if as_text:
+        compared, by = value, PropertyType.text
+    else:
+        compared, by = _compared_number(value), PropertyType.number
+    predicate = properties_service.build_property_value_predicate(
+        form, by, op, compared
+    )
+    return None if predicate is None else held(predicate)
+
+
+def _compared_number(value: Any) -> Any:
+    """A filter's value as its field's values are kept: a date or datetime as
+    seconds since the epoch, a checkbox as 1 or 0."""
+    if isinstance(value, list):
+        return [_compared_number(each) for each in value]
+    return forms(value)[1] if isinstance(value, (bool, str)) else value
+
+
 async def annotate_plugin_values(session: AsyncSession, tasks: Sequence[Task]) -> None:
     """Set ``.plugin_values`` on every task: the shown values of the installs
     whose actions the reader could run there — on, placed in the task's
@@ -457,27 +676,9 @@ async def annotate_plugin_values(session: AsyncSession, tasks: Sequence[Task]) -
             )
             .order_by(PluginMetadata.install_id, PluginMetadata.key)
         )
-        viewer: Optional[plugin_age.AgeViewer] = None
-        offered: dict[tuple[int, int], bool] = {}
+        offered = _Offered(context)
         for task_id, install_id, key, value, initiative_id, roles, minimum in rows:
-            if (install_id, initiative_id) not in offered:
-                old_enough = True
-                if minimum is not None:
-                    # Read only when a plug-in here asks for an age.
-                    viewer = viewer or await plugin_age.current_viewer(context.user_id)
-                    old_enough = plugin_age.age_allows({"minimum_age": minimum}, viewer)
-                offered[(install_id, initiative_id)] = (
-                    guild_plugins.surface_access(
-                        guild_plugins.ITEM_SURFACE,
-                        initiative_id=initiative_id,
-                        placement_role_ids=list(roles or ()),
-                        is_guild_admin=context.is_admin,
-                        member_role_ids=context.member_role_ids,
-                        age_allows=old_enough,
-                    )
-                    is guild_plugins.SurfaceAccess.open
-                )
-            if offered[(install_id, initiative_id)]:
+            if await offered(install_id, initiative_id, roles, minimum):
                 found[task_id].append(
                     PluginValueSummary(plugin_id=install_id, key=key, value=value)
                 )

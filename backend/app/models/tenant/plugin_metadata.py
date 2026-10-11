@@ -10,6 +10,12 @@ uninstalling removes everything it kept.
 ``lookup`` is the value as text when the value is a JSON string, number or
 boolean short enough to look up by, and ``NULL`` otherwise.
 
+``text_form`` and ``number_form`` are what a filter compares a value by: the
+words a reader sees of it (a string, a badge's text, a link's text or else its
+address), and a number (a number, a progress bar's fraction, a checkbox as 1 or
+0, a date or datetime as seconds since the epoch). Each is worked out from the
+value's shape alone on every write, and ``NULL`` where the shape has none.
+
 ``shown`` says the install's pinned definition declares the key as a field on
 the item's kind. It is set on every write and again whenever the install moves
 to another version; the install's own values are never shown.
@@ -29,10 +35,12 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
     String,
+    Text,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -79,6 +87,12 @@ class PluginMetadata(SQLModel, table=True):
     value: Any = Field(sa_column=Column(JSONB, nullable=False))
     lookup: Optional[str] = Field(
         default=None, sa_column=Column(String(LOOKUP_LENGTH), nullable=True)
+    )
+    text_form: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    number_form: Optional[float] = Field(
+        default=None, sa_column=Column(Float, nullable=True)
     )
     #: Declared as a field on the item's kind by the install's pinned version.
     shown: bool = Field(

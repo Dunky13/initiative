@@ -21,7 +21,10 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { TaskPriority } from "@/api/generated/initiativeAPI.schemas";
 import type { DueFilterOption } from "@/components/projects/projectTasksConfig";
-import type { PropertyFilterCondition } from "@/components/properties/PropertyFilter";
+import type {
+  PluginFilterCondition,
+  PropertyFilterCondition,
+} from "@/components/properties/PropertyFilter";
 
 /** The due-window tokens a view can hold. `null` is "any due date". */
 export type DueToken = Exclude<DueFilterOption, "all">;
@@ -41,6 +44,8 @@ export interface TaskFilterSpec {
   assignees: string[];
   tag_ids: number[];
   properties: PropertyFilterCondition[];
+  /** By a plug-in's field, where the reader is drawn it. */
+  plugins: PluginFilterCondition[];
   due: DueToken | null;
   include_archived: boolean;
 }
@@ -53,6 +58,7 @@ export const EMPTY_TASK_FILTERS: TaskFilterSpec = {
   assignees: [],
   tag_ids: [],
   properties: [],
+  plugins: [],
   due: null,
   include_archived: false,
 };
@@ -101,6 +107,11 @@ export function specFromStored(raw: StoredTaskFilters | null | undefined): TaskF
           (entry) => typeof entry?.property_id === "number"
         )
       : [],
+    plugins: Array.isArray(raw.plugins)
+      ? (raw.plugins as PluginFilterCondition[]).filter(
+          (entry) => typeof entry?.field === "string" && entry.field.startsWith("plugin:")
+        )
+      : [],
     due: typeof raw.due === "string" && DUE_TOKENS.includes(raw.due) ? (raw.due as DueToken) : null,
     include_archived: raw.include_archived === true,
   };
@@ -119,7 +130,8 @@ export function taskFiltersEqual(a: TaskFilterSpec, b: TaskFilterSpec): boolean 
     sameIds(a.tag_ids, b.tag_ids) &&
     a.due === b.due &&
     a.include_archived === b.include_archived &&
-    JSON.stringify(a.properties) === JSON.stringify(b.properties)
+    JSON.stringify(a.properties) === JSON.stringify(b.properties) &&
+    JSON.stringify(a.plugins) === JSON.stringify(b.plugins)
   );
 }
 
@@ -134,6 +146,7 @@ export function taskFilterCount(spec: TaskFilterSpec): number {
     spec.assignees.length +
     spec.tag_ids.length +
     spec.properties.length +
+    spec.plugins.length +
     (spec.due ? 1 : 0) +
     (spec.include_archived ? 1 : 0)
   );
@@ -256,6 +269,11 @@ export function taskSpecConditions(spec: TaskFilterSpec): (FilterCondition | Fil
       field: "property_values" as const,
       op: entry.op as FilterCondition["op"],
       value: { property_id: entry.property_id, value: entry.value },
+    })),
+    ...spec.plugins.map((entry) => ({
+      field: "plugin_values" as const,
+      op: entry.op as FilterCondition["op"],
+      value: { field: entry.field, value: entry.value },
     })),
     ...(spec.due ? dueConditions(spec.due) : []),
   ];
