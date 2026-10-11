@@ -33,6 +33,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     String,
+    Text,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -127,4 +128,14 @@ class EventOutbox(SQLModel, table=True):
     parents: list[dict[str, Any]] = Field(
         default_factory=list,
         sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+
+    # The tool instance whose sharing governs the change: the resource itself
+    # when it is a tool, else the outermost tool in ``parents``. Stamped by the
+    # capture trigger, like the pair a search entry carries, so the read policy
+    # asks a person's sharing without walking the chain. NULL for a change that
+    # sits under no tool (a tag), which answers to the initiative gate alone.
+    dac_tool: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    dac_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
     )

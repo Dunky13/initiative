@@ -1250,16 +1250,17 @@ def webhook_subscription_path() -> InitiativePath:
     )
 
 
-def _search_tool_gate(t: str, write: bool) -> str:
-    """Gates 3 and 4 for a search entry, keyed on the tool it names.
+def _named_tool_gate(t: str, write: bool) -> str:
+    """Gates 3 and 4 for a row that names its governing tool: a search entry,
+    a change in the change log.
 
-    Every other table has one governing tool rendered into its policy. An entry
-    names its own in ``dac_tool``, so the switch and the role key are a CASE
-    over that column — one arm per tool, and rows naming none (the guild's
+    Every other table has one governing tool rendered into its policy. These
+    rows name their own in ``dac_tool``, so the switch and the role key are a
+    CASE over that column — one arm per tool, and rows naming none (the guild's
     vocabulary) fall through the ELSE.
 
-    An entry outlives the content it describes by as long as the sweep takes,
-    so it answers the same three questions the source does rather than trusting
+    A row outlives the content it describes by as long as the sweep takes, so
+    it answers the same three questions the source does rather than trusting
     that it was right when it was written.
     """
     # The switch no longer needs an arm per tool: the pair the standing carries
@@ -1284,12 +1285,14 @@ def _search_tool_gate(t: str, write: bool) -> str:
     )
 
 
-def search_entries_path() -> InitiativePath:
-    """The search index is reached exactly like the content it describes.
+def named_tool_path() -> InitiativePath:
+    """A row about content, reached exactly like the content it describes: the
+    search index, and the change log.
 
-    It stores ``initiative_id`` directly, so unlike ``recent_views`` this needs
-    no per-type EXISTS join — the row was stamped with its source's initiative
-    by the same registry that renders that source's own policies.
+    It stores ``initiative_id`` and its governing ``dac_tool``/``dac_id``
+    directly, so unlike ``recent_views`` this needs no per-type EXISTS join —
+    the row was stamped by the same registries that render the source's own
+    policies.
 
     A NULL initiative is the guild-level case (a tag, a guild calendar): the
     initiative gate has nothing to decide, and these are rows every member
@@ -1307,7 +1310,7 @@ def search_entries_path() -> InitiativePath:
         # The index stores the governing pair, so the legs need no join. Which
         # tool governs an entry differs per row, so the two that name a tool are
         # a CASE over it rather than a rendered constant.
-        dac=DacPath(predicate=lambda t, c, w: _search_tool_gate(t, w)),
+        dac=DacPath(predicate=lambda t, c, w: _named_tool_gate(t, w)),
     )
 
 
@@ -1408,21 +1411,20 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # reads this table, so a policy here that called it would not resolve.
     # ``direct()`` derives none, because the table is no tool's own.
     "resource_grants": direct(),
-    # The change log itself. Scoped like the rows it describes, which is what
-    # lets the poller read it AS the subscriber (see EVENT_SOURCES below).
-    # Reading is the question this path answers; writing is the capture
-    # trigger's alone (app.db.guild_ddl._WRITTEN_BY).
-    # No sharing leg, decided 2026-09-10: the envelope is identifiers and
-    # changed column names, and every consumer reads current state back
-    # through the REST path, where sharing decides. The initiative gate is
-    # what scopes it. See outbox_poller's module docstring.
-    "event_outbox": direct(),
+    # The change log itself, read like the content each change describes: a
+    # person reads a change only where they can open the tool instance that
+    # governs it (``dac_tool``/``dac_id``, stamped by the capture trigger), as
+    # with the search index. The poller and the levels pass read it as the
+    # system, so a subscription's reach is still the scope it names (see
+    # outbox_poller's module docstring). Writing is the capture trigger's alone
+    # (app.db.guild_ddl._WRITTEN_BY).
+    "event_outbox": named_tool_path(),
     # The events installed plug-ins emit, scoped by the initiative an event names
     # like the change log beside it. Written by the system engine alone
     # (app.db.guild_ddl._WRITTEN_BY) and read by the poller.
     "plugin_event_outbox": direct(),
     # The search index. Derived from the content tables, and gated like them.
-    "search_entries": search_entries_path(),
+    "search_entries": named_tool_path(),
     # Integration config, reached by whoever can reach what it watches.
     "webhook_subscriptions": webhook_subscription_path(),
     # Stored files, reached through the initiative whose content shows them.

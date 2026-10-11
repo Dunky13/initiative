@@ -55,6 +55,7 @@ from typing import Any, Callable
 from sqlalchemy import Column
 from sqlmodel import SQLModel
 
+from app.core.tools import Tool
 from app.db import gucs
 from app.db.initiative_rls import (
     EVENTED_TABLES,
@@ -377,6 +378,11 @@ def build_specs() -> list[CaptureSpec]:
 # The capture function
 # ---------------------------------------------------------------------------
 
+#: Each tool's table and the tool it is, for the governing-tool lookup the
+#: function makes from a change's resource and parents. From the enum, so a new
+#: tool is governed without an edit here.
+_GOVERNING_TOOLS = ", ".join(f"('{tool.plural}', '{tool.value}')" for tool in Tool)
+
 #: Rendered once into ``public``. Per-table knowledge arrives as TG_ARGV, where
 #: every "expression" is SQL text evaluated with the changed row as ``$1``:
 #:   0 — expression resolving the row's initiative id
@@ -408,6 +414,8 @@ DECLARE
     v_parents    jsonb := '[]'::jsonb;
     v_was_quiet  boolean := false;
     v_is_quiet   boolean := false;
+    v_dac_tool   text;
+    v_dac_id     integer;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         v_row := OLD;
@@ -537,6 +545,20 @@ BEGIN
         v_parents := COALESCE(v_parents, '[]'::jsonb);
     END IF;
 
+    -- The tool whose sharing governs the change: the resource itself when it
+    -- is a tool, else the outermost tool among its parents. None for a change
+    -- under no tool, which the initiative gate alone answers.
+    SELECT m.tool, x.id INTO v_dac_tool, v_dac_id
+      FROM (
+            SELECT v_type AS type, v_resource AS id, 0::bigint AS ord
+            UNION ALL
+            SELECT p ->> 'type', (p ->> 'id')::integer, o
+              FROM jsonb_array_elements(v_parents) WITH ORDINALITY AS e(p, o)
+           ) x
+      JOIN (VALUES {_GOVERNING_TOOLS}) AS m(tbl, tool) ON m.tbl = x.type
+     ORDER BY x.ord DESC
+     LIMIT 1;
+
     -- Who wrote it: the person, the installed plug-in, or both when a plug-in acts
     -- for a member. Each is read on its own from the request context, and an
     -- anonymous table names neither.
@@ -552,11 +574,11 @@ BEGIN
     EXECUTE format(
         'INSERT INTO %I.event_outbox ('
         '  txn_id, occurred_at, actor_user_id, actor_install_id, initiative_id,'
-        '  resource_type, resource_id, action, changed, parents'
-        ') VALUES (txid_current(), now(), $1, $2, $3, $4, $5, $6, $7, $8)',
+        '  resource_type, resource_id, action, changed, parents, dac_tool, dac_id'
+        ') VALUES (txid_current(), now(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
         TG_TABLE_SCHEMA
     ) USING v_actor, v_install, v_initiative, v_type, v_resource, v_action,
-            v_changed, v_parents;
+            v_changed, v_parents, v_dac_tool, v_dac_id;
 
     -- Wake whoever is holding sockets for this guild. A hint, not the message:
     -- the row above is the truth, and one that reaches nobody costs a listener
