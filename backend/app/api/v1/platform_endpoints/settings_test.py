@@ -382,7 +382,7 @@ async def test_raising_cap_reopens_joins(
     invitee = await acting_user()
     # Minted while the seat is still free, redeemed after it is taken —
     # minting itself is capacity-gated, so the order here is the scenario.
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=operator.user.id, max_uses=5
     )
     await guild_service.ensure_membership(
@@ -395,7 +395,7 @@ async def test_raising_cap_reopens_joins(
     blocked = await client.post(
         "/api/v1/communities/invite/accept",
         headers=invitee.headers,
-        json={"code": invite.code},
+        json={"code": invite_code},
     )
     assert blocked.status_code == 403
     assert blocked.json()["detail"] == "COMMUNITY_USER_LIMIT_REACHED"
@@ -408,7 +408,7 @@ async def test_raising_cap_reopens_joins(
     accepted = await client.post(
         "/api/v1/communities/invite/accept",
         headers=invitee.headers,
-        json={"code": invite.code},
+        json={"code": invite_code},
     )
     assert accepted.status_code == 200
     # The cap itself is an admin-only field, and the invitee joins as a plain

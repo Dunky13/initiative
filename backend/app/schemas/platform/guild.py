@@ -327,7 +327,6 @@ class CommunityInviteRead(SanitizedBaseModel):
     )
 
     id: int
-    code: str
     community_id: int = Field(validation_alias=AliasChoices("community_id", "guild_id"))
     created_by: Optional[int]
     expires_at: Optional[datetime]
@@ -343,6 +342,12 @@ class CommunityInviteRead(SanitizedBaseModel):
     @classmethod
     def _mask_invitee_email(cls, value: Optional[str]) -> Optional[str]:
         return mask_email(value)
+
+
+class CommunityInviteCreated(CommunityInviteRead):
+    """A new invite, with its code: the one time the code is shown."""
+
+    code: str
 
 
 class CommunityInviteAcceptRequest(SanitizedBaseModel):

@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Einladung konnte nicht gelöscht werden.",
     "inviteLinkCopied": "Einladungslink in die Zwischenablage kopiert.",
     "copyInviteLink": "Einladungslink kopieren",
+    "newInviteLinkOnce": "Kopiere diesen Link jetzt. Er wird nicht noch einmal angezeigt.",
+    "inviteLinkTitle": "Einladungslink",
     "deleteInviteLink": "Einladung löschen",
     "usesFormat": "Verwendungen: {{uses}}/{{max}} · Läuft ab: {{expires}}",
     "neverExpires": "Nie",

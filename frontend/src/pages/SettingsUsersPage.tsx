@@ -138,6 +138,15 @@ export const SettingsUsersPage = () => {
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteMaxUses, setInviteMaxUses] = useState<number>(1);
   const [inviteExpiresDays, setInviteExpiresDays] = useState<number>(7);
+  // The invite just made, with its code: shown once, as only its hash is kept,
+  // and only in the community it was made for.
+  const [newInvite, setNewInvite] = useState<{
+    communityId: number;
+    inviteId: number;
+    code: string;
+  } | null>(null);
+  const newInviteCode =
+    newInvite && newInvite.communityId === activeCommunityId ? newInvite.code : null;
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<{
     userId: number;
     email: string;
@@ -389,7 +398,12 @@ export const SettingsUsersPage = () => {
         max_uses: inviteMaxUses > 0 ? inviteMaxUses : null,
         expires_at: expiresAt,
       };
-      await createCommunityInvite(activeCommunityId, payload);
+      const created = await createCommunityInvite(activeCommunityId, payload);
+      setNewInvite({
+        communityId: activeCommunityId,
+        inviteId: created.id,
+        code: created.code,
+      });
       await invitesQuery.refetch();
     } catch (error) {
       console.error(error);
@@ -406,6 +420,7 @@ export const SettingsUsersPage = () => {
     setInviteActionError(null);
     try {
       await deleteCommunityInvite(activeCommunityId, inviteId);
+      if (newInvite?.inviteId === inviteId) setNewInvite(null);
       await invitesQuery.refetch();
     } catch (error) {
       console.error(error);
@@ -490,6 +505,18 @@ export const SettingsUsersPage = () => {
                 <HelpLink topic={SupportTopic.community} communityId={activeCommunityId} />
               </div>
             ) : null}
+            {newInviteCode ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-primary/40 bg-primary/5 p-4 text-sm">
+                <div>
+                  <p className="break-all font-medium">{inviteLinkForCode(newInviteCode)}</p>
+                  <p className="text-muted-foreground text-xs">{t("users.newInviteLinkOnce")}</p>
+                </div>
+                <Button variant="outline" size="icon" onClick={() => copyInviteLink(newInviteCode)}>
+                  <Copy className="h-4 w-4" />
+                  <span className="sr-only">{t("users.copyInviteLink")}</span>
+                </Button>
+              </div>
+            ) : null}
             <div className="h-px bg-border" />
             {invitesQuery.isLoading ? (
               <SkeletonRegion label={t("users.loadingInvites")}>
@@ -501,38 +528,27 @@ export const SettingsUsersPage = () => {
               <p className="text-muted-foreground text-sm">{t("users.noActiveInvites")}</p>
             ) : null}
             <div className="space-y-3">
-              {invites.map((invite) => {
-                const link = inviteLinkForCode(invite.code);
-                return (
-                  <div
-                    key={invite.id}
-                    className="flex flex-wrap gap-3 rounded border bg-muted/30 p-4 text-sm items-center justify-between"
-                  >
-                    <div>
-                      <p className="font-medium">{link}</p>
-                      <InviteUsesLine
-                        uses={invite.uses}
-                        maxUses={invite.max_uses ?? null}
-                        expiresAt={invite.expires_at ?? null}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => copyInviteLink(invite.code)}
-                      >
-                        <Copy className="h-4 w-4" />
-                        <span className="sr-only">{t("users.copyInviteLink")}</span>
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => deleteInvite(invite.id)}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">{t("users.deleteInviteLink")}</span>
-                      </Button>
-                    </div>
+              {invites.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="flex flex-wrap gap-3 rounded border bg-muted/30 p-4 text-sm items-center justify-between"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {invite.invitee_email ?? t("users.inviteLinkTitle")}
+                    </p>
+                    <InviteUsesLine
+                      uses={invite.uses}
+                      maxUses={invite.max_uses ?? null}
+                      expiresAt={invite.expires_at ?? null}
+                    />
                   </div>
-                );
-              })}
+                  <Button variant="outline" size="icon" onClick={() => deleteInvite(invite.id)}>
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">{t("users.deleteInviteLink")}</span>
+                  </Button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

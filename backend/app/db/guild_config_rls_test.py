@@ -27,7 +27,9 @@ from app.testing import (
 
 
 def _invite(guild_id: int, user_id: int, code: str) -> GuildInvite:
-    return GuildInvite(code=code, guild_id=guild_id, created_by=user_id, max_uses=1)
+    return GuildInvite(
+        code_hash=code, guild_id=guild_id, created_by=user_id, max_uses=1
+    )
 
 
 async def _writing_as(role_session, *, user_id: int, guild_id: int, settings=False):
@@ -39,7 +41,7 @@ async def _writing_as(role_session, *, user_id: int, guild_id: int, settings=Fal
 
 async def _invite_exists(session, code: str) -> bool:
     row = (
-        await session.exec(select(GuildInvite).where(GuildInvite.code == code))
+        await session.exec(select(GuildInvite).where(GuildInvite.code_hash == code))
     ).first()
     return row is not None
 
@@ -52,7 +54,7 @@ async def test_a_member_neither_reads_nor_writes_an_invite(
     await session.commit()
     member = await acting_user(guild_role=CommunityRole.member, guild=a.guild)
     s = await _writing_as(role_session, user_id=member.user.id, guild_id=a.guild.id)
-    assert list(await s.exec(select(GuildInvite.code))) == []
+    assert list(await s.exec(select(GuildInvite.code_hash))) == []
     s.add(_invite(a.guild.id, member.user.id, "by-a-member"))
     with pytest.raises(DBAPIError, match="row-level security"):
         await s.commit()
@@ -68,7 +70,7 @@ async def test_the_administrator_reads_and_writes_an_invite(
     s.add(_invite(a.guild.id, a.user.id, "by-the-admin"))
     await s.commit()
     assert await _invite_exists(session, "by-the-admin")
-    assert list(await s.exec(select(GuildInvite.code))) == ["by-the-admin"]
+    assert list(await s.exec(select(GuildInvite.code_hash))) == ["by-the-admin"]
 
 
 async def test_a_settings_grant_reads_invites_and_does_not_write_them(
@@ -85,7 +87,7 @@ async def test_a_settings_grant_reads_invites_and_does_not_write_them(
     s = await _writing_as(
         role_session, user_id=support.id, guild_id=a.guild.id, settings=True
     )
-    assert list(await s.exec(select(GuildInvite.code))) == ["issued-by-the-admin"]
+    assert list(await s.exec(select(GuildInvite.code_hash))) == ["issued-by-the-admin"]
     s.add(_invite(a.guild.id, support.id, "by-a-settings-grant"))
     with pytest.raises(DBAPIError, match="permission denied|row-level security"):
         await s.commit()

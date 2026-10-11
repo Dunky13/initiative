@@ -604,7 +604,9 @@ class GuildInvite(SQLModel, table=True):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    code: str = Field(index=True, unique=True, nullable=False, max_length=64)
+    # SHA-256 of the code, in hex. The code itself is shown once, when the
+    # invite is made.
+    code_hash: str = Field(index=True, unique=True, nullable=False, max_length=64)
     guild_id: int = Field(foreign_key="guilds.id", ondelete="CASCADE", nullable=False)
     # The invite outlives the admin who issued it.
     created_by: Optional[int] = Field(

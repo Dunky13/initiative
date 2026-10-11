@@ -2599,9 +2599,23 @@ export interface CommunityInviteCreate {
   invitee_email?: string | null;
 }
 
+/**
+ * A new invite, with its code: the one time the code is shown.
+ */
+export interface CommunityInviteCreated {
+  id: number;
+  community_id: number;
+  created_by: number | null;
+  expires_at: string | null;
+  max_uses: number | null;
+  uses: number;
+  invitee_email: string | null;
+  created_at: string;
+  code: string;
+}
+
 export interface CommunityInviteRead {
   id: number;
-  code: string;
   community_id: number;
   created_by: number | null;
   expires_at: string | null;
