@@ -7,7 +7,7 @@ the community already keeps, and writes nothing else:
 - **Views**: each person's latest open of each item, from ``recent_views``.
 - **Contributions**: each change a person made, from the change log. A change to
   something that has no level of its own (a comment, a reaction) counts for the
-  innermost item it sits in.
+  innermost item it sits in (``content_item_of``, which the feed asks too).
 
 Each person counts once per item, at their weightiest engagement, decayed by
 age, so opening something forty times is opening it once. Somebody who turned
@@ -43,7 +43,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
-from app.db.initiative_rls import CONTENT_KIND_TABLES
 from app.db.request_context import Unattributed
 from app.db.session import routed_guild_id, set_rls_context
 from app.core.guild_auth_options import CommunityAuthOption
@@ -59,9 +58,11 @@ from app.services.tenant.recent_views import WINDOW
 HALF_LIFE = timedelta(days=2)
 #: What opening an item counts for.
 VIEW_WEIGHT = 1.0
-#: What opening it from search counts for: search orders by the level, so an
-#: open it led to says less about the item.
-SEARCH_VIEW_WEIGHT = 0.5
+#: Where an open came from a surface that orders by the level, so it says less
+#: about the item: search and the activity feed.
+ORDERED_SOURCES = (ViewSource.search, ViewSource.feed)
+#: What such an open counts for.
+ORDERED_VIEW_WEIGHT = 0.5
 #: What changing it counts for: acting on something says more than opening it.
 CONTRIBUTION_WEIGHT = 2.0
 #: The fewest different people an item needs before it has a level.
@@ -96,11 +97,10 @@ def boosted(rank: Any, level: Any) -> ColumnElement[float]:
 #: answers for the system engine.
 _LEVELS = text(
     """
-    WITH kinds AS (SELECT unnest(:tables) AS tbl, unnest(:kinds) AS kind),
-    engaged AS (
+    WITH engaged AS (
         SELECT v.user_id, v.entity_type AS kind, v.entity_id AS id,
                v.last_viewed_at AS at,
-               CASE v.source WHEN :searched THEN :search_view_weight
+               CASE WHEN v.source = ANY (:ordered) THEN :ordered_view_weight
                    ELSE :view_weight END AS weight
         FROM recent_views v
         WHERE v.last_viewed_at > :since
@@ -108,18 +108,7 @@ _LEVELS = text(
       UNION ALL
         SELECT o.actor_user_id, t.kind, t.id, o.occurred_at, :contribution_weight
         FROM event_outbox o
-        CROSS JOIN LATERAL (
-            SELECT k.kind, c.id
-            FROM (
-                SELECT o.resource_type AS tbl, o.resource_id AS id, 0::bigint AS depth
-              UNION ALL
-                SELECT p.value ->> 'type', (p.value ->> 'id')::int, p.depth
-                FROM jsonb_array_elements(o.parents) WITH ORDINALITY AS p (value, depth)
-            ) c
-            JOIN kinds k ON k.tbl = c.tbl
-            ORDER BY c.depth
-            LIMIT 1
-        ) t
+        CROSS JOIN LATERAL content_item_of(o.resource_type, o.resource_id, o.parents) t
         WHERE o.occurred_at > :since
           AND o.actor_user_id IS NOT NULL
           AND o.actor_install_id IS NULL
@@ -161,14 +150,12 @@ _LEVELS = text(
     )
     """
 ).bindparams(
-    bindparam("tables", type_=ARRAY(Text)),
-    bindparam("kinds", type_=ARRAY(Text)),
     bindparam("uncounted", type_=ARRAY(Integer)),
     bindparam("now", type_=DateTime(timezone=True)),
     bindparam("since", type_=DateTime(timezone=True)),
     bindparam("view_weight", type_=Float),
-    bindparam("search_view_weight", type_=Float),
-    bindparam("searched", type_=Text),
+    bindparam("ordered_view_weight", type_=Float),
+    bindparam("ordered", type_=ARRAY(Text)),
     bindparam("contribution_weight", type_=Float),
     bindparam("half_life", type_=Float),
     bindparam("level_max", type_=Integer),
@@ -218,7 +205,6 @@ async def prepare() -> Visit:
             .scalars()
             .all()
         )
-    tables, kinds = zip(*((t, k) for k, t in CONTENT_KIND_TABLES.items()))
 
     async def visit(session: AsyncSession, guild_id: int) -> None:
         if not await advisory_lock(
@@ -235,14 +221,12 @@ async def prepare() -> Visit:
         await session.exec(
             _LEVELS,  # type: ignore[arg-type]
             params={
-                "tables": list(tables),
-                "kinds": list(kinds),
                 "uncounted": uncounted,
                 "now": now,
                 "since": now - WINDOW,
                 "view_weight": VIEW_WEIGHT,
-                "search_view_weight": SEARCH_VIEW_WEIGHT,
-                "searched": ViewSource.search.value,
+                "ordered_view_weight": ORDERED_VIEW_WEIGHT,
+                "ordered": [source.value for source in ORDERED_SOURCES],
                 "contribution_weight": CONTRIBUTION_WEIGHT,
                 "half_life": HALF_LIFE.total_seconds(),
                 "level_max": LEVEL_MAX,

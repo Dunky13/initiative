@@ -21,6 +21,8 @@ class ViewSource(str, Enum):
     direct = "direct"
     #: A search result or the command palette.
     search = "search"
+    #: An entry in an activity feed.
+    feed = "feed"
 
 
 _ENTITY_TYPE_VALUES = ", ".join(f"'{kind}'" for kind in CONTENT_KINDS)

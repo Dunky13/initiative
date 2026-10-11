@@ -127,10 +127,14 @@ async def test_somebody_who_asked_not_to_be_counted_is_left_out(
     assert await _levels(session) == {}
 
 
-async def test_an_open_from_search_counts_for_less(session: AsyncSession, acting_user):
-    """Search orders by the level, so an open it led to weighs half."""
+async def test_an_open_from_search_or_the_feed_counts_for_less(
+    session: AsyncSession, acting_user
+):
+    """Search and the feed order by the level, so an open they led to weighs
+    half."""
     (a, b, c), task = await _three_people(session, acting_user)
-    await _all_opened(session, (a, b), task, source=ViewSource.search)
+    await _all_opened(session, (a,), task, source=ViewSource.search)
+    await _all_opened(session, (b,), task, source=ViewSource.feed)
     session.add(
         EventOutbox(
             txn_id=1,

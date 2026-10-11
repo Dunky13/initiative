@@ -15,6 +15,7 @@ from app.core.tools import Tool
 #                          them — the one place tenant data is read without a
 #                          single guild context (see /me routes below).
 from app.api.v1.tenant_endpoints import (
+    activity,
     moderation,
     evidence,
     holds,
@@ -293,6 +294,7 @@ guild_router.include_router(holds.router, prefix="/holds", tags=["holds"])
 # Asking whoever runs the deployment for help. Guild-scoped because whether
 # it is offered at all is the community's own setting.
 guild_router.include_router(comments.router, prefix="/comments", tags=["comments"])
+guild_router.include_router(activity.router, prefix="/activity", tags=["activity"])
 guild_router.include_router(reactions.router, prefix="/reactions", tags=["reactions"])
 # Guild-scoped AI config (guild/user levels). Platform AI config is top-level.
 guild_router.include_router(
