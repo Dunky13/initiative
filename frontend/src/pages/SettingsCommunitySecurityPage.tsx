@@ -350,7 +350,7 @@ const SignInRequirementCard = ({
                     }
                     onValueChange={changeProvider}
                   >
-                    <SelectTrigger className="w-full sm:w-72">
+                    <SelectTrigger className="w-full max-w-72">
                       <SelectValue placeholder={t("communityAuth.policy.providerPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
