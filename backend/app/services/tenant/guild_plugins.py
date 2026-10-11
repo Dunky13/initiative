@@ -924,25 +924,27 @@ async def place_with_roles(
     return placed
 
 
-def _on_tasks(definition: Any, block: str, id_key: str) -> list[dict]:
-    """What a definition declares in one block on tasks, in its order."""
+def _declared_on(definition: Any, block: str, id_key: str, kind: str) -> list[str]:
+    """What a definition declares in one block on one kind of item, in its order."""
     return [
-        entry
+        entry[id_key]
         for entry in _declared(
             definition if isinstance(definition, dict) else {}, block, id_key
         )
-        if tool_layouts_service.PLUGIN_DETAIL in (entry.get("on") or ())
+        if kind in (entry.get("on") or ())
     ]
 
 
-def _fields_in_tree(node: Any) -> Iterable[str]:
-    """The install's own fields a part's tree shows."""
-    if not isinstance(node, dict):
-        return
-    if node.get("type") in ("field", "value"):
-        yield str((node.get("props") or {}).get("field"))
-    for child in node.get("children") or ():
-        yield from _fields_in_tree(child)
+def _arriving(
+    definition: Any, previous: Any, block: str, id_key: str, kind: str
+) -> list[str]:
+    """What ``definition`` declares on ``kind`` that ``previous`` did not."""
+    had = set(_declared_on(previous, block, id_key, kind))
+    return [
+        each
+        for each in _declared_on(definition, block, id_key, kind)
+        if each not in had
+    ]
 
 
 async def show_on_saved_details(
@@ -952,53 +954,33 @@ async def show_on_saved_details(
     *,
     previous: Any = None,
 ) -> None:
-    """Show the install's fields, then its parts, on the saved task details of
-    these initiatives, as it declares them: what placing it does. A field one
-    of its shown parts already shows is not added on its own. After an
-    upgrade, ``previous`` is the definition it replaced, and only what that
-    did not show is added. Once added, one a manager takes off stays off."""
-    fields = _on_tasks(plugin.definition, "fields", "key")
-    parts = _on_tasks(plugin.definition, "parts", "id")
-    before = {entry["key"]: entry for entry in _on_tasks(previous, "fields", "key")}
-    parts_before = {entry["id"] for entry in _on_tasks(previous, "parts", "id")}
-    await tool_layouts_service.add_to_saved_details(
-        session,
-        initiative_ids,
-        [
-            *(
-                {
-                    "type": "field",
-                    "props": {
-                        "field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{field['key']}"
-                    },
-                }
-                for field in fields
-                if not _shown_in_parts(parts, field)
-                and (
-                    field["key"] not in before
-                    or _shown_in_parts(
-                        _on_tasks(previous, "parts", "id"), before[field["key"]]
-                    )
-                )
-            ),
-            *(
-                {"type": "plugin", "props": {"plugin": plugin.id, "part": part["id"]}}
-                for part in parts
-                if part["id"] not in parts_before
-            ),
-        ],
-    )
-
-
-def _shown_in_parts(parts: list[dict], field: dict) -> bool:
-    """Whether one of the parts a task's page shows, up to the limit, shows
-    ``field`` wherever the field itself is offered: its tree shows it, and it
-    asks no connection the field does not."""
-    return any(
-        field["key"] in set(_fields_in_tree(part.get("tree")))
-        and part.get("requires") in (None, field.get("requires"))
-        for part in parts[: tool_layouts_service.MAX_PLUGIN_PARTS]
-    )
+    """Show the install's fields, then its parts, on the saved details of these
+    initiatives, for each kind of item whose page draws plug-ins, as it
+    declares them: what placing it does. After an upgrade, ``previous`` is the
+    definition it replaced, and only what that did not declare is added. Once
+    added, one a manager takes off stays off. A field one of its parts also
+    shows is drawn once, where the page is drawn."""
+    for kind in tool_layouts_service.PLUGIN_DETAILS:
+        fields = _arriving(plugin.definition, previous, "fields", "key", kind)
+        parts = _arriving(plugin.definition, previous, "parts", "id", kind)
+        await tool_layouts_service.add_to_saved_details(
+            session,
+            kind,
+            initiative_ids,
+            [
+                *(
+                    {
+                        "type": "field",
+                        "props": {"field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"},
+                    }
+                    for key in fields
+                ),
+                *(
+                    {"type": "plugin", "props": {"plugin": plugin.id, "part": part}}
+                    for part in parts
+                ),
+            ],
+        )
 
 
 # --- opening a surface ------------------------------------------------------

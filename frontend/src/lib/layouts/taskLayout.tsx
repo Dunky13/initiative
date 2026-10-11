@@ -76,6 +76,8 @@ import {
 } from "./fieldEditors";
 import { type FieldKind, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
 import {
+  FieldsInParts,
+  fieldsInParts,
   PluginFieldOnDetail,
   PluginPartView,
   pluginFields,
@@ -646,6 +648,7 @@ export const TaskLayoutView = ({
     [layout, plugins]
   );
   const placed = useMemo(() => placedProperties(tree), [tree]);
+  const inParts = useMemo(() => fieldsInParts(tree, plugins), [tree, plugins]);
   // The detail's labels are the fields' own.
   const view = useMemo<LayoutContext>(
     () => ({
@@ -661,7 +664,9 @@ export const TaskLayoutView = ({
     // Another task's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${task.id}`} value={context}>
       <PlacedProperties.Provider value={placed}>
-        {renderNode(tree, task, view, TASK_PARTS)}
+        <FieldsInParts.Provider value={inParts}>
+          {renderNode(tree, task, view, TASK_PARTS)}
+        </FieldsInParts.Provider>
       </PlacedProperties.Provider>
     </DetailContext.Provider>
   );

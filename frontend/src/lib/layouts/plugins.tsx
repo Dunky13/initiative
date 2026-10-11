@@ -1,5 +1,5 @@
 import { Check, ExternalLink, Minus } from "lucide-react";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { createContext, Fragment, type ReactNode, useContext, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -78,27 +78,29 @@ export type PluginOnItems = {
   actions: ReadonlyMap<string, PluginActionDecl>;
 };
 
-/** A task: the kind of item plug-ins are drawn on so far. */
-const KIND = "task";
+/** The kinds of item whose pages draw plug-ins, as the manifest names them. */
+export type PluginItemKind = "task";
 
-/** What a block declares on tasks, of what the server offers the reader. */
+/** What a block declares on one kind of item, of what the server offers the
+ *  reader. */
 const declared = <T extends { on: string[] }>(
   definition: object,
   block: string,
   id: keyof T,
-  offered: string[]
+  offered: string[],
+  kind: PluginItemKind
 ) => {
   const entries = (definition as Record<string, unknown>)[block];
   return new Map(
     (Array.isArray(entries) ? (entries as T[]) : [])
-      .filter((entry) => Array.isArray(entry?.on) && entry.on.includes(KIND))
+      .filter((entry) => Array.isArray(entry?.on) && entry.on.includes(kind))
       .filter((entry) => offered.includes(String(entry[id])))
       .map((entry) => [String(entry[id]), entry])
   );
 };
 
-/** The installs whose values, parts and actions a reader meets on the tasks of
- *  one initiative. */
+/** The installs whose values, parts and actions a reader meets on one kind of
+ *  item in one initiative. */
 export const pluginsOnItems = (
   installs: Pick<
     CommunityPluginRead,
@@ -111,7 +113,8 @@ export const pluginsOnItems = (
     | "item_parts"
     | "item_actions"
   >[],
-  initiativeId: number
+  initiativeId: number,
+  kind: PluginItemKind = "task"
 ): ReadonlyMap<number, PluginOnItems> =>
   new Map(
     installs
@@ -126,14 +129,22 @@ export const pluginsOnItems = (
               install.definition,
               "fields",
               "key",
-              install.item_fields
+              install.item_fields,
+              kind
             ),
-            parts: declared<PluginPartDecl>(install.definition, "parts", "id", install.item_parts),
+            parts: declared<PluginPartDecl>(
+              install.definition,
+              "parts",
+              "id",
+              install.item_parts,
+              kind
+            ),
             actions: declared<PluginActionDecl>(
               install.definition,
               "actions",
               "id",
-              install.item_actions
+              install.item_actions,
+              kind
             ),
           },
         ];
@@ -145,12 +156,14 @@ const NO_PLUGINS: ReadonlyMap<number, PluginOnItems> = new Map();
 /** {@link pluginsOnItems} for the community's installs, once they load. */
 export const usePluginsOnItems = (
   initiativeId: number | null | undefined,
-  enabled = true
+  enabled = true,
+  kind: PluginItemKind = "task"
 ): ReadonlyMap<number, PluginOnItems> => {
   const { data } = useCommunityPlugins({ enabled: enabled && initiativeId != null });
   return useMemo(
-    () => (data && initiativeId != null ? pluginsOnItems(data.items, initiativeId) : NO_PLUGINS),
-    [data, initiativeId]
+    () =>
+      data && initiativeId != null ? pluginsOnItems(data.items, initiativeId, kind) : NO_PLUGINS,
+    [data, initiativeId, kind]
   );
 };
 
@@ -188,28 +201,55 @@ export const pluginFilterFields = (
 /** How many parts of one install a tree may place, as the contract says. */
 export const MAX_PLUGIN_PARTS = contract.caps.partsPlacedPerItem;
 
-/** The install's own fields a part's tree shows. */
-const fieldsInTree = (node: LayoutNode, into: Set<string>): Set<string> => {
-  if (node.type === "field" || node.type === "value") into.add(String(node.props?.field));
-  for (const child of node.children ?? []) fieldsInTree(child, into);
-  return into;
-};
-
-/** What a task's page draws of the plug-ins until its layout is saved: each
+/** What an item's page draws of the plug-ins until its layout is saved: each
  *  install's fields, then its parts up to {@link MAX_PLUGIN_PARTS}, as it
- *  declares them. A field one of those parts shows is drawn there only. */
+ *  declares them. A field a drawn part also shows is drawn there only
+ *  ({@link FieldsInParts}). */
 export const shippedPluginParts = (plugins: ReadonlyMap<number, PluginOnItems>): LayoutNode[] =>
-  [...plugins.values()].flatMap(({ id, fields, parts }) => {
-    const drawn = [...parts.values()].slice(0, MAX_PLUGIN_PARTS);
-    const inParts = new Set<string>();
-    for (const part of drawn) fieldsInTree(part.tree, inParts);
-    return [
-      ...[...fields.keys()]
-        .filter((key) => !inParts.has(key))
-        .map((key) => ({ type: "field", props: { field: pluginFieldId(id, key) } })),
-      ...drawn.map((part) => ({ type: "plugin", props: { plugin: id, part: part.id } })),
-    ];
-  });
+  [...plugins.values()].flatMap(({ id, fields, parts }) => [
+    ...[...fields.keys()].map((key) => ({
+      type: "field",
+      props: { field: pluginFieldId(id, key) },
+    })),
+    ...[...parts.keys()]
+      .slice(0, MAX_PLUGIN_PARTS)
+      .map((part) => ({ type: "plugin", props: { plugin: id, part } })),
+  ]);
+
+/** Every node of a tree, at any depth. */
+const nodesOf = (node: LayoutNode): LayoutNode[] => [
+  node,
+  ...(node.children ?? []).flatMap(nodesOf),
+];
+
+/**
+ * The plug-in fields an item's page already shows inside a part it draws, by
+ * field id: a part the page places, the reader is offered, and whose tree
+ * shows the field. Drawn there, the field is not drawn again on its own. A
+ * part that does not draw (taken off, or waiting on a connection) hides
+ * nothing, so its fields show on their own.
+ */
+export const fieldsInParts = (
+  root: LayoutNode,
+  plugins: ReadonlyMap<number, PluginOnItems>
+): Set<string> =>
+  new Set(
+    nodesOf(root)
+      .filter((node) => node.type === "plugin")
+      .flatMap((node) => {
+        const plugin = plugins.get(Number(node.props?.plugin));
+        const part = plugin?.parts.get(String(node.props?.part));
+        if (!plugin || !part) return [];
+        return nodesOf(part.tree)
+          .filter((shown) => shown.type === "field" || shown.type === "value")
+          .map((shown) => String(shown.props?.field))
+          .filter((key) => plugin.fields.has(key))
+          .map((key) => pluginFieldId(plugin.id, key));
+      })
+  );
+
+/** What the page being drawn shows inside its parts ({@link fieldsInParts}). */
+export const FieldsInParts = createContext<ReadonlySet<string>>(new Set());
 
 const pluginValue = (values: PluginValueSummary[] | undefined, install: number, key: string) =>
   values?.find((value) => value.plugin_id === install && value.key === key)?.value ?? null;
@@ -366,7 +406,8 @@ export const PluginField = ({ value, field, variant }: FieldRendererProps) => {
 /** A plug-in field on a detail: its name above its value, which the
  *  plug-in alone changes. */
 export const PluginFieldOnDetail = ({ field, item }: { field: FieldDef; item: PluginItem }) => {
-  if (!field.plugin) return null;
+  const inParts = useContext(FieldsInParts);
+  if (!field.plugin || inParts.has(field.id)) return null;
   const { install, field: declared } = field.plugin;
   const value = pluginValue(item.plugin_values, install, declared.key);
   if (!shows(declared.kind, value)) return null;

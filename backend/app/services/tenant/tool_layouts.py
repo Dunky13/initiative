@@ -398,14 +398,19 @@ async def drop_for_instances(
         )
 
 
-#: The detail plug-ins are drawn on so far.
-PLUGIN_DETAIL = "task"
+#: The details that draw plug-ins, each named as the kind of item it shows.
+PLUGIN_DETAILS = tuple(
+    kind for kind, parts in DETAIL_PARTS.items() if "plugin" in parts
+)
 
 
 async def add_to_saved_details(
-    session: AsyncSession, initiative_ids: Iterable[int], nodes: list[dict[str, Any]]
+    session: AsyncSession,
+    kind: str,
+    initiative_ids: Iterable[int],
+    nodes: list[dict[str, Any]],
 ) -> None:
-    """Add parts to the end of the side of every saved task detail in these
+    """Add parts to the end of the side of every saved ``kind`` detail in these
     initiatives: what a plug-in shows as it arrives. A detail already holding
     one keeps it where it is, a plug-in's parts stop at its limit, and a detail
     the parts would take past its limits is left as it is. A detail not saved
@@ -417,7 +422,7 @@ async def add_to_saved_details(
         select(ToolLayout)
         .where(
             col(ToolLayout.initiative_id).in_(ids),
-            ToolLayout.kind == PLUGIN_DETAIL,
+            ToolLayout.kind == kind,
         )
         .with_for_update()
     )
