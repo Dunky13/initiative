@@ -744,5 +744,6 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "Dieser Fall wurde nicht gefunden, oder du kannst ihn nicht öffnen.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Für einen Fall dieser Art kann kein Zugriff angefragt werden.",
   "ACCESS_GRANT_CASE_CLOSED": "Dieser Fall ist geschlossen.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community.",
+  "HOLD_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community als diesen Inhalt."
 }

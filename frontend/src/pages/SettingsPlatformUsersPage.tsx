@@ -1,24 +1,12 @@
-import {
-  CalendarClock,
-  Download,
-  LockOpen,
-  Mail,
-  MailCheck,
-  ShieldOff,
-  Trash2,
-  UserCheck,
-} from "lucide-react";
+import { Download } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   ListAllUsersSortBy,
   type OperatorUserRead,
-  UserAction,
   type UserRole,
 } from "@/api/generated/initiativeAPI.schemas";
-import { invalidate, q } from "@/api/query-keys";
-import { OperatorDeleteUserDialog } from "@/components/platform/OperatorDeleteUserDialog";
 import {
   sheetOffersSomething,
   UserOperatorSettingsSheet,
@@ -29,22 +17,11 @@ import { UserHandle } from "@/components/UserHandle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable } from "@/components/ui/data-table";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { useAuth } from "@/hooks/useAuth";
-import {
-  useExportPlatformUsersCsv,
-  useOperatorClearAgeBlock,
-  useOperatorClearSecondFactor,
-  useOperatorLiftSignInLock,
-  useOperatorReactivateUser,
-  useOperatorResendVerification,
-  useOperatorRestoreUser,
-  useOperatorTriggerPasswordReset,
-  usePlatformUsers,
-} from "@/hooks/useOperatorUsers";
+import { useExportPlatformUsersCsv, usePlatformUsers } from "@/hooks/useOperatorUsers";
 import { useServerTableState } from "@/hooks/useServerTableState";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
@@ -61,15 +38,6 @@ const SORT_FIELDS = Object.values(ListAllUsersSortBy);
 export const SettingsPlatformUsersPage = () => {
   const { t } = useTranslation(["settings", "common"]);
   const { user } = useAuth();
-  const [resettingUserId, setResettingUserId] = useState<number | null>(null);
-  const [resetPasswordConfirm, setResetPasswordConfirm] = useState<{
-    userId: number;
-    handle: string;
-  } | null>(null);
-  const [clearSecondFactorTarget, setClearSecondFactorTarget] = useState<OperatorUserRead | null>(
-    null
-  );
-  const [deleteUserTarget, setDeleteUserTarget] = useState<OperatorUserRead | null>(null);
   const [managingId, setManagingId] = useState<number | null>(null);
 
   // Viewing the roster needs ``users.read`` (support+). What the viewer may do
@@ -90,74 +58,6 @@ export const SettingsPlatformUsersPage = () => {
   // Read the row back out of the query, so a save re-renders the sheet with
   // what was actually persisted.
   const managing = rows.find((row) => row.id === managingId) ?? null;
-  // The account a toast names: its handle while its row is on the page.
-  const handleOf = (userId: number): string =>
-    rows.find((row) => row.id === userId)?.username ?? t("common:userWithId", { id: userId });
-
-  const resetPassword = useOperatorTriggerPasswordReset({
-    onSuccess: (_data, userId) => {
-      toast.success(t("platformUsers.resetSuccess", { handle: handleOf(userId) }));
-      setResettingUserId(null);
-    },
-    onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, "settings:platformUsers.resetError"));
-      setResettingUserId(null);
-    },
-  });
-
-  const resendVerification = useOperatorResendVerification({
-    onSuccess: (_data, userId) => {
-      toast.success(t("platformUsers.resendVerificationSuccess", { handle: handleOf(userId) }));
-    },
-    onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, "settings:platformUsers.resendVerificationError"));
-    },
-  });
-
-  const clearAgeBlock = useOperatorClearAgeBlock({
-    onSuccess: () => toast.success(t("settings:platformUsers.ageBlockCleared")),
-    onError: (err) => toast.error(getErrorMessage(err, "settings:platformUsers.actionError")),
-  });
-
-  const liftSignInLock = useOperatorLiftSignInLock({
-    onSuccess: () => toast.success(t("settings:platformUsers.signInLockLifted")),
-    onError: (err) => toast.error(getErrorMessage(err, "settings:platformUsers.actionError")),
-  });
-
-  const clearSecondFactor = useOperatorClearSecondFactor({
-    onSuccess: () => toast.success(t("settings:platformUsers.secondFactorCleared")),
-    onError: (err) => toast.error(getErrorMessage(err, "settings:platformUsers.actionError")),
-  });
-
-  const reactivateUser = useOperatorReactivateUser({
-    onSuccess: (_data, userId) => {
-      toast.success(t("platformUsers.reactivateSuccess", { handle: handleOf(userId) }));
-    },
-    onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, "settings:platformUsers.reactivateError"));
-    },
-  });
-
-  const restoreUser = useOperatorRestoreUser({
-    onSuccess: (_data, userId) => {
-      toast.success(t("platformUsers.restoreSuccess", { handle: handleOf(userId) }));
-    },
-    onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, "settings:platformUsers.restoreError"));
-    },
-  });
-
-  const handleResetPassword = (userId: number, handle: string) => {
-    setResetPasswordConfirm({ userId, handle });
-  };
-
-  const confirmResetPassword = () => {
-    if (resetPasswordConfirm) {
-      setResettingUserId(resetPasswordConfirm.userId);
-      resetPassword.mutate(resetPasswordConfirm.userId);
-      setResetPasswordConfirm(null);
-    }
-  };
 
   const exportPlatformUsers = useExportPlatformUsersCsv({
     onError: (err) => {
@@ -323,92 +223,14 @@ export const SettingsPlatformUsersPage = () => {
       enableSorting: false,
       cell: ({ row }) => {
         const platformUser = row.original;
-        const isResetting = resettingUserId === platformUser.id;
-        const allows = (action: UserAction): boolean =>
-          platformUser.allowed_actions.includes(action);
-
+        // Every act on the account is in its sheet, where the case it is for
+        // can be named; what is left here acts on nothing.
         return (
           <RowActionsMenu subject={getUserHandle(platformUser)}>
-            {allows(UserAction.reactivate) && (
-              <DropdownMenuItem onSelect={() => reactivateUser.mutate(platformUser.id)}>
-                <UserCheck className="h-4 w-4" />
-                {t("platformUsers.reactivate")}
-              </DropdownMenuItem>
-            )}
-            {/* Distinct from reactivating: nothing was dropped, so this puts
-                the account back exactly where it was. Its holder can do the
-                same thing by simply signing in. */}
-            {allows(UserAction.restore) && (
-              <DropdownMenuItem
-                onSelect={() => restoreUser.mutate(platformUser.id)}
-                disabled={restoreUser.isPending}
-              >
-                <UserCheck className="h-4 w-4" />
-                {t("platformUsers.restore")}
-              </DropdownMenuItem>
-            )}
-            {allows(UserAction.reset_password) && (
-              <DropdownMenuItem
-                onSelect={() => handleResetPassword(platformUser.id, platformUser.username)}
-                disabled={isResetting || resetPassword.isPending}
-              >
-                <Mail className="h-4 w-4" />
-                {isResetting ? t("common:submitting") : t("platformUsers.resetPassword")}
-              </DropdownMenuItem>
-            )}
-            {allows(UserAction.resend_verification) && (
-              <DropdownMenuItem
-                onSelect={() => resendVerification.mutate(platformUser.id)}
-                disabled={resendVerification.isPending}
-              >
-                <MailCheck className="h-4 w-4" />
-                {t("platformUsers.resendVerification")}
-              </DropdownMenuItem>
-            )}
-            {allows(UserAction.lift_sign_in_lock) && (
-              <DropdownMenuItem
-                onSelect={() => liftSignInLock.mutate(platformUser.id)}
-                disabled={liftSignInLock.isPending}
-              >
-                <LockOpen className="h-4 w-4" />
-                {t("platformUsers.liftSignInLock")}
-              </DropdownMenuItem>
-            )}
-            {allows(UserAction.clear_second_factor) && (
-              <DropdownMenuItem onSelect={() => setClearSecondFactorTarget(platformUser)}>
-                <ShieldOff className="h-4 w-4" />
-                {t("platformUsers.clearSecondFactor")}
-              </DropdownMenuItem>
-            )}
-            {/* Under age, or a date on file that may be a typo: either way it
-                is put right by answering again. */}
-            {allows(UserAction.clear_age_block) && (
-              <DropdownMenuItem
-                onSelect={() => clearAgeBlock.mutate(platformUser.id)}
-                disabled={clearAgeBlock.isPending}
-              >
-                <CalendarClock className="h-4 w-4" />
-                {t("platformUsers.clearAgeBlock")}
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem onSelect={() => exportUserCsv(platformUser)}>
               <Download className="h-4 w-4" />
               {t("platformUsers.exportUser")}
             </DropdownMenuItem>
-            {allows(UserAction.delete) && (
-              <>
-                {/* Deleting an account is the one thing here that cannot be
-                    undone, so it sits below a rule rather than in the run. */}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onSelect={() => setDeleteUserTarget(platformUser)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {t("platformUsers.deleteUser")}
-                </DropdownMenuItem>
-              </>
-            )}
           </RowActionsMenu>
         );
       },
@@ -452,46 +274,6 @@ export const SettingsPlatformUsersPage = () => {
           actorRole={actorRole}
         />
       </Card>
-
-      <ConfirmDialog
-        open={resetPasswordConfirm !== null}
-        onOpenChange={(open) => !open && setResetPasswordConfirm(null)}
-        title={t("platformUsers.resetPassword")}
-        description={t("platformUsers.resetDescription", {
-          handle: resetPasswordConfirm?.handle ?? "this account",
-        })}
-        confirmLabel={t("common:send")}
-        cancelLabel={t("common:cancel")}
-        onConfirm={confirmResetPassword}
-        isLoading={resetPassword.isPending}
-      />
-
-      <ConfirmDialog
-        open={clearSecondFactorTarget !== null}
-        onOpenChange={(open) => !open && setClearSecondFactorTarget(null)}
-        title={t("platformUsers.clearSecondFactor")}
-        description={t("platformUsers.clearSecondFactorDescription", {
-          handle: clearSecondFactorTarget ? getUserHandle(clearSecondFactorTarget) : "",
-        })}
-        confirmLabel={t("platformUsers.clearSecondFactorConfirm")}
-        cancelLabel={t("common:cancel")}
-        onConfirm={() => {
-          if (clearSecondFactorTarget) clearSecondFactor.mutate(clearSecondFactorTarget.id);
-        }}
-        isLoading={clearSecondFactor.isPending}
-        destructive
-      />
-
-      {deleteUserTarget && (
-        <OperatorDeleteUserDialog
-          open={deleteUserTarget !== null}
-          onOpenChange={(open) => !open && setDeleteUserTarget(null)}
-          onSuccess={() => {
-            void invalidate(q.operatorUsers());
-          }}
-          targetUser={deleteUserTarget}
-        />
-      )}
     </div>
   );
 };

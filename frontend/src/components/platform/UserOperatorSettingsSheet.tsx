@@ -16,7 +16,19 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { Eraser, ImageOff, KeyRound, LogOut } from "lucide-react";
+import {
+  CalendarClock,
+  Eraser,
+  ImageOff,
+  KeyRound,
+  LockOpen,
+  LogOut,
+  Mail,
+  MailCheck,
+  ShieldOff,
+  Trash2,
+  UserCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -26,6 +38,7 @@ import {
   type UserRole,
 } from "@/api/generated/initiativeAPI.schemas";
 import { CasePicker } from "@/components/platform/CasePicker";
+import { OperatorDeleteUserDialog } from "@/components/platform/OperatorDeleteUserDialog";
 import { Section, SettingRow } from "@/components/platform/SettingRow";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -47,12 +60,19 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   type OperatorProfileField,
   useOperatorAccountCases,
+  useOperatorClearAgeBlock,
   useOperatorClearProfileField,
+  useOperatorClearSecondFactor,
+  useOperatorLiftSignInLock,
+  useOperatorReactivateUser,
   useOperatorRemoveAvatar,
+  useOperatorResendVerification,
+  useOperatorRestoreUser,
   useOperatorRevokeApiKeys,
   useOperatorSetSuspension,
   useOperatorSetUsername,
   useOperatorSignOutEverywhere,
+  useOperatorTriggerPasswordReset,
   useOperatorUpdatePlatformRole,
 } from "@/hooks/useOperatorUsers";
 import { useServerForm } from "@/hooks/useServerForm";
@@ -79,26 +99,11 @@ const platformRoleLabel = (role: UserRole, t: TranslateFn): string =>
 const platformRoleDescription = (role: UserRole, t: TranslateFn): string =>
   t(`platformUsers.roleDescriptions.${role}`);
 
-/** The actions this sheet offers. The rest of `allowed_actions` live in the
- *  row's menu. */
-const SHEET_ACTIONS: readonly UserAction[] = [
-  UserAction.rename,
-  UserAction.remove_avatar,
-  UserAction.clear_display_names,
-  UserAction.clear_custom_status,
-  UserAction.clear_decorations,
-  UserAction.suspend,
-  UserAction.unsuspend,
-  UserAction.revoke_api_keys,
-  UserAction.sign_out_everywhere,
-  UserAction.change_role,
-];
-
-/** True when the sheet would offer something for this account: one of its
- *  actions, or the account's open cases. */
+/** True when the sheet would offer something for this account: any action on
+ *  it, or its open cases. Every act on an account is taken here, where the
+ *  case it is for can be named. */
 export const sheetOffersSomething = (target: OperatorUserRead): boolean =>
-  target.open_case_count > 0 ||
-  target.allowed_actions.some((action) => SHEET_ACTIONS.includes(action));
+  target.open_case_count > 0 || target.allowed_actions.length > 0;
 
 /** The three parts of a profile a moderator clears, each with the action that
  *  allows it and where its words live. */
@@ -194,6 +199,9 @@ export const UserOperatorSettingsSheet = ({
   const [apiKeysConfirm, setApiKeysConfirm] = useState(false);
   const [signOutConfirm, setSignOutConfirm] = useState(false);
   const [clearing, setClearing] = useState<OperatorProfileField | null>(null);
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [secondFactorConfirm, setSecondFactorConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // The acts here may be taken for an operations case, which hears of each.
   // Chosen afresh for each account the sheet opens on.
   const { user: viewer } = useAuth();
@@ -299,6 +307,71 @@ export const UserOperatorSettingsSheet = ({
     caseTaskId
   );
 
+  const actionError = (err: unknown) =>
+    toast.error(getErrorMessage(err, "settings:platformUsers.actionError"));
+  const handle = user ? getUserHandle(user) : "";
+
+  const resetPassword = useOperatorTriggerPasswordReset(
+    {
+      onSuccess: () => {
+        toast.success(t("platformUsers.resetSuccess", { handle }));
+        setResetConfirm(false);
+      },
+      onError: (err) => {
+        toast.error(getErrorMessage(err, "settings:platformUsers.resetError"));
+        setResetConfirm(false);
+      },
+    },
+    caseTaskId
+  );
+  // Sends nothing new and changes nothing, so no case hears of it.
+  const resendVerification = useOperatorResendVerification({
+    onSuccess: () => toast.success(t("platformUsers.resendVerificationSuccess", { handle })),
+    onError: (err) =>
+      toast.error(getErrorMessage(err, "settings:platformUsers.resendVerificationError")),
+  });
+  const liftSignInLock = useOperatorLiftSignInLock(
+    {
+      onSuccess: () => toast.success(t("platformUsers.signInLockLifted")),
+      onError: actionError,
+    },
+    caseTaskId
+  );
+  const clearSecondFactor = useOperatorClearSecondFactor(
+    {
+      onSuccess: () => {
+        toast.success(t("platformUsers.secondFactorCleared"));
+        setSecondFactorConfirm(false);
+      },
+      onError: (err) => {
+        actionError(err);
+        setSecondFactorConfirm(false);
+      },
+    },
+    caseTaskId
+  );
+  const clearAgeBlock = useOperatorClearAgeBlock(
+    {
+      onSuccess: () => toast.success(t("platformUsers.ageBlockCleared")),
+      onError: actionError,
+    },
+    caseTaskId
+  );
+  const reactivate = useOperatorReactivateUser(
+    {
+      onSuccess: () => toast.success(t("platformUsers.reactivateSuccess", { handle })),
+      onError: (err) => toast.error(getErrorMessage(err, "settings:platformUsers.reactivateError")),
+    },
+    caseTaskId
+  );
+  const restore = useOperatorRestoreUser(
+    {
+      onSuccess: () => toast.success(t("platformUsers.restoreSuccess", { handle })),
+      onError: (err) => toast.error(getErrorMessage(err, "settings:platformUsers.restoreError")),
+    },
+    caseTaskId
+  );
+
   if (!user) return null;
 
   const isSuspended = user.status === "suspended";
@@ -313,6 +386,16 @@ export const UserOperatorSettingsSheet = ({
   const showApiKeys = allows(UserAction.revoke_api_keys);
   const showSignOut = allows(UserAction.sign_out_everywhere);
   const showRole = allows(UserAction.change_role);
+  const showReset = allows(UserAction.reset_password);
+  const showResend = allows(UserAction.resend_verification);
+  const showSignInLock = allows(UserAction.lift_sign_in_lock);
+  const showSecondFactor = allows(UserAction.clear_second_factor);
+  const showSignIn = showReset || showResend || showSignInLock || showSecondFactor;
+  const showReactivate = allows(UserAction.reactivate);
+  const showRestore = allows(UserAction.restore);
+  const showAgeBlock = allows(UserAction.clear_age_block);
+  const showStanding = showReactivate || showRestore || showAgeBlock;
+  const showDelete = allows(UserAction.delete);
   const clearingEntry = PROFILE_FIELDS.find((item) => item.field === clearing) ?? null;
 
   const commitUsername = () => {
@@ -356,6 +439,67 @@ export const UserOperatorSettingsSheet = ({
           ) : null}
 
           <div className="space-y-6 py-6">
+            {showStanding && (
+              <Section title={t("platformUsers.sheet.standing")}>
+                {showReactivate && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.reactivateLabel")}
+                    help={t("platformUsers.sheet.reactivateHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => reactivate.mutate(user.id)}
+                        disabled={reactivate.isPending}
+                      >
+                        <UserCheck className="h-4 w-4" />
+                        {t("platformUsers.reactivate")}
+                      </Button>
+                    }
+                  />
+                )}
+                {/* Distinct from reactivating: nothing was dropped, so this
+                    puts the account back exactly where it was. */}
+                {showRestore && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.restoreLabel")}
+                    help={t("platformUsers.sheet.restoreHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => restore.mutate(user.id)}
+                        disabled={restore.isPending}
+                      >
+                        <UserCheck className="h-4 w-4" />
+                        {t("platformUsers.restore")}
+                      </Button>
+                    }
+                  />
+                )}
+                {showAgeBlock && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.ageBlockLabel")}
+                    help={t("platformUsers.sheet.ageBlockHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => clearAgeBlock.mutate(user.id)}
+                        disabled={clearAgeBlock.isPending}
+                      >
+                        <CalendarClock className="h-4 w-4" />
+                        {t("platformUsers.clearAgeBlock")}
+                      </Button>
+                    }
+                  />
+                )}
+              </Section>
+            )}
+
             {(showIdentity || showAvatar || clearable.length > 0) && (
               <Section title={t("platformUsers.sheet.identity")}>
                 {showIdentity && (
@@ -489,6 +633,83 @@ export const UserOperatorSettingsSheet = ({
               </Section>
             )}
 
+            {showSignIn && (
+              <Section title={t("platformUsers.sheet.signIn")}>
+                {showReset && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.resetLabel")}
+                    help={t("platformUsers.sheet.resetHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setResetConfirm(true)}
+                        disabled={resetPassword.isPending}
+                      >
+                        <Mail className="h-4 w-4" />
+                        {t("platformUsers.resetPassword")}
+                      </Button>
+                    }
+                  />
+                )}
+                {showResend && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.resendLabel")}
+                    help={t("platformUsers.sheet.resendHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => resendVerification.mutate(user.id)}
+                        disabled={resendVerification.isPending}
+                      >
+                        <MailCheck className="h-4 w-4" />
+                        {t("platformUsers.sheet.resend")}
+                      </Button>
+                    }
+                  />
+                )}
+                {showSignInLock && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.signInLockLabel")}
+                    help={t("platformUsers.sheet.signInLockHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => liftSignInLock.mutate(user.id)}
+                        disabled={liftSignInLock.isPending}
+                      >
+                        <LockOpen className="h-4 w-4" />
+                        {t("platformUsers.sheet.signInLockLift")}
+                      </Button>
+                    }
+                  />
+                )}
+                {showSecondFactor && (
+                  <SettingRow
+                    label={t("platformUsers.sheet.secondFactorLabel")}
+                    help={t("platformUsers.sheet.secondFactorHelp")}
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSecondFactorConfirm(true)}
+                        disabled={clearSecondFactor.isPending}
+                      >
+                        <ShieldOff className="h-4 w-4" />
+                        {t("platformUsers.sheet.secondFactorClear")}
+                      </Button>
+                    }
+                  />
+                )}
+              </Section>
+            )}
+
             {showRole && (
               <Section title={t("platformUsers.sheet.role")}>
                 <SettingRow
@@ -532,6 +753,27 @@ export const UserOperatorSettingsSheet = ({
             )}
 
             {user.open_case_count > 0 && <AccountCases user={user} open={open} />}
+
+            {/* The one thing here that may not be undone, so it comes last. */}
+            {showDelete && (
+              <Section title={t("platformUsers.sheet.deleteSection")}>
+                <SettingRow
+                  label={t("platformUsers.deleteUser")}
+                  help={t("platformUsers.sheet.deleteHelp")}
+                  control={
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleting(true)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {t("platformUsers.sheet.delete")}
+                    </Button>
+                  }
+                />
+              </Section>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -630,6 +872,41 @@ export const UserOperatorSettingsSheet = ({
         isLoading={signOut.isPending}
         onConfirm={() => signOut.mutate(user.id)}
       />
+
+      <ConfirmDialog
+        open={resetConfirm}
+        onOpenChange={setResetConfirm}
+        title={t("platformUsers.resetPassword")}
+        description={t("platformUsers.resetDescription", { handle })}
+        confirmLabel={t("common:send")}
+        cancelLabel={t("common:cancel")}
+        loadingLabel={t("common:submitting")}
+        isLoading={resetPassword.isPending}
+        onConfirm={() => resetPassword.mutate(user.id)}
+      />
+
+      <ConfirmDialog
+        open={secondFactorConfirm}
+        onOpenChange={setSecondFactorConfirm}
+        title={t("platformUsers.clearSecondFactor")}
+        description={t("platformUsers.clearSecondFactorDescription", { handle })}
+        confirmLabel={t("platformUsers.clearSecondFactorConfirm")}
+        cancelLabel={t("common:cancel")}
+        loadingLabel={t("common:submitting")}
+        destructive
+        isLoading={clearSecondFactor.isPending}
+        onConfirm={() => clearSecondFactor.mutate(user.id)}
+      />
+
+      {deleting && (
+        <OperatorDeleteUserDialog
+          open={deleting}
+          onOpenChange={setDeleting}
+          onSuccess={() => onOpenChange(false)}
+          targetUser={user}
+          caseTaskId={caseTaskId}
+        />
+      )}
 
       <ConfirmDialog
         open={clearingEntry !== null}

@@ -811,3 +811,83 @@ async def test_restoring_undoes_only_the_removal_standing_on_it(client, session,
     await session.commit()
     await set_rls_context(session, Unattributed())
     assert (await restore(third["id"])).status_code == 409
+
+
+# -- What the audit log says ---------------------------------------------------
+
+
+async def test_the_platforms_acts_are_written_in_its_audit_log(
+    client, session, scene, capfd
+):
+    """A community's own moderators write only to its log (see the moderation
+    suite); a platform moderator acting under a Moderate grant writes to the
+    platform's audit log too, naming the grant."""
+    from app.core.audit_events import AuditEventType
+    from app.testing import create_user
+    from app.testing.audit import emitted
+    from app.testing.factories import create_access_grant, get_auth_headers
+
+    guild = scene["mod"].guild
+    platform = await create_user(session, role="moderator")
+    grant = await create_access_grant(
+        session, user=platform, guild=guild, access_level="moderate"
+    )
+    await set_rls_context(session, Unattributed())
+    headers = get_auth_headers(platform)
+    task_id = scene["task"].id
+
+    emitted(capfd)
+    for act in ("lock_comments", "unlock_comments"):
+        response = await client.post(
+            f"/api/v1/c/{guild.id}/moderation/acts",
+            json={"act": act, "target_type": "task", "target_id": task_id},
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+    removed = await client.post(
+        f"/api/v1/c/{guild.id}/moderation/acts",
+        json={
+            "act": "remove",
+            "target_type": "comment",
+            "target_id": scene["comment"].id,
+            "reason": "spam",
+        },
+        headers=headers,
+    )
+    assert removed.status_code == 201, removed.text
+
+    lines = emitted(capfd)
+    kinds = [line["event_type"] for line in lines]
+    for event in (
+        AuditEventType.MODERATION_COMMENTS_LOCKED,
+        AuditEventType.MODERATION_COMMENTS_UNLOCKED,
+        AuditEventType.MODERATION_CONTENT_REMOVED,
+    ):
+        assert kinds.count(event.value) == 1, kinds
+    line = next(
+        line
+        for line in lines
+        if line["event_type"] == AuditEventType.MODERATION_CONTENT_REMOVED.value
+    )
+    assert line["actor_user_id"] == platform.id
+    assert line["guild_id"] == guild.id
+    assert line["detail"]["via_grant_id"] == grant.id
+    assert line["detail"]["action_id"] == removed.json()["id"]
+    # Never the words a removal took down.
+    assert scene["comment"].content not in json.dumps(line)
+
+
+async def test_a_community_moderators_acts_stay_out_of_the_audit_log(
+    client, scene, capfd
+):
+    from app.testing.audit import emitted
+
+    emitted(capfd)
+    for act in ("lock_comments", "unlock_comments"):
+        response = await _act(client, scene["mod"], act, "task", scene["task"].id)
+        assert response.status_code == 201, response.text
+    assert [
+        line["event_type"]
+        for line in emitted(capfd)
+        if line["event_type"].startswith("moderation.")
+    ] == []

@@ -448,6 +448,13 @@ const BreakGlassSection = () => {
   );
 };
 
+/** The content rung the request form starts on: the one the link that opened
+ *  it named, where the reader may ask for it, and read-only otherwise. */
+const startingLevel = (search: AccessGrantsSearch, canModerate: boolean): string => {
+  if (search.form !== "request" || !search.level) return "read";
+  return search.level === "moderate" && !canModerate ? "read" : search.level;
+};
+
 const RequestSection = () => {
   const { t } = useTranslation(["settings", "common"]);
   const { user } = useAuth();
@@ -465,6 +472,7 @@ const RequestSection = () => {
     limits.data?.max_duration_minutes
   );
   const defaultDuration = String(durationOptions.includes(240) ? 240 : (durationOptions[0] ?? ""));
+  const search = useSearch({ strict: false }) as AccessGrantsSearch;
   const preselected = usePreselectedCommunity("request");
   const [pickedCommunity, setCommunity] = useState<PickedCommunity | null>(preselected);
   const caseChoice = useCaseChoice("request");
@@ -472,7 +480,7 @@ const RequestSection = () => {
   // Two axes, asked for independently. "none" is how you say you do not want
   // one — clearing up after an incident wants both; having a look wants only
   // the first.
-  const [level, setLevel] = useState("read");
+  const [level, setLevel] = useState<string>(() => startingLevel(search, canModerate));
   const [settingsLevel, setSettingsLevel] = useState("none");
   // Null until chosen: the offered windows arrive with the limits above.
   const [chosenDuration, setDuration] = useState<string | null>(null);
