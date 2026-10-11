@@ -170,6 +170,7 @@ export const DemoPage = () => {
                   onClick={() => {
                     setRedeemed(null);
                     setLanding(null);
+                    setTimedOut(false);
                     setReplacing(true);
                   }}
                 >
