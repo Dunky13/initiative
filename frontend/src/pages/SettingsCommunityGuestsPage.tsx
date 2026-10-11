@@ -304,7 +304,7 @@ export const SettingsCommunityGuestsPage = () => {
                 }))}
                 onChange={setInitiativeIds}
                 placeholder={t("guests.initiativesPlaceholder")}
-                className="w-full sm:w-72"
+                className="w-full max-w-72"
               />
             </div>
             <div className="space-y-2">
