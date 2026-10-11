@@ -285,7 +285,9 @@ async def test_presets_become_views_and_come_back(session) -> None:
 
 async def test_views_become_layouts_and_come_back(session) -> None:
     """A project keeps what each of its list views drew and its task layout,
-    and opens where it did; the views that only filtered are gone. The
+    and opens where it did; the views that only filtered become the presets of
+    their list, a shipped one unrenamed by its slug alone and a sort only on a
+    table. A project whose presets are the shipped ones stores nothing. The
     downgrade gives each project holding a layout the shipped views again,
     drawn as its layouts say."""
     user = await create_user(session)
@@ -294,6 +296,7 @@ async def test_views_become_layouts_and_come_back(session) -> None:
     initiative = await create_initiative(session, guild, user)
     drawn = (await create_project(session, initiative, user, name="Drawn")).id
     filtered = (await create_project(session, initiative, user, name="Filtered")).id
+    seeded = (await create_project(session, initiative, user, name="Seeded")).id
     layouts = _load("20261010_0493_views_become_layouts")
 
     def run(step):
@@ -342,6 +345,37 @@ async def test_views_become_layouts_and_come_back(session) -> None:
     # A project whose views only filtered, opening on one of them.
     await view(filtered, 0, "table", definition=_TABLE)
     await view(filtered, 1, "mine", definition=_MINE, is_default=True)
+    await view(
+        filtered,
+        2,
+        "blocked",
+        definition={
+            **_TABLE,
+            "filters": {"tag_ids": [7], "status_ids": [], "include_archived": False},
+            "sort": [{"field": "dueDate", "direction": "desc"}],
+        },
+    )
+    await view(
+        filtered,
+        3,
+        "my-board",
+        name="My board",
+        definition={**_MINE, "layout": {"type": "board"}, "sort": [{"field": "title"}]},
+    )
+    # A project that kept the shipped views as they were.
+    for position, (slug, definition) in enumerate(
+        (
+            ("table", _TABLE),
+            ("board", _BOARD),
+            ("calendar", _CALENDAR),
+            ("incomplete", _INCOMPLETE),
+            ("unassigned", _UNASSIGNED),
+            ("mine", _MINE),
+        )
+    ):
+        await view(
+            seeded, position, slug, definition=definition, is_default=not position
+        )
 
     await session.run_sync(run(layouts._apply_upgrade))
     rows = (
@@ -350,11 +384,32 @@ async def test_views_become_layouts_and_come_back(session) -> None:
             " ORDER BY tool_id, kind"
         )
     ).all()
+    mine = {"slug": "mine", "filters": {"assignees": ["me"]}}
     assert [tuple(row) for row in rows] == [
         (drawn, "board", {"card": card}),
         (drawn, "default", {"kind": "board"}),
-        (drawn, "table", {"columns": ["title"]}),
+        (drawn, "table", {"columns": ["title"], "presets": [mine]}),
         (drawn, "task", task),
+        (
+            filtered,
+            "board",
+            {"presets": [{**mine, "slug": "my-board", "name": "My board"}]},
+        ),
+        (
+            filtered,
+            "table",
+            {
+                "presets": [
+                    mine,
+                    {
+                        "slug": "blocked",
+                        "name": "Blocked",
+                        "filters": {"tag_ids": [7]},
+                        "sort": [{"field": "due_date", "dir": "desc"}],
+                    },
+                ]
+            },
+        ),
     ]
 
     await session.run_sync(run(layouts._apply_downgrade))

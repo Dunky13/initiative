@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "No se pudo eliminar la invitación.",
     "inviteLinkCopied": "Enlace de invitación copiado al portapapeles.",
     "copyInviteLink": "Copiar enlace de invitación",
+    "newInviteLinkOnce": "Copia este enlace ahora. No se volverá a mostrar.",
+    "inviteLinkTitle": "Enlace de invitación",
     "deleteInviteLink": "Eliminar invitación",
     "usesFormat": "Usos: {{uses}}/{{max}} · Expira: {{expires}}",
     "neverExpires": "Nunca",

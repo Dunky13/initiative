@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any, cast
@@ -1371,8 +1372,15 @@ async def get_guild_retention_days(session: AsyncSession) -> int | None:
     return row.retention_days
 
 
+def _hash_code(code: str) -> str:
+    """The stored form of an invite code. Codes are random
+    (``INVITE_CODE_BYTES``), so one unsalted SHA-256 is enough and keeps the
+    lookup indexed, as for ``user_tokens``."""
+    return sha256(code.encode("utf-8")).hexdigest()
+
+
 async def _invite_code_exists(session: AsyncSession, code: str) -> bool:
-    stmt = select(GuildInvite.id).where(GuildInvite.code == code)
+    stmt = select(GuildInvite.id).where(GuildInvite.code_hash == _hash_code(code))
     result = await session.exec(stmt)
     return result.first() is not None
 
@@ -1406,9 +1414,10 @@ async def create_guild_invite(
     max_uses: int | None = 1,
     invitee_email: str | None = None,
     actor_user_id: int | None = None,
-) -> GuildInvite:
-    """Mint an invite. ``actor_user_id`` names who for the record; without one
-    the invite is minted unrecorded."""
+) -> tuple[GuildInvite, str]:
+    """Mint an invite, and return it with its code, which is not kept.
+    ``actor_user_id`` names who for the record; without one the invite is
+    minted unrecorded."""
     # A full guild mints no new invites: every seat is taken, so any code handed
     # out now could only fail at redemption. Raises ``GuildCapacityError``.
     await _assert_member_capacity(session, guild_id=guild_id, claiming_seat=False)
@@ -1422,7 +1431,7 @@ async def create_guild_invite(
             expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
         )
     invite = GuildInvite(
-        code=code,
+        code_hash=_hash_code(code),
         guild_id=guild_id,
         created_by=created_by,
         expires_at=expiry,
@@ -1443,7 +1452,7 @@ async def create_guild_invite(
             target_id=invite.id,
             detail=_invite_detail(invite),
         )
-    return invite
+    return invite, code
 
 
 def _invite_detail(invite: GuildInvite) -> dict[str, object]:
@@ -2019,8 +2028,14 @@ async def restore_guild(
     return guild
 
 
-async def get_invite_by_code(session: AsyncSession, *, code: str) -> GuildInvite | None:
-    stmt = select(GuildInvite).where(GuildInvite.code == code)
+async def get_invite_by_code(
+    session: AsyncSession, *, code: str, lock: bool = False
+) -> GuildInvite | None:
+    """The invite ``code`` opens. ``lock`` holds its row until the transaction
+    ends, so two redemptions are counted one after the other."""
+    stmt = select(GuildInvite).where(GuildInvite.code_hash == _hash_code(code))
+    if lock:
+        stmt = stmt.with_for_update()
     result = await session.exec(stmt)
     return result.one_or_none()
 
@@ -2033,8 +2048,19 @@ def invite_is_active(invite: GuildInvite) -> bool:
     return True
 
 
-async def _live_invite(session: AsyncSession, *, code: str) -> GuildInvite:
-    invite = await get_invite_by_code(session, code=code)
+async def _live_invite(
+    session: AsyncSession,
+    *,
+    code: str | None = None,
+    invite_id: int | None = None,
+    lock: bool = False,
+) -> GuildInvite:
+    """The invite named by its ``code`` or, for one a sign-up already holds,
+    its ``invite_id``, while it can still be redeemed."""
+    if code is not None:
+        invite = await get_invite_by_code(session, code=code, lock=lock)
+    else:
+        invite = await session.get(GuildInvite, invite_id, with_for_update=lock)
     if not invite:
         raise GuildInviteError(GuildMessages.INVITE_NOT_FOUND)
     if not invite_is_active(invite):
@@ -2070,10 +2096,13 @@ async def invite_awaiting_address(
 async def redeem_invite_for_user(
     session: AsyncSession,
     *,
-    code: str,
     user: User,
+    code: str | None = None,
+    invite_id: int | None = None,
 ) -> Guild:
-    invite = await _live_invite(session, code=code)
+    """Join ``user`` to the community of the invite named by ``code`` or
+    ``invite_id``."""
+    invite = await _live_invite(session, code=code, invite_id=invite_id, lock=True)
 
     # A grant reaches the community for its window and makes nobody a
     # member; joining waits until the grant has ended. A billing grant
