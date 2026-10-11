@@ -166,26 +166,41 @@ async def make_pitch(
         seated = await seat_cast(
             session, guild_id=guild_id, people=plan.people, actor_id=host.id
         )
-        if directory is not None:
-            await _list(session, guild, directory)
         await session.commit()
-    async with cohorts.system_session(guild_id) as session:
-        await set_rls_context(session, SystemGuild(guild_id))
-        job = await backup_service.stage_backup_job(
-            session,
-            guild_id=guild_id,
-            user=host,
-            payload=bundle,
-            status=ImportJobStatus.queued,
-            anchor=datetime.fromisoformat(plan.exported_at)
-            if plan.exported_at
-            else None,
-            people_map=seated,
-        )
-        await session.commit()
-        job_id = cast(int, job.id)
-    await _wait_for_import(guild_id, job_id)
+    try:
+        async with cohorts.system_session(guild_id) as session:
+            await set_rls_context(session, SystemGuild(guild_id))
+            job = await backup_service.stage_backup_job(
+                session,
+                guild_id=guild_id,
+                user=host,
+                payload=bundle,
+                status=ImportJobStatus.queued,
+                anchor=datetime.fromisoformat(plan.exported_at)
+                if plan.exported_at
+                else None,
+                people_map=seated,
+            )
+            await session.commit()
+            job_id = cast(int, job.id)
+        await _wait_for_import(guild_id, job_id)
+    except Exception:
+        # A pitch whose import did not finish is not left behind, so trying
+        # again makes one community rather than two.
+        async with cohorts.system_session(None) as session:
+            await set_rls_context(session, Unattributed())
+            unfinished = await session.get(Guild, guild_id)
+            if unfinished is not None:
+                await guild_purge.destroy_now(session, unfinished)
+        raise
     if directory is not None:
+        # Listed only once its content is in.
+        async with cohorts.system_session(None) as session:
+            await set_rls_context(session, Unattributed())
+            listed = await session.get(Guild, guild_id)
+            if listed is not None:
+                await _list(session, listed, directory)
+            await session.commit()
         async with cohorts.system_session(guild_id) as session:
             await set_rls_context(session, SystemGuild(guild_id))
             await session.exec(

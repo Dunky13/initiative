@@ -363,6 +363,28 @@ async def test_making_a_pitch_imports_and_publishes(pitch, session):
     assert (await session.exec(select(Task.title))).all() == ["Proof the dough"]
 
 
+async def test_a_pitch_whose_import_fails_is_not_left_behind(
+    pitch, session, monkeypatch
+):
+    _link, _bea, source = pitch
+    newest = await pitches.newest_export(source)
+    assert newest is not None
+
+    async def fails(*_args, **_kwargs) -> None:
+        raise RuntimeError("the import left out an entry")
+
+    monkeypatch.setattr(pitches, "_wait_for_import", fails)
+    async with import_engine.open_payload(source, newest[0]) as bundle:
+        assert bundle is not None
+        with pytest.raises(RuntimeError):
+            await pitches.make_pitch(bundle=bundle, name="Half made")
+
+    session.expire_all()
+    assert (
+        await session.exec(select(Guild).where(Guild.name == "Half made"))
+    ).all() == []
+
+
 async def test_cleanup_removes_an_idle_pitch_and_leftovers(demo, session):
     host = await accounts.demo_host(session)
     now = datetime.now(timezone.utc)
