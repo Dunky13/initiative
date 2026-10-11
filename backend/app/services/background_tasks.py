@@ -374,6 +374,17 @@ def start_background_tasks() -> list[asyncio.Task]:
         ),
     ]
 
+    from app.core.config import settings
+
+    if settings.DEMO_MODE:
+        from app.demo.copies import pool_pass
+
+        tasks.append(
+            asyncio.create_task(
+                Loop("demo-pool", interval=MINUTE_PASS_SECONDS).run(pool_pass)
+            )
+        )
+
     # The marketplace registry needs a trusted root. A build without one runs
     # no worker at all. Each pass asks the platform switch first, so turning
     # the registry off stops the fetching without a restart. The loop runs its
@@ -381,8 +392,6 @@ def start_background_tasks() -> list[asyncio.Task]:
     # this build ships is already seeded by then and the registry adds to it
     # through the same writer.
     if registry_available():
-        from app.core.config import settings
-
         tasks.append(
             asyncio.create_task(
                 Loop(

@@ -69,6 +69,7 @@ from app.models.platform.guild import (
     CommunityStatus,
     LIVE_STATUS_VALUES,
 )
+from app.demo.copies import copy_expiry as demo_copy_expiry
 from app.models.platform.guild_administration import GuildAdministration
 from app.models.platform.guild_image import (
     BANNER_VARIANTS,
@@ -620,6 +621,11 @@ async def create_community(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=GuildMessages.COMMUNITY_CREATION_DISABLED,
+        )
+    if settings.DEMO_MODE and await demo_copy_expiry(current_user.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildMessages.COMMUNITY_CREATION_DEMO_ACCOUNT,
         )
     name = guild_in.name
 

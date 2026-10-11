@@ -26,6 +26,7 @@
   "COMMUNITY_CREATION_DISABLED": "Community creation is disabled",
   "FREE_COMMUNITY_ALREADY_HELD": "You already have a free community. Another one needs a plan — pick one and we'll set it up.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "You've created as many communities as you can in 24 hours. Try again later.",
+  "COMMUNITY_CREATION_DEMO_ACCOUNT": "Demo accounts can't create communities",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Only platform staff can create a community owned by someone else",
   "COMMUNITY_OWNER_NOT_FOUND": "That account doesn't exist or can't be given a community",
   "COMMUNITY_NOT_FOUND": "Community not found",
@@ -745,5 +746,7 @@
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Access can't be asked for a case of this kind.",
   "ACCESS_GRANT_CASE_CLOSED": "That case is closed.",
   "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "That case is about another community.",
-  "HOLD_CASE_OTHER_COMMUNITY": "That case is about a different community from this content."
+  "HOLD_CASE_OTHER_COMMUNITY": "That case is about a different community from this content.",
+  "DEMO_LINK_NOT_FOUND": "This demo link doesn't work any more. Ask whoever sent it for a new one.",
+  "DEMO_BUSY": "All demo spaces are busy. Try again in a minute."
 }

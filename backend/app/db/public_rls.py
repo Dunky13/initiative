@@ -662,6 +662,10 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             platform_base=frozenset({SELECT, INSERT, DELETE}),
         ),
     ),
+    # The demo deployment's copies (``DEMO_MODE``): written when a link is
+    # opened and by the pool loop, and read for an account's own copy expiry,
+    # all on the system engine. No request role reaches them.
+    "demo_sandboxes": SharedTable(rls=FORCED_NO_POLICY, grants=Grants(app_admin=DML)),
     # Part of the direct-message transport, per-account and cross-guild (see
     # ``dm_devices``).
     "dm_conversation_members": SharedTable(

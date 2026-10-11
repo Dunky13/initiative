@@ -33,6 +33,7 @@
   "COMMUNITY_CREATION_DISABLED": "La creación de comunidades está deshabilitada",
   "FREE_COMMUNITY_ALREADY_HELD": "Ya tienes una comunidad gratuita. Otra necesita un plan: elige uno y la creamos.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "Ya has creado todas las comunidades que puedes en 24 horas. Vuelve a intentarlo más tarde.",
+  "COMMUNITY_CREATION_DEMO_ACCOUNT": "Las cuentas de demostración no pueden crear comunidades",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Solo el personal de la plataforma puede crear una comunidad para otra persona",
   "COMMUNITY_OWNER_NOT_FOUND": "Esa cuenta no existe o no puede recibir una comunidad",
   "COMMUNITY_NOT_FOUND": "Comunidad no encontrada",
@@ -745,5 +746,7 @@
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "No se puede pedir acceso para un caso de este tipo.",
   "ACCESS_GRANT_CASE_CLOSED": "Ese caso está cerrado.",
   "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ese caso trata de otra comunidad.",
-  "HOLD_CASE_OTHER_COMMUNITY": "Ese caso trata sobre una comunidad distinta de la de este contenido."
+  "HOLD_CASE_OTHER_COMMUNITY": "Ese caso trata sobre una comunidad distinta de la de este contenido.",
+  "DEMO_LINK_NOT_FOUND": "Este enlace de demostración ya no funciona. Pide uno nuevo a quien te lo envió.",
+  "DEMO_BUSY": "Todos los espacios de demostración están ocupados. Vuelve a intentarlo en un minuto."
 }

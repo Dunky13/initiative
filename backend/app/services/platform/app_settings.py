@@ -444,9 +444,13 @@ async def record_running_version(
         settings_row.last_seen_version == version
         and not started
         and settings_row.demo_mode == demo_mode
+        and (settings_row.guests_enabled or not demo_mode)
     ):
         return settings_row.previous_version
     settings_row.demo_mode = demo_mode
+    # The demo's visitors are guests of their copies.
+    if demo_mode:
+        settings_row.guests_enabled = True
     if started:
         settings_row.transitions = {**settings_row.transitions, **started}
     if settings_row.last_seen_version != version:

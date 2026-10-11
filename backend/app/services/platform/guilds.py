@@ -68,6 +68,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_INVITE_EXPIRATION_DAYS = 7
+#: The rungs above ``guest`` a guest may hold on the demo deployment.
+DEMO_GUEST_ROLES = (CommunityRole.member, CommunityRole.admin, CommunityRole.superadmin)
 INVITE_CODE_BYTES = 16
 
 
@@ -606,7 +608,10 @@ async def extend_guest(
     actor_user_id: int,
 ) -> GuildMembership:
     """End ``user_id``'s time as a guest ``days`` from now, held to the same
-    limits as a new guest's. Raises ``NotAGuestError`` unless they are one."""
+    limits as a new guest's. Raises ``NotAGuestError`` unless they are one.
+    Nobody sets their own end."""
+    if actor_user_id == user_id:
+        raise CodedError(GuildMessages.CANNOT_CHANGE_OWN_ROLE)
     membership = await get_membership(
         session, guild_id=guild_id, user_id=user_id, for_update=True
     )
@@ -642,7 +647,9 @@ async def make_guest_a_member(
 ) -> GuildMembership:
     """Make a guest a member: their time no longer ends and they take a seat,
     so the member cap applies. Raises ``NotAGuestError`` unless they are a
-    guest."""
+    guest. Nobody makes themselves a member."""
+    if actor_user_id == user_id:
+        raise CodedError(GuildMessages.CANNOT_CHANGE_OWN_ROLE)
     membership = await get_membership(
         session, guild_id=guild_id, user_id=user_id, for_update=True
     )
@@ -1552,6 +1559,7 @@ async def create_guild_invite(
     max_uses: int | None = 1,
     invitee_email: str | None = None,
     guest_days: int | None = None,
+    guest_role: CommunityRole = CommunityRole.guest,
     grants: Sequence[CommunityInviteGrant] = (),
     actor_user_id: int | None = None,
 ) -> tuple[GuildInvite, str]:
@@ -1559,8 +1567,13 @@ async def create_guild_invite(
     ``guest_days`` makes it a guest invite: redeeming it makes a guest for
     that long, held to the community's and the deployment's limits, and gives
     them ``grants``. The session is routed into the community, where those are
-    kept. ``actor_user_id`` names who for the record; without one the invite
-    is minted unrecorded."""
+    kept. ``guest_role`` is the rung the guest holds: ``guest``, or on the demo
+    deployment a rung above it. ``actor_user_id`` names who for the record;
+    without one the invite is minted unrecorded."""
+    if guest_role is not CommunityRole.guest and not (
+        settings.DEMO_MODE and guest_role in DEMO_GUEST_ROLES
+    ):
+        raise GuildInviteError(GuildMessages.COMMUNITY_ROLE_NOT_ASSIGNABLE)
     # A full guild mints no new invites: every seat is taken, so any code handed
     # out now could only fail at redemption. Raises ``GuildCapacityError``.
     if guest_days is None:
@@ -1587,7 +1600,7 @@ async def create_guild_invite(
         if invitee_email
         else None,
         guest_days=guest_days,
-        guest_role=CommunityRole.guest if guest_days is not None else None,
+        guest_role=guest_role if guest_days is not None else None,
     )
     session.add(invite)
     await session.flush()
@@ -2333,6 +2346,13 @@ async def _live_invite(
     target_guild = await get_guild(session, guild_id=invite.guild_id)
     if target_guild.status != CommunityStatus.active.value:
         raise GuildInviteError(GuildMessages.INVITE_EXPIRED_OR_USED)
+    if settings.DEMO_MODE:
+        from app.demo import pitches
+
+        # An invite into a pitch opens a copy of it (app.demo.copies), and
+        # joins nobody to the pitch itself.
+        if await pitches.is_pitch(session, invite.guild_id):
+            raise GuildInviteError(GuildMessages.INVITE_NOT_FOUND)
     return invite
 
 

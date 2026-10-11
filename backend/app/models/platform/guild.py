@@ -629,7 +629,8 @@ class GuildInvite(SQLModel, table=True):
     expires_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    max_uses: Optional[int] = Field(default=1, nullable=True)
+    #: ``None`` for no limit.
+    max_uses: Optional[int] = Field(default=1, sa_column=Column(Integer, nullable=True))
     uses: int = Field(default=0, nullable=False)
     invitee_email_encrypted: Optional[str] = Field(
         default=None,

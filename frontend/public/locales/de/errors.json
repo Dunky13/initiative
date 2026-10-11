@@ -33,6 +33,7 @@
   "COMMUNITY_CREATION_DISABLED": "Das Erstellen von Communitys ist deaktiviert",
   "FREE_COMMUNITY_ALREADY_HELD": "Du hast bereits eine kostenlose Community. Eine weitere braucht einen Tarif — wähle einen aus, dann richten wir sie ein.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "Du hast innerhalb von 24 Stunden so viele Communitys erstellt, wie möglich ist. Versuche es später noch einmal.",
+  "COMMUNITY_CREATION_DEMO_ACCOUNT": "Demo-Konten können keine Communitys erstellen",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Nur Plattform-Personal kann eine Community für jemand anderen erstellen",
   "COMMUNITY_OWNER_NOT_FOUND": "Dieses Konto existiert nicht oder kann keine Community erhalten",
   "COMMUNITY_NOT_FOUND": "Community nicht gefunden",
@@ -745,5 +746,7 @@
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Für einen Fall dieser Art kann kein Zugriff angefragt werden.",
   "ACCESS_GRANT_CASE_CLOSED": "Dieser Fall ist geschlossen.",
   "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community.",
-  "HOLD_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community als diesen Inhalt."
+  "HOLD_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community als diesen Inhalt.",
+  "DEMO_LINK_NOT_FOUND": "Dieser Demo-Link funktioniert nicht mehr. Bitte die Person, die ihn geschickt hat, um einen neuen.",
+  "DEMO_BUSY": "Alle Demo-Bereiche sind belegt. Versuche es in einer Minute noch einmal."
 }

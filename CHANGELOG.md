@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An invite with no use limit takes any number of people.** One made with the uses left at 0 stopped working after the first person joined.
 - **A closed case keeps its attachments while a hold names it.** The files on a case are no longer deleted at the end of their keeping while content held for the platform is worked on that case.
 - **A platform hold names a case about the community it holds content in.** A case about another community is refused; one about none yet is settled as about this one.
 - **Task embeds keep showing tasks after a tag is deleted, and offer every project.** A filter naming a deleted tag matched nothing, so the embed went empty. It now leaves the deleted tag out. Choosing a project in the embed's settings lists every project in the initiative, not just the first page of them.

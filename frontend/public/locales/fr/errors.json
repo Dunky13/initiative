@@ -33,6 +33,7 @@
   "COMMUNITY_CREATION_DISABLED": "La création de communauté est désactivée",
   "FREE_COMMUNITY_ALREADY_HELD": "Vous avez déjà une communauté gratuite. Une autre nécessite un forfait — choisissez-en un et nous la créerons.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "Vous avez créé autant de communautés que possible en 24 heures. Réessayez plus tard.",
+  "COMMUNITY_CREATION_DEMO_ACCOUNT": "Les comptes de démonstration ne peuvent pas créer de communautés",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Seul le personnel de la plateforme peut créer une communauté pour quelqu'un d'autre",
   "COMMUNITY_OWNER_NOT_FOUND": "Ce compte n'existe pas ou ne peut pas recevoir de communauté",
   "COMMUNITY_NOT_FOUND": "Communauté introuvable",
@@ -745,5 +746,7 @@
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "On ne peut pas demander d'accès pour un dossier de ce type.",
   "ACCESS_GRANT_CASE_CLOSED": "Ce dossier est clos.",
   "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté.",
-  "HOLD_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté que celle de ce contenu."
+  "HOLD_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté que celle de ce contenu.",
+  "DEMO_LINK_NOT_FOUND": "Ce lien de démonstration ne fonctionne plus. Demandez-en un nouveau à la personne qui vous l'a envoyé.",
+  "DEMO_BUSY": "Tous les espaces de démonstration sont occupés. Réessayez dans une minute."
 }

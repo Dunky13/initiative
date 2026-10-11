@@ -178,6 +178,27 @@ async def test_accepting_an_invite_answers_with_the_member_tier_guild(
         assert body[field] is None, f"{field} must not reach a plain member"
 
 
+async def test_an_invite_with_no_use_limit_takes_any_number_of_people(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    from app.services.platform import guilds as guilds_service
+
+    admin = await acting_user(guild_role=CommunityRole.admin)
+    _, code = await guilds_service.create_guild_invite(
+        session, guild_id=admin.guild.id, created_by=admin.user.id, max_uses=None
+    )
+    await session.commit()
+
+    for _ in range(2):
+        joiner = await acting_user("member")
+        resp = await client.post(
+            "/api/v1/communities/invite/accept",
+            headers=joiner.headers,
+            json={"code": code},
+        )
+        assert resp.status_code == 200, resp.text
+
+
 async def test_creating_a_guild_seats_its_creator_and_leaves_the_icon_unset(
     client: AsyncClient, acting_user
 ):
