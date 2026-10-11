@@ -40,7 +40,13 @@ SELF_SHAPES = {
 #: Shapes that carry an address field and mask it. Each has a validator
 #: applying ``app.core.email_masking.mask_email``; adding a name here means
 #: having added that validator.
-MASKED_SHAPES = {"OperatorUserRead", "AccessGrantRead", "CommunityInviteRead"}
+MASKED_SHAPES = {
+    "OperatorUserRead",
+    "AccessGrantRead",
+    "CommunityInviteRead",
+    # Inherits CommunityInviteRead's validator.
+    "CommunityInviteCreated",
+}
 
 #: Shapes that carry a deployment's contact address: one an operator published
 #: so people can write to it, not an account's stored address. It is served in
