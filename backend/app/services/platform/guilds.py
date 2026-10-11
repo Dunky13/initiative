@@ -18,6 +18,7 @@ from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.guild_auth_options import CommunityAuthOption
 from app.core.intake import IntakeStream
+from app.core.tools import Tool
 from app.core.encryption import encrypt_field, normalize_email, SALT_EMAIL
 from app.core.errors import CodedError
 from app.core.messages import GuildMessages
@@ -43,6 +44,7 @@ from app.models.platform.guild import (
 from app.models.platform.access_grant import AccessGrant, AccessGrantPurpose
 from app.models.platform.guild_administration import GuildAdministration
 from app.models.platform.notification import NotificationType
+from app.models.tenant.guest_invite_grant import GuestInviteGrant
 from app.models.tenant.guild_setting import GuildSetting
 from app.models.platform.user import User, UserStatus
 from app.services import audit as audit_service
@@ -85,6 +87,13 @@ class GuestsDisabledError(CodedError):
 
 class NotAGuestError(CodedError):
     """Raised when a guest's terms are changed for somebody who is not one."""
+
+    status_code = 404
+
+
+class GuestGrantError(CodedError):
+    """Raised when a guest invite names an initiative or item the community
+    does not hold."""
 
     status_code = 404
 
@@ -1540,13 +1549,15 @@ async def create_guild_invite(
     max_uses: int | None = 1,
     invitee_email: str | None = None,
     guest_days: int | None = None,
+    grants: Sequence[GuestInviteGrant] = (),
     actor_user_id: int | None = None,
 ) -> tuple[GuildInvite, str]:
     """Mint an invite, and return it with its code, which is not kept.
     ``guest_days`` makes it a guest invite: redeeming it makes a guest for
-    that long, held to the community's and the deployment's limits.
-    ``actor_user_id`` names who for the record; without one the invite is
-    minted unrecorded."""
+    that long, held to the community's and the deployment's limits, and gives
+    them ``grants``. The session is routed into the community, where those are
+    kept. ``actor_user_id`` names who for the record; without one the invite
+    is minted unrecorded."""
     # A full guild mints no new invites: every seat is taken, so any code handed
     # out now could only fail at redemption. Raises ``GuildCapacityError``.
     if guest_days is None:
@@ -1577,6 +1588,11 @@ async def create_guild_invite(
     )
     session.add(invite)
     await session.flush()
+    for grant in grants:
+        await _assert_grantable(session, grant)
+        grant.invite_id = cast(int, invite.id)
+        session.add(grant)
+    await session.flush()
     if actor_user_id is not None:
         await audit_service.record(
             session,
@@ -1588,6 +1604,94 @@ async def create_guild_invite(
             detail=_invite_detail(invite),
         )
     return invite, code
+
+
+async def _assert_grantable(session: AsyncSession, grant: GuestInviteGrant) -> None:
+    """Raise ``GuestGrantError`` unless the community holds the initiative a
+    guest invite names, and the item, where it names one, in that initiative."""
+    from app.db.base import MODELS_BY_TABLE
+    from app.models.tenant.initiative import Initiative
+
+    if await session.get(Initiative, grant.initiative_id) is None:
+        raise GuestGrantError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+    if grant.resource_type is None:
+        return
+    model = MODELS_BY_TABLE[Tool(grant.resource_type).plural]
+    row = await session.get(model, grant.resource_id)
+    if row is None or row.initiative_id != grant.initiative_id:
+        raise GuestGrantError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+
+
+async def guest_invite_grants(
+    session: AsyncSession, *, invite_ids: Sequence[int]
+) -> dict[int, list[GuestInviteGrant]]:
+    """What each of these guest invites gives, by invite. The session is
+    routed into the community."""
+    if not invite_ids:
+        return {}
+    rows = await session.exec(
+        select(GuestInviteGrant)
+        .where(ids_in(GuestInviteGrant.invite_id, invite_ids))
+        .order_by(GuestInviteGrant.id)
+    )
+    found: dict[int, list[GuestInviteGrant]] = {}
+    for row in rows:
+        found.setdefault(row.invite_id, []).append(row)
+    return found
+
+
+def _give_guest_invite_grants(
+    session: AsyncSession, *, invite: GuildInvite, user_id: int
+) -> None:
+    """Once ``session`` commits, give ``user_id`` what ``invite`` names: each
+    initiative joined with the role their standing earns, each item shared at
+    its level. Run in the community's cohort, as auto-join enrolment is, and
+    recorded as its administrator's: one named since withdrawn is skipped."""
+    from app.db.base import MODELS_BY_TABLE
+    from app.db.session import set_rls_context
+    from app.models.tenant.initiative import Initiative
+    from app.services import permissions as permissions_service
+    from app.services.tenant import initiatives as initiatives_service
+
+    guild_id, invite_id, actor = invite.guild_id, invite.id, invite.created_by
+
+    async def give() -> None:
+        async with cohorts.system_session(guild_id) as guild_session:
+            await set_rls_context(guild_session, SystemGuild(guild_id))
+            grants = await guest_invite_grants(guild_session, invite_ids=[invite_id])
+            for grant in grants.get(invite_id, []):
+                if grant.resource_type is None:
+                    initiative = await guild_session.get(
+                        Initiative, grant.initiative_id
+                    )
+                    if initiative is not None:
+                        await initiatives_service.self_join(
+                            guild_session,
+                            initiative=initiative,
+                            user_id=user_id,
+                            actor_user_id=actor,
+                            via="guest_invite",
+                        )
+                    continue
+                tool = Tool(grant.resource_type)
+                row = await guild_session.get(
+                    MODELS_BY_TABLE[tool.plural], grant.resource_id
+                )
+                if row is None or grant.level is None:
+                    continue
+                await permissions_service.grant_to_person(
+                    guild_session,
+                    resource_type=tool,
+                    resource_id=row.id,
+                    guild_id=guild_id,
+                    initiative_id=row.initiative_id,
+                    user_id=user_id,
+                    level=grant.level,
+                    actor_user_id=actor,
+                )
+            await guild_session.commit()
+
+    post_commit.after_commit(session, give)
 
 
 def _invite_detail(invite: GuildInvite) -> dict[str, object]:
@@ -1620,6 +1724,9 @@ async def delete_guild_invite(
     result = await session.exec(stmt)
     invite = result.one_or_none()
     if invite:
+        await session.exec(
+            delete(GuestInviteGrant).where(col(GuestInviteGrant.invite_id) == invite.id)
+        )
         if actor_user_id is not None:
             await audit_service.record(
                 session,
@@ -2293,6 +2400,8 @@ async def redeem_invite_for_user(
         invite_id=invite.id,
         guest_until=guest_until,
     )
+    if guest_until is not None:
+        _give_guest_invite_grants(session, invite=invite, user_id=user.id)
     invite.uses += 1
     session.add(invite)
     guild = await get_guild(session, guild_id=invite.guild_id)

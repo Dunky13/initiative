@@ -529,6 +529,51 @@ async def replace_resource_grants(
         )
 
 
+async def grant_to_person(
+    session: Any,
+    *,
+    resource_type: Tool,
+    resource_id: int,
+    guild_id: int,
+    initiative_id: int | None,
+    user_id: int,
+    level: ResourceAccessLevel,
+    actor_user_id: int | None,
+) -> None:
+    """Share one resource with ``user_id`` at ``level``, unless a grant
+    already names them there, which is left as it is. Recorded as a share is.
+    Caller commits."""
+    held = await session.exec(
+        select(ResourceGrant.id).where(
+            ResourceGrant.resource_type == resource_type,
+            ResourceGrant.resource_id == resource_id,
+            ResourceGrant.user_id == user_id,
+        )
+    )
+    if held.first() is not None:
+        return
+    session.add(
+        ResourceGrant(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            initiative_id=initiative_id,
+            user_id=user_id,
+            level=level,
+        )
+    )
+    await session.flush()
+    await _record_grant_changes(
+        session,
+        actor_user_id=actor_user_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        guild_id=guild_id,
+        initiative_id=initiative_id,
+        before={},
+        after={("user", user_id): _grant_level(level)},
+    )
+
+
 class Action(str, Enum):
     """What somebody may do to one of a tool's rows, beyond reading it — the
     names ``resource_actions`` answers in (``app.db.authorization``)."""

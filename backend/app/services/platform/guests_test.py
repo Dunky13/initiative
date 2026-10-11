@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func
+from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
 
 from app.core.messages import GuildMessages
@@ -14,6 +15,9 @@ from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityRole, GuildInvite, GuildMembership
 from app.models.platform.notification import Notification, NotificationType
 from app.models.platform.user_profile_view import MemberProfile
+from app.models.tenant.guest_invite_grant import GuestInviteGrant
+from app.models.tenant.initiative import InitiativeMember
+from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.services import cross_guild
 from app.services import permissions as permissions_service
 from app.services.platform import app_settings as app_settings_service
@@ -22,11 +26,13 @@ from app.services.platform import guests
 from app.services.platform import guilds as guilds_service
 from app.services.platform import users as users_service
 from app.services.tenant import named_people
+from app.testing.routing import route_as
 from app.testing import (
     create_guest,
     create_guild,
     create_guild_calendar,
     create_guild_membership,
+    create_initiative,
     create_initiative_member,
     create_resource_grant,
     create_task,
@@ -568,3 +574,114 @@ async def test_admins_see_their_guests_while_guests_are_off(
     )
 
     assert [row["id"] for row in listed.json()["items"]] == [guest_id], listed.text
+
+
+async def test_a_guest_invite_gives_what_it_names(client, acting_user, session):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    joined_whole = await create_initiative(session, a.guild, a.user)
+    joiner = await acting_user()
+    await _platform(session)
+    ids = (a.guild.id, a.initiative.id, a.project.id, joined_whole.id)
+    guild_id, initiative_id, project_id, whole_id = ids
+
+    made = await client.post(
+        f"/api/v1/communities/{guild_id}/invites",
+        json={
+            "guest_days": 7,
+            "grants": [
+                {"initiative_id": whole_id},
+                {
+                    "initiative_id": initiative_id,
+                    "resource_type": "project",
+                    "resource_id": project_id,
+                    "level": "write",
+                },
+            ],
+        },
+        headers=a.headers,
+    )
+    assert made.status_code == 201, made.text
+    listed = await client.get(
+        f"/api/v1/communities/{guild_id}/invites", headers=a.headers
+    )
+    assert len(listed.json()[0]["grants"]) == 2
+
+    joined = await client.post(
+        "/api/v1/communities/invite/accept",
+        json={"code": made.json()["code"]},
+        headers=joiner.headers,
+    )
+    opened = await client.get(
+        f"/api/v1/c/{guild_id}/projects/{project_id}", headers=joiner.headers
+    )
+
+    assert joined.status_code == 200, joined.text
+    assert opened.status_code == 200, opened.text
+    await set_rls_context(session, SystemGuild(guild_id))
+    assert (
+        await session.exec(
+            select(InitiativeMember.initiative_id).where(
+                InitiativeMember.user_id == joiner.user.id
+            )
+        )
+    ).all() == [whole_id]
+    assert (
+        await session.exec(
+            select(ResourceGrant.level).where(ResourceGrant.user_id == joiner.user.id)
+        )
+    ).all() == [ResourceAccessLevel.write]
+
+
+async def test_a_guest_invite_names_only_what_the_community_holds_there(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    elsewhere = await create_initiative(session, a.guild, a.user)
+    await _platform(session)
+
+    made = await client.post(
+        f"/api/v1/communities/{a.guild.id}/invites",
+        json={
+            "guest_days": 7,
+            "grants": [
+                {
+                    "initiative_id": elsewhere.id,
+                    "resource_type": "project",
+                    "resource_id": a.project.id,
+                    "level": "read",
+                }
+            ],
+        },
+        headers=a.headers,
+    )
+
+    assert made.status_code == 404, made.text
+    assert made.json()["detail"] == GuildMessages.GUEST_GRANT_NOT_FOUND
+
+
+async def test_what_an_invite_gives_is_its_administrations_alone(
+    acting_user, session, role_session
+):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    member = await acting_user(
+        guild_role=CommunityRole.member, guild=a.guild, initiative=a.initiative
+    )
+    await _platform(session)
+    invite, _ = await guilds_service.create_guild_invite(
+        session, guild_id=a.guild.id, created_by=a.user.id, guest_days=7
+    )
+    await set_rls_context(session, SystemGuild(a.guild.id))
+    session.add(GuestInviteGrant(invite_id=invite.id, initiative_id=a.initiative.id))
+    await session.commit()
+    guild_id, invite_id, initiative_id = a.guild.id, invite.id, a.initiative.id
+
+    as_admin = await role_session("app_user")
+    await route_as(as_admin, user_id=a.user.id, guild_id=guild_id)
+    as_member = await role_session("app_user")
+    await route_as(as_member, user_id=member.user.id, guild_id=guild_id)
+
+    assert len((await as_admin.exec(select(GuestInviteGrant))).all()) == 1
+    assert (await as_member.exec(select(GuestInviteGrant))).all() == []
+    as_member.add(GuestInviteGrant(invite_id=invite_id, initiative_id=initiative_id))
+    with pytest.raises(DBAPIError):
+        await as_member.flush()

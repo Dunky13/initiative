@@ -127,6 +127,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "enrolls a new member in the auto-join initiatives after the membership "
         "commits, on the community's cohort session"
     ),
+    (f"{_SERVICES}/guilds.py", "_give_guest_invite_grants.give"): (
+        "gives a new guest what their invite names after the membership "
+        "commits, on the community's cohort session"
+    ),
     (f"{_SERVICES}/users.py", "_in_each_guild"): (
         "an account's per-community part of deactivation and erasure, one "
         "cohort session per community it belonged to"

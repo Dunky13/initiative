@@ -15,6 +15,7 @@ from pydantic import (
 
 from app.core.guild_auth_options import CommunityAuthOption
 from app.core.login_methods import LoginMethod
+from app.core.tools import Tool
 from app.core.messages import GuildMessages
 from app.schemas.base import RawTextStr, RichTextStr, SanitizedBaseModel, TitleStr
 from app.schemas.query import PageMeta
@@ -315,6 +316,30 @@ class CommunityBillingSummaryRead(SanitizedBaseModel):
     payment_failed: bool = False
 
 
+class CommunityInviteGrant(SanitizedBaseModel):
+    """What a guest invite gives: an initiative to join, or one item in it at
+    ``read`` or ``write``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    initiative_id: int
+    #: The item and its level, all three or none.
+    resource_type: Optional[Tool] = None
+    resource_id: Optional[int] = None
+    level: Optional[Literal["read", "write"]] = None
+
+    @model_validator(mode="after")
+    def _item_whole(self) -> "CommunityInviteGrant":
+        named = {
+            self.resource_type is None,
+            self.resource_id is None,
+            self.level is None,
+        }
+        if len(named) != 1:
+            raise ValueError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+        return self
+
+
 class CommunityInviteCreate(SanitizedBaseModel):
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = Field(default=1, ge=1)
@@ -322,6 +347,14 @@ class CommunityInviteCreate(SanitizedBaseModel):
     #: Makes a guest invite: whoever redeems it is a guest for this many days,
     #: or the community's or the deployment's longest stay if that is shorter.
     guest_days: Optional[int] = Field(default=None, ge=1)
+    #: What a guest invite gives. Only a guest invite gives anything.
+    grants: List[CommunityInviteGrant] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _grants_need_a_guest(self) -> "CommunityInviteCreate":
+        if self.grants and self.guest_days is None:
+            raise ValueError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+        return self
 
 
 class CommunityInviteRead(SanitizedBaseModel):
@@ -340,8 +373,10 @@ class CommunityInviteRead(SanitizedBaseModel):
     # address on redemption, from the ciphertext.
     invitee_email: Optional[str]
     created_at: datetime
-    #: Set on a guest invite: how many days its guest stays.
+    #: Set on a guest invite: how many days its guest stays, and what it
+    #: gives them.
     guest_days: Optional[int] = None
+    grants: List[CommunityInviteGrant] = Field(default_factory=list)
 
     @field_validator("invitee_email", mode="after")
     @classmethod
