@@ -14,6 +14,7 @@
  * for whom every other section is empty by construction.
  */
 
+import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -43,8 +44,12 @@ import { readableTextShadow } from "@/lib/contrastColor";
 import { DEFAULT_ENABLED_TOOLS, isToolView, TOOLS, type ToolView, toolViews } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
+/** The rail's comment circle: the community's latest comments, in the tray in
+ *  place of a tool's table. */
+const COMMENTS_SEGMENT = "comments";
+
 export function CommunityHomePage() {
-  const { t } = useTranslation("communityHome");
+  const { t } = useTranslation(["communityHome", "comments"]);
   const { activeCommunity } = useCommunities();
   const gp = useCommunityPath();
   const { search, setSearch, selectTool, query, table } = useToolBrowserSearch<{
@@ -103,6 +108,11 @@ export function CommunityHomePage() {
   }, [visibleInitiatives]);
 
   const selected = selectTool(tools);
+  const showingComments = search.tool === COMMENTS_SEGMENT;
+  const railNodes = useMemo(
+    () => [{ segment: COMMENTS_SEGMENT, icon: MessageSquare, label: t("comments:title") }],
+    [t]
+  );
   // Which of the tool's views the table is showing. In the address like the
   // rest of it, and left out while live — the default needs no spelling. A
   // view the selected tool does not have falls back to the live one.
@@ -111,7 +121,7 @@ export function CommunityHomePage() {
       ? search.state
       : "active";
   // How much sits in each of the tool's views across the community.
-  const countsQuery = useToolCounts(selected, {});
+  const countsQuery = useToolCounts(selected, {}, { enabled: !showingComments });
 
   const { rows, totalCount, isLoading, isError } = useCommunityToolRows(
     selected,
@@ -122,6 +132,7 @@ export function CommunityHomePage() {
       sortBy: table.sortBy,
       sortDir: table.sortDir,
       view,
+      enabled: !showingComments,
     }
   );
 
@@ -182,7 +193,8 @@ export function CommunityHomePage() {
             <div>
               <ToolRail
                 tools={tools}
-                selected={selected}
+                nodes={railNodes}
+                selected={showingComments ? COMMENTS_SEGMENT : selected}
                 to={gp("/")}
                 label={t("toolRail")}
                 align={banner.text_align}
@@ -190,50 +202,58 @@ export function CommunityHomePage() {
               <div
                 className={cn("rounded-b-2xl px-3 pt-1 pb-3 sm:px-4 sm:pb-4", TOOL_TRAY_SURFACE)}
               >
-                {/* Which of the tool's views the tray is showing. Above
-                    the table rather than in its toolbar, because it changes
-                    what the table IS rather than narrowing what it holds — and
-                    for a calendar, which has no list page of its own, this is
-                    the only place an archived one can be found. */}
-                <div className="flex justify-end pt-2 pb-3">
-                  <ToolViewFilter
-                    tool={selected}
-                    value={view}
-                    counts={countsQuery.data?.views}
-                    onChange={(next) =>
-                      setSearch({
-                        state: next === "active" ? undefined : next,
-                        // The other state's cursor means nothing in this one.
-                        page: undefined,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* A search that found nothing still renders the table: the
-                    box that found nothing is in its toolbar, and taking it
-                    away would leave no way to unsay the search. */}
-                {isLoading ? (
-                  <SkeletonRegion label={t("loading")}>
-                    <TableSkeleton rows={5} columns={5} pagination />
-                  </SkeletonRegion>
-                ) : isError ? (
-                  <p className="p-2 text-destructive text-sm">{t("loadError")}</p>
-                ) : totalCount === 0 && !query ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{t("empty.title")}</CardTitle>
-                      <CardDescription>{t("empty.description")}</CardDescription>
-                    </CardHeader>
-                  </Card>
+                {showingComments ? (
+                  <div className="pt-2">
+                    <CommunityRecentComments />
+                  </div>
                 ) : (
-                  <ToolTable
-                    tool={selected}
-                    rows={rows}
-                    initiatives={initiativesQuery.data ?? []}
-                    totalCount={totalCount}
-                    {...table}
-                  />
+                  <>
+                    {/* Which of the tool's views the tray is showing. Above
+                      the table rather than in its toolbar, because it changes
+                      what the table IS rather than narrowing what it holds — and
+                      for a calendar, which has no list page of its own, this is
+                      the only place an archived one can be found. */}
+                    <div className="flex justify-end pt-2 pb-3">
+                      <ToolViewFilter
+                        tool={selected}
+                        value={view}
+                        counts={countsQuery.data?.views}
+                        onChange={(next) =>
+                          setSearch({
+                            state: next === "active" ? undefined : next,
+                            // The other state's cursor means nothing in this one.
+                            page: undefined,
+                          })
+                        }
+                      />
+                    </div>
+
+                    {/* A search that found nothing still renders the table: the
+                      box that found nothing is in its toolbar, and taking it
+                      away would leave no way to unsay the search. */}
+                    {isLoading ? (
+                      <SkeletonRegion label={t("loading")}>
+                        <TableSkeleton rows={5} columns={5} pagination />
+                      </SkeletonRegion>
+                    ) : isError ? (
+                      <p className="p-2 text-destructive text-sm">{t("loadError")}</p>
+                    ) : totalCount === 0 && !query ? (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>{t("empty.title")}</CardTitle>
+                          <CardDescription>{t("empty.description")}</CardDescription>
+                        </CardHeader>
+                      </Card>
+                    ) : (
+                      <ToolTable
+                        tool={selected}
+                        rows={rows}
+                        initiatives={initiativesQuery.data ?? []}
+                        totalCount={totalCount}
+                        {...table}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -242,10 +262,7 @@ export function CommunityHomePage() {
               the ones you're in, then the ones you could join. */}
             <InitiativeDirectory entries={directoryEntries} onCreate={onCreate} />
 
-            {/* Community-wide, so it stays put as the rail switches the table's tool. */}
-            <CommunityRecentComments />
-
-            {/* The week ahead, community-wide like the comments above it. */}
+            {/* The week ahead, community-wide, so it stays put as the rail switches the table's tool. */}
             <CommunityComingUp />
           </>
         )}

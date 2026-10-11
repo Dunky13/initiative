@@ -31,6 +31,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
+import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
@@ -51,9 +52,20 @@ const TRAY_EDGE = "top-13";
 
 const GOO_FILTER_ID = "community-tool-rail-goo";
 
+/** A circle after the tools that is not a tool: one of the page's own views,
+ *  addressed by `?tool=<segment>` like the tools beside it. */
+export interface RailNode {
+  segment: string;
+  icon: LucideIcon;
+  label: string;
+}
+
 interface ToolRailProps {
   tools: Tool[];
-  selected: Tool;
+  /** Circles of the page's own, after the tools. */
+  nodes?: readonly RailNode[];
+  /** The open tool, or the segment of the open node. */
+  selected: Tool | RailNode["segment"];
   /** The page the circles link to; each adds its own `?tool=`. */
   to: string;
   /** What the rail is, for a reader who cannot see the circles. */
@@ -62,10 +74,26 @@ interface ToolRailProps {
   align?: "center" | "left";
 }
 
-export const ToolRail = ({ tools, selected, to, label, align = "left" }: ToolRailProps) => {
+export const ToolRail = ({
+  tools,
+  nodes = [],
+  selected,
+  to,
+  label,
+  align = "left",
+}: ToolRailProps) => {
   // Only the tool names come from here; `nav` leads so the derived label keys
   // resolve without a namespace prefix — the same call shape the sidebar uses.
   const { t } = useTranslation("nav");
+  const circles = [
+    ...tools.map((tool) => ({
+      segment: toolRouteSegment(tool),
+      icon: TOOL_ICONS[tool],
+      label: t(toolNavLabelKey(tool)),
+      isSelected: tool === selected,
+    })),
+    ...nodes.map((node) => ({ ...node, isSelected: node.segment === selected })),
+  ];
 
   return (
     <div className="relative">
@@ -118,14 +146,12 @@ export const ToolRail = ({ tools, selected, to, label, align = "left" }: ToolRai
               align === "center" && "justify-center"
             )}
           >
-            {tools.map((tool) => {
-              const Icon = TOOL_ICONS[tool];
-              const isSelected = tool === selected;
+            {circles.map(({ segment, icon: Icon, label: name, isSelected }) => {
               return (
-                <li key={tool}>
+                <li key={segment}>
                   <Link
                     to={to}
-                    search={{ tool: toolRouteSegment(tool) }}
+                    search={{ tool: segment }}
                     aria-current={isSelected ? "page" : undefined}
                     className={cn(
                       "group flex w-20 flex-col items-center rounded-lg pt-5 pb-1 text-center outline-none transition-colors",
@@ -165,7 +191,7 @@ export const ToolRail = ({ tools, selected, to, label, align = "left" }: ToolRai
                           : "font-medium text-muted-foreground group-hover:text-foreground"
                       )}
                     >
-                      {t(toolNavLabelKey(tool))}
+                      {name}
                     </span>
                   </Link>
                 </li>

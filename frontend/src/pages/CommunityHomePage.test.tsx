@@ -559,14 +559,14 @@ describe("CommunityHomePage", () => {
     expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
   });
 
-  // The feed under the table is the whole community's. Each entry names where
+  // The rail's comment circle is the whole community's feed. Each entry names where
   // the comment was left and leads straight back to it, on whichever surface
   // that was — including one the community itself holds rather than an
   // initiative.
   it.each<FeedCase>([
     [
       "the community's latest comment on a task, to the task inside its project",
-      { tools: { projects: [LANDER()] } },
+      { tools: { projects: [LANDER()] }, search: { tool: "comments" } },
       {
         comment_id: 11,
         content: "Ready for the review",
@@ -582,7 +582,7 @@ describe("CommunityHomePage", () => {
     ],
     [
       "a comment left on a tool entity, to that entity",
-      { initiative: { queues_enabled: true }, tools: { queues: [] }, search: { tool: "queues" } },
+      { initiative: { queues_enabled: true }, tools: { queues: [] }, search: { tool: "comments" } },
       {
         comment_id: 12,
         content: "Order looks wrong",
@@ -596,7 +596,7 @@ describe("CommunityHomePage", () => {
     ],
     [
       "a community-level calendar's comment, at the community route",
-      { initiative: { calendars_enabled: true } },
+      { initiative: { calendars_enabled: true }, search: { tool: "comments" } },
       {
         comment_id: 13,
         content: "Moving this to Thursday",
@@ -658,28 +658,36 @@ describe("CommunityHomePage", () => {
     expect(screen.getByText("Waiting for you")).toBeInTheDocument();
   });
 
-  it("keeps the comment feed while the rail switches tools", async () => {
-    stubInitiatives({ queues_enabled: true });
-    stubTools({ queues: [] });
+  it("shows the comments in the tray in place of the table, from their own circle", async () => {
+    stubOneProject();
     stubRecentComment({ content: "Still here" });
 
-    // Queues are empty, so the table is replaced by its empty state — the
-    // community-wide feed is not.
-    renderHome({ tool: "queues" });
+    renderHome({ tool: "comments" });
 
-    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
-    expect(screen.getByText("Still here")).toBeInTheDocument();
+    expect(await screen.findByText("Still here")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Comments" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText("Lunar Lander")).not.toBeInTheDocument();
+  });
+
+  it("keeps the comments out of a tool's tray", async () => {
+    stubOneProject();
+    stubRecentComment({ content: "Not here" });
+
+    renderHome();
+
+    expect(await screen.findByText("Lunar Lander")).toBeInTheDocument();
+    expect(screen.queryByText("Not here")).not.toBeInTheDocument();
   });
 
   it("says so when the community has no comments yet", async () => {
     stubOneProject();
 
-    renderHome();
+    renderHome({ tool: "comments" });
 
     expect(await screen.findByText("No comments yet")).toBeInTheDocument();
   });
 
-  it("lists everything dated this week under the comments, each leading to itself", async () => {
+  it("lists everything dated this week under the initiatives, each leading to itself", async () => {
     stubOneProject();
     const tomorrowNoon = addHours(addDays(startOfDay(new Date()), 1), 12);
     const asked: URL[] = [];

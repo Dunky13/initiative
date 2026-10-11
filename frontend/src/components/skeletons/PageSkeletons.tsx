@@ -570,7 +570,7 @@ export const SettingsPaneSkeleton = ({ label }: LabelledSkeletonProps) => (
 );
 
 /** The community front page: its banner, the tool rail rising out of the
- *  tray with the table in it, the initiative directory, and recent comments. */
+ *  tray with the table in it, the initiative directory, and what is coming up. */
 export const CommunityHomeSkeleton = ({ label }: LabelledSkeletonProps) => (
   <SkeletonRegion label={label} className="space-y-6">
     {/* Full-bleed like the banner it stands in for. */}

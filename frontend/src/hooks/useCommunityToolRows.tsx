@@ -37,6 +37,8 @@ export interface CommunityToolQuery {
    *  is where some of them are found — and the only place they can be taken
    *  back out. */
   view?: ToolView;
+  /** False while the page shows something other than the table. */
+  enabled?: boolean;
 }
 
 export function useCommunityToolRows(
@@ -69,7 +71,7 @@ export function useCommunityToolRows(
   const results = useQueries({
     queries: TOOLS.map((candidate) => ({
       ...TOOL_HOOKS[candidate].listQuery(communityId, params),
-      enabled: candidate === tool,
+      enabled: candidate === tool && view.enabled !== false,
       placeholderData: keepPreviousData,
     })),
   });
