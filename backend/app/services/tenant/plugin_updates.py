@@ -280,6 +280,13 @@ async def apply_version(
                 reason="upgraded",
                 definition=previous,
             )
+    # What the new version adds to tasks shows where it is placed.
+    await guild_plugins_service.show_on_saved_details(
+        session,
+        plugin,
+        await guild_plugins_service.placed_initiative_ids(session, plugin.id),
+        previous=previous,
+    )
     # The new version may route its webhooks by another value, or have
     # dropped the connection that held it.
     await plugin_installs.record(guild_id, plugin)

@@ -75,7 +75,13 @@ import {
   TitleField,
 } from "./fieldEditors";
 import { type FieldKind, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
-import { PluginFieldOnDetail, PluginPartView, pluginFields, usePluginsOnItems } from "./plugins";
+import {
+  PluginFieldOnDetail,
+  PluginPartView,
+  pluginFields,
+  shippedPluginParts,
+  usePluginsOnItems,
+} from "./plugins";
 import { TASK_LAYOUT, taskFields } from "./tasks";
 import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
 
@@ -634,9 +640,12 @@ export const TaskLayoutView = ({
     [gp, context.initiativeId, task.project_id]
   );
   const env = useProjectLayoutEnv(taskHref);
-  const tree = useMemo(() => TASK_LAYOUT.tree(layout), [layout]);
-  const placed = useMemo(() => placedProperties(tree), [tree]);
   const plugins = usePluginsOnItems(context.initiativeId);
+  const tree = useMemo(
+    () => TASK_LAYOUT.tree(layout, shippedPluginParts(plugins)),
+    [layout, plugins]
+  );
+  const placed = useMemo(() => placedProperties(tree), [tree]);
   // The detail's labels are the fields' own.
   const view = useMemo<LayoutContext>(
     () => ({

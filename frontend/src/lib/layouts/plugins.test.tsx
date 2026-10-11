@@ -8,8 +8,13 @@ import i18n from "@/__tests__/helpers/i18n-test";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
 import type { TaskListRead } from "@/api/generated/initiativeAPI.schemas";
-import { pluginFieldId, pluginFields, pluginsOnItems } from "@/lib/layouts/plugins";
-import { taskFields } from "@/lib/layouts/tasks";
+import {
+  pluginFieldId,
+  pluginFields,
+  pluginsOnItems,
+  shippedPluginParts,
+} from "@/lib/layouts/plugins";
+import { TASK_LAYOUT, taskFields } from "@/lib/layouts/tasks";
 import { type LayoutNode, LayoutTree } from "@/lib/layouts/tree";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -101,6 +106,23 @@ describe("pluginsOnItems", () => {
     expect([...(unmet?.fields.keys() ?? [])]).toEqual(["ci.url"]);
     expect(unmet?.parts.size).toBe(0);
     expect(unmet?.actions.size).toBe(0);
+  });
+});
+
+describe("a plug-in on a task's page", () => {
+  it("shows its fields, then its parts, at the end of a side not saved", () => {
+    const more = shippedPluginParts(pluginsOnItems([install], 7));
+    const side = (stored: Parameters<typeof TASK_LAYOUT.root>[0]) =>
+      TASK_LAYOUT.root(stored, more).children?.[2]?.children;
+
+    expect(more).toEqual([
+      { type: "field", props: { field: pluginFieldId(3, "ci.state") } },
+      { type: "field", props: { field: pluginFieldId(3, "ci.url") } },
+      { type: "plugin", props: { plugin: 3, part: "builds" } },
+    ]);
+    expect(side(null)?.slice(-3)).toEqual(more);
+    // A saved side holds what it holds.
+    expect(side({ header: [], main: [], side: [] })).toEqual([]);
   });
 });
 

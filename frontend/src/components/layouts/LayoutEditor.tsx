@@ -55,7 +55,12 @@ import {
   startHistory,
   withCard,
 } from "@/lib/layouts/draft";
-import { type PluginOnItems, pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
+import {
+  type PluginOnItems,
+  pluginFields,
+  shippedPluginParts,
+  usePluginsOnItems,
+} from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import { toast } from "@/lib/mascotToast";
@@ -252,9 +257,16 @@ export const LayoutEditor = ({
         definition: draft.lists[active as ListLayoutReadKind] ?? {},
       };
   const stored = openDetail ? (draft.details[openDetail.spec.kind] ?? null) : null;
+  const installed = usePluginsOnItems(initiativeId);
   const detail = useMemo(
-    () => (openDetail ? openDetail.spec.root(stored as StoredRegions | null) : null),
-    [openDetail, stored]
+    () =>
+      openDetail
+        ? openDetail.spec.root(
+            stored as StoredRegions | null,
+            openDetail.plugins ? shippedPluginParts(installed) : []
+          )
+        : null,
+    [openDetail, stored, installed]
   );
   // The tree the part edits change.
   const tree = current ? cardOf(current.definition) : (detail ?? EMPTY_TREE);
@@ -282,7 +294,6 @@ export const LayoutEditor = ({
   }
 
   const { data: definitions = [] } = useProperties({ initiativeId });
-  const installed = usePluginsOnItems(initiativeId);
   // The plug-ins that draw on what is open: a list's tasks, or a detail that
   // takes them.
   const plugins = openDetail && !openDetail.plugins ? NO_PLUGINS : installed;
