@@ -80,5 +80,21 @@
     "inProject": "en {{projectName}}",
     "readMore": "Leer más",
     "showLess": "Mostrar menos"
+  },
+  "comingUp": {
+    "title": "Próximamente",
+    "description": "Todo lo de la comunidad con fecha en los próximos siete días.",
+    "empty": "No hay nada previsto esta semana",
+    "loadError": "No se pudo cargar lo que viene. Inténtalo de nuevo más tarde.",
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "kind": {
+      "event": "Evento",
+      "taskStart": "Empieza la tarea",
+      "taskDue": "Vence la tarea",
+      "projectStart": "Empieza el proyecto",
+      "projectEnd": "Termina el proyecto",
+      "pollCloses": "Cierra la encuesta"
+    }
   }
 }

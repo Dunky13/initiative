@@ -1,17 +1,22 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { addDays, addHours, format, startOfDay } from "date-fns";
 import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildBanner,
+  buildCalendarEvent,
   buildCommunity,
   buildFileSummary,
   buildInitiative,
   buildInitiativeDirectoryEntry,
   buildInitiativeJoinRequest,
+  buildPoll,
+  buildPost,
   buildProject,
   buildRecentActivityEntry,
+  buildTask,
   buildUser,
   initiativeCan,
 } from "@/__tests__/factories";
@@ -672,6 +677,77 @@ describe("CommunityHomePage", () => {
     renderHome();
 
     expect(await screen.findByText("No comments yet")).toBeInTheDocument();
+  });
+
+  it("lists everything dated this week under the comments, each leading to itself", async () => {
+    stubOneProject();
+    const tomorrowNoon = addHours(addDays(startOfDay(new Date()), 1), 12);
+    const asked: URL[] = [];
+    server.use(
+      communityHttp.get("/calendar-entries/", ({ request }) => {
+        asked.push(new URL(request.url));
+        return HttpResponse.json({
+          events: [
+            buildCalendarEvent({
+              id: 5,
+              title: "Board night",
+              initiative_id: INITIATIVE_ID,
+              start_at: tomorrowNoon.toISOString(),
+              end_at: addHours(tomorrowNoon, 2).toISOString(),
+            }),
+          ],
+          tasks: [
+            buildTask({
+              id: 11,
+              title: "Print flyers",
+              project_id: 1,
+              project_name: "Lunar Lander",
+              initiative_id: INITIATIVE_ID,
+              due_date: tomorrowNoon.toISOString(),
+            }),
+          ],
+          task_occurrences: [],
+          projects: [
+            buildProject({
+              id: 2,
+              name: "Bake sale",
+              initiative_id: INITIATIVE_ID,
+              end_date: format(tomorrowNoon, "yyyy-MM-dd"),
+            }),
+          ],
+          polls: [
+            buildPost({
+              id: 3,
+              name: "Pick a night",
+              initiative_id: INITIATIVE_ID,
+              poll: buildPoll({ question: null, closes_at: tomorrowNoon.toISOString() }),
+            }),
+          ],
+        });
+      })
+    );
+
+    renderHome();
+
+    const card = (title: string) => screen.getByRole("link", { name: new RegExp(title) });
+    expect(await screen.findByText("Board night")).toBeInTheDocument();
+    expect(card("Board night")).toHaveAttribute("href", "/c/1/go/calendar-event/5");
+    expect(card("Print flyers")).toHaveTextContent("Task due");
+    expect(card("Print flyers")).toHaveTextContent("Lunar Lander · Apollo");
+    expect(card("Print flyers")).toHaveAttribute(
+      "href",
+      `/c/1/i/${INITIATIVE_ID}/projects/1/tasks/11`
+    );
+    expect(card("Bake sale")).toHaveTextContent("Project ends");
+    expect(card("Bake sale")).toHaveTextContent("Tomorrow");
+    expect(card("Bake sale")).toHaveAttribute("href", `/c/1/i/${INITIATIVE_ID}/projects/2`);
+    expect(card("Pick a night")).toHaveTextContent("Poll closes");
+    expect(card("Pick a night")).toHaveAttribute("href", `/c/1/i/${INITIATIVE_ID}/posts/3`);
+    // Projects and polls are asked for, and only open tasks.
+    const url = asked.at(-1);
+    expect(url?.searchParams.get("include_projects")).toBe("true");
+    expect(url?.searchParams.get("include_polls")).toBe("true");
+    expect(url?.searchParams.get("conditions")).toContain("in_progress");
   });
 
   it("lists the community's initiatives under the table, grouped by where you stand", async () => {

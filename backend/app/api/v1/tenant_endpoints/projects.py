@@ -229,7 +229,7 @@ def _slim_project_reads(
 ) -> List[ProjectRead]:
     """Build lightweight ``ProjectRead`` rows for the slim projection.
 
-    Carries only ``{id, name, icon, initiative_id, can}`` plus
+    Carries only ``{id, name, icon, initiative_id, can}``, its dates, plus
     the cheap scalar flags and who owns it (``owner_id``, or ``owner_plugin`` as
     the caller annotated it); files/grants/tags/the owner's profile/nested
     initiative are left at their defaults so no heavy relationship is
@@ -244,6 +244,8 @@ def _slim_project_reads(
                 name=project.name,
                 description=None,
                 icon=project.icon,
+                start_date=project.start_date,
+                end_date=project.end_date,
                 owner_id=ownership_service.owner_user_id_of(project),
                 initiative_id=project.initiative_id,
                 created_at=project.created_at,
