@@ -748,5 +748,12 @@
   "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community.",
   "HOLD_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community als diesen Inhalt.",
   "DEMO_LINK_NOT_FOUND": "Dieser Demo-Link funktioniert nicht mehr. Bitte die Person, die ihn geschickt hat, um einen neuen.",
-  "DEMO_BUSY": "Alle Demo-Bereiche sind belegt. Versuche es in einer Minute noch einmal."
+  "DEMO_BUSY": "Alle Demo-Bereiche sind belegt. Versuche es in einer Minute noch einmal.",
+  "DEMO_COPY_NOT_FOUND": "Diese Demo-Kopie gibt es nicht mehr.",
+  "DEMO_PITCH_NOT_FOUND": "Diese Community ist kein Demo-Pitch.",
+  "DEMO_PITCH_ADMIN_REQUIRED": "Nur die Admins dieses Pitches können ihn veröffentlichen.",
+  "DEMO_PITCH_SOURCE_INVALID": "Die Exportdatei des Pitches lässt sich nicht importieren, oder eine genannte Bearbeitungsperson hat kein Konto.",
+  "DEMO_PITCH_HELD": "Dieser Pitch enthält Inhalte, die geprüft werden, und kann noch nicht gelöscht werden.",
+  "DEMO_PERSONA_TAKEN": "Dieser Handle gehört zu einem echten Konto.",
+  "DEMO_LINK_EXPIRY_INVALID": "Ein Demo-Link kann nicht in der Vergangenheit enden."
 }
