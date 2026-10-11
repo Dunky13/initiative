@@ -93,6 +93,7 @@ from app.schemas.platform.guild import (
     CommunityInviteAcceptRequest,
     CommunityInviteCreate,
     CommunityGuestExtend,
+    CommunityInviteGrant,
     CommunityInviteCreated,
     CommunityInviteRead,
     CommunityPaymentIssueRead,
@@ -696,7 +697,20 @@ async def list_community_invites(
     session: SettingsRLSSessionDep,
 ) -> List[CommunityInviteRead]:
     invites = await guilds_service.list_guild_invites(session, guild_id=guild_id)
-    return [CommunityInviteRead.model_validate(invite) for invite in invites]
+    grants = await guilds_service.guest_invite_grants(
+        session, invite_ids=[invite.id for invite in invites if invite.guest_days]
+    )
+    return [
+        CommunityInviteRead.model_validate(invite).model_copy(
+            update={
+                "grants": [
+                    CommunityInviteGrant.model_validate(grant)
+                    for grant in grants.get(invite.id, [])
+                ]
+            }
+        )
+        for invite in invites
+    ]
 
 
 @router.get("/{community_id}", response_model=CommunityRead)
@@ -1377,11 +1391,16 @@ async def create_community_invite(
         max_uses=invite_in.max_uses,
         invitee_email=invite_in.invitee_email,
         guest_days=invite_in.guest_days,
+        grants=invite_in.grants,
         actor_user_id=current_user.id,
     )
     await session.commit()
     return CommunityInviteCreated.model_validate(
-        {**CommunityInviteRead.model_validate(invite).model_dump(), "code": code}
+        {
+            **CommunityInviteRead.model_validate(invite).model_dump(),
+            "code": code,
+            "grants": invite_in.grants,
+        }
     )
 
 

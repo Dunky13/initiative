@@ -29,6 +29,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, false, func, inspect, or_, true
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, undefer
 from sqlmodel import select
 
@@ -527,6 +528,57 @@ async def replace_resource_grants(
             before=before,
             after=after,
         )
+
+
+async def grant_to_person(
+    session: Any,
+    *,
+    resource_type: Tool,
+    resource_id: int,
+    guild_id: int,
+    initiative_id: int | None,
+    user_id: int,
+    level: ResourceAccessLevel,
+    actor_user_id: int | None,
+) -> None:
+    """Share one resource with ``user_id`` at ``level``, unless a grant
+    already names them there, which is left as it is. Recorded as a share is.
+    Caller commits."""
+    held = await session.exec(
+        select(ResourceGrant.id).where(
+            ResourceGrant.resource_type == resource_type,
+            ResourceGrant.resource_id == resource_id,
+            ResourceGrant.user_id == user_id,
+        )
+    )
+    if held.first() is not None:
+        return
+    # Two writers can both find none; the unique grantee key keeps one, and
+    # the other is the share the caller asked for.
+    try:
+        async with session.begin_nested():
+            session.add(
+                ResourceGrant(
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    initiative_id=initiative_id,
+                    user_id=user_id,
+                    level=level,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        return
+    await _record_grant_changes(
+        session,
+        actor_user_id=actor_user_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        guild_id=guild_id,
+        initiative_id=initiative_id,
+        before={},
+        after={("user", user_id): _grant_level(level)},
+    )
 
 
 class Action(str, Enum):

@@ -1104,15 +1104,30 @@ def plugin_metadata_path() -> InitiativePath:
     )
 
 
+#: The community's administration: its admin, a settings rung writing beside
+#: a read_write grant, or the system engine.
+_ADMINISTRATION = (
+    f"({_P.system} OR {_P.admin} OR ({POLICY_SETTINGS_ADMIN} AND {_P.pam_write}))"
+)
+
+
 def managed_write(initiative_expr: str) -> str:
     """Who changes what an initiative is set up with: its managers by the
-    standing, the community's admin, a settings rung writing beside a
-    read_write grant, or the system engine. The structural initiative tables'
-    ``managed_*`` policies, and a shared page's views."""
+    standing, or the community's administration. The structural initiative
+    tables' ``managed_*`` policies, and a shared page's views."""
     return (
-        f"({_P.system} OR {_P.admin} OR ({POLICY_SETTINGS_ADMIN} AND {_P.pam_write})"
-        f" OR ({_P.this_guild}"
+        f"({_ADMINISTRATION} OR ({_P.this_guild}"
         f" AND ({initiative_expr}) = ANY ({_P.field('manager_initiatives')})))"
+    )
+
+
+def administration_path() -> InitiativePath:
+    """A row the community's administration alone reads and writes, whatever
+    initiative it names: what a guest invite gives, which the invites
+    themselves answer to."""
+    return InitiativePath(
+        predicate=lambda t, w: _ADMINISTRATION,
+        initiative_expr=lambda r: f"{r}.initiative_id",
     )
 
 
@@ -1427,6 +1442,7 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     "search_entries": named_tool_path(),
     # Integration config, reached by whoever can reach what it watches.
     "webhook_subscriptions": webhook_subscription_path(),
+    "guest_invite_grants": administration_path(),
     # Stored files, reached through the initiative whose content shows them.
     "uploads": uploads_path(),
     # Reports a community settles. Reached by whoever already sees everything
@@ -1969,6 +1985,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
         "integration config; it reports on content, not on itself"
     ),
     "intake_bindings": Silent("routing config; it reports on no content"),
+    "guest_invite_grants": Silent("an invite's terms; redeeming it is recorded"),
     "moderation_reports": Silent("who reported whom is not an automation signal"),
     "moderation_report_reporters": Silent("the reporters behind one report"),
     "moderation_actions": Silent("the moderation log, read on its own surface"),
