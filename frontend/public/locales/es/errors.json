@@ -464,7 +464,7 @@
   "TOOL_LAYOUTS_TARGET_INVALID": "No se pueden configurar diseños para eso.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "Esta herramienta no muestra ese diseño.",
   "TOOL_LAYOUTS_TOO_LARGE": "Ese diseño tiene demasiadas partes. Quita algunas e inténtalo de nuevo.",
-  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Una tarjeta o un detalle puede tener hasta 3 partes del mismo plug-in.",
+  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Una tarjeta o un detalle puede tener hasta {{max}} partes del mismo plug-in.",
   "COMMUNITY_NOT_A_COMMUNITY": "Esa comunidad no está publicado en el directorio de comunidades.",
   "COMMUNITY_COMMUNITY_REQUIRES_CATEGORY": "Una comunidad publicada necesita al menos una categoría.",
   "COMMUNITY_COMMUNITY_CONTENT_NOT_DECLARED": "Confirma que esta comunidad no contiene contenido para adultos antes de publicarla.",

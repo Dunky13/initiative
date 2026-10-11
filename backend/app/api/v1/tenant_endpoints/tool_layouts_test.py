@@ -460,6 +460,9 @@ async def test_a_layout_is_refused_unless_every_part_is_one_we_draw(
     assert response.status_code == status, response.text
     if detail is not None:
         assert response.json()["detail"] == detail
+    if detail == "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS":
+        # The wording names the contract's limit.
+        assert response.json()["params"] == {"max": str(MAX_PLUGIN_PARTS)}
 
 
 async def test_a_list_offers_the_presets_it_keeps(client: AsyncClient, acting_user):
