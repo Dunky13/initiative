@@ -90,6 +90,7 @@ from app.schemas.platform.guild import (
     CommunityRead,
     CommunityInviteAcceptRequest,
     CommunityInviteCreate,
+    CommunityGuestExtend,
     CommunityInviteCreated,
     CommunityInviteRead,
     CommunityPaymentIssueRead,
@@ -565,6 +566,7 @@ async def get_invite_status(
         expires_at=invite.expires_at if invite else None,
         max_uses=invite.max_uses if invite else None,
         uses=invite.uses if invite else None,
+        guest_days=invite.guest_days if invite else None,
     )
 
 
@@ -1159,6 +1161,8 @@ async def _auth_settings_response(
         redacted_by_platform=platform.redact,
         allow_engagement_ranking=guild.allow_engagement_ranking,
         engagement_ranking_allowed_by_platform=settings_row.engagement_ranking_enabled,
+        guest_max_days=guild.guest_max_days,
+        guest_max_days_by_platform=settings_row.max_guest_days,
     )
 
 
@@ -1226,6 +1230,8 @@ async def update_community_auth_settings(
         key: value
         for key, value in payload.model_dump(exclude=requirements).items()
         if value is not None
+        # ``null`` is an answer for the guests' limit: no limit of its own.
+        or (key == "guest_max_days" and key in payload.model_fields_set)
     }
     for key in requirements:
         asked = getattr(payload, key)
@@ -1368,6 +1374,7 @@ async def create_community_invite(
         expires_at=invite_in.expires_at,
         max_uses=invite_in.max_uses,
         invitee_email=invite_in.invitee_email,
+        guest_days=invite_in.guest_days,
         actor_user_id=current_user.id,
     )
     await session.commit()
@@ -1549,6 +1556,56 @@ async def update_community_membership(
     # Guild-level access change (e.g. admin → member loses the guild-admin
     # bypass): re-check this user's live content streams now so the change takes
     # effect immediately, not on the next bounded re-auth tick.
+    await content_sockets.revoke_user(guild_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{community_id}/guests/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def extend_community_guest(
+    guild_id: CommunityIdPath,
+    _guild_context: SettingsAdminWriteContextDep,
+    user_id: int,
+    payload: CommunityGuestExtend,
+    session: SystemSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Set when a guest's time ends, ``days`` from now. On the system engine,
+    as a role change is: the guild role holds no UPDATE on memberships."""
+    await guilds_service.extend_guest(
+        session,
+        guild_id=guild_id,
+        user_id=user_id,
+        days=payload.days,
+        actor_user_id=current_user.id,
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{community_id}/guests/{user_id}/member",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def make_community_guest_a_member(
+    guild_id: CommunityIdPath,
+    _guild_context: SettingsAdminWriteContextDep,
+    user_id: int,
+    session: SystemSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Make a guest a member. They take a seat, so the member cap applies."""
+    await guilds_service.lock_guild_seats(session, guild_id)
+    await guilds_service.make_guest_a_member(
+        session, guild_id=guild_id, user_id=user_id, actor_user_id=current_user.id
+    )
+    await session.commit()
+    await post_commit.settle(session)
+    # Routed as a guest until now: their live streams re-check as a member.
     await content_sockets.revoke_user(guild_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

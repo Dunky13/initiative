@@ -247,6 +247,8 @@ class GuildMessages:
     COMMUNITY_MEMBERSHIP_MISSING = "COMMUNITY_MEMBERSHIP_MISSING"
     COMMUNITY_USER_LIMIT_REACHED = "COMMUNITY_USER_LIMIT_REACHED"
     COMMUNITY_GUEST_LIMIT_REACHED = "COMMUNITY_GUEST_LIMIT_REACHED"
+    COMMUNITY_GUESTS_DISABLED = "COMMUNITY_GUESTS_DISABLED"
+    NOT_A_GUEST = "NOT_A_GUEST"
     # Asked to join a guild that is not listed in the community directory (or
     # is no longer active). Reported as a 404 — an unlisted guild has published
     # nothing, its existence at a given id included.

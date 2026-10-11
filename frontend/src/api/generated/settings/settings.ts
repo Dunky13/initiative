@@ -914,6 +914,10 @@ export function useReadCommunitySettings<
  * ``engagement_ranking_enabled`` says whether search may order any
  * community's content by how many members engaged with it lately. Each
  * community is asked too, and off wins. Omitted, it is left alone.
+ *
+ * ``guests_enabled`` lets communities have guests, and ``max_guest_days`` is
+ * the longest one may stay. Off, no guest reaches anything until it is back
+ * on. Omitted, each is left alone.
  * @summary Update Community Settings
  */
 export const updateCommunitySettings = (

@@ -237,9 +237,10 @@ async def test_the_seat_writes_only_its_own_switches(engine):
     """The seat changes what its community asks of the people reaching it, and
     nothing else about the community.
 
-    Six columns: whether a second factor is required, whether the session
+    Seven columns: whether a second factor is required, whether the session
     standard is held to, the three that say what a notification may leave
-    carrying, and whether search ranks by engagement. A name, an icon, an owner
+    carrying, whether search ranks by engagement, and how long a guest may
+    stay. A name, an icon, an owner
     or a lifecycle status is not the seat's, and a new column on ``guilds`` is
     not either until a migration says so.
     """
@@ -250,6 +251,7 @@ async def test_the_seat_writes_only_its_own_switches(engine):
         "allow_email_notifications",
         "redact_notification_content",
         "allow_engagement_ranking",
+        "guest_max_days",
     }
     async with engine.connect() as conn:
         held = await conn.scalar(

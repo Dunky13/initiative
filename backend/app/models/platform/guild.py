@@ -260,6 +260,7 @@ class Guild(SQLModel, table=True):
             postgresql_using="gin",
             postgresql_where=text("is_community"),
         ),
+        CheckConstraint("guest_max_days >= 1", name="ck_guilds_guest_max_days"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -409,6 +410,12 @@ class Guild(SQLModel, table=True):
     allow_engagement_ranking: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
+    # The longest a guest may stay, in days, under the deployment's ceiling
+    # (``app_settings.max_guest_days``). NULL leaves the ceiling alone. The
+    # seat sets it with the guests' sign-in rule.
+    guest_max_days: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
     )
 
     # The operator-set caps, plan label, and sign-in entitlement — everything
@@ -600,6 +607,13 @@ class GuildMembership(SQLModel, table=True):
 
 class GuildInvite(SQLModel, table=True):
     __tablename__ = "guild_invites"
+    __table_args__ = (
+        CheckConstraint("guest_days >= 1", name="ck_guild_invites_guest_days"),
+        CheckConstraint(
+            "(guest_days IS NULL) = (guest_role IS NULL)",
+            name="ck_guild_invites_guest_terms",
+        ),
+    )
     __allow_unmapped__ = True
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -624,6 +638,15 @@ class GuildInvite(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    # A guest invite: redeeming it makes a guest with ``guest_role`` for
+    # ``guest_days``. Both are NULL on a member invite.
+    guest_days: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
+    guest_role: Optional[CommunityRole] = Field(
+        default=None,
+        sa_column=Column(SQLEnum(CommunityRole, name="guild_role"), nullable=True),
     )
 
     @property

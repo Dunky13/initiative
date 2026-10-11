@@ -1949,6 +1949,7 @@ async def _join_awaited_invite(
     except (
         guilds_service.GuildInviteError,
         guilds_service.GuildCapacityError,
+        guilds_service.GuestsDisabledError,
         guilds_service.AgeConfirmationRequiredError,
     ) as exc:
         logger.info(

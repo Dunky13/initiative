@@ -249,6 +249,8 @@ class UserCommunityMember(UserCommunityRead):
     #: SEAT-ONLY. Whether this member's personal API keys reach the guild.
     #: ``None`` for anyone who does not hold the superadmin seat.
     api_keys_allowed: Optional[bool] = None
+    #: When a guest's time ends; ``None`` for a member.
+    guest_until: Optional[datetime] = None
 
 
 class UserCommunityMemberListResponse(PageMeta):

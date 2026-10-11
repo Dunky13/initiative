@@ -319,6 +319,9 @@ class CommunityInviteCreate(SanitizedBaseModel):
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = Field(default=1, ge=1)
     invitee_email: Optional[EmailStr] = None
+    #: Makes a guest invite: whoever redeems it is a guest for this many days,
+    #: or the community's or the deployment's longest stay if that is shorter.
+    guest_days: Optional[int] = Field(default=None, ge=1)
 
 
 class CommunityInviteRead(SanitizedBaseModel):
@@ -337,6 +340,8 @@ class CommunityInviteRead(SanitizedBaseModel):
     # address on redemption, from the ciphertext.
     invitee_email: Optional[str]
     created_at: datetime
+    #: Set on a guest invite: how many days its guest stays.
+    guest_days: Optional[int] = None
 
     @field_validator("invitee_email", mode="after")
     @classmethod
@@ -369,6 +374,14 @@ class CommunityInviteStatus(SanitizedBaseModel):
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = None
     uses: Optional[int] = None
+    #: Set on a guest invite: how many days its guest stays.
+    guest_days: Optional[int] = None
+
+
+class CommunityGuestExtend(SanitizedBaseModel):
+    #: The guest's time ends this many days from now, or at the community's
+    #: or the deployment's longest stay if that is shorter.
+    days: int = Field(ge=1)
 
 
 class CommunityUpdate(SanitizedBaseModel):
@@ -640,6 +653,10 @@ class CommunityAuthSettingsRead(SanitizedBaseModel):
     #: lately, and whether the deployment allows that at all.
     allow_engagement_ranking: bool = True
     engagement_ranking_allowed_by_platform: bool = True
+    #: The longest a guest may stay, in days, and the deployment's ceiling,
+    #: which applies when it is ``None`` or longer.
+    guest_max_days: Optional[int] = None
+    guest_max_days_by_platform: int
 
 
 class CommunityAuthSettingsUpdate(SanitizedBaseModel):
@@ -661,6 +678,8 @@ class CommunityAuthSettingsUpdate(SanitizedBaseModel):
     allow_email_notifications: Optional[bool] = None
     redact_notification_content: Optional[bool] = None
     allow_engagement_ranking: Optional[bool] = None
+    #: ``null`` leaves only the deployment's ceiling.
+    guest_max_days: Optional[int] = Field(default=None, ge=1)
 
 
 class CommunityDeletionRequest(SanitizedBaseModel):

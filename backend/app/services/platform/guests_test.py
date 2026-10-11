@@ -399,3 +399,112 @@ async def test_a_guest_hears_of_an_item_only_while_it_reaches_it(
     assert await named_people.readers(session, everyone, [guest_id, member_id]) == {
         member_id
     }
+
+
+def _days_from_now(until: datetime) -> float:
+    return (until - datetime.now(timezone.utc)) / timedelta(days=1)
+
+
+async def test_a_guest_invite_makes_a_guest_for_the_shortest_limit(
+    client, acting_user, session
+):
+    owner = await acting_user()
+    seat = await acting_user(guild_role=CommunityRole.superadmin)
+    joiner = await acting_user()
+    guild_id = seat.guild.id
+
+    platform = await client.put(
+        "/api/v1/settings/community",
+        json={
+            "community_directory_enabled": False,
+            "guests_enabled": True,
+            "max_guest_days": 20,
+        },
+        headers=owner.headers,
+    )
+    assert platform.json()["max_guest_days"] == 20, platform.text
+    limited = await client.patch(
+        f"/api/v1/communities/{guild_id}/auth-settings",
+        json={"guest_max_days": 10},
+        headers=seat.headers,
+    )
+    assert limited.json()["guest_max_days"] == 10, limited.text
+    assert limited.json()["guest_max_days_by_platform"] == 20
+    made = await client.post(
+        f"/api/v1/communities/{guild_id}/invites",
+        json={"guest_days": 30},
+        headers=seat.headers,
+    )
+    assert made.json()["guest_days"] == 10, made.text
+    status = await client.get(f"/api/v1/communities/invite/{made.json()['code']}")
+    assert status.json()["guest_days"] == 10
+
+    joined = await client.post(
+        "/api/v1/communities/invite/accept",
+        json={"code": made.json()["code"]},
+        headers=joiner.headers,
+    )
+
+    assert joined.status_code == 200, joined.text
+    membership = await guilds_service.get_membership(
+        session, guild_id=guild_id, user_id=joiner.user.id
+    )
+    assert membership is not None and membership.role == CommunityRole.guest
+    assert membership.guest_until is not None
+    assert 9.9 < _days_from_now(membership.guest_until) <= 10
+
+
+async def test_no_guest_invite_while_guests_are_off(client, acting_user, session):
+    a = await acting_user(guild_role=CommunityRole.admin)
+    await _platform(session, guests_enabled=False)
+
+    response = await client.post(
+        f"/api/v1/communities/{a.guild.id}/invites",
+        json={"guest_days": 7},
+        headers=a.headers,
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == GuildMessages.COMMUNITY_GUESTS_DISABLED
+
+
+async def test_an_admin_lists_extends_and_makes_a_guest_a_member(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin)
+    member = await acting_user(guild_role=CommunityRole.member, guild=a.guild)
+    await _platform(session)
+    guest = await create_guest(session, a.guild)
+    guild_id, guest_id = a.guild.id, guest.id
+    guests_url = f"/api/v1/communities/{guild_id}/guests/{guest_id}"
+
+    listed = await client.get(
+        a.g("/users/"), params={"guests": True}, headers=a.headers
+    )
+    refused = await client.get(
+        a.g("/users/"), params={"guests": True}, headers=member.headers
+    )
+    extended = await client.patch(guests_url, json={"days": 5}, headers=a.headers)
+    extended_until = (
+        await guilds_service.get_membership(
+            session, guild_id=guild_id, user_id=guest_id
+        )
+    ).guest_until
+    made_member = await client.post(f"{guests_url}/member", headers=a.headers)
+    session.expire_all()
+    after_joining = await guilds_service.get_membership(
+        session, guild_id=guild_id, user_id=guest_id
+    )
+
+    assert [row["id"] for row in listed.json()["items"]] == [guest_id], listed.text
+    assert listed.json()["items"][0]["guest_until"] is not None
+    assert refused.status_code == 403
+    assert extended.status_code == 204, extended.text
+    assert extended_until is not None and 4.9 < _days_from_now(extended_until) <= 5
+    assert made_member.status_code == 204, made_member.text
+    assert after_joining is not None
+    assert after_joining.guest_until is None
+    assert after_joining.role == CommunityRole.member
+    again = await client.patch(guests_url, json={"days": 5}, headers=a.headers)
+    assert again.status_code == 404
+    assert again.json()["detail"] == GuildMessages.NOT_A_GUEST

@@ -77,6 +77,18 @@ class GuildCapacityError(CodedError):
     status_code = 403
 
 
+class GuestsDisabledError(CodedError):
+    """Raised when a guest would be made while the deployment allows none."""
+
+    status_code = 403
+
+
+class NotAGuestError(CodedError):
+    """Raised when a guest's terms are changed for somebody who is not one."""
+
+    status_code = 404
+
+
 class CommunityJoinError(CodedError):
     """Raised when a guild cannot be joined from the community directory."""
 
@@ -518,20 +530,108 @@ async def _assert_member_capacity(
         raise GuildCapacityError(GuildMessages.COMMUNITY_USER_LIMIT_REACHED)
 
 
-async def _assert_guest_capacity(session: AsyncSession, *, guild_id: int) -> None:
+async def _assert_guest_capacity(
+    session: AsyncSession, *, guild_id: int, claiming_seat: bool = True
+) -> None:
     """Raise ``GuildCapacityError`` if the guild is at its ``max_guests`` cap.
 
-    The guest half of :func:`_assert_member_capacity`, on the join path only:
-    the same session requirement, and with a cap set the same transaction-scoped
-    lock, under its own namespace so guests and members do not queue behind
-    each other. A cap of 0 takes no new guests.
+    The guest half of :func:`_assert_member_capacity`: the same session
+    requirement and the same ``claiming_seat``, with the lock under its own
+    namespace so guests and members do not queue behind each other. A cap of 0
+    takes no new guests.
     """
     administration = await get_administration(session, guild_id=guild_id)
     if administration.max_guests is None:
         return
-    await advisory_lock(session, LockNamespace.GUEST_CAP, guild_id)
+    if claiming_seat:
+        await advisory_lock(session, LockNamespace.GUEST_CAP, guild_id)
     if await count_guests(session, guild_id=guild_id) >= administration.max_guests:
         raise GuildCapacityError(GuildMessages.COMMUNITY_GUEST_LIMIT_REACHED)
+
+
+async def _guest_days(session: AsyncSession, *, guild_id: int, days: int) -> int:
+    """``days`` held to the community's longest guest stay and the
+    deployment's. Raises ``GuestsDisabledError`` while the deployment allows no
+    guests."""
+    from app.services.platform import app_settings as app_settings_service
+
+    settings_row = await app_settings_service.get_app_settings(session)
+    if not settings_row.guests_enabled:
+        raise GuestsDisabledError(GuildMessages.COMMUNITY_GUESTS_DISABLED)
+    guild = await get_guild(session, guild_id=guild_id)
+    limits = (days, settings_row.max_guest_days, guild.guest_max_days)
+    return min(limit for limit in limits if limit is not None)
+
+
+async def extend_guest(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    user_id: int,
+    days: int,
+    actor_user_id: int,
+) -> GuildMembership:
+    """End ``user_id``'s time as a guest ``days`` from now, held to the same
+    limits as a new guest's. Raises ``NotAGuestError`` unless they are one."""
+    membership = await get_membership(
+        session, guild_id=guild_id, user_id=user_id, for_update=True
+    )
+    if membership is None or membership.guest_until is None:
+        raise NotAGuestError(GuildMessages.NOT_A_GUEST)
+    before = membership.guest_until
+    days = await _guest_days(session, guild_id=guild_id, days=days)
+    membership.guest_until = datetime.now(timezone.utc) + timedelta(days=days)
+    session.add(membership)
+    await session.flush()
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.GUILD_GUEST_EXTENDED,
+        actor_user_id=actor_user_id,
+        target_user_id=user_id,
+        guild_id=guild_id,
+        target_type="guild",
+        target_id=guild_id,
+        detail={
+            "from": before.isoformat(),
+            "to": membership.guest_until.isoformat(),
+        },
+    )
+    return membership
+
+
+async def make_guest_a_member(
+    session: AsyncSession, *, guild_id: int, user_id: int, actor_user_id: int
+) -> GuildMembership:
+    """Make a guest a member: their time no longer ends and they take a seat,
+    so the member cap applies. Raises ``NotAGuestError`` unless they are a
+    guest."""
+    membership = await get_membership(
+        session, guild_id=guild_id, user_id=user_id, for_update=True
+    )
+    if membership is None or membership.guest_until is None:
+        raise NotAGuestError(GuildMessages.NOT_A_GUEST)
+    await _assert_member_capacity(session, guild_id=guild_id)
+    membership.guest_until = None
+    if membership.role == CommunityRole.guest:
+        membership.role = CommunityRole.member
+    session.add(membership)
+    await session.flush()
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.GUILD_GUEST_MADE_MEMBER,
+        actor_user_id=actor_user_id,
+        target_user_id=user_id,
+        guild_id=guild_id,
+        target_type="guild",
+        target_id=guild_id,
+        detail={"role": membership.role.value},
+    )
+    account_stream.queue_account_signal(session, user_id, "membership")
+    billing_ping.notify_membership_changed(guild_id)
+    enroll_new_member_in_auto_join_initiatives(
+        session, guild_id=guild_id, user_id=user_id, role=membership.role
+    )
+    return membership
 
 
 async def _next_membership_position(session: AsyncSession, *, user_id: int) -> int:
@@ -1413,14 +1513,21 @@ async def create_guild_invite(
     expires_at: datetime | None = None,
     max_uses: int | None = 1,
     invitee_email: str | None = None,
+    guest_days: int | None = None,
     actor_user_id: int | None = None,
 ) -> tuple[GuildInvite, str]:
     """Mint an invite, and return it with its code, which is not kept.
+    ``guest_days`` makes it a guest invite: redeeming it makes a guest for
+    that long, held to the community's and the deployment's limits.
     ``actor_user_id`` names who for the record; without one the invite is
     minted unrecorded."""
     # A full guild mints no new invites: every seat is taken, so any code handed
     # out now could only fail at redemption. Raises ``GuildCapacityError``.
-    await _assert_member_capacity(session, guild_id=guild_id, claiming_seat=False)
+    if guest_days is None:
+        await _assert_member_capacity(session, guild_id=guild_id, claiming_seat=False)
+    else:
+        guest_days = await _guest_days(session, guild_id=guild_id, days=guest_days)
+        await _assert_guest_capacity(session, guild_id=guild_id, claiming_seat=False)
     code = await _generate_unique_invite_code(session)
     if expires_at is None:
         expiry = datetime.now(timezone.utc) + timedelta(
@@ -1439,6 +1546,8 @@ async def create_guild_invite(
         invitee_email_encrypted=encrypt_field(invitee_email, SALT_EMAIL)
         if invitee_email
         else None,
+        guest_days=guest_days,
+        guest_role=CommunityRole.guest if guest_days is not None else None,
     )
     session.add(invite)
     await session.flush()
@@ -1465,6 +1574,7 @@ def _invite_detail(invite: GuildInvite) -> dict[str, object]:
         "max_uses": invite.max_uses,
         "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
         "addressed": invite.invitee_email_encrypted is not None,
+        "guest_days": invite.guest_days,
     }
 
 
@@ -2141,13 +2251,20 @@ async def redeem_invite_for_user(
     if await is_listed_in_directory(session, guild_id=invite.guild_id):
         await assert_age_confirmed(session, user=user)
 
+    guest_until = None
+    if invite.guest_days is not None:
+        days = await _guest_days(
+            session, guild_id=invite.guild_id, days=invite.guest_days
+        )
+        guest_until = datetime.now(timezone.utc) + timedelta(days=days)
     await ensure_membership(
         session,
         guild_id=invite.guild_id,
         user_id=user.id,
-        role=CommunityRole.member,
+        role=invite.guest_role or CommunityRole.member,
         via="invite",
         invite_id=invite.id,
+        guest_until=guest_until,
     )
     invite.uses += 1
     session.add(invite)
