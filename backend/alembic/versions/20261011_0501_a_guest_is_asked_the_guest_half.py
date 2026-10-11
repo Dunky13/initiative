@@ -10,8 +10,8 @@
 The function is stated here as it was and as it becomes, so this revision
 reads the same whatever the module says later.
 
-Revision ID: 20261011_0500
-Revises: 20261010_0499
+Revision ID: 20261011_0501
+Revises: 20261010_0500
 Create Date: 2026-10-11
 """
 
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "20261011_0500"
-down_revision = "20261010_0499"
+revision = "20261011_0501"
+down_revision = "20261010_0500"
 branch_labels = None
 depends_on = None
 
