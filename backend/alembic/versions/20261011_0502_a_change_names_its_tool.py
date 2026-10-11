@@ -10,7 +10,8 @@ resource itself when it is a tool, else the outermost tool among its parents.
 The tool tables are listed as of this revision. The table's row security is
 lifted while they are written, and restored.
 
-The downgrade drops the two columns.
+The downgrade drops the two columns, and the policies rendered on them with
+them; the next boot renders the read policy the older revision expects.
 
 Revision ID: 20261011_0502
 Revises: 20261011_0501
@@ -40,6 +41,13 @@ def _add() -> None:
     op.add_column("event_outbox", sa.Column("dac_tool", sa.Text(), nullable=True))
     op.add_column("event_outbox", sa.Column("dac_id", sa.Integer(), nullable=True))
     op.execute("ALTER TABLE event_outbox NO FORCE ROW LEVEL SECURITY")
+    try:
+        _stamp()
+    finally:
+        op.execute("ALTER TABLE event_outbox FORCE ROW LEVEL SECURITY")
+
+
+def _stamp() -> None:
     op.execute(
         f"""
         UPDATE event_outbox o SET dac_tool = g.tool, dac_id = g.rid
@@ -60,12 +68,15 @@ def _add() -> None:
          WHERE g.id = o.id
         """
     )
-    op.execute("ALTER TABLE event_outbox FORCE ROW LEVEL SECURITY")
 
 
 def _drop() -> None:
-    op.drop_column("event_outbox", "dac_id")
-    op.drop_column("event_outbox", "dac_tool")
+    # The policies rendered on the columns go with them; the next boot renders
+    # what the older revision expects.
+    op.execute(
+        "ALTER TABLE event_outbox DROP COLUMN IF EXISTS dac_id CASCADE, "
+        "DROP COLUMN IF EXISTS dac_tool CASCADE"
+    )
 
 
 def upgrade() -> None:

@@ -161,7 +161,8 @@ SYSTEM_GUILD_MAINTENANCE_GRANTS: dict[str, tuple[str, ...]] = {
     # writes are column-scoped where possible; DELETE needs a table privilege.
     "event_outbox": (
         "INSERT (txn_id, occurred_at, actor_user_id, actor_install_id, "
-        "initiative_id, resource_type, resource_id, action, changed, parents)",
+        "initiative_id, resource_type, resource_id, action, changed, parents, "
+        "dac_tool, dac_id)",
         # The poller's candidate scan: which transactions exist, in what order.
         # Nothing of what a row says — that is read per transaction, as the
         # subscription's owner, where RLS decides it.
