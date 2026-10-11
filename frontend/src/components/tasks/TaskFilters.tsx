@@ -33,6 +33,7 @@ import {
   type DueToken,
   type TaskFilterSpec,
 } from "@/lib/filters/taskFilters";
+import { pluginFilterFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { PRIORITY_ORDER } from "@/lib/sorting";
 
 /**
@@ -87,6 +88,13 @@ export const TaskFilters = ({ scope, value, onChange, stacked = false }: TaskFil
   const { data: tags = [] } = useTags({ enabled: project !== null });
 
   const patch = (fields: Partial<TaskFilterSpec>) => onChange({ ...value, ...fields });
+  // A project's list offers the plug-in fields its readers are drawn there.
+  const { i18n } = useTranslation();
+  const plugins = usePluginsOnItems(project?.initiativeId, project !== null);
+  const pluginFields = useMemo(
+    () => pluginFilterFields(plugins, i18n.language),
+    [plugins, i18n.language]
+  );
 
   // Convert tag IDs to Tag objects for TagPicker
   const selectedTags = useMemo(() => {
@@ -304,7 +312,10 @@ export const TaskFilters = ({ scope, value, onChange, stacked = false }: TaskFil
       <PropertyFilter
         initiativeId={project?.initiativeId}
         value={value.properties}
-        onChange={(properties: PropertyFilterCondition[]) => patch({ properties })}
+        plugins={{ fields: pluginFields, value: value.plugins }}
+        onChange={(properties: PropertyFilterCondition[], plugins) =>
+          patch({ properties, plugins })
+        }
       />
     </div>
   );

@@ -29,7 +29,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, List, Literal, Optional, Union, get_args
 
-from pydantic import AfterValidator, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, ConfigDict, Field, field_validator, model_validator
 
 from app.core.tools import Tool
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
@@ -84,6 +84,21 @@ class PresetPropertyFilter(_Strict):
     value: Any = None
 
 
+class PresetPluginFilter(_Strict):
+    """A filter on a plug-in's field, ``plugin:<install id>:<key>``."""
+
+    field: str
+    op: FilterOp = FilterOp.eq
+    value: Any = None
+
+    @field_validator("field")
+    @classmethod
+    def _plugin_field(cls, value: str) -> str:
+        if not value.startswith(PLUGIN_FIELD_PREFIX):
+            raise ValueError("a plug-in field is 'plugin:<id>:<key>'")
+        return _named_field(value)
+
+
 class TaskFilterSpec(_Strict):
     """The task filters a preset holds, the shape every task list filters by.
     Unknown keys are refused."""
@@ -96,6 +111,9 @@ class TaskFilterSpec(_Strict):
     assignees: List[str] = Field(default_factory=list, max_length=MAX_ASSIGNEES)
     tag_ids: List[int] = Field(default_factory=list, max_length=MAX_TAG_IDS)
     properties: List[PresetPropertyFilter] = Field(
+        default_factory=list, max_length=MAX_PROPERTY_FILTERS
+    )
+    plugins: List[PresetPluginFilter] = Field(
         default_factory=list, max_length=MAX_PROPERTY_FILTERS
     )
     due: Optional[DueToken] = None
@@ -113,6 +131,15 @@ class TaskFilterSpec(_Strict):
     @classmethod
     def _dedupe(cls, value: List[Any]) -> List[Any]:
         return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def _field_filters_within_limit(self) -> "TaskFilterSpec":
+        # Property and plug-in filters share one limit, as a task list does.
+        if len(self.properties) + len(self.plugins) > MAX_PROPERTY_FILTERS:
+            raise ValueError(
+                f"at most {MAX_PROPERTY_FILTERS} property and plug-in filters"
+            )
+        return self
 
 
 class CalendarFilterSpec(_Strict):

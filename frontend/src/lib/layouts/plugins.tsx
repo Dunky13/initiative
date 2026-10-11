@@ -2,10 +2,12 @@ import { Check, ExternalLink, Minus } from "lucide-react";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  CommunityPluginRead,
-  PluginValueSummary,
+import {
+  type CommunityPluginRead,
+  type PluginValueSummary,
+  PropertyType,
 } from "@/api/generated/initiativeAPI.schemas";
+import type { PluginFilterField } from "@/components/properties/PropertyFilter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -153,6 +155,34 @@ export const usePluginsOnItems = (
 
 /** A plug-in field's id in a view: by install and key, as the server checks it. */
 export const pluginFieldId = (install: number, key: string) => `plugin:${install}:${key}`;
+
+/** The property type each kind of plug-in field is filtered like: by its
+ *  words, or by its number (a progress bar's fraction, a date's day). */
+const FILTERED_AS: Record<PluginFieldKind, PropertyType> = {
+  text: PropertyType.text,
+  badge: PropertyType.text,
+  link: PropertyType.text,
+  number: PropertyType.number,
+  progress: PropertyType.number,
+  checkbox: PropertyType.checkbox,
+  date: PropertyType.date,
+  datetime: PropertyType.datetime,
+};
+
+/** The plug-in fields a task list can be filtered by, as the reader is drawn them. */
+export const pluginFilterFields = (
+  plugins: ReadonlyMap<number, PluginOnItems>,
+  language: string
+): PluginFilterField[] =>
+  [...plugins.values()].flatMap(({ id, fields }) =>
+    [...fields.values()]
+      .filter((field) => Object.hasOwn(FILTERED_AS, field.kind))
+      .map((field) => ({
+        id: pluginFieldId(id, field.key),
+        name: localized(field.name, language) ?? field.key,
+        type: FILTERED_AS[field.kind],
+      }))
+  );
 
 /** How many parts of one install a tree may place, as the server allows. */
 export const MAX_PLUGIN_PARTS = 3;
