@@ -2,7 +2,6 @@ import {
   type InfiniteData,
   infiniteQueryOptions,
   useInfiniteQuery,
-  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 
@@ -10,10 +9,8 @@ import {
   createComment,
   deleteComment,
   getListCommentsQueryKey,
-  getRecentCommentsQueryKey,
   listComments,
   readComment,
-  recentComments,
   updateComment,
 } from "@/api/generated/comments/comments";
 import {
@@ -21,8 +18,6 @@ import {
   type CommentListResponse,
   type CommentRead,
   type ListCommentsParams,
-  type RecentActivityEntry,
-  type RecentCommentsParams,
 } from "@/api/generated/initiativeAPI.schemas";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -32,7 +27,6 @@ import { getHttpStatus } from "@/lib/errorMessage";
 import { queryClient } from "@/lib/queryClient";
 import { singularOf } from "@/lib/tools";
 import type { MutationOpts } from "@/types/mutation";
-import type { QueryOpts } from "@/types/query";
 
 // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -107,19 +101,6 @@ export const useCommentThreadState = (
       canModerate: data.pages[0]?.can_moderate ?? false,
     }),
     enabled: options?.enabled,
-  });
-};
-
-export const useRecentComments = (
-  params?: RecentCommentsParams,
-  options?: QueryOpts<RecentActivityEntry[]>
-) => {
-  const communityId = useActiveCommunityId();
-  return useQuery<RecentActivityEntry[]>({
-    queryKey: getRecentCommentsQueryKey(communityId, params),
-    queryFn: () => recentComments(communityId, params),
-    staleTime: 30 * 1000,
-    ...options,
   });
 };
 
@@ -314,7 +295,7 @@ export const useCreateComment = (
   useCommunityMutation<CommentRead, Parameters<typeof createComment>[1]>(
     {
       mutationFn: (communityId, data) => createComment(communityId, data),
-      invalidate: () => invalidate(q.recentComments(), q.relationships()),
+      invalidate: () => invalidate(q.relationships()),
       errorKey: "common:error",
     },
     options
@@ -338,7 +319,7 @@ export const useUpdateComment = (
   >(
     {
       mutationFn: (communityId, { commentId, data }) => updateComment(communityId, commentId, data),
-      invalidate: () => invalidate(q.recentComments(), q.relationships()),
+      invalidate: () => invalidate(q.relationships()),
       errorKey: "common:error",
     },
     options

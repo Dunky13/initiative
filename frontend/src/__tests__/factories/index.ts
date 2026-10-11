@@ -1,3 +1,4 @@
+export { buildActivityEntry } from "./activity.factory";
 export {
   buildCalendarEvent,
   buildEventAttendee,
@@ -7,7 +8,6 @@ export { ownerCan, readerCan, writerCan } from "./can";
 export {
   buildComment,
   buildReactionGroup,
-  buildRecentActivityEntry,
   resetCounter as resetCommentCounter,
 } from "./comment.factory";
 export {

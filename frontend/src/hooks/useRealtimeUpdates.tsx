@@ -82,9 +82,6 @@ const RESOURCE_SPECS: Record<string, (id: number, recount: boolean) => Spec[]> =
     ])
   ),
   tasks: (id) => [q.task(id), q.allTasks()],
-  // The community's recent-activity list is a comment feed of its own. Which thread
-  // moved is a question about the parent, below.
-  comments: () => [q.recentComments()],
   calendar_events: (id) => [q.calendarEvent(id), q.allCalendarEvents()],
   // The wiki it is in is named as its parent, which refreshes the tree.
   wiki_pages: (id) => [q.wikiPage(id)],

@@ -9182,20 +9182,6 @@ export interface ReactionToggle {
   emoji: string;
 }
 
-export interface RecentActivityEntry {
-  comment_id: number;
-  content: string;
-  created_at: string;
-  author: CommentAuthor | null;
-  project_id: number | null;
-  project_name: string | null;
-  entity_type: string | null;
-  entity_id: number | null;
-  entity_name: string | null;
-  initiative_id: number | null;
-  reactions: ReactionGroup[];
-}
-
 export type RecentEntityType = (typeof RecentEntityType)[keyof typeof RecentEntityType];
 
 export const RecentEntityType = {
@@ -12192,14 +12178,6 @@ export type ListCommentsParams = {
   post_id?: number | null;
   gallery_id?: number | null;
   wiki_id?: number | null;
-};
-
-export type RecentCommentsParams = {
-  /**
-   * @minimum 1
-   * @maximum 50
-   */
-  limit?: number;
 };
 
 export type ReadCommentParams = {

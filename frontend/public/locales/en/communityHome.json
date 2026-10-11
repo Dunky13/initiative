@@ -2,6 +2,41 @@
   "title": "Community",
   "subtitle": "Everything in this community, one tool at a time.",
   "nodeRail": "Community activity",
+  "feed": {
+    "nodes": {
+      "all": "All",
+      "yours": "Yours",
+      "comments": "Comments"
+    },
+    "empty": {
+      "all": "Nothing has changed here this week.",
+      "yours": "Nothing has happened to your things this week.",
+      "comments": "Nobody has commented this week."
+    },
+    "loadError": "Failed to load what's been happening. Please try again later.",
+    "loadMore": "Show more",
+    "new": "New",
+    "others_one": "{{count}} other",
+    "others_other": "{{count}} others",
+    "sentence_one": "{{people}} {{actions}}",
+    "sentence_other": "{{people}} {{actions}}",
+    "verbs": {
+      "created_one": "created",
+      "created_other": "created",
+      "completed_one": "completed",
+      "completed_other": "completed",
+      "commented_one": "commented",
+      "commented_other": "commented",
+      "edited_one": "edited",
+      "edited_other": "edited",
+      "moved_one": "moved",
+      "moved_other": "moved",
+      "scheduled_one": "rescheduled",
+      "scheduled_other": "rescheduled",
+      "published_one": "published",
+      "published_other": "published"
+    }
+  },
   "loading": "Loading…",
   "loadError": "Failed to load this tool. Please try again later.",
   "communityWide": "Community-wide",
@@ -70,16 +105,6 @@
       "smart_link": "Link",
       "spreadsheet": "Spreadsheet"
     }
-  },
-  "recentComments": {
-    "title": "Recent comments",
-    "noComments": "No comments yet",
-    "loadError": "Failed to load recent comments. Please try again later.",
-    "unknownAuthor": "Unknown",
-    "onEntity": "on {{entityName}}",
-    "inProject": "in {{projectName}}",
-    "readMore": "Read more",
-    "showLess": "Show less"
   },
   "comingUp": {
     "title": "Coming up",

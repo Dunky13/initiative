@@ -159,14 +159,6 @@ describe("realtime comment frames", () => {
     expect(members(), "roster").toBe(false);
   });
 
-  it("refreshes the community's recent activity for any comment", () => {
-    const recent = seed([`/api/v1/c/${COMMUNITY}/comments/recent`]);
-
-    applyChanges([comment(1, [{ type: "posts", id: ENTITY_ID }])], COMMUNITY);
-
-    expect(recent()).toBe(true);
-  });
-
   it("leaves another entity's thread alone, and reads nothing for a thread not open", async () => {
     const other = seedThread("post_id", 99);
     const closed = seedThread("post_id", ENTITY_ID, { open: false });

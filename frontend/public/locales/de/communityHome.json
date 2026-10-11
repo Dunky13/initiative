@@ -2,6 +2,41 @@
   "title": "Community",
   "subtitle": "Alles in dieser Community, ein Werkzeug nach dem anderen.",
   "nodeRail": "Community-Aktivität",
+  "feed": {
+    "nodes": {
+      "all": "Alles",
+      "yours": "Deins",
+      "comments": "Kommentare"
+    },
+    "empty": {
+      "all": "Diese Woche hat sich hier nichts geändert.",
+      "yours": "Diese Woche ist an deinen Sachen nichts passiert.",
+      "comments": "Diese Woche hat niemand kommentiert."
+    },
+    "loadError": "Was zuletzt passiert ist, konnte nicht geladen werden. Bitte versuche es später erneut.",
+    "loadMore": "Mehr anzeigen",
+    "new": "Neu",
+    "others_one": "{{count}} weitere Person",
+    "others_other": "{{count}} weitere Personen",
+    "sentence_one": "{{people}} hat {{actions}}",
+    "sentence_other": "{{people}} haben {{actions}}",
+    "verbs": {
+      "created_one": "erstellt",
+      "created_other": "erstellt",
+      "completed_one": "abgeschlossen",
+      "completed_other": "abgeschlossen",
+      "commented_one": "kommentiert",
+      "commented_other": "kommentiert",
+      "edited_one": "bearbeitet",
+      "edited_other": "bearbeitet",
+      "moved_one": "verschoben",
+      "moved_other": "verschoben",
+      "scheduled_one": "neu terminiert",
+      "scheduled_other": "neu terminiert",
+      "published_one": "veröffentlicht",
+      "published_other": "veröffentlicht"
+    }
+  },
   "loading": "Wird geladen…",
   "loadError": "Dieses Werkzeug konnte nicht geladen werden. Bitte versuche es später erneut.",
   "communityWide": "Community-weit",
@@ -70,16 +105,6 @@
       "smart_link": "Link",
       "spreadsheet": "Tabelle"
     }
-  },
-  "recentComments": {
-    "title": "Neueste Kommentare",
-    "noComments": "Noch keine Kommentare",
-    "loadError": "Neueste Kommentare konnten nicht geladen werden. Bitte später erneut versuchen.",
-    "unknownAuthor": "Unbekannt",
-    "onEntity": "zu {{entityName}}",
-    "inProject": "in {{projectName}}",
-    "readMore": "Mehr anzeigen",
-    "showLess": "Weniger anzeigen"
   },
   "comingUp": {
     "title": "Demnächst",
