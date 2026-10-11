@@ -685,6 +685,8 @@ class HoldMessages:
     ALREADY_RELEASED = "HOLD_ALREADY_RELEASED"
     #: The case named isn't one the platform is working.
     CASE_NOT_FOUND = "HOLD_CASE_NOT_FOUND"
+    #: The case named is about another community.
+    CASE_OTHER_COMMUNITY = "HOLD_CASE_OTHER_COMMUNITY"
     #: Another hold still covers it, so it can't be removed or destroyed.
     COVERED_BY_ANOTHER = "HOLD_COVERED_BY_ANOTHER"
     #: The community is being deleted for good.

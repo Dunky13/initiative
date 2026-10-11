@@ -7,9 +7,10 @@
  * name somebody filled in is theirs, and an operator needs none of it to do
  * any of this.
  *
- * The levers themselves live in the sheet behind Manage and the row's menu, and
- * each one is drawn only where the row's `allowed_actions` names it — the
- * server works that out per viewer, so nothing here asks for a role.
+ * The levers themselves live in the sheet behind Manage, where the case an act
+ * is for can be named, and each one is drawn only where the row's
+ * `allowed_actions` names it — the server works that out per viewer, so
+ * nothing here asks for a role. The row's menu only exports.
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -39,6 +40,9 @@ const state = vi.hoisted(() => ({
   casesEnabled: undefined as boolean | undefined,
   grantCases: [] as GrantCaseRead[],
   signOutCase: undefined as number | null | undefined,
+  resetPassword: vi.fn(),
+  resetCase: undefined as number | null | undefined,
+  deleteCase: undefined as number | null | undefined,
 }));
 
 vi.mock("@/hooks/useAccessGrants", () => ({
@@ -57,7 +61,15 @@ vi.mock("@/hooks/useOperatorUsers", () => ({
     state.search = params.search;
     return { data: buildPage(state.roster), isLoading: false, isError: false };
   },
-  useOperatorTriggerPasswordReset: () => ({ mutate: vi.fn(), isPending: false }),
+  useOperatorTriggerPasswordReset: (_options: unknown, caseTaskId?: number | null) => {
+    state.resetCase = caseTaskId;
+    return { mutate: state.resetPassword, isPending: false };
+  },
+  useOperatorDeleteUser: (_userId: number, _options: unknown, caseTaskId?: number | null) => {
+    state.deleteCase = caseTaskId;
+    return { mutate: vi.fn(), isPending: false };
+  },
+  useUserDeletionEligibility: () => ({ data: undefined, refetch: vi.fn(), isFetching: false }),
   useOperatorResendVerification: () => ({ mutate: vi.fn(), isPending: false }),
   useOperatorSetUsername: () => ({ mutate: vi.fn(), isPending: false }),
   useOperatorClearAgeBlock: () => ({ mutate: vi.fn(), isPending: false }),
@@ -183,59 +195,20 @@ describe("SettingsPlatformUsersPage", () => {
     expect(screen.queryByRole("button", { name: /^Actions$/ })).not.toBeInTheDocument();
   });
 
-  it("puts the row's actions behind one menu instead of a run of buttons", async () => {
-    renderRoster(masked(["delete", "suspend"]));
+  it("keeps only the export in the row's menu", async () => {
+    renderRoster(masked(["delete", "suspend", "reset_password", "clear_second_factor"]));
 
     const triggers = await screen.findAllByRole("button", { name: /actions for/i });
     expect(triggers).toHaveLength(2);
-
-    // Flat, these were up to seven buttons per row; none draws until asked.
-    expect(screen.queryByText("Delete user")).not.toBeInTheDocument();
-
     await userEvent.click(triggers[1]);
 
+    // Every act on the account is in its sheet, where its case can be named.
     const menu = await screen.findByRole("menu");
-    expect(menu).toHaveTextContent("Delete user");
-    // Suspending is a setting the sheet holds, not a one-shot menu item.
-    expect(menu).not.toHaveTextContent("Suspend");
+    expect(menu).toHaveTextContent("Export");
+    expect(menu).not.toHaveTextContent("Delete user");
+    expect(menu).not.toHaveTextContent("Reset password");
+    expect(menu).not.toHaveTextContent("Clear two-factor authentication");
   });
-
-  it.each([true, false])(
-    "offers a password reset only where the row allows it (%s)",
-    async (allowed) => {
-      renderRoster(masked(allowed ? ["reset_password"] : []), buildUser({ role: "moderator" }));
-
-      const triggers = await screen.findAllByRole("button", { name: /actions for/i });
-      await userEvent.click(triggers[1]);
-      const item = within(await screen.findByRole("menu")).queryByText("Reset password");
-      expect(Boolean(item)).toBe(allowed);
-    }
-  );
-
-  it.each([true, false])(
-    "offers to clear an authenticator only where allowed (%s)",
-    async (allowed) => {
-      const rows = masked(allowed ? ["clear_second_factor"] : []);
-      renderRoster(rows, buildUser({ role: "moderator" }));
-
-      const triggers = await screen.findAllByRole("button", { name: /actions for/i });
-      await userEvent.click(triggers[1]);
-      const item = within(await screen.findByRole("menu")).queryByText(
-        "Clear two-factor authentication"
-      );
-      if (!allowed) {
-        expect(item).not.toBeInTheDocument();
-        return;
-      }
-
-      // It signs them out everywhere, so it asks first.
-      await userEvent.click(item as HTMLElement);
-      const dialog = await screen.findByRole("alertdialog");
-      expect(state.clearSecondFactor).not.toHaveBeenCalled();
-      await userEvent.click(within(dialog).getByRole("button", { name: "Clear it" }));
-      expect(state.clearSecondFactor).toHaveBeenCalledWith(rows[1].id);
-    }
-  );
 
   it("marks an account with open cases on its row", async () => {
     const rows = masked();
@@ -368,13 +341,76 @@ describe("SettingsPlatformUsersPage manage sheet", () => {
     expect(state.clearProfileField).toHaveBeenCalledWith({ userId: rows[1].id, field });
   });
 
-  it("offers nothing to open on a row that allows nothing the sheet holds", async () => {
-    // The roster's menu actions are not the sheet's: a row that only allows a
-    // password reset has nothing behind Manage.
-    renderRoster(masked(["reset_password"]), buildUser({ role: "moderator" }));
+  it("offers nothing to open on a row that allows nothing", async () => {
+    renderRoster(masked([]), buildUser({ role: "moderator" }));
 
     await screen.findByText("owner");
     expect(screen.queryByRole("button", { name: /manage account/i })).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])(
+    "offers a password reset only where the row allows it (%s)",
+    async (allowed) => {
+      state.resetPassword.mockClear();
+      const rows = masked(allowed ? ["reset_password"] : ["rename"]);
+      renderRoster(rows, buildUser({ role: "moderator" }));
+
+      const sheet = await openSheet();
+      const reset = within(sheet).queryByRole("button", { name: "Reset password" });
+      if (!allowed) {
+        expect(reset).not.toBeInTheDocument();
+        return;
+      }
+      await userEvent.click(reset as HTMLElement);
+      const dialog = await screen.findByRole("alertdialog");
+      expect(state.resetPassword).not.toHaveBeenCalled();
+      await userEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+      expect(state.resetPassword).toHaveBeenCalledWith(rows[1].id);
+    }
+  );
+
+  it.each([true, false])(
+    "offers to clear an authenticator only where allowed (%s)",
+    async (allowed) => {
+      state.clearSecondFactor.mockClear();
+      const rows = masked(allowed ? ["clear_second_factor"] : ["rename"]);
+      renderRoster(rows, buildUser({ role: "moderator" }));
+
+      const sheet = await openSheet();
+      const clear = lever(sheet, "Two-factor authentication");
+      if (!allowed) {
+        expect(clear).not.toBeInTheDocument();
+        return;
+      }
+      // It signs them out everywhere, so it asks first.
+      await userEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
+      const dialog = await screen.findByRole("alertdialog");
+      expect(state.clearSecondFactor).not.toHaveBeenCalled();
+      await userEvent.click(within(dialog).getByRole("button", { name: "Clear it" }));
+      expect(state.clearSecondFactor).toHaveBeenCalledWith(rows[1].id);
+    }
+  );
+
+  it("takes a one-off act and a deletion for the case chosen in the sheet", async () => {
+    state.grantCases = [
+      {
+        task_id: 43,
+        title: "Locked out",
+        stream: "support",
+        subject_community_id: null,
+        mine: true,
+      },
+    ];
+    renderRoster(masked(["reset_password", "delete"]), buildUser({ role: "operator" }));
+
+    const sheet = await openSheet();
+    await userEvent.click(within(sheet).getByRole("combobox", { name: "For case" }));
+    await userEvent.click(await screen.findByRole("option", { name: /#43 · Locked out/ }));
+    expect(state.resetCase).toBe(43);
+
+    await userEvent.click(within(sheet).getByRole("button", { name: "Delete…" }));
+    await waitFor(() => expect(state.deleteCase).toBe(43));
+    state.grantCases = [];
   });
 
   it("lists an account's open cases, read once the sheet is open", async () => {

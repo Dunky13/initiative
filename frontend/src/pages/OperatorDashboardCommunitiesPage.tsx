@@ -262,13 +262,17 @@ const CommunityAccessMenu = ({ community }: { community: PlatformCommunityStorag
   const { t } = useTranslation("settings");
   const canRequest = community.allowed_actions.includes(CommunityAction.request_access);
   const canBreakGlass = community.allowed_actions.includes(CommunityAction.break_glass);
+  // A moderator reaching a community from here is moderating it: suspending
+  // it, or looking at what it holds, takes Moderate.
+  const { user } = useAuth();
+  const level = hasCapability(user, Capability.contentModerate) ? "moderate" : undefined;
   return (
     <RowActionsMenu subject={community.name}>
       {canRequest && (
         <DropdownMenuItem asChild>
           <Link
             to="/settings/operator/access"
-            search={{ community: community.id, name: community.name, form: "request" }}
+            search={{ community: community.id, name: community.name, form: "request", level }}
           >
             <KeyRound className="h-4 w-4" />
             {t("communities.access.request")}

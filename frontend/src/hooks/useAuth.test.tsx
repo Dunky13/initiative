@@ -37,6 +37,11 @@ vi.mock("@/api/client", () => ({
   forgetSessionActivity: vi.fn(),
 }));
 
+const prefetchViewPreferences = vi.fn();
+vi.mock("@/lib/viewPreferences", () => ({
+  prefetchViewPreferences: () => prefetchViewPreferences(),
+}));
+
 // Generated calls arrive here: the account read answers from `get`, every POST
 // is recorded on `post`, and nothing else answers.
 vi.mock("@/api/mutator", () => ({
@@ -534,5 +539,44 @@ describe("useAuth passkey step-up", () => {
     presentPasskey.mockRejectedValueOnce(new Error("no credential"));
     await expect(auth.stepUpWithPasskey()).rejects.toThrow();
     expect(setAuthToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAuth while suspended", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset().mockResolvedValue({ data: {} });
+    getItem.mockReset().mockReturnValue(null);
+    prefetchViewPreferences.mockClear();
+  });
+
+  const refused = () =>
+    act(() => {
+      window.dispatchEvent(new CustomEvent("initiative:auth:account-suspended"));
+    });
+
+  it("re-reads the account the first time a request says it is suspended", async () => {
+    get.mockResolvedValueOnce({ data: buildUser({ status: "active" }) });
+    renderAuth();
+    await waitFor(() => expect(auth.user?.status).toBe("active"));
+    expect(prefetchViewPreferences).toHaveBeenCalled();
+
+    get.mockResolvedValueOnce({ data: buildUser({ status: "suspended" }) });
+    refused();
+    await waitFor(() => expect(auth.user?.status).toBe("suspended"));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks nothing more of a suspended account, so a refusal can't loop", async () => {
+    get.mockResolvedValue({ data: buildUser({ status: "suspended" }) });
+    renderAuth();
+    await waitFor(() => expect(auth.user?.status).toBe("suspended"));
+    // Nothing on the time-out screen reads the saved views.
+    expect(prefetchViewPreferences).not.toHaveBeenCalled();
+
+    refused();
+    refused();
+    await act(async () => {});
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

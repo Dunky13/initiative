@@ -137,14 +137,21 @@ async def test_a_request_must_name_a_case_where_cases_are_taken(
 
 
 async def test_a_request_for_a_case_tells_the_case_and_names_its_community(
-    client: AsyncClient, session: AsyncSession, desk
+    client: AsyncClient, session: AsyncSession, desk, capfd
 ):
+    from app.core.audit_events import AuditEventType
+    from app.testing.audit import emitted
+
     target = await create_guild(session)
     task_id = await _case()
 
+    emitted(capfd)
     response = await _request(client, desk["agent"], target.id, case_task_id=task_id)
     assert response.status_code == 201, response.text
     assert response.json()["case_task_id"] == task_id
+    (linked,) = emitted(capfd, AuditEventType.ACCESS_GRANT_CASE_LINKED)
+    assert linked["target"] == {"type": "access_grant", "id": response.json()["id"]}
+    assert linked["detail"]["case_task_id"] == task_id
 
     (requested,) = await _notes(session, desk, task_id)
     assert requested.system_kind == "grant_requested"

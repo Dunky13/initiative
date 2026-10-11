@@ -133,7 +133,8 @@ export const CaseHolds = ({ taskId, communityId, resourceType, resourceId }: Cas
           {t("case.holds.needGrant", { community: communityId })}{" "}
           <Link
             to="/settings/operator/access"
-            search={{ form: "request", case: taskId, community: communityId }}
+            // Reading what the platform holds takes Moderate.
+            search={{ form: "request", case: taskId, community: communityId, level: "moderate" }}
             className="underline underline-offset-2"
           >
             {t("case.holds.requestAccess")}

@@ -76,6 +76,13 @@ interface LoginPayload {
   deviceName?: string;
 }
 
+/** Ask for the view-preference map for `account` ahead of the first screen.
+ *  A suspended account reaches only its time-out screen, which has no lists,
+ *  and is refused everything else. */
+const prefetchFor = (account: UserRead): void => {
+  if (account.status !== "suspended") prefetchViewPreferences();
+};
+
 /** Answering a challenge: one of the two codes, never both. */
 interface SecondFactorPayload {
   challenge: string;
@@ -199,6 +206,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // * `identityEpochRef` — signing in or out replaces *who* the account is,
   //   which no read of the previous person may undo. Bumped there and nowhere
   //   else, so an ordinary read cannot invalidate another read.
+  // Whether the account held now is suspended, for the refusal handler below,
+  // which outlives any one render.
+  const suspendedRef = useRef(false);
+  useEffect(() => {
+    suspendedRef.current = user?.status === "suspended";
+  }, [user]);
   const readSeqRef = useRef(0);
   const appliedReadRef = useRef(0);
   const identityEpochRef = useRef(0);
@@ -232,7 +245,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // The first screen's list query waits on the saved filters and sort, so
       // ask for them from here rather than from the screen: knowing who is
       // signed in is the only prerequisite, and this is where that happens.
-      if (nextUser) prefetchViewPreferences();
+      if (nextUser) prefetchFor(nextUser);
     },
     [rememberIdentity]
   );
@@ -256,7 +269,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       serveAccount(currentServerKey(), nextUser.id);
       // The view-preference map is still fresh from any earlier call, so a
       // re-read costs nothing.
-      prefetchViewPreferences();
+      prefetchFor(nextUser);
     },
     [rememberIdentity]
   );
@@ -659,6 +672,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return undefined;
     }
     const handleSuspended = () => {
+      // Already showing the time-out screen: the account read already says
+      // so, and reading it again would only be refused again.
+      if (suspendedRef.current) return;
       void refreshUser();
     };
     window.addEventListener(AUTH_ACCOUNT_SUSPENDED_EVENT, handleSuspended);
