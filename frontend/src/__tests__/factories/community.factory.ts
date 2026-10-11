@@ -93,6 +93,7 @@ export function buildCommunityInviteStatus(
     expires_at: null,
     max_uses: null,
     uses: 0,
+    guest_days: null,
     ...overrides,
   };
 }
