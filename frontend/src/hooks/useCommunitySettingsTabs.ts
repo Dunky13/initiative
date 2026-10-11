@@ -27,7 +27,11 @@ export const useCommunitySettingsTabs = (): SettingsTab[] => {
   const onTheGrantedSeat = activeCommunity?.grantSettingsLevel === "superadmin";
   const isSuperadmin = Boolean(activeCommunity?.can.seat);
   // Where the deployment has a billing portal, the plan sits with the usage.
-  const { billing } = useAppConfig();
+  const { billing, guestsEnabled } = useAppConfig();
+  // Guests are invited by whoever hands out invites, and only where the
+  // deployment allows guests and the community takes them.
+  const managesGuests =
+    Boolean(activeCommunity?.can.configure) && guestsEnabled && activeCommunity?.max_guests !== 0;
   // Where the community has a sign-in of its own to configure, that is. Most
   // never do: the operator grants each half of the surface separately, and
   // with neither there is nothing on the tab to show anybody. A grantee's
@@ -72,6 +76,17 @@ export const useCommunitySettingsTabs = (): SettingsTab[] => {
         label: t("communityLayout.tabs.users"),
         path: urlCommunityId ? communityPath(urlCommunityId, "/settings/users") : "/settings/users",
       },
+      ...(managesGuests
+        ? [
+            {
+              value: "guests",
+              label: t("communityLayout.tabs.guests"),
+              path: urlCommunityId
+                ? communityPath(urlCommunityId, "/settings/guests")
+                : "/settings/guests",
+            },
+          ]
+        : []),
       ...(configuresItsOwnSignIn
         ? [
             {
@@ -151,5 +166,13 @@ export const useCommunitySettingsTabs = (): SettingsTab[] => {
       });
     }
     return tabs;
-  }, [urlCommunityId, t, configuresItsOwnSignIn, isSuperadmin, reachesContent, billing]);
+  }, [
+    urlCommunityId,
+    t,
+    configuresItsOwnSignIn,
+    isSuperadmin,
+    reachesContent,
+    billing,
+    managesGuests,
+  ]);
 };

@@ -21,6 +21,7 @@ const config = vi.hoisted(() => ({
   directMessages: true,
   retentionDays: 90 as number | null,
   holdDays: 30 as number | null,
+  guests: false,
 }));
 
 vi.mock("@/hooks/useAppConfig", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/hooks/useAppConfig", () => ({
     communityDirectoryEnabled: config.communityDirectory,
     communityAgeGateEnabled: config.ageGate,
     directMessagesEnabled: config.directMessages,
+    guestsEnabled: config.guests,
     isLoading: false,
   }),
 }));
@@ -43,6 +45,8 @@ vi.mock("@/hooks/useSettings", () => ({
       deleted_community_retention_days: config.retentionDays,
       on_hold_community_deletion_days: config.holdDays,
       engagement_ranking_enabled: true,
+      guests_enabled: config.guests,
+      max_guest_days: 365,
     },
   }),
 }));
@@ -65,6 +69,7 @@ beforeEach(() => {
   config.directMessages = true;
   config.retentionDays = 90;
   config.holdDays = 30;
+  config.guests = false;
 });
 
 describe("SettingsPlatformCommunityPage", () => {
@@ -309,6 +314,37 @@ describe("how long communities stay on hold", () => {
     expect(updateMutate).toHaveBeenCalledWith({
       community_directory_enabled: false,
       on_hold_community_deletion_days: null,
+    });
+  });
+});
+
+describe("guests", () => {
+  it("lets communities have guests", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByLabelText("Allow guests"));
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      community_directory_enabled: false,
+      guests_enabled: true,
+    });
+  });
+
+  it("saves the longest a guest may stay", async () => {
+    config.guests = true;
+    renderPage();
+
+    const box = (await screen.findByLabelText(
+      "Longest a guest may stay (days)"
+    )) as HTMLInputElement;
+    expect(box.value).toBe("365");
+
+    await userEvent.clear(box);
+    await userEvent.type(box, "30");
+    await userEvent.click(screen.getByRole("button", { name: "Save the longest guest stay" }));
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      community_directory_enabled: false,
+      max_guest_days: 30,
     });
   });
 });

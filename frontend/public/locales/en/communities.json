@@ -615,5 +615,38 @@
       "apply": "Show nearby first",
       "clear": "Stop sorting by location"
     }
+  },
+  "guests": {
+    "invitesTitle": "Invite a guest",
+    "invitesDescription": "Make a link for someone who should see only certain initiatives or items, for a set number of days.",
+    "guestDaysLabel": "Days the guest stays",
+    "initiativesLabel": "Initiatives they join",
+    "initiativesPlaceholder": "None",
+    "itemsLabel": "Items they get",
+    "itemsHelp": "Search for a project, file or other item, then choose whether they can view or edit it.",
+    "itemLevel": "Access to {{title}}",
+    "removeItem": "Remove {{title}}",
+    "generateInvite": "Generate guest invite",
+    "noActiveInvites": "No guest invites.",
+    "staysDays_one": "Stays {{count}} day",
+    "staysDays_other": "Stays {{count}} days",
+    "joinsInitiatives": "Joins {{names}}",
+    "givesItems_one": "{{count}} item",
+    "givesItems_other": "{{count}} items",
+    "listTitle": "Guests",
+    "listDescription": "People here for a set number of days. A guest takes no seat and sees only what their invite gave them.",
+    "loading": "Loading guests…",
+    "unableToLoad": "Unable to load guests.",
+    "noGuests": "No guests right now.",
+    "endsColumn": "Time ends",
+    "extend": "Extend",
+    "extendTitle": "Extend {{name}}'s time",
+    "extendDescription": "Their time as a guest ends this many days from now, or sooner if the community or the server allows less.",
+    "extendDaysLabel": "Days from now",
+    "extended": "Guest time extended.",
+    "extendError": "Could not extend their time.",
+    "makeMember": "Make member",
+    "madeMember": "They're a member now.",
+    "makeMemberError": "Could not make them a member."
   }
 }

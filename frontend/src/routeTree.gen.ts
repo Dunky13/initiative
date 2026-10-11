@@ -86,6 +86,7 @@ import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsIndexRouteImpor
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/community'
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/danger-zone'
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsDataRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/data'
+import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/guests'
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/initiatives'
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/integrations'
 import { Route as ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRouteImport } from './routes/_serverRequired/_authenticated/c/$communityId/settings/security'
@@ -627,6 +628,12 @@ const ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute =
   ServerRequiredAuthenticatedCCommunityIdSettingsDataRouteImport.update({
     id: '/data',
     path: '/data',
+    getParentRoute: () => ServerRequiredAuthenticatedCCommunityIdSettingsRoute,
+  } as any)
+const ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute =
+  ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRouteImport.update({
+    id: '/guests',
+    path: '/guests',
     getParentRoute: () => ServerRequiredAuthenticatedCCommunityIdSettingsRoute,
   } as any)
 const ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute =
@@ -1496,6 +1503,7 @@ export interface FileRoutesByFullPath {
   '/c/$communityId/settings/community': typeof ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRoute
   '/c/$communityId/settings/danger-zone': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute
   '/c/$communityId/settings/data': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute
+  '/c/$communityId/settings/guests': typeof ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute
   '/c/$communityId/settings/initiatives': typeof ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute
   '/c/$communityId/settings/integrations': typeof ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute
   '/c/$communityId/settings/security': typeof ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRoute
@@ -1658,6 +1666,7 @@ export interface FileRoutesByTo {
   '/c/$communityId/settings/community': typeof ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRoute
   '/c/$communityId/settings/danger-zone': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute
   '/c/$communityId/settings/data': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute
+  '/c/$communityId/settings/guests': typeof ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute
   '/c/$communityId/settings/initiatives': typeof ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute
   '/c/$communityId/settings/integrations': typeof ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute
   '/c/$communityId/settings/security': typeof ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRoute
@@ -1818,6 +1827,7 @@ export interface FileRoutesById {
   '/_serverRequired/_authenticated/c/$communityId/settings/community': typeof ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRoute
   '/_serverRequired/_authenticated/c/$communityId/settings/danger-zone': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute
   '/_serverRequired/_authenticated/c/$communityId/settings/data': typeof ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute
+  '/_serverRequired/_authenticated/c/$communityId/settings/guests': typeof ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute
   '/_serverRequired/_authenticated/c/$communityId/settings/initiatives': typeof ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute
   '/_serverRequired/_authenticated/c/$communityId/settings/integrations': typeof ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute
   '/_serverRequired/_authenticated/c/$communityId/settings/security': typeof ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRoute
@@ -1988,6 +1998,7 @@ export interface FileRouteTypes {
     | '/c/$communityId/settings/community'
     | '/c/$communityId/settings/danger-zone'
     | '/c/$communityId/settings/data'
+    | '/c/$communityId/settings/guests'
     | '/c/$communityId/settings/initiatives'
     | '/c/$communityId/settings/integrations'
     | '/c/$communityId/settings/security'
@@ -2150,6 +2161,7 @@ export interface FileRouteTypes {
     | '/c/$communityId/settings/community'
     | '/c/$communityId/settings/danger-zone'
     | '/c/$communityId/settings/data'
+    | '/c/$communityId/settings/guests'
     | '/c/$communityId/settings/initiatives'
     | '/c/$communityId/settings/integrations'
     | '/c/$communityId/settings/security'
@@ -2309,6 +2321,7 @@ export interface FileRouteTypes {
     | '/_serverRequired/_authenticated/c/$communityId/settings/community'
     | '/_serverRequired/_authenticated/c/$communityId/settings/danger-zone'
     | '/_serverRequired/_authenticated/c/$communityId/settings/data'
+    | '/_serverRequired/_authenticated/c/$communityId/settings/guests'
     | '/_serverRequired/_authenticated/c/$communityId/settings/initiatives'
     | '/_serverRequired/_authenticated/c/$communityId/settings/integrations'
     | '/_serverRequired/_authenticated/c/$communityId/settings/security'
@@ -2948,6 +2961,13 @@ declare module '@tanstack/react-router' {
       path: '/data'
       fullPath: '/c/$communityId/settings/data'
       preLoaderRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsDataRouteImport
+      parentRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsRoute
+    }
+    '/_serverRequired/_authenticated/c/$communityId/settings/guests': {
+      id: '/_serverRequired/_authenticated/c/$communityId/settings/guests'
+      path: '/guests'
+      fullPath: '/c/$communityId/settings/guests'
+      preLoaderRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRouteImport
       parentRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsRoute
     }
     '/_serverRequired/_authenticated/c/$communityId/settings/initiatives': {
@@ -3633,6 +3653,7 @@ interface ServerRequiredAuthenticatedCCommunityIdSettingsRouteChildren {
   ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsCommunityRoute
   ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute
   ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute
+  ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute
   ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute
   ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute
   ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRoute: typeof ServerRequiredAuthenticatedCCommunityIdSettingsSecurityRoute
@@ -3650,6 +3671,8 @@ const ServerRequiredAuthenticatedCCommunityIdSettingsRouteChildren: ServerRequir
       ServerRequiredAuthenticatedCCommunityIdSettingsDangerZoneRoute,
     ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute:
       ServerRequiredAuthenticatedCCommunityIdSettingsDataRoute,
+    ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute:
+      ServerRequiredAuthenticatedCCommunityIdSettingsGuestsRoute,
     ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute:
       ServerRequiredAuthenticatedCCommunityIdSettingsInitiativesRoute,
     ServerRequiredAuthenticatedCCommunityIdSettingsIntegrationsRoute:

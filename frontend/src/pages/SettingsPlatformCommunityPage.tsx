@@ -19,8 +19,10 @@ import type { DmPolicy } from "@/api/generated/initiativeAPI.schemas";
 import { DeletedAccountRetentionSection } from "@/components/platform/DeletedAccountRetentionSection";
 import { DeletedCommunityRetentionSection } from "@/components/platform/DeletedCommunityRetentionSection";
 import { OnHoldCommunityDeletionSection } from "@/components/platform/OnHoldCommunityDeletionSection";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -32,18 +34,35 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAuth } from "@/hooks/useAuth";
+import { useServerForm } from "@/hooks/useServerForm";
 import { useCommunitySettings, useUpdateCommunitySettings } from "@/hooks/useSettings";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import { Capability, hasCapability } from "@/lib/permissions";
+import { readOptionalWholeNumber } from "@/lib/text";
+
+/** The most days the server takes for the longest guest stay. */
+const MAX_GUEST_DAYS = 3650;
 
 export const SettingsPlatformCommunityPage = () => {
-  const { t } = useTranslation("settings");
+  const { t } = useTranslation(["settings", "common"]);
   const { user } = useAuth();
   const canManagePlatformConfig = hasCapability(user, Capability.configManage);
-  const { communityDirectoryEnabled, communityAgeGateEnabled, directMessagesEnabled, isLoading } =
-    useAppConfig();
+  const {
+    communityDirectoryEnabled,
+    communityAgeGateEnabled,
+    directMessagesEnabled,
+    guestsEnabled,
+    isLoading,
+  } = useAppConfig();
   const { data: community } = useCommunitySettings();
+  // Typed here and saved by its button, so a refetch does not reset it.
+  const guestDaysForm = useServerForm(
+    community,
+    (loaded) => ({ days: loaded ? String(loaded.max_guest_days) : "" }),
+    "max_guest_days"
+  );
+  const guestDays = readOptionalWholeNumber(guestDaysForm.values.days, 1, MAX_GUEST_DAYS);
   // Turning the age gate off is an assertion about every account here, not a
   // preference, so it is confirmed. Turning it back on is not.
   const [confirmingAgeGateOff, setConfirmingAgeGateOff] = useState(false);
@@ -62,6 +81,19 @@ export const SettingsPlatformCommunityPage = () => {
             ? t("community.directMessagesEnabledToast")
             : t("community.directMessagesDisabledToast")
         );
+        return;
+      }
+      if (variables.guests_enabled !== undefined) {
+        toast.success(
+          result.guests_enabled
+            ? t("community.guestsEnabledToast")
+            : t("community.guestsDisabledToast")
+        );
+        return;
+      }
+      if (variables.max_guest_days !== undefined) {
+        guestDaysForm.settle({ days: String(variables.max_guest_days) });
+        toast.success(t("community.maxGuestDaysSaved", { count: result.max_guest_days }));
         return;
       }
       if (variables.engagement_ranking_enabled !== undefined) {
@@ -231,6 +263,61 @@ export const SettingsPlatformCommunityPage = () => {
           <p className="text-muted-foreground text-sm">
             {t("community.engagementRankingHelpText")}
           </p>
+        </div>
+
+        {/* Each community may set a shorter longest stay of its own, and may
+            take no guests at all. */}
+        <div className="space-y-4 border-t pt-4">
+          <div className="flex items-center gap-3">
+            <Switch
+              id="guests-enabled"
+              checked={guestsEnabled}
+              disabled={isLoading || update.isPending}
+              onCheckedChange={(checked) =>
+                update.mutate({
+                  community_directory_enabled: communityDirectoryEnabled,
+                  guests_enabled: Boolean(checked),
+                })
+              }
+            />
+            <Label htmlFor="guests-enabled">{t("community.guestsEnabledLabel")}</Label>
+          </div>
+          <p className="text-muted-foreground text-sm">{t("community.guestsEnabledHelpText")}</p>
+          <div className="ms-7 space-y-2 border-s ps-4">
+            <Label htmlFor="max-guest-days">{t("community.maxGuestDaysLabel")}</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                id="max-guest-days"
+                type="number"
+                min={1}
+                max={MAX_GUEST_DAYS}
+                className="w-40"
+                value={guestDaysForm.values.days}
+                disabled={!community || !guestsEnabled}
+                onChange={(event) => guestDaysForm.set({ days: event.target.value })}
+              />
+              <Button
+                aria-label={t("community.maxGuestDaysSave")}
+                disabled={
+                  !community ||
+                  !guestsEnabled ||
+                  guestDays.value === null ||
+                  !guestDays.valid ||
+                  guestDays.value === community.max_guest_days ||
+                  update.isPending
+                }
+                onClick={() =>
+                  update.mutate({
+                    community_directory_enabled: communityDirectoryEnabled,
+                    max_guest_days: guestDays.value,
+                  })
+                }
+              >
+                {update.isPending ? t("common:submitting") : t("common:save")}
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-sm">{t("community.maxGuestDaysHelpText")}</p>
+          </div>
         </div>
 
         <DeletedCommunityRetentionSection directoryEnabled={communityDirectoryEnabled} />
