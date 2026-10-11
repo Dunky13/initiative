@@ -234,6 +234,11 @@ class AuditEventType(str, Enum):
     #: one is recorded, and redeeming one is a ``GUILD_MEMBER_ADDED``.
     GUILD_INVITE_CREATED = "guild.invite_created", AuditCategory.AUTHORIZATION
     GUILD_INVITE_REVOKED = "guild.invite_revoked", AuditCategory.AUTHORIZATION
+    #: A guest's end moved. Becoming a guest is a ``GUILD_MEMBER_ADDED`` with
+    #: ``guest_until`` in its detail, and leaving one a ``GUILD_MEMBER_REMOVED``.
+    GUILD_GUEST_EXTENDED = "guild.guest_extended", AuditCategory.AUTHORIZATION
+    #: A guest made a member: their time no longer ends, and they take a seat.
+    GUILD_GUEST_MADE_MEMBER = "guild.guest_made_member", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ADDED = "initiative.member_added", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_REMOVED = "initiative.member_removed", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ROLE_CHANGED = (

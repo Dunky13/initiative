@@ -2264,6 +2264,8 @@ export interface CommunityAuthSettingsRead {
   redacted_by_platform: boolean;
   allow_engagement_ranking: boolean;
   engagement_ranking_allowed_by_platform: boolean;
+  guest_max_days: number | null;
+  guest_max_days_by_platform: number;
 }
 
 /**
@@ -2283,6 +2285,7 @@ export interface CommunityAuthSettingsUpdate {
   allow_email_notifications?: boolean | null;
   redact_notification_content?: boolean | null;
   allow_engagement_ranking?: boolean | null;
+  guest_max_days?: number | null;
 }
 
 /**
@@ -2589,6 +2592,11 @@ export interface CommunityExportStatus {
   latest_started_by: string | null;
 }
 
+export interface CommunityGuestExtend {
+  /** @minimum 1 */
+  days: number;
+}
+
 export interface CommunityInviteAcceptRequest {
   code: string;
 }
@@ -2597,6 +2605,7 @@ export interface CommunityInviteCreate {
   expires_at?: string | null;
   max_uses?: number | null;
   invitee_email?: string | null;
+  guest_days?: number | null;
 }
 
 /**
@@ -2611,6 +2620,7 @@ export interface CommunityInviteCreated {
   uses: number;
   invitee_email: string | null;
   created_at: string;
+  guest_days: number | null;
   code: string;
 }
 
@@ -2623,6 +2633,7 @@ export interface CommunityInviteRead {
   uses: number;
   invitee_email: string | null;
   created_at: string;
+  guest_days: number | null;
 }
 
 export interface CommunityInviteStatus {
@@ -2634,6 +2645,7 @@ export interface CommunityInviteStatus {
   expires_at: string | null;
   max_uses: number | null;
   uses: number | null;
+  guest_days: number | null;
 }
 
 /**
@@ -3372,6 +3384,8 @@ export interface CommunitySettingsResponse {
   deleted_account_retention_days: number | null;
   on_hold_community_deletion_days: number | null;
   engagement_ranking_enabled: boolean;
+  guests_enabled: boolean;
+  max_guest_days: number;
 }
 
 export interface CommunitySettingsUpdate {
@@ -3383,6 +3397,8 @@ export interface CommunitySettingsUpdate {
   deleted_community_retention_days?: number | null;
   deleted_account_retention_days?: number | null;
   on_hold_community_deletion_days?: number | null;
+  guests_enabled?: boolean | null;
+  max_guest_days?: number | null;
 }
 
 export interface CommunityStorageUsageRead {
@@ -10275,6 +10291,7 @@ export interface UserCommunityMember {
   oidc_managed: boolean;
   display_name: string | null;
   api_keys_allowed: boolean | null;
+  guest_until: string | null;
 }
 
 /**
@@ -12744,6 +12761,10 @@ export type ListUsersParams = {
    * @maximum 100
    */
   page_size?: number;
+  /**
+   * The community's guests instead of its members. For its administrators.
+   */
+  guests?: boolean;
 };
 
 export type SearchUsersParams = {

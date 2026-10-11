@@ -653,6 +653,10 @@ class CommunitySettingsResponse(SanitizedBaseModel):
     #: Whether search may order a community's content by how many members
     #: engaged with it lately. Each community is asked too, and off wins.
     engagement_ranking_enabled: bool
+    #: Whether communities may have guests, and the longest a guest may stay,
+    #: in days. Off, no guest reaches anything until it is back on.
+    guests_enabled: bool
+    max_guest_days: int
 
 
 class NotificationSettingsResponse(SanitizedBaseModel):
@@ -722,6 +726,11 @@ class CommunitySettingsUpdate(SanitizedBaseModel):
         default=None,
         ge=MIN_GUILD_RETENTION_DAYS,
         le=MAX_GUILD_RETENTION_DAYS,
+    )
+    #: Omitted, each is left as it was.
+    guests_enabled: Optional[bool] = None
+    max_guest_days: Optional[int] = Field(
+        default=None, ge=1, le=MAX_GUILD_RETENTION_DAYS
     )
 
 

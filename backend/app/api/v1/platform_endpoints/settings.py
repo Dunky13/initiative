@@ -369,6 +369,8 @@ async def read_community_settings(
         deleted_account_retention_days=settings_obj.deleted_account_retention_days,
         on_hold_community_deletion_days=settings_obj.on_hold_community_deletion_days,
         engagement_ranking_enabled=settings_obj.engagement_ranking_enabled,
+        guests_enabled=settings_obj.guests_enabled,
+        max_guest_days=settings_obj.max_guest_days,
     )
 
 
@@ -418,6 +420,10 @@ async def update_community_settings(
     ``engagement_ranking_enabled`` says whether search may order any
     community's content by how many members engaged with it lately. Each
     community is asked too, and off wins. Omitted, it is left alone.
+
+    ``guests_enabled`` lets communities have guests, and ``max_guest_days`` is
+    the longest one may stay. Off, no guest reaches anything until it is back
+    on. Omitted, each is left alone.
     """
     settings_obj = await app_settings_service.update_community_settings(
         session,
@@ -426,6 +432,8 @@ async def update_community_settings(
         default_dm_policy=payload.default_dm_policy,
         direct_messages_enabled=payload.direct_messages_enabled,
         engagement_ranking_enabled=payload.engagement_ranking_enabled,
+        guests_enabled=payload.guests_enabled,
+        max_guest_days=payload.max_guest_days,
         deleted_community_retention_days=payload.deleted_community_retention_days,
         retention_provided="deleted_community_retention_days"
         in payload.model_fields_set,
@@ -446,6 +454,8 @@ async def update_community_settings(
         deleted_account_retention_days=settings_obj.deleted_account_retention_days,
         on_hold_community_deletion_days=settings_obj.on_hold_community_deletion_days,
         engagement_ranking_enabled=settings_obj.engagement_ranking_enabled,
+        guests_enabled=settings_obj.guests_enabled,
+        max_guest_days=settings_obj.max_guest_days,
     )
 
 

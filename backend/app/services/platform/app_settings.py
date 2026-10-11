@@ -502,6 +502,8 @@ COMMUNITY_FIELDS: tuple[str, ...] = (
     "default_dm_policy",
     "direct_messages_enabled",
     "engagement_ranking_enabled",
+    "guests_enabled",
+    "max_guest_days",
     "deleted_community_retention_days",
     "deleted_account_retention_days",
     "on_hold_community_deletion_days",
@@ -753,6 +755,8 @@ async def update_community_settings(
     default_dm_policy: "DmPolicy | None" = None,
     direct_messages_enabled: bool | None = None,
     engagement_ranking_enabled: bool | None = None,
+    guests_enabled: bool | None = None,
+    max_guest_days: int | None = None,
     deleted_community_retention_days: int | None = None,
     retention_provided: bool = False,
     deleted_account_retention_days: int | None = None,
@@ -785,6 +789,10 @@ async def update_community_settings(
     ``engagement_ranking_enabled`` is left alone when omitted. Off, no
     community ranks by engagement, whatever its own answer.
 
+    ``guests_enabled`` and ``max_guest_days`` are left alone when omitted.
+    Off, no guest reaches anything; the ceiling bounds guests made or
+    extended after it changes.
+
     ``deleted_community_retention_days`` and
     ``deleted_account_retention_days`` are the fifth and sixth, and the only
     ones where ``None`` is an answer rather than an omission — it means deleted
@@ -810,6 +818,10 @@ async def update_community_settings(
             settings_row.direct_messages_enabled = bool(direct_messages_enabled)
         if engagement_ranking_enabled is not None:
             settings_row.engagement_ranking_enabled = engagement_ranking_enabled
+        if guests_enabled is not None:
+            settings_row.guests_enabled = guests_enabled
+        if max_guest_days is not None:
+            settings_row.max_guest_days = max_guest_days
         if retention_provided:
             settings_row.deleted_community_retention_days = (
                 deleted_community_retention_days

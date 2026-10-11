@@ -58,6 +58,16 @@ async def _put(session: AsyncSession, guild_id: int | None, key: str, value: Any
             )
         )
         await session.commit()
+    elif key == "guest_auth_policy":
+        session.add(
+            GuildAuthPolicy(
+                guild_id=guild_id,
+                policy="open",
+                guest_policy=value.policy,
+                guest_require_methods=sorted(m.value for m in value.methods),
+            )
+        )
+        await session.commit()
     else:
         guild = await session.get(Guild, guild_id)
         setattr(guild, key, value)
@@ -121,6 +131,13 @@ CASES: dict[tuple[str, str], Case] = {
     ("community", "allow_email_notifications"): Case(True, False, GUILD_SETTINGS),
     ("community", "redact_notification_content"): Case(False, True, GUILD_SETTINGS),
     ("community", "allow_engagement_ranking"): Case(True, False, GUILD_SETTINGS),
+    # Its writer is not a guest, so is not asked to meet it.
+    ("community", "guest_auth_policy"): Case(
+        SignInRequirement(),
+        FACTOR_REQUIREMENT,
+        AuditEventType.GUILD_AUTH_POLICY_CHANGED,
+    ),
+    ("community", "guest_max_days"): Case(None, 30, GUILD_SETTINGS),
 }
 
 RULES = pytest.mark.parametrize(
