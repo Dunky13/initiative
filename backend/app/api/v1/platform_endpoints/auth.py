@@ -97,7 +97,7 @@ from app.models.platform.user import (
     UserRole,
     UserStatus,
 )
-from app.models.platform.guild import Guild, GuildInvite, CommunityRole
+from app.models.platform.guild import Guild, CommunityRole
 from app.schemas.platform.token import Token
 from app.schemas.platform.second_factor import SecondFactorChallengeAnswer
 from app.schemas.platform.auth import (
@@ -1941,13 +1941,10 @@ async def _join_awaited_invite(
     expired, filled up or was withdrawn in the meantime joins nothing, and the
     person can be sent another.
     """
-    invite = await session.get(GuildInvite, invite_id)
-    if invite is None:
-        return
     try:
         async with session.begin_nested():
             await guilds_service.redeem_invite_for_user(
-                session, code=invite.code, user=user
+                session, invite_id=invite_id, user=user
             )
     except (
         guilds_service.GuildInviteError,

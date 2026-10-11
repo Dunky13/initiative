@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Impossible de supprimer l'invitation.",
     "inviteLinkCopied": "Lien d'invitation copié dans le presse-papiers.",
     "copyInviteLink": "Copier le lien d'invitation",
+    "newInviteLinkOnce": "Copiez ce lien maintenant. Il ne sera plus affiché.",
+    "inviteLinkTitle": "Lien d'invitation",
     "deleteInviteLink": "Supprimer l'invitation",
     "usesFormat": "Utilisations : {{uses}}/{{max}} · Expiration : {{expires}}",
     "neverExpires": "Jamais",

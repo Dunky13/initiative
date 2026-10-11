@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Unable to delete invite.",
     "inviteLinkCopied": "Invite link copied to clipboard.",
     "copyInviteLink": "Copy invite link",
+    "newInviteLinkOnce": "Copy this link now. It won't be shown again.",
+    "inviteLinkTitle": "Invite link",
     "deleteInviteLink": "Delete invite",
     "usesFormat": "Uses: {{uses}}/{{max}} · Expires: {{expires}}",
     "neverExpires": "Never",

@@ -259,14 +259,14 @@ async def test_register_with_invite_blocked_when_guild_full(
     seat = await create_user(session, email="reg-seat@example.com")
     # Minted while the seat is still free, redeemed after it is taken —
     # minting itself is capacity-gated, so the order here is the scenario.
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=seat.id, max_uses=5
     )
     await guild_service.ensure_membership(session, guild_id=guild.id, user_id=seat.id)
     await session.commit()
 
     response = await client.post(
-        f"/api/v1/auth/register?invite_code={invite.code}",
+        f"/api/v1/auth/register?invite_code={invite_code}",
         json={
             "email": "reg-newuser@example.com",
             "username": "reg-newuser",
@@ -305,14 +305,14 @@ async def test_register_with_a_bound_invite_joins_on_confirming(
     monkeypatch.setattr(email_service, "send_verification_email", _capture)
     admin = await create_user(session, email="bound-admin@example.com")
     guild = await create_guild(session, creator=admin)
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
         invitee_email="bound-invitee@example.com",
     )
     await session.commit()
-    guild_id, code = guild.id, invite.code
+    guild_id, code = guild.id, invite_code
 
     def _register(email: str, username: str):
         return client.post(

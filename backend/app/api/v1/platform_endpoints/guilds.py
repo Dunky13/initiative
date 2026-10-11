@@ -90,6 +90,7 @@ from app.schemas.platform.guild import (
     CommunityRead,
     CommunityInviteAcceptRequest,
     CommunityInviteCreate,
+    CommunityInviteCreated,
     CommunityInviteRead,
     CommunityPaymentIssueRead,
     CommunityBillingSummaryRead,
@@ -546,7 +547,9 @@ async def join_directory_community(
 
 
 @router.get("/invite/{code}", response_model=CommunityInviteStatus)
+@limiter.limit("30/minute")
 async def get_invite_status(
+    request: Request,
     code: str,
     session: SystemSessionDep,
 ) -> CommunityInviteStatus:
@@ -1348,7 +1351,7 @@ async def delete_community(
 
 @router.post(
     "/{community_id}/invites",
-    response_model=CommunityInviteRead,
+    response_model=CommunityInviteCreated,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_community_invite(
@@ -1357,8 +1360,8 @@ async def create_community_invite(
     invite_in: CommunityInviteCreate,
     session: SettingsRLSSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
-) -> CommunityInviteRead:
-    invite = await guilds_service.create_guild_invite(
+) -> CommunityInviteCreated:
+    invite, code = await guilds_service.create_guild_invite(
         session,
         guild_id=guild_id,
         created_by=current_user.id,
@@ -1368,7 +1371,9 @@ async def create_community_invite(
         actor_user_id=current_user.id,
     )
     await session.commit()
-    return CommunityInviteRead.model_validate(invite)
+    return CommunityInviteCreated.model_validate(
+        {**CommunityInviteRead.model_validate(invite).model_dump(), "code": code}
+    )
 
 
 @router.delete(

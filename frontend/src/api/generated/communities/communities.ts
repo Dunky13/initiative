@@ -32,6 +32,7 @@ import type {
   CommunityEntitlementsRead,
   CommunityInviteAcceptRequest,
   CommunityInviteCreate,
+  CommunityInviteCreated,
   CommunityInviteRead,
   CommunityInviteStatus,
   CommunityMembershipUpdate,
@@ -857,7 +858,7 @@ export const createCommunityInvite = (
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<CommunityInviteRead>(
+  return apiMutator<CommunityInviteCreated>(
     {
       url: `/api/v1/communities/${communityId}/invites`,
       method: "POST",
