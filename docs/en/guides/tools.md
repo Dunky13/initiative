@@ -143,6 +143,10 @@ There's one button for making a new one. On a phone it lives at the bottom of th
 
 Every tool has a **Connections** section, and so do the things inside one — a task, an event, a picture, a wiki page. It lists what this links to and what links to it, and it's where you say how two things relate: this task *is blocked by* that one, this file *is attached to* that project. See [Mentions & links](mentions-and-links.md#connections).
 
+## Activity
+
+On a big enough screen, every tool page but a wiki's has **Activity** folded down the right-hand edge. Open it and it's the community's [activity feed](communities.md#the-community-front-page), kept to this one thing: who did what to it, and to everything inside it, this week. An initiative's own page has one too, for the whole initiative. It closes again when you've seen enough, which is usually about four cards in.
+
 ## Duplicating
 
 Every tool but a notice can be copied from **Settings → Advanced → Duplicate**, into this initiative or any other where you can make one. The copy brings everything inside it, with their tags and links — a calendar its events and repeats, a wiki its published pages — and keeps its sharing while it stays in the same initiative. Anyone who can read a template can copy it.
