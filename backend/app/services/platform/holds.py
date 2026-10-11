@@ -397,7 +397,15 @@ async def place(
     if opened_case_task_id is not None:
         case_task_id = opened_case_task_id
     elif via is HoldVia.platform and case_task_id is not None:
+        from app.services.platform.intake import claim_subject_guild
+
         await _require_case(case_task_id)
+        # A case's holds sit in the community it is about: that is where the
+        # keeping of its files looks for them.
+        if await claim_subject_guild(case_task_id, guild_id) == "other":
+            raise HoldError(
+                HoldMessages.CASE_OTHER_COMMUNITY, status.HTTP_400_BAD_REQUEST
+            )
     else:
         case_task_id = await _open_case(guild_id, request)
 

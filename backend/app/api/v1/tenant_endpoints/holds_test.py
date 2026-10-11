@@ -600,3 +600,49 @@ async def test_a_hold_standing_30_days_is_noted_on_its_case(
     ).all()
     assert "hold_reminder" in notes
     assert "hold_placed" in notes
+
+
+async def test_a_platform_hold_settles_the_community_its_case_is_about(
+    client, session, scene, operations
+):
+    """A case's holds sit in the community it is about, which is where the
+    keeping of its files looks for them: a hold names a case about this
+    community, or one about none yet, which it then names."""
+    from app.core.intake import IntakeStream
+    from app.services.platform.intake import CaseRefs, open_case
+    from app.services.tenant.cases import _subject
+    from app.testing import create_guild
+
+    guild = scene["guild"]
+    moderator = await _moderator(session, guild)
+    body = {
+        "target_type": "comment",
+        "target_id": scene["comment"].id,
+        "reason": "legal_request",
+    }
+    other = await create_guild(session)
+    elsewhere = await open_case(
+        IntakeStream.moderation,
+        title="About another community",
+        refs=CaseRefs(subject_guild=other.id),
+    )
+    unnamed = await open_case(IntakeStream.moderation, title="About nowhere yet")
+    assert elsewhere is not None and unnamed is not None
+
+    refused = await client.post(
+        f"/api/v1/c/{guild.id}/holds",
+        json={**body, "case_task_id": elsewhere.task_id},
+        headers=get_auth_headers(moderator),
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["detail"] == HoldMessages.CASE_OTHER_COMMUNITY
+
+    held = await client.post(
+        f"/api/v1/c/{guild.id}/holds",
+        json={**body, "case_task_id": unnamed.task_id},
+        headers=get_auth_headers(moderator),
+    )
+    assert held.status_code == 201, held.text
+    await set_rls_context(session, SystemGuild(operations["guild"].id))
+    assert (await _subject(session, unnamed.task_id))["subject_guild_id"] == guild.id
+    await set_rls_context(session, Unattributed())
