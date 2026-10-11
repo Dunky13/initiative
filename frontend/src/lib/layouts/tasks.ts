@@ -178,5 +178,4 @@ export const TASK_LAYOUT = detailLayoutSpec({
   kind: "task",
   shipped: TASK_DETAIL_REGIONS,
   fieldParts: ["field", "status", "dates", "properties"],
-  moreOrder: 7,
 });

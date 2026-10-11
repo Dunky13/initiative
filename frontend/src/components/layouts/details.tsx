@@ -46,8 +46,7 @@ export type EditableDetail = {
     help: string;
     shipped: string;
     titleHelp: string;
-    toMoreFieldsHelp: string;
-    moreFields: string;
+    hiddenHelp: string;
     parts: string;
   };
   /** Its fields, by id: the built-ins, and the plug-ins' where they draw on it. */
@@ -171,8 +170,7 @@ export const taskDetail = (project: LayoutProject): EditableDetail => ({
     help: "layoutEditor.detailHelp",
     shipped: "layoutEditor.shipped",
     titleHelp: "layoutEditor.detailTitleHelp",
-    toMoreFieldsHelp: "layoutEditor.toMoreFieldsHelp",
-    moreFields: "tasks:edit.moreFields",
+    hiddenHelp: "layoutEditor.hiddenHelp",
     parts: "layoutEditor",
   },
   fields: taskFields,
@@ -188,8 +186,7 @@ export const eventDetail = (initiativeId: number): EditableDetail => ({
     help: "layoutEditor.eventDetail.help",
     shipped: "layoutEditor.eventDetail.shipped",
     titleHelp: "layoutEditor.eventDetail.titleHelp",
-    toMoreFieldsHelp: "layoutEditor.eventDetail.toMoreFieldsHelp",
-    moreFields: "calendars:eventPage.moreFields",
+    hiddenHelp: "layoutEditor.eventDetail.hiddenHelp",
     parts: "layoutEditor.eventDetail",
   },
   fields: eventFields,

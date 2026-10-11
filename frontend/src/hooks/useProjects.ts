@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   ListMyProjectsParams,
+  ListProjectsParams,
   ProjectListResponse,
   ProjectRead,
   TaskStatusCreate,
@@ -58,16 +59,18 @@ export const useSetProjectGrants = projects.useSetGrants;
 export const useTemplateProjects = (open: boolean) =>
   useProjects({ is_template: true }, { enabled: open });
 
-/** Every live project the reader may edit — where a task can be moved to; a
- *  template takes no tasks moved into it. Walks the list's windows, so no
- *  destination is left off a long list. */
-export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) => {
+/** Every live project `filters` match, every window of the list read — for a
+ *  picker that has to offer all of them rather than the first page. */
+export const useAllProjects = (
+  filters: ListProjectsParams = {},
+  options?: QueryOpts<ProjectListResponse>
+) => {
   const communityId = useActiveCommunityId();
   const params = {
-    writable: true,
     slim: true,
     page_size: 0,
     ...toolViewParams(Tool.project, "active"),
+    ...filters,
   };
   return useQuery<ProjectListResponse>({
     queryKey: getListProjectsQueryKey(communityId, params),
@@ -76,6 +79,11 @@ export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) =>
     ...options,
   });
 };
+
+/** Every live project the reader may edit — where a task can be moved to; a
+ *  template takes no tasks moved into it. */
+export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) =>
+  useAllProjects({ writable: true }, options);
 
 export const useFavoriteProjects = (options?: QueryOpts<ProjectRead[]>) => {
   const communityId = useActiveCommunityId();

@@ -518,15 +518,13 @@ describe("LayoutEditor", () => {
   });
 
   describe("the task's detail", () => {
-    it("moves a field taken off it to More fields, and stores the layout whole", async () => {
+    it("hides a field taken off it, and stores the layout whole", async () => {
       const { user } = editor("task");
       expect(await within(await canvas()).findByDisplayValue("Draw the map")).toBeInTheDocument();
 
-      await user.click(
-        within(await outline()).getByRole("button", { name: /move tags to more fields/i })
-      );
+      await user.click(within(await outline()).getByRole("button", { name: /^hide tags$/i }));
 
-      expect(within(await outline()).getByText("More fields")).toBeInTheDocument();
+      expect(within(await outline()).queryByText("Tags")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: /^save$/i }));
       await waitFor(() => expect(sent).toHaveLength(1));
       expect(JSON.stringify(saved("task")?.side)).not.toContain('"tags"');
@@ -586,9 +584,7 @@ describe("LayoutEditor", () => {
       const { user } = editor("", vi.fn(), buildToolLayoutSet({ tool: "calendar" }), true);
       expect(await within(await canvas()).findByDisplayValue("Room 2")).toBeInTheDocument();
 
-      await user.click(
-        within(await outline()).getByRole("button", { name: /move location to more fields/i })
-      );
+      await user.click(within(await outline()).getByRole("button", { name: /^hide location$/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       await waitFor(() => expect(sent).toHaveLength(1));

@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
+import { MentionCommunity } from "@/hooks/useMentionedPeople";
 import { useChipStates } from "@/hooks/useSmartChips";
 import { collectCommentReferences } from "@/lib/commentReferences";
 
@@ -25,9 +25,8 @@ export const useCommentReferences = () => useContext(CommentReferencesContext);
  * A thread of forty comments naming the same task asks about it once, and a
  * rename reaches all forty without any of them being edited.
  *
- * The people it names are resolved the same way, but by `MentionedPeopleScope`
- * — the same scope a file's mentions read from, so a mention is the same
- * chip wherever it is written.
+ * The people it names ask for themselves (`useMentionedPerson`), in the
+ * community this says they were written in.
  */
 export function CommentReferences({
   contents,
@@ -54,10 +53,7 @@ export function CommentReferences({
 
   return (
     <CommentReferencesContext.Provider value={value}>
-      <MentionedPeopleScope communityId={communityId}>
-        <ReportMentionedPeople texts={contents} />
-        {children}
-      </MentionedPeopleScope>
+      <MentionCommunity.Provider value={communityId ?? null}>{children}</MentionCommunity.Provider>
     </CommentReferencesContext.Provider>
   );
 }

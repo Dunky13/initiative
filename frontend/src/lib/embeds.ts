@@ -9,18 +9,18 @@
  */
 
 import type {
-  FilterCondition,
-  FilterGroup,
   ListTasksParams,
   SmartChipKind,
   SortField,
 } from "@/api/generated/initiativeAPI.schemas";
 import {
+  buildTaskListParams,
   EMPTY_TASK_FILTERS,
   type StoredTaskFilters,
   specFromStored,
   type TaskFilterSpec,
-  taskSpecConditions,
+  tableSortFields,
+  taskTableSorting,
 } from "@/lib/filters/taskFilters";
 import { isSmartChipKind } from "@/lib/smartChips";
 
@@ -61,25 +61,23 @@ export const emptyTaskQuery = (initiativeId: number): TaskQuery => ({
 /** How many rows a list or table shows before it pages on. */
 export const EMBED_PAGE_SIZE = 20;
 
-/** The task list request for one page of an embed. A count asks for one row
- *  and reads the total. */
-export const taskQueryParams = (query: TaskQuery, page: number, count = false): ListTasksParams => {
-  const scope: FilterCondition =
+/** The task list request for one page of an embed: the same request a
+ *  project's list makes, scoped to the embed's project or initiative. A count
+ *  asks for one row and reads the total. */
+export const taskQueryParams = (
+  query: TaskQuery,
+  page: number,
+  count = false
+): ListTasksParams => ({
+  ...buildTaskListParams(
+    query.filters,
     query.project_id !== null
-      ? { field: "project_id", op: "eq", value: query.project_id }
-      : { field: "initiative_ids", op: "in_", value: [query.initiative_id] };
-  const conditions: (FilterCondition | FilterGroup)[] = [
-    scope,
-    ...taskSpecConditions(query.filters),
-  ];
-  return {
-    conditions,
-    page: count ? 1 : page,
-    page_size: count ? 1 : EMBED_PAGE_SIZE,
-    ...(query.sort.length > 0 && { sorting: query.sort }),
-    ...(query.filters.include_archived && { include_archived: true }),
-  };
-};
+      ? { projectId: query.project_id }
+      : { initiativeId: query.initiative_id },
+    { page: count ? 1 : page, page_size: count ? 1 : EMBED_PAGE_SIZE }
+  ),
+  ...(query.sort.length > 0 && { sorting: query.sort }),
+});
 
 const MODES = new Set<EmbedMode>([...ITEM_MODES, ...TASK_MODES]);
 
@@ -104,8 +102,11 @@ export const readQuery = (value: unknown): TaskQuery | null => {
     initiative_id: stored.initiative_id,
     project_id: typeof stored.project_id === "number" ? stored.project_id : null,
     filters: specFromStored(stored.filters as StoredTaskFilters | undefined),
+    // Read the way a preset's sort is: only what the list can order by.
     sort: Array.isArray(stored.sort)
-      ? stored.sort.filter((entry) => typeof entry?.field === "string")
+      ? tableSortFields(
+          taskTableSorting(stored.sort.filter((entry) => typeof entry?.field === "string"))
+        )
       : [],
   };
 };

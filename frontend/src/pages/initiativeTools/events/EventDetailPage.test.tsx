@@ -108,9 +108,9 @@ describe("an event's page", () => {
     );
     open();
 
-    // What the layout places nowhere is still on the page, under More fields.
-    expect(await screen.findByText("More fields")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Room 2")).toBeInTheDocument();
+    // What the layout places nowhere is not on the page.
+    expect(await screen.findByDisplayValue("Standup")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Room 2")).not.toBeInTheDocument();
   });
 
   it("shows a reader who cannot change it the event, and nothing to change it with", async () => {

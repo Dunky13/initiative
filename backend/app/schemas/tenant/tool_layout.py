@@ -445,8 +445,8 @@ class ListLayoutDefinition(_Strict):
 
 class DetailLayoutDefinition(_Strict):
     """How one task (or event) is shown on its own, in three regions, each its
-    parts in order. A region it leaves out is drawn as shipped, and a field
-    placed in none of them is drawn in a "More fields" section."""
+    parts in order. A region it leaves out is drawn as shipped; what it places
+    nowhere is not shown."""
 
     header: Optional[List[DetailPart]] = None
     main: Optional[List[DetailPart]] = None

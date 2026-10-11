@@ -80,8 +80,7 @@
     "commentsError": "Kommentare können derzeit nicht geladen werden.",
     "skipOccurrence": "Diesen Termin überspringen",
     "taskSkipped": "Weiter zum nächsten Termin",
-    "skipError": "Dieser Termin konnte nicht übersprungen werden",
-    "moreFields": "Weitere Felder"
+    "skipError": "Dieser Termin konnte nicht übersprungen werden"
   },
   "scope": {
     "title": {

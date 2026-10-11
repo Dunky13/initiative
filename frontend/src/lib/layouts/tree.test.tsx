@@ -8,7 +8,7 @@ import type { PropertyDefinitionRead, TaskListRead } from "@/api/generated/initi
 import { TASK_LAYOUT, taskFields } from "@/lib/layouts/tasks";
 
 /** The page as shipped. */
-const TASK_DETAIL = TASK_LAYOUT.tree(undefined, "");
+const TASK_DETAIL = TASK_LAYOUT.tree(undefined);
 
 import {
   LAYOUT_PARTS,
@@ -183,35 +183,18 @@ describe("a task detail's tree", () => {
   const regions = (tree: LayoutNode) =>
     Object.fromEntries((tree.children ?? []).map((region) => [region.type, region.children]));
 
-  it("draws what a layout stores, the rest as shipped, and gathers what it leaves out", () => {
+  it("draws what a layout stores, the rest as shipped, and nothing it leaves out", () => {
     const work: LayoutNode = {
       type: "section",
       props: { title: "Work" },
       children: [field("description")],
     };
 
-    const page = regions(TASK_LAYOUT.tree({ main: [work], side: [] }, "More fields"));
+    const page = regions(TASK_LAYOUT.tree({ main: [work], side: [] }));
 
     expect(page.header).toEqual(regions(TASK_DETAIL).header);
     // Drawn where the shipped page puts what it starts with on one column.
     expect(page.main).toEqual([{ ...work, props: { ...work.props, order: 1 } }]);
-    const [more] = page.side ?? [];
-    expect(more.props).toMatchObject({ title: "More fields" });
-    expect(more.children?.map((node) => String(node.props?.field ?? node.type))).toEqual([
-      "checklist",
-      "status",
-      "priority",
-      "assignees",
-      "dates",
-      "recurrence",
-      "tags",
-      "properties",
-    ]);
-  });
-
-  it("adds no More fields where a layout places every field", () => {
-    expect(
-      regions(TASK_LAYOUT.tree({ main: regions(TASK_DETAIL).main }, "More fields")).side
-    ).toEqual(regions(TASK_DETAIL).side);
+    expect(page.side).toEqual([]);
   });
 });

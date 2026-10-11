@@ -586,10 +586,10 @@ export const TaskLayoutView = ({
   context: TaskLayoutContext;
   layout?: StoredRegions | null;
   /** The layout is being edited: each part is marked with its path, which
-   *  the editor's detail tree shares, More fields being past the side's end. */
+   *  the editor's detail tree shares. */
   editing?: boolean;
 }) => {
-  const { t, i18n } = useTranslation("tasks");
+  const { i18n } = useTranslation("tasks");
   const communityId = useActiveCommunityId();
   const gp = useCommunityPath();
   const taskHref = useCallback(
@@ -597,7 +597,7 @@ export const TaskLayoutView = ({
     [gp, context.initiativeId, task.project_id]
   );
   const env = useProjectLayoutEnv(taskHref);
-  const tree = useMemo(() => TASK_LAYOUT.tree(layout, t("edit.moreFields")), [layout, t]);
+  const tree = useMemo(() => TASK_LAYOUT.tree(layout), [layout]);
   const plugins = usePluginsOnItems(context.initiativeId);
   // The detail's labels are the fields' own.
   const view = useMemo<LayoutContext>(

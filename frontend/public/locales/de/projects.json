@@ -369,8 +369,7 @@
     "sectionWith": "Abschnitt mit {{name}}",
     "sectionTitle": "Titel",
     "startFolded": "Eingeklappt beginnen",
-    "toMoreFields": "{{name}} nach Weitere Felder verschieben",
-    "toMoreFieldsHelp": "Das Detail jeder Aufgabe lässt dieses Feld ändern. Von hier entfernt, wandert es nach Weitere Felder.",
+    "hiddenHelp": "Das Detail jeder Aufgabe kann dies zeigen. Entfernt, ist es ausgeblendet, und Hinzufügen holt es zurück.",
     "parts": {
       "header": "Kopf",
       "main": "Hauptbereich",
@@ -398,7 +397,7 @@
       "actions": "Was sonst mit der Aufgabe möglich ist: verschieben, duplizieren, archivieren, löschen und Plug-in-Aktionen."
     },
     "taskLayout": "Aufgabendetail",
-    "detailHelp": "Wie das Detail jeder Aufgabe in diesem Projekt aufgebaut ist. Ein Feld, das nirgends platziert ist, wird trotzdem angezeigt, unter Weitere Felder.",
+    "detailHelp": "Wie das Detail jeder Aufgabe in diesem Projekt aufgebaut ist. Was es weglässt, ist ausgeblendet.",
     "useShipped": "Ausgeliefertes Layout verwenden",
     "shipped": "Das ist das Layout, wie es ausgeliefert wird. Eine Änderung macht es zum eigenen Layout des Projekts.",
     "detailTitleHelp": "Das Detail jeder Aufgabe zeigt ihren Titel.",
@@ -413,10 +412,10 @@
     "noEvents": "Diese Initiative hat dieses Jahr keine Termine. Füge einen hinzu, um sein Detail hier zu sehen.",
     "eventDetail": {
       "name": "Termindetail",
-      "help": "Wie das Detail jedes Termins in dieser Initiative aufgebaut ist, in jedem ihrer Kalender. Ein Feld, das nirgends platziert ist, wird trotzdem angezeigt, unter Weitere Felder.",
+      "help": "Wie das Detail jedes Termins in dieser Initiative aufgebaut ist, in jedem ihrer Kalender. Was es weglässt, ist ausgeblendet.",
       "shipped": "Das ist das Layout, wie es ausgeliefert wird. Eine Änderung macht es zum eigenen Layout der Initiative.",
       "titleHelp": "Das Detail jedes Termins zeigt seinen Titel.",
-      "toMoreFieldsHelp": "Das Detail jedes Termins lässt dieses Feld ändern. Von hier entfernt, wandert es nach Weitere Felder.",
+      "hiddenHelp": "Das Detail jedes Termins kann dies zeigen. Entfernt, ist es ausgeblendet, und Hinzufügen holt es zurück.",
       "parts": {
         "dates": "Wann",
         "rsvp": "Deine Antwort",
