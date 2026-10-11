@@ -1,13 +1,13 @@
 /**
- * A tool switcher: one circle per tool, its name underneath. The community
- * front page browses one community with it; My Tools browses every community
- * the reader is in.
+ * A switcher of nodes: one circle per node, its name underneath. The community
+ * front page switches between its tools and its comments with it; My Tools
+ * switches between the reader's tools in every community they are in.
  *
- * Each circle is a real link carrying `?tool=<route segment>`, so a tool view
- * is shareable, survives a reload, and answers the back button. Where those
- * links point is the caller's business — the rail only names the tool.
+ * Each circle is a real link carrying `?<param>=<segment>`, so the view is
+ * shareable, survives a reload, and answers the back button. What the nodes
+ * are and where they point is the caller's business — the rail only draws them.
  *
- * The circles are the top edge of the tray the table below sits in, not marks
+ * The circles are the top edge of the tray the view below sits in, not marks
  * laid on the banner: each one's lower half is inside the tray, and an SVG goo
  * filter — blur the shapes, then push the alpha back to a hard edge — welds
  * the two into a single silhouette with a fillet at every neck
@@ -18,7 +18,7 @@
  * the untouched graphic back over the blob, so the words and the icons stay as
  * sharp as they were.
  *
- * Which tool is open is said by size rather than by colour — that circle
+ * Which node is open is said by size rather than by colour — that circle
  * swells out of the row and drags its neighbours' necks with it, and its name
  * goes to the page's full ink. Size is state, so it holds whatever the reader
  * has asked for about motion; only the travel between sizes, and the swell
@@ -32,10 +32,7 @@
 
 import { Link } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
-import { useTranslation } from "react-i18next";
 
-import type { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { TOOL_ICONS, toolNavLabelKey, toolRouteSegment } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
 /**
@@ -44,57 +41,36 @@ import { cn } from "@/lib/utils";
  * circles have to be this exact fill for the goo to read as one surface rather
  * than as circles on a panel.
  */
-export const TOOL_TRAY_SURFACE = "bg-muted";
+export const TRAY_SURFACE = "bg-muted";
 
 /** Where the tray's edge crosses the circles: their waist, so half of each one
  *  stands above the tray and half is already in it. */
 const TRAY_EDGE = "top-13";
 
-const GOO_FILTER_ID = "community-tool-rail-goo";
+const GOO_FILTER_ID = "node-rail-goo";
 
-/** A circle after the tools that is not a tool: one of the page's own views,
- *  addressed by `?tool=<segment>` like the tools beside it. */
+/** One circle: what the address calls it, its icon and its name. */
 export interface RailNode {
   segment: string;
   icon: LucideIcon;
   label: string;
 }
 
-interface ToolRailProps {
-  tools: Tool[];
-  /** Circles of the page's own, after the tools. */
-  nodes?: readonly RailNode[];
-  /** The open tool, or the segment of the open node. */
-  selected: Tool | RailNode["segment"];
-  /** The page the circles link to; each adds its own `?tool=`. */
+interface NodeRailProps {
+  nodes: readonly RailNode[];
+  /** The segment of the open node. */
+  selected: string;
+  /** The page the circles link to. */
   to: string;
+  /** The search param each circle sets to its segment. */
+  param: string;
   /** What the rail is, for a reader who cannot see the circles. */
   label: string;
   /** Where the banner above puts its copy. The rail lines up with it. */
   align?: "center" | "left";
 }
 
-export const ToolRail = ({
-  tools,
-  nodes = [],
-  selected,
-  to,
-  label,
-  align = "left",
-}: ToolRailProps) => {
-  // Only the tool names come from here; `nav` leads so the derived label keys
-  // resolve without a namespace prefix — the same call shape the sidebar uses.
-  const { t } = useTranslation("nav");
-  const circles = [
-    ...tools.map((tool) => ({
-      segment: toolRouteSegment(tool),
-      icon: TOOL_ICONS[tool],
-      label: t(toolNavLabelKey(tool)),
-      isSelected: tool === selected,
-    })),
-    ...nodes.map((node) => ({ ...node, isSelected: node.segment === selected })),
-  ];
-
+export const NodeRail = ({ nodes, selected, to, param, label, align = "left" }: NodeRailProps) => {
   return (
     <div className="relative">
       {/* The goo itself: blur everything in the filtered layer, throw the
@@ -131,7 +107,7 @@ export const ToolRail = ({
             around the table. */}
         <div
           aria-hidden="true"
-          className={cn("absolute inset-x-0 bottom-0 rounded-t-2xl", TRAY_EDGE, TOOL_TRAY_SURFACE)}
+          className={cn("absolute inset-x-0 bottom-0 rounded-t-2xl", TRAY_EDGE, TRAY_SURFACE)}
         />
         <nav aria-label={label} className="relative overflow-x-auto px-2 pb-2 sm:px-3">
           {/* `w-max min-w-full` rather than `min-w-max`: the list is at least as
@@ -146,12 +122,13 @@ export const ToolRail = ({
               align === "center" && "justify-center"
             )}
           >
-            {circles.map(({ segment, icon: Icon, label: name, isSelected }) => {
+            {nodes.map(({ segment, icon: Icon, label: name }) => {
+              const isSelected = segment === selected;
               return (
                 <li key={segment}>
                   <Link
                     to={to}
-                    search={{ tool: segment }}
+                    search={{ [param]: segment }}
                     aria-current={isSelected ? "page" : undefined}
                     className={cn(
                       "group flex w-20 flex-col items-center rounded-lg pt-5 pb-1 text-center outline-none transition-colors",
@@ -167,7 +144,7 @@ export const ToolRail = ({
                         // rather than by colour: it stands a good deal taller
                         // than the rest of the row and drags the necks either
                         // side of it up with it.
-                        TOOL_TRAY_SURFACE,
+                        TRAY_SURFACE,
                         // The size is state, so it holds however the reader
                         // feels about motion; only the travel between sizes,
                         // and the lift under a pointer, are motion, so only

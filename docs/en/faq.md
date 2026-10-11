@@ -117,7 +117,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
     If you're not a member of the initiative it lives in, Initiative hides it completely — so a direct link says "not found" rather than "access denied". Ask to be added to the initiative. See [Sharing & access](sharing/index.md).
 
 ??? question "My Tools doesn't show everything in my community"
-    It isn't meant to. My Tools and My Calendar — and the community front page — show what has reached *you*: shared with you, shared with a role you hold, or shared with everyone in an initiative you're in. It's a working list, not an inventory. Open a single initiative to see all of its work. See [Your space](guides/your-space.md#my-tools).
+    It isn't meant to. My Tools and My Calendar show what has reached *you*: shared with you, shared with a role you hold, or shared with everyone in an initiative you're in. It's a working list, not an inventory. Open a single initiative to see all of its work. See [Your space](guides/your-space.md#my-tools).
 
 ??? question "I'm a community admin. Why isn't every initiative in my sidebar?"
     Because navigation follows what you're *in*, not what you *may reach* — otherwise a community with a hundred initiatives buries the three you actually work in. Your authority hasn't changed: open any initiative and you see all of it. To keep one to hand, join it from the community front page (you walk straight in). See [Community admins join like everyone else](guides/initiatives.md#community-admins-join-like-everybody-else).

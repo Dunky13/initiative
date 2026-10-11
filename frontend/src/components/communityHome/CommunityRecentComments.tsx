@@ -1,7 +1,7 @@
 /**
  * The community home's activity strip: the latest comments anywhere in the community.
  *
- * The rail's comment circle shows it in the tray, in place of a tool's table.
+ * It fills the tray under the front page's rail.
  * The endpoint only returns comments on entities the user may see, so no
  * filtering happens here.
  */

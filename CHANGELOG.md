@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **A community's recent comments have their own circle.** On the community's home page, **Comments** sits after the tools in the row of circles, and shows the latest comments where a tool's table would be.
+- **A community's home page leads with its comments.** The row of tool circles and the table under it are gone from the community's home page; a single **Comments** circle shows the latest comments from across the community in their place. To browse everything of one kind across your communities, use My Tools.
 - **Add in the layout editor shows what you can build.** It opens with a search box and the layout blocks first: an **Accordion** (a titled section that opens and closes; you name it by typing as it's added), a **Box** that groups what it holds, and a **Row** that puts things side by side. Below them, every field is in one list, with where each comes from, and then the panels: the item's own and each plug-in's.
 - **A task embed can be sorted.** Its author picks the order in the embed's settings, as a layout preset does, and anyone reading can sort its table by a column. Ticking a task done in My Tasks also takes one step now.
 - **An invite link is shown once, when you make it.** Copy it then: the invites list in a community's settings now shows each invite's uses and end, without its link. Links handed out before still work.

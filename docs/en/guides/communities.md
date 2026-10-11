@@ -25,15 +25,16 @@ The rail also keeps up with itself. If an admin adds you somewhere, or a group l
 
 ## The community front page
 
-Opening a community drops you on its front page. Its name sits on the banner, with where it is underneath if it has said. Its tools run across the top as circles — pick one, and you get everything of that kind that's reached **you**: shared with you directly, with a role you hold, or with everyone in an initiative you're in.
+Opening a community drops you on its front page. Its name sits on the banner, with where it is underneath if it has said.
 
-Only the tools your initiatives actually use turn up, so a community that has never once needed a queue is not given a Queues circle to look at and feel vaguely guilty about.
+Under the banner, **Comments** shows the latest ones from anywhere in the community. Each says what it was left on, and clicking it takes you there, into the middle of the conversation. You only see comments on things you can open.
 
-**Search** narrows by name; the **Name**, **Initiative** and **Last updated** headers sort. Both reach everything in the community, not just the rows on screen, so nothing hides on page two. All of it lives in the web address, so you can bookmark or send the exact view you're on.
+Below that are the community's initiatives, the ones you're in and the ones you could join, and then **Coming up**: everything with a date in the next seven days.
 
-Community admins get the same page. Their authority is unchanged — open any initiative and they see all of it — but the front page is a reading list, not an inventory of everything in existence.
+To see every project, file or queue that has reached you, here and in your other communities, open [My Tools](your-space.md#my-tools).
 
-![A community's front page](../images/communities/community-front-page.png)
+!!! screenshot
+    The community front page: the banner, the Comments circle with its tray of recent comments, the initiatives and Coming up. Save as `docs/en/images/communities/community-front-page.png`.
 
 ## Finding a community to join
 

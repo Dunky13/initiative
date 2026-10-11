@@ -236,10 +236,10 @@ export const toolApiPath = (tool: Tool): string => `/api/v1/${toolRouteSegment(t
 
 // ---------------------------------------------------------------------------
 // Routes — a tool entity's URL names the whole chain it belongs to:
-// /c/{community}/i/{initiative}/{tool}/{id}. There is no community-wide tool list; the
-// community home (`/?tool=`) is the cross-initiative browse surface, so a tool's
-// "list" is always one initiative's tab. Every builder here returns a
-// COMMUNITY-relative path — callers prepend the community prefix with `useCommunityPath`.
+// /c/{community}/i/{initiative}/{tool}/{id}. There is no community-wide tool list;
+// My Tools is the cross-initiative browse surface, so a tool's "list" is one
+// initiative's tab, or the community's own for a community-level entity. Every
+// builder here returns a COMMUNITY-relative path — callers prepend the community prefix with `useCommunityPath`.
 // ---------------------------------------------------------------------------
 
 /** Community-relative initiatives list. */
@@ -299,18 +299,6 @@ export const toolSettingsSectionRoute = (
   const base = toolSettingsRoute(tool, initiativeId, id);
   return section === TOOL_SETTINGS_DEFAULT_SECTION ? base : `${base}/${section}`;
 };
-
-/**
- * Where a tool's entities are browsed ACROSS initiatives: the community home,
- * showing that tool. The only "list" a community-level entity can go back to, and
- * where a tool page lands when it has no initiative to return to.
- */
-export const toolCommunityBrowseTarget = (
-  tool: Tool
-): { to: string; search: { tool: string } } => ({
-  to: "/",
-  search: { tool: toolRouteSegment(tool) },
-});
 
 // --- The tools with a child entity -----------------------------------------
 // Stated here once rather than left to each page: a task belongs to a project,
