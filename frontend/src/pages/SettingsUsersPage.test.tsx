@@ -192,6 +192,7 @@ describe("SettingsUsersPage invites", () => {
       invitee_email: null,
       created_at: new Date().toISOString(),
       guest_days: null,
+      grants: [],
     };
     createInvite.mockImplementation(async () => {
       state.invites = [invite];

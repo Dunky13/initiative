@@ -44,6 +44,7 @@
   "COMMUNITY_GUESTS_DISABLED": "Les invités sont désactivés sur ce serveur.",
   "NOT_A_GUEST": "Cette personne n'est pas invitée ici.",
   "GUEST_TIME_ENDED": "Votre temps d'invité ici vient de se terminer. Réessayez dans quelques minutes.",
+  "GUEST_GRANT_NOT_FOUND": "Cette initiative ou cet élément n'appartient pas à cette communauté.",
   "CANNOT_CHANGE_OWN_ROLE": "Impossible de modifier votre propre rôle dans la communauté",
   "USER_NOT_FOUND_IN_COMMUNITY": "Utilisateur introuvable dans la communauté",
   "COMMUNITY_ROLE_NOT_ASSIGNABLE": "Ce rôle de communauté ne peut pas être attribué.",

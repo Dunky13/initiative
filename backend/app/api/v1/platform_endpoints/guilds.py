@@ -54,7 +54,9 @@ from app.core.security import (
 )
 from app.services.platform.identity_refs import billing_refs
 from app.services.marketplace import plugin_refs
-from app.db import post_commit
+from app.db import cohorts, post_commit
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
 from app.services import email as email_service
@@ -91,6 +93,7 @@ from app.schemas.platform.guild import (
     CommunityInviteAcceptRequest,
     CommunityInviteCreate,
     CommunityGuestExtend,
+    CommunityInviteGrant,
     CommunityInviteCreated,
     CommunityInviteRead,
     CommunityPaymentIssueRead,
@@ -694,7 +697,20 @@ async def list_community_invites(
     session: SettingsRLSSessionDep,
 ) -> List[CommunityInviteRead]:
     invites = await guilds_service.list_guild_invites(session, guild_id=guild_id)
-    return [CommunityInviteRead.model_validate(invite) for invite in invites]
+    grants = await guilds_service.guest_invite_grants(
+        session, invite_ids=[invite.id for invite in invites if invite.guest_days]
+    )
+    return [
+        CommunityInviteRead.model_validate(invite).model_copy(
+            update={
+                "grants": [
+                    CommunityInviteGrant.model_validate(grant)
+                    for grant in grants.get(invite.id, [])
+                ]
+            }
+        )
+        for invite in invites
+    ]
 
 
 @router.get("/{community_id}", response_model=CommunityRead)
@@ -1375,11 +1391,16 @@ async def create_community_invite(
         max_uses=invite_in.max_uses,
         invitee_email=invite_in.invitee_email,
         guest_days=invite_in.guest_days,
+        grants=invite_in.grants,
         actor_user_id=current_user.id,
     )
     await session.commit()
     return CommunityInviteCreated.model_validate(
-        {**CommunityInviteRead.model_validate(invite).model_dump(), "code": code}
+        {
+            **CommunityInviteRead.model_validate(invite).model_dump(),
+            "code": code,
+            "grants": invite_in.grants,
+        }
     )
 
 
@@ -1822,6 +1843,22 @@ async def leave_community(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=GuildMessages.CANNOT_VACATE_LAST_SUPERADMIN,
         )
+
+    if membership.guest_until is not None:
+        # A guest's own role changes none of what leaving takes away, so their
+        # departure runs as the expiry sweep runs it, on the community's
+        # cohort, recorded as theirs.
+        async with cohorts.system_session(guild_id) as guild_session:
+            await set_rls_context(guild_session, SystemGuild(guild_id))
+            await guilds_service.remove_user_from_guild(
+                guild_session,
+                guild_id=guild_id,
+                user_id=current_user.id,
+                actor_user_id=current_user.id,
+            )
+            await guild_session.commit()
+        await content_sockets.revoke_user(guild_id, current_user.id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Ownership release happens inside remove_user_from_guild, while the
     # leaver's membership rows are still in place for RLS to match.

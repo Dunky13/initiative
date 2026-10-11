@@ -5,6 +5,7 @@
   "saving": "Enregistrement…",
   "saved": "Enregistré",
   "remove": "Supprimer la propriété",
+  "loadError": "Impossible de charger cette propriété.",
   "types": {
     "text": "Texte",
     "number": "Nombre",

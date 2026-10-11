@@ -172,6 +172,7 @@ export const detailChoices = (
       (field) =>
         !named.has(field.id) &&
         ((field.source === "builtin" && spec.detailFields.has(field.id)) ||
+          field.source === "property" ||
           field.source === "plugin")
     ),
     plugins: plugins.map((plugin) => ({

@@ -203,8 +203,11 @@ FREEZE_EXEMPT_TABLES: frozenset[str] = frozenset(
 #: is somebody's access, and removing it narrows who can reach a resource
 #: without touching the resource, so it may go whatever state the resource is
 #: in — archived content is the content most worth taking somebody off. Giving
-#: or raising access is still a change, and stays refused.
-_REVOCABLE_TABLES: frozenset[str] = frozenset({"resource_grants"})
+#: or raising access is still a change, and stays refused. What a guest invite
+#: gives is the same: withdrawing the invite takes it away.
+_REVOCABLE_TABLES: frozenset[str] = frozenset(
+    {"resource_grants", "guest_invite_grants"}
+)
 
 #: Edge tables, which name two ends and belong to neither. They take the freeze
 #: on INSERT and UPDATE — no new link to or from frozen content, because a link

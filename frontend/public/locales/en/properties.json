@@ -5,6 +5,7 @@
   "saving": "Saving…",
   "saved": "Saved",
   "remove": "Remove property",
+  "loadError": "Couldn't load this property.",
   "types": {
     "text": "Text",
     "number": "Number",

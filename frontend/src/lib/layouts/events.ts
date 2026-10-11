@@ -1,5 +1,8 @@
+import type { PropertyDefinitionRead } from "@/api/generated/initiativeAPI.schemas";
+
 import { at, detailLayoutSpec, type Region } from "./detailLayout";
 import type { FieldDef, FieldKind } from "./fields";
+import { propertyFields } from "./tasks";
 import type { LayoutNode } from "./tree";
 
 /** An event's fields, each with its label's key and the kind of value it is. */
@@ -12,14 +15,24 @@ export const EVENT_FIELDS = {
   tags: { label: "common:toolSettings.tags", kind: "tags" },
 } as const satisfies Record<string, { label: string; kind: FieldKind }>;
 
-/** An event's fields as the editor names them. An event is drawn in its
- *  detail alone so far, so none has a value to draw elsewhere. */
-export const eventFields = (): Map<string, FieldDef> =>
+/** An event's fields as the editor names them, then the initiative's
+ *  properties. An event is drawn in its detail alone so far, so none has a
+ *  value to draw elsewhere. */
+export const eventFields = (definitions: PropertyDefinitionRead[] = []): Map<string, FieldDef> =>
   new Map(
-    Object.entries(EVENT_FIELDS).map(([id, { label, kind }]) => [
-      id,
-      { id, kind, label, source: "builtin", hideable: id !== "title", value: () => null },
-    ])
+    [
+      ...Object.entries(EVENT_FIELDS).map(
+        ([id, { label, kind }]): FieldDef => ({
+          id,
+          kind,
+          label,
+          source: "builtin",
+          hideable: id !== "title",
+          value: () => null,
+        })
+      ),
+      ...propertyFields(definitions, () => null),
+    ].map((field) => [field.id, field])
   );
 
 const field = (id: string): LayoutNode => ({ type: "field", props: { field: id } });

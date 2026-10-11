@@ -195,15 +195,7 @@ def _named_field(value: str) -> str:
     )
 
 
-def _plugin_field(value: str) -> str:
-    """``plugin:<install id>:<metadata key>``."""
-    if value.startswith(PLUGIN_FIELD_PREFIX):
-        return _named_field(value)
-    raise ValueError("a field here is a built-in field id or 'plugin:<id>:<key>'")
-
-
 NamedFieldId = Annotated[str, AfterValidator(_named_field)]
-PluginFieldId = Annotated[str, AfterValidator(_plugin_field)]
 CardFieldId = Union[TaskFieldId, NamedFieldId]
 
 
@@ -226,15 +218,16 @@ TaskColumnFieldId = Enum(
     {f.name: f.value for f in TaskFieldId if f.value in _COLUMNS},
     type=str,
 )
-#: What a task's layout edits as a field. Its status, its dates and its
-#: properties are parts of their own, and its counts are a card's.
+#: What a task's layout edits as a field, beside a property or a plug-in's.
+#: Its status and its dates are parts of their own, and its counts are a
+#: card's.
 TaskDetailFieldId = Enum(
     "TaskDetailFieldId",
     {f.name: f.value for f in TaskFieldId if f.value in _PAGE},
     type=str,
 )
 ColumnFieldId = Union[TaskColumnFieldId, NamedFieldId]
-DetailFieldId = Union[TaskDetailFieldId, EventDetailFieldId, PluginFieldId]
+DetailFieldId = Union[TaskDetailFieldId, EventDetailFieldId, NamedFieldId]
 
 
 def _part_id(value: str) -> str:

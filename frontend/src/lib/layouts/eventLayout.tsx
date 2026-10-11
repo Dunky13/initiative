@@ -67,12 +67,18 @@ import { eventRoute } from "@/lib/tools";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
 
-import type { StoredRegions } from "./detailLayout";
+import { PlacedProperties, placedProperties, type StoredRegions } from "./detailLayout";
 import { indexPaths } from "./draft";
 import { FieldFrame, useFieldDraft } from "./editing";
 import { EVENT_FIELDS, EVENT_LAYOUT } from "./events";
-import { DescriptionField, PropertiesField, TagsField, TitleField } from "./fieldEditors";
-import { useProjectLayoutEnv } from "./fields";
+import {
+  DescriptionField,
+  PlacedPropertyField,
+  PropertiesField,
+  TagsField,
+  TitleField,
+} from "./fieldEditors";
+import { PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
 import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
 
 /** What an event's detail shares with its parts, beside the event itself. */
@@ -611,6 +617,7 @@ const TagsEditor = ({ event, label }: EditorProps) => {
  *  community-level calendar has none to offer. */
 const PropertiesEditor = ({ event }: { event: CalendarEventRead }) => {
   const { readOnly, occurrence } = useEventLayout();
+  const placed = useContext(PlacedProperties);
   if (event.initiative_id === null) return null;
   if (readOnly && event.properties.length === 0) return null;
   return (
@@ -621,6 +628,30 @@ const PropertiesEditor = ({ event }: { event: CalendarEventRead }) => {
       readOnly={readOnly}
       initiativeId={event.initiative_id}
       canOpen={{ tool: Tool.calendar, id: event.calendar_id }}
+      except={placed}
+    />
+  );
+};
+
+/** One property the layout places on its own. */
+const PropertyEditor = ({
+  event,
+  propertyId,
+}: {
+  event: CalendarEventRead;
+  propertyId: number;
+}) => {
+  const { readOnly, occurrence } = useEventLayout();
+  if (event.initiative_id === null) return null;
+  return (
+    <PlacedPropertyField
+      kind={eventSaves(occurrence)}
+      id={event.id}
+      properties={event.properties}
+      readOnly={readOnly}
+      initiativeId={event.initiative_id}
+      canOpen={{ tool: Tool.calendar, id: event.calendar_id }}
+      propertyId={propertyId}
     />
   );
 };
@@ -638,6 +669,11 @@ const FIELD_EDITORS: Record<keyof typeof EVENT_FIELDS, (props: EditorProps) => R
 /** One field of the event, by its id, labelled in the event's own words. */
 const EventField = ({ id, event }: { id: string; event: CalendarEventRead }) => {
   const { t } = useTranslation(["calendars", "common"]);
+  if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
+    return (
+      <PropertyEditor event={event} propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))} />
+    );
+  }
   if (!Object.hasOwn(FIELD_EDITORS, id)) return null;
   const Editor = FIELD_EDITORS[id as keyof typeof FIELD_EDITORS];
   return <Editor event={event} label={t(EVENT_FIELDS[id as keyof typeof EVENT_FIELDS].label)} />;
@@ -686,6 +722,7 @@ export const EventLayoutView = ({
   const communityId = useActiveCommunityId();
   const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
   const tree = useMemo(() => EVENT_LAYOUT.tree(layout), [layout]);
+  const placed = useMemo(() => placedProperties(tree), [tree]);
   const view = useMemo<LayoutContext>(
     () => ({
       fields: new Map(),
@@ -698,7 +735,9 @@ export const EventLayoutView = ({
   return (
     // Another event's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${event.id}`} value={context}>
-      {renderNode(tree, event, view, EVENT_PARTS)}
+      <PlacedProperties.Provider value={placed}>
+        {renderNode(tree, event, view, EVENT_PARTS)}
+      </PlacedProperties.Provider>
     </DetailContext.Provider>
   );
 };

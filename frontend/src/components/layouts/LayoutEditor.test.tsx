@@ -533,6 +533,27 @@ describe("LayoutEditor", () => {
       expect(JSON.stringify(saved("task"))).not.toContain('"order"');
     });
 
+    it("places a property on its own", async () => {
+      const { user } = editor("task");
+
+      await user.click(
+        await within(await outline()).findByRole("button", { name: "Side", pressed: false })
+      );
+      await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "Add" })).getByRole("button", {
+          name: /^effort/i,
+        })
+      );
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect((saved("task")?.side as LayoutNode[] | undefined)?.at(-1)).toEqual({
+        type: "field",
+        props: { field: "property:12" },
+      });
+    });
+
     it("adds accordions where asked for, each named by typing over its title", async () => {
       const { user } = editor("task");
 

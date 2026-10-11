@@ -39,6 +39,7 @@
   "COMMUNITY_GUESTS_DISABLED": "Guests are turned off on this server.",
   "NOT_A_GUEST": "This person isn't a guest here.",
   "GUEST_TIME_ENDED": "Your time as a guest here has just ended. Try again in a few minutes.",
+  "GUEST_GRANT_NOT_FOUND": "That initiative or item isn't in this community.",
   "CANNOT_CHANGE_OWN_ROLE": "Cannot change your own community role",
   "USER_NOT_FOUND_IN_COMMUNITY": "User not found in community",
   "COMMUNITY_ROLE_NOT_ASSIGNABLE": "That community role can't be assigned.",
