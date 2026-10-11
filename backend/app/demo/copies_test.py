@@ -480,3 +480,27 @@ async def test_a_visitor_neither_extends_nor_promotes_itself(pitch, client, sess
     for response in (extended, promoted):
         assert response.status_code == 400, response.text
         assert response.json()["detail"] == GuildMessages.CANNOT_CHANGE_OWN_ROLE
+
+
+async def test_a_copys_other_guests_keep_their_accounts(pitch, client, session):
+    link, _bea, _source = pitch
+    copy_id = await copies.build_copy()
+    _opened, _headers, me = await _open(client, await link())
+    invited = await create_user(session)
+    await create_guild_membership(
+        session,
+        user=invited,
+        guild=await session.get(Guild, copy_id),
+        role=CommunityRole.guest,
+        guest_until=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    invited_id = invited.id
+
+    await copies.expire_copies(
+        datetime.now(timezone.utc) + timedelta(days=pitches.COPY_DAYS, minutes=1)
+    )
+
+    session.expire_all()
+    assert await session.get(Guild, copy_id) is None
+    assert await session.get(User, me["id"]) is None
+    assert await session.get(User, invited_id) is not None

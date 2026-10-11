@@ -335,8 +335,8 @@ async def expire_copies(now: datetime) -> None:
 
 
 async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
-    """Delete the copy's guest accounts, each taking its record with it, and
-    then the community. Marked deleted first, which closes it to its visitors
+    """Delete the visitor's account, taking its record with it, and then the
+    community. Marked deleted first, which closes it to its visitors
     and lets its seat holder go. A step that fails leaves the copy recorded for
     the next pass. The visitor's account is the one the copy recorded, so one
     the guest sweep has already taken out of it is found too."""
@@ -348,15 +348,10 @@ async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
         guild.status_changed_at = datetime.now(timezone.utc)
         session.add(guild)
         await session.commit()
-    guests = await session.exec(
-        select(GuildMembership.user_id).where(
-            GuildMembership.guild_id == guild_id,
-            GuildMembership.guest_until.is_not(None),
-        )
-    )
+    # Only the account the copy was made for: anyone else its guest was
+    # invited, and leaves with the community.
     sandbox = await session.get(DemoSandbox, guild_id)
-    recorded = [sandbox.visitor_id] if sandbox and sandbox.visitor_id else []
-    visitors = {*guests.all(), *recorded}
+    visitors = [sandbox.visitor_id] if sandbox and sandbox.visitor_id else []
     for user_id in visitors:
         await users_service.hard_delete_user(session, user_id, actor_user_id=None)
     await session.refresh(guild)
