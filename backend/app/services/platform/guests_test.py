@@ -685,3 +685,77 @@ async def test_what_an_invite_gives_is_its_administrations_alone(
     as_member.add(GuestInviteGrant(invite_id=invite_id, initiative_id=initiative_id))
     with pytest.raises(DBAPIError):
         await as_member.flush()
+
+
+async def test_an_item_archived_since_is_skipped_and_the_rest_given(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    joiner = await acting_user()
+    await _platform(session)
+    guild_id, initiative_id, project_id = a.guild.id, a.initiative.id, a.project.id
+    _, code = await guilds_service.create_guild_invite(
+        session,
+        guild_id=guild_id,
+        created_by=a.user.id,
+        guest_days=7,
+        grants=[
+            GuestInviteGrant(initiative_id=initiative_id),
+            GuestInviteGrant(
+                initiative_id=initiative_id,
+                resource_type=Tool.project,
+                resource_id=project_id,
+                level=ResourceAccessLevel.read,
+            ),
+        ],
+    )
+    a.project.archived_at = datetime.now(timezone.utc)
+    session.add(a.project)
+    await session.commit()
+
+    joined = await client.post(
+        "/api/v1/communities/invite/accept",
+        json={"code": code},
+        headers=joiner.headers,
+    )
+
+    assert joined.status_code == 200, joined.text
+    await set_rls_context(session, SystemGuild(guild_id))
+    assert (
+        await session.exec(
+            select(InitiativeMember.initiative_id).where(
+                InitiativeMember.user_id == joiner.user.id
+            )
+        )
+    ).all() == [initiative_id]
+    assert (
+        await session.exec(
+            select(ResourceGrant.id).where(ResourceGrant.user_id == joiner.user.id)
+        )
+    ).all() == []
+
+
+async def test_an_invite_naming_an_archived_initiative_is_withdrawn(
+    client, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    await _platform(session)
+    invite, _ = await guilds_service.create_guild_invite(
+        session,
+        guild_id=a.guild.id,
+        created_by=a.user.id,
+        guest_days=7,
+        grants=[GuestInviteGrant(initiative_id=a.initiative.id)],
+    )
+    a.initiative.archived_at = datetime.now(timezone.utc)
+    session.add(a.initiative)
+    await session.commit()
+    guild_id, invite_id = a.guild.id, invite.id
+
+    withdrawn = await client.delete(
+        f"/api/v1/communities/{guild_id}/invites/{invite_id}", headers=a.headers
+    )
+
+    assert withdrawn.status_code == 204, withdrawn.text
+    session.expire_all()
+    assert await session.get(GuildInvite, invite_id) is None

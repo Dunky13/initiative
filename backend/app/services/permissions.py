@@ -29,6 +29,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, false, func, inspect, or_, true
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, undefer
 from sqlmodel import select
 
@@ -552,16 +553,22 @@ async def grant_to_person(
     )
     if held.first() is not None:
         return
-    session.add(
-        ResourceGrant(
-            resource_type=resource_type,
-            resource_id=resource_id,
-            initiative_id=initiative_id,
-            user_id=user_id,
-            level=level,
-        )
-    )
-    await session.flush()
+    # Two writers can both find none; the unique grantee key keeps one, and
+    # the other is the share the caller asked for.
+    try:
+        async with session.begin_nested():
+            session.add(
+                ResourceGrant(
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    initiative_id=initiative_id,
+                    user_id=user_id,
+                    level=level,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        return
     await _record_grant_changes(
         session,
         actor_user_id=actor_user_id,

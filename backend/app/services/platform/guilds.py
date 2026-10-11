@@ -10,6 +10,7 @@ import secrets
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import ColumnElement, case, exists, func, or_, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import aliased
 from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -1646,7 +1647,8 @@ def _give_guest_invite_grants(
     """Once ``session`` commits, give ``user_id`` what ``invite`` names: each
     initiative joined with the role their standing earns, each item shared at
     its level. Run in the community's cohort, as auto-join enrolment is, and
-    recorded as its administrator's: one named since withdrawn is skipped."""
+    recorded as its administrator's. Each is given on its own: one deleted or
+    archived since is skipped, and the rest are still given."""
     from app.db.base import MODELS_BY_TABLE
     from app.db.session import set_rls_context
     from app.models.tenant.initiative import Initiative
@@ -1660,36 +1662,45 @@ def _give_guest_invite_grants(
             await set_rls_context(guild_session, SystemGuild(guild_id))
             grants = await guest_invite_grants(guild_session, invite_ids=[invite_id])
             for grant in grants.get(invite_id, []):
-                if grant.resource_type is None:
-                    initiative = await guild_session.get(
-                        Initiative, grant.initiative_id
+                try:
+                    async with guild_session.begin_nested():
+                        await give_one(guild_session, grant)
+                except DBAPIError:
+                    logger.info(
+                        "guest invite %s: %s %s not given to user %s",
+                        invite_id,
+                        grant.resource_type or "initiative",
+                        grant.resource_id or grant.initiative_id,
+                        user_id,
                     )
-                    if initiative is not None:
-                        await initiatives_service.self_join(
-                            guild_session,
-                            initiative=initiative,
-                            user_id=user_id,
-                            actor_user_id=actor,
-                            via="guest_invite",
-                        )
-                    continue
-                tool = Tool(grant.resource_type)
-                row = await guild_session.get(
-                    MODELS_BY_TABLE[tool.plural], grant.resource_id
-                )
-                if row is None or grant.level is None:
-                    continue
-                await permissions_service.grant_to_person(
-                    guild_session,
-                    resource_type=tool,
-                    resource_id=row.id,
-                    guild_id=guild_id,
-                    initiative_id=row.initiative_id,
-                    user_id=user_id,
-                    level=grant.level,
-                    actor_user_id=actor,
-                )
             await guild_session.commit()
+
+    async def give_one(guild_session: AsyncSession, grant: GuestInviteGrant) -> None:
+        if grant.resource_type is None:
+            initiative = await guild_session.get(Initiative, grant.initiative_id)
+            if initiative is not None:
+                await initiatives_service.self_join(
+                    guild_session,
+                    initiative=initiative,
+                    user_id=user_id,
+                    actor_user_id=actor,
+                    via="guest_invite",
+                )
+            return
+        tool = Tool(grant.resource_type)
+        row = await guild_session.get(MODELS_BY_TABLE[tool.plural], grant.resource_id)
+        if row is None or grant.level is None:
+            return
+        await permissions_service.grant_to_person(
+            guild_session,
+            resource_type=tool,
+            resource_id=row.id,
+            guild_id=guild_id,
+            initiative_id=row.initiative_id,
+            user_id=user_id,
+            level=grant.level,
+            actor_user_id=actor,
+        )
 
     post_commit.after_commit(session, give)
 
