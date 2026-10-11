@@ -760,3 +760,30 @@ async def test_an_invite_naming_an_archived_initiative_is_withdrawn(
     assert withdrawn.status_code == 204, withdrawn.text
     session.expire_all()
     assert await session.get(GuildInvite, invite_id) is None
+
+
+@pytest.mark.parametrize("way", ["removed", "expires"])
+async def test_a_guest_given_only_an_item_keeps_no_grant_on_leaving(
+    client, acting_user, session, way
+):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    await _platform(session)
+    guest = await create_guest(
+        session, a.guild, ends_in=-HOUR if way == "expires" else HOUR
+    )
+    await create_resource_grant(session, a.project, user=guest)
+    guild_id, guest_id = a.guild.id, guest.id
+
+    if way == "removed":
+        response = await client.delete(a.g(f"/users/{guest_id}"), headers=a.headers)
+        assert response.status_code == 204, response.text
+    else:
+        await guests.end_expired_guests()
+
+    session.expire_all()
+    await set_rls_context(session, SystemGuild(guild_id))
+    assert (
+        await session.exec(
+            select(ResourceGrant.id).where(ResourceGrant.user_id == guest_id)
+        )
+    ).all() == []

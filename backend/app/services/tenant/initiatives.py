@@ -17,6 +17,7 @@ from app.core.audit_events import AuditEventType
 from app.core.errors import CodedError
 from app.core.messages import InitiativeMessages
 from app.db.session import routed_context
+from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.initiative import (
     BUILTIN_ROLES,
     Initiative,
@@ -373,9 +374,27 @@ async def remove_user_from_guild_initiatives(
     from app.db.schema_provisioning import guild_schema_name
     from app.services.tenant import recent_views
 
-    await session.exec(
-        select(func.public.member_departs(guild_schema_name(guild_id), user_id, None))
+    schema = guild_schema_name(guild_id)
+    await session.exec(select(func.public.member_departs(schema, user_id, None)))
+    # An initiative they reached only through items shared with them has no
+    # membership row to delete, so its departure is run here.
+    shared_only = (
+        select(ResourceGrant.initiative_id)
+        .where(
+            ResourceGrant.user_id == user_id,
+            ResourceGrant.initiative_id.is_not(None),
+            ResourceGrant.initiative_id.not_in(
+                select(InitiativeMember.initiative_id).where(
+                    InitiativeMember.user_id == user_id
+                )
+            ),
+        )
+        .distinct()
     )
+    for initiative_id in (await session.exec(shared_only)).all():
+        await session.exec(
+            select(func.public.member_departs(schema, user_id, initiative_id))
+        )
     await session.exec(
         delete(InitiativeMember).where(
             InitiativeMember.user_id == user_id,
