@@ -615,5 +615,38 @@
       "apply": "Mostrar primero las cercanas",
       "clear": "Dejar de ordenar por ubicación"
     }
+  },
+  "guests": {
+    "invitesTitle": "Invitar a un invitado",
+    "invitesDescription": "Crea un enlace para alguien que solo deba ver ciertas iniciativas o elementos, durante un número fijo de días.",
+    "guestDaysLabel": "Días que se queda el invitado",
+    "initiativesLabel": "Iniciativas a las que se une",
+    "initiativesPlaceholder": "Ninguna",
+    "itemsLabel": "Elementos que recibe",
+    "itemsHelp": "Busca un proyecto, un archivo u otro elemento y elige si puede verlo o editarlo.",
+    "itemLevel": "Acceso a {{title}}",
+    "removeItem": "Quitar {{title}}",
+    "generateInvite": "Generar invitación de invitado",
+    "noActiveInvites": "No hay invitaciones de invitado.",
+    "staysDays_one": "Se queda {{count}} día",
+    "staysDays_other": "Se queda {{count}} días",
+    "joinsInitiatives": "Se une a {{names}}",
+    "givesItems_one": "{{count}} elemento",
+    "givesItems_other": "{{count}} elementos",
+    "listTitle": "Invitados",
+    "listDescription": "Personas que están aquí durante un número fijo de días. Un invitado no ocupa plaza y solo ve lo que le dio su invitación.",
+    "loading": "Cargando invitados…",
+    "unableToLoad": "No se pudieron cargar los invitados.",
+    "noGuests": "No hay invitados ahora mismo.",
+    "endsColumn": "Fin del tiempo",
+    "extend": "Ampliar",
+    "extendTitle": "Ampliar el tiempo de {{name}}",
+    "extendDescription": "Su tiempo como invitado termina dentro de estos días, o antes si la comunidad o el servidor permiten menos.",
+    "extendDaysLabel": "Días a partir de hoy",
+    "extended": "Tiempo de invitado ampliado.",
+    "extendError": "No se pudo ampliar su tiempo.",
+    "makeMember": "Hacer miembro",
+    "madeMember": "Ahora es miembro.",
+    "makeMemberError": "No se pudo hacer miembro."
   }
 }

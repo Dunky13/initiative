@@ -615,5 +615,38 @@
       "apply": "Afficher d’abord les proches",
       "clear": "Ne plus trier par lieu"
     }
+  },
+  "guests": {
+    "invitesTitle": "Inviter un invité",
+    "invitesDescription": "Créez un lien pour quelqu'un qui ne doit voir que certaines initiatives ou certains éléments, pendant un nombre de jours défini.",
+    "guestDaysLabel": "Jours de séjour de l'invité",
+    "initiativesLabel": "Initiatives qu'il rejoint",
+    "initiativesPlaceholder": "Aucune",
+    "itemsLabel": "Éléments qu'il reçoit",
+    "itemsHelp": "Recherchez un projet, un fichier ou un autre élément, puis choisissez s'il peut le voir ou le modifier.",
+    "itemLevel": "Accès à {{title}}",
+    "removeItem": "Retirer {{title}}",
+    "generateInvite": "Générer une invitation d'invité",
+    "noActiveInvites": "Aucune invitation d'invité.",
+    "staysDays_one": "Reste {{count}} jour",
+    "staysDays_other": "Reste {{count}} jours",
+    "joinsInitiatives": "Rejoint {{names}}",
+    "givesItems_one": "{{count}} élément",
+    "givesItems_other": "{{count}} éléments",
+    "listTitle": "Invités",
+    "listDescription": "Des personnes présentes pour un nombre de jours défini. Un invité n'occupe pas de place et ne voit que ce que son invitation lui a donné.",
+    "loading": "Chargement des invités…",
+    "unableToLoad": "Impossible de charger les invités.",
+    "noGuests": "Aucun invité pour le moment.",
+    "endsColumn": "Fin du séjour",
+    "extend": "Prolonger",
+    "extendTitle": "Prolonger le séjour de {{name}}",
+    "extendDescription": "Son séjour en tant qu'invité se termine dans ce nombre de jours, ou plus tôt si la communauté ou le serveur autorise moins.",
+    "extendDaysLabel": "Jours à partir d'aujourd'hui",
+    "extended": "Séjour de l'invité prolongé.",
+    "extendError": "Impossible de prolonger son séjour.",
+    "makeMember": "Rendre membre",
+    "madeMember": "Cette personne est maintenant membre.",
+    "makeMemberError": "Impossible de rendre cette personne membre."
   }
 }

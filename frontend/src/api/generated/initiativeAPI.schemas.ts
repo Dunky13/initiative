@@ -2732,11 +2732,33 @@ export interface CommunityInviteAcceptRequest {
   code: string;
 }
 
+export type CommunityInviteGrantLevel =
+  | (typeof CommunityInviteGrantLevel)[keyof typeof CommunityInviteGrantLevel]
+  | null;
+
+export const CommunityInviteGrantLevel = {
+  read: "read",
+  write: "write",
+} as const;
+
+/**
+ * What a guest invite gives: an initiative to join, or one item in it at
+ * ``read`` or ``write``.
+ */
+export interface CommunityInviteGrant {
+  initiative_id: number;
+  resource_type?: Tool | null;
+  resource_id?: number | null;
+  level?: CommunityInviteGrantLevel;
+}
+
 export interface CommunityInviteCreate {
   expires_at?: string | null;
   max_uses?: number | null;
   invitee_email?: string | null;
   guest_days?: number | null;
+  /** @maxItems 100 */
+  grants?: CommunityInviteGrant[];
 }
 
 /**
@@ -2752,6 +2774,7 @@ export interface CommunityInviteCreated {
   invitee_email: string | null;
   created_at: string;
   guest_days: number | null;
+  grants: CommunityInviteGrant[];
   code: string;
 }
 
@@ -2765,6 +2788,7 @@ export interface CommunityInviteRead {
   invitee_email: string | null;
   created_at: string;
   guest_days: number | null;
+  grants: CommunityInviteGrant[];
 }
 
 export interface CommunityInviteStatus {

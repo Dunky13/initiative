@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  extendCommunityGuest,
+  makeCommunityGuestAMember,
   setMemberApiAccess,
   setMemberDisplayName,
   setOwnDisplayName,
@@ -411,6 +413,37 @@ export const useSetMemberApiAccess = (options?: MutationOpts<void, SetMemberApiA
               ),
             }
         );
+        return invalidate(q.communityMembers());
+      },
+    },
+    options
+  );
+};
+
+type GuestVars = { communityId: number; userId: number };
+
+/** End a guest's time `days` from now, as far as the community's and the server's limits allow. */
+export const useExtendGuest = (options?: MutationOpts<void, GuestVars & { days: number }>) =>
+  useApiMutation<void, GuestVars & { days: number }>(
+    {
+      mutationFn: ({ communityId, userId, days }) =>
+        extendCommunityGuest(communityId, userId, { days }),
+      invalidate: () => invalidate(q.communityMembers()),
+    },
+    options
+  );
+
+/**
+ * Make a guest a member. They take a seat, so the community list — which
+ * carries the member count the invite forms read — refreshes with the roster.
+ */
+export const useMakeGuestAMember = (options?: MutationOpts<void, GuestVars>) => {
+  const { refreshCommunities } = useCommunities();
+  return useApiMutation<void, GuestVars>(
+    {
+      mutationFn: ({ communityId, userId }) => makeCommunityGuestAMember(communityId, userId),
+      invalidate: () => {
+        void refreshCommunities();
         return invalidate(q.communityMembers());
       },
     },

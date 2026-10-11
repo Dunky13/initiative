@@ -75,6 +75,7 @@ let connectable: { id: number; slug: string; display_name: string }[] = [
 // Every control saves through the same PATCH, one field at a time.
 const save = vi.fn();
 let secondFactorAvailable = true;
+let guestsEnabled = false;
 const refreshCommunities = vi.fn(() => Promise.resolve<CommunityEntry[]>([]));
 
 // Partial: the render helper reaches for ``CommunityContext`` from this module.
@@ -106,7 +107,7 @@ vi.mock(import("@/hooks/useCommunities"), async (importOriginal) => ({
 vi.mock("@/hooks/useActiveCommunityId", () => ({ useActiveCommunityId: () => communityId }));
 
 vi.mock("@/hooks/useAppConfig", () => ({
-  useAppConfig: () => ({ secondFactorAvailable }),
+  useAppConfig: () => ({ secondFactorAvailable, guestsEnabled }),
 }));
 
 // ``useServer`` is left real: the render helper provides its context, and
@@ -170,6 +171,7 @@ describe("SettingsCommunitySecurityPage", () => {
     communityId = 4;
     settings = baseSettings();
     secondFactorAvailable = true;
+    guestsEnabled = false;
     connections = [
       connection(1, 11, "corp", "Corp SSO"),
       connection(2, 12, "contractors", "Contractors"),
@@ -561,6 +563,55 @@ describe("SettingsCommunitySecurityPage", () => {
       render();
 
       expect(control()).not.toBeInTheDocument();
+    });
+  });
+
+  describe("guests", () => {
+    beforeEach(() => {
+      guestsEnabled = true;
+    });
+
+    it("saves the guests' own sign-in requirement", async () => {
+      const user = mounted();
+
+      // The second of each control is the guests'.
+      await user.click(screen.getAllByLabelText(/require single sign-on/i)[1]);
+      await chooseOption(user, "Contractors");
+      await user.click(
+        screen.getByRole("button", { name: "Save the guests' sign-in requirement" })
+      );
+
+      expect(save.mock.calls[0][0]).toEqual({
+        guest_auth_policy: { policy: "required", provider_id: 12, require_methods: [] },
+      });
+    });
+
+    it("saves the longest stay, below the server's limit", async () => {
+      const user = mounted();
+      const days = screen.getByLabelText("Longest a guest may stay (days)");
+      expect(screen.getByText(/server's limit of 90 days/i)).toBeInTheDocument();
+
+      await user.type(days, "30");
+      await user.click(screen.getByRole("button", { name: "Save the longest guest stay" }));
+      expect(save.mock.calls[0][0]).toEqual({ guest_max_days: 30 });
+    });
+
+    it("clears a stay of its own back to the server's limit", async () => {
+      stored({ guest_max_days: 30 });
+      const user = mounted();
+
+      await user.clear(screen.getByLabelText("Longest a guest may stay (days)"));
+      await user.click(screen.getByRole("button", { name: "Save the longest guest stay" }));
+
+      expect(save.mock.calls[0][0]).toEqual({ guest_max_days: null });
+    });
+
+    it("says nothing about guests where the community takes none", () => {
+      guestsEnabled = false;
+      render();
+
+      expect(screen.queryByText("Guests' sign-in requirement")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Longest a guest may stay (days)")).not.toBeInTheDocument();
     });
   });
 

@@ -33,7 +33,8 @@
       "security": "Security",
       "integrations": "Integrations",
       "usage": "Usage",
-      "planAndUsage": "Plan & usage"
+      "planAndUsage": "Plan & usage",
+      "guests": "Guests"
     },
     "tabBadge": {
       "paymentFailed": "Payment failed",
@@ -1600,6 +1601,27 @@
       "askedByPlatform": "Your server already asks everybody here for a second factor, so there's nothing to add.",
       "saved": "Second factor saved.",
       "error": "Could not save the second-factor requirement."
+    },
+    "guestPolicy": {
+      "title": "Guests' sign-in requirement",
+      "description": "Control which sign-in a guest's session must have used before it can reach this community. You don't have to meet it yourself.",
+      "openHelp": "Any signed-in guest can reach what they were given.",
+      "requiredHelp": "Guests can only reach this community after signing in with the selected provider.",
+      "anyProviderHelp": "Guests can come in through any provider this community has set up. Signing in somewhere else on this deployment does not count.",
+      "requirePasskeyHelp": "Guests must have signed in with a passkey, or presented one, in this session. They can add one without signing out.",
+      "saved": "Guests' sign-in requirement saved",
+      "error": "Could not save the guests' sign-in requirement",
+      "save": "Save the guests' sign-in requirement"
+    },
+    "guestStay": {
+      "title": "Guest stays",
+      "description": "Guest invites and extensions never run longer than this. Guests already here keep their end date.",
+      "label": "Longest a guest may stay (days)",
+      "hint_one": "Leave blank to use the server's limit of {{count}} day, which is also the most you can set.",
+      "hint_other": "Leave blank to use the server's limit of {{count}} days, which is also the most you can set.",
+      "saved": "Longest guest stay saved",
+      "error": "Could not save the longest guest stay",
+      "save": "Save the longest guest stay"
     }
   },
   "authProviders": {
@@ -1822,7 +1844,16 @@
     "engagementRankingLabel": "Let communities rank results by engagement",
     "engagementRankingHelpText": "When off, no community on this server ranks by engagement, whatever its own setting.",
     "engagementRankingEnabledToast": "Communities can rank results by engagement.",
-    "engagementRankingDisabledToast": "Engagement ranking is off for every community."
+    "engagementRankingDisabledToast": "Engagement ranking is off for every community.",
+    "guestsEnabledLabel": "Allow guests",
+    "guestsEnabledHelpText": "Communities can invite people for a set number of days. Guests take no seat and see only what they were given. While this is off, no guest gets in.",
+    "guestsEnabledToast": "Communities can have guests.",
+    "guestsDisabledToast": "Guests are turned off.",
+    "maxGuestDaysLabel": "Longest a guest may stay (days)",
+    "maxGuestDaysHelpText": "No guest stays longer than this, whatever a community sets.",
+    "maxGuestDaysSave": "Save the longest guest stay",
+    "maxGuestDaysSaved_one": "Guests stay {{count}} day at most.",
+    "maxGuestDaysSaved_other": "Guests stay {{count}} days at most."
   },
   "account": {
     "passwordTitle": "Password",

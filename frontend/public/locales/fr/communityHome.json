@@ -1,7 +1,7 @@
 {
   "title": "Communauté",
   "subtitle": "Tout ce que contient la communauté, un outil à la fois.",
-  "toolRail": "Outils de la communauté",
+  "nodeRail": "Activité de la communauté",
   "loading": "Chargement…",
   "loadError": "Impossible de charger cet outil. Veuillez réessayer plus tard.",
   "communityWide": "Toute la communauté",

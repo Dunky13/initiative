@@ -33,7 +33,8 @@
       "security": "Sécurité",
       "integrations": "Intégrations",
       "usage": "Utilisation",
-      "planAndUsage": "Forfait et utilisation"
+      "planAndUsage": "Forfait et utilisation",
+      "guests": "Invités"
     },
     "tabBadge": {
       "paymentFailed": "Échec du paiement",
@@ -1600,6 +1601,27 @@
       "askedByPlatform": "Votre serveur demande déjà un second facteur à tout le monde ici ; il n’y a rien à ajouter.",
       "saved": "Second facteur enregistré.",
       "error": "Impossible d’enregistrer l’exigence de second facteur."
+    },
+    "guestPolicy": {
+      "title": "Exigence de connexion des invités",
+      "description": "Contrôlez quelle connexion la session d'un invité doit avoir utilisée avant d'atteindre cette communauté. Vous n'avez pas à la remplir vous-même.",
+      "openHelp": "Tout invité connecté peut atteindre ce qui lui a été donné.",
+      "requiredHelp": "Les invités ne peuvent atteindre cette communauté qu'après s'être connectés avec le fournisseur sélectionné.",
+      "anyProviderHelp": "Les invités peuvent entrer par n'importe quel fournisseur configuré par cette communauté. Se connecter ailleurs sur cette installation ne compte pas.",
+      "requirePasskeyHelp": "Les invités doivent s'être connectés avec une clé d'accès, ou en avoir présenté une, dans cette session. Ils peuvent l'ajouter sans se déconnecter.",
+      "saved": "Exigence de connexion des invités enregistrée",
+      "error": "Impossible d'enregistrer l'exigence de connexion des invités",
+      "save": "Enregistrer l'exigence de connexion des invités"
+    },
+    "guestStay": {
+      "title": "Séjour des invités",
+      "description": "Les invitations d'invité et les prolongations ne durent jamais plus longtemps que cela. Les invités déjà présents gardent leur date de fin.",
+      "label": "Séjour maximal d'un invité (jours)",
+      "hint_one": "Laissez vide pour utiliser la limite du serveur de {{count}} jour, qui est aussi le maximum que vous pouvez définir.",
+      "hint_other": "Laissez vide pour utiliser la limite du serveur de {{count}} jours, qui est aussi le maximum que vous pouvez définir.",
+      "saved": "Séjour maximal des invités enregistré",
+      "error": "Impossible d'enregistrer le séjour maximal des invités",
+      "save": "Enregistrer le séjour maximal des invités"
     }
   },
   "authProviders": {
@@ -1822,7 +1844,16 @@
     "engagementRankingLabel": "Permettre aux communautés de classer les résultats par engagement",
     "engagementRankingHelpText": "Désactivé, aucune communauté de ce serveur ne classe par engagement, quel que soit son propre réglage.",
     "engagementRankingEnabledToast": "Les communautés peuvent classer les résultats par engagement.",
-    "engagementRankingDisabledToast": "Le classement par engagement est désactivé pour toutes les communautés."
+    "engagementRankingDisabledToast": "Le classement par engagement est désactivé pour toutes les communautés.",
+    "guestsEnabledLabel": "Autoriser les invités",
+    "guestsEnabledHelpText": "Les communautés peuvent inviter des personnes pour un nombre de jours défini. Les invités n'occupent pas de place et ne voient que ce qui leur a été donné. Tant que c'est désactivé, aucun invité n'entre.",
+    "guestsEnabledToast": "Les communautés peuvent avoir des invités.",
+    "guestsDisabledToast": "Les invités sont désactivés.",
+    "maxGuestDaysLabel": "Séjour maximal d'un invité (jours)",
+    "maxGuestDaysHelpText": "Aucun invité ne reste plus longtemps que cela, quel que soit le réglage d'une communauté.",
+    "maxGuestDaysSave": "Enregistrer le séjour maximal des invités",
+    "maxGuestDaysSaved_one": "Les invités restent {{count}} jour au plus.",
+    "maxGuestDaysSaved_other": "Les invités restent {{count}} jours au plus."
   },
   "account": {
     "passwordTitle": "Mot de passe",

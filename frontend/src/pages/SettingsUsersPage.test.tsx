@@ -192,6 +192,7 @@ describe("SettingsUsersPage invites", () => {
       invitee_email: null,
       created_at: new Date().toISOString(),
       guest_days: null,
+      grants: [],
     };
     createInvite.mockImplementation(async () => {
       state.invites = [invite];
@@ -207,6 +208,27 @@ describe("SettingsUsersPage invites", () => {
 
     await waitFor(() => expect(screen.queryByText(/fresh-code/)).not.toBeInTheDocument());
     expect(deleteInvite).toHaveBeenCalledWith(community.id, 7);
+  });
+
+  it("leaves guest invites to the Guests tab", async () => {
+    state.invites = [
+      {
+        id: 8,
+        community_id: 1,
+        created_by: null,
+        expires_at: null,
+        max_uses: 1,
+        uses: 0,
+        invitee_email: null,
+        created_at: new Date().toISOString(),
+        guest_days: 5,
+        grants: [],
+      },
+    ];
+    setup({});
+
+    expect(await screen.findByText("No active invites.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete invite" })).not.toBeInTheDocument();
   });
 });
 
