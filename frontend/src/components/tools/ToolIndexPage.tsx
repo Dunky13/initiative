@@ -67,7 +67,11 @@ import { parsePropertyFilters } from "@/components/properties/PropertyFilter";
 import { CardGridSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TagBrowseLayout } from "@/components/tags/TagBrowseLayout";
-import { ToolFilterFields, type ToolListFilters } from "@/components/tools/ToolFilterFields";
+import {
+  readToolListFilters,
+  ToolFilterFields,
+  type ToolListFilters,
+} from "@/components/tools/ToolFilterFields";
 import { SortableCards } from "@/components/tools/ToolIndexSortable";
 import {
   TABLE_SORT_FIELDS,
@@ -85,12 +89,19 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import { useGridSelection } from "@/hooks/useGridSelection";
 import { useToolCreateAccess } from "@/hooks/useInitiativeAccess";
-import { usePersistedTableState } from "@/hooks/usePersistedTableState";
+import {
+  deviceJSON,
+  LIST,
+  type ListViewSpec,
+  NO_PART_VIEW,
+  useListView,
+  viewKey,
+} from "@/hooks/useListView";
 import { useReorderProjects } from "@/hooks/useProjects";
+import { useKnownTagIds } from "@/hooks/useTags";
 import { useTagTreeSelection } from "@/hooks/useTagTreeSelection";
 import { useToolCounts } from "@/hooks/useToolCounts";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
-import { useViewPreference } from "@/hooks/useViewPreference";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { FILE_UPLOAD_ACCEPT } from "@/lib/fileUtils";
 import type { AppColumnDef } from "@/lib/table";
@@ -102,6 +113,7 @@ import {
   toolCamelPlural,
   toolDetailRoute,
   toolListingKind,
+  toolRouteSegment,
   toolViewParams,
   toolViews,
 } from "@/lib/tools";
@@ -477,8 +489,43 @@ const useListPage = (tool: Tool) => {
   return { view, setView, page, pageSize, setPage, setPageSize };
 };
 
+const NO_TAGS: number[] = [];
+
 /** Newest first, the way a table opens until its reader picks an order. */
 const NEWEST_FIRST: SortingState = [{ id: "updated_at", desc: true }];
+
+/**
+ * Where one person's view of an initiative's tool list is kept: how it is
+ * drawn (cards, rows or by tag), their filters but for a typed search, and
+ * the table's order and columns. What an older release kept (how each tool
+ * was drawn, the same in every initiative, and the table's order and columns
+ * on the device) is carried over.
+ */
+const toolListViewSpec = (
+  tool: Tool,
+  communityId: number,
+  initiativeId: number,
+  reorders: boolean
+): ListViewSpec<ToolListFilters> => ({
+  key: viewKey(communityId, "initiative", initiativeId, toolRouteSegment(tool)),
+  read: readToolListFilters,
+  defaults: { filters: {}, ...NO_PART_VIEW, sorting: reorders ? [] : NEWEST_FIRST },
+  carryOver: (items) => {
+    const layout = items[`${tool}:view-mode`];
+    const order = deviceJSON(toolTableStorageKey(tool, "order")) as { sorting?: unknown } | null;
+    const columns = deviceJSON(toolTableStorageKey(tool, "columns"));
+    if (typeof layout !== "string" && !order && !columns) return null;
+    return {
+      layout: typeof layout === "string" ? layout : null,
+      parts: {
+        [LIST]: {
+          ...(Array.isArray(order?.sorting) ? { sorting: order.sorting } : {}),
+          ...(columns && typeof columns === "object" ? { columns } : {}),
+        },
+      },
+    };
+  },
+});
 
 /** The list's own narrowing, as the counts endpoint takes it for the tag tree:
  *  tags aside, since the tree counts every one. */
@@ -510,7 +557,25 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
   const communityId = useActiveCommunityId();
   const unread = useUnreadTree();
 
-  const [filters, setFilters] = useState<ToolListFilters>({});
+  // This person's view of the list. A typed search is for this visit only.
+  const viewSpec = useMemo(
+    () => toolListViewSpec(tool, communityId, fixedInitiativeId, Boolean(entry.reorder)),
+    [tool, communityId, fixedInitiativeId, entry.reorder]
+  );
+  const listView = useListView(viewSpec);
+  const [searchText, setSearchText] = useState("");
+  const filters = useMemo<ToolListFilters>(
+    () => ({ ...listView.filters, ...(searchText ? { search: searchText } : {}) }),
+    [listView.filters, searchText]
+  );
+  const { setFilters: keepFilters } = listView;
+  const setFilters = useCallback(
+    ({ search: typed, ...rest }: ToolListFilters) => {
+      setSearchText(typed ?? "");
+      keepFilters(rest);
+    },
+    [keepFilters]
+  );
   // Closed until asked for. The filter button carries a count of what's set, so
   // a narrowed list still says so with the panel shut — and the fields no
   // longer take the top of the page before the list itself.
@@ -520,32 +585,28 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
   const { view, setView, page, pageSize, setPage, setPageSize } = useListPage(tool);
   // How the list is drawn — cards, rows or by tag — remembered per tool.
   const defaultLayout = entry.defaultLayout ?? "grid";
-  const [savedLayout, setLayout] = useViewPreference<string>(`${tool}:view-mode`, defaultLayout);
-  const layout: ToolIndexLayout = isLayout(savedLayout) ? savedLayout : defaultLayout;
+  const layout: ToolIndexLayout = isLayout(listView.layout) ? listView.layout : defaultLayout;
+  const setLayout = listView.rememberLayout;
   const tagTree = useTagTreeSelection(layout === "tags");
 
   // The order a reader picks in a tool's table outlives the visit, and is the
   // list's order in every layout. A tool that keeps the reader's own order
   // opens in it: asked for no order, the server lists in that one.
-  const [tableState, { setSorting }] = usePersistedTableState(toolTableStorageKey(tool, "order"), {
-    sorting: entry.reorder ? [] : NEWEST_FIRST,
-  });
+  const tableState = { sorting: listView.sorting };
+  const { setSorting } = listView;
   const [sorted] = tableState.sorting;
   const sort =
     entry.table && sorted && TABLE_SORT_FIELDS.has(sorted.id)
       ? { sort_by: sorted.id, sort_dir: sorted.desc ? ("desc" as const) : ("asc" as const) }
       : {};
 
+  const knownTagIds = useKnownTagIds(filters.tag_ids ?? NO_TAGS);
   const listFilters: ToolIndexFilters["list"] = {
     ...filters,
     search: search || undefined,
     // A tag picked in the tree narrows by it; with none picked, the
     // filter panel's tags still apply.
-    tag_ids: tagTree.tagIds.length
-      ? tagTree.tagIds
-      : filters.tag_ids?.length
-        ? filters.tag_ids
-        : undefined,
+    tag_ids: tagTree.tagIds.length ? tagTree.tagIds : knownTagIds.length ? knownTagIds : undefined,
     ...(entry.untagged && tagTree.wantsUntagged ? { untagged: true as const } : {}),
   };
   const list = entry.useList(fixedInitiativeId, {
@@ -829,6 +890,8 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
                 setSorting(next);
                 setPage(1);
               }}
+              columnVisibility={listView.columns}
+              onColumnVisibilityChange={listView.setColumns}
             />
           ) : layout === "list" ? (
             <ul className="divide-y rounded-lg border">
