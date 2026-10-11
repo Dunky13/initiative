@@ -140,7 +140,7 @@ export const useRedeemDemoLink = <TError = ErrorType<HTTPValidationError>, TCont
 };
 /**
  * The signed-in visitor's copy, and whether the import filling it has
- * finished. 404 for an account not made for a copy.
+ * finished, or failed. 404 for an account not made for a copy.
  * @summary Read Demo Copy
  */
 export const readDemoCopy = (

@@ -4373,11 +4373,13 @@ export interface DeletionEligibilityResponse {
 }
 
 /**
- * A demo visitor's own copy, and whether its import has finished.
+ * A demo visitor's own copy, and whether its import has finished, or
+ * failed and left the copy unusable.
  */
 export interface DemoCopyRead {
   community_id: number;
   ready: boolean;
+  failed?: boolean;
   expires_at?: string | null;
 }
 

@@ -58,10 +58,9 @@ CLEANUP_AFTER = timedelta(days=30)
 CLEANUP_EVERY_SECONDS = 24 * 60 * 60
 #: What a pool community is called until a link names it after its pitch.
 _POOLED_NAME = "Demo"
+
+
 #: The import job states a copy's import ends in.
-_FINISHED = (ImportJobStatus.done, ImportJobStatus.failed)
-
-
 class LinkNotLive(Exception):
     """The link is unknown, revoked, expired or used up, or its pitch has
     nothing published."""
@@ -314,10 +313,10 @@ async def account_copy(user_id: int) -> AccountCopy | None:
     return None if row is None else AccountCopy(*row)
 
 
-async def copy_ready(copy: AccountCopy) -> bool:
-    """Whether the import filling the copy has finished. One that is missing
-    counts as failed. Read on the system engine routed into the copy: a
-    member visitor does not read import jobs."""
+async def copy_import(copy: AccountCopy) -> ImportJobStatus:
+    """Where the import filling the copy stands; one that is missing counts as
+    failed. Read on the system engine routed into the copy: a member visitor
+    does not read import jobs."""
     async with cohorts.system_session(copy.guild_id) as session:
         await set_rls_context(session, SystemGuild(copy.guild_id))
         status = (
@@ -325,7 +324,7 @@ async def copy_ready(copy: AccountCopy) -> bool:
                 select(ImportJob.status).where(ImportJob.id == copy.import_job_id)
             )
         ).first()
-    return status is None or status in _FINISHED
+    return ImportJobStatus.failed if status is None else ImportJobStatus(status)
 
 
 # --- the pool loop -----------------------------------------------------------
