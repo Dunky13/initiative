@@ -243,40 +243,56 @@ async def test_a_property_filter_reads_only_the_listed_rows_values(
         assert read <= 3, f"{op.value} on 3 tasks read {read} values"
 
 
-async def test_the_feed_reads_a_bounded_slice_of_the_week(
-    acting_user, session: AsyncSession, role_session
-):
-    """A community whose week holds far more changes than the feed considers:
-    one page reads the newest :data:`~activity_feed.CANDIDATE_CHANGES` of
-    them, through the index on time, and no more. Each one read is a read its
-    policy authorizes, so a feed that read the week would cost a busy community
-    a policy check per change on every visit."""
-    a = await acting_user(
-        guild_role=CommunityRole.member, initiative=True, project=True
-    )
-    task = await create_task(session, a.project)
-    await route_session_to_guild(session, a.guild.id)
-    # What the factories wrote, as a person's changes, so every row read is one
-    # the feed considers.
-    await session.exec(
-        text("UPDATE event_outbox SET actor_user_id = :who").bindparams(who=a.user.id)
-    )
+async def _changes(session: AsyncSession, task, actor_id: int, count: int) -> None:
+    """``count`` more changes to ``task`` by ``actor_id``, copied from the one
+    its creation logged, ten seconds apart."""
     await session.exec(
         text(
             "INSERT INTO event_outbox (txn_id, occurred_at, actor_user_id, "
             "initiative_id, resource_type, resource_id, action, changed, parents, "
             "dac_tool, dac_id) "
-            "SELECT o.txn_id, now() - n * interval '1 minute', :other, "
+            "SELECT o.txn_id, now() - n * interval '10 seconds', :actor, "
             "o.initiative_id, o.resource_type, o.resource_id, 'updated', "
             "'{title}', o.parents, o.dac_tool, o.dac_id "
             "FROM event_outbox o, generate_series(1, :count) n "
-            "WHERE o.resource_type = 'tasks' AND o.resource_id = :task"
-        ).bindparams(
-            other=a.user.id + 1000,
-            count=20 * activity_feed.CANDIDATE_CHANGES,
-            task=task.id,
-        )
+            "WHERE o.resource_type = 'tasks' AND o.resource_id = :task "
+            "AND o.action = 'created'"
+        ).bindparams(actor=actor_id, count=count, task=task.id)
     )
+
+
+def _scan_of(plan: dict, relation: str) -> dict:
+    """The node of a plan that scans ``relation``."""
+    if plan.get("Relation Name") == relation:
+        return plan
+    for child in plan.get("Plans", []):
+        if found := _scan_of(child, relation):
+            return found
+    return {}
+
+
+async def test_the_feed_asks_sharing_only_of_what_it_can_open(
+    acting_user, session: AsyncSession, role_session
+):
+    """A reader who can open one project of a busy community: the week's
+    changes elsewhere, in an initiative they are not in and in a project not
+    shared with them, are passed over by a comparison of ids, which the scan
+    makes before the sharing check. A feed that asked sharing of the week
+    would cost a reader who can see little as much as one who can see it all."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    b = await acting_user(
+        guild_role=CommunityRole.member, guild=a.guild, initiative=True, project=True
+    )
+    unshared = await create_project(session, a.initiative, b.user)
+    seen = await create_task(session, a.project)
+    elsewhere = await create_task(session, b.project)
+    hidden = await create_task(session, unshared)
+    seen_id = seen.id
+    await route_session_to_guild(session, a.guild.id)
+    for task, count in ((elsewhere, 20_000), (hidden, 20_000), (seen, 500)):
+        await _changes(session, task, b.user.id, count)
     await session.commit()
     await route_session_to_guild(session, a.guild.id)
     await session.exec(text("ANALYZE event_outbox"))
@@ -284,11 +300,19 @@ async def test_the_feed_reads_a_bounded_slice_of_the_week(
 
     member = await role_session("app_user")
     await establish_guild_access(member, a.user, a.guild.id)
-    statement, params = activity_feed.query(reader_id=a.user.id)
-    explained = text(f"EXPLAIN (ANALYZE, FORMAT JSON) {statement.text}").bindparams(
+    tools = await activity_feed.readable_tools(member)
+    statement, params = activity_feed.query(tools, reader_id=a.user.id)
+    rows = (await member.exec(statement, params=params)).all()  # type: ignore[call-overload]
+    explained = text(f"EXPLAIN (FORMAT JSON) {statement.text}").bindparams(
         *statement._bindparams.values()
     )
     (plan,) = (await member.exec(explained, params=params)).one()  # type: ignore[call-overload]
     plan = plan if isinstance(plan, list) else json.loads(plan)
-    read = _rows_read(plan[0]["Plan"], "event_outbox")
-    assert read <= activity_feed.CANDIDATE_CHANGES, f"one page read {read} changes"
+    scan = _scan_of(plan[0]["Plan"], "event_outbox")
+    condition = scan.get("Filter", "") + scan.get("Index Cond", "")
+
+    assert [row.entity_id for row in rows] == [seen_id]
+    assert "dac_id = ANY" in condition and "resource_access(" in condition, condition
+    assert condition.index("dac_id = ANY") < condition.index("resource_access("), (
+        "the scan asks sharing before it compares ids"
+    )

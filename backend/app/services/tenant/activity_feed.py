@@ -19,7 +19,16 @@ count toward the level and make no entry.
 
 The newest :data:`CANDIDATE_CHANGES` changes are the candidates, read through
 the change log's index on time, so a busy community's request reads a bounded
-slice of the week. Older changes have faded by then anyway.
+slice of the week. Older changes have faded by then anyway. The scan is held
+to the tools the reader can open, read first from the search index under their
+own policies, so a change in a tool they cannot open is passed over by a
+comparison of ids rather than a sharing check: a reader who can open little of
+a busy community does not pay for the rest of it.
+
+Whether the reader made an item or is assigned to it is asked of each kind's
+own table, once per kind among the candidates, and the candidates are scored
+here: asked inside the statement, every kind's table and its policies would be
+planned on every request whichever kinds were there.
 """
 
 from __future__ import annotations
@@ -29,16 +38,17 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from sqlalchemy import DateTime, Float, Integer, Text, bindparam, text
+from sqlalchemy import DateTime, Integer, Table, Text, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.tools import Tool
 from app.db.initiative_rls import CONTENT_KIND_TABLES, NAMED_PEOPLE
 from app.models.platform.user_profile_view import MemberProfile
+from app.models.tenant.search_entry import SearchEntry
 from app.services.tenant.change_log import RETENTION
-from app.services.tenant.engagement_levels import BOOST
+from app.services.tenant.engagement_levels import boosted
 
 #: How far back the feed reads: the change log's own retention.
 WINDOW = RETENTION
@@ -52,7 +62,8 @@ PAGE_SIZE = 20
 ACTORS_SHOWN = 3
 
 #: What the reader's own involvement adds to an item's relevance.
-ASSIGNED_WEIGHT = 2.0
+#: Made it, or named on it (assigned, attending).
+INVOLVED_WEIGHT = 2.0
 CHANGED_WEIGHT = 1.0
 OPENED_WEIGHT = 0.5
 FAVOURITE_WEIGHT = 0.5
@@ -100,42 +111,31 @@ QUIET_FACETS: tuple[str, ...] = (
 _SCHEDULE_COLUMNS = ("start_date", "due_date", "start_at")
 
 
-def _item_rows(column: str, test: str) -> str:
-    """A CASE over every content kind with ``column``: whether the row of that
-    kind ``test`` holds for. From the schema, so a new kind is asked the moment
-    its table has the column."""
-    arms = " ".join(
-        f"WHEN '{kind}' THEN EXISTS (SELECT 1 FROM {table} r "  # noqa: S608
-        f"WHERE r.id = i.id AND {test})"
-        for kind, table in sorted(CONTENT_KIND_TABLES.items())
-        if column in SQLModel.metadata.tables[table].c
-    )
-    return f"(CASE i.kind {arms} ELSE false END)"
-
-
-def _assigned() -> str:
-    """Whether a row naming the reader hangs off the item: an assignee, an
-    attendee. From :data:`NAMED_PEOPLE`, the rows kept (not cleared) whose
-    foreign key is a content kind's."""
+def _naming_tables() -> dict[str, list[tuple[Table, str, str]]]:
+    """Per content kind, the tables whose rows say the reader is involved with
+    one: ``(table, column naming the item, column naming the person)``. The
+    item's own ``created_by``, and the kept :data:`NAMED_PEOPLE` rows (an
+    assignee, an attendee) whose foreign key is the kind's. From the schema, so
+    a new kind is asked the moment its table has either."""
     kind_of = {table: kind for kind, table in CONTENT_KIND_TABLES.items()}
-    arms: dict[str, list[str]] = {}
+    tables = SQLModel.metadata.tables
+    naming: dict[str, list[tuple[Table, str, str]]] = {}
+    for kind, name in CONTENT_KIND_TABLES.items():
+        if "created_by" in tables[name].c:
+            naming.setdefault(kind, []).append((tables[name], "id", "created_by"))
     for named in NAMED_PEOPLE:
         if named.clear:
             continue
-        for fk in SQLModel.metadata.tables[named.table].foreign_keys:
+        for fk in tables[named.table].foreign_keys:
             kind = kind_of.get(fk.column.table.name)
             if kind is not None:
-                arms.setdefault(kind, []).append(
-                    f"EXISTS (SELECT 1 FROM {named.table} n "  # noqa: S608
-                    f"WHERE n.{fk.parent.name} = i.id "
-                    f"AND n.{named.column} = :reader)"
+                naming.setdefault(kind, []).append(
+                    (tables[named.table], fk.parent.name, named.column)
                 )
-    return "(CASE i.kind {} ELSE false END)".format(
-        " ".join(
-            f"WHEN '{kind}' THEN ({' OR '.join(tests)})"
-            for kind, tests in sorted(arms.items())
-        )
-    )
+    return naming
+
+
+_NAMING = _naming_tables()
 
 
 def _verb() -> str:
@@ -147,10 +147,18 @@ def _verb() -> str:
             -- The item itself arriving: a facet is always reported as updated.
             WHEN o.action = 'created' AND o.resource_type = ANY (:item_tables)
                 THEN '{Verb.created.value}'
-            WHEN o.action <> 'updated' OR o.changed <@ :quiet THEN NULL
+            WHEN o.action <> 'updated' THEN NULL
+            -- The log says only that completed_at changed. The latest such
+            -- change completed the task if it is done now; any earlier one
+            -- could have gone either way, and moved its status regardless.
             WHEN o.resource_type = 'tasks' AND 'completed_at' = ANY (o.changed) THEN
                 CASE WHEN EXISTS (SELECT 1 FROM tasks t WHERE t.id = o.resource_id
                                   AND t.completed_at IS NOT NULL)
+                      AND NOT EXISTS (SELECT 1 FROM changes later
+                                       WHERE later.resource_type = 'tasks'
+                                         AND later.resource_id = o.resource_id
+                                         AND 'completed_at' = ANY (later.changed)
+                                         AND later.occurred_at > o.occurred_at)
                      THEN '{Verb.completed.value}' ELSE '{Verb.moved.value}' END
             WHEN o.resource_type = 'tasks' AND 'task_status_id' = ANY (o.changed)
                 THEN '{Verb.moved.value}'
@@ -163,18 +171,13 @@ def _verb() -> str:
         END"""
 
 
-def _statement(view: FeedView, *, initiative: bool, tool: bool) -> Any:
-    """The feed as one statement, narrowed where the request asks."""
-    narrowing = ""
-    if initiative:
-        narrowing += " AND o.initiative_id = :initiative_id"
-    if tool:
-        narrowing += " AND o.dac_tool = :tool AND o.dac_id = :tool_id"
-    wanted = {
-        FeedView.all: "true",
-        FeedView.yours: "(i.assigned OR i.made OR i.changed_by_reader)",
-        FeedView.comments: f"'{Verb.commented.value}' = ANY (i.verbs)",
-    }[view]
+def _statement(tools: list[str]) -> Any:
+    """The candidates as one statement: each item people changed among the
+    changes in ``tools`` the reader can open (``:ids_<tool>`` each), with what
+    the log, the index and the levels say about it."""
+    readable = " OR ".join(
+        f"(o.dac_tool = '{tool}' AND o.dac_id = ANY (:ids_{tool}))" for tool in tools
+    )
     sql = f"""
     WITH changes AS (
         SELECT o.resource_type, o.resource_id, o.parents, o.action,
@@ -183,7 +186,9 @@ def _statement(view: FeedView, *, initiative: bool, tool: bool) -> Any:
         FROM event_outbox o
         WHERE o.occurred_at > :since
           AND o.actor_user_id IS NOT NULL
-          AND o.actor_install_id IS NULL{narrowing}
+          AND o.actor_install_id IS NULL
+          AND NOT (o.action = 'updated' AND o.changed::text[] <@ :quiet)
+          AND ({readable})
         ORDER BY o.occurred_at DESC
         LIMIT :candidates
     ),
@@ -207,78 +212,46 @@ def _statement(view: FeedView, *, initiative: bool, tool: bool) -> Any:
                count(*) AS actor_count
         FROM per_actor p
         GROUP BY p.kind, p.id
-    ),
-    involved AS (
-        SELECT i.*,
-               (SELECT array_agg(DISTINCT a.verb ORDER BY a.verb) FROM attributed a
-                 WHERE a.kind = i.kind AND a.id = i.id
-                   AND a.actor <> :reader AND a.verb IS NOT NULL) AS verbs,
-               EXISTS (SELECT 1 FROM attributed a
-                        WHERE a.kind = i.kind AND a.id = i.id
-                          AND a.actor = :reader) AS changed_by_reader,
-               {_assigned()} AS assigned,
-               {_item_rows("created_by", "r.created_by = :reader")} AS made,
-               EXISTS (SELECT 1 FROM recent_views v
-                        WHERE v.user_id = :reader AND v.entity_type = i.kind
-                          AND v.entity_id = i.id AND v.last_viewed_at > :since)
-                   AS opened
-        FROM items i
-    ),
-    entries AS (
-        SELECT i.kind AS entity_type, i.id AS entity_id, i.latest, i.actors,
-               i.actor_count, i.verbs,
-               se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,
-               power(2.0, -extract(epoch FROM (:now - i.latest)) / :half_life)
-               * (1 + :boost * coalesce(l.level, 0))
-               * (1
-                  + CASE WHEN i.assigned THEN :assigned_weight ELSE 0 END
-                  + CASE WHEN i.changed_by_reader THEN :changed_weight ELSE 0 END
-                  + CASE WHEN i.opened THEN :opened_weight ELSE 0 END
-                  + CASE WHEN se.dac_tool = '{Tool.project.value}' AND EXISTS (
-                        SELECT 1 FROM project_favorites f
-                         WHERE f.user_id = :reader AND f.project_id = se.dac_id)
-                    THEN :favourite_weight ELSE 0 END) AS score
-        FROM involved i
-        JOIN search_entries se
-          ON se.entity_type = i.kind AND se.entity_id = i.id AND se.chunk_ix = 0
-         AND NOT se.archived AND NOT se.template
-        LEFT JOIN engagement_levels l
-          ON l.entity_type = i.kind AND l.entity_id = i.id
-        WHERE {wanted}
     )
-    SELECT e.*, container.title AS tool_title, ini.name AS initiative_name
-    FROM entries e
+    SELECT i.kind AS entity_type, i.id AS entity_id, i.latest, i.actors,
+           i.actor_count,
+           (SELECT array_agg(DISTINCT a.verb ORDER BY a.verb) FROM attributed a
+             WHERE a.kind = i.kind AND a.id = i.id
+               AND a.actor <> :reader AND a.verb IS NOT NULL) AS verbs,
+           EXISTS (SELECT 1 FROM attributed a
+                    WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
+               AS changed,
+           EXISTS (SELECT 1 FROM recent_views v
+                    WHERE v.user_id = :reader AND v.entity_type = i.kind
+                      AND v.entity_id = i.id AND v.last_viewed_at > :since)
+               AS opened,
+           se.dac_tool = '{Tool.project.value}' AND EXISTS (
+               SELECT 1 FROM project_favorites f
+                WHERE f.user_id = :reader AND f.project_id = se.dac_id)
+               AS favourite,
+           coalesce(l.level, 0) AS level,
+           se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,
+           container.title AS tool_title, ini.name AS initiative_name
+    FROM items i
+    JOIN search_entries se
+      ON se.entity_type = i.kind AND se.entity_id = i.id AND se.chunk_ix = 0
+     AND NOT se.archived AND NOT se.template
+    LEFT JOIN engagement_levels l ON l.entity_type = i.kind AND l.entity_id = i.id
     LEFT JOIN search_entries container
-      ON container.entity_type = e.tool AND container.entity_id = e.tool_id
+      ON container.entity_type = se.dac_tool AND container.entity_id = se.dac_id
      AND container.chunk_ix = 0
-     AND NOT (container.entity_type = e.entity_type
-              AND container.entity_id = e.entity_id)
-    LEFT JOIN initiatives ini ON ini.id = e.initiative_id
-    ORDER BY e.score DESC, e.latest DESC, e.entity_type, e.entity_id
-    LIMIT :limit OFFSET :offset
+     AND NOT (container.entity_type = i.kind AND container.entity_id = i.id)
+    LEFT JOIN initiatives ini ON ini.id = se.initiative_id
     """
-    params = [
+    return text(sql).bindparams(
         bindparam("reader", type_=Integer),
         bindparam("since", type_=DateTime(timezone=True)),
-        bindparam("now", type_=DateTime(timezone=True)),
         bindparam("candidates", type_=Integer),
         bindparam("quiet", type_=ARRAY(Text)),
         bindparam("schedule_columns", type_=ARRAY(Text)),
         bindparam("item_tables", type_=ARRAY(Text)),
-        bindparam("half_life", type_=Float),
-        bindparam("boost", type_=Float),
-        bindparam("assigned_weight", type_=Float),
-        bindparam("changed_weight", type_=Float),
-        bindparam("opened_weight", type_=Float),
-        bindparam("favourite_weight", type_=Float),
-        bindparam("limit", type_=Integer),
-        bindparam("offset", type_=Integer),
-    ]
-    if initiative:
-        params.append(bindparam("initiative_id", type_=Integer))
-    if tool:
-        params += [bindparam("tool", type_=Text), bindparam("tool_id", type_=Integer)]
-    return text(sql).bindparams(*params)
+        *(bindparam(f"ids_{tool}", type_=ARRAY(Integer)) for tool in tools),
+    )
 
 
 @dataclass(frozen=True)
@@ -299,45 +272,73 @@ class FeedEntry:
     actor_count: int
 
 
-def query(
+async def readable_tools(
+    session: AsyncSession,
     *,
-    reader_id: int,
-    view: FeedView = FeedView.all,
     initiative_id: Optional[int] = None,
     tool: Optional[Tool] = None,
     tool_id: Optional[int] = None,
-    page: int = 1,
-    page_size: int = PAGE_SIZE,
-) -> tuple[Any, dict[str, Any]]:
-    """The statement one page of the feed runs, and its parameters."""
-    now = datetime.now(timezone.utc)
+) -> dict[str, list[int]]:
+    """The tools the reader can open, by kind, narrowed to one initiative or one
+    tool where those are given: what the feed's scan is held to."""
+    rows = select(SearchEntry.entity_type, SearchEntry.entity_id).where(
+        SearchEntry.chunk_ix == 0,
+        col(SearchEntry.entity_type).in_([t.value for t in Tool]),
+    )
+    if initiative_id is not None:
+        rows = rows.where(SearchEntry.initiative_id == initiative_id)
+    if tool is not None and tool_id is not None:
+        rows = rows.where(
+            SearchEntry.entity_type == tool.value, SearchEntry.entity_id == tool_id
+        )
+    tools: dict[str, list[int]] = {}
+    for kind, entity_id in (await session.exec(rows)).all():
+        tools.setdefault(kind, []).append(entity_id)
+    return tools
+
+
+def query(tools: dict[str, list[int]], *, reader_id: int) -> tuple[Any, dict]:
+    """The candidates' statement over ``tools``, and its parameters."""
     params: dict[str, Any] = {
         "reader": reader_id,
-        "since": now - WINDOW,
-        "now": now,
+        "since": datetime.now(timezone.utc) - WINDOW,
         "candidates": CANDIDATE_CHANGES,
         "quiet": list(QUIET_FACETS),
         "schedule_columns": list(_SCHEDULE_COLUMNS),
         "item_tables": sorted(CONTENT_KIND_TABLES.values()),
-        "half_life": HALF_LIFE.total_seconds(),
-        "boost": BOOST,
-        "assigned_weight": ASSIGNED_WEIGHT,
-        "changed_weight": CHANGED_WEIGHT,
-        "opened_weight": OPENED_WEIGHT,
-        "favourite_weight": FAVOURITE_WEIGHT,
-        # One more than the page, to say whether another follows.
-        "limit": page_size + 1,
-        "offset": (page - 1) * page_size,
+        **{f"ids_{tool}": ids for tool, ids in tools.items()},
     }
-    if initiative_id is not None:
-        params["initiative_id"] = initiative_id
-    if tool is not None and tool_id is not None:
-        params["tool"] = tool.value
-        params["tool_id"] = tool_id
-    statement = _statement(
-        view, initiative=initiative_id is not None, tool="tool" in params
+    return _statement(sorted(tools)), params
+
+
+async def _involved(
+    session: AsyncSession, reader_id: int, items: dict[str, list[int]]
+) -> set[tuple[str, int]]:
+    """The items, of those given by kind, the reader made or is named on."""
+    found: set[tuple[str, int]] = set()
+    for kind, ids in items.items():
+        for table, item_column, person_column in _NAMING.get(kind, ()):
+            rows = await session.exec(
+                select(table.c[item_column]).where(  # type: ignore[call-overload]
+                    table.c[item_column].in_(ids), table.c[person_column] == reader_id
+                )
+            )
+            found.update((kind, item_id) for item_id in rows.all())
+    return found
+
+
+def _score(row: Any, now: datetime, involved: bool) -> float:
+    age = (now - row["latest"]).total_seconds()
+    relevance = (
+        1
+        + (INVOLVED_WEIGHT if involved else 0)
+        + (CHANGED_WEIGHT if row["changed"] else 0)
+        + (OPENED_WEIGHT if row["opened"] else 0)
+        + (FAVOURITE_WEIGHT if row["favourite"] else 0)
     )
-    return statement, params
+    return (
+        2 ** (-age / HALF_LIFE.total_seconds()) * boosted(1, row["level"]) * relevance
+    )
 
 
 async def feed(
@@ -357,20 +358,40 @@ async def feed(
     of the instance), where those are given. Narrowing only removes changes.
     Returns the page's entries and whether another page follows.
     """
-    statement, params = query(
-        reader_id=reader_id,
-        view=view,
-        initiative_id=initiative_id,
-        tool=tool,
-        tool_id=tool_id,
-        page=page,
-        page_size=page_size,
+    tools = await readable_tools(
+        session, initiative_id=initiative_id, tool=tool, tool_id=tool_id
     )
+    if not tools:
+        return [], False
+    statement, params = query(tools, reader_id=reader_id)
     rows = (await session.exec(statement, params=params)).mappings().all()  # type: ignore[call-overload]
-    has_next = len(rows) > page_size
-    rows = rows[:page_size]
 
-    people_ids = {actor for row in rows for actor in row["actors"]}
+    by_kind: dict[str, list[int]] = {}
+    for row in rows:
+        by_kind.setdefault(row["entity_type"], []).append(row["entity_id"])
+    involved = await _involved(session, reader_id, by_kind)
+
+    def wanted(row: Any) -> bool:
+        if view is FeedView.yours:
+            return row["changed"] or (row["entity_type"], row["entity_id"]) in involved
+        if view is FeedView.comments:
+            return Verb.commented.value in (row["verbs"] or ())
+        return True
+
+    now = datetime.now(timezone.utc)
+    ranked = sorted(
+        (row for row in rows if wanted(row)),
+        key=lambda row: (
+            -_score(row, now, (row["entity_type"], row["entity_id"]) in involved),
+            -row["latest"].timestamp(),
+            row["entity_type"],
+            row["entity_id"],
+        ),
+    )
+    start = (page - 1) * page_size
+    shown = ranked[start : start + page_size]
+
+    people_ids = {actor for row in shown for actor in row["actors"]}
     people = (
         {
             person.id: person
@@ -398,5 +419,5 @@ async def feed(
             actors=[people[a] for a in row["actors"] if a in people],
             actor_count=row["actor_count"],
         )
-        for row in rows
-    ], has_next
+        for row in shown
+    ], len(ranked) > start + page_size

@@ -8,6 +8,7 @@ from app.core.tools import Tool
 from app.db.request_context import SystemGuild
 from app.db.session import clear_rls_context, set_rls_context
 from app.models.platform.guild import CommunityRole
+from app.models.tenant.task import TaskStatusCategory
 from app.services.tenant import activity_feed
 from app.services.tenant.activity_feed import FeedView
 from app.testing import (
@@ -129,6 +130,31 @@ async def test_views_and_narrowing(session, acting_user, reading_as):
         commented.id,
     }
     assert elsewhere.id in ids(await _feed(reading_as, b))
+
+
+async def test_only_the_latest_completion_reads_as_completed(
+    session, acting_user, reading_as
+):
+    """The log says only that completion changed. One person reopens a done
+    task and another completes it again: the reopening reads as moved."""
+    a, b = await _start(session, acting_user)
+    task = await create_task(
+        session, a.project, status_category=TaskStatusCategory.done
+    )
+    await _log(session, a.guild.id, "DELETE FROM event_outbox")
+    for who, completed in ((a.user.id, "NULL"), (b.user.id, "now()")):
+        await _log(
+            session,
+            a.guild.id,
+            f"UPDATE tasks SET completed_at = {completed} WHERE id = :task",
+            task=task.id,
+        )
+        await _by(session, a.guild.id, who)
+
+    (entry,) = await _feed(reading_as, b)
+    assert entry.verbs == ["moved"]
+    (entry,) = await _feed(reading_as, a)
+    assert entry.verbs == ["completed"]
 
 
 async def test_the_endpoint_narrows_to_a_tool_only_with_its_id(client, acting_user):
