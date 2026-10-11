@@ -10,8 +10,8 @@ app_admin-only: RLS enabled and forced with no policies, and the schema's
 default grants revoked from the two base roles. The table is new and empty, so
 nothing is backfilled.
 
-Revision ID: 20261011_0506
-Revises: 20261011_0505
+Revision ID: 20261011_0507
+Revises: 20261011_0506
 Create Date: 2026-10-11
 """
 
@@ -22,8 +22,8 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "20261011_0506"
-down_revision = "20261011_0505"
+revision = "20261011_0507"
+down_revision = "20261011_0506"
 branch_labels = None
 depends_on = None
 
