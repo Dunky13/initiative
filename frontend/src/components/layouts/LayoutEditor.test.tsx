@@ -551,8 +551,10 @@ describe("LayoutEditor", () => {
       );
       await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
       const picker = await screen.findByRole("dialog", { name: "Add" });
+      // A search no kind matches keeps every kind, and names the field.
+      await user.type(within(picker).getByRole("textbox", { name: /search/i }), "Budget");
       await user.click(within(picker).getByRole("button", { name: /^number$/i }));
-      await user.type(within(picker).getByLabelText(/property name/i), "Budget");
+      expect(within(picker).getByLabelText(/property name/i)).toHaveValue("Budget");
       await user.click(within(picker).getByRole("button", { name: /^create$/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 

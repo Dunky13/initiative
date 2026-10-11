@@ -42,6 +42,7 @@ export const NewPropertyForm = ({
   type: startType = PropertyType.text,
   onCreated,
   onCancel,
+  onPendingChange,
 }: {
   initiativeId: number;
   /** What the name starts as: what was searched for, say. */
@@ -50,6 +51,8 @@ export const NewPropertyForm = ({
   type?: PropertyTypeValue;
   onCreated: (definition: PropertyDefinitionRead) => void;
   onCancel: () => void;
+  /** Told when creating starts and ends. */
+  onPendingChange?: (pending: boolean) => void;
 }) => {
   const { t } = useTranslation(["properties", "common"]);
   const [newName, setNewName] = useState(startName);
@@ -81,10 +84,13 @@ export const NewPropertyForm = ({
       initiative_id: initiativeId,
       options,
     };
+    onPendingChange?.(true);
     try {
       onCreated(await createPropertyMutation.mutateAsync(payload));
     } catch {
       // toast handled inside the mutation hook
+    } finally {
+      onPendingChange?.(false);
     }
   };
 
@@ -205,7 +211,13 @@ export const NewPropertyForm = ({
         >
           {t("properties:picker.createButton")}
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onCancel}
+          disabled={createPropertyMutation.isPending}
+        >
           {t("common:cancel")}
         </Button>
       </div>

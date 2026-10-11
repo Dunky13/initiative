@@ -700,6 +700,9 @@ export const AddPicker = ({
   const [search, setSearch] = useState("");
   // The kind of field being made, while its form is open.
   const [making, setMaking] = useState<PropertyTypeValue | null>(null);
+  // While a field is being made the picker stays open, so no other edit lands
+  // before it is placed.
+  const [creating, setCreating] = useState(false);
   const setOpen = (next: boolean) => {
     setOpenState(next);
     if (!next) {
@@ -728,8 +731,10 @@ export const AddPicker = ({
     }))
     .filter((plugin) => plugin.parts.length > 0);
   const typeName = (type: PropertyTypeValue) => t(`properties:types.${type}`);
+  // A search no kind matches may be the new field's name, so every kind stays.
+  const typesFound = PROPERTY_TYPES.filter((type) => matches(query, typeName(type)));
   const newTypes =
-    newField === undefined ? [] : PROPERTY_TYPES.filter((type) => matches(query, typeName(type)));
+    newField === undefined ? [] : typesFound.length > 0 ? typesFound : PROPERTY_TYPES;
   const offers =
     parts.length +
     fields.length +
@@ -746,7 +751,12 @@ export const AddPicker = ({
     setOpen(false);
   };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next || !creating) setOpen(next);
+      }}
+    >
       <PopoverTrigger asChild disabled={offers === 0 || locked}>
         {trigger ?? (
           <Button type="button" variant="outline" size="sm" className="w-full">
@@ -771,6 +781,7 @@ export const AddPicker = ({
             name={search.trim()}
             onCreated={(created) => pick(() => onField(propertyFieldId(created.id)))}
             onCancel={() => setMaking(null)}
+            onPendingChange={setCreating}
           />
         ) : (
           <>
