@@ -48,7 +48,7 @@ export function TaskSortPicker({
   return (
     <div className="grid-cols-pair grid gap-4">
       <div className="space-y-2">
-        <Label htmlFor="task-sort">{translate("layoutEditor.presets.sortBy")}</Label>
+        <Label htmlFor="task-sort">{translate("layouts:presets.sortBy")}</Label>
         <Select
           value={value?.field ?? NO_SORT}
           onValueChange={(field) =>
@@ -59,7 +59,7 @@ export function TaskSortPicker({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NO_SORT}>{translate("layoutEditor.presets.noSort")}</SelectItem>
+            <SelectItem value={NO_SORT}>{translate("layouts:presets.noSort")}</SelectItem>
             {SORTS.map(({ field, label }) => (
               <SelectItem key={field} value={field}>
                 {sortLabel(label)}
@@ -77,7 +77,7 @@ export function TaskSortPicker({
             value && onChange({ ...value, dir: checked ? "desc" : "asc" })
           }
         />
-        <Label htmlFor="task-sort-descending">{translate("layoutEditor.presets.descending")}</Label>
+        <Label htmlFor="task-sort-descending">{translate("layouts:presets.descending")}</Label>
       </div>
     </div>
   );
