@@ -9,7 +9,6 @@ from sqlalchemy import inspect as sa_inspect
 from app.core.identity_boundary import PersonId
 from app.schemas.base import (
     RichMentionStr,
-    RichTextStr,
     SanitizedBaseModel,
     TitleStr,
     reject_null,
@@ -24,7 +23,6 @@ from app.schemas.tenant.property import PropertiesOnCreate
 from app.schemas.tenant.tool import ToolSummaryBase
 from app.schemas.tenant.task_status import TaskStatusRead
 from app.schemas.platform.user import UserPublic
-from app.schemas.tenant.comment import CommentAuthor
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.db.guild_standing import ActorContext
@@ -151,16 +149,3 @@ class ProjectListResponse(PageMeta):
 
 class ProjectReorderRequest(SanitizedBaseModel):
     project_ids: List[int] = Field(default_factory=list)
-
-
-class ProjectActivityEntry(SanitizedBaseModel):
-    comment_id: int
-    content: RichTextStr
-    created_at: datetime
-    author: Optional[CommentAuthor] = None
-    task_id: int
-    task_title: str
-
-
-class ProjectActivityResponse(PageMeta):
-    items: List[ProjectActivityEntry]

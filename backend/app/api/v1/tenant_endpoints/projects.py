@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, case, func
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import case, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload, undefer
 from sqlmodel import delete, select
@@ -34,11 +34,9 @@ from app.models.tenant.task import (
     TaskStatus,
     TaskStatusCategory,
 )
-from app.models.tenant.comment import Comment, in_thread
 from app.models.platform.user import User
 from app.api import resource_access, tool_copy
 from app.core.tools import Tool
-from app.db.query import build_paginated_response, paginated_query
 from app.db.session import require_actor_context
 from app.services import notifications as notifications_service
 from app.services.tenant import ownership as ownership_service
@@ -58,10 +56,7 @@ from app.schemas.tenant.project import (
     ProjectTaskSummary,
     ProjectReorderRequest,
     ProjectUpdate,
-    ProjectActivityEntry,
-    ProjectActivityResponse,
 )
-from app.schemas.tenant.comment import CommentAuthor
 from app.services.tenant import project_grants
 from app.schemas.tenant.tool import serialize_tool
 
@@ -484,52 +479,6 @@ async def unfavorite_project(
     )
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get("/{project_id}/activity", response_model=ProjectActivityResponse)
-async def project_activity_feed(
-    project_id: int,
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=20),
-) -> ProjectActivityResponse:
-    project = await resource_access.load_authorized(
-        session, Tool.project, project_id, current_user, guild_context
-    )
-    on_project = and_(Task.project_id == project.id, in_thread())
-    rows, total_count, actual_page = await paginated_query(
-        session,
-        select(Comment, Task)
-        .join(Task, Comment.task_id == Task.id)
-        .where(on_project)
-        .options(selectinload(Comment.author))
-        .order_by(Comment.created_at.desc(), Comment.id.desc()),
-        select(func.count())
-        .select_from(Comment)
-        .join(Task, Comment.task_id == Task.id)
-        .where(on_project),
-        page,
-        page_size,
-    )
-    entries: list[ProjectActivityEntry] = []
-    for comment, task in rows:
-        author = comment.author
-        author_payload = CommentAuthor.model_validate(author) if author else None
-        entries.append(
-            ProjectActivityEntry(
-                comment_id=comment.id,
-                content=comment.content,
-                created_at=comment.created_at,
-                author=author_payload,
-                task_id=task.id,
-                task_title=task.title,
-            )
-        )
-    return ProjectActivityResponse(
-        **build_paginated_response(entries, total_count, actual_page, page_size)
-    )
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
