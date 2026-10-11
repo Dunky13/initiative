@@ -145,7 +145,11 @@ def _epoch(text: str) -> Optional[float]:
 def _number(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) if math.isfinite(value) else None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def forms(value: Any) -> tuple[Optional[str], Optional[float]]:

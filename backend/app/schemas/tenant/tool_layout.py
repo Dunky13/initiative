@@ -29,7 +29,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, List, Literal, Optional, Union, get_args
 
-from pydantic import AfterValidator, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, ConfigDict, Field, field_validator, model_validator
 
 from app.core.tools import Tool
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
@@ -131,6 +131,15 @@ class TaskFilterSpec(_Strict):
     @classmethod
     def _dedupe(cls, value: List[Any]) -> List[Any]:
         return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def _field_filters_within_limit(self) -> "TaskFilterSpec":
+        # Property and plug-in filters share one limit, as a task list does.
+        if len(self.properties) + len(self.plugins) > MAX_PROPERTY_FILTERS:
+            raise ValueError(
+                f"at most {MAX_PROPERTY_FILTERS} property and plug-in filters"
+            )
+        return self
 
 
 class CalendarFilterSpec(_Strict):

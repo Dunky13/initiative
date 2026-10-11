@@ -48,7 +48,11 @@ def _epoch(text: str) -> Optional[float]:
 def _number(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) if math.isfinite(value) else None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _forms(value: Any) -> tuple[Optional[str], Optional[float]]:
@@ -72,23 +76,26 @@ def _forms(value: Any) -> tuple[Optional[str], Optional[float]]:
     return None, None
 
 
+#: How many values are read and written at a time.
+_BATCH = 500
+
+
 def _fill() -> None:
     bind = op.get_bind()
-    rows = bind.execute(
-        sa.text(
-            "SELECT install_id, entity_type, entity_id, key, value FROM plugin_metadata"
-        )
-    ).all()
-    for install_id, entity_type, entity_id, key, value in rows:
-        text_form, number_form = _forms(value)
-        if text_form is None and number_form is None:
-            continue
-        bind.execute(
+    after: tuple = (0, "", 0, "")
+    while True:
+        rows = bind.execute(
             sa.text(
-                "UPDATE plugin_metadata SET text_form = :text, number_form = :number "
-                "WHERE install_id = :install AND entity_type = :type "
-                "AND entity_id = :entity AND key = :key"
+                "SELECT install_id, entity_type, entity_id, key, value "
+                "FROM plugin_metadata "
+                "WHERE (install_id, entity_type, entity_id, key) > (:i, :t, :e, :k) "
+                "ORDER BY install_id, entity_type, entity_id, key LIMIT :n"
             ),
+            {"i": after[0], "t": after[1], "e": after[2], "k": after[3], "n": _BATCH},
+        ).all()
+        if not rows:
+            return
+        written = [
             {
                 "text": text_form,
                 "number": number_form,
@@ -96,8 +103,22 @@ def _fill() -> None:
                 "type": entity_type,
                 "entity": entity_id,
                 "key": key,
-            },
-        )
+            }
+            for install_id, entity_type, entity_id, key, value in rows
+            for text_form, number_form in [_forms(value)]
+            if text_form is not None or number_form is not None
+        ]
+        if written:
+            bind.execute(
+                sa.text(
+                    "UPDATE plugin_metadata "
+                    "SET text_form = :text, number_form = :number "
+                    "WHERE install_id = :install AND entity_type = :type "
+                    "AND entity_id = :entity AND key = :key"
+                ),
+                written,
+            )
+        after = tuple(rows[-1][:4])
 
 
 def _add() -> None:

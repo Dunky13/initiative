@@ -161,7 +161,7 @@ export const pluginFieldId = (install: number, key: string) => `plugin:${install
 const FILTERED_AS: Record<PluginFieldKind, PropertyType> = {
   text: PropertyType.text,
   badge: PropertyType.text,
-  link: PropertyType.url,
+  link: PropertyType.text,
   number: PropertyType.number,
   progress: PropertyType.number,
   checkbox: PropertyType.checkbox,
