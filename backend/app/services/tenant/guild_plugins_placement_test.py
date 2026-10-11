@@ -411,3 +411,103 @@ class TestShowingOnSavedDetails:
             build,
             {"type": "field", "props": {"field": f"plugin:{plugin.id}:commit"}},
         ]
+
+    @staticmethod
+    def _showing(part_trees: list[dict], *, requires: dict | None = None) -> dict:
+        """Fields build and state, and parts one, two, ... with these trees;
+        the last part asks ``requires``."""
+        definition = _on_items(
+            ("build", "task"),
+            ("state", "task"),
+            parts=tuple(f"p{index}" for index in range(len(part_trees))),
+        )
+        for part, tree in zip(definition["parts"], part_trees):
+            part["tree"] = tree
+        if requires is not None:
+            definition["parts"][-1]["requires"] = requires
+        return definition
+
+    async def _side_after_placing(self, session, definition, *, then=None) -> list:
+        user, guild, first, _second = await _guild_with_two_initiatives(session)
+        project = await create_project(session, first, user)
+        plugin = await create_guild_plugin(session, guild, user, definition=definition)
+        await route_session_to_guild(session, guild.id)
+        layout = ToolLayout(
+            initiative_id=first.id,
+            tool="project",
+            tool_id=project.id,
+            kind="task",
+            definition={"header": [], "main": [], "side": []},
+        )
+        session.add(layout)
+        await session.commit()
+        await route_session_to_guild(session, guild.id)
+        await set_placed_initiatives(session, plugin, {first.id})
+        await session.commit()
+        if then is not None:
+            previous, plugin.definition = plugin.definition, then
+            await route_session_to_guild(session, guild.id)
+            await show_on_saved_details(session, plugin, [first.id], previous=previous)
+            await session.commit()
+        await route_session_to_guild(session, guild.id)
+        await session.refresh(layout)
+        return [
+            node["props"].get("field", "").rsplit(":", 1)[-1] or node["props"]["part"]
+            for node in layout.definition["side"]
+        ]
+
+    _BUILD = {"type": "field", "props": {"field": "build"}}
+    _EMPTY = {"type": "stack"}
+
+    @pytest.mark.parametrize(
+        ("trees", "requires", "side"),
+        [
+            # A part showing a field draws it, so it is not added on its own.
+            ([{"type": "section", "children": [_BUILD]}], None, ["state", "p0"]),
+            # As a bare value, nested deeper.
+            (
+                [
+                    {
+                        "type": "section",
+                        "children": [
+                            {
+                                "type": "stack",
+                                "children": [
+                                    {"type": "value", "props": {"field": "build"}}
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                None,
+                ["state", "p0"],
+            ),
+            # Only a part past the limit shows it, so it stays on its own.
+            (
+                [_EMPTY, _EMPTY, _EMPTY, _BUILD],
+                None,
+                ["build", "state", "p0", "p1", "p2"],
+            ),
+            # The part asks a connection the field does not, so may be hidden
+            # where the field shows.
+            (
+                [_BUILD],
+                {"all_of": ["ci"]},
+                ["build", "state", "p0"],
+            ),
+        ],
+    )
+    async def test_a_field_its_shown_part_shows_is_not_added_on_its_own(
+        self, session: AsyncSession, trees, requires, side
+    ):
+        definition = self._showing(trees, requires=requires)
+        assert await self._side_after_placing(session, definition) == side
+
+    async def test_a_field_its_part_stops_showing_is_added_on_upgrade(
+        self, session: AsyncSession
+    ):
+        assert await self._side_after_placing(
+            session,
+            self._showing([self._BUILD]),
+            then=self._showing([self._EMPTY]),
+        ) == ["state", "p0", "build"]
