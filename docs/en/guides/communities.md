@@ -27,14 +27,26 @@ The rail also keeps up with itself. If an admin adds you somewhere, or a group l
 
 Opening a community drops you on its front page. Its name sits on the banner, with where it is underneath if it has said.
 
-Under the banner, **Comments** shows the latest ones from anywhere in the community. Each says what it was left on, and clicking it takes you there, into the middle of the conversation. You only see comments on things you can open.
+Under the banner is what people have been up to this week: a card per thing, saying what it is, where it lives, and who did what to it. "Ada and 2 others commented and edited", and when. Click a card to go straight to the thing. You only ever see things you can open.
+
+Three circles sit on top of it:
+
+| Circle | Shows |
+|---|---|
+| **All** | Everything that moved this week. It's the one that opens first. |
+| **Yours** | What's happened to your things: what you made, what you're assigned to or going to, and what you changed or commented on this week. |
+| **Comments** | The latest comments themselves, from anywhere in the community: who said it, what they said, where, and the reactions it drew. |
+
+It isn't strictly newest first. Something recent comes higher, so does something lots of people are busy with, and so does anything that's yours: the task you're on, the project you favourited, the file you opened yesterday. Anything that changed since you last looked here is marked **New**. That's remembered on this device, so your phone and your laptop each keep their own count.
+
+A few things never make a card. Your own changes, because you were there. Reactions, though a thing that's drawn a pile of them rises a little. And reading a post, voting in a poll or answering an invitation, which are your business, not the community's.
 
 Below that are the community's initiatives, the ones you're in and the ones you could join, and then **Coming up**: everything with a date in the next seven days.
 
 To see every project, file or queue that has reached you, here and in your other communities, open [My Tools](your-space.md#my-tools).
 
 !!! screenshot
-    The community front page: the banner, the Comments circle with its tray of recent comments, the initiatives and Coming up. Save as `docs/en/images/communities/community-front-page.png`.
+    The community front page: the banner, the All circle with its tray of this week's activity, the initiatives and Coming up. Save as `docs/en/images/communities/community-front-page.png`.
 
 ## Finding a community to join
 

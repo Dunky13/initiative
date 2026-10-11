@@ -2,6 +2,41 @@
   "title": "Comunidad",
   "subtitle": "Todo lo de la comunidad, una herramienta a la vez.",
   "nodeRail": "Actividad de la comunidad",
+  "feed": {
+    "nodes": {
+      "all": "Todo",
+      "yours": "Lo tuyo",
+      "comments": "Comentarios"
+    },
+    "empty": {
+      "all": "Esta semana no ha cambiado nada aquí.",
+      "yours": "Esta semana no ha pasado nada con tus cosas.",
+      "comments": "Nadie ha comentado esta semana."
+    },
+    "loadError": "No se pudo cargar lo que ha pasado. Vuelve a intentarlo más tarde.",
+    "loadMore": "Mostrar más",
+    "new": "Nuevo",
+    "others_one": "{{count}} persona más",
+    "others_other": "{{count}} personas más",
+    "sentence_one": "{{people}} {{actions}}",
+    "sentence_other": "{{people}} {{actions}}",
+    "verbs": {
+      "created_one": "creó",
+      "created_other": "crearon",
+      "completed_one": "completó",
+      "completed_other": "completaron",
+      "commented_one": "comentó",
+      "commented_other": "comentaron",
+      "edited_one": "editó",
+      "edited_other": "editaron",
+      "moved_one": "movió",
+      "moved_other": "movieron",
+      "scheduled_one": "reprogramó",
+      "scheduled_other": "reprogramaron",
+      "published_one": "publicó",
+      "published_other": "publicaron"
+    }
+  },
   "loading": "Cargando…",
   "loadError": "No se pudo cargar esta herramienta. Inténtalo de nuevo más tarde.",
   "communityWide": "Todo la comunidad",
@@ -72,7 +107,6 @@
     }
   },
   "recentComments": {
-    "title": "Comentarios recientes",
     "noComments": "Aún no hay comentarios",
     "loadError": "No se pudieron cargar los comentarios recientes. Inténtalo de nuevo más tarde.",
     "unknownAuthor": "Desconocido",

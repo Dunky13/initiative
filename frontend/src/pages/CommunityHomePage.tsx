@@ -1,6 +1,6 @@
 /**
- * The community front page: the community's latest comments in a tray under
- * its banner, then its initiatives and what is coming up.
+ * The community front page: what people changed lately in a tray under its
+ * banner, one view per circle, then its initiatives and what is coming up.
  *
  * It is also the community's initiative list — the standalone initiatives page was
  * folded into it. The section under the tray holds the ones you're in and the
@@ -10,11 +10,13 @@
  */
 
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
+import { Activity, MessageSquare, UserRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { FeedView } from "@/api/generated/initiativeAPI.schemas";
 import { CommunityLocationLine } from "@/components/communities/CommunityLocationLine";
+import { CommunityActivityFeed } from "@/components/communityHome/CommunityActivityFeed";
 import { CommunityBannerBadges } from "@/components/communityHome/CommunityBannerBadges";
 import { CommunityComingUp } from "@/components/communityHome/CommunityComingUp";
 import { CommunityHomeEmptyState } from "@/components/communityHome/CommunityHomeEmptyState";
@@ -24,23 +26,58 @@ import { CreateInitiativeWizard } from "@/components/initiatives/CreateInitiativ
 import { PageBanner } from "@/components/PageBanner";
 import { PluginSettingsDialog } from "@/components/plugins/PluginSettingsDialog";
 import { NodeRail, TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { liveInitiatives, useInitiativeAccess } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
 import { renderableBanner } from "@/lib/banner";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { readableTextShadow } from "@/lib/contrastColor";
+import { getItem, setItem } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
-/** The rail's one node: the community's latest comments, in the tray under it. */
-const COMMENTS_SEGMENT = "comments";
+/** The rail's circles, in order; the first is the default. All and Yours are
+ *  views of the activity feed; Comments shows the comments themselves. */
+const FEED_NODES = [
+  { view: FeedView.all, icon: Activity },
+  { view: FeedView.yours, icon: UserRound },
+  { view: FeedView.comments, icon: MessageSquare },
+] as const;
+
+const isFeedView = (value: unknown): value is FeedView =>
+  FEED_NODES.some((node) => node.view === value);
+
+/**
+ * When the reader last opened this community's front page, read once as the
+ * page opens, then moved to now. Kept on the device, per account: it orders
+ * nothing and nobody else needs it.
+ */
+const useLastVisit = (userId: number | undefined, communityId: number): string | null => {
+  const key = userId === undefined ? null : `activity-last-visit:${userId}:${communityId}`;
+  // Read again only for another account or community: moving it to now must
+  // not take the marks off the entries this visit is showing.
+  const lastVisit = useMemo(() => (key ? getItem(key) : null), [key]);
+  useEffect(() => {
+    if (key) void setItem(key, new Date().toISOString());
+  }, [key]);
+  return lastVisit;
+};
 
 export function CommunityHomePage() {
-  const { t } = useTranslation(["communityHome", "comments"]);
+  const { t } = useTranslation("communityHome");
   const { activeCommunity } = useCommunities();
   const gp = useCommunityPath();
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { create?: string; plugin?: number };
+  const search = useSearch({ strict: false }) as {
+    create?: string;
+    plugin?: number;
+    node?: string;
+  };
+  const view = isFeedView(search.node) ? search.node : FeedView.all;
+  const communityId = useActiveCommunityId();
+  const { user } = useAuth();
+  const lastVisit = useLastVisit(user?.id, communityId);
 
   const initiativesQuery = useInitiatives();
   const directoryQuery = useInitiativeDirectory();
@@ -79,7 +116,12 @@ export function CommunityHomePage() {
   const hasNoInitiatives = initiativesQuery.isSuccess && visibleInitiatives.length === 0;
 
   const railNodes = useMemo(
-    () => [{ segment: COMMENTS_SEGMENT, icon: MessageSquare, label: t("comments:title") }],
+    () =>
+      FEED_NODES.map(({ view, icon }) => ({
+        segment: view,
+        icon,
+        label: t(`feed.nodes.${view}`),
+      })),
     [t]
   );
 
@@ -132,20 +174,24 @@ export function CommunityHomePage() {
           />
         ) : (
           <>
-            {/* The rail and the comments are one tray: the circle is its top
-                edge rising, and what it shows sits in the same surface
-                underneath it. */}
+            {/* The rail and the feed are one tray: the circles are its top
+                edge rising, and what the open one shows sits in the same
+                surface underneath it. */}
             <div>
               <NodeRail
                 nodes={railNodes}
-                selected={COMMENTS_SEGMENT}
+                selected={view}
                 to={gp("/")}
                 param="node"
                 label={t("nodeRail")}
                 align={banner.text_align}
               />
               <div className={cn("rounded-b-2xl p-3 sm:px-4 sm:pb-4", TRAY_SURFACE)}>
-                <CommunityRecentComments />
+                {view === FeedView.comments ? (
+                  <CommunityRecentComments />
+                ) : (
+                  <CommunityActivityFeed view={view} lastVisit={lastVisit} />
+                )}
               </div>
             </div>
 

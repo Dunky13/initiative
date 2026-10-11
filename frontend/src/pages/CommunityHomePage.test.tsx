@@ -5,6 +5,7 @@ import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  buildActivityEntry,
   buildBanner,
   buildCalendarEvent,
   buildCommunity,
@@ -17,6 +18,7 @@ import {
   buildRecentActivityEntry,
   buildTask,
   buildUser,
+  buildUserPublic,
   initiativeCan,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -24,6 +26,7 @@ import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
 import type { BannerTextAlign } from "@/api/generated/initiativeAPI.schemas";
 import { queryClient } from "@/lib/queryClient";
+import { setItem } from "@/lib/storage";
 import { isToolEnabled, TOOLS } from "@/lib/tools";
 
 import { CommunityHomePage } from "./CommunityHomePage";
@@ -76,9 +79,30 @@ function stubEmptyCommunity(directory: unknown[] = []) {
 
 const NEBULA = () => buildInitiativeDirectoryEntry({ id: 9, name: "Nebula", join_policy: "open" });
 
-/** One case of the feed: what the community holds, what was said, and where
- *  the entry has to lead. */
+/** One case of the feed: what the community holds, the entry, and where it
+ *  has to lead. */
 type FeedCase = [
+  label: string,
+  community: { initiative?: Record<string, boolean> },
+  entry: Parameters<typeof buildActivityEntry>[0],
+  href: string,
+];
+
+/** The community's feed holds these entries, and says which view was asked for. */
+function stubFeed(...entries: ReturnType<typeof buildActivityEntry>[]) {
+  const asked: string[] = [];
+  server.use(
+    communityHttp.get("/activity/", ({ request }) => {
+      asked.push(new URL(request.url).searchParams.get("view") ?? "");
+      return HttpResponse.json({ items: entries, page: 1, page_size: 20, has_next: false });
+    })
+  );
+  return asked;
+}
+
+/** One comment case: what the community holds, what was said, and where it
+ *  has to lead. */
+type CommentCase = [
   label: string,
   community: { initiative?: Record<string, boolean> },
   entry: NonNullable<Parameters<typeof buildRecentActivityEntry>[0]>,
@@ -230,11 +254,50 @@ describe("CommunityHomePage", () => {
     }
   });
 
-  // The rail's comment circle is the whole community's feed. Each entry names where
+  // Each entry leads straight to its item, on whichever surface holds it —
+  // including one the community itself holds rather than an initiative.
+  it.each<FeedCase>([
+    [
+      "a task, to the task inside its project",
+      {},
+      { title: "Fuel check", entity_type: "task", entity_id: 4, tool: "project", tool_id: 1 },
+      "/c/1/i/5/projects/1/tasks/4",
+    ],
+    [
+      "a tool entity, to that entity",
+      { initiative: { queues_enabled: true } },
+      { title: "Combat Order", entity_type: "queue", entity_id: 8, tool: "queue", tool_id: 8 },
+      "/c/1/i/5/queues/8",
+    ],
+    [
+      "a community-level calendar, at the community route",
+      { initiative: { calendars_enabled: true } },
+      {
+        title: "Club Nights",
+        entity_type: "calendar",
+        entity_id: 3,
+        tool: "calendar",
+        tool_id: 3,
+        initiative_id: null,
+      },
+      "/c/1/calendars/3",
+    ],
+  ])("links %s", async (_label, { initiative = {} }, entry, href) => {
+    stubInitiatives(initiative);
+    stubFeed(buildActivityEntry(entry));
+
+    renderHome();
+
+    const title = String(entry?.title);
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: new RegExp(title) })).toHaveAttribute("href", href);
+  });
+
+  // The Comments circle is the community's latest comments. Each names where
   // the comment was left and leads straight back to it, on whichever surface
   // that was — including one the community itself holds rather than an
   // initiative.
-  it.each<FeedCase>([
+  it.each<CommentCase>([
     [
       "the community's latest comment on a task, to the task inside its project",
       {},
@@ -283,7 +346,7 @@ describe("CommunityHomePage", () => {
     stubInitiatives(initiative);
     stubRecentComment(entry);
 
-    renderHome();
+    renderHome({ node: "comments" });
 
     expect(await screen.findByText(says)).toBeInTheDocument();
     expect(screen.getByText(String(entry.content))).toBeInTheDocument();
@@ -291,6 +354,28 @@ describe("CommunityHomePage", () => {
       "href",
       href
     );
+  });
+
+  it("shows the community's comments in the tray, under their circle", async () => {
+    stubInitiatives();
+    stubRecentComment({ content: "Still here" });
+
+    renderHome({ node: "comments" });
+
+    const rail = await screen.findByRole("navigation", { name: "Community activity" });
+    expect(within(rail).getByRole("link", { name: "Comments" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(await screen.findByText("Still here")).toBeInTheDocument();
+  });
+
+  it("says so when the community has no comments yet", async () => {
+    stubInitiatives();
+
+    renderHome({ node: "comments" });
+
+    expect(await screen.findByText("No comments yet")).toBeInTheDocument();
   });
 
   it("opens a plug-in's settings from the address, where the reader answers what it asked", async () => {
@@ -327,26 +412,115 @@ describe("CommunityHomePage", () => {
     expect(screen.getByText("Waiting for you")).toBeInTheDocument();
   });
 
-  it("shows the community's comments in the tray, under their circle", async () => {
+  it("shows everything under All by default, saying who did what", async () => {
     stubInitiatives();
-    stubRecentComment({ content: "Still here" });
+    const asked = stubFeed(
+      buildActivityEntry({
+        actors: [buildUserPublic({ display_name: "Ada" })],
+        actor_count: 3,
+        verbs: ["commented", "edited"],
+      })
+    );
 
     renderHome();
 
     const rail = await screen.findByRole("navigation", { name: "Community activity" });
-    expect(within(rail).getByRole("link", { name: "Comments" })).toHaveAttribute(
+    expect(within(rail).getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByText("Ada and 2 others commented and edited")).toBeInTheDocument();
+    expect(asked).toEqual(["all"]);
+  });
+
+  it("asks the feed for the circle in the address", async () => {
+    stubInitiatives();
+    const asked = stubFeed();
+
+    renderHome({ node: "yours" });
+
+    const rail = await screen.findByRole("navigation", { name: "Community activity" });
+    expect(within(rail).getByRole("link", { name: "Yours" })).toHaveAttribute(
       "aria-current",
       "page"
     );
-    expect(await screen.findByText("Still here")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Nothing has happened to your things this week.")
+    ).toBeInTheDocument();
+    expect(asked).toEqual(["yours"]);
   });
 
-  it("says so when the community has no comments yet", async () => {
+  it("marks what changed since the reader's last visit as new", async () => {
     stubInitiatives();
+    await setItem(`activity-last-visit:${READER.id}:1`, "2026-01-15T12:00:00.000Z");
+    stubFeed(
+      buildActivityEntry({ title: "Since", entity_id: 1, latest: "2026-01-16T00:00:00.000Z" }),
+      buildActivityEntry({ title: "Before", entity_id: 2, latest: "2026-01-14T00:00:00.000Z" })
+    );
 
     renderHome();
 
-    expect(await screen.findByText("No comments yet")).toBeInTheDocument();
+    const since = (await screen.findByText("Since")).closest("li") as HTMLElement;
+    const before = screen.getByText("Before").closest("li") as HTMLElement;
+    expect(within(since).getByText("New")).toBeInTheDocument();
+    expect(within(before).queryByText("New")).not.toBeInTheDocument();
+  });
+
+  it("shows each item once across pages, which are ranked afresh", async () => {
+    stubInitiatives();
+    const pages = [
+      [
+        buildActivityEntry({ title: "First", entity_id: 1 }),
+        buildActivityEntry({ title: "Moved up", entity_id: 2 }),
+      ],
+      // Ranked afresh: what was on the first page can come back on the second.
+      [
+        buildActivityEntry({ title: "Moved up", entity_id: 2 }),
+        buildActivityEntry({ title: "Third", entity_id: 3 }),
+      ],
+    ];
+    server.use(
+      communityHttp.get("/activity/", ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get("page") ?? 1);
+        return HttpResponse.json({
+          items: pages[page - 1],
+          page,
+          page_size: 2,
+          has_next: page === 1,
+        });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderHome();
+    await screen.findByText("First");
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+
+    expect(await screen.findByText("Third")).toBeInTheDocument();
+    expect(screen.getAllByText("Moved up")).toHaveLength(1);
+  });
+
+  it("keeps the rows it has when the next page fails, with a way to try again", async () => {
+    stubInitiatives();
+    server.use(
+      communityHttp.get("/activity/", ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get("page") ?? 1);
+        if (page > 1) return new HttpResponse(null, { status: 500 });
+        return HttpResponse.json({
+          items: [buildActivityEntry({ title: "First", entity_id: 1 })],
+          page,
+          page_size: 1,
+          has_next: true,
+        });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderHome();
+    await user.click(await screen.findByRole("button", { name: "Show more" }));
+
+    expect(
+      await screen.findByText("Failed to load what's been happening. Please try again later.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("First")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show more" })).toBeEnabled();
   });
 
   it("lists everything dated this week under the initiatives, each leading to itself", async () => {
@@ -420,7 +594,7 @@ describe("CommunityHomePage", () => {
     expect(url?.searchParams.get("conditions")).toContain("in_progress");
   });
 
-  it("lists the community's initiatives under the comments, grouped by where you stand", async () => {
+  it("lists the community's initiatives under the feed, grouped by where you stand", async () => {
     stubInitiatives();
     stubDirectory([
       buildInitiativeDirectoryEntry({ id: INITIATIVE_ID, name: "Apollo", is_member: true }),
