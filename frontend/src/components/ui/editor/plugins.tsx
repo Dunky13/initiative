@@ -31,7 +31,6 @@ import { FloatingLinkEditorPlugin } from "@/components/ui/editor/plugins/floatin
 import { FloatingTextFormatToolbarPlugin } from "@/components/ui/editor/plugins/floating-text-format-plugin";
 import { LegacyNodesPlugin } from "@/components/ui/editor/plugins/legacy-nodes-plugin";
 import { LinkSanitizePlugin } from "@/components/ui/editor/plugins/link-sanitize-plugin";
-import { MentionedPeoplePlugin } from "@/components/ui/editor/plugins/mentioned-people-plugin";
 import { MentionsPlugin } from "@/components/ui/editor/plugins/mentions-plugin";
 import { MermaidPreviewPlugin } from "@/components/ui/editor/plugins/mermaid-preview-plugin";
 import { AlignmentPickerPlugin } from "@/components/ui/editor/plugins/picker/alignment-picker-plugin";
@@ -371,12 +370,6 @@ export function Plugins({
         {/* Ungated: a reader needs the diagram more than a writer does. */}
         <MermaidPreviewPlugin />
         {!readOnly && <MentionsPlugin initiativeId={initiativeId ?? undefined} />}
-        {/* Not gated on `supportsEntityMentions`: that flag says whether this
-            editor lets you INSERT a mention, and reading one is a different
-            question. A read-only view renders mentions too, and an unreported
-            one shows the name it was written with instead of who that person
-            is now. */}
-        <MentionedPeoplePlugin />
         {supportsEntityMentions && !readOnly && (
           <EntityMentionsPlugin initiativeId={initiativeId} subject={subject} />
         )}
@@ -421,7 +414,7 @@ export function Plugins({
               StatusPickerPlugin(t),
               // Live chips, offered where `#` is: prose only.
               ...(supportsEntityMentions
-                ? [...SmartChipPickerPlugins(t, initiativeId), EmbedPickerPlugin(t, initiativeId)]
+                ? [...SmartChipPickerPlugins(t, initiativeId), EmbedPickerPlugin(t)]
                 : []),
               ColumnsLayoutPickerPlugin(),
               AlignmentPickerPlugin({ alignment: "left" }),

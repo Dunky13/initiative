@@ -11,6 +11,7 @@ import type {
   TaskListResponse,
   TaskStatusCategory,
   TaskStatusRead,
+  TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { listTaskStatuses } from "@/api/generated/task-statuses/task-statuses";
 import { getListMyTasksQueryKey, listMyTasks } from "@/api/generated/tasks/tasks";
@@ -30,7 +31,6 @@ import {
   taskTableSorting,
 } from "@/lib/filters/taskFilters";
 import { toast } from "@/lib/mascotToast";
-import { statusForCategory } from "@/lib/taskStatusDefaults";
 import { browserTimezone } from "@/lib/timezones";
 
 const SORT_DEFAULTS: SortField[] = [
@@ -346,34 +346,22 @@ export function useGlobalTasksTable() {
     []
   );
 
-  const resolveStatusIdForCategory = useCallback(
-    async (projectId: number, category: TaskStatusCategory, communityId: number | null) => {
-      const statuses = await fetchProjectStatuses(projectId, communityId);
-      return statusForCategory(statuses, category)?.id ?? null;
-    },
-    [fetchProjectStatuses]
-  );
-
-  const changeTaskStatusById = useCallback(
-    async (task: TaskListRead, targetStatusId: number) => {
+  /** Move a row: shown in its new status at once where that status is known,
+   *  and written either way. */
+  const moveTask = useCallback(
+    async (task: TaskListRead, data: TaskUpdate, target: TaskStatusRead | undefined) => {
       const targetCommunityId = task.community_id ?? activeCommunityId ?? null;
       if (!targetCommunityId) {
         toast.error(t("errors.communityContext"));
         return;
       }
-      // The status the row is moving to is already in hand whenever the caller
-      // resolved it through this project's statuses, which is every path that
-      // reaches here; without it the row simply waits for the refetch.
-      const target = projectStatusCache.current
-        .get(task.project_id)
-        ?.statuses.find((status) => status.id === targetStatusId);
       const rollback = target ? applyStatusLocally(task, target) : null;
       const key = taskKey(task);
       setUpdatingTasks((prev) => new Set(prev).add(key));
       try {
         await updateTaskStatusMutate({
           taskId: task.id,
-          data: { task_status_id: targetStatusId },
+          data,
           // Cross-community update from the personal My Tasks table: per-community task
           // ids collide, so the update must name the task's own community (path).
           communityId: targetCommunityId,
@@ -393,25 +381,33 @@ export function useGlobalTasksTable() {
     [activeCommunityId, applyStatusLocally, updateTaskStatusMutate, t]
   );
 
+  const cachedStatuses = (task: TaskListRead) =>
+    projectStatusCache.current.get(task.project_id)?.statuses ?? [];
+
+  const changeTaskStatusById = useCallback(
+    (task: TaskListRead, targetStatusId: number) =>
+      moveTask(
+        task,
+        { task_status_id: targetStatusId },
+        cachedStatuses(task).find((status) => status.id === targetStatusId)
+      ),
+    [moveTask]
+  );
+
+  // The project's column for the category is the server's to pick. The row
+  // moves ahead of it into a known column of that category, or into its own
+  // marked with the category until the answer names the column.
   const changeTaskStatus = useCallback(
-    async (task: TaskListRead, targetCategory: TaskStatusCategory) => {
-      const targetCommunityId = task.community_id ?? activeCommunityId ?? null;
-      if (!targetCommunityId) {
-        toast.error(t("errors.communityContext"));
-        return;
-      }
-      const targetStatusId = await resolveStatusIdForCategory(
-        task.project_id,
-        targetCategory,
-        targetCommunityId
-      );
-      if (!targetStatusId) {
-        toast.error(t("errors.statusNoMatch"));
-        return;
-      }
-      await changeTaskStatusById(task, targetStatusId);
-    },
-    [activeCommunityId, changeTaskStatusById, resolveStatusIdForCategory, t]
+    (task: TaskListRead, targetCategory: TaskStatusCategory) =>
+      moveTask(
+        task,
+        { status_category: targetCategory },
+        cachedStatuses(task).find((status) => status.category === targetCategory) ?? {
+          ...task.task_status,
+          category: targetCategory,
+        }
+      ),
+    [moveTask]
   );
 
   // --- Display tasks ---
@@ -463,7 +459,6 @@ export function useGlobalTasksTable() {
     changeTaskStatus,
     changeTaskStatusById,
     fetchProjectStatuses,
-    resolveStatusIdForCategory,
     projectStatusCache,
     isUpdatingTask,
 

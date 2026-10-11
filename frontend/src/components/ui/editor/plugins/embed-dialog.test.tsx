@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { renderPage } from "@/__tests__/helpers/render";
+import { EditorInitiativeContext } from "@/components/ui/editor/context/editor-initiative-context";
 import { documentExtension } from "@/components/ui/editor/document-extension";
 import { $isReferenceEmbedNode } from "@/components/ui/editor/nodes/reference-embed-node";
 import { EmbedDialog } from "@/components/ui/editor/plugins/embed-dialog";
@@ -17,18 +18,20 @@ let editor!: LexicalEditor;
 function Harness({ onClose }: { onClose: () => void }) {
   const extension = useMemo(() => documentExtension({ collaborative: false, editable: true }), []);
   return (
-    <LexicalExtensionComposer extension={extension} contentEditable={null}>
-      <TooltipProvider>
-        <Dialog onClose={onClose} />
-      </TooltipProvider>
-    </LexicalExtensionComposer>
+    <EditorInitiativeContext.Provider value={7}>
+      <LexicalExtensionComposer extension={extension} contentEditable={null}>
+        <TooltipProvider>
+          <Dialog onClose={onClose} />
+        </TooltipProvider>
+      </LexicalExtensionComposer>
+    </EditorInitiativeContext.Provider>
   );
 }
 
 function Dialog({ onClose }: { onClose: () => void }) {
   const [found] = useLexicalComposerContext();
   editor = found;
-  return <EmbedDialog activeEditor={found} initiativeId={7} onClose={onClose} />;
+  return <EmbedDialog activeEditor={found} onClose={onClose} />;
 }
 
 const embeds = () =>

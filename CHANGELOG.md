@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A task embed can be sorted.** Its author picks the order in the embed's settings, as a layout preset does, and anyone reading can sort its table by a column. Ticking a task done in My Tasks also takes one step now.
 - **Smart chips keep up as things change.** A chip, a `[[ ]]` link and an embed show a change the moment it is made, for everyone looking, instead of up to a minute later. Ticking a task's box in a document shows at once and takes one step, and a chip whose reading turns at a set time, like a due date passing, changes at that moment. A long document asks only about what is new or has changed.
 - **Your view of every list follows you.** The filters, sort, grouping and columns you set on a list, and how you're looking at it (a table, board or calendar; a calendar's month, week or day; a gallery's masonry or grid), are kept for you on that list and follow you to any device. Before, some were kept on one device (a calendar's filters and what it hides, a table's grouping and columns, a tool list's order), some were the same in every initiative, calendar or gallery, and some were forgotten when you left the page (filters on posts, on a gallery's pictures and on tool lists). A typed search and a calendar's date range are still for one visit. What you had set carries over the first time you open each list.
 - **My Tasks filters like a project's tasks.** It has the same filters (status, due date, priority, community and properties) and the same menu to switch between its table and calendar. A project's tasks can now be filtered by priority too.
@@ -73,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Task embeds keep showing tasks after a tag is deleted, and offer every project.** A filter naming a deleted tag matched nothing, so the embed went empty. It now leaves the deleted tag out. Choosing a project in the embed's settings lists every project in the initiative, not just the first page of them.
 - **A project's view is its own in each community.** Someone in two communities saw the same filters on projects that happened to share a number, since project numbers start again in every community.
 - **Smart chips, links and embeds show what they point at in every browser.** A browser extension that strips tracking from web addresses could remove what a document asked about, so every chip, `[[ ]]` link and embed on the page read as no longer available. The page now sends its references in the request itself, where nothing rewrites them.
 - **A wiki whose home page was deleted for good opens without it.** It used to keep naming the deleted page.

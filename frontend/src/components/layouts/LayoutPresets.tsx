@@ -14,14 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { tableSortFields, taskTableSorting } from "@/lib/filters/taskFilters";
 import type { ListLayout } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
@@ -37,6 +29,7 @@ import {
 import type { TranslateFn } from "@/types/i18n";
 
 import type { LayoutEdits } from "./LayoutEditor";
+import { TaskSortPicker } from "./TaskSortPicker";
 
 /** A tool's presets, as the editor changes them: the presets it reads, what
  *  one that narrows nothing holds, its list's own filter controls, and which
@@ -55,20 +48,6 @@ export const editablePresets = <F,>(presets: {
   controls: (value: F, onChange: (next: F) => void) => ReactNode;
   sortable: (kind: ListLayoutReadKind) => boolean;
 }): EditablePresets => presets as unknown as EditablePresets;
-
-/** What a preset can sort a table by, as the task list names it, and the
- *  field (or key) that names it for a reader. */
-const SORTS: readonly { field: string; label: { field: string } | { key: string } }[] = [
-  { field: "title", label: { field: "title" } },
-  { field: "due_date", label: { field: "dueDate" } },
-  { field: "start_date", label: { field: "startDate" } },
-  { field: "priority", label: { field: "priority" } },
-  { field: "status_position", label: { key: "tasks:columns.status" } },
-  { field: "tag_name", label: { field: "tags" } },
-];
-
-/** Picked in the sort select for "no sort of its own". */
-const NO_SORT = "none";
 
 /**
  * The presets a list offers: each one's name, and buttons to change, move or
@@ -240,10 +219,6 @@ const PresetDialog = ({
     tableSortFields(preset?.sorting ?? [])[0] ?? null
   );
   const trimmed = name.trim();
-  const sortLabel = (label: (typeof SORTS)[number]["label"]) =>
-    "key" in label
-      ? translate(label.key)
-      : translate(fields.get(label.field)?.label ?? label.field);
 
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
@@ -275,46 +250,7 @@ const PresetDialog = ({
             />
           </div>
           {of.controls(filters, setFilters)}
-          {sortable ? (
-            <div className="grid-cols-pair grid gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="preset-sort">{translate("layoutEditor.presets.sortBy")}</Label>
-                <Select
-                  value={sort?.field ?? NO_SORT}
-                  onValueChange={(field) =>
-                    setSort(field === NO_SORT ? null : { field, dir: sort?.dir ?? "asc" })
-                  }
-                >
-                  <SelectTrigger id="preset-sort">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NO_SORT}>
-                      {translate("layoutEditor.presets.noSort")}
-                    </SelectItem>
-                    {SORTS.map(({ field, label }) => (
-                      <SelectItem key={field} value={field}>
-                        {sortLabel(label)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2 self-end pb-2">
-                <Switch
-                  id="preset-descending"
-                  checked={sort?.dir === "desc"}
-                  disabled={!sort}
-                  onCheckedChange={(checked) =>
-                    sort && setSort({ ...sort, dir: checked ? "desc" : "asc" })
-                  }
-                />
-                <Label htmlFor="preset-descending">
-                  {translate("layoutEditor.presets.descending")}
-                </Label>
-              </div>
-            </div>
-          ) : null}
+          {sortable ? <TaskSortPicker value={sort} onChange={setSort} fields={fields} /> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {translate("common:cancel")}

@@ -63,8 +63,7 @@ _DEFAULT_CATEGORY_PREFERENCE: Sequence[TaskStatusCategory] = (
 
 #: Where a task moved to a category lands when its project has no column of
 #: that category: the nearest one before it, so "done" in a project with no
-#: done column is the furthest the project goes. The client's
-#: ``CATEGORY_FALLBACK`` says the same.
+#: done column is the furthest the project goes.
 CATEGORY_FALLBACK: dict[TaskStatusCategory, Sequence[TaskStatusCategory]] = {
     TaskStatusCategory.backlog: (TaskStatusCategory.backlog,),
     TaskStatusCategory.todo: (TaskStatusCategory.todo, TaskStatusCategory.backlog),

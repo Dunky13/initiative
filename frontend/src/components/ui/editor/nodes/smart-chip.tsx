@@ -10,7 +10,7 @@ import { useChipState } from "@/hooks/useSmartChips";
 import { communityPath } from "@/lib/communityUrl";
 import { entityRefTypeFor } from "@/lib/entityResolver";
 import { dateTimeFormat } from "@/lib/intl";
-import { hitIcon } from "@/lib/searchResults";
+import { entityIcon } from "@/lib/searchResults";
 import { chipAspect, chipDisplay, chipEntityType, chipRef } from "@/lib/smartChips";
 import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
@@ -71,13 +71,7 @@ function ReadingChip({ chipKind, entityId, fallback }: SmartChipProps) {
     void navigate({ to: communityPath(communityId, entityRefRoute(refType, entityId)) });
   };
 
-  const Icon = hitIcon({
-    entity_type: entityType,
-    entity_id: entityId,
-    initiative_id: null,
-    tool: null,
-    tool_id: null,
-  });
+  const Icon = entityIcon(entityType);
 
   return (
     <HoverCard openDelay={200} closeDelay={100}>

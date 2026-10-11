@@ -3,12 +3,12 @@ import { $getNodeByKey, type LexicalEditor, type NodeKey } from "lexical";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  type SearchEntityType,
-  type SearchSuggestion,
-  type SmartChipKind,
-  Tool,
+import type {
+  SearchEntityType,
+  SearchSuggestion,
+  SmartChipKind,
 } from "@/api/generated/initiativeAPI.schemas";
+import { TaskSortPicker } from "@/components/layouts/TaskSortPicker";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useProjects, useProjectTaskStatuses } from "@/hooks/useProjects";
+import { useAllProjects, useProjectTaskStatuses } from "@/hooks/useProjects";
 import { useProperties } from "@/hooks/useProperties";
 import {
   CARD,
@@ -45,9 +45,8 @@ import {
 import { LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { TASK_COLUMNS, taskFields } from "@/lib/layouts/tasks";
-import { hitIcon } from "@/lib/searchResults";
+import { entityIcon } from "@/lib/searchResults";
 import { chipKindsFor } from "@/lib/smartChips";
-import { toolViewParams } from "@/lib/tools";
 
 type Source = "item" | "tasks";
 
@@ -60,8 +59,6 @@ interface Item {
 interface EmbedDialogProps {
   activeEditor: LexicalEditor;
   onClose: () => void;
-  /** The page's initiative, where the caller has it; otherwise the editor's. */
-  initiativeId?: number | null;
   /** The embed being changed. Absent, a new one is inserted. */
   nodeKey?: NodeKey;
 }
@@ -94,15 +91,9 @@ const readEmbed = (editor: LexicalEditor, nodeKey: NodeKey | undefined) =>
  * how it is drawn. Opened to insert one, and from an embed's settings to
  * change it.
  */
-export function EmbedDialog({
-  activeEditor,
-  onClose,
-  initiativeId: given,
-  nodeKey,
-}: EmbedDialogProps) {
+export function EmbedDialog({ activeEditor, onClose, nodeKey }: EmbedDialogProps) {
   const { t } = useTranslation(["editor", "common"]);
-  const fromEditor = useEditorInitiative();
-  const initiativeId = given ?? fromEditor;
+  const initiativeId = useEditorInitiative();
   const start = useMemo(() => readEmbed(activeEditor, nodeKey), [activeEditor, nodeKey]);
 
   const [source, setSource] = useState<Source>(start?.query ? "tasks" : "item");
@@ -276,13 +267,7 @@ function ItemSettings({
 }) {
   const { t } = useTranslation("editor");
   const facts = chipKindsFor(item.entityType);
-  const Icon = hitIcon({
-    entity_type: item.entityType,
-    entity_id: item.entityId,
-    initiative_id: null,
-    tool: null,
-    tool_id: null,
-  });
+  const Icon = entityIcon(item.entityType);
   // A kind with nothing to read about it has only its card to show.
   const modes = facts.length > 0 ? ITEM_MODES : ITEM_MODES.slice(0, 1);
   return (
@@ -336,11 +321,7 @@ function TaskSettings({
   // Built-in fields are named in the layout's own namespaces, as a table's
   // header names them.
   const { t: fieldName } = useTranslation(LAYOUT_NAMESPACES);
-  const { data: projects } = useProjects({
-    slim: true,
-    initiative_id: query.initiative_id,
-    ...toolViewParams(Tool.project, "active"),
-  });
+  const { data: projects } = useAllProjects({ initiative_id: query.initiative_id });
   const { data: statuses = [] } = useProjectTaskStatuses(query.project_id);
   const { data: definitions = [] } = useProperties({ initiativeId: query.initiative_id });
   const plugins = usePluginsOnItems(query.initiative_id);
@@ -399,6 +380,13 @@ function TaskSettings({
         onChange={(filters) => onQuery({ ...query, filters })}
         stacked
       />
+      {display.mode === "count" ? null : (
+        <TaskSortPicker
+          value={query.sort[0] ?? null}
+          onChange={(sort) => onQuery({ ...query, sort: sort ? [sort] : [] })}
+          fields={fields}
+        />
+      )}
       <ModePicker
         modes={TASK_MODES}
         value={display.mode}

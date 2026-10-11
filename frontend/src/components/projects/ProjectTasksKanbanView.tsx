@@ -24,7 +24,6 @@ import { priorityVariant } from "@/components/projects/projectTasksConfig";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { Badge } from "@/components/ui/badge";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import { useProperties } from "@/hooks/useProperties";
 import { formatDateTime } from "@/lib/formatDate";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
@@ -119,17 +118,6 @@ export const ProjectTasksKanbanView = ({
     [fields, plugins, card, env, editing]
   );
 
-  // The people the cards' excerpts mention, asked about once for the board.
-  const excerpts = useMemo(
-    () =>
-      namesField(card, "description")
-        ? Object.values(groupedTasks).flatMap((tasks) =>
-            tasks.flatMap((task) => task.description_excerpt ?? [])
-          )
-        : [],
-    [groupedTasks, card]
-  );
-
   const taskStatusesLength = taskStatuses.length;
   // Basis rather than min-width: it is what the collapse animates.
   const columnBasis = cn(
@@ -138,50 +126,47 @@ export const ProjectTasksKanbanView = ({
   );
 
   return (
-    <MentionedPeopleScope>
-      <ReportMentionedPeople texts={excerpts} />
-      <DndContext
-        sensors={sensors}
-        collisionDetection={kanbanCollisionDetection}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
-        onDragCancel={onDragCancel}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={kanbanCollisionDetection}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
+    >
+      <div
+        ref={scrollContainerRef}
+        className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
+        data-kanban-scroll-container
       >
-        <div
-          ref={scrollContainerRef}
-          className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
-          data-kanban-scroll-container
-        >
-          <div className="flex gap-4">
-            {taskStatuses.map((status) => {
-              const isCollapsed = collapsedStatusIds.has(status.id);
-              return (
-                <KanbanColumn
-                  key={status.id}
-                  status={status}
-                  tasks={groupedTasks[status.id] ?? []}
-                  canWrite={canReorderTasks}
-                  view={view}
-                  collapsed={isCollapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  taskCount={groupedTasks[status.id]?.length ?? 0}
-                  className={cn(
-                    "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
-                    isCollapsed ? "grow-0 basis-12" : columnBasis
-                  )}
-                  onArchiveDoneTasks={onArchiveDoneTasks}
-                  isArchiving={isArchivingDoneTasks}
-                />
-              );
-            })}
-          </div>
+        <div className="flex gap-4">
+          {taskStatuses.map((status) => {
+            const isCollapsed = collapsedStatusIds.has(status.id);
+            return (
+              <KanbanColumn
+                key={status.id}
+                status={status}
+                tasks={groupedTasks[status.id] ?? []}
+                canWrite={canReorderTasks}
+                view={view}
+                collapsed={isCollapsed}
+                onToggleCollapse={onToggleCollapse}
+                taskCount={groupedTasks[status.id]?.length ?? 0}
+                className={cn(
+                  "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
+                  isCollapsed ? "grow-0 basis-12" : columnBasis
+                )}
+                onArchiveDoneTasks={onArchiveDoneTasks}
+                isArchiving={isArchivingDoneTasks}
+              />
+            );
+          })}
         </div>
-        <DragOverlay>
-          {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
-        </DragOverlay>
-      </DndContext>
-    </MentionedPeopleScope>
+      </div>
+      <DragOverlay>
+        {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
+      </DragOverlay>
+    </DndContext>
   );
 };
 
