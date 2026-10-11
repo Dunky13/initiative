@@ -178,7 +178,7 @@ describe("LayoutEditor", () => {
     const { user } = editor("table");
 
     await user.click(await within(await outline()).findByRole("button", { name: /^add$/i }));
-    await user.click(await screen.findByRole("button", { name: "Effort" }));
+    await user.click(await screen.findByRole("button", { name: /^effort/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -248,8 +248,10 @@ describe("LayoutEditor", () => {
     const { user } = editor("table");
 
     await user.click(await within(await outline()).findByRole("button", { name: /^add$/i }));
-    expect(await screen.findByText("CI")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Build" }));
+    const picker = await screen.findByRole("dialog", { name: "Add" });
+    // Found by the plug-in it comes from, as the list shows it.
+    await user.type(within(picker).getByRole("textbox", { name: /search/i }), "ci");
+    await user.click(within(picker).getByRole("button", { name: /^build/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -369,18 +371,18 @@ describe("LayoutEditor", () => {
       // Clicked where it is, as the pointer reaches it from the part.
       fireEvent.click(screen.getByRole("button", { name: /add before priority/i }));
       const picker = await screen.findByRole("dialog", { name: "Add" });
-      await user.click(within(picker).getByRole("button", { name: "Group" }));
+      await user.click(within(picker).getByRole("button", { name: /^row/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       await waitFor(() => expect(sent).toHaveLength(1));
       const card = saved("board")?.card;
-      // The row holding Priority starts with the group, Priority after it.
+      // The row holding Priority starts with the new row, Priority after it.
       expect(
         (
           (card as LayoutNode | undefined)?.children?.[1] as LayoutNode | undefined
         )?.children?.slice(0, 2)
       ).toEqual([
-        { type: "stack", props: { align: "start" }, children: [] },
+        { type: "stack", props: { direction: "row", wrap: true }, children: [] },
         { type: "field", props: { field: "priority" } },
       ]);
     });
@@ -392,7 +394,7 @@ describe("LayoutEditor", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /add after priority/i }));
       const picker = await screen.findByRole("dialog", { name: "Add" });
-      await user.click(within(picker).getByRole("button", { name: "Effort" }));
+      await user.click(within(picker).getByRole("button", { name: /^effort/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       await waitFor(() => expect(sent).toHaveLength(1));
@@ -454,18 +456,18 @@ describe("LayoutEditor", () => {
       expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
     });
 
-    it("takes a part into a group added empty", async () => {
+    it("takes a part into a row added empty", async () => {
       const { user } = editor("board");
       const drawn = await canvas();
       await user.click(await within(drawn).findByText(/priority: medium/i));
       await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
       const picker = await screen.findByRole("dialog", { name: "Add" });
-      await user.click(within(picker).getByRole("button", { name: "Group" }));
-      // Adding put the group after Priority and selected it; Priority again.
+      await user.click(within(picker).getByRole("button", { name: /^row/i }));
+      // Adding put the row after Priority and selected it; Priority again.
       await user.click(within(drawn).getByText(/priority: medium/i));
       const [empty] = within(drawn).getAllByText(/drop a part here/i);
       await user.hover(empty);
-      expect(screen.getByRole("button", { name: /add to group/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /add to row/i })).toBeInTheDocument();
 
       await grab(/move priority/i);
       under(empty, () => firePointer("pointerUp", window, 1));
@@ -477,7 +479,7 @@ describe("LayoutEditor", () => {
         ((card as LayoutNode | undefined)?.children?.[1] as LayoutNode | undefined)?.children?.[0]
       ).toEqual({
         type: "stack",
-        props: { align: "start" },
+        props: { direction: "row", wrap: true },
         children: [{ type: "field", props: { field: "priority" } }],
       });
     });
@@ -531,22 +533,57 @@ describe("LayoutEditor", () => {
       expect(JSON.stringify(saved("task"))).not.toContain('"order"');
     });
 
-    it("adds a section where it was asked for, titled as typed", async () => {
+    it("places a property on its own", async () => {
       const { user } = editor("task");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
       );
       await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
-      await user.click(await screen.findByRole("button", { name: "Section" }));
-      await user.type(screen.getByLabelText(/^title$/i), "Planning{Enter}");
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "Add" })).getByRole("button", {
+          name: /^effort/i,
+        })
+      );
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       await waitFor(() => expect(sent).toHaveLength(1));
       expect((saved("task")?.side as LayoutNode[] | undefined)?.at(-1)).toEqual({
+        type: "field",
+        props: { field: "property:12" },
+      });
+    });
+
+    it("adds accordions where asked for, each named by typing over its title", async () => {
+      const { user } = editor("task");
+
+      await user.click(
+        await within(await outline()).findByRole("button", { name: "Side", pressed: false })
+      );
+      await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
+      const picker = await screen.findByRole("dialog", { name: "Add" });
+      // The search narrows what is offered.
+      await user.type(within(picker).getByRole("textbox", { name: /search/i }), "acc");
+      expect(within(picker).queryByRole("button", { name: /^row/i })).not.toBeInTheDocument();
+      await user.click(within(picker).getByRole("button", { name: /^accordion/i }));
+      // Its title is selected as it opens, so typing names it.
+      await user.keyboard("Planning{Enter}");
+      // Another, added while the first is still selected, is named the same way.
+      await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "Add" })).getByRole("button", {
+          name: /^accordion/i,
+        })
+      );
+      await user.keyboard("Later{Enter}");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(sent).toHaveLength(1));
+      // The second went into the first, which was selected.
+      expect((saved("task")?.side as LayoutNode[] | undefined)?.at(-1)).toEqual({
         type: "section",
         props: { title: "Planning" },
-        children: [],
+        children: [{ type: "section", props: { title: "Later" }, children: [] }],
       });
     });
 

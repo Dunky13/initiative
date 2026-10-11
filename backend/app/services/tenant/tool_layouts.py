@@ -30,6 +30,7 @@ from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import (
     MAX_DEFINITION_BYTES,
     PLUGIN_FIELD_PREFIX,
+    PROPERTY_FIELD_PREFIX,
     MAX_DEPTH,
     MAX_NODES,
     MAX_PLUGIN_PARTS,
@@ -193,7 +194,8 @@ def _within_limits(stored: dict[str, Any], roots: list[Any], loose: int) -> None
 
 def _drawn_on(part: Any, kind: str) -> bool:
     """Whether a kind of detail draws the part: one of its own parts, or one of
-    its fields. A plug-in's field is drawn where its parts are."""
+    its fields. A plug-in's field is drawn where its parts are, and a single
+    property where its properties are."""
     if part.type not in DETAIL_PARTS[kind]:
         return False
     if not isinstance(part, DetailFieldPart):
@@ -201,6 +203,8 @@ def _drawn_on(part: Any, kind: str) -> bool:
     field = getattr(part.props.field, "value", part.props.field)
     if field.startswith(PLUGIN_FIELD_PREFIX):
         return "plugin" in DETAIL_PARTS[kind]
+    if field.startswith(PROPERTY_FIELD_PREFIX):
+        return "properties" in DETAIL_PARTS[kind]
     return field in DETAIL_FIELDS[kind]
 
 

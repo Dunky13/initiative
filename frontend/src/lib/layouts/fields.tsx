@@ -55,7 +55,8 @@ export type FieldKind =
 
 /** A property's field, by its definition id: what a view stores, so renaming
  *  the property keeps every view that shows it. */
-export const propertyFieldId = (definitionId: number) => `property:${definitionId}`;
+export const PROPERTY_FIELD_PREFIX = "property:";
+export const propertyFieldId = (definitionId: number) => `${PROPERTY_FIELD_PREFIX}${definitionId}`;
 
 /** Anything a view can show about an item. */
 export type FieldDef = {
@@ -95,7 +96,14 @@ export type LayoutEnv = {
 // The namespaces a layout's names are in, loaded together so none shows as a
 // key: an event's fields are named in `calendars`, whether or not an event is
 // drawn beside them.
-export const LAYOUT_NAMESPACES = ["projects", "tasks", "dates", "relations", "calendars"] as const;
+export const LAYOUT_NAMESPACES = [
+  "projects",
+  "layouts",
+  "tasks",
+  "dates",
+  "relations",
+  "calendars",
+] as const;
 
 /** The env of a project's views: one community, and its tasks' pages. */
 export const useProjectLayoutEnv = (taskHref: (taskId: number) => string): LayoutEnv => {

@@ -15,12 +15,24 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { EyeOff, FileText, GripVertical, LayoutList, Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  Columns2,
+  EyeOff,
+  FileText,
+  GripVertical,
+  LayoutList,
+  ListCollapse,
+  type LucideIcon,
+  Plus,
+  Search,
+  Square,
+} from "lucide-react";
+import { type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LAYOUT_REGIONS } from "@/lib/layouts/detailLayout";
 import {
@@ -58,8 +70,46 @@ type PickerPlugin = {
   parts: { id: string; name: string; description?: string }[];
 };
 
-/** A part the picker offers beside the fields, under the group it names. */
-type PickerPart = { group: "builtin" | "properties" | "layout"; label: string; node: LayoutNode };
+/** A part the picker offers beside the fields: a layout block, drawn as a
+ *  tile with its icon and what it does, or one of the tool's panels. */
+type PickerPart = {
+  group: "layout" | "panel";
+  label: string;
+  node: LayoutNode;
+  icon?: LucideIcon;
+  description?: string;
+};
+
+/** The layout blocks: an accordion opens and closes under its title, a box
+ *  groups what it holds, and a row puts it side by side. */
+const LAYOUT_BLOCKS = {
+  accordion: { icon: ListCollapse },
+  box: { icon: Square },
+  row: { icon: Columns2 },
+} as const;
+
+const block = (
+  name: keyof typeof LAYOUT_BLOCKS,
+  node: LayoutNode,
+  translate: TranslateFn
+): PickerPart => ({
+  group: "layout",
+  label: translate(`layouts:blocks.${name}`),
+  description: translate(`layouts:blocks.${name}Help`),
+  icon: LAYOUT_BLOCKS[name].icon,
+  node,
+});
+
+/** A new row as a card or a detail draws one: side by side, wrapping when
+ *  narrow. Each is its own node, as the editor knows a part by its node. */
+const row = (): LayoutNode => ({
+  type: "stack",
+  props: { direction: "row", wrap: true },
+  children: [],
+});
+
+/** The title an accordion is added with, selected so typing names it. */
+export const accordionTitle = (translate: TranslateFn) => translate("layouts:blocks.accordion");
 
 /** What Add offers where something is added: the fields, each plug-in's
  *  parts, and the other parts. */
@@ -92,27 +142,23 @@ export const listChoices = (
     })),
     parts: board
       ? [
+          block("row", row(), translate),
           ...(holdsPart(card, "properties")
             ? []
             : [
                 {
-                  group: "properties" as const,
-                  label: translate("layoutEditor.allProperties"),
+                  group: "panel" as const,
+                  label: translate("layouts:allProperties"),
                   node: { type: "properties" },
                 },
               ]),
-          {
-            group: "layout" as const,
-            label: translate("layoutEditor.group"),
-            node: { type: "stack", props: { align: "start" }, children: [] },
-          },
         ]
       : [],
   };
 };
 
-/** What a task's detail can add: its fields not placed, its own parts once
- *  each, plug-in parts, sections and groups. */
+/** What a detail can add: the layout blocks, its fields not placed, its own
+ *  parts once each, and plug-in parts. */
 export const detailChoices = (
   detail: LayoutNode,
   { spec, words }: EditableDetail,
@@ -126,6 +172,7 @@ export const detailChoices = (
       (field) =>
         !named.has(field.id) &&
         ((field.source === "builtin" && spec.detailFields.has(field.id)) ||
+          field.source === "property" ||
           field.source === "plugin")
     ),
     plugins: plugins.map((plugin) => ({
@@ -133,32 +180,29 @@ export const detailChoices = (
       parts: addablePluginParts(detail, plugin.id, plugin.parts),
     })),
     parts: [
+      block(
+        "accordion",
+        { type: "section", props: { title: accordionTitle(translate) }, children: [] },
+        translate
+      ),
+      block("box", { type: "section", children: [] }, translate),
+      block("row", row(), translate),
       ...spec.ownParts
         .filter((type) => !holdsPart(detail, type))
         .map((type) => ({
-          group: "builtin" as const,
-          label: translate(`${words.parts}.parts.${type}`),
+          group: "panel" as const,
+          label: translate(`${words.parts}parts.${type}`),
           node: { type },
         })),
       ...(holdsPart(detail, "properties")
         ? []
         : [
             {
-              group: "properties" as const,
-              label: translate("layoutEditor.allProperties"),
+              group: "panel" as const,
+              label: translate("layouts:allProperties"),
               node: { type: "properties" },
             },
           ]),
-      {
-        group: "layout" as const,
-        label: translate("layoutEditor.section"),
-        node: { type: "section", children: [] },
-      },
-      {
-        group: "layout" as const,
-        label: translate("layoutEditor.group"),
-        node: { type: "stack", children: [] },
-      },
     ],
   };
 };
@@ -186,7 +230,7 @@ export const usePartLabel = (
   fields: ReadonlyMap<string, FieldDef>,
   plugins: ReadonlyMap<number, PluginOnItems>,
   /** Where the names of the open detail's own parts are. */
-  partWords = "layoutEditor"
+  partWords = "layouts:"
 ) => {
   const { t } = useTranslation(LAYOUT_NAMESPACES);
   const translate = t as TranslateFn;
@@ -196,36 +240,36 @@ export const usePartLabel = (
   const partLabel = (node: LayoutNode): string => {
     switch (node.type) {
       case "card":
-        return translate("layoutEditor.card");
+        return translate("layouts:card");
       case "stack":
         return node.props?.direction === "row"
-          ? translate("layoutEditor.row")
-          : translate("layoutEditor.group");
-      // An untitled section is told apart by what it starts with.
+          ? translate("layouts:row")
+          : translate("layouts:group");
+      // An accordion by its title; a box by what it starts with.
       case "section": {
         if (typeof node.props?.title === "string" && node.props.title) return node.props.title;
         const [first] = node.children ?? [];
         return first
-          ? translate("layoutEditor.sectionWith", { name: partLabel(first) })
-          : translate("layoutEditor.section");
+          ? translate("layouts:boxWith", { name: partLabel(first) })
+          : translate("layouts:blocks.box");
       }
       case "properties":
-        return translate("layoutEditor.allProperties");
+        return translate("layouts:allProperties");
       case "plugin": {
         const plugin = pickerPlugins.find((each) => each.id === Number(node.props?.plugin));
         const part = plugin?.parts.find((each) => each.id === node.props?.part);
-        return part?.name ?? translate("layoutEditor.missingPart");
+        return part?.name ?? translate("layouts:missingPart");
       }
       case "field": {
         const field = fields.get(String(node.props?.field));
-        return field ? labelOf(field) : translate("layoutEditor.missingField");
+        return field ? labelOf(field) : translate("layouts:missingField");
       }
       case "header":
       case "main":
       case "side":
-        return translate(`layoutEditor.parts.${node.type}`);
+        return translate(`layouts:parts.${node.type}`);
       default:
-        return translate(`${partWords}.parts.${node.type}`);
+        return translate(`${partWords}parts.${node.type}`);
     }
   };
   return { labelOf, partLabel, pickerPlugins };
@@ -281,7 +325,7 @@ export const ListLayoutOutline = ({
   };
 
   return (
-    <nav aria-label={translate("layoutEditor.outline")} className="flex h-full flex-col">
+    <nav aria-label={translate("layouts:outline")} className="flex h-full flex-col">
       <div className="flex-1 space-y-1 overflow-y-auto p-3">
         <OutlineRow
           id="layout"
@@ -308,7 +352,7 @@ export const ListLayoutOutline = ({
               partLabel={partLabel}
               hideAction={(node) =>
                 removable(node, fields)
-                  ? translate("layoutEditor.hide", { name: partLabel(node) })
+                  ? translate("layouts:hide", { name: partLabel(node) })
                   : null
               }
               selection={selection}
@@ -320,12 +364,12 @@ export const ListLayoutOutline = ({
         {layout === "table" ? (
           <DndContext sensors={sensors} onDragEnd={onColumnDragEnd}>
             <p className="px-2 pt-2 font-medium text-muted-foreground text-xs">
-              {translate("layoutEditor.columns")}
+              {translate("layouts:columns")}
             </p>
             <SortableContext items={columns} strategy={verticalListSortingStrategy}>
               {columns.map((id) => {
                 const field = fields.get(id);
-                const label = field ? labelOf(field) : translate("layoutEditor.missingField");
+                const label = field ? labelOf(field) : translate("layouts:missingField");
                 return (
                   <OutlineRow
                     key={id}
@@ -339,7 +383,7 @@ export const ListLayoutOutline = ({
                       field?.hideable === false
                         ? undefined
                         : {
-                            label: translate("layoutEditor.hide", { name: label }),
+                            label: translate("layouts:hide", { name: label }),
                             run: () => edits.removeColumn(id),
                           }
                     }
@@ -392,7 +436,7 @@ export const DetailLayoutOutline = ({
   const translate = t as TranslateFn;
   const { labelOf, partLabel } = usePartLabel(fields, plugins, of.words.parts);
   return (
-    <nav aria-label={translate("layoutEditor.outline")} className="flex h-full flex-col">
+    <nav aria-label={translate("layouts:outline")} className="flex h-full flex-col">
       <div className="flex-1 space-y-1 overflow-y-auto p-3">
         <OutlineRow
           id="layout"
@@ -410,7 +454,7 @@ export const DetailLayoutOutline = ({
           hideAction={(node) =>
             FIXED.has(node.type) || !removable(node, fields)
               ? null
-              : translate("layoutEditor.hide", { name: partLabel(node) })
+              : translate("layouts:hide", { name: partLabel(node) })
           }
           selection={selection}
           edits={edits}
@@ -521,7 +565,7 @@ const PartTree = ({
 
 /** Where a dragged row goes to the end of a group. */
 const EndSlot = ({ id, depth, empty }: { id: string; depth: number; empty: boolean }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <div
@@ -532,7 +576,7 @@ const EndSlot = ({ id, depth, empty }: { id: string; depth: number; empty: boole
       )}
       style={{ paddingLeft: `${depth * 0.75 + 1.75}rem` }}
     >
-      {empty ? t("layoutEditor.empty") : t("layoutEditor.dropHere")}
+      {empty ? t("layouts:empty") : t("layouts:dropHere")}
     </div>
   );
 };
@@ -560,7 +604,7 @@ const OutlineRow = ({
   fixed?: boolean;
   locked?: boolean;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled: fixed || locked,
@@ -584,7 +628,7 @@ const OutlineRow = ({
         <button
           type="button"
           className="flex h-7 w-6 cursor-grab items-center justify-center text-muted-foreground disabled:cursor-not-allowed"
-          aria-label={t("layoutEditor.move", { name: label })}
+          aria-label={t("layouts:move", { name: label })}
           disabled={locked}
           {...attributes}
           {...listeners}
@@ -617,18 +661,14 @@ const OutlineRow = ({
   );
 };
 
-type PickerGroupEntry = {
-  key: string;
-  heading: string;
-  fields: FieldDef[];
-  plugin: number;
-  plugins: PickerPlugin["parts"];
-  parts: PickerPart[];
-};
+/** Whether any of what is shown for an item holds what was searched for. */
+const matches = (query: string, ...shown: (string | undefined)[]) =>
+  !query || shown.some((text) => text?.toLocaleLowerCase().includes(query));
 
-/** What can be added, shown as things rather than ids: fields and parts by
- *  where they come from, each plug-in's under its name, and the layout
- *  parts. Opened from the outline's Add, or from a point on the canvas. */
+/** What can be added, shown as things rather than ids: the layout blocks as
+ *  tiles, then every field in one list, each with where it comes from, then
+ *  the panels, the tool's and each plug-in's. A search narrows all of it.
+ *  Opened from the outline's Add, or from a point on the canvas. */
 export const AddPicker = ({
   choices: { fields, plugins, parts },
   labelOf,
@@ -645,77 +685,113 @@ export const AddPicker = ({
   trigger?: ReactNode;
   onOpenChange?: (open: boolean) => void;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const [open, setOpenState] = useState(false);
+  const [search, setSearch] = useState("");
   const setOpen = (next: boolean) => {
     setOpenState(next);
+    if (!next) setSearch("");
     onOpenChange?.(next);
   };
-  const own = (group: PickerPart["group"]) => parts.filter((part) => part.group === group);
-  const groups: PickerGroupEntry[] = [
-    {
-      key: "builtin",
-      heading: t("layoutEditor.builtIn"),
-      fields: fields.filter((field) => field.source === "builtin"),
-      plugin: 0,
-      plugins: [],
-      parts: own("builtin"),
-    },
-    {
-      key: "properties",
-      heading: t("layoutEditor.properties"),
-      fields: fields.filter((field) => field.source === "property"),
-      plugin: 0,
-      plugins: [],
-      parts: own("properties"),
-    },
-    ...plugins.map((plugin) => ({
-      key: `plugin:${plugin.id}`,
-      heading: plugin.name,
-      fields: fields.filter((field) => field.plugin?.install === plugin.id),
-      plugin: plugin.id,
-      plugins: plugin.parts,
-      parts: [],
-    })),
-    {
-      key: "layout",
-      heading: t("layoutEditor.layoutParts"),
-      fields: [],
-      plugin: 0,
-      plugins: [],
-      parts: own("layout"),
-    },
-  ].filter((group) => group.fields.length + group.plugins.length + group.parts.length > 0);
+  const query = search.trim().toLocaleLowerCase();
+  const pluginName = new Map(plugins.map((plugin) => [plugin.id, plugin.name]));
+  const sourceOf = (field: FieldDef) =>
+    field.source === "plugin"
+      ? (pluginName.get(field.plugin?.install ?? 0) ?? "")
+      : t(field.source === "property" ? "layouts:fromProperty" : "layouts:builtIn");
+  const blocks = parts.filter(
+    (part) => part.group === "layout" && matches(query, part.label, part.description)
+  );
+  const shownFields = fields.filter((field) => matches(query, labelOf(field), sourceOf(field)));
+  const panels = parts.filter((part) => part.group === "panel" && matches(query, part.label));
+  const pluginPanels = plugins
+    .map((plugin) => ({
+      ...plugin,
+      parts: plugin.parts.filter((part) =>
+        matches(query, part.name, part.description, plugin.name)
+      ),
+    }))
+    .filter((plugin) => plugin.parts.length > 0);
+  const offers =
+    parts.length + fields.length + plugins.reduce((count, each) => count + each.parts.length, 0);
+  const found = blocks.length + shownFields.length + panels.length + pluginPanels.length;
+  // A pick leaves focus where adding put it (a new accordion's title), rather
+  // than back on Add; closing without one returns it there.
+  const picked = useRef(false);
   const pick = (run: () => void) => {
+    picked.current = true;
     run();
     setOpen(false);
   };
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild disabled={groups.length === 0 || locked}>
+      <PopoverTrigger asChild disabled={offers === 0 || locked}>
         {trigger ?? (
           <Button type="button" variant="outline" size="sm" className="w-full">
             <Plus className="h-4 w-4" />
-            {t("layoutEditor.add")}
+            {t("layouts:add")}
           </Button>
         )}
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="max-h-96 w-72 overflow-y-auto p-2"
-        aria-label={t("layoutEditor.add")}
+        className="max-h-[28rem] w-96 overflow-y-auto p-2"
+        aria-label={t("layouts:add")}
+        onCloseAutoFocus={(event) => {
+          if (picked.current) event.preventDefault();
+          picked.current = false;
+        }}
       >
-        {groups.map((group) => (
-          <PickerGroup key={group.key} heading={group.heading}>
-            {group.parts.map((part) => (
-              <PickerItem key={part.label} onClick={() => pick(() => onNode(part.node))}>
-                {part.label}
-              </PickerItem>
-            ))}
-            {group.fields.map((field) => {
+        <div className="relative mb-2">
+          <Search
+            className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("layouts:search")}
+            aria-label={t("layouts:search")}
+            className="pl-8"
+            autoFocus
+          />
+        </div>
+        {blocks.length > 0 ? (
+          <PickerGroup heading={t("layouts:layoutParts")}>
+            <div className="grid grid-cols-fill-24/3 gap-1">
+              {blocks.map((part) => {
+                const Icon = part.icon;
+                return (
+                  <button
+                    key={part.label}
+                    type="button"
+                    className="flex flex-col items-center gap-1 rounded-md border p-2 text-center text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                    title={part.description}
+                    onClick={() => pick(() => onNode(part.node))}
+                  >
+                    {Icon ? (
+                      <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                    ) : null}
+                    <span>{part.label}</span>
+                    {part.description ? (
+                      <span className="text-muted-foreground text-xs">{part.description}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </PickerGroup>
+        ) : null}
+        {shownFields.length > 0 ? (
+          <PickerGroup heading={t("layouts:fieldsGroup")}>
+            {shownFields.map((field) => {
               const Icon = field.icon;
               return (
-                <PickerItem key={field.id} onClick={() => pick(() => onField(field))}>
+                <PickerItem
+                  key={field.id}
+                  note={sourceOf(field)}
+                  onClick={() => pick(() => onField(field))}
+                >
                   {Icon ? (
                     <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   ) : null}
@@ -723,17 +799,33 @@ export const AddPicker = ({
                 </PickerItem>
               );
             })}
-            {group.plugins.map((part) => (
+          </PickerGroup>
+        ) : null}
+        {panels.length > 0 ? (
+          <PickerGroup heading={t("layouts:panels")}>
+            {panels.map((part) => (
+              <PickerItem key={part.label} onClick={() => pick(() => onNode(part.node))}>
+                {part.label}
+              </PickerItem>
+            ))}
+          </PickerGroup>
+        ) : null}
+        {pluginPanels.map((plugin) => (
+          <PickerGroup key={`plugin:${plugin.id}`} heading={plugin.name}>
+            {plugin.parts.map((part) => (
               <PickerItem
                 key={`part:${part.id}`}
                 description={part.description}
-                onClick={() => pick(() => onPart(group.plugin, part.id))}
+                onClick={() => pick(() => onPart(plugin.id, part.id))}
               >
                 {part.name}
               </PickerItem>
             ))}
           </PickerGroup>
         ))}
+        {found === 0 ? (
+          <p className="px-2 py-3 text-muted-foreground text-sm">{t("layouts:noMatches")}</p>
+        ) : null}
       </PopoverContent>
     </Popover>
   );
@@ -748,10 +840,13 @@ const PickerGroup = ({ heading, children }: { heading: string; children: ReactNo
 
 const PickerItem = ({
   description,
+  note,
   onClick,
   children,
 }: {
   description?: string;
+  /** Where it comes from, set apart at the end of the row. */
+  note?: string;
   onClick: () => void;
   children: ReactNode;
 }) => (
@@ -760,7 +855,10 @@ const PickerItem = ({
     className="flex w-full flex-col items-start rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
     onClick={onClick}
   >
-    <span className="flex items-center gap-2">{children}</span>
+    <span className="flex w-full items-center gap-2">
+      {children}
+      {note ? <span className="ml-auto truncate text-muted-foreground text-xs">{note}</span> : null}
+    </span>
     {description ? <span className="text-muted-foreground text-xs">{description}</span> : null}
   </button>
 );

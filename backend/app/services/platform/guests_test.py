@@ -763,7 +763,7 @@ async def test_an_invite_naming_an_archived_initiative_is_withdrawn(
     assert await session.get(GuildInvite, invite_id) is None
 
 
-@pytest.mark.parametrize("way", ["removed", "expires"])
+@pytest.mark.parametrize("way", ["leaves", "removed", "expires"])
 async def test_a_guest_given_only_an_item_keeps_no_grant_on_leaving(
     client, acting_user, session, way
 ):
@@ -781,7 +781,12 @@ async def test_a_guest_given_only_an_item_keeps_no_grant_on_leaving(
     await session.commit()
     guild_id, guest_id = a.guild.id, guest.id
 
-    if way == "removed":
+    if way == "leaves":
+        response = await client.delete(
+            f"/api/v1/communities/{guild_id}/leave", headers=get_auth_headers(guest)
+        )
+        assert response.status_code == 204, response.text
+    elif way == "removed":
         response = await client.delete(a.g(f"/users/{guest_id}"), headers=a.headers)
         assert response.status_code == 204, response.text
     else:
@@ -794,3 +799,23 @@ async def test_a_guest_given_only_an_item_keeps_no_grant_on_leaving(
             select(ResourceGrant.id).where(ResourceGrant.user_id == guest_id)
         )
     ).all() == []
+
+
+async def test_a_guest_can_leave(client, acting_user, session):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    await _platform(session)
+    guest = await create_guest(session, a.guild)
+    await create_resource_grant(session, a.project, user=guest)
+    guild_id, guest_id = a.guild.id, guest.id
+
+    response = await client.delete(
+        f"/api/v1/communities/{guild_id}/leave", headers=get_auth_headers(guest)
+    )
+
+    assert response.status_code == 204, response.text
+    assert (
+        await guilds_service.get_membership(
+            session, guild_id=guild_id, user_id=guest_id
+        )
+        is None
+    )

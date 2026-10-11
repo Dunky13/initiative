@@ -140,7 +140,7 @@ const stackClassName = ({ direction, gap = "xs", wrap, align, tone }: StackProps
 const emptyWhileEdited = (node: LayoutNode, view: LayoutContext): ReactNode =>
   view.editing && !node.children?.length ? (
     <div className="flex min-h-10 w-full items-center justify-center rounded-md border border-dashed px-2 text-center text-muted-foreground text-xs">
-      {view.env.t("layoutEditor.emptyGroup")}
+      {view.env.t("layouts:emptyGroup")}
     </div>
   ) : null;
 

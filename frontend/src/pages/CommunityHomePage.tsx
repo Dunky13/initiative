@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 
 import { CommunityLocationLine } from "@/components/communities/CommunityLocationLine";
 import { CommunityBannerBadges } from "@/components/communityHome/CommunityBannerBadges";
+import { CommunityComingUp } from "@/components/communityHome/CommunityComingUp";
 import { CommunityHomeEmptyState } from "@/components/communityHome/CommunityHomeEmptyState";
 import { CommunityRecentComments } from "@/components/communityHome/CommunityRecentComments";
 import { InitiativeDirectory } from "@/components/communityHome/InitiativeDirectory";
@@ -243,6 +244,9 @@ export function CommunityHomePage() {
 
             {/* Community-wide, so it stays put as the rail switches the table's tool. */}
             <CommunityRecentComments />
+
+            {/* The week ahead, community-wide like the comments above it. */}
+            <CommunityComingUp />
           </>
         )}
 

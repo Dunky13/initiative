@@ -82,11 +82,11 @@ export const LayoutPresets = ({
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <h3 className="font-medium text-sm">{translate("layoutEditor.presets.heading")}</h3>
-        <p className="text-muted-foreground text-xs">{translate("layoutEditor.presets.help")}</p>
+        <h3 className="font-medium text-sm">{translate("layouts:presets.heading")}</h3>
+        <p className="text-muted-foreground text-xs">{translate("layouts:presets.help")}</p>
       </div>
       {presets.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{translate("layoutEditor.presets.none")}</p>
+        <p className="text-muted-foreground text-sm">{translate("layouts:presets.none")}</p>
       ) : (
         <ul className="space-y-1">
           {presets.map((preset, index) => {
@@ -99,7 +99,7 @@ export const LayoutPresets = ({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  aria-label={translate("layoutEditor.presets.edit", { name })}
+                  aria-label={translate("layouts:presets.edit", { name })}
                   onClick={() => setOpen({ index })}
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -109,7 +109,7 @@ export const LayoutPresets = ({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  aria-label={translate("layoutEditor.presets.moveUp", { name })}
+                  aria-label={translate("layouts:presets.moveUp", { name })}
                   disabled={index === 0}
                   onClick={() => move(index, -1)}
                 >
@@ -120,7 +120,7 @@ export const LayoutPresets = ({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  aria-label={translate("layoutEditor.presets.moveDown", { name })}
+                  aria-label={translate("layouts:presets.moveDown", { name })}
                   disabled={index === presets.length - 1}
                   onClick={() => move(index, 1)}
                 >
@@ -131,7 +131,7 @@ export const LayoutPresets = ({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  aria-label={translate("layoutEditor.presets.remove", { name })}
+                  aria-label={translate("layouts:presets.remove", { name })}
                   onClick={() => change(presets.filter((_, each) => each !== index))}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -149,11 +149,11 @@ export const LayoutPresets = ({
         onClick={() => setOpen({ index: null })}
       >
         <Plus className="h-4 w-4" />
-        {translate("layoutEditor.presets.add")}
+        {translate("layouts:presets.add")}
       </Button>
       {presets.length >= MAX_PRESETS ? (
         <p className="text-muted-foreground text-xs">
-          {translate("layoutEditor.presets.full", { count: MAX_PRESETS })}
+          {translate("layouts:presets.full", { count: MAX_PRESETS })}
         </p>
       ) : null}
       {open ? (
@@ -233,14 +233,12 @@ const PresetDialog = ({
         >
           <DialogHeader>
             <DialogTitle>
-              {translate(
-                preset ? "layoutEditor.presets.editTitle" : "layoutEditor.presets.addTitle"
-              )}
+              {translate(preset ? "layouts:presets.editTitle" : "layouts:presets.addTitle")}
             </DialogTitle>
-            <DialogDescription>{translate("layoutEditor.presets.dialogHelp")}</DialogDescription>
+            <DialogDescription>{translate("layouts:presets.dialogHelp")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="preset-name">{translate("layoutEditor.presets.name")}</Label>
+            <Label htmlFor="preset-name">{translate("layouts:presets.name")}</Label>
             <Input
               id="preset-name"
               value={name}

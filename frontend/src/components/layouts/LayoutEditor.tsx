@@ -227,7 +227,7 @@ export const LayoutEditor = ({
   initialKind?: string;
   onClose: () => void;
 }) => {
-  const { t, i18n } = useTranslation(["projects", "common"]);
+  const { t, i18n } = useTranslation(["projects", "layouts", "common"]);
   const translate = t as TranslateFn;
   const wide = atLeast(useWidthClass(), "md");
   const [base, setBase] = useState(() => draftOf(set, details));
@@ -483,7 +483,7 @@ export const LayoutEditor = ({
     save.mutate(changesFrom(base, draft), {
       onSuccess: (stored) => {
         if (stored) adopt(stored);
-        toast.success(t("layoutEditor.saved"));
+        toast.success(t("layouts:saved"));
       },
     });
 
@@ -521,14 +521,14 @@ export const LayoutEditor = ({
       className="fixed inset-0 z-50 flex flex-col bg-background"
       role="dialog"
       aria-modal="true"
-      aria-label={t("layoutEditor.title")}
+      aria-label={t("layouts:title")}
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={t("layoutEditor.close")}
+          aria-label={t("layouts:close")}
           onClick={close}
         >
           <X className="h-4 w-4" />
@@ -541,7 +541,7 @@ export const LayoutEditor = ({
             setSelected(LAYOUT_SELECTED);
           }}
         >
-          <SelectTrigger className="w-56" aria-label={t("layoutEditor.layout")}>
+          <SelectTrigger className="w-56" aria-label={t("layouts:layout")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -563,14 +563,14 @@ export const LayoutEditor = ({
           type="single"
           value={width}
           onValueChange={(next) => next && setWidth(next as PreviewWidth)}
-          aria-label={t("layoutEditor.previewWidth")}
+          aria-label={t("layouts:previewWidth")}
           disabled={!wide}
         >
           {WIDTHS.map(({ width: each, icon: Icon }) => (
             <ToggleGroupItem
               key={each}
               value={each}
-              aria-label={t(`layoutEditor.width.${each}`)}
+              aria-label={t(`layouts:width.${each}`)}
               className="h-8 w-8"
             >
               <Icon className="h-4 w-4" />
@@ -581,7 +581,7 @@ export const LayoutEditor = ({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={t("layoutEditor.undo")}
+          aria-label={t("layouts:undo")}
           disabled={saving || history.past.length === 0}
           onClick={() => dispatch({ type: "undo" })}
         >
@@ -591,7 +591,7 @@ export const LayoutEditor = ({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label={t("layoutEditor.redo")}
+          aria-label={t("layouts:redo")}
           disabled={saving || history.future.length === 0}
           onClick={() => dispatch({ type: "redo" })}
         >
@@ -607,15 +607,15 @@ export const LayoutEditor = ({
             setSelected(LAYOUT_SELECTED);
           }}
         >
-          {t("layoutEditor.discard")}
+          {t("layouts:discard")}
         </Button>
         <Button type="button" size="sm" disabled={!dirty || saving} onClick={commit}>
-          {saving ? t("layoutEditor.saving") : t("common:save")}
+          {saving ? t("layouts:saving") : t("common:save")}
         </Button>
       </header>
       {/* A screen too narrow to edit on keeps the draft, and says so. */}
       {!wide ? (
-        <p className="p-6 text-muted-foreground text-sm">{t("layoutEditor.compact")}</p>
+        <p className="p-6 text-muted-foreground text-sm">{t("layouts:compact")}</p>
       ) : current && project ? (
         <div className="grid min-h-0 flex-1 grid-cols-[16rem_minmax(0,1fr)_18rem]">
           <aside className="min-h-0 border-r">
@@ -646,7 +646,7 @@ export const LayoutEditor = ({
             <ListLayoutSettings
               layout={current}
               presets={presets}
-              help={`layoutEditor.listHelp.${current.kind}`}
+              help={`layouts:listHelp.${current.kind}`}
               opensFirst={draft.opensOn === current.kind}
               stored={draft.lists[current.kind] != null}
               fields={fields}
@@ -664,7 +664,7 @@ export const LayoutEditor = ({
             <ListLayoutSettings
               layout={current}
               presets={presets}
-              help="layoutEditor.calendarListHelp"
+              help="layouts:calendarListHelp"
               stored={draft.lists[current.kind] != null}
               fields={fields}
               selection={LAYOUT_SELECTED}
@@ -713,10 +713,10 @@ export const LayoutEditor = ({
           setAsking(false);
           blocker.reset?.();
         }}
-        title={t("layoutEditor.unsavedTitle")}
-        description={t(saving ? "layoutEditor.savingBody" : "layoutEditor.unsavedBody")}
-        confirmLabel={t("layoutEditor.leave")}
-        cancelLabel={t("layoutEditor.stay")}
+        title={t("layouts:unsavedTitle")}
+        description={t(saving ? "layouts:savingBody" : "layouts:unsavedBody")}
+        confirmLabel={t("layouts:leave")}
+        cancelLabel={t("layouts:stay")}
         onConfirm={() => {
           leaving.current = true;
           setAsking(false);

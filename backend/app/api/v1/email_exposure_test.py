@@ -44,7 +44,7 @@ MASKED_SHAPES = {
     "OperatorUserRead",
     "AccessGrantRead",
     "CommunityInviteRead",
-    # Inherits CommunityInviteRead's validator.
+    # A new invite with its code; it masks as CommunityInviteRead, which it is.
     "CommunityInviteCreated",
 }
 

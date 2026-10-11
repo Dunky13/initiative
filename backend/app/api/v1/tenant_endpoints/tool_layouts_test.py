@@ -67,6 +67,7 @@ _TASK: dict[str, Any] = {
                 "props": {"title": "Work", "collapsed": True},
                 "children": [
                     {"type": "field", "props": {"field": "description"}},
+                    {"type": "field", "props": {"field": "property:12"}},
                     {"type": "plugin", "props": {"plugin": 3, "part": "builds"}},
                 ],
             },
@@ -395,7 +396,6 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
         (_task({"type": "field", "props": {"field": "startDate"}}), 422, None),
-        (_task({"type": "field", "props": {"field": "property:12"}}), 422, None),
         (_task({"type": "card"}), 422, None),
         ({"kind": "gallery", "definition": {}}, 422, None),
         (_table(columns=["plugin:x:ci"]), 422, None),
@@ -422,7 +422,6 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "a preset naming someone by name",
         "a sort on a board's preset, which a board does not sort by",
         "a date alone on a task",
-        "a property alone on a task",
         "a card on a task",
         "a kind no tool draws",
         "a plug-in field by name",
@@ -670,7 +669,10 @@ async def test_the_calendar_lays_out_its_event_detail(client: AsyncClient, actin
     event = _detail(
         "calendar_event",
         {"type": "rsvp"},
-        {"type": "section", "children": [{"type": "dates"}, _field("location")]},
+        {
+            "type": "section",
+            "children": [{"type": "dates"}, _field("location"), _field("property:12")],
+        },
     )
 
     saved = await client.put(
