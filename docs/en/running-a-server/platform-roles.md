@@ -41,34 +41,32 @@ The **first person to register** on a new server becomes the **owner**. The owne
 
 ![Operator dashboard › Users](../images/running-a-server/operator-users.png)
 
-**Manage** opens everything you can change about one account:
+**Manage** opens everything you can do to one account, so the case you're acting for can be named for every one of them:
 
+- **For case** — at the top of the panel, where you can read open cases: choose the case you're acting for, and each act you take in the panel is noted on it, by handle and name of the act. Optional.
+- **Reactivate** a deactivated account.
+- **Restore account**, shown on a deleted account that hasn't been erased yet. It comes back exactly as it was — the same as if they'd signed in themselves during the window. See [How long deleted things are kept](configuration.md#how-long-deleted-things-are-kept).
+- **Reset age question** lets somebody answer the age question again, where they answered as under age. Nearly always a mistyped year. It clears the answer and nothing else — they answer again from scratch, and no birthday is recorded either way. See [Asking members their age](configuration.md#asking-members-their-age).
 - **Username** — the handle they're addressed by. The four digits after it stay as they are.
 - **Profile picture** — take one down. Putting one up stays theirs.
 - **Names in communities**, **status line** and **decorations** — clear any of them, for one that breaches your terms. Names clear in every community they're in. They can set each again.
-- **Sign out everywhere** — ends every session the account has, on every device. For an account somebody else may have got into: its holder signs in again, and whoever else had it doesn't.
-- **Cases** — how many open cases in your [operations community](#where-operations-work-lands) the account filed or is the subject of, with a link to each. A link opens only for someone with access to where the case is kept.
-- **For case** — at the top of the panel, where you can read open cases: choose the case you're acting for, and each change you make in the panel is noted on it, by handle and name of the act. Optional.
-- **API keys** — **Revoke** switches off every key the account holds, at once. The keys stay on the owner's list marked disabled, and they can make new ones.
 - **Suspend** — puts the account in time out. They can sign in, and what they get is one screen: that they're suspended, the reason you gave, and [who to contact](#who-to-contact). Their communities, their own settings and every power their platform role carries stay out of reach until you lift it. Nothing is deleted; lifting it hands everything back exactly as it was.
-- **Platform role** — move them up or down the ladder. You can't grant a rung above your own.
-
-Each of those asks for its own capability, so a moderator opening the same panel sees everything but the platform role. What's offered on each account is worked out by the server: nothing on an account above your own rung, and nothing on your own — that's yours to change from your own settings.
-
-The row's actions menu keeps the one-off jobs. It offers nothing but **Export** on an account above your own role.
-
+- **API keys** — **Revoke** switches off every key the account holds, at once. The keys stay on the owner's list marked disabled, and they can make new ones.
+- **Sign out everywhere** — ends every session the account has, on every device. For an account somebody else may have got into: its holder signs in again, and whoever else had it doesn't.
 - **Reset password** sends them a reset email.
 - **Resend verification email**, shown on an account whose address isn't confirmed yet.
-- **Reactivate** a deactivated account.
-- **Restore account**, shown on a deleted account that hasn't been erased yet. It comes back exactly as it was — the same as if they'd signed in themselves during the window. See [How long deleted things are kept](configuration.md#how-long-deleted-things-are-kept).
-- **Export** one account as CSV. **Export all as CSV**, above the list, takes the lot.
-- **Reset age question** lets somebody answer the age question again, where they answered as under age. Nearly always a mistyped year. It clears the answer and nothing else — they answer again from scratch, and no birthday is recorded either way. See [Asking members their age](configuration.md#asking-members-their-age).
 - **Turn password sign-in back on**, shown on an account marked **Password sign-in off**. Five wrong passwords or codes in fifteen minutes switch it off for fifteen minutes; a second time that day, an hour; after that, four hours each time. It comes back on by itself, or as soon as they reset their password from the emailed link, so this is for when they can't wait. Their passkeys work throughout, and so does anywhere they're already signed in. Moderator and above.
 - **Clear two-factor authentication**, shown on an account with an authenticator app set up, while signing in with a password or an emailed code is turned on — those are the only sign-ins that ask for its code. For when their phone is gone and so are the recovery codes. It takes the authenticator off, signs them out everywhere and emails them; they sign in the way they usually do and set it up again. Moderator and above.
-- **Delete user**, choosing how thorough it is:
+- **Platform role** — move them up or down the ladder. You can't grant a rung above your own.
+- **Cases** — how many open cases in your [operations community](#where-operations-work-lands) the account filed or is the subject of, with a link to each. A link opens only for someone with access to where the case is kept.
+- **Delete user**, last, choosing how thorough it is:
     - **Deactivate** — can't sign in; data preserved; reversible.
     - **Anonymize** — personal details removed; their content remains as "Deleted user"; not reversible.
     - **Hard delete** — everything removed, including authored content; not reversible.
+
+Each of those asks for its own capability, so a moderator opening the same panel sees everything but the platform role. What's offered on each account is worked out by the server: nothing on an account above your own rung, and nothing on your own — that's yours to change from your own settings.
+
+The row's actions menu keeps **Export**, one account as CSV. **Export all as CSV**, above the list, takes the lot.
 
 Before a destructive delete, Initiative makes you resolve one kind of **blocker**: an account holding a community's only [superadmin](../guides/communities.md#why-superadmin-is-separate) seat. Either the account holder hands the seat to another member first, or you [break glass](#cross-community-access-break-glass-and-time-bound-grants) into the community and, from its own settings, appoint somebody in **Settings → Users** — or, where there's nobody left to hand it to, delete the community in **Settings → Danger zone**. Deleting a community always happens there, under a grant. Content they owned is released on the way out for the community's admins to claim.
 
@@ -102,7 +100,7 @@ Ask for one, the other, or both. Each is approved and recorded on its own.
 
 Where your [operations community](#where-operations-work-lands) takes security, moderation or support cases, a request names the **case** it's for, picked from the open cases you can read. The case must be about the community you're asking for, or about none yet, in which case the request settles it. Feedback cases can't be named; breaking glass may name a case, and doesn't have to.
 
-The case hears what becomes of the grant: that it was asked for, how it was decided (an approval moves a case still waiting to be picked up into progress), each moderation act or suspension taken under it, and what it did — once an hour while it's live, and in full when it ends: what was read, counted by kind, and what was changed, listed, with who revoked it if somebody did. The case is only ever told ids, counts and the names of routes and acts, never what the community holds. A case lists its grants in its **Access** section, with **Request access** to ask for another.
+The case hears what becomes of the grant: that it was asked for, how it was decided (an approval moves a case still waiting to be picked up into progress), each moderation act or suspension taken under it, and what it did — once an hour while it's live, and in full when it ends: what was read, counted by kind, and what was changed, listed, with who revoked it if somebody did. The case is only ever told ids, counts and the names of routes and acts, never what the community holds. A case lists its grants in its **Access** section, with **Request access** to ask for another. A moderator's request from a community's row, or from a case's **Holds**, starts on **Moderate**, which reading what the platform holds takes.
 
 !!! info "A grant is never a membership"
     Whatever it reaches and whoever holds it, a grant runs out. Anything that would outlive it stays out of reach — a grantee can't answer a request to join an initiative, for instance, because the membership on the other side of that answer has no end date.

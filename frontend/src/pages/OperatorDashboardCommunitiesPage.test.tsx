@@ -870,7 +870,18 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
       expect(item.getAttribute("href")).toContain("community=7");
       expect(item.getAttribute("href")).toContain("form=request");
+      // Support doesn't moderate, so the request starts where it always did.
+      expect(item.getAttribute("href")).not.toContain("level=");
       expect(screen.queryByRole("menuitem", { name: "Break glass" })).not.toBeInTheDocument();
+    });
+
+    it("starts a moderator's request on Moderate", async () => {
+      serveWith(["request_access"]);
+      const user = mounted("moderator");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Capped Community" }));
+      const item = await screen.findByRole("menuitem", { name: "Request access" });
+      expect(item.getAttribute("href")).toContain("level=moderate");
     });
 
     it("opens breaking glass for the row's community", async () => {

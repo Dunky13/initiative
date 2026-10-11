@@ -392,6 +392,27 @@ describe("SettingsAccessGrantsPage", () => {
     expect(createRequest.mock.calls[0][0]).toMatchObject({ community_id: 9 });
   });
 
+  it.each([
+    [["access.request", "content.moderate"], "moderate"],
+    [["access.request"], "read"],
+  ])(
+    "starts on the level it was opened for, where the reader may ask for it (%s)",
+    async (capabilities, sent) => {
+      const user = userEvent.setup();
+      render(capabilities, {
+        community: 9,
+        name: "Gone Community",
+        form: "request",
+        level: "moderate",
+      });
+
+      await screen.findByRole("combobox", { name: "Community" });
+      await user.type(screen.getByLabelText(/reason/i), "a held comment");
+      await user.click(screen.getByRole("button", { name: /request access/i }));
+      expect(createRequest.mock.calls[0][0]).toMatchObject({ access_level: sent });
+    }
+  );
+
   it("starts breaking glass with the community it was opened for, and only that form", async () => {
     const user = userEvent.setup();
     render(["access.request", "data.bypass"], {
