@@ -58,7 +58,7 @@ from app.schemas.tenant.tool_layout import (
 #: The parts any detail lays out with.
 _LAYOUT_PARTS = frozenset({"stack", "section", "field", "properties"})
 
-#: The parts each kind of detail draws. Plug-ins draw on tasks so far.
+#: The parts each kind of detail draws. A detail with ``plugin`` draws plug-ins.
 DETAIL_PARTS: dict[str, frozenset[str]] = {
     "task": _LAYOUT_PARTS
     | {
@@ -72,7 +72,8 @@ DETAIL_PARTS: dict[str, frozenset[str]] = {
         "case",
         "comments",
     },
-    "calendar_event": _LAYOUT_PARTS | {"dates", "rsvp", "actions", "relations"},
+    "calendar_event": _LAYOUT_PARTS
+    | {"plugin", "dates", "rsvp", "actions", "relations"},
 }
 
 #: The built-in fields each kind of detail edits.

@@ -74,6 +74,7 @@ __all__ = [
     "read",
     "reconcile_shown",
     "shown_keys",
+    "values_on",
     "write",
 ]
 
@@ -636,22 +637,40 @@ def _compared_number(value: Any) -> Any:
 
 
 async def annotate_plugin_values(session: AsyncSession, tasks: Sequence[Task]) -> None:
-    """Set ``.plugin_values`` on every task: the shown values of the installs
-    whose actions the reader could run there — on, placed in the task's
-    initiative with a role the reader holds (or the reader its admin), and
-    the reader old enough for the plug-in (``guild_plugins.surface_access``).
-    One query for the page.
+    """Set ``.plugin_values`` on every task (:func:`values_on`). Each task's
+    project is loaded."""
+    found = await values_on(
+        session,
+        "task",
+        {
+            task.id: task.project.initiative_id
+            for task in tasks
+            if task.id is not None and task.project is not None
+        },
+    )
+    for task in tasks:
+        object.__setattr__(task, "plugin_values", found.get(task.id or 0, []))
+
+
+async def values_on(
+    session: AsyncSession, kind: str, initiatives: Mapping[int, Optional[int]]
+) -> dict[int, list[PluginValueSummary]]:
+    """The shown values on items of one kind, by item id, given each item's
+    initiative: those of the installs whose actions the reader could run there
+    — on, placed in the item's initiative with a role the reader holds (or the
+    reader its admin), and the reader old enough for the plug-in
+    (``guild_plugins.surface_access``). One query for the page.
 
     ``session`` is the reader's, so which values it reads is the table's
-    policies' answer; which installs' values are drawn is decided here. Each
-    task's project is loaded. An installed plug-in reading tasks is drawn
-    none: it reads its own values through its metadata routes. Nor is a
+    policies' answer; which installs' values are drawn is decided here. An
+    item no initiative holds is drawn none, nor is an installed plug-in reading
+    items: it reads its own values through its metadata routes. Nor is a
     guest, who runs no plug-in."""
     context = require_actor_context(session)
     initiatives = {
-        task.id: task.project.initiative_id
-        for task in tasks
-        if task.id is not None and task.project is not None
+        item: initiative
+        for item, initiative in initiatives.items()
+        if initiative is not None
     }
     found: dict[int, list[PluginValueSummary]] = defaultdict(list)
     if initiatives and isinstance(context, GuildContext) and not context.guest:
@@ -671,7 +690,7 @@ async def annotate_plugin_values(session: AsyncSession, tasks: Sequence[Task]) -
                 PluginPlacement.install_id == PluginMetadata.install_id,
             )
             .where(
-                PluginMetadata.entity_type == "task",
+                PluginMetadata.entity_type == kind,
                 PluginMetadata.shown.is_(True),
                 GuildPlugin.enabled.is_(True),
                 tuple_(PluginMetadata.entity_id, PluginPlacement.initiative_id).in_(
@@ -681,10 +700,9 @@ async def annotate_plugin_values(session: AsyncSession, tasks: Sequence[Task]) -
             .order_by(PluginMetadata.install_id, PluginMetadata.key)
         )
         offered = _Offered(context)
-        for task_id, install_id, key, value, initiative_id, roles, minimum in rows:
+        for item_id, install_id, key, value, initiative_id, roles, minimum in rows:
             if await offered(install_id, initiative_id, roles, minimum):
-                found[task_id].append(
+                found[item_id].append(
                     PluginValueSummary(plugin_id=install_id, key=key, value=value)
                 )
-    for task in tasks:
-        object.__setattr__(task, "plugin_values", found.get(task.id or 0, []))
+    return found

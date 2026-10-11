@@ -133,6 +133,76 @@ describe("an event's page", () => {
     expect(screen.queryByRole("button", { name: /more actions/i })).not.toBeInTheDocument();
   });
 
+  it("shows a plug-in's values and runs its actions where it is placed", async () => {
+    const ran = vi.fn();
+    const on = ["calendar_event"];
+    server.use(
+      communityHttp.get("/plugins/", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 3,
+              name: "CI",
+              enabled: true,
+              definition: {
+                fields: [
+                  { key: "ci.state", name: { en: "CI" }, kind: "badge", on },
+                  { key: "ci.url", name: { en: "Build" }, kind: "link", on },
+                  { key: "task.only", name: { en: "Tasks" }, kind: "text", on: ["task"] },
+                ],
+                parts: [
+                  {
+                    id: "builds",
+                    name: { en: "Builds" },
+                    on,
+                    tree: {
+                      type: "section",
+                      children: [{ type: "field", props: { field: "ci.url" } }],
+                    },
+                  },
+                ],
+                actions: [{ id: "rerun", name: { en: "Run again" }, on, menu: true }],
+              },
+              item_initiatives: [1],
+              item_fields: ["ci.state", "ci.url", "task.only"],
+              item_parts: ["builds"],
+              item_actions: ["rerun"],
+            },
+          ],
+        })
+      ),
+      communityHttp.post("/plugins/3/actions/rerun", async ({ request }) => {
+        ran(await request.json());
+        return HttpResponse.json({ values: {} });
+      })
+    );
+    serve(
+      buildCalendarEvent({
+        id: 9,
+        title: "Standup",
+        can: { edit: false },
+        plugin_values: [
+          { plugin_id: 3, key: "ci.state", value: { text: "passing" } },
+          { plugin_id: 3, key: "ci.url", value: { url: "https://ci.example/9", text: "#9" } },
+          { plugin_id: 3, key: "task.only", value: "nope" },
+        ],
+      })
+    );
+    open();
+
+    // Its fields and its part show without being placed; the link its part
+    // shows is drawn once, and a field for tasks not at all.
+    expect(await screen.findByText("passing")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /#9/ })).toHaveLength(1);
+    expect(screen.queryByText("nope")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /more actions/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Run again" }));
+    await waitFor(() =>
+      expect(ran).toHaveBeenCalledWith({ entity_type: "calendar_event", entity_id: 9 })
+    );
+  });
+
   it("asks which dates of a repeating event a change is for, and opens the date made its own", async () => {
     const series = buildCalendarEvent({
       id: 9,

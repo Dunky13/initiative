@@ -57,6 +57,8 @@ from app.testing import (
     create_guild_plugin,
     create_project,
     create_resource_grant,
+    create_calendar,
+    create_calendar_event,
     create_task,
     create_user,
     guild_url,
@@ -1189,6 +1191,49 @@ class TestShownValues:
         )
         await session.commit()
         assert await drawn() == [], "an install not placed there"
+
+    async def test_whoever_reads_an_event_reads_its_shown_values(
+        self, client: AsyncClient, session: AsyncSession, acting_user, role_session
+    ):
+        """As on a task: the event's read carries the values of the fields the
+        install declares on events, and none of its private ones."""
+        installed = await install_plugin(
+            session,
+            acting_user,
+            role_session,
+            granted=["calendars:read"],
+            declares={
+                "fields": [
+                    {
+                        "key": "venue.room",
+                        "name": {"en": "Room"},
+                        "kind": "text",
+                        "on": ["calendar_event"],
+                    }
+                ]
+            },
+        )
+        seat = installed.seat
+        calendar = await create_calendar(session, installed.placed, seat.user)
+        event = await create_calendar_event(session, calendar, seat.user)
+        written = await client.put(
+            f"{BASE}/metadata",
+            headers=install_headers(installed, ["calendars:read"]),
+            json={
+                "entity_type": "calendar_event",
+                "entity_id": event.id,
+                "values": {"venue.room": "B2", "sync.etag": "x"},
+            },
+        )
+        assert written.status_code == 200, written.text
+
+        read = await client.get(
+            seat.g(f"/calendar-events/{event.id}"), headers=seat.headers
+        )
+        assert read.status_code == 200, read.text
+        assert read.json()["plugin_values"] == [
+            {"plugin_id": installed.plugin.id, "key": "venue.room", "value": "B2"}
+        ]
 
     async def test_a_task_list_filters_by_a_field_where_it_is_drawn(
         self, client: AsyncClient, session: AsyncSession, acting_user, role_session

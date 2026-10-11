@@ -79,7 +79,6 @@ import {
   FieldsInParts,
   fieldsInParts,
   PluginFieldOnDetail,
-  PluginPartView,
   pluginFields,
   shippedPluginParts,
   usePluginsOnItems,
@@ -610,14 +609,6 @@ const TASK_PARTS: Parts<TaskRead> = {
   relations: (_node, task) => <Relations task={task} />,
   case: (_node, task) => <Case task={task} />,
   comments: (_node, task) => <Comments task={task} />,
-  plugin: (node, task, view) => (
-    <PluginPartView
-      plugins={view.plugins}
-      pluginId={Number(node.props?.plugin)}
-      partId={String(node.props?.part)}
-      task={task}
-    />
-  ),
 };
 
 /** A task's detail, drawn from its project's layout, or as shipped. */

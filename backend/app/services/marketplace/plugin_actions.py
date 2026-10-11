@@ -97,9 +97,12 @@ async def _item_initiative(
     session: AsyncSession, kind: str, entity_id: int, context: GuildContext
 ) -> int:
     """The item's initiative, once the reader is found to read it as its own
-    routes would let them (404 or 403 otherwise)."""
+    routes would let them (404 or 403 otherwise). An item of the community's
+    own tool, which no initiative holds, has no plug-in placed on it."""
     row = await resource_access.load_kind(session, kind, entity_id, None, context)
     tool = row if KINDS[kind].parent is None else resource_access.parent_of(row)
+    if tool.initiative_id is None:
+        raise _not_offered()
     return int(tool.initiative_id)
 
 

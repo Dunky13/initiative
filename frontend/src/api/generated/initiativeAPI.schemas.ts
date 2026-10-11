@@ -1839,6 +1839,7 @@ export interface CalendarEventRead {
   overridden_fields: string[];
   skipped_starts: string[];
   extra_starts: string[];
+  plugin_values: PluginValueSummary[];
 }
 
 export type CalendarEventUpdateScope =

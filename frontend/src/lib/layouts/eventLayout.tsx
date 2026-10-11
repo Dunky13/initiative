@@ -79,6 +79,14 @@ import {
   TitleField,
 } from "./fieldEditors";
 import { PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
+import {
+  FieldsInParts,
+  fieldsInParts,
+  PluginFieldOnDetail,
+  pluginFields,
+  shippedPluginParts,
+  usePluginsOnItems,
+} from "./plugins";
 import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
 
 /** What an event's detail shares with its parts, beside the event itself. */
@@ -667,13 +675,24 @@ const FIELD_EDITORS: Record<keyof typeof EVENT_FIELDS, (props: EditorProps) => R
 };
 
 /** One field of the event, by its id, labelled in the event's own words. */
-const EventField = ({ id, event }: { id: string; event: CalendarEventRead }) => {
+const EventField = ({
+  id,
+  event,
+  view,
+}: {
+  id: string;
+  event: CalendarEventRead;
+  view: LayoutContext;
+}) => {
   const { t } = useTranslation(["calendars", "common"]);
   if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
     return (
       <PropertyEditor event={event} propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))} />
     );
   }
+  // A plug-in's value is the plug-in's to change.
+  const plugin = view.fields.get(id);
+  if (plugin?.source === "plugin") return <PluginFieldOnDetail field={plugin} item={event} />;
   if (!Object.hasOwn(FIELD_EDITORS, id)) return null;
   const Editor = FIELD_EDITORS[id as keyof typeof FIELD_EDITORS];
   return <Editor event={event} label={t(EVENT_FIELDS[id as keyof typeof EVENT_FIELDS].label)} />;
@@ -694,7 +713,9 @@ const Relations = ({ event }: { event: CalendarEventRead }) => (
 /** The parts an event's detail is drawn from. */
 const EVENT_PARTS: Parts<CalendarEventRead> = {
   ...LAYOUT_PARTS,
-  field: (node, event) => <EventField id={String(node.props?.field)} event={event} />,
+  field: (node, event, view) => (
+    <EventField id={String(node.props?.field)} event={event} view={view} />
+  ),
   dates: (_node, event) => <DatesEditor event={event} />,
   rsvp: (_node, event) => <MyAnswer event={event} />,
   properties: (_node, event) => <PropertiesEditor event={event} />,
@@ -719,24 +740,34 @@ export const EventLayoutView = ({
    *  the editor's detail tree shares. */
   editing?: boolean;
 }) => {
+  const { i18n } = useTranslation();
   const communityId = useActiveCommunityId();
   const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
-  const tree = useMemo(() => EVENT_LAYOUT.tree(layout), [layout]);
+  const plugins = usePluginsOnItems(event.initiative_id, true, "calendar_event");
+  const tree = useMemo(
+    () => EVENT_LAYOUT.tree(layout, shippedPluginParts(plugins)),
+    [layout, plugins]
+  );
   const placed = useMemo(() => placedProperties(tree), [tree]);
+  const inParts = useMemo(() => fieldsInParts(tree, plugins), [tree, plugins]);
+  // The detail's own fields draw themselves; the plug-ins' are found here.
   const view = useMemo<LayoutContext>(
     () => ({
-      fields: new Map(),
+      fields: new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field])),
+      plugins,
       variant: "detail",
       env,
       editing: editing ? indexPaths(tree) : undefined,
     }),
-    [env, editing, tree]
+    [plugins, i18n.language, env, editing, tree]
   );
   return (
     // Another event's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${event.id}`} value={context}>
       <PlacedProperties.Provider value={placed}>
-        {renderNode(tree, event, view, EVENT_PARTS)}
+        <FieldsInParts.Provider value={inParts}>
+          {renderNode(tree, event, view, EVENT_PARTS)}
+        </FieldsInParts.Provider>
       </PlacedProperties.Provider>
     </DetailContext.Provider>
   );

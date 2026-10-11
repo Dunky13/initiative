@@ -411,3 +411,34 @@ class TestShowingOnSavedDetails:
             build,
             {"type": "field", "props": {"field": f"plugin:{plugin.id}:commit"}},
         ]
+
+    async def test_placing_adds_its_event_fields_to_the_saved_event_detail(
+        self, session: AsyncSession
+    ):
+        user, guild, first, _ = await _guild_with_two_initiatives(session)
+        plugin = await create_guild_plugin(
+            session,
+            guild,
+            user,
+            definition=_on_items(("build", "task"), ("venue", "calendar_event")),
+        )
+        await route_session_to_guild(session, guild.id)
+        layout = ToolLayout(
+            initiative_id=first.id,
+            tool="calendar",
+            tool_id=None,
+            kind="calendar_event",
+            definition={"header": [], "main": [], "side": []},
+        )
+        session.add(layout)
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await set_placed_initiatives(session, plugin, {first.id})
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await session.refresh(layout)
+        assert layout.definition["side"] == [
+            {"type": "field", "props": {"field": f"plugin:{plugin.id}:venue"}}
+        ]

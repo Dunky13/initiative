@@ -126,10 +126,16 @@ export const useSetPluginScopes = (
 
 /** Run one of a plug-in's actions on a task. The plug-in does the work; the
  *  task is read again for the values it shows afterwards. */
-export const useRunPluginTaskAction = () =>
-  useCommunityMutation<PluginActionResult, { pluginId: number; actionId: string; taskId: number }>({
-    mutationFn: (communityId, { pluginId, actionId, taskId }) =>
-      runPluginAction(communityId, pluginId, actionId, { entity_type: "task", entity_id: taskId }),
-    invalidate: (_data, { taskId }) => invalidate(q.allTasks(), q.task(taskId)),
+export const useRunPluginAction = () =>
+  useCommunityMutation<
+    PluginActionResult,
+    { pluginId: number; actionId: string; kind: "task" | "calendar_event"; itemId: number }
+  >({
+    mutationFn: (communityId, { pluginId, actionId, kind, itemId }) =>
+      runPluginAction(communityId, pluginId, actionId, { entity_type: kind, entity_id: itemId }),
+    invalidate: (_data, { kind, itemId }) =>
+      kind === "task"
+        ? invalidate(q.allTasks(), q.task(itemId))
+        : invalidate(q.allCalendarEvents(), q.calendarEvent(itemId)),
     errorKey: "plugins:error",
   });

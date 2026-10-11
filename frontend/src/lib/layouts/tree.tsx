@@ -12,7 +12,7 @@ import {
   type LayoutVariant,
   propertyFieldId,
 } from "./fields";
-import { type PluginOnItems, PluginPartView } from "./plugins";
+import { type PluginItem, type PluginOnItems, PluginPartView } from "./plugins";
 import { Section } from "./section";
 
 /** A view as data: a registered part, its props, and what it holds. The same
@@ -205,6 +205,16 @@ export const LAYOUT_PARTS = {
   header: region("space-y-2 canvas-md:col-span-2"),
   main: column("canvas-md:col-start-1 canvas-md:row-start-2 canvas-md:gap-6"),
   side: column("canvas-md:col-start-2 canvas-md:row-start-2 canvas-md:gap-4"),
+  /** One of a plug-in's parts, on whatever kind of item the plug-ins were
+   *  read for. */
+  plugin: <I,>(node: LayoutNode, item: I, view: LayoutContext) => (
+    <PluginPartView
+      plugins={view.plugins}
+      pluginId={Number(node.props?.plugin)}
+      partId={String(node.props?.part)}
+      item={item as PluginItem}
+    />
+  ),
   /** A bordered group of parts, titled in the initiative's own words. */
   section: <I,>(node: LayoutNode, item: I, view: LayoutContext, parts: Parts<I>) => (
     <Section
@@ -238,14 +248,6 @@ const PARTS: Parts<LayoutItem> = {
         summary.property_id
       )
     ),
-  plugin: (node, item, view) => (
-    <PluginPartView
-      plugins={view.plugins}
-      pluginId={Number(node.props?.plugin)}
-      partId={String(node.props?.part)}
-      task={item}
-    />
-  ),
 };
 
 /** Whether a tree draws a field. */
