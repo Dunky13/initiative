@@ -9,8 +9,8 @@ default grants revoked from the two base roles. The system engine is also
 granted the sequence of ``demo_leads``. The table is new and empty, so nothing
 is backfilled.
 
-Revision ID: 20261011_0507
-Revises: 20261011_0506
+Revision ID: 20261011_0508
+Revises: 20261011_0507
 Create Date: 2026-10-11
 """
 
@@ -21,8 +21,8 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "20261011_0507"
-down_revision = "20261011_0506"
+revision = "20261011_0508"
+down_revision = "20261011_0507"
 branch_labels = None
 depends_on = None
 
