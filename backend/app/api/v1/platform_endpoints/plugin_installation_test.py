@@ -1245,6 +1245,8 @@ class TestShownValues:
             None,
         )
         assert metadata_service.forms({"value": 3, "max": 4}) == (None, 0.75)
+        # Too large to be a float, so kept with no number.
+        assert metadata_service.forms(10**400) == (None, None)
 
     async def test_only_a_shown_value_is_heard_as_a_change_to_the_task(
         self, client: AsyncClient, session: AsyncSession, acting_user, role_session
