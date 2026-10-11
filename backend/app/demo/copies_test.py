@@ -46,6 +46,7 @@ from app.testing import (
     create_initiative_member,
     create_task,
     create_user,
+    get_auth_headers,
     route_session_to_guild,
 )
 from app.testing.plugin_clients import InstalledPlugin, install_headers, install_plugin
@@ -911,3 +912,23 @@ def test_a_used_up_link_says_so_though_it_ended_then():
     assert pitches.link_state(link, now) is LinkState.used_up
     link.max_uses = None
     assert pitches.link_state(link, now) is LinkState.expired
+
+
+async def test_a_guest_invited_into_a_copy_has_no_copy_of_its_own(
+    pitch, client, session
+):
+    link, _bea, _source = pitch
+    copy_id = await copies.build_copy()
+    await _open(client, await link())
+    invited = await create_user(session)
+    await create_guild_membership(
+        session,
+        user=invited,
+        guild=await session.get(Guild, copy_id),
+        role=CommunityRole.guest,
+        guest_until=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    copy = await client.get("/api/v1/demo/copy", headers=get_auth_headers(invited))
+
+    assert copy.status_code == 404

@@ -292,8 +292,8 @@ class AccountCopy:
 
 
 async def account_copy(user_id: int) -> AccountCopy | None:
-    """The copy this account is a guest of, or ``None`` for an account that is
-    no copy's guest."""
+    """The copy made for this account, or ``None`` for an account no copy was
+    made for, a guest someone invited into one included."""
     async with cohorts.system_session(None) as session:
         row = (
             await session.exec(
@@ -306,6 +306,7 @@ async def account_copy(user_id: int) -> AccountCopy | None:
                 .join(DemoSandbox, DemoSandbox.guild_id == GuildMembership.guild_id)
                 .where(
                     GuildMembership.user_id == user_id,
+                    DemoSandbox.visitor_id == user_id,
                     GuildMembership.guest_until.is_not(None),
                 )
             )
