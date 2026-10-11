@@ -248,8 +248,10 @@ describe("LayoutEditor", () => {
     const { user } = editor("table");
 
     await user.click(await within(await outline()).findByRole("button", { name: /^add$/i }));
-    expect(await screen.findByText("CI")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^build/i }));
+    const picker = await screen.findByRole("dialog", { name: "Add" });
+    // Found by the plug-in it comes from, as the list shows it.
+    await user.type(within(picker).getByRole("textbox", { name: /search/i }), "ci");
+    await user.click(within(picker).getByRole("button", { name: /^build/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -531,7 +533,7 @@ describe("LayoutEditor", () => {
       expect(JSON.stringify(saved("task"))).not.toContain('"order"');
     });
 
-    it("adds an accordion where it was asked for, named by typing over its title", async () => {
+    it("adds accordions where asked for, each named by typing over its title", async () => {
       const { user } = editor("task");
 
       await user.click(
@@ -545,13 +547,22 @@ describe("LayoutEditor", () => {
       await user.click(within(picker).getByRole("button", { name: /^accordion/i }));
       // Its title is selected as it opens, so typing names it.
       await user.keyboard("Planning{Enter}");
+      // Another, added while the first is still selected, is named the same way.
+      await user.click(within(await outline()).getByRole("button", { name: /^add$/i }));
+      await user.click(
+        within(await screen.findByRole("dialog", { name: "Add" })).getByRole("button", {
+          name: /^accordion/i,
+        })
+      );
+      await user.keyboard("Later{Enter}");
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       await waitFor(() => expect(sent).toHaveLength(1));
+      // The second went into the first, which was selected.
       expect((saved("task")?.side as LayoutNode[] | undefined)?.at(-1)).toEqual({
         type: "section",
         props: { title: "Planning" },
-        children: [],
+        children: [{ type: "section", props: { title: "Later" }, children: [] }],
       });
     });
 

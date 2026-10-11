@@ -40,7 +40,8 @@ export type EditableDetail = {
   /** What the editor says about it, as keys in `projects`, each naming its
    *  namespace where it is another: its name, what it is, that it is as
    *  shipped, what its title and its fields are, and where its own parts'
-   *  names (`.parts`) and what each does (`.partHelp`) are. */
+   *  names (`parts`) and what each does (`partHelp`) are, as the start of their
+   *  keys. */
   words: {
     name: string;
     help: string;
@@ -75,7 +76,7 @@ const noop = () => {};
 
 /** The task's detail drawn with the project's first task. */
 const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNode }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const { user } = useAuth();
   const scopePrompt = useScopePrompt();
   const leaving = useRef(true);
@@ -97,7 +98,7 @@ const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNo
           readOnly: false,
           // Drawn here so it can be placed; a reader sees it only when they
           // cannot change the task.
-          readOnlyMessage: t("layoutEditor.noticePreview"),
+          readOnlyMessage: t("layouts:noticePreview"),
           statuses: project.statuses,
           initiativeId: project.initiativeId,
           currentUserId: user?.id,
@@ -110,7 +111,7 @@ const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNo
     );
   }
   return listed.isSuccess && first === null ? (
-    <p className="text-muted-foreground text-sm">{t("layoutEditor.noTasks")}</p>
+    <p className="text-muted-foreground text-sm">{t("layouts:noTasks")}</p>
   ) : null;
 };
 
@@ -119,7 +120,7 @@ const YEAR = 365 * 24 * 60 * 60 * 1000;
 /** The event's detail drawn with the first of the initiative's events within
  *  a year either side of today. */
 const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const leaving = useRef(true);
   const params = useMemo(() => {
     const now = Date.now();
@@ -158,7 +159,7 @@ const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layo
     );
   }
   return listed.isSuccess && first === null ? (
-    <p className="text-muted-foreground text-sm">{t("layoutEditor.noEvents")}</p>
+    <p className="text-muted-foreground text-sm">{t("layouts:noEvents")}</p>
   ) : null;
 };
 
@@ -166,12 +167,12 @@ const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layo
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
   words: {
-    name: "layoutEditor.taskLayout",
-    help: "layoutEditor.detailHelp",
-    shipped: "layoutEditor.shipped",
-    titleHelp: "layoutEditor.detailTitleHelp",
-    hiddenHelp: "layoutEditor.hiddenHelp",
-    parts: "layoutEditor",
+    name: "layouts:taskLayout",
+    help: "layouts:detailHelp",
+    shipped: "layouts:shipped",
+    titleHelp: "layouts:detailTitleHelp",
+    hiddenHelp: "layouts:hiddenHelp",
+    parts: "layouts:",
   },
   fields: taskFields,
   plugins: true,
@@ -182,12 +183,12 @@ export const taskDetail = (project: LayoutProject): EditableDetail => ({
 export const eventDetail = (initiativeId: number): EditableDetail => ({
   spec: EVENT_LAYOUT,
   words: {
-    name: "layoutEditor.eventDetail.name",
-    help: "layoutEditor.eventDetail.help",
-    shipped: "layoutEditor.eventDetail.shipped",
-    titleHelp: "layoutEditor.eventDetail.titleHelp",
-    hiddenHelp: "layoutEditor.eventDetail.hiddenHelp",
-    parts: "layoutEditor.eventDetail",
+    name: "layouts:eventDetail.name",
+    help: "layouts:eventDetail.help",
+    shipped: "layouts:eventDetail.shipped",
+    titleHelp: "layouts:eventDetail.titleHelp",
+    hiddenHelp: "layouts:eventDetail.hiddenHelp",
+    parts: "layouts:eventDetail.",
   },
   fields: eventFields,
   plugins: false,

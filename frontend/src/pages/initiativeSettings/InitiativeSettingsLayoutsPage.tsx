@@ -85,7 +85,7 @@ const ProjectLayouts = ({
   initiativeId: number;
   entry: InitiativeToolLayoutsRead;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const gp = useCommunityPath();
   const wide = atLeast(useWidthClass(), "md");
   const project = gp(toolDetailRoute(Tool.project, initiativeId, entry.tool_id));
@@ -100,7 +100,7 @@ const ProjectLayouts = ({
           <Button asChild variant="outline" size="sm">
             <Link to={editor}>
               <Pencil className="h-4 w-4" />
-              {t("layoutEditor.open")}
+              {t("layouts:open")}
             </Link>
           </Button>
         ) : null}
@@ -113,7 +113,7 @@ const ProjectLayouts = ({
 /** The calendar's event detail, which every calendar in the initiative shares,
  *  opening its editor where the reader may change it and has the room. */
 const CalendarLayouts = ({ initiativeId }: { initiativeId: number }) => {
-  const { t } = useTranslation(["initiatives", "projects"]);
+  const { t } = useTranslation(["initiatives", "projects", "layouts"]);
   const gp = useCommunityPath();
   const wide = atLeast(useWidthClass(), "md");
   const set = useToolLayouts(calendarTarget(initiativeId)).data;
@@ -132,7 +132,7 @@ const CalendarLayouts = ({ initiativeId }: { initiativeId: number }) => {
           <Button asChild variant="outline" size="sm">
             <Link to={editor}>
               <Pencil className="h-4 w-4" />
-              {t("projects:layoutEditor.open")}
+              {t("layouts:open")}
             </Link>
           </Button>
         ) : null}

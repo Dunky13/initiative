@@ -36,10 +36,10 @@ export const listLayoutLooks: Record<ListLayoutReadKind, Look> = {
   calendar: { icon: Calendar, labelKey: "tasks.viewCalendar" },
 };
 
-/** Each detail layout's icon, and its name in `projects`. */
+/** Each detail layout's icon, and its name in `layouts`. */
 export const detailLayoutLooks: Record<DetailLayoutRead["kind"], Look> = {
-  task: { icon: FileText, labelKey: "layoutEditor.taskLayout" },
-  calendar_event: { icon: CalendarDays, labelKey: "layoutEditor.eventDetail.name" },
+  task: { icon: FileText, labelKey: "layouts:taskLayout" },
+  calendar_event: { icon: CalendarDays, labelKey: "layouts:eventDetail.name" },
 };
 
 /** Any layout's icon and name. */
