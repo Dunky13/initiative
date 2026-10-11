@@ -290,16 +290,6 @@
     "archivedOn": "Archivé le {{date}}",
     "reorder": "Réordonner le projet"
   },
-  "activitySidebar": {
-    "title": "Activité du projet",
-    "activity": "Activité",
-    "expand": "Déplier le panneau d'activité",
-    "collapse": "Replier le panneau d'activité",
-    "loading": "Chargement de l'activité…",
-    "noComments": "Aucun commentaire pour l'instant.",
-    "commentedOn": "a commenté",
-    "loadMore": "Charger plus"
-  },
   "presets": {
     "label": "Préréglages",
     "incomplete": "Non terminées",

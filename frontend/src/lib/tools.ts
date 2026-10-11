@@ -483,6 +483,19 @@ export const NO_RELATIONS_PANEL: ReadonlySet<Tool> = new Set<Tool>([
 export const showsRelations = (tool: Tool): boolean => !NO_RELATIONS_PANEL.has(tool);
 
 /**
+ * Tools whose pages do NOT carry the activity drawer, and why. Stated as an
+ * exclusion, like {@link NO_RELATIONS_PANEL}, so a tool's activity is beside it
+ * by default and leaving one out has to be written down.
+ */
+export const NO_ACTIVITY_DRAWER: ReadonlySet<Tool> = new Set<Tool>([
+  // A wiki's side of the page is its tree of pages, which is how it is read.
+  Tool.wiki,
+]);
+
+/** Whether this tool's pages carry the activity drawer. */
+export const showsActivity = (tool: Tool): boolean => !NO_ACTIVITY_DRAWER.has(tool);
+
+/**
  * The initiative master-switch field for a tool (same spelling as the view
  * permission). Every tool has one.
  */

@@ -290,16 +290,6 @@
     "archivedOn": "Archived {{date}}",
     "reorder": "Reorder project"
   },
-  "activitySidebar": {
-    "title": "Project activity",
-    "activity": "Activity",
-    "expand": "Expand activity sidebar",
-    "collapse": "Collapse activity sidebar",
-    "loading": "Loading activity…",
-    "noComments": "No comments yet.",
-    "commentedOn": "commented on",
-    "loadMore": "Load more"
-  },
   "presets": {
     "label": "Presets",
     "incomplete": "Incomplete",

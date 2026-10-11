@@ -14,6 +14,7 @@ import { type RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas
 import { AcceptTerms } from "@/components/AcceptTerms";
 import { AccountTimeOut } from "@/components/AccountTimeOut";
 import { AppSidebar } from "@/components/AppSidebar";
+import { ActivityDrawer } from "@/components/activity/ActivityDrawer";
 import { AnnouncementCenter } from "@/components/announcements/AnnouncementCenter";
 import { UpdateAnnouncementDialog } from "@/components/announcements/UpdateAnnouncementDialog";
 import { ChooseHandle } from "@/components/ChooseHandle";
@@ -25,7 +26,6 @@ import { BottomNav } from "@/components/navigation/BottomNav";
 import { CreateActionProvider } from "@/components/navigation/CreateActionContext";
 import { PushPermissionPrompt } from "@/components/notifications/PushPermissionPrompt";
 import { OfflineBanner } from "@/components/offline/OfflineBanner";
-import { ProjectActivitySidebar } from "@/components/projects/ProjectActivitySidebar";
 import { RecentTabsBar } from "@/components/recents/RecentTabsBar";
 import { PageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { StartFlow } from "@/components/start/StartFlow";
@@ -54,7 +54,7 @@ import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { isJustSignedIn } from "@/lib/authTransition";
 import { chooseNoCommunityLayout } from "@/lib/noCommunityLayout";
 import { canAccessPlatformAreas } from "@/lib/permissions";
-import { getActiveRecentKey } from "@/lib/recentRoute";
+import { activityScope, getActiveRecentKey } from "@/lib/recentRoute";
 import { returnPath } from "@/lib/returnPath";
 import { cn } from "@/lib/utils";
 
@@ -256,12 +256,6 @@ function AppLayout() {
   const recentItems = recentQuery.data?.slice(0, user?.recent_tabs_limit ?? 20);
 
   const activeRecentKey = getActiveRecentKey(location.pathname);
-  // ProjectActivitySidebar still wants the active project directly — and the
-  // initiative it sits in, since a task's URL names that too.
-  const activeProjectId =
-    activeRecentKey?.entityType === Tool.project ? activeRecentKey.entityId : null;
-  const activeProjectInitiativeId =
-    activeRecentKey?.entityType === Tool.project ? activeRecentKey.initiativeId : null;
 
   // const isDark = document.documentElement.classList.contains("dark");
 
@@ -437,10 +431,7 @@ function AppLayout() {
                   </main>
                 </div>
               </div>
-              <ProjectActivitySidebar
-                projectId={activeProjectId}
-                initiativeId={activeProjectInitiativeId}
-              />
+              <ActivityDrawer scope={activityScope(location.pathname)} />
               <BottomNav />
             </SidebarProvider>
           </DocumentOutlineScope>

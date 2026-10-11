@@ -37,6 +37,11 @@
       "published_other": "publié"
     }
   },
+  "activityDrawer": {
+    "title": "Activité",
+    "expand": "Déplier le panneau d'activité",
+    "collapse": "Replier le panneau d'activité"
+  },
   "loading": "Chargement…",
   "loadError": "Impossible de charger cet outil. Veuillez réessayer plus tard.",
   "communityWide": "Toute la communauté",

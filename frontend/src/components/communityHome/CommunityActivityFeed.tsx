@@ -24,6 +24,7 @@ import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { useActivityFeed } from "@/hooks/useActivity";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { listFormat } from "@/lib/intl";
+import type { ActivityScope } from "@/lib/recentRoute";
 import { FROM_FEED, hitIcon, searchHitPath } from "@/lib/searchResults";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
@@ -117,11 +118,18 @@ interface CommunityActivityFeedProps {
   view: FeedView;
   /** When the reader was last here, as an ISO time; nothing is new without one. */
   lastVisit: string | null;
+  /** The one tool or initiative to show, for a feed beside it. */
+  scope?: ActivityScope | null;
 }
 
-export const CommunityActivityFeed = ({ view, lastVisit }: CommunityActivityFeedProps) => {
+export const CommunityActivityFeed = ({ view, lastVisit, scope }: CommunityActivityFeedProps) => {
   const { t } = useTranslation("communityHome");
-  const feed = useActivityFeed({ view });
+  const feed = useActivityFeed({
+    view,
+    initiative_id: scope?.initiativeId,
+    tool: scope?.tool,
+    tool_id: scope?.toolId,
+  });
   // Each page is ranked afresh, so an item that moved up since the last one
   // can come back on the next; it stays where it was first shown.
   const entries = useMemo(() => {

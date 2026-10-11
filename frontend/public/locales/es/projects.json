@@ -290,16 +290,6 @@
     "archivedOn": "Archivado el {{date}}",
     "reorder": "Reordenar proyecto"
   },
-  "activitySidebar": {
-    "title": "Actividad del proyecto",
-    "activity": "Actividad",
-    "expand": "Expandir barra de actividad",
-    "collapse": "Contraer barra de actividad",
-    "loading": "Cargando actividad…",
-    "noComments": "Aún no hay comentarios.",
-    "commentedOn": "comentó en",
-    "loadMore": "Cargar más"
-  },
   "presets": {
     "label": "Ajustes predefinidos",
     "incomplete": "Pendientes",

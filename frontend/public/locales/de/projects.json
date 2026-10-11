@@ -290,16 +290,6 @@
     "archivedOn": "Archiviert am {{date}}",
     "reorder": "Projekt neu anordnen"
   },
-  "activitySidebar": {
-    "title": "Projektaktivität",
-    "activity": "Aktivität",
-    "expand": "Aktivitäts-Seitenleiste ausklappen",
-    "collapse": "Aktivitäts-Seitenleiste einklappen",
-    "loading": "Aktivität wird geladen…",
-    "noComments": "Noch keine Kommentare.",
-    "commentedOn": "kommentierte",
-    "loadMore": "Mehr laden"
-  },
   "presets": {
     "label": "Vorlagen",
     "incomplete": "Unerledigt",

@@ -37,6 +37,11 @@
       "published_other": "publicaron"
     }
   },
+  "activityDrawer": {
+    "title": "Actividad",
+    "expand": "Expandir barra de actividad",
+    "collapse": "Contraer barra de actividad"
+  },
   "loading": "Cargando…",
   "loadError": "No se pudo cargar esta herramienta. Inténtalo de nuevo más tarde.",
   "communityWide": "Todo la comunidad",

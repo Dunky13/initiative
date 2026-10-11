@@ -37,6 +37,11 @@
       "published_other": "veröffentlicht"
     }
   },
+  "activityDrawer": {
+    "title": "Aktivität",
+    "expand": "Aktivitäts-Seitenleiste ausklappen",
+    "collapse": "Aktivitäts-Seitenleiste einklappen"
+  },
   "loading": "Wird geladen…",
   "loadError": "Dieses Werkzeug konnte nicht geladen werden. Bitte versuche es später erneut.",
   "communityWide": "Community-weit",
