@@ -158,6 +158,8 @@ class FieldContext:
     user_id: Optional[int]
     #: Custom property definitions by id, for the fields that dispatch on one.
     property_definitions: Mapping[int, Any] = dataclass_field(default_factory=dict)
+    #: The plug-in fields the person may filter by, by field id.
+    plugin_fields: Mapping[str, Any] = dataclass_field(default_factory=dict)
     #: IANA timezone, for sorts that group by the reader's local day rather than
     #: the server's. Present here too so one context serves a request that both
     #: filters and orders.

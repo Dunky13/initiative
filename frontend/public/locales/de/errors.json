@@ -464,7 +464,7 @@
   "TOOL_LAYOUTS_TARGET_INVALID": "Dafür lassen sich keine Layouts einrichten.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "Dieses Tool stellt dieses Layout nicht dar.",
   "TOOL_LAYOUTS_TOO_LARGE": "Dieses Layout hat zu viele Teile. Entferne einige und versuche es erneut.",
-  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Eine Karte oder ein Detail kann bis zu 3 Teile desselben Plug-ins enthalten.",
+  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Eine Karte oder ein Detail kann bis zu {{max}} Teile desselben Plug-ins enthalten.",
   "COMMUNITY_NOT_A_COMMUNITY": "Diese Community ist nicht im Community-Verzeichnis eingetragen.",
   "COMMUNITY_COMMUNITY_REQUIRES_CATEGORY": "Eine eingetragene Community braucht mindestens eine Kategorie.",
   "COMMUNITY_COMMUNITY_CONTENT_NOT_DECLARED": "Bestätige, dass diese Community keine Inhalte für Erwachsene enthält, bevor du sie einträgst.",
@@ -744,5 +744,6 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "Dieser Fall wurde nicht gefunden, oder du kannst ihn nicht öffnen.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Für einen Fall dieser Art kann kein Zugriff angefragt werden.",
   "ACCESS_GRANT_CASE_CLOSED": "Dieser Fall ist geschlossen.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community.",
+  "HOLD_CASE_OTHER_COMMUNITY": "Dieser Fall betrifft eine andere Community als diesen Inhalt."
 }

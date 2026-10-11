@@ -130,10 +130,20 @@ async def _tell_requested(
     requester: User,
     guild_name: Optional[str],
 ) -> None:
-    """Tell the case a request names that access was asked for it."""
+    """Tell the case a request names that access was asked for it, and write
+    down that each grant serves it."""
     case = grants[0].case_task_id
     if case is None:
         return
+    for grant in grants:
+        audit_service.emit(
+            event_type=AuditEventType.ACCESS_GRANT_CASE_LINKED,
+            actor_user_id=requester.id,
+            guild_id=grant.guild_id,
+            target_type="access_grant",
+            target_id=grant.id,
+            detail={"case_task_id": case, "purpose": grant.purpose},
+        )
     await grant_cases.note(
         case,
         case_activity.ActivityKind.grant_requested,

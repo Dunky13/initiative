@@ -68,6 +68,7 @@ from seed import (  # noqa: E402
     properties,
     queues,
     tags,
+    tickets,
     wikis,
 )
 from seed.state import (  # noqa: E402
@@ -154,6 +155,10 @@ async def seed() -> None:
             f"{len(IntakeStream)} streams bound"
         )
         await session.commit()
+
+        print("  Filing tickets, reports and a hold...")
+        filed = await tickets.seed(session, users, seeded["primary"])
+        print(f"  {filed} cases waiting in {operations.OPERATIONS_GUILD_NAME}")
 
     save_state(ids)
 

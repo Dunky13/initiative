@@ -132,11 +132,12 @@ const forCase = (caseTaskId?: number | null) =>
 /** Delete a user account (operator endpoint). Closes over the target userId. */
 export const useOperatorDeleteUser = (
   userId: number,
-  options?: MutationOpts<AccountDeletionResponse, OperatorUserDeleteRequest>
+  options?: MutationOpts<AccountDeletionResponse, OperatorUserDeleteRequest>,
+  caseTaskId?: number | null
 ) =>
   useApiMutation<AccountDeletionResponse, OperatorUserDeleteRequest>(
     {
-      mutationFn: (request) => deleteUser(userId, request),
+      mutationFn: (request) => deleteUser(userId, request, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options
@@ -144,11 +145,12 @@ export const useOperatorDeleteUser = (
 
 /** Trigger a password reset email for a user (operator endpoint). */
 export const useOperatorTriggerPasswordReset = (
-  options?: MutationOpts<VerificationSendResponse, number>
+  options?: MutationOpts<VerificationSendResponse, number>,
+  caseTaskId?: number | null
 ) =>
   useApiMutation<VerificationSendResponse, number>(
     {
-      mutationFn: (userId) => triggerPasswordReset(userId),
+      mutationFn: (userId) => triggerPasswordReset(userId, forCase(caseTaskId)),
     },
     options
   );
@@ -165,10 +167,13 @@ export const useOperatorResendVerification = (
   );
 
 /** Reactivate a deactivated user (operator endpoint). */
-export const useOperatorReactivateUser = (options?: MutationOpts<OperatorUserRead, number>) =>
+export const useOperatorReactivateUser = (
+  options?: MutationOpts<OperatorUserRead, number>,
+  caseTaskId?: number | null
+) =>
   useApiMutation<OperatorUserRead, number>(
     {
-      mutationFn: (userId) => reactivateUser(userId),
+      mutationFn: (userId) => reactivateUser(userId, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options
@@ -179,10 +184,13 @@ export const useOperatorReactivateUser = (options?: MutationOpts<OperatorUserRea
  * Not the same thing as reactivating: a deleted account never lost its
  * memberships, so this puts it back exactly where it was, while reactivating a
  * deactivated one gives back an account with no communities. */
-export const useOperatorRestoreUser = (options?: MutationOpts<OperatorUserRead, number>) =>
+export const useOperatorRestoreUser = (
+  options?: MutationOpts<OperatorUserRead, number>,
+  caseTaskId?: number | null
+) =>
   useApiMutation<OperatorUserRead, number>(
     {
-      mutationFn: (userId) => restoreDeletedUser(userId),
+      mutationFn: (userId) => restoreDeletedUser(userId, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options
@@ -233,10 +241,13 @@ export const useOperatorSetSuspension = (
  *  For the case that is nearly all of them: a mistyped year. It clears the
  *  record that the question was answered and nothing else — the date was never
  *  kept, so there is nothing else to clear. */
-export const useOperatorClearAgeBlock = (options?: MutationOpts<OperatorUserRead, number>) =>
+export const useOperatorClearAgeBlock = (
+  options?: MutationOpts<OperatorUserRead, number>,
+  caseTaskId?: number | null
+) =>
   useApiMutation<OperatorUserRead, number>(
     {
-      mutationFn: (userId) => clearAgeBlock(userId),
+      mutationFn: (userId) => clearAgeBlock(userId, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options
@@ -244,10 +255,13 @@ export const useOperatorClearAgeBlock = (options?: MutationOpts<OperatorUserRead
 
 /** Turn an account's password and code sign-in back on after wrong answers
  *  turned it off (``users.manage``). */
-export const useOperatorLiftSignInLock = (options?: MutationOpts<OperatorUserRead, number>) =>
+export const useOperatorLiftSignInLock = (
+  options?: MutationOpts<OperatorUserRead, number>,
+  caseTaskId?: number | null
+) =>
   useApiMutation<OperatorUserRead, number>(
     {
-      mutationFn: (userId) => liftSignInLock(userId),
+      mutationFn: (userId) => liftSignInLock(userId, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options
@@ -256,10 +270,13 @@ export const useOperatorLiftSignInLock = (options?: MutationOpts<OperatorUserRea
 /** Take an authenticator off an account whose holder has lost it
  *  (``users.manage``). Signs them out everywhere; they sign in with their
  *  password and set one up again. */
-export const useOperatorClearSecondFactor = (options?: MutationOpts<void, number>) =>
+export const useOperatorClearSecondFactor = (
+  options?: MutationOpts<void, number>,
+  caseTaskId?: number | null
+) =>
   useApiMutation<void, number>(
     {
-      mutationFn: (userId) => clearSecondFactor(userId),
+      mutationFn: (userId) => clearSecondFactor(userId, forCase(caseTaskId)),
       invalidate: () => invalidate(q.operatorUsers()),
     },
     options

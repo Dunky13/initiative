@@ -73,6 +73,7 @@ VIRTUAL_FIELDS = {
     "tag_ids",
     "initiative_ids",
     "property_values",
+    "plugin_values",
 }
 
 

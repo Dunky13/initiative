@@ -931,3 +931,50 @@ async def test_the_cases_setting_shows_only_to_people_who_work_cases(
     await session.commit()
     await set_rls_context(session, Unattributed())
     assert not await _offers_cases(client, desk["staff"])
+
+
+# ── What the audit log says ──────────────────────────────────────────────────
+
+
+async def test_filing_and_answering_are_written_down_without_what_was_said(
+    client, acting_user, desk, capfd
+):
+    import json
+
+    from app.core.audit_events import AuditEventType
+    from app.testing.audit import emitted
+
+    filer = await acting_user("member")
+    emitted(capfd)
+    filed = await client.post(
+        TICKETS,
+        data={
+            "payload": json.dumps(
+                {
+                    "stream": "support",
+                    "type": "account",
+                    "subject": "Locked out of my account",
+                    "body": "Secret details about my account.",
+                }
+            )
+        },
+        headers=filer.headers,
+    )
+    assert filed.status_code == 202, filed.text
+    (line,) = emitted(capfd, AuditEventType.TICKET_FILED)
+    assert line["actor_user_id"] == filer.user.id
+    assert line["detail"] == {"stream": "support", "topic": "account", "attachments": 0}
+
+    task_id = (await client.get(TICKETS, headers=filer.headers)).json()["items"][0][
+        "task_id"
+    ]
+    emitted(capfd)
+    answered = await client.post(
+        f"{TICKETS}/{task_id}/replies",
+        data={"body": "More secret details."},
+        headers=filer.headers,
+    )
+    assert answered.status_code == 201, answered.text
+    (line,) = emitted(capfd, AuditEventType.TICKET_REPLIED)
+    assert line["target"] == {"type": "task", "id": task_id}
+    assert "Secret" not in json.dumps(line)

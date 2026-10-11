@@ -6273,6 +6273,15 @@ export const TaskColumnFieldId = {
   tags: "tags",
 } as const;
 
+/**
+ * A filter on a plug-in's field, ``plugin:<install id>:<key>``.
+ */
+export interface PresetPluginFilter {
+  field: string;
+  op?: FilterOp;
+  value?: unknown;
+}
+
 export type TaskFilterSpecDue = (typeof TaskFilterSpecDue)[keyof typeof TaskFilterSpecDue] | null;
 
 export const TaskFilterSpecDue = {
@@ -6299,6 +6308,8 @@ export interface TaskFilterSpec {
   tag_ids?: number[];
   /** @maxItems 5 */
   properties?: PresetPropertyFilter[];
+  /** @maxItems 5 */
+  plugins?: PresetPluginFilter[];
   due?: TaskFilterSpecDue;
   include_archived?: boolean;
 }

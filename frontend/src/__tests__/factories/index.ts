@@ -1,3 +1,4 @@
+export { buildActivityEntry } from "./activity.factory";
 export {
   buildCalendarEvent,
   buildEventAttendee,

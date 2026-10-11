@@ -8,6 +8,10 @@
 
 export type AccessGrantsForm = "request" | "break_glass";
 
+/** The content rungs a request may start on. */
+export type AccessGrantsLevel = "read" | "read_write" | "moderate";
+const LEVELS: readonly AccessGrantsLevel[] = ["read", "read_write", "moderate"];
+
 export interface AccessGrantsSearch {
   /** The community the form starts with. */
   community?: number;
@@ -17,6 +21,9 @@ export interface AccessGrantsSearch {
   case?: number;
   /** Which form it is for. */
   form?: AccessGrantsForm;
+  /** The content rung the request form starts on: what the errand that
+   *  linked here needs, such as Moderate for content the platform holds. */
+  level?: AccessGrantsLevel;
 }
 
 const positiveId = (value: unknown): number | undefined => {
@@ -34,10 +41,12 @@ export const validateAccessGrantsSearch = (search: Record<string, unknown>): Acc
     community !== undefined && typeof search.name === "string" && search.name.trim()
       ? search.name
       : undefined;
+  const level = LEVELS.find((rung) => rung === search.level);
   return {
     ...(community !== undefined ? { community } : {}),
     ...(name ? { name } : {}),
     ...(caseTaskId !== undefined ? { case: caseTaskId } : {}),
     ...(form ? { form } : {}),
+    ...(level ? { level } : {}),
   };
 };

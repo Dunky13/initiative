@@ -464,7 +464,7 @@
   "TOOL_LAYOUTS_TARGET_INVALID": "Layouts can't be set up for that.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "This tool doesn't draw that layout.",
   "TOOL_LAYOUTS_TOO_LARGE": "That layout has too many parts. Remove some and try again.",
-  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "A card or a detail can hold up to 3 parts from the same plug-in.",
+  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "A card or a detail can hold up to {{max}} parts from the same plug-in.",
   "COMMUNITY_NOT_A_COMMUNITY": "That community is not open to the community directory.",
   "COMMUNITY_COMMUNITY_REQUIRES_CATEGORY": "A listed community needs at least one category.",
   "COMMUNITY_COMMUNITY_CONTENT_NOT_DECLARED": "Confirm this community contains no adult content before listing it.",
@@ -744,5 +744,6 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "That case wasn't found, or you can't open it.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Access can't be asked for a case of this kind.",
   "ACCESS_GRANT_CASE_CLOSED": "That case is closed.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "That case is about another community."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "That case is about another community.",
+  "HOLD_CASE_OTHER_COMMUNITY": "That case is about a different community from this content."
 }

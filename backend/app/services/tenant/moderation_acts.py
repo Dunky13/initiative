@@ -37,6 +37,7 @@ from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.audit_events import AuditEventType
 from app.core.encryption import (
     SALT_MODERATION_SNAPSHOT,
     decrypt_field,
@@ -53,12 +54,13 @@ from app.db.guild_standing import GuildContext
 from app.db.base import MODELS_BY_TABLE
 from app.db.query import paginated_query
 from app.db.request_context import SystemGuild
-from app.db.session import set_rls_context
+from app.db.session import routed_guild_id, set_rls_context
 from app.db.soft_delete_filter import select_including_deleted
 from app.models.platform.notification import NotificationType
 from app.models.tenant._mixins import CommentLockMixin, HoldMixin
 from app.models.tenant.comment import Comment
 from app.models.tenant.moderation import ModerationAction
+from app.services import audit as audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +145,9 @@ async def is_held(guild_id: int, target_type: str, target_id: int) -> bool:
     return held is not None
 
 
-def _grant_id(context: Optional[GuildContext]) -> Optional[int]:
+def platform_grant_id(context: Optional[GuildContext]) -> Optional[int]:
+    """The moderate grant the reader acts under, where they act for the
+    platform rather than as one of the community's own moderators."""
     if context is None or not context.pam_moderate or context.grant is None:
         return None
     return context.grant.id
@@ -160,6 +164,17 @@ class Who:
     report_id: Optional[int] = None
     hold_id: Optional[int] = None
     via_grant_id: Optional[int] = None
+
+
+#: The audit line an act the platform took writes beside its log row.
+_AUDITED: dict[ModerationAct, AuditEventType] = {
+    ModerationAct.remove: AuditEventType.MODERATION_CONTENT_REMOVED,
+    ModerationAct.restore: AuditEventType.MODERATION_CONTENT_RESTORED,
+    ModerationAct.lock_comments: AuditEventType.MODERATION_COMMENTS_LOCKED,
+    ModerationAct.unlock_comments: AuditEventType.MODERATION_COMMENTS_UNLOCKED,
+    ModerationAct.clear_reactions: AuditEventType.MODERATION_REACTIONS_CLEARED,
+    ModerationAct.warn: AuditEventType.MODERATION_MEMBER_WARNED,
+}
 
 
 async def _record(
@@ -193,6 +208,28 @@ async def _record(
     )
     system.add(row)
     await system.flush()
+    # A community's own decisions are its log's alone; an act the platform
+    # took under a grant is the platform's record too. Staged on the same
+    # session, so the line and the row commit together.
+    if who.via_grant_id is None:
+        return row
+    await audit_service.record(
+        system,
+        event_type=_AUDITED[act],
+        actor_user_id=who.actor_id,
+        target_user_id=subject_user_id,
+        guild_id=routed_guild_id(system),
+        target_type=target_type,
+        target_id=target_id,
+        detail={
+            "action_id": row.id,
+            "initiative_id": initiative_id,
+            "reason": reason.value if reason else None,
+            "report_id": who.report_id,
+            "hold_id": who.hold_id,
+            "via_grant_id": who.via_grant_id,
+        },
+    )
     return row
 
 
@@ -492,7 +529,9 @@ async def act(
     if request.act is ModerationAct.warn and note is None:
         raise ActError(ModerationMessages.MESSAGE_REQUIRED)
 
-    who = Who(actor_id=actor_id, report_id=report_id, via_grant_id=_grant_id(context))
+    who = Who(
+        actor_id=actor_id, report_id=report_id, via_grant_id=platform_grant_id(context)
+    )
     let_go: set[str] = set()
     async with cohorts.system_session(guild_id) as system:
         await set_rls_context(system, SystemGuild(guild_id))
@@ -640,7 +679,7 @@ async def restore(
         raise ActError(ModerationMessages.NOT_A_REMOVAL)
     if not may_moderate(context, removal.initiative_id):
         raise ActError(ModerationMessages.NOT_A_MODERATOR, status.HTTP_403_FORBIDDEN)
-    who = Who(actor_id=actor_id, via_grant_id=_grant_id(context))
+    who = Who(actor_id=actor_id, via_grant_id=platform_grant_id(context))
     async with cohorts.system_session(guild_id) as system:
         await set_rls_context(system, SystemGuild(guild_id))
         removal = (

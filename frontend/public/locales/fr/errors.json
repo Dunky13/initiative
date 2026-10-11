@@ -464,7 +464,7 @@
   "TOOL_LAYOUTS_TARGET_INVALID": "Impossible de configurer des dispositions pour cela.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "Cet outil n'affiche pas cette disposition.",
   "TOOL_LAYOUTS_TOO_LARGE": "Cette disposition a trop d'éléments. Retirez-en et réessayez.",
-  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Une carte ou un détail peut contenir jusqu'à 3 éléments d'un même plug-in.",
+  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Une carte ou un détail peut contenir jusqu'à {{max}} éléments d'un même plug-in.",
   "COMMUNITY_NOT_A_COMMUNITY": "Cette communauté n’est pas inscrite à l’annuaire des communautés.",
   "COMMUNITY_COMMUNITY_REQUIRES_CATEGORY": "Une communauté inscrite doit avoir au moins une catégorie.",
   "COMMUNITY_COMMUNITY_CONTENT_NOT_DECLARED": "Confirmez que cette communauté ne contient aucun contenu pour adultes avant de l’inscrire.",
@@ -744,5 +744,6 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "Ce dossier est introuvable, ou vous ne pouvez pas l'ouvrir.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "On ne peut pas demander d'accès pour un dossier de ce type.",
   "ACCESS_GRANT_CASE_CLOSED": "Ce dossier est clos.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté.",
+  "HOLD_CASE_OTHER_COMMUNITY": "Ce dossier concerne une autre communauté que celle de ce contenu."
 }

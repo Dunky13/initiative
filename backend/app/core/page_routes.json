@@ -100,6 +100,7 @@
   "/c/$communityId/settings/community",
   "/c/$communityId/settings/danger-zone",
   "/c/$communityId/settings/data",
+  "/c/$communityId/settings/guests",
   "/c/$communityId/settings/initiatives",
   "/c/$communityId/settings/integrations",
   "/c/$communityId/settings/security",

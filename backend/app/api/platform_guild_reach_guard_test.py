@@ -184,6 +184,14 @@ _ALLOWED: dict[tuple[str, str], str] = {
     (f"{_SERVICES}/grant_cases.py", "case_exists"): (
         "grant cases: reads whether a case a grant serves is still there to be told"
     ),
+    (f"{_SERVICES}/intake.py", "case_locked"): (
+        "intake: holds a case's task locked while a hold naming it is written, "
+        "so evidence retention never decides the case's files in between"
+    ),
+    (f"{_SERVICES}/evidence.py", "held_cases"): (
+        "evidence retention: asks the community a case is about whether a "
+        "hold there still names the case, before its files are deleted"
+    ),
     (f"{_SERVICES}/grant_cases.py", "activate"): (
         "grant cases: puts a case to work when access for it is approved"
     ),

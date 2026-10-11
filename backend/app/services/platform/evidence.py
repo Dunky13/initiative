@@ -49,6 +49,7 @@ from app.core.messages import EvidenceMessages
 from app.db import cohorts
 from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
+from app.db.soft_delete_filter import select_including_deleted
 from app.models.tenant.evidence import DISPLAY_NAME_LENGTH, Evidence, EvidenceKind
 from app.services import storage as storage_service
 
@@ -709,7 +710,8 @@ async def purge_due(session: AsyncSession, guild_id: int) -> int:
     read from the parent as it stands when the rows are deleted, so a reopened
     case keeps its files, and one closed again counts from the new close. The
     tasks are locked while that is decided, so a reopen at the same moment
-    either lands first and keeps the files, or waits for them to go.
+    either lands first and keeps the files, or waits for them to go. A case
+    a hold still names keeps its files until the hold is released.
     """
     from app.models.tenant.intake import IntakeCase
     from app.models.tenant.moderation import ModerationReport
@@ -719,28 +721,39 @@ async def purge_due(session: AsyncSession, guild_id: int) -> int:
     gone: list[str] = []
     for stream in IntakeStream:
         cutoff = now - timedelta(days=meta(stream).retention_days)
-        closed_long_enough = (
-            select(IntakeCase.id)
-            .join(Task, Task.id == IntakeCase.task_id)
-            .join(TaskStatus, TaskStatus.id == Task.task_status_id)
-            .where(IntakeCase.stream == stream.value)
-            .where(IntakeCase.id.in_(select(Evidence.case_id)))  # type: ignore[union-attr]
-            .where(
-                or_(
-                    Task.deleted_at < cutoff,  # type: ignore[operator]
-                    and_(
-                        TaskStatus.category == TaskStatusCategory.done,
-                        Task.completed_at < cutoff,  # type: ignore[operator]
-                    ),
+        due = (
+            await session.exec(
+                # A case in the trash is closed too.
+                select_including_deleted(IntakeCase.id, IntakeCase.task_id)
+                .join(Task, Task.id == IntakeCase.task_id)
+                .join(TaskStatus, TaskStatus.id == Task.task_status_id)
+                .where(IntakeCase.stream == stream.value)
+                .where(IntakeCase.id.in_(select(Evidence.case_id)))  # type: ignore[union-attr]
+                .where(
+                    or_(
+                        Task.deleted_at < cutoff,  # type: ignore[operator]
+                        and_(
+                            TaskStatus.category == TaskStatusCategory.done,
+                            Task.completed_at < cutoff,  # type: ignore[operator]
+                        ),
+                    )
                 )
+                .with_for_update(of=Task)
             )
-            .with_for_update(of=Task)
-        )
+        ).all()
+        if not due:
+            continue
+        # A case a hold still names keeps its files for as long as the hold
+        # stands, however long ago it closed.
+        held = await held_cases(session, [int(task_id) for _id, task_id in due])
+        kept = [int(case_id) for case_id, task_id in due if task_id not in held]
+        if not kept:
+            continue
         gone += (
             (
                 await session.exec(
                     delete(Evidence)
-                    .where(Evidence.case_id.in_(closed_long_enough))  # type: ignore[union-attr]
+                    .where(Evidence.case_id.in_(kept))  # type: ignore[union-attr]
                     .returning(Evidence.storage_key)
                 )
             )
@@ -770,6 +783,67 @@ async def purge_due(session: AsyncSession, guild_id: int) -> int:
         await _remove_unnamed(session, guild_id, gone)
         logger.info("evidence: purged %s from community %s", len(gone), guild_id)
     return len(gone)
+
+
+async def held_cases(session: AsyncSession, task_ids: Sequence[int]) -> set[int]:
+    """The cases among ``task_ids`` that a hold in force still names.
+
+    ``session`` is routed into the operations community. A case's holds sit
+    in the community it is about — placing a hold for a case settles that —
+    so each community is asked about its own cases, once. One that can't be
+    asked keeps its cases' files until it can.
+    """
+    from app.core.intake import CaseField
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.guild import Guild
+    from app.models.tenant.content_hold import ContentHold
+    from app.services.tenant.properties import summaries_by_id
+
+    by_subject: dict[int, list[int]] = {}
+    for task_id, summaries in (
+        await summaries_by_id(session, "task", task_ids)
+    ).items():
+        for summary in summaries:
+            if summary.name != CaseField.subject_guild.value:
+                continue
+            try:
+                subject = int(summary.value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            by_subject.setdefault(subject, []).append(task_id)
+    if not by_subject:
+        return set()
+    async with SystemSessionLocal() as shared:
+        standing = set(
+            (
+                await shared.exec(
+                    select(Guild.id).where(Guild.id.in_(list(by_subject)))  # type: ignore[union-attr]
+                )
+            ).all()
+        )
+    held: set[int] = set()
+    for subject, ids in by_subject.items():
+        if subject not in standing:
+            # A community deleted for good held nothing: it couldn't be
+            # deleted while a hold stood.
+            continue
+        try:
+            async with cohorts.system_session(subject) as other:
+                await set_rls_context(other, SystemGuild(subject, read_only=True))
+                held.update(
+                    (
+                        await other.exec(
+                            select(ContentHold.case_task_id)
+                            .where(ContentHold.case_task_id.in_(ids))  # type: ignore[union-attr]
+                            .where(ContentHold.released_at.is_(None))  # type: ignore[union-attr]
+                        )
+                    ).all()
+                )
+                await other.rollback()
+        except Exception:  # noqa: BLE001 — kept rather than lost; asked again next sweep
+            logger.exception("evidence: could not ask community %s for holds", subject)
+            held.update(ids)
+    return {int(task_id) for task_id in held if task_id is not None}
 
 
 async def _remove_unnamed(
