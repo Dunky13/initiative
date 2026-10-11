@@ -9,7 +9,7 @@ import {
   type SmartChipKind,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { ProjectTasksFilters } from "@/components/projects/ProjectTasksFilters";
+import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEditorInitiative } from "@/components/ui/editor/context/editor-initiative-context";
@@ -388,10 +388,13 @@ function TaskSettings({
           </SelectContent>
         </Select>
       </div>
-      <ProjectTasksFilters
-        memberScope={{ type: "initiative", initiativeId: query.initiative_id }}
-        taskStatuses={query.project_id === null ? [] : statuses}
-        initiativeId={query.initiative_id}
+      <TaskFilters
+        scope={{
+          kind: "project",
+          memberScope: { type: "initiative", initiativeId: query.initiative_id },
+          statuses: query.project_id === null ? [] : statuses,
+          initiativeId: query.initiative_id,
+        }}
         value={query.filters}
         onChange={(filters) => onQuery({ ...query, filters })}
         stacked
