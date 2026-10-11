@@ -568,3 +568,23 @@ async def test_admins_see_their_guests_while_guests_are_off(
     )
 
     assert [row["id"] for row in listed.json()["items"]] == [guest_id], listed.text
+
+
+async def test_a_guest_can_leave(client, acting_user, session):
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    await _platform(session)
+    guest = await create_guest(session, a.guild)
+    await create_resource_grant(session, a.project, user=guest)
+    guild_id, guest_id = a.guild.id, guest.id
+
+    response = await client.delete(
+        f"/api/v1/communities/{guild_id}/leave", headers=get_auth_headers(guest)
+    )
+
+    assert response.status_code == 204, response.text
+    assert (
+        await guilds_service.get_membership(
+            session, guild_id=guild_id, user_id=guest_id
+        )
+        is None
+    )
