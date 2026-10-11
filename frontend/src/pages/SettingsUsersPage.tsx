@@ -138,8 +138,15 @@ export const SettingsUsersPage = () => {
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteMaxUses, setInviteMaxUses] = useState<number>(1);
   const [inviteExpiresDays, setInviteExpiresDays] = useState<number>(7);
-  // The code of the invite just made: shown once, as only its hash is kept.
-  const [newInviteCode, setNewInviteCode] = useState<string | null>(null);
+  // The invite just made, with its code: shown once, as only its hash is kept,
+  // and only in the community it was made for.
+  const [newInvite, setNewInvite] = useState<{
+    communityId: number;
+    inviteId: number;
+    code: string;
+  } | null>(null);
+  const newInviteCode =
+    newInvite && newInvite.communityId === activeCommunityId ? newInvite.code : null;
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<{
     userId: number;
     email: string;
@@ -392,7 +399,11 @@ export const SettingsUsersPage = () => {
         expires_at: expiresAt,
       };
       const created = await createCommunityInvite(activeCommunityId, payload);
-      setNewInviteCode(created.code);
+      setNewInvite({
+        communityId: activeCommunityId,
+        inviteId: created.id,
+        code: created.code,
+      });
       await invitesQuery.refetch();
     } catch (error) {
       console.error(error);
@@ -409,6 +420,7 @@ export const SettingsUsersPage = () => {
     setInviteActionError(null);
     try {
       await deleteCommunityInvite(activeCommunityId, inviteId);
+      if (newInvite?.inviteId === inviteId) setNewInvite(null);
       await invitesQuery.refetch();
     } catch (error) {
       console.error(error);
