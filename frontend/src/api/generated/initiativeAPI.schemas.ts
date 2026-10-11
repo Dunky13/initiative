@@ -373,6 +373,95 @@ export interface AccountsWithoutFactor {
   everyone: number;
 }
 
+export type SearchEntityType = (typeof SearchEntityType)[keyof typeof SearchEntityType];
+
+export const SearchEntityType = {
+  calendar: "calendar",
+  calendar_event: "calendar_event",
+  comment: "comment",
+  counter: "counter",
+  counter_group: "counter_group",
+  dashboard: "dashboard",
+  file: "file",
+  gallery: "gallery",
+  gallery_image: "gallery_image",
+  post: "post",
+  project: "project",
+  queue: "queue",
+  queue_item: "queue_item",
+  tag: "tag",
+  task: "task",
+  wiki: "wiki",
+  wiki_page: "wiki_page",
+} as const;
+
+export type Tool = (typeof Tool)[keyof typeof Tool];
+
+export const Tool = {
+  project: "project",
+  file: "file",
+  queue: "queue",
+  counter_group: "counter_group",
+  calendar: "calendar",
+  dashboard: "dashboard",
+  post: "post",
+  gallery: "gallery",
+  wiki: "wiki",
+} as const;
+
+/**
+ * What happened to an item, as an entry says it.
+ */
+export type Verb = (typeof Verb)[keyof typeof Verb];
+
+export const Verb = {
+  created: "created",
+  completed: "completed",
+  commented: "commented",
+  edited: "edited",
+  moved: "moved",
+  scheduled: "scheduled",
+  published: "published",
+} as const;
+
+/**
+ * A person, as everyone else sees them — the handle, and the name they
+ * set in the guild being read.
+ */
+export interface UserPublic {
+  id: number;
+  username: string;
+  discriminator: number;
+  avatar_url: string | null;
+  status: UserStatus;
+  display_name: string | null;
+}
+
+/**
+ * One item, and what people did to it lately.
+ */
+export interface ActivityEntry {
+  entity_type: SearchEntityType;
+  entity_id: number;
+  title: string;
+  initiative_id: number | null;
+  initiative_name: string | null;
+  tool: Tool | null;
+  tool_id: number | null;
+  tool_title: string | null;
+  latest: string;
+  verbs: Verb[];
+  actors: UserPublic[];
+  actor_count: number;
+}
+
+export interface ActivityFeedPage {
+  items: ActivityEntry[];
+  page: number;
+  page_size: number;
+  has_next: boolean;
+}
+
 /**
  * Someone saying when they were born, once.
  *
@@ -555,20 +644,6 @@ export interface AnnouncementWrite {
   dismissals_required?: number;
   trigger_route?: string | null;
 }
-
-export type Tool = (typeof Tool)[keyof typeof Tool];
-
-export const Tool = {
-  project: "project",
-  file: "file",
-  queue: "queue",
-  counter_group: "counter_group",
-  calendar: "calendar",
-  dashboard: "dashboard",
-  post: "post",
-  gallery: "gallery",
-  wiki: "wiki",
-} as const;
 
 export interface ApiKeyCreateRequest {
   /**
@@ -1451,19 +1526,6 @@ export interface ProjectCan {
   export: boolean;
   unarchive: boolean;
   configure: boolean;
-}
-
-/**
- * A person, as everyone else sees them — the handle, and the name they
- * set in the guild being read.
- */
-export interface UserPublic {
-  id: number;
-  username: string;
-  discriminator: number;
-  avatar_url: string | null;
-  status: UserStatus;
-  display_name: string | null;
 }
 
 /**
@@ -5037,28 +5099,6 @@ export interface EmbedRead {
   refs?: string[];
 }
 
-export type SearchEntityType = (typeof SearchEntityType)[keyof typeof SearchEntityType];
-
-export const SearchEntityType = {
-  calendar: "calendar",
-  calendar_event: "calendar_event",
-  comment: "comment",
-  counter: "counter",
-  counter_group: "counter_group",
-  dashboard: "dashboard",
-  file: "file",
-  gallery: "gallery",
-  gallery_image: "gallery_image",
-  post: "post",
-  project: "project",
-  queue: "queue",
-  queue_item: "queue_item",
-  tag: "tag",
-  task: "task",
-  wiki: "wiki",
-  wiki_page: "wiki_page",
-} as const;
-
 /**
  * One end of an edge: what kind of thing, and which one.
  */
@@ -5183,6 +5223,17 @@ export interface FavoriteContactsResponse {
   items: ContactRead[];
   total_count: number;
 }
+
+/**
+ * What an entry has to be, to be in a view.
+ */
+export type FeedView = (typeof FeedView)[keyof typeof FeedView];
+
+export const FeedView = {
+  all: "all",
+  yours: "yours",
+  comments: "comments",
+} as const;
 
 /**
  * One field a client may offer for filtering.
@@ -9206,6 +9257,7 @@ export type ViewSource = (typeof ViewSource)[keyof typeof ViewSource];
 export const ViewSource = {
   direct: "direct",
   search: "search",
+  feed: "feed",
 } as const;
 
 /**
@@ -12155,6 +12207,22 @@ export type ReadCommentParams = {
    * Also return the resource if it is in the trash. For reading a resource back after a deleted event — the row still exists until retention purges it, and access is checked exactly as for a live one.
    */
   include_deleted?: boolean;
+};
+
+export type ReadActivityParams = {
+  view?: FeedView;
+  initiative_id?: number | null;
+  tool?: Tool | null;
+  tool_id?: number | null;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  page_size?: number;
 };
 
 export type ListInitiativesParams = {
