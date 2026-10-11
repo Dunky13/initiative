@@ -157,19 +157,28 @@ export const pluginFieldId = (install: number, key: string) => `plugin:${install
 /** How many parts of one install a tree may place, as the server allows. */
 export const MAX_PLUGIN_PARTS = 3;
 
+/** The install's own fields a part's tree shows. */
+const fieldsInTree = (node: LayoutNode, into: Set<string>): Set<string> => {
+  if (node.type === "field" || node.type === "value") into.add(String(node.props?.field));
+  for (const child of node.children ?? []) fieldsInTree(child, into);
+  return into;
+};
+
 /** What a task's page draws of the plug-ins until its layout is saved: each
  *  install's fields, then its parts up to {@link MAX_PLUGIN_PARTS}, as it
- *  declares them. */
+ *  declares them. A field one of those parts shows is drawn there only. */
 export const shippedPluginParts = (plugins: ReadonlyMap<number, PluginOnItems>): LayoutNode[] =>
-  [...plugins.values()].flatMap(({ id, fields, parts }) => [
-    ...[...fields.keys()].map((key) => ({
-      type: "field",
-      props: { field: pluginFieldId(id, key) },
-    })),
-    ...[...parts.keys()]
-      .slice(0, MAX_PLUGIN_PARTS)
-      .map((part) => ({ type: "plugin", props: { plugin: id, part } })),
-  ]);
+  [...plugins.values()].flatMap(({ id, fields, parts }) => {
+    const drawn = [...parts.values()].slice(0, MAX_PLUGIN_PARTS);
+    const inParts = new Set<string>();
+    for (const part of drawn) fieldsInTree(part.tree, inParts);
+    return [
+      ...[...fields.keys()]
+        .filter((key) => !inParts.has(key))
+        .map((key) => ({ type: "field", props: { field: pluginFieldId(id, key) } })),
+      ...drawn.map((part) => ({ type: "plugin", props: { plugin: id, part: part.id } })),
+    ];
+  });
 
 const pluginValue = (values: PluginValueSummary[] | undefined, install: number, key: string) =>
   values?.find((value) => value.plugin_id === install && value.key === key)?.value ?? null;

@@ -924,15 +924,25 @@ async def place_with_roles(
     return placed
 
 
-def _on_tasks(definition: Any, block: str, id_key: str) -> list[str]:
+def _on_tasks(definition: Any, block: str, id_key: str) -> list[dict]:
     """What a definition declares in one block on tasks, in its order."""
     return [
-        entry[id_key]
+        entry
         for entry in _declared(
             definition if isinstance(definition, dict) else {}, block, id_key
         )
         if tool_layouts_service.PLUGIN_DETAIL in (entry.get("on") or ())
     ]
+
+
+def _fields_in_tree(node: Any) -> Iterable[str]:
+    """The install's own fields a part's tree shows."""
+    if not isinstance(node, dict):
+        return
+    if node.get("type") in ("field", "value"):
+        yield str((node.get("props") or {}).get("field"))
+    for child in node.get("children") or ():
+        yield from _fields_in_tree(child)
 
 
 async def show_on_saved_details(
@@ -943,16 +953,21 @@ async def show_on_saved_details(
     previous: Any = None,
 ) -> None:
     """Show the install's fields, then its parts, on the saved task details of
-    these initiatives, as it declares them: what placing it does. After an
+    these initiatives, as it declares them: what placing it does. A field one
+    of the parts it shows already shows is not added on its own. After an
     upgrade, ``previous`` is the definition it replaced, and only what that
     did not declare is added. Once added, one a manager takes off stays off."""
+    parts = _on_tasks(plugin.definition, "parts", "id")[
+        : tool_layouts_service.MAX_PLUGIN_PARTS
+    ]
+    in_parts = {key for part in parts for key in _fields_in_tree(part.get("tree"))}
 
     def arriving(block: str, id_key: str) -> list[str]:
-        had = set(_on_tasks(previous, block, id_key))
+        had = {entry[id_key] for entry in _on_tasks(previous, block, id_key)}
         return [
-            each
-            for each in _on_tasks(plugin.definition, block, id_key)
-            if each not in had
+            entry[id_key]
+            for entry in _on_tasks(plugin.definition, block, id_key)
+            if entry[id_key] not in had
         ]
 
     await tool_layouts_service.add_to_saved_details(
@@ -965,6 +980,7 @@ async def show_on_saved_details(
                     "props": {"field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"},
                 }
                 for key in arriving("fields", "key")
+                if key not in in_parts
             ),
             *(
                 {"type": "plugin", "props": {"plugin": plugin.id, "part": part}}

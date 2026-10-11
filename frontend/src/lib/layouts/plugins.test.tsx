@@ -115,12 +115,12 @@ describe("a plug-in on a task's page", () => {
     const side = (stored: Parameters<typeof TASK_LAYOUT.root>[0]) =>
       TASK_LAYOUT.root(stored, more).children?.[2]?.children;
 
+    // ci.url is shown in the builds part, so not on its own as well.
     expect(more).toEqual([
       { type: "field", props: { field: pluginFieldId(3, "ci.state") } },
-      { type: "field", props: { field: pluginFieldId(3, "ci.url") } },
       { type: "plugin", props: { plugin: 3, part: "builds" } },
     ]);
-    expect(side(null)?.slice(-3)).toEqual(more);
+    expect(side(null)?.slice(-2)).toEqual(more);
     // A saved side holds what it holds.
     expect(side({ header: [], main: [], side: [] })).toEqual([]);
   });

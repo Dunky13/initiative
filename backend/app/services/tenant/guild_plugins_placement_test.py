@@ -411,3 +411,36 @@ class TestShowingOnSavedDetails:
             build,
             {"type": "field", "props": {"field": f"plugin:{plugin.id}:commit"}},
         ]
+
+    async def test_a_field_its_part_shows_is_not_added_on_its_own(
+        self, session: AsyncSession
+    ):
+        user, guild, first, _second = await _guild_with_two_initiatives(session)
+        project = await create_project(session, first, user)
+        definition = _on_items(("build", "task"), ("state", "task"), parts=("builds",))
+        definition["parts"][0]["tree"] = {
+            "type": "section",
+            "children": [{"type": "field", "props": {"field": "build"}}],
+        }
+        plugin = await create_guild_plugin(session, guild, user, definition=definition)
+        await route_session_to_guild(session, guild.id)
+        layout = ToolLayout(
+            initiative_id=first.id,
+            tool="project",
+            tool_id=project.id,
+            kind="task",
+            definition={"header": [], "main": [], "side": []},
+        )
+        session.add(layout)
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await set_placed_initiatives(session, plugin, {first.id})
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await session.refresh(layout)
+        assert layout.definition["side"] == [
+            {"type": "field", "props": {"field": f"plugin:{plugin.id}:state"}},
+            {"type": "plugin", "props": {"plugin": plugin.id, "part": "builds"}},
+        ]
