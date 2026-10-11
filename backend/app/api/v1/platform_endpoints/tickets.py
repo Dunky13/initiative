@@ -212,14 +212,30 @@ async def file_ticket(
     )
 
     if isinstance(ticket, SupportTicketCreate):
-        return await _ask_for_help(current_user, ticket, attached)
-    if isinstance(ticket, SecurityTicketCreate):
-        return await _report_security_problem(current_user, ticket, attached)
-    if isinstance(ticket, FeedbackTicketCreate):
-        return await _send_feedback(current_user, ticket, attached)
-    if isinstance(ticket, AppealTicketCreate):
-        return await _appeal(current_user, ticket, attached)
-    return await _report(session, current_user, ticket, attached)
+        accepted = await _ask_for_help(current_user, ticket, attached)
+    elif isinstance(ticket, SecurityTicketCreate):
+        accepted = await _report_security_problem(current_user, ticket, attached)
+    elif isinstance(ticket, FeedbackTicketCreate):
+        accepted = await _send_feedback(current_user, ticket, attached)
+    elif isinstance(ticket, AppealTicketCreate):
+        accepted = await _appeal(current_user, ticket, attached)
+    else:
+        accepted = await _report(session, current_user, ticket, attached)
+    if not isinstance(ticket, ModerationTicketCreate):
+        # Which stream and what about; never what it said. A report is not
+        # written here: one about a community is that community's business,
+        # and its own log keeps it.
+        topic = getattr(ticket, "type", None)
+        audit_service.emit(
+            event_type=AuditEventType.TICKET_FILED,
+            actor_user_id=current_user.id,
+            detail={
+                "stream": stream.value,
+                "topic": getattr(topic, "value", topic),
+                "attachments": len(attached),
+            },
+        )
+    return accepted
 
 
 async def _send_feedback(
@@ -447,6 +463,16 @@ async def reply_to_filed_ticket(
             files, meta(detail.ticket.stream).evidence_for(detail.ticket.topic)
         )
         await tickets_service.reply(current_user, detail, answer.body, attached)
+        audit_service.emit(
+            event_type=AuditEventType.TICKET_REPLIED,
+            actor_user_id=current_user.id,
+            target_type="task",
+            target_id=task_id,
+            detail={
+                "stream": detail.ticket.stream.value,
+                "attachments": len(attached),
+            },
+        )
     except tickets_service.TicketNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

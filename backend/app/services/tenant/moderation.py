@@ -25,6 +25,7 @@ from sqlalchemy import Table, select as sa_select, text, tuple_
 from sqlmodel import SQLModel, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.audit_events import AuditEventType
 from app.core.intake import IntakeStream
 from app.core.messages import HoldMessages, ModerationMessages
 from app.core.moderation import (
@@ -50,6 +51,7 @@ from app.models.platform import user_profile_view
 from app.models.platform.user import User
 from app.models.tenant.moderation import ModerationReport, ModerationReportReporter
 from app.models.tenant.search_entry import SearchEntry
+from app.services import audit as audit_service
 from app.services.platform import evidence as evidence_service
 from app.services.platform.intake import CaseFiler, CaseOutcome, CaseRefs, open_case
 from app.db.request_context import SystemGuild
@@ -772,6 +774,27 @@ async def settle_report(
     report.decided_by = decided_by
     report.decided_at = moment
     session.add(report)
+    # The community's own decision is its record alone; one the platform
+    # made under a grant is the platform's too.
+    from app.services.tenant.moderation_acts import platform_grant_id
+
+    via_grant_id = platform_grant_id(context)
+    if via_grant_id is not None:
+        await audit_service.record(
+            session,
+            event_type=AuditEventType.MODERATION_REPORT_SETTLED,
+            actor_user_id=decided_by,
+            guild_id=guild_id,
+            target_type=report.target_type,
+            target_id=report.target_id,
+            detail={
+                "report_id": report.id,
+                "outcome": outcome.value,
+                "action_id": report.action_id,
+                "platform_case_task_id": report.platform_case_id,
+                "via_grant_id": via_grant_id,
+            },
+        )
     await session.commit()
     await session.refresh(report)
     if report.platform_case_id is not None:

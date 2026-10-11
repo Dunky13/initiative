@@ -101,6 +101,51 @@ class AuditEventType(str, Enum):
     #: kept from the community, by whom, and how it ended.
     HOLD_PLACED = "hold.placed", AuditCategory.MODERATION, 1
     HOLD_RELEASED = "hold.released", AuditCategory.MODERATION, 1
+    #: A community's moderators acted, one line per row of its moderation log:
+    #: what was done, to what, on whose report or hold, and under which grant.
+    #: Never the words a removal took down; the log row keeps those, sealed.
+    MODERATION_CONTENT_REMOVED = (
+        "moderation.content_removed",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_CONTENT_RESTORED = (
+        "moderation.content_restored",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_COMMENTS_LOCKED = (
+        "moderation.comments_locked",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_COMMENTS_UNLOCKED = (
+        "moderation.comments_unlocked",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_REACTIONS_CLEARED = (
+        "moderation.reactions_cleared",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_MEMBER_WARNED = (
+        "moderation.member_warned",
+        AuditCategory.MODERATION,
+        1,
+    )
+    #: A community report was closed, with its outcome and the log row an
+    #: outcome that acts wrote.
+    MODERATION_REPORT_SETTLED = (
+        "moderation.report_settled",
+        AuditCategory.MODERATION,
+        1,
+    )
+    #: Somebody filed a ticket with whoever runs the server: which stream, and
+    #: what about. Never what it said.
+    TICKET_FILED = "ticket.filed", AuditCategory.MODERATION, 1
+    #: Whoever filed a case answered on it.
+    TICKET_REPLIED = "ticket.replied", AuditCategory.MODERATION
 
     # The platform ladder. Granting a rung is an operator's job (``roles.assign``),
     # not a moderator's, so it is recorded apart from the account actions above:
@@ -187,6 +232,13 @@ class AuditEventType(str, Enum):
     ACCESS_GRANT_DECIDED = "access_grant.decided", AuditCategory.AUTHORIZATION, 1
     ACCESS_GRANT_SELF_ISSUED = (
         "access_grant.self_issued",
+        AuditCategory.AUTHORIZATION,
+        1,
+    )
+    #: A grant named the operations case it serves, so the case the access
+    #: was for is answerable from the log as well as from the grant.
+    ACCESS_GRANT_CASE_LINKED = (
+        "access_grant.case_linked",
         AuditCategory.AUTHORIZATION,
         1,
     )
