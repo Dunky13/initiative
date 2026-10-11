@@ -32,7 +32,7 @@ import {
   viewKey,
 } from "@/hooks/useListView";
 import { useProjectTaskStatuses } from "@/hooks/useProjects";
-import { useTags } from "@/hooks/useTags";
+import { useKnownTagIds } from "@/hooks/useTags";
 import { listLayouts, useProjectLayouts } from "@/hooks/useToolLayouts";
 import {
   EMPTY_TASK_FILTERS,
@@ -194,14 +194,12 @@ export function useProjectTaskView({
     },
     [setSorting, rememberLayout, kind]
   );
-  /** Make `next`'s filters and sort this person's own, on the layout it
-   *  opened on, which is the one they come back to. */
+  /** Make `next`'s filters and sort this person's own on the layout on
+   *  screen. Which layout they come back to is theirs to pick: a link that
+   *  names one does not change it. */
   const applyPreset = useCallback(
-    (next: Preset) => {
-      apply({ filters: next.filters, sorting: next.sorting });
-      rememberLayout(kind);
-    },
-    [apply, rememberLayout, kind]
+    (next: Preset) => apply({ filters: next.filters, sorting: next.sorting }),
+    [apply]
   );
   const { preset, pick: pickPreset } = usePresetLink({
     slug: search.preset,
@@ -218,47 +216,24 @@ export function useProjectTaskView({
   const spec_ = preset?.filters ?? view.filters;
   const sorting = preset?.sorting ?? view.sorting;
 
-  // Fetch community tags for filtering
-  const { data: tags = [], isSuccess: tagsLoaded, isError: tagsFailed } = useTags();
+  const tag_ids = useKnownTagIds(spec_.tag_ids);
 
   /**
-   * The filters actually applied, with ids that no longer resolve dropped.
-   *
-   * A deleted tag or a removed status does NOT quietly stop narrowing: it is
-   * still sent as `tag_ids in (42)`, which matches nothing, so the list goes
-   * empty and the control that would explain why has no option left to render.
-   *
-   * Pruning is derived rather than written back: rewriting someone's filters
-   * on their behalf is not this component's call. Editing any filter persists
-   * the pruned set, so it heals on the first change.
-   *
-   * The two lookups fail differently. Statuses arrive as a prop, so an empty
-   * list means "not loaded yet" and nothing is pruned. Tags are fetched: while
-   * that request is in flight the filter stands, but if it *fails* the tag
-   * filter is dropped rather than trusted, because an id that cannot be
-   * checked is an id that may be hiding every task in the project. Showing
-   * more than was asked for is recoverable; showing an unexplained empty list
-   * is not.
+   * The filters actually applied, with ids that no longer resolve dropped:
+   * deleted tags (see {@link useKnownTagIds}) and removed statuses. Statuses
+   * arrive as a prop, so an empty list means "not loaded yet" and nothing is
+   * pruned.
    */
   const appliedSpec = useMemo(() => {
     const spec = spec_;
     const statusIds = new Set(taskStatuses.map((status) => status.id));
     const status_ids =
       taskStatuses.length > 0 ? spec.status_ids.filter((id) => statusIds.has(id)) : spec.status_ids;
-
-    let tag_ids = spec.tag_ids;
-    if (tagsLoaded) {
-      const tagIds = new Set(tags.map((tag) => tag.id));
-      tag_ids = spec.tag_ids.filter((id) => tagIds.has(id));
-    } else if (tagsFailed) {
-      tag_ids = [];
-    }
-
-    if (tag_ids.length === spec.tag_ids.length && status_ids.length === spec.status_ids.length) {
+    if (tag_ids === spec.tag_ids && status_ids.length === spec.status_ids.length) {
       return spec;
     }
     return { ...spec, tag_ids, status_ids };
-  }, [spec_, tags, tagsLoaded, tagsFailed, taskStatuses]);
+  }, [spec_, tag_ids, taskStatuses]);
 
   return {
     filtersLoaded: view.loaded,

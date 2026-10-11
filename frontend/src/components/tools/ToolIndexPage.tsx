@@ -98,6 +98,7 @@ import {
   viewKey,
 } from "@/hooks/useListView";
 import { useReorderProjects } from "@/hooks/useProjects";
+import { useKnownTagIds } from "@/hooks/useTags";
 import { useTagTreeSelection } from "@/hooks/useTagTreeSelection";
 import { useToolCounts } from "@/hooks/useToolCounts";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
@@ -488,6 +489,8 @@ const useListPage = (tool: Tool) => {
   return { view, setView, page, pageSize, setPage, setPageSize };
 };
 
+const NO_TAGS: number[] = [];
+
 /** Newest first, the way a table opens until its reader picks an order. */
 const NEWEST_FIRST: SortingState = [{ id: "updated_at", desc: true }];
 
@@ -597,16 +600,13 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
       ? { sort_by: sorted.id, sort_dir: sorted.desc ? ("desc" as const) : ("asc" as const) }
       : {};
 
+  const knownTagIds = useKnownTagIds(filters.tag_ids ?? NO_TAGS);
   const listFilters: ToolIndexFilters["list"] = {
     ...filters,
     search: search || undefined,
     // A tag picked in the tree narrows by it; with none picked, the
     // filter panel's tags still apply.
-    tag_ids: tagTree.tagIds.length
-      ? tagTree.tagIds
-      : filters.tag_ids?.length
-        ? filters.tag_ids
-        : undefined,
+    tag_ids: tagTree.tagIds.length ? tagTree.tagIds : knownTagIds.length ? knownTagIds : undefined,
     ...(entry.untagged && tagTree.wantsUntagged ? { untagged: true as const } : {}),
   };
   const list = entry.useList(fixedInitiativeId, {

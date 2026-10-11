@@ -58,7 +58,7 @@ describe("a person's view of a list", () => {
     });
   });
 
-  it("saves nothing before it is in, or when a change leaves it as it was", async () => {
+  it("applies a change made before it is in to it, and saves no change that leaves it as it was", async () => {
     const kept = keepViewPreferences();
     kept[spec.key] = { layout: "list" };
     let view!: ReturnType<typeof useListView<{ tag_ids: number[] }>>;
@@ -68,13 +68,15 @@ describe("a person's view of a list", () => {
     };
     renderWithProviders(createElement(Probe));
 
-    act(() => view.rememberLayout("tags"));
-    await waitFor(() => expect(view.loaded).toBe(true));
+    act(() => view.setMode("week"));
+    await waitFor(() => expect(view.mode).toBe("week"));
     expect(view.layout).toBe("list");
-    act(() => view.rememberLayout("list"));
+    await waitFor(() => expect(kept[spec.key]).toMatchObject({ layout: "list", mode: "week" }));
 
-    // Past the save's debounce: nothing reached the server.
+    const saved = kept[spec.key];
+    act(() => view.rememberLayout("list"));
+    // Past the save's debounce: nothing more reached the server.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(kept[spec.key]).toEqual({ layout: "list" });
+    expect(kept[spec.key]).toBe(saved);
   });
 });

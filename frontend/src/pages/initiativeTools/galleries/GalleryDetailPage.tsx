@@ -58,7 +58,7 @@ import { useInitiative } from "@/hooks/useInitiatives";
 import { LIST, type ListViewSpec, NO_PART_VIEW, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/useRecents";
-import { useTags } from "@/hooks/useTags";
+import { useKnownTagIds, useTags } from "@/hooks/useTags";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatPeriod } from "@/lib/formatDate";
 import { imageLabel, imageSrc } from "@/lib/galleries";
@@ -157,7 +157,7 @@ export function GalleryDetailPage() {
   const [searchQuery, setSearchQuery] = useState("");
   // The wall narrows by the kept ids at once; the picker shows their names
   // once the community's tags arrive.
-  const tagIds = wallView.filters.tag_ids;
+  const tagIds = useKnownTagIds(wallView.filters.tag_ids);
   const { data: communityTags = [] } = useTags();
   const tagFilters = useMemo<TagSummary[]>(
     () => communityTags.filter((tag) => tagIds.includes(tag.id)),

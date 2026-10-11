@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -46,6 +47,25 @@ export const useTags = (options?: { enabled?: boolean }) => {
     staleTime: 60 * 1000,
     enabled: options?.enabled ?? true,
   });
+};
+
+/**
+ * Saved tag ids, less any the community no longer has. A deleted tag does not
+ * quietly stop narrowing: sent as `tag_ids in (42)` it matches nothing, so the
+ * list goes empty while the picker has no tag left to show why. While the
+ * tags load the ids stand; if they can't be read they are dropped, because an
+ * id that cannot be checked may be hiding everything. Derived rather than
+ * written back: the next change to the filters keeps the pruned set.
+ */
+export const useKnownTagIds = (ids: number[]): number[] => {
+  const { data: tags, isSuccess, isError } = useTags();
+  return useMemo(() => {
+    if (isError) return ids.length > 0 ? [] : ids;
+    if (!isSuccess) return ids;
+    const known = new Set(tags.map((tag) => tag.id));
+    const kept = ids.filter((id) => known.has(id));
+    return kept.length === ids.length ? ids : kept;
+  }, [ids, tags, isSuccess, isError]);
 };
 
 export const useTag = (tagId: number | null) => {

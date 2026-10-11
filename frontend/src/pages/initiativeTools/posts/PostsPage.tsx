@@ -26,6 +26,7 @@ import { useInitiative } from "@/hooks/useInitiatives";
 import { type ListViewSpec, NO_PART_VIEW, useListView, viewKey } from "@/hooks/useListView";
 import { PostReadTrackerProvider } from "@/hooks/usePostReadTracker";
 import { usePostsFeed, usePostsTimeline } from "@/hooks/usePosts";
+import { useKnownTagIds } from "@/hooks/useTags";
 import { useToolCounts } from "@/hooks/useToolCounts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatPeriod, formatPeriodYear } from "@/lib/formatDate";
@@ -93,6 +94,8 @@ const readPostsFilters = (raw: unknown): PostsFilters => {
   return { ...kept, read: kept.read === "unread" ? "unread" : "all" };
 };
 
+const NO_TAGS: number[] = [];
+
 /** Where one person's view of an initiative's board is kept. */
 const postsViewSpec = (communityId: number, initiativeId: number): ListViewSpec<PostsFilters> => ({
   key: viewKey(communityId, "initiative", initiativeId, "posts"),
@@ -132,7 +135,7 @@ export const PostsView = ({ fixedInitiativeId, canCreate }: PostsViewProps) => {
     (read: ReadFilter) => keepFilters((prev) => ({ ...prev, read })),
     [keepFilters]
   );
-  const tagIds = listFilters.tag_ids ?? [];
+  const tagIds = useKnownTagIds(listFilters.tag_ids ?? NO_TAGS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Which of the board's two states it is showing. An archived notice is off
   // the feed, so this is the only place it can be reached.

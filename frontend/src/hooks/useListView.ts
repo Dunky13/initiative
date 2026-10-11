@@ -186,6 +186,8 @@ export function useListView<F>(
   const { read, defaults } = spec;
   const loadedRef = useRef(loaded);
   loadedRef.current = loaded;
+  // Changes made before the view is in, applied to it once it is.
+  const early = useRef<((kept: StoredListView) => StoredListView)[]>([]);
 
   // What an older release kept is read once the map is in, until the person
   // changes something, which keeps it here whole: opening a list writes
@@ -205,20 +207,33 @@ export function useListView<F>(
   );
 
   /** Change the kept view, from what is kept now: the cache, so changes made
-   *  together compose. Nothing is written before the view is in, which the
-   *  write would replace, or when the change leaves it as it was. */
-  const change = useCallback(
-    (patch: (kept: StoredListView) => StoredListView) => {
-      if (!loadedRef.current) return;
+   *  together compose. Nothing is written when a change leaves it as it was;
+   *  a change made before the view is in waits for it, rather than replacing
+   *  it. */
+  const write = useCallback(
+    (patches: ((kept: StoredListView) => StoredListView)[]) => {
       const kept = keptView(
         queryClient.getQueryData<UserViewPreferencesMap>(VIEW_PREFERENCES_QUERY_KEY)?.items,
         specRef.current
       ).view;
-      const next = patch(kept);
+      const next = patches.reduce((view, patch) => patch(view), kept);
       if (JSON.stringify(next) !== JSON.stringify(kept)) setRaw(next);
     },
     [queryClient, setRaw]
   );
+  const change = useCallback(
+    (patch: (kept: StoredListView) => StoredListView) => {
+      if (loadedRef.current) write([patch]);
+      else early.current.push(patch);
+    },
+    [write]
+  );
+  useEffect(() => {
+    if (!loaded || early.current.length === 0) return;
+    const patches = early.current;
+    early.current = [];
+    write(patches);
+  }, [loaded, write]);
 
   /** Change this part, keeping `layout` as the one last shown. */
   const changePart = useCallback(
