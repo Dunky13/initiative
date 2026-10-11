@@ -16,7 +16,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.schemas.base import RichMentionStr, RichTextStr, SanitizedBaseModel
+from app.schemas.base import RichMentionStr, SanitizedBaseModel
 from app.schemas.tenant.reaction import ReactionGroup
 from app.models.platform.user import Presence
 from app.models.tenant.comment import CommentAudience
@@ -212,32 +212,3 @@ class CommentListResponse(SanitizedBaseModel):
     #: Whether the reader is in the moderation set of the thread's initiative:
     #: they take comments down, and write in a locked thread.
     can_moderate: bool = False
-
-
-class RecentActivityEntry(SanitizedBaseModel):
-    # Same as the other read schemas here: a field with a default is still
-    # always sent, so the generated client should see it as present rather than
-    # optional.
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    comment_id: int
-    content: RichTextStr
-    created_at: datetime
-    author: Optional[CommentAuthor] = None
-    # The project a task comment's task is in. None for any other parent.
-    project_id: Optional[int] = None
-    project_name: Optional[str] = None
-    # What the comment is on: "task", "wiki_page" or a Tool value, with the
-    # entity's id and display name.
-    entity_type: Optional[str] = None
-    entity_id: Optional[int] = None
-    entity_name: Optional[str] = None
-    # The initiative the commented-on entity lives in, so the row can link at
-    # its real address. None when the parent is gone or unreadable (or the
-    # parent is a guild-level calendar, which belongs to no initiative).
-    initiative_id: Optional[int] = None
-    # The same chips the thread shows. The feed is where a guild sees what is
-    # going on, and a comment that drew six reactions reads differently from
-    # one that drew none — so the row carries them rather than looking like a
-    # quieter comment than it was.
-    reactions: list[ReactionGroup] = Field(default_factory=list)

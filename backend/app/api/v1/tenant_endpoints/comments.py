@@ -1,5 +1,5 @@
 import inspect
-from typing import Annotated, List, Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -21,7 +21,6 @@ from app.schemas.tenant.comment import (
     CommentListResponse,
     CommentRead,
     CommentUpdate,
-    RecentActivityEntry,
 )
 from app.services import notifications as notifications_service
 from app.services.tenant import attachments as attachments_service
@@ -76,24 +75,6 @@ async def create_comment(
         comment, viewer_id=guild_context.user_id
     )
     return response
-
-
-@router.get("/recent", response_model=List[RecentActivityEntry])
-async def recent_comments(
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-    limit: int = Query(default=10, ge=1, le=50),
-) -> List[RecentActivityEntry]:
-    """Return the most recent comments across the guild.
-
-    Only returns comments on parents the current user has DAC permission to
-    view (direct user permission or role-based). Initiative-level filtering is
-    handled by RLS on the joined parent tables.
-    """
-    return await comments_service.recent_activity(
-        session, viewer_id=current_user.id, limit=limit
-    )
 
 
 @router.get("/", response_model=CommentListResponse)

@@ -166,18 +166,14 @@ _WRITE_ROUTE_MAPS = [
 ]
 
 # Comment reads, matched by exact path shape rather than by adding ``comments``
-# to ``READ_TAGS``, so only these two of the router's four GETs are exposed:
+# to ``READ_TAGS``, so only these two of the router's three GETs are exposed:
 # list a parent's thread (``GET /comments/``) and read one comment back by id
 # (``GET /comments/{id}``). Together they close the loop on the comment write —
 # an agent can see the discussion on the task it is working and read back what
 # it posted in a later session.
 #
-# The other two stay behind the default-deny catch-all. ``GET /comments/recent``
-# is a guild-wide activity feed rather than a working surface — the same reason
-# ``join-requests`` is carved out of the ``initiatives`` tag — and it reaches
-# comments on parents (files, queues, counters, calendars, dashboards) that
-# the tool surface otherwise doesn't cover, undirected by any task at hand.
-# ``GET /comments/mentions/search`` backs the editor's @-mention picker; the
+# The other stays behind the default-deny catch-all: ``GET
+# /comments/mentions/search`` backs the editor's @-mention picker, and the
 # member and task lookups an agent needs are already tools of their own.
 _COMMENT_READ_ROUTE_MAPS = [
     RouteMap(methods=["GET"], pattern=r".*/comments/$", mcp_type=MCPType.TOOL),

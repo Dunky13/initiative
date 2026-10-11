@@ -179,15 +179,14 @@ async def test_the_tool_reads_stop_short_of_these():
 async def test_comment_reads_are_exposed():
     """The two reads that pair with the comment write, and only those.
 
-    ``comments`` is deliberately not a READ_TAG: the router's other two GETs
-    (the guild-wide ``recent`` activity feed and the @-mention picker's search)
-    are matched by no RouteMap and fall through the default-deny catch-all.
+    ``comments`` is deliberately not a READ_TAG: the router's other GET, the
+    @-mention picker's search, is matched by no RouteMap and falls through the
+    default-deny catch-all.
     """
     names = {t.name.lower() for t in await build_mcp_server(app).list_tools()}
 
     assert "list_comments" in names
     assert "read_comment" in names
-    assert "recent_comments" not in names
     assert "search_mentionables" not in names
 
 
