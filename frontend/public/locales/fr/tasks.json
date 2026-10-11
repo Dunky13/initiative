@@ -80,8 +80,7 @@
     "commentsError": "Impossible de charger les commentaires pour l'instant.",
     "skipOccurrence": "Passer cette occurrence",
     "taskSkipped": "Passée à l'occurrence suivante",
-    "skipError": "Impossible de passer cette occurrence",
-    "moreFields": "Autres champs"
+    "skipError": "Impossible de passer cette occurrence"
   },
   "scope": {
     "title": {

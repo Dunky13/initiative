@@ -369,8 +369,7 @@
     "sectionWith": "Section with {{name}}",
     "sectionTitle": "Title",
     "startFolded": "Start folded",
-    "toMoreFields": "Move {{name}} to More fields",
-    "toMoreFieldsHelp": "Every task's detail lets this be changed. Removed from here, it moves to More fields.",
+    "hiddenHelp": "Every task's detail can show this. Taken off, it is hidden, and Add puts it back.",
     "parts": {
       "header": "Header",
       "main": "Main",
@@ -398,7 +397,7 @@
       "actions": "What else can be done with the task: move, duplicate, archive, delete, and plug-in actions."
     },
     "taskLayout": "Task detail",
-    "detailHelp": "How every task's detail in this project is laid out. A field placed nowhere is still shown, under More fields.",
+    "detailHelp": "How every task's detail in this project is laid out. What it leaves out is hidden.",
     "useShipped": "Use the shipped layout",
     "shipped": "This is the layout as shipped. Changing it makes it the project's own.",
     "detailTitleHelp": "Every task's detail shows its title.",
@@ -413,10 +412,10 @@
     "noEvents": "This initiative has no events this year. Add one to see its detail here.",
     "eventDetail": {
       "name": "Event detail",
-      "help": "How every event's detail in this initiative is laid out, on each of its calendars. A field placed nowhere is still shown, under More fields.",
+      "help": "How every event's detail in this initiative is laid out, on each of its calendars. What it leaves out is hidden.",
       "shipped": "This is the layout as shipped. Changing it makes it the initiative's own.",
       "titleHelp": "Every event's detail shows its title.",
-      "toMoreFieldsHelp": "Every event's detail lets this be changed. Removed from here, it moves to More fields.",
+      "hiddenHelp": "Every event's detail can show this. Taken off, it is hidden, and Add puts it back.",
       "parts": {
         "dates": "When",
         "rsvp": "Your answer",

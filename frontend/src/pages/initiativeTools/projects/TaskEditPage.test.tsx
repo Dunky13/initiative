@@ -483,7 +483,7 @@ describe("TaskEditPage", () => {
     expect(sent[0]).toMatchObject({ priority: "high", scope: "this" });
   });
 
-  it("lays the page out as its project's layout says, gathering what it leaves out", async () => {
+  it("lays the page out as its project's layout says, leaving out what it doesn't place", async () => {
     // The task was moved: its new project lays its page out, while the path
     // still names the one it came from.
     const MOVED_TO = PROJECT_ID + 1;
@@ -499,9 +499,8 @@ describe("TaskEditPage", () => {
     );
     renderTaskPage({ taskProjectId: MOVED_TO });
 
-    const more = await screen.findByRole("button", { name: "More fields" });
-    expect(screen.getByRole("button", { name: "Work" })).toBeInTheDocument();
-    expect(more.closest("section")).toContainElement(await fieldNamed(/^status$/i));
+    expect(await screen.findByRole("button", { name: "Work" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /^status$/i })).not.toBeInTheDocument();
   });
 
   it("shows every field read-only to a reader", async () => {

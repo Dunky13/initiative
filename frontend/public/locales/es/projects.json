@@ -369,8 +369,7 @@
     "sectionWith": "Sección con {{name}}",
     "sectionTitle": "Título",
     "startFolded": "Empezar plegada",
-    "toMoreFields": "Mover {{name}} a Más campos",
-    "toMoreFieldsHelp": "El detalle de cada tarea permite cambiar este campo. Si se quita de aquí, pasa a Más campos.",
+    "hiddenHelp": "El detalle de cada tarea puede mostrar esto. Si se quita, queda oculto, y Añadir lo devuelve.",
     "parts": {
       "header": "Encabezado",
       "main": "Principal",
@@ -398,7 +397,7 @@
       "actions": "Qué más se puede hacer con la tarea: mover, duplicar, archivar, eliminar y las acciones de plug-ins."
     },
     "taskLayout": "Detalle de la tarea",
-    "detailHelp": "Cómo se organiza el detalle de cada tarea de este proyecto. Un campo que no está en ningún sitio se sigue mostrando, en Más campos.",
+    "detailHelp": "Cómo se organiza el detalle de cada tarea de este proyecto. Lo que deja fuera queda oculto.",
     "useShipped": "Usar el diseño original",
     "shipped": "Este es el diseño original. Cambiarlo lo convierte en el del proyecto.",
     "detailTitleHelp": "El detalle de cada tarea muestra su título.",
@@ -413,10 +412,10 @@
     "noEvents": "Esta iniciativa no tiene eventos este año. Añade uno para ver su detalle aquí.",
     "eventDetail": {
       "name": "Detalle del evento",
-      "help": "Cómo se organiza el detalle de cada evento de esta iniciativa, en cada uno de sus calendarios. Un campo que no está en ningún sitio se sigue mostrando, en Más campos.",
+      "help": "Cómo se organiza el detalle de cada evento de esta iniciativa, en cada uno de sus calendarios. Lo que deja fuera queda oculto.",
       "shipped": "Este es el diseño original. Cambiarlo lo convierte en el de la iniciativa.",
       "titleHelp": "El detalle de cada evento muestra su título.",
-      "toMoreFieldsHelp": "El detalle de cada evento permite cambiar este campo. Si se quita de aquí, pasa a Más campos.",
+      "hiddenHelp": "El detalle de cada evento puede mostrar esto. Si se quita, queda oculto, y Añadir lo devuelve.",
       "parts": {
         "dates": "Cuándo",
         "rsvp": "Tu respuesta",

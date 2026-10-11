@@ -81,8 +81,7 @@ export type CanvasTools = {
   /** What is being edited: a drag under way ends when it changes, as an undo
    *  may have put another part where the dragged one was. */
   revision: unknown;
-  /** Whether it is a part the editor has, as against one the page draws of
-   *  its own (More fields). */
+  /** Whether it is a part the editor has. */
   knows: (of: Selection) => boolean;
   /** Where adding into it puts a part: an empty group's first place. */
   inside: (of: Selection) => Place | null;

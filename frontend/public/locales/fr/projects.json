@@ -369,8 +369,7 @@
     "sectionWith": "Section avec {{name}}",
     "sectionTitle": "Titre",
     "startFolded": "Repliée au départ",
-    "toMoreFields": "Déplacer {{name}} vers Autres champs",
-    "toMoreFieldsHelp": "Le détail de chaque tâche permet de modifier ce champ. Retiré d'ici, il passe dans Autres champs.",
+    "hiddenHelp": "Le détail de chaque tâche peut afficher ceci. Retiré, il est masqué, et Ajouter le remet.",
     "parts": {
       "header": "En-tête",
       "main": "Principal",
@@ -398,7 +397,7 @@
       "actions": "Ce qu'on peut faire d'autre avec la tâche : déplacer, dupliquer, archiver, supprimer, et les actions des plug-ins."
     },
     "taskLayout": "Détail de la tâche",
-    "detailHelp": "La disposition du détail de chaque tâche de ce projet. Un champ placé nulle part reste affiché, sous Autres champs.",
+    "detailHelp": "La disposition du détail de chaque tâche de ce projet. Ce qu'elle laisse de côté est masqué.",
     "useShipped": "Utiliser la disposition d'origine",
     "shipped": "C'est la disposition d'origine. La modifier en fait celle du projet.",
     "detailTitleHelp": "Le détail de chaque tâche affiche son titre.",
@@ -413,10 +412,10 @@
     "noEvents": "Cette initiative n'a aucun événement cette année. Ajoutez-en un pour voir son détail ici.",
     "eventDetail": {
       "name": "Détail de l'événement",
-      "help": "La disposition du détail de chaque événement de cette initiative, dans chacun de ses calendriers. Un champ placé nulle part reste affiché, sous Autres champs.",
+      "help": "La disposition du détail de chaque événement de cette initiative, dans chacun de ses calendriers. Ce qu'elle laisse de côté est masqué.",
       "shipped": "C'est la disposition d'origine. La modifier en fait celle de l'initiative.",
       "titleHelp": "Le détail de chaque événement affiche son titre.",
-      "toMoreFieldsHelp": "Le détail de chaque événement permet de modifier ce champ. Retiré d'ici, il passe dans Autres champs.",
+      "hiddenHelp": "Le détail de chaque événement peut afficher ceci. Retiré, il est masqué, et Ajouter le remet.",
       "parts": {
         "dates": "Quand",
         "rsvp": "Votre réponse",

@@ -1,7 +1,7 @@
 /**
  * A detail (a task's, an event's) laid out from a tree: its regions, where
- * each part falls once the detail is one column, the fields placed nowhere,
- * and the layout a detail is stored as.
+ * each part falls once the detail is one column, and the layout a detail is
+ * stored as. What a layout leaves out is not shown.
  */
 
 import type {
@@ -73,46 +73,36 @@ export interface DetailLayoutSpec {
   ownParts: string[];
   /** The built-in fields it edits: those the shipped detail places. */
   detailFields: ReadonlySet<string>;
-  /** Whether a part edits a field: placed nowhere, it is drawn under More
-   *  fields rather than gone. */
+  /** Whether a part edits a field: taken off, the field is hidden. */
   editsAField: (node: LayoutNode) => boolean;
-  /** What the shipped detail edits and `regions` place nowhere, in its order. */
-  unplacedFields: (regions: Record<Region, LayoutNode[]>) => LayoutNode[];
   /** The detail as one tree to edit by path: the detail, holding its header,
    *  main and side in that order. */
   root: (stored: StoredRegions | null | undefined) => LayoutNode;
   /**
    * The detail from a stored layout: each region as stored, or as shipped where
-   * the layout leaves it out. What the shipped detail edits and the layout
-   * places nowhere is drawn in a "More fields" section at the side, so a
-   * field still has a place on a detail nobody laid out for it. A stored part
-   * carries no `order`: where it falls on one column is worked out here, so a
-   * detail laid out anew still reads as the shipped one does on a phone.
+   * the layout leaves it out. A stored part carries no `order`: where it falls
+   * on one column is worked out here, so a detail laid out anew still reads as
+   * the shipped one does on a phone.
    */
-  tree: (stored: StoredRegions | null | undefined, moreFields: string) => LayoutNode;
+  tree: (stored: StoredRegions | null | undefined) => LayoutNode;
 }
 
 /**
  * A kind of detail, from how it ships: its regions, with each column
- * part's one-column `order`; the part types that edit a field; and where More
- * fields falls on one column, after everything else.
+ * part's one-column `order`, and the part types that edit a field.
  */
 export const detailLayoutSpec = ({
   kind,
   shipped,
   fieldParts,
-  moreOrder,
 }: {
   kind: DetailLayoutRead["kind"];
   shipped: Record<Region, LayoutNode[]>;
   fieldParts: readonly string[];
-  moreOrder: number;
 }): DetailLayoutSpec => {
   const editing = new Set(fieldParts);
   const editsAField = (node: LayoutNode) => editing.has(node.type);
   const shippedNodes = nodesIn(Object.values(shipped).flat());
-  /** What the shipped detail edits, in its order. */
-  const shippedFields = shippedNodes.filter(editsAField);
   /** Where the shipped detail puts each of its column parts on one column. */
   const shippedOrder = new Map(
     [...shipped.main, ...shipped.side].map((node) => [anchorOf(node), Number(node.props?.order)])
@@ -141,11 +131,6 @@ export const detailLayoutSpec = ({
     side: stored?.side ?? shipped.side,
   });
 
-  const unplacedFields = (regions: Record<Region, LayoutNode[]>) => {
-    const placed = new Set(nodesIn(Object.values(regions).flat()).map(placedAs));
-    return shippedFields.filter((node) => !placed.has(placedAs(node)));
-  };
-
   return {
     kind,
     shipped,
@@ -156,7 +141,6 @@ export const detailLayoutSpec = ({
       shippedNodes.filter((node) => node.type === "field").map((node) => String(node.props?.field))
     ),
     editsAField,
-    unplacedFields,
     root: (stored) => {
       const regions = regionsOf(stored);
       return {
@@ -164,29 +148,14 @@ export const detailLayoutSpec = ({
         children: LAYOUT_REGIONS.map((region) => ({ type: region, children: regions[region] })),
       };
     },
-    tree: (stored, moreFields) => {
+    tree: (stored) => {
       const regions = regionsOf(stored);
-      const unplaced = unplacedFields(regions);
-      const side = ordered(regions.side, "side");
       return {
         type: "layout",
         children: [
           { type: "header", children: regions.header },
           { type: "main", children: ordered(regions.main, "main") },
-          {
-            type: "side",
-            children: unplaced.length
-              ? [
-                  ...side,
-                  // Last on one column, after whatever the regions hold.
-                  at(moreOrder, {
-                    type: "section",
-                    props: { title: moreFields },
-                    children: unplaced,
-                  }),
-                ]
-              : side,
-          },
+          { type: "side", children: ordered(regions.side, "side") },
         ],
       };
     },

@@ -60,5 +60,4 @@ export const EVENT_LAYOUT = detailLayoutSpec({
   kind: "calendar_event",
   shipped: EVENT_DETAIL_REGIONS,
   fieldParts: ["field", "dates", "properties"],
-  moreOrder: 8,
 });

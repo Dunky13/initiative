@@ -258,7 +258,7 @@ const PartSettings = ({
           ? on.words.titleHelp
           : "layoutEditor.titleHelp"
         : on?.spec.editsAField(node)
-          ? on.words.toMoreFieldsHelp
+          ? on.words.hiddenHelp
           : on
             ? `${on.words.parts}.partHelp.${node.type}`
             : node.type === "properties"
