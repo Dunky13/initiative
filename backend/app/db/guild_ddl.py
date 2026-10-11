@@ -50,6 +50,7 @@ from app.db.initiative_rls import (
     entity_tables,
     governing_path,
     managed_write,
+    render_content_item_fn,
     render_entity_access_fn,
     render_entity_initiative_fn,
     InitiativePath,
@@ -1430,6 +1431,8 @@ def render_guild_rls_ddl() -> str:
         + render_entity_access_fn()
         + "\n"
         + render_entity_initiative_fn()
+        + "\n"
+        + render_content_item_fn()
         + "\n"
         + render_resource_frozen_fn()
         + "\n"

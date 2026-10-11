@@ -1027,6 +1027,40 @@ $entity_initiative$;
 """
 
 
+#: The item a change counts for, for every reader of the change log that asks.
+CONTENT_ITEM_FN = "content_item_of"
+
+
+def render_content_item_fn() -> str:
+    """The item a change log row counts for, as ``(kind, id)``.
+
+    The changed row itself when it is a tool or something inside one, else the
+    innermost of its ``parents`` that is: a comment or a reaction counts for
+    what it sits on. No row for a change that is about none (a tag). SQL, so a
+    lateral call is planned as the join it stands for, and it reads no table.
+    """
+    kinds = ", ".join(
+        f"('{table}', '{kind}')" for kind, table in sorted(CONTENT_KIND_TABLES.items())
+    )
+    return f"""
+CREATE OR REPLACE FUNCTION {CONTENT_ITEM_FN}(p_type text, p_id integer, p_parents jsonb)
+    RETURNS TABLE (kind text, id integer)
+    LANGUAGE sql IMMUTABLE
+    AS $content_item_of$
+    SELECT k.kind, c.id
+    FROM (
+        SELECT p_type AS tbl, p_id AS id, 0::bigint AS depth
+      UNION ALL
+        SELECT p.value ->> 'type', (p.value ->> 'id')::integer, p.depth
+        FROM jsonb_array_elements(p_parents) WITH ORDINALITY AS p (value, depth)
+    ) c
+    JOIN (VALUES {kinds}) AS k (tbl, kind) ON k.tbl = c.tbl
+    ORDER BY c.depth
+    LIMIT 1
+$content_item_of$;
+"""
+
+
 def _entity_readable(t: str, kinds: Iterable[str]) -> str:
     """A row on a ``(entity_type, entity_id)`` pair is read by whoever can see
     the thing it is on: one ``EXISTS`` into that thing's own table, whose

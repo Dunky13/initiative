@@ -21,6 +21,7 @@ from app.db.schema_provisioning import guild_role_name, guild_schema_name
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import Task
 from app.schemas.query import FilterOp
+from app.services.tenant import activity_feed
 from app.services.tenant import properties as properties_service
 from app.testing import (
     create_guild,
@@ -240,3 +241,54 @@ async def test_a_property_filter_reads_only_the_listed_rows_values(
         plan = plan if isinstance(plan, list) else json.loads(plan)
         read = _rows_read(plan[0]["Plan"], "property_values")
         assert read <= 3, f"{op.value} on 3 tasks read {read} values"
+
+
+async def test_the_feed_reads_a_bounded_slice_of_the_week(
+    acting_user, session: AsyncSession, role_session
+):
+    """A community whose week holds far more changes than the feed considers:
+    one page reads the newest :data:`~activity_feed.CANDIDATE_CHANGES` of
+    them, through the index on time, and no more. Each one read is a read its
+    policy authorizes, so a feed that read the week would cost a busy community
+    a policy check per change on every visit."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    task = await create_task(session, a.project)
+    await route_session_to_guild(session, a.guild.id)
+    # What the factories wrote, as a person's changes, so every row read is one
+    # the feed considers.
+    await session.exec(
+        text("UPDATE event_outbox SET actor_user_id = :who").bindparams(who=a.user.id)
+    )
+    await session.exec(
+        text(
+            "INSERT INTO event_outbox (txn_id, occurred_at, actor_user_id, "
+            "initiative_id, resource_type, resource_id, action, changed, parents, "
+            "dac_tool, dac_id) "
+            "SELECT o.txn_id, now() - n * interval '1 minute', :other, "
+            "o.initiative_id, o.resource_type, o.resource_id, 'updated', "
+            "'{title}', o.parents, o.dac_tool, o.dac_id "
+            "FROM event_outbox o, generate_series(1, :count) n "
+            "WHERE o.resource_type = 'tasks' AND o.resource_id = :task"
+        ).bindparams(
+            other=a.user.id + 1000,
+            count=20 * activity_feed.CANDIDATE_CHANGES,
+            task=task.id,
+        )
+    )
+    await session.commit()
+    await route_session_to_guild(session, a.guild.id)
+    await session.exec(text("ANALYZE event_outbox"))
+    await session.commit()
+
+    member = await role_session("app_user")
+    await establish_guild_access(member, a.user, a.guild.id)
+    statement, params = activity_feed.query(reader_id=a.user.id)
+    explained = text(f"EXPLAIN (ANALYZE, FORMAT JSON) {statement.text}").bindparams(
+        *statement._bindparams.values()
+    )
+    (plan,) = (await member.exec(explained, params=params)).one()  # type: ignore[call-overload]
+    plan = plan if isinstance(plan, list) else json.loads(plan)
+    read = _rows_read(plan[0]["Plan"], "event_outbox")
+    assert read <= activity_feed.CANDIDATE_CHANGES, f"one page read {read} changes"
