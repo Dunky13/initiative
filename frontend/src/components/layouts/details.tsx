@@ -52,8 +52,6 @@ export type EditableDetail = {
   };
   /** Its fields, by id: the built-ins, and the plug-ins' where they draw on it. */
   fields: (definitions: PropertyDefinitionRead[], plugins: FieldDef[]) => Map<string, FieldDef>;
-  /** Whether plug-ins draw on it, so the editor offers their parts and fields. */
-  plugins: boolean;
   /** The detail drawn with one of its own, laid out as `tree` says. */
   preview: (tree: LayoutNode) => ReactNode;
 };
@@ -175,7 +173,6 @@ export const taskDetail = (project: LayoutProject): EditableDetail => ({
     parts: "layouts:",
   },
   fields: taskFields,
-  plugins: true,
   preview: (tree) => <TaskPreview project={project} tree={tree} />,
 });
 
@@ -191,7 +188,6 @@ export const eventDetail = (initiativeId: number): EditableDetail => ({
     parts: "layouts:eventDetail.",
   },
   fields: eventFields,
-  plugins: false,
   preview: (tree) => <EventPreview initiativeId={initiativeId} tree={tree} />,
 });
 

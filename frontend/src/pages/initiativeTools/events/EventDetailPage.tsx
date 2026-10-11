@@ -38,6 +38,7 @@ import { calendarTarget, detailLayoutOf, useToolLayouts } from "@/hooks/useToolL
 import { useCommunityPath } from "@/lib/communityUrl";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { EventLayoutView } from "@/lib/layouts/eventLayout";
+import { usePluginMenuActions } from "@/lib/layouts/plugins";
 import { toast } from "@/lib/mascotToast";
 import { eventRoute, toolDetailRoute, toolListRoute } from "@/lib/tools";
 
@@ -123,6 +124,7 @@ export function EventDetailPage() {
   const layoutsQuery = useToolLayouts(
     event?.initiative_id != null ? calendarTarget(event.initiative_id) : null
   );
+  const pluginActions = usePluginMenuActions("calendar_event", parsedId, event?.initiative_id);
 
   if (eventQuery.isLoading || layoutsQuery.isLoading) {
     return (
@@ -191,7 +193,7 @@ export function EventDetailPage() {
         communityId={event.community_id}
         onGone={() => leave(leaveTo)}
       />
-      {canWrite ? (
+      {canWrite || pluginActions.items.length > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -209,31 +211,41 @@ export function EventDetailPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              disabled={duplicateEvent.isPending}
-              onSelect={() => void handleDuplicate()}
-            >
-              <Copy className="h-4 w-4" />
-              {t("common:subToolDuplicate.action")}
-            </DropdownMenuItem>
-            {repeating ? (
-              <DropdownMenuItem
-                disabled={detach.isPending}
-                onSelect={() => detach.mutate(occurrenceStart)}
-              >
-                <Unlink className="h-4 w-4" />
-                {t("occurrence.detach")}
-              </DropdownMenuItem>
+            {canWrite ? (
+              <>
+                <DropdownMenuItem
+                  disabled={duplicateEvent.isPending}
+                  onSelect={() => void handleDuplicate()}
+                >
+                  <Copy className="h-4 w-4" />
+                  {t("common:subToolDuplicate.action")}
+                </DropdownMenuItem>
+                {repeating ? (
+                  <DropdownMenuItem
+                    disabled={detach.isPending}
+                    onSelect={() => detach.mutate(occurrenceStart)}
+                  >
+                    <Unlink className="h-4 w-4" />
+                    {t("occurrence.detach")}
+                  </DropdownMenuItem>
+                ) : null}
+              </>
             ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              disabled={deleteEvent.isPending}
-              onSelect={() => void handleDelete()}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t("deleteEvent")}
-            </DropdownMenuItem>
+            {canWrite && pluginActions.items.length > 0 ? <DropdownMenuSeparator /> : null}
+            {pluginActions.items}
+            {canWrite ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  disabled={deleteEvent.isPending}
+                  onSelect={() => void handleDelete()}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t("deleteEvent")}
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -265,6 +277,7 @@ export function EventDetailPage() {
           actions,
         }}
       />
+      {pluginActions.dialog}
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}

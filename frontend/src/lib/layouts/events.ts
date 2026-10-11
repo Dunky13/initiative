@@ -18,7 +18,10 @@ export const EVENT_FIELDS = {
 /** An event's fields as the editor names them, then the initiative's
  *  properties. An event is drawn in its detail alone so far, so none has a
  *  value to draw elsewhere. */
-export const eventFields = (definitions: PropertyDefinitionRead[] = []): Map<string, FieldDef> =>
+export const eventFields = (
+  definitions: PropertyDefinitionRead[] = [],
+  plugins: FieldDef[] = []
+): Map<string, FieldDef> =>
   new Map(
     [
       ...Object.entries(EVENT_FIELDS).map(
@@ -32,6 +35,7 @@ export const eventFields = (definitions: PropertyDefinitionRead[] = []): Map<str
         })
       ),
       ...propertyFields(definitions, () => null),
+      ...plugins,
     ].map((field) => [field.id, field])
   );
 

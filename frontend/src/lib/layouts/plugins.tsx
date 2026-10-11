@@ -14,17 +14,17 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import contract from "@/contract/manifest.contract.json";
-import { useCommunityPlugins, useRunPluginTaskAction } from "@/hooks/useCommunityPlugins";
+import { useCommunityPlugins, useRunPluginAction } from "@/hooks/useCommunityPlugins";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import { numberFormat } from "@/lib/intl";
 import { cn } from "@/lib/utils";
 import { type LocalizedText, localized } from "@/lib/widgets/widgetMeta";
 
-import type { FieldDef, FieldRendererProps, LayoutItem } from "./fields";
+import type { FieldDef, FieldRendererProps } from "./fields";
 import { Section } from "./section";
 
 /** What a plug-in draws on an item from: the item, and the values it carries. */
-type PluginItem = Pick<LayoutItem, "id" | "plugin_values">;
+export type PluginItem = { id: number; plugin_values?: PluginValueSummary[] };
 
 import type { LayoutNode } from "./tree";
 
@@ -71,6 +71,8 @@ type PluginActionDecl = {
  *  there, of what the server offers this reader. */
 export type PluginOnItems = {
   id: number;
+  /** The kind of item it is met on. */
+  kind: PluginItemKind;
   /** What the community calls the install. */
   name: string;
   fields: ReadonlyMap<string, PluginFieldDecl>;
@@ -79,7 +81,7 @@ export type PluginOnItems = {
 };
 
 /** The kinds of item whose pages draw plug-ins, as the manifest names them. */
-export type PluginItemKind = "task";
+export type PluginItemKind = "task" | "calendar_event";
 
 /** What a block declares on one kind of item, of what the server offers the
  *  reader. */
@@ -124,6 +126,7 @@ export const pluginsOnItems = (
           install.id,
           {
             id: install.id,
+            kind,
             name: install.name,
             fields: declared<PluginFieldDecl>(
               install.definition,
@@ -423,14 +426,14 @@ export const PluginFieldOnDetail = ({ field, item }: { field: FieldDef; item: Pl
 
 // -- Actions --------------------------------------------------------------------
 
-/** Runs a plug-in's actions on a task, asking first when the action says to. */
-const useActionRunner = (taskId: number) => {
+/** Runs a plug-in's actions on an item, asking first when the action says to. */
+const useActionRunner = (kind: PluginItemKind, itemId: number) => {
   const { t, i18n } = useTranslation("common");
-  const run = useRunPluginTaskAction();
+  const run = useRunPluginAction();
   const [asking, setAsking] = useState<{ plugin: number; action: PluginActionDecl } | null>(null);
   const start = (plugin: number, action: PluginActionDecl) => {
     if (action.confirm) setAsking({ plugin, action });
-    else run.mutate({ pluginId: plugin, actionId: action.id, taskId });
+    else run.mutate({ pluginId: plugin, actionId: action.id, kind, itemId });
   };
   const dialog = (
     <ConfirmDialog
@@ -444,7 +447,9 @@ const useActionRunner = (taskId: number) => {
       }
       cancelLabel={t("cancel")}
       onConfirm={() => {
-        if (asking) run.mutate({ pluginId: asking.plugin, actionId: asking.action.id, taskId });
+        if (asking) {
+          run.mutate({ pluginId: asking.plugin, actionId: asking.action.id, kind, itemId });
+        }
         setAsking(null);
       }}
     />
@@ -452,12 +457,16 @@ const useActionRunner = (taskId: number) => {
   return { start, pending: run.isPending, dialog };
 };
 
-/** The task menu's entries for the actions plug-ins offer there, and the
+/** An item's menu entries for the actions plug-ins offer there, and the
  *  question one asks before it runs, which stays when the menu closes. */
-export const usePluginMenuActions = (taskId: number, initiativeId: number | null | undefined) => {
+export const usePluginMenuActions = (
+  kind: PluginItemKind,
+  itemId: number,
+  initiativeId: number | null | undefined
+) => {
   const { i18n } = useTranslation();
-  const plugins = usePluginsOnItems(initiativeId);
-  const runner = useActionRunner(taskId);
+  const plugins = usePluginsOnItems(initiativeId, true, kind);
+  const runner = useActionRunner(kind, itemId);
   const items = [...plugins.values()].flatMap(({ id, actions }) =>
     [...actions.values()]
       .filter((action) => action.menu)
@@ -481,7 +490,7 @@ const BUTTON_VARIANT = { primary: "default", secondary: "outline", ghost: "ghost
 
 type Drawing = {
   plugin: PluginOnItems;
-  task: PluginItem;
+  item: PluginItem;
   language: string;
   start: (plugin: number, action: PluginActionDecl) => void;
   pending: boolean;
@@ -495,7 +504,7 @@ const drawChildren = (node: LayoutNode, drawing: Drawing): ReactNode =>
 
 const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
   const props = node.props ?? {};
-  const { plugin, task, language } = drawing;
+  const { plugin, item, language } = drawing;
   switch (node.type) {
     case "section":
       return (
@@ -524,7 +533,7 @@ const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
     case "value": {
       const field = plugin.fields.get(String(props.field));
       if (!field) return null;
-      const value = pluginValue(task.plugin_values, plugin.id, field.key);
+      const value = pluginValue(item.plugin_values, plugin.id, field.key);
       if (!shows(field.kind, value)) return null;
       const drawn = <PluginValue field={field} value={value} />;
       if (node.type === "value") return drawn;
@@ -568,30 +577,30 @@ const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
   }
 };
 
-/** One of a plug-in's parts on a task, drawn from its manifest's tree. A part
+/** One of a plug-in's parts on an item, drawn from its manifest's tree. A part
  *  the install no longer declares, or one placed where its plug-in does not
  *  reach the reader, draws nothing. */
 export const PluginPartView = ({
   plugins,
   pluginId,
   partId,
-  task,
+  item,
 }: {
   plugins: ReadonlyMap<number, PluginOnItems> | undefined;
   pluginId: number;
   partId: string;
-  task: PluginItem;
+  item: PluginItem;
 }) => {
   const { i18n } = useTranslation();
-  const runner = useActionRunner(task.id);
   const plugin = plugins?.get(pluginId);
+  const runner = useActionRunner(plugin?.kind ?? "task", item.id);
   const part = plugin?.parts.get(partId);
   if (!plugin || !part) return null;
   return (
     <>
       {drawPart(part.tree, {
         plugin,
-        task,
+        item,
         language: i18n.language,
         start: runner.start,
         pending: runner.pending,

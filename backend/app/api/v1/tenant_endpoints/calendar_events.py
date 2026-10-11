@@ -63,6 +63,7 @@ from app.services.permissions import Action
 from app.services.tenant import calendar_events as events_service
 from app.services.tenant import calendar_occurrences as occurrences_service
 from app.services.tenant import ical_service
+from app.services.tenant import plugin_metadata
 from app.services import notifications as notifications_service
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
@@ -288,6 +289,9 @@ async def _serialized_event(
     occurrence: datetime | None = None,
 ) -> CalendarEventRead:
     """``occurrence`` shows that one's answers in place of the series'."""
+    values = await plugin_metadata.values_on(
+        session, "calendar_event", {event.id: event.calendar.initiative_id}
+    )
     return serialize_calendar_event(
         event,
         context=context,
@@ -297,6 +301,7 @@ async def _serialized_event(
             if occurrence is not None
             else await occurrences_service.answers_on(session, event)
         ),
+        plugin_values=values.get(event.id, []),
     )
 
 

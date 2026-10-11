@@ -55,12 +55,7 @@ import {
   startHistory,
   withCard,
 } from "@/lib/layouts/draft";
-import {
-  type PluginOnItems,
-  pluginFields,
-  shippedPluginParts,
-  usePluginsOnItems,
-} from "@/lib/layouts/plugins";
+import { pluginFields, shippedPluginParts, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import { toast } from "@/lib/mascotToast";
@@ -144,8 +139,6 @@ const draftOf = (set: ToolLayoutSetRead, details: EditableDetail[]): Draft => {
     opensOn: lists.find((layout) => layout.is_default)?.kind ?? "table",
   };
 };
-
-const NO_PLUGINS: ReadonlyMap<number, PluginOnItems> = new Map();
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -257,16 +250,14 @@ export const LayoutEditor = ({
         definition: draft.lists[active as ListLayoutReadKind] ?? {},
       };
   const stored = openDetail ? (draft.details[openDetail.spec.kind] ?? null) : null;
-  const installed = usePluginsOnItems(initiativeId);
+  // The plug-ins that draw on what is open: a list's tasks, or a detail's item.
+  const plugins = usePluginsOnItems(initiativeId, true, openDetail?.spec.kind ?? "task");
   const detail = useMemo(
     () =>
       openDetail
-        ? openDetail.spec.root(
-            stored as StoredRegions | null,
-            openDetail.plugins ? shippedPluginParts(installed) : []
-          )
+        ? openDetail.spec.root(stored as StoredRegions | null, shippedPluginParts(plugins))
         : null,
-    [openDetail, stored, installed]
+    [openDetail, stored, plugins]
   );
   // The tree the part edits change.
   const tree = current ? cardOf(current.definition) : (detail ?? EMPTY_TREE);
@@ -294,9 +285,6 @@ export const LayoutEditor = ({
   }
 
   const { data: definitions = [] } = useProperties({ initiativeId });
-  // The plug-ins that draw on what is open: a list's tasks, or a detail that
-  // takes them.
-  const plugins = openDetail && !openDetail.plugins ? NO_PLUGINS : installed;
   const fields = useMemo(
     () => (openDetail?.fields ?? taskFields)(definitions, pluginFields(plugins, i18n.language)),
     [openDetail, definitions, plugins, i18n.language]

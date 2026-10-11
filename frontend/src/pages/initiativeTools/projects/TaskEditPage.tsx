@@ -128,7 +128,11 @@ export const TaskEditPage = () => {
   const repeating = Boolean(task?.recurrence);
   // A plug-in's actions are the plug-in's to allow, so a reader who cannot
   // edit the task may still run them.
-  const pluginActions = usePluginMenuActions(parsedTaskId, projectQuery.data?.initiative_id);
+  const pluginActions = usePluginMenuActions(
+    "task",
+    parsedTaskId,
+    projectQuery.data?.initiative_id
+  );
 
   const skipTask = useSkipTask({
     onSuccess: (skipped) => {

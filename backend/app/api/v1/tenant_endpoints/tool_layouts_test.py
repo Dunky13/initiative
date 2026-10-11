@@ -647,8 +647,6 @@ def _detail(kind: str, *side: dict[str, Any]) -> dict[str, Any]:
                 {"type": "section", "children": [_field("checklist")]},
             ),
         ),
-        ("calendar", _detail("calendar_event", _plugin_part(3))),
-        ("calendar", _detail("calendar_event", _field("plugin:3:ci.state"))),
         ("project", _detail("task", {"type": "rsvp"})),
         ("project", _detail("task", _field("location"))),
         ("project", _detail("calendar_event")),
@@ -656,8 +654,6 @@ def _detail(kind: str, *side: dict[str, Any]) -> dict[str, Any]:
     ids=[
         "a task's part on an event",
         "a task's field on an event",
-        "a plug-in's part on an event",
-        "a plug-in's field on an event",
         "an event's part on a task",
         "an event's field on a task",
         "an event's detail on a project",
@@ -691,6 +687,9 @@ async def test_the_calendar_lays_out_its_event_detail(client: AsyncClient, actin
             "type": "section",
             "children": [{"type": "dates"}, _field("location"), _field("property:12")],
         },
+        # A plug-in's part and field, as on a task.
+        _plugin_part(3),
+        _field("plugin:3:ci.state"),
     )
 
     saved = await client.put(
@@ -702,6 +701,8 @@ async def test_the_calendar_lays_out_its_event_detail(client: AsyncClient, actin
     assert [part["type"] for part in layout["definition"]["side"]] == [
         "rsvp",
         "section",
+        "plugin",
+        "field",
     ]
     assert layout["updated_at"] is not None
 
