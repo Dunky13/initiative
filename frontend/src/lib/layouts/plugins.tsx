@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
+import contract from "@/contract/manifest.contract.json";
 import { useCommunityPlugins, useRunPluginTaskAction } from "@/hooks/useCommunityPlugins";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import { numberFormat } from "@/lib/intl";
@@ -184,8 +185,8 @@ export const pluginFilterFields = (
       }))
   );
 
-/** How many parts of one install a tree may place, as the server allows. */
-export const MAX_PLUGIN_PARTS = 3;
+/** How many parts of one install a tree may place, as the contract says. */
+export const MAX_PLUGIN_PARTS = contract.caps.partsPlacedPerItem;
 
 /** What a task's page draws of the plug-ins until its layout is saved: each
  *  install's fields, then its parts up to {@link MAX_PLUGIN_PARTS}, as it

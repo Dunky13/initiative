@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.errors import CodedError
 from app.core.messages import ToolLayoutMessages
 from app.core.tools import DETAIL_LAYOUTS, LAYOUT_DEFAULT, LIST_LAYOUTS, Tool
 from app.db.advisory_locks import LockNamespace, advisory_lock
@@ -189,7 +190,10 @@ def _within_limits(stored: dict[str, Any], roots: list[Any], loose: int) -> None
         part.props.plugin for part, _ in parts if isinstance(part, PluginPart)
     )
     if any(count > MAX_PLUGIN_PARTS for count in installs.values()):
-        raise _bad_request(ToolLayoutMessages.TOO_MANY_PLUGIN_PARTS)
+        raise CodedError(
+            ToolLayoutMessages.TOO_MANY_PLUGIN_PARTS,
+            params={"max": str(MAX_PLUGIN_PARTS)},
+        )
 
 
 def _drawn_on(part: Any, kind: str) -> bool:
@@ -451,7 +455,7 @@ async def add_to_saved_details(
                     {"kind": row.kind, "definition": definition}
                 ),
             )
-        except (HTTPException, ValidationError):
+        except (HTTPException, CodedError, ValidationError):
             continue
         row.definition = definition
         row.updated_at = datetime.now(timezone.utc)

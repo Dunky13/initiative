@@ -464,7 +464,7 @@
   "TOOL_LAYOUTS_TARGET_INVALID": "Impossible de configurer des dispositions pour cela.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "Cet outil n'affiche pas cette disposition.",
   "TOOL_LAYOUTS_TOO_LARGE": "Cette disposition a trop d'éléments. Retirez-en et réessayez.",
-  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Une carte ou un détail peut contenir jusqu'à 3 éléments d'un même plug-in.",
+  "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Une carte ou un détail peut contenir jusqu'à {{max}} éléments d'un même plug-in.",
   "COMMUNITY_NOT_A_COMMUNITY": "Cette communauté n’est pas inscrite à l’annuaire des communautés.",
   "COMMUNITY_COMMUNITY_REQUIRES_CATEGORY": "Une communauté inscrite doit avoir au moins une catégorie.",
   "COMMUNITY_COMMUNITY_CONTENT_NOT_DECLARED": "Confirmez que cette communauté ne contient aucun contenu pour adultes avant de l’inscrire.",

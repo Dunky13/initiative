@@ -35,6 +35,7 @@ from app.core.tools import Tool
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.base import SanitizedBaseModel
 from app.schemas.query import FilterOp, SortDir
+from app.services.marketplace import contract
 from app.services.marketplace.manifest_values import (
     IDENTIFIER_CHARS,
     MAX_IDENTIFIER_LENGTH,
@@ -48,7 +49,7 @@ MAX_NODES = 300
 MAX_DEPTH = 6
 MAX_DEFINITION_BYTES = 64 * 1024
 #: One plug-in's parts on one task: on a card, or across its detail.
-MAX_PLUGIN_PARTS = 3
+MAX_PLUGIN_PARTS = contract.cap("partsPlacedPerItem")
 #: Presets on one list.
 MAX_PRESETS = 20
 
