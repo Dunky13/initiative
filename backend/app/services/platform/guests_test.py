@@ -35,6 +35,7 @@ from app.testing import (
     create_guild_membership,
     create_initiative,
     create_initiative_member,
+    create_project,
     create_resource_grant,
     create_task,
     create_user,
@@ -772,6 +773,12 @@ async def test_a_guest_given_only_an_item_keeps_no_grant_on_leaving(
         session, a.guild, ends_in=-HOUR if way == "expires" else HOUR
     )
     await create_resource_grant(session, a.project, user=guest)
+    # An archived item's share goes as well.
+    archived = await create_project(session, a.initiative, a.user)
+    await create_resource_grant(session, archived, user=guest)
+    archived.archived_at = datetime.now(timezone.utc)
+    session.add(archived)
+    await session.commit()
     guild_id, guest_id = a.guild.id, guest.id
 
     if way == "removed":
