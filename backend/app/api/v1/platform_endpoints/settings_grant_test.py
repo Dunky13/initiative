@@ -267,6 +267,8 @@ async def test_the_superadmin_grantee_reads_the_auth_controls(
         "redacted_by_platform": False,
         "allow_engagement_ranking": True,
         "engagement_ranking_allowed_by_platform": True,
+        "guest_max_days": None,
+        "guest_max_days_by_platform": 90,
     }
 
 
