@@ -8,8 +8,8 @@
   ``app_superadmin`` gets ``UPDATE`` on the column beside the rules it
   already sets.
 
-Revision ID: 20261011_0503
-Revises: 20261011_0502
+Revision ID: 20261011_0504
+Revises: 20261011_0503
 Create Date: 2026-10-11
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "20261011_0503"
-down_revision = "20261011_0502"
+revision = "20261011_0504"
+down_revision = "20261011_0503"
 branch_labels = None
 depends_on = None
 
