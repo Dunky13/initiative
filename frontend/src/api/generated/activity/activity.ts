@@ -45,8 +45,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 
 /**
  * What people changed lately in what the reader can open, one entry per
- * item, ordered for the reader. Narrowed to one initiative, or to one tool
- * (``tool`` with ``tool_id``).
+ * item, ordered for the reader.
  * @summary Read Activity
  */
 export const readActivity = (

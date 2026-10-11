@@ -136,7 +136,6 @@ async def test_the_endpoint_narrows_to_a_tool_only_with_its_id(client, acting_us
 
     response = await client.get(a.g("/activity/?tool=project"), headers=a.headers)
     assert response.status_code == 422
-    assert response.json()["detail"] == "ACTIVITY_TOOL_NEEDS_ITS_ID"
 
     response = await client.get(a.g("/activity/"), headers=a.headers)
     assert response.status_code == 200, response.text

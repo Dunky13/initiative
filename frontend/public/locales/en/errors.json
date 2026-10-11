@@ -743,6 +743,5 @@
   "ACCESS_GRANT_CASE_NOT_FOUND": "That case wasn't found, or you can't open it.",
   "ACCESS_GRANT_CASE_NOT_LINKABLE": "Access can't be asked for a case of this kind.",
   "ACCESS_GRANT_CASE_CLOSED": "That case is closed.",
-  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "That case is about another community.",
-  "ACTIVITY_TOOL_NEEDS_ITS_ID": "Name the tool and which one to narrow the feed to."
+  "ACCESS_GRANT_CASE_OTHER_COMMUNITY": "That case is about another community."
 }

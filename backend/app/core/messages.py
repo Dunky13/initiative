@@ -1657,13 +1657,6 @@ class NativeMessages:
     APP_UPDATE_REQUIRED = "NATIVE_APP_UPDATE_REQUIRED"
 
 
-class ActivityMessages:
-    """Codes for the activity feed."""
-
-    #: A feed narrowed to a tool names the tool and which one.
-    TOOL_NEEDS_ITS_ID = "ACTIVITY_TOOL_NEEDS_ITS_ID"
-
-
 class LegalMessages:
     """Codes for the hosted deployment's terms and privacy policy."""
 
