@@ -362,10 +362,8 @@ export const ListLayoutOutline = ({
 
 /**
  * A task's detail as a list beside the canvas: the layout, its header, main and
- * side with their parts, then the fields placed nowhere, which every task
- * still shows under More fields. A row is dragged to move it, into another
- * region or section as well; taking off a part that changes a field sends the
- * field to More fields.
+ * side with their parts. A row is dragged to move it, into another region or
+ * section as well; a part taken off is hidden, and Add puts it back.
  */
 export const DetailLayoutOutline = ({
   detail,
@@ -393,12 +391,6 @@ export const DetailLayoutOutline = ({
   const { t } = useTranslation(LAYOUT_NAMESPACES);
   const translate = t as TranslateFn;
   const { labelOf, partLabel } = usePartLabel(fields, plugins, of.words.parts);
-  const regions = detail.children ?? [];
-  const unplaced = of.spec.unplacedFields({
-    header: regions[0]?.children ?? [],
-    main: regions[1]?.children ?? [],
-    side: regions[2]?.children ?? [],
-  });
   return (
     <nav aria-label={translate("layoutEditor.outline")} className="flex h-full flex-col">
       <div className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -418,31 +410,12 @@ export const DetailLayoutOutline = ({
           hideAction={(node) =>
             FIXED.has(node.type) || !removable(node, fields)
               ? null
-              : translate(
-                  of.spec.editsAField(node) ? "layoutEditor.toMoreFields" : "layoutEditor.hide",
-                  {
-                    name: partLabel(node),
-                  }
-                )
+              : translate("layoutEditor.hide", { name: partLabel(node) })
           }
           selection={selection}
           edits={edits}
           locked={locked}
         />
-        {unplaced.length > 0 ? (
-          <div className="pt-2">
-            <p className="px-2 font-medium text-muted-foreground text-xs">
-              {translate(of.words.moreFields)}
-            </p>
-            <ul className="text-muted-foreground text-sm">
-              {unplaced.map((node) => (
-                <li key={`${node.type}:${String(node.props?.field ?? "")}`}>
-                  <span className="block truncate py-1 pl-8">{partLabel(node)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </div>
       <div className="border-t p-3">
         <AddPicker choices={choices} labelOf={labelOf} adders={adders} locked={locked} />

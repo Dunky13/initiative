@@ -80,8 +80,7 @@
     "commentsError": "Unable to load comments right now.",
     "skipOccurrence": "Skip this occurrence",
     "taskSkipped": "Moved on to the next occurrence",
-    "skipError": "Couldn't skip this occurrence",
-    "moreFields": "More fields"
+    "skipError": "Couldn't skip this occurrence"
   },
   "scope": {
     "title": {

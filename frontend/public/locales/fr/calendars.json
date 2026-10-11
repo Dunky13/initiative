@@ -147,7 +147,6 @@
     "description": "Description",
     "noDescription": "Aucune description.",
     "when": "Quand",
-    "tagsPlaceholder": "Ajouter des étiquettes",
-    "moreFields": "Autres champs"
+    "tagsPlaceholder": "Ajouter des étiquettes"
   }
 }

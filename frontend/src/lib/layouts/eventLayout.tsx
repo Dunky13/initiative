@@ -680,13 +680,12 @@ export const EventLayoutView = ({
   context: EventLayoutContext;
   layout?: StoredRegions | null;
   /** The layout is being edited: each part is marked with its path, which
-   *  the editor's detail tree shares, More fields being past the side's end. */
+   *  the editor's detail tree shares. */
   editing?: boolean;
 }) => {
-  const { t } = useTranslation("calendars");
   const communityId = useActiveCommunityId();
   const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
-  const tree = useMemo(() => EVENT_LAYOUT.tree(layout, t("eventPage.moreFields")), [layout, t]);
+  const tree = useMemo(() => EVENT_LAYOUT.tree(layout), [layout]);
   const view = useMemo<LayoutContext>(
     () => ({
       fields: new Map(),

@@ -197,7 +197,7 @@ describe("a task detail laid out", () => {
     const stored = storedLayout(
       insertAt(TASK_LAYOUT.root(null), [1], { type: "plugin", props: { plugin: 3, part: "ci" } }, 2)
     );
-    const tree = TASK_LAYOUT.tree(stored as StoredRegions, "More fields");
+    const tree = TASK_LAYOUT.tree(stored as StoredRegions);
     const orders = (index: number) =>
       tree.children?.[index]?.children?.map((node) => [
         // A section by its first part.
@@ -220,25 +220,6 @@ describe("a task detail laid out", () => {
     expect(orders(2)).toEqual([
       ["status", 2],
       ["relations", 5],
-    ]);
-  });
-
-  it("names what it places nowhere, which More fields then draws", () => {
-    const page = TASK_LAYOUT.root({ side: [] });
-    const unplaced = TASK_LAYOUT.unplacedFields({
-      header: page.children?.[0]?.children ?? [],
-      main: page.children?.[1]?.children ?? [],
-      side: [],
-    });
-
-    expect(unplaced.map((node) => node.props?.field ?? node.type)).toEqual([
-      "status",
-      "priority",
-      "assignees",
-      "dates",
-      "recurrence",
-      "tags",
-      "properties",
     ]);
   });
 });
