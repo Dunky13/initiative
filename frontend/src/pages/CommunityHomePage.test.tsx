@@ -8,7 +8,6 @@ import {
   buildBanner,
   buildCalendarEvent,
   buildCommunity,
-  buildFileSummary,
   buildInitiative,
   buildInitiativeDirectoryEntry,
   buildInitiativeJoinRequest,
@@ -20,7 +19,6 @@ import {
   buildUser,
   initiativeCan,
 } from "@/__tests__/factories";
-import { buildQueueSummary } from "@/__tests__/factories/queue.factory";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
@@ -34,38 +32,6 @@ const INITIATIVE_ID = 7;
 
 /** Whoever is reading the page. */
 const READER = buildUser({ id: 42 });
-
-const page = (items: unknown[], totalCount = items.length) =>
-  HttpResponse.json({
-    items,
-    total_count: totalCount,
-    page: 1,
-    page_size: 20,
-    has_next: false,
-  });
-
-/**
- * The community home reads every tool through the same paginated envelope, so one
- * stub shape covers all six. Only the selected tool is actually requested.
- */
-function stubTools({
-  projects = [],
-  files = [],
-  queues = [],
-}: {
-  projects?: unknown[];
-  files?: unknown[];
-  queues?: unknown[];
-} = {}) {
-  server.use(
-    communityHttp.get("/projects/", () => page(projects)),
-    communityHttp.get("/files/", () => page(files)),
-    communityHttp.get("/queues/", () => page(queues)),
-    communityHttp.get("/counter-groups/", () => page([])),
-    communityHttp.get("/calendars/", () => page([])),
-    communityHttp.get("/dashboards/", () => page([]))
-  );
-}
 
 /** The listing is the reader's own memberships, community admin or not, so the
  *  stub carries their role, and may view every tool the initiative has on. */
@@ -101,48 +67,20 @@ function stubFlippingDirectory(
   return acted;
 }
 
-/** A community with nothing in it: no initiatives, no tools, and whatever —
+/** A community with nothing in it: no initiatives, and whatever —
  *  usually nothing — it has on offer to join. */
 function stubEmptyCommunity(directory: unknown[] = []) {
   server.use(communityHttp.get("/initiatives/", () => HttpResponse.json([])));
-  stubTools();
   stubDirectory(directory);
 }
 
-/** The ordinary background: one initiative the reader is in, holding one
- *  project, so the table below the rail has a row. */
-function stubOneProject() {
-  stubInitiatives();
-  stubTools({ projects: [buildProject({ id: 1, name: "Lunar Lander" })] });
-}
-
-/** Answers the projects listing, recording every request the table made. */
-function watchProjects(respond: (url: URL) => Response = () => page([LANDER()])) {
-  const asked: URL[] = [];
-  server.use(
-    communityHttp.get("/projects/", ({ request }) => {
-      const url = new URL(request.url);
-      asked.push(url);
-      return respond(url);
-    })
-  );
-  return asked;
-}
-
-const LANDER = () => buildProject({ id: 1, name: "Lunar Lander" });
 const NEBULA = () => buildInitiativeDirectoryEntry({ id: 9, name: "Nebula", join_policy: "open" });
-const pageOf = (url: URL) => url.searchParams.get("page") ?? "1";
-const sought = (asked: URL[], key: string) => asked.at(-1)?.searchParams.get(key);
 
 /** One case of the feed: what the community holds, what was said, and where
  *  the entry has to lead. */
 type FeedCase = [
   label: string,
-  community: {
-    initiative?: Record<string, boolean>;
-    tools?: Parameters<typeof stubTools>[0];
-    search?: Record<string, unknown>;
-  },
+  community: { initiative?: Record<string, boolean> },
   entry: NonNullable<Parameters<typeof buildRecentActivityEntry>[0]>,
   says: string,
   href: string,
@@ -205,7 +143,6 @@ describe("CommunityHomePage", () => {
 
   it("heads the page with the community's banner, carrying its own name and description", async () => {
     stubInitiatives();
-    stubTools();
 
     renderHomeFor({
       name: "Ravenloft Chronicle",
@@ -229,7 +166,6 @@ describe("CommunityHomePage", () => {
     ["the colour it wears by default", buildBanner(), "rgb(37, 99, 235)"],
   ])("heads a community with no artwork with %s", async (_label, banner, colour) => {
     stubInitiatives();
-    stubTools();
 
     const { container } = renderHomeFor({ banner });
 
@@ -247,7 +183,6 @@ describe("CommunityHomePage", () => {
     "says how big the community is, and %s",
     async (_label, member_count, online_count, members, online) => {
       stubInitiatives();
-      stubTools();
 
       renderHomeFor({ member_count, online_count });
 
@@ -263,7 +198,6 @@ describe("CommunityHomePage", () => {
 
   it("carries the community's own banner layout through to the banner", async () => {
     stubInitiatives();
-    stubTools();
 
     const { container } = renderHomeFor({
       banner: buildBanner({ text_align: "left", fade: "strong" }),
@@ -272,24 +206,23 @@ describe("CommunityHomePage", () => {
     await screen.findByRole("heading", { level: 1 });
     expect(container.querySelector("h1")?.parentElement?.className).toContain("text-left");
     // A faded banner is extended and the same amount taken back, so the rail
-    // and the table below end up over its tail.
+    // and the tray below end up over its tail.
     const banner = container.querySelector<HTMLElement>("div.grid");
     expect(banner?.style.marginBottom).toBe("-224px");
   });
 
-  // The tool circles sit under the banner's copy, so they follow the edge it
-  // was aligned to rather than a fixed one of their own.
+  // The rail sits under the banner's copy, so it follows the edge that was
+  // aligned to rather than a fixed one of its own.
   it.each<[string, BannerTextAlign, boolean]>([
-    ["centres the tool circles under a banner that centres its copy", "center", true],
-    ["keeps them against the edge the banner's copy sits on when it is left", "left", false],
+    ["centres the rail under a banner that centres its copy", "center", true],
+    ["keeps it against the edge the banner's copy sits on when it is left", "left", false],
   ])("%s", async (_label, text_align, centred) => {
     stubInitiatives();
-    stubTools();
 
     renderHomeFor({ banner: buildBanner({ text_align }) });
 
     await screen.findByRole("heading", { level: 1 });
-    const rail = screen.getByRole("navigation", { name: /tool/i }).firstElementChild;
+    const rail = screen.getByRole("navigation", { name: "Community activity" }).firstElementChild;
     if (centred) {
       expect(rail?.className).toContain("justify-center");
     } else {
@@ -297,276 +230,14 @@ describe("CommunityHomePage", () => {
     }
   });
 
-  it("lists the whole community's projects under the projects circle", async () => {
-    stubInitiatives();
-    stubTools({
-      projects: [
-        buildProject({ id: 1, name: "Lunar Lander", initiative_id: INITIATIVE_ID }),
-        buildProject({ id: 2, name: "Rover Telemetry", initiative_id: INITIATIVE_ID }),
-      ],
-    });
-
-    renderHome();
-
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Rover Telemetry" })).toBeInTheDocument();
-    // Each row names the initiative it came from, since the table spans them all.
-    expect(screen.getAllByRole("link", { name: "Apollo" }).length).toBeGreaterThan(0);
-  });
-
-  // The rail shows only what the community's initiatives actually turned on, and
-  // projects are a tool like any other now — so an initiative that is only
-  // files has no Projects circle to offer.
-  it.each([
-    [
-      "Queues, and none for the calendars it left off",
-      { queues_enabled: true },
-      ["Queues", "Projects"],
-      ["Calendar"],
-    ],
-    [
-      "Files, and none for the projects it turned off",
-      { projects_enabled: false },
-      ["Files"],
-      ["Projects"],
-    ],
-  ])("shows a circle for %s", async (_label, initiative, shown, hidden) => {
-    stubInitiatives(initiative);
-    stubTools({ projects: [LANDER()] });
-
-    renderHome();
-
-    const rail = await screen.findByRole("navigation", { name: "Community tools" });
-    // The rail waits on the initiative list — until it lands only the core
-    // tools show, so assert on the settled state.
-    expect(await within(rail).findByRole("link", { name: shown[0] })).toBeInTheDocument();
-    for (const name of shown.slice(1)) {
-      expect(within(rail).getByRole("link", { name })).toBeInTheDocument();
-    }
-    for (const name of hidden) {
-      expect(within(rail).queryByRole("link", { name })).not.toBeInTheDocument();
-    }
-  });
-
-  it("switches the table to the tool named in the address", async () => {
-    stubInitiatives({ queues_enabled: true });
-    stubTools({
-      queues: [
-        buildQueueSummary({
-          id: 3,
-          name: "Launch Window",
-          initiative_id: INITIATIVE_ID,
-        }),
-      ],
-    });
-
-    renderHome({ tool: "queues" });
-
-    expect(await screen.findByRole("link", { name: "Launch Window" })).toBeInTheDocument();
-  });
-
-  it("falls back to a reachable tool when the address names an unknown one", async () => {
-    stubOneProject();
-
-    renderHome({ tool: "not-a-tool" });
-
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
-  });
-
-  it("recovers a page number the tool no longer has", async () => {
-    stubInitiatives();
-    // 40 projects across two pages of 20 — page 99 exists nowhere.
-    const asked = watchProjects((url) =>
-      pageOf(url) === "99" ? page([], 40) : page([LANDER()], 40)
-    );
-
-    renderHome({ tool: "projects", page: 99 });
-
-    // The community still holds projects, so it lands back on a page that has them
-    // instead of leaving an empty table over 40 rows.
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
-    expect(asked.map(pageOf)).toContain("99");
-  });
-
-  it("leaves a page number that is in range alone", async () => {
-    stubInitiatives();
-    const asked = watchProjects(() =>
-      page([buildProject({ id: 21, name: "Second Page Project" })], 40)
-    );
-
-    renderHome({ tool: "projects", page: 2 });
-
-    expect(await screen.findByRole("link", { name: "Second Page Project" })).toBeInTheDocument();
-    // No spurious reset to page 1 while the first response is still in flight.
-    await waitFor(() => expect(asked.map(pageOf)).toEqual(["2"]));
-  });
-
-  it("asks the server for most-recently-updated first, unasked", async () => {
-    stubInitiatives();
-    const asked = watchProjects();
-
-    renderHome();
-
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
-    expect(sought(asked, "sort_by")).toBe("updated_at");
-    expect(sought(asked, "sort_dir")).toBe("desc");
-  });
-
-  it("shows the tool's own views with the community's totals", async () => {
-    stubInitiatives();
-    const asked = watchProjects();
-    server.use(
-      communityHttp.get("/tools/project/counts", () =>
-        HttpResponse.json({
-          views: { active: 4, templates: 2, archived: 1 },
-          tag_counts: {},
-          untagged_count: 0,
-        })
-      )
-    );
-
-    renderHome();
-
-    const templates = await screen.findByRole("radio", { name: "Templates" });
-    await waitFor(() => expect(templates).toHaveTextContent("2"));
-    expect(screen.getByRole("radio", { name: "Active" })).toHaveTextContent("4");
-
-    await userEvent.click(templates);
-    await waitFor(() => expect(sought(asked, "is_template")).toBe("true"));
-  });
-
-  it("searches the whole community rather than the page in hand", async () => {
-    stubInitiatives();
-    const asked = watchProjects((url) =>
-      page(
-        url.searchParams.get("search")
-          ? [buildProject({ id: 2, name: "Rover Telemetry" })]
-          : [LANDER(), buildProject({ id: 2, name: "Rover Telemetry" })]
-      )
-    );
-
-    renderHome();
-    await screen.findByRole("link", { name: "Lunar Lander" });
-
-    await userEvent.type(screen.getByPlaceholderText("Search by name…"), "rover");
-
-    // The text goes to the server, and the row it does not match leaves — it
-    // was never a client-side filter over the twenty rows already fetched.
-    await waitFor(() =>
-      expect(asked.map((url) => url.searchParams.get("search"))).toContain("rover")
-    );
-    await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "Lunar Lander" })).not.toBeInTheDocument()
-    );
-    expect(screen.getByRole("link", { name: "Rover Telemetry" })).toBeInTheDocument();
-  });
-
-  it("keeps the search box on screen when the search finds nothing", async () => {
-    stubInitiatives();
-    watchProjects((url) => (url.searchParams.get("search") ? page([]) : page([LANDER()])));
-
-    renderHome();
-    await screen.findByRole("link", { name: "Lunar Lander" });
-
-    await userEvent.type(screen.getByPlaceholderText("Search by name…"), "zzz");
-
-    // Not the "nothing here yet" story, which would take away the only way to
-    // unsay the search.
-    await waitFor(() =>
-      expect(screen.queryByRole("link", { name: "Lunar Lander" })).not.toBeInTheDocument()
-    );
-    expect(screen.getByPlaceholderText("Search by name…")).toHaveValue("zzz");
-    expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
-  });
-
-  it("sorts by a column header, and says so in the address", async () => {
-    stubInitiatives();
-    const asked = watchProjects();
-
-    renderHome();
-    await screen.findByRole("link", { name: "Lunar Lander" });
-
-    await userEvent.click(screen.getByRole("button", { name: /^name/i }));
-
-    await waitFor(() => expect(sought(asked, "sort_by")).toBe("name"));
-    expect(sought(asked, "sort_dir")).toBe("asc");
-  });
-
-  it("takes the order from the address, so a sorted table is a link", async () => {
-    stubInitiatives();
-    const asked = watchProjects();
-
-    renderHome({ sort: "initiative", dir: "desc" });
-
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
-    expect(sought(asked, "sort_by")).toBe("initiative");
-    expect(sought(asked, "sort_dir")).toBe("desc");
-  });
-
-  it("toggles from the order in the address, not the one it mounted with", async () => {
-    stubInitiatives();
-    const asked = watchProjects();
-
-    const { router } = renderHome();
-    await screen.findByRole("link", { name: "Lunar Lander" });
-
-    // The order changes after the table mounted — the back button landing on
-    // one, say. The headers have to follow it, or the next click toggles from
-    // where the table came in rather than from what the rows are actually in.
-    await router.navigate({ href: "/?sort=name&dir=asc" });
-    await waitFor(() => expect(sought(asked, "sort_by")).toBe("name"));
-
-    await userEvent.click(screen.getByRole("button", { name: /^name/i }));
-
-    // Ascending was showing, so one click means descending.
-    await waitFor(() => expect(sought(asked, "sort_dir")).toBe("desc"));
-    expect(sought(asked, "sort_by")).toBe("name");
-  });
-
-  it("drops a half-typed search when the tool changes under it", async () => {
-    stubInitiatives({ queues_enabled: true });
-    const asked: string[] = [];
-    server.use(
-      communityHttp.get("/projects/", () => page([LANDER()])),
-      communityHttp.get("/queues/", ({ request }) => {
-        asked.push(new URL(request.url).searchParams.get("search") ?? "");
-        return page([buildQueueSummary({ id: 3, name: "Launch Window" })]);
-      })
-    );
-
-    const { router } = renderHome();
-    await screen.findByRole("link", { name: "Lunar Lander" });
-
-    // Typed, then a tool picked before the search had gone anywhere — the
-    // rail's own link carries the tool and nothing else.
-    await userEvent.type(screen.getByPlaceholderText("Search by name…"), "rover");
-    await router.navigate({ href: "/?tool=queues" });
-
-    expect(await screen.findByRole("link", { name: "Launch Window" })).toBeInTheDocument();
-    // The new tool is not narrowed by what was meant for the last one, and the
-    // box that text was typed into is empty.
-    await waitFor(() => expect(asked.length).toBeGreaterThan(0));
-    expect(asked.every((search) => search === "")).toBe(true);
-    expect(screen.getByPlaceholderText("Search by name…")).toHaveValue("");
-  });
-
-  it("says so when the selected tool has nothing in the community", async () => {
-    stubInitiatives();
-    stubTools({ files: [] });
-
-    renderHome({ tool: "files" });
-
-    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
-  });
-
-  // The feed under the table is the whole community's. Each entry names where
+  // The rail's comment circle is the whole community's feed. Each entry names where
   // the comment was left and leads straight back to it, on whichever surface
   // that was — including one the community itself holds rather than an
   // initiative.
   it.each<FeedCase>([
     [
       "the community's latest comment on a task, to the task inside its project",
-      { tools: { projects: [LANDER()] } },
+      {},
       {
         comment_id: 11,
         content: "Ready for the review",
@@ -582,7 +253,7 @@ describe("CommunityHomePage", () => {
     ],
     [
       "a comment left on a tool entity, to that entity",
-      { initiative: { queues_enabled: true }, tools: { queues: [] }, search: { tool: "queues" } },
+      { initiative: { queues_enabled: true } },
       {
         comment_id: 12,
         content: "Order looks wrong",
@@ -608,12 +279,11 @@ describe("CommunityHomePage", () => {
       "on Club Nights",
       "/c/1/calendars/3",
     ],
-  ])("links %s", async (_label, { initiative = {}, tools = {}, search }, entry, says, href) => {
+  ])("links %s", async (_label, { initiative = {} }, entry, says, href) => {
     stubInitiatives(initiative);
-    stubTools(tools);
     stubRecentComment(entry);
 
-    renderHome(search);
+    renderHome();
 
     expect(await screen.findByText(says)).toBeInTheDocument();
     expect(screen.getByText(String(entry.content))).toBeInTheDocument();
@@ -625,7 +295,6 @@ describe("CommunityHomePage", () => {
 
   it("opens a plug-in's settings from the address, where the reader answers what it asked", async () => {
     stubInitiatives();
-    stubTools();
     server.use(
       communityHttp.get("/plugins/3", () =>
         HttpResponse.json({
@@ -658,29 +327,30 @@ describe("CommunityHomePage", () => {
     expect(screen.getByText("Waiting for you")).toBeInTheDocument();
   });
 
-  it("keeps the comment feed while the rail switches tools", async () => {
-    stubInitiatives({ queues_enabled: true });
-    stubTools({ queues: [] });
+  it("shows the community's comments in the tray, under their circle", async () => {
+    stubInitiatives();
     stubRecentComment({ content: "Still here" });
 
-    // Queues are empty, so the table is replaced by its empty state — the
-    // community-wide feed is not.
-    renderHome({ tool: "queues" });
+    renderHome();
 
-    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
-    expect(screen.getByText("Still here")).toBeInTheDocument();
+    const rail = await screen.findByRole("navigation", { name: "Community activity" });
+    expect(within(rail).getByRole("link", { name: "Comments" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(await screen.findByText("Still here")).toBeInTheDocument();
   });
 
   it("says so when the community has no comments yet", async () => {
-    stubOneProject();
+    stubInitiatives();
 
     renderHome();
 
     expect(await screen.findByText("No comments yet")).toBeInTheDocument();
   });
 
-  it("lists everything dated this week under the comments, each leading to itself", async () => {
-    stubOneProject();
+  it("lists everything dated this week under the initiatives, each leading to itself", async () => {
+    stubInitiatives();
     const tomorrowNoon = addHours(addDays(startOfDay(new Date()), 1), 12);
     const asked: URL[] = [];
     server.use(
@@ -750,8 +420,8 @@ describe("CommunityHomePage", () => {
     expect(url?.searchParams.get("conditions")).toContain("in_progress");
   });
 
-  it("lists the community's initiatives under the table, grouped by where you stand", async () => {
-    stubOneProject();
+  it("lists the community's initiatives under the comments, grouped by where you stand", async () => {
+    stubInitiatives();
     stubDirectory([
       buildInitiativeDirectoryEntry({ id: INITIATIVE_ID, name: "Apollo", is_member: true }),
       NEBULA(),
@@ -768,8 +438,8 @@ describe("CommunityHomePage", () => {
     expect(within(joinable).getByRole("button", { name: "Join" })).toBeInTheDocument();
   });
 
-  it("asks no directory for a guest, and still lists what is shared with them", async () => {
-    stubOneProject();
+  it("asks no directory for a guest", async () => {
+    stubInitiatives();
     let asked = false;
     server.use(
       communityHttp.get("/initiatives/directory", () => {
@@ -780,13 +450,15 @@ describe("CommunityHomePage", () => {
 
     renderHomeFor({ role: "guest" });
 
-    expect(await screen.findByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("navigation", { name: "Community activity" })
+    ).toBeInTheDocument();
     expect(screen.queryByText("Nebula")).not.toBeInTheDocument();
     expect(asked).toBe(false);
   });
 
   it("folds the whole initiatives section away from its heading", async () => {
-    stubOneProject();
+    stubInitiatives();
     stubDirectory([NEBULA()]);
 
     renderHome();
@@ -795,11 +467,11 @@ describe("CommunityHomePage", () => {
 
     await waitFor(() => expect(screen.queryByText("Nebula")).not.toBeInTheDocument());
     // The rest of the page is untouched by the fold.
-    expect(screen.getByRole("link", { name: "Lunar Lander" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Community activity" })).toBeInTheDocument();
   });
 
   it("offers a community admin the create dialog from the section header", async () => {
-    stubOneProject();
+    stubInitiatives();
     stubDirectory([NEBULA()]);
 
     renderHome();
@@ -811,7 +483,7 @@ describe("CommunityHomePage", () => {
   });
 
   it("keeps creating out of a member's hands", async () => {
-    stubOneProject();
+    stubInitiatives();
     stubDirectory([NEBULA()]);
 
     renderHomeAsMember();
@@ -822,7 +494,7 @@ describe("CommunityHomePage", () => {
   });
 
   it("opens the create dialog for the ?create=true deep link", async () => {
-    stubOneProject();
+    stubInitiatives();
 
     renderHome({ create: "true" });
 
@@ -832,7 +504,7 @@ describe("CommunityHomePage", () => {
   });
 
   it("re-reads the community once the reader joins, so the card flips to joined", async () => {
-    stubOneProject();
+    stubInitiatives();
 
     // The membership row is what the directory reports back on, so the second
     // read — the one the join's invalidation forces — answers differently.
@@ -857,7 +529,7 @@ describe("CommunityHomePage", () => {
   });
 
   it("re-reads the community once the reader knocks, so the card flips to requested", async () => {
-    stubOneProject();
+    stubInitiatives();
 
     // Asking changes nothing about what the reader can see — only the card's
     // own state — so the directory is what has to answer differently.
@@ -890,7 +562,9 @@ describe("CommunityHomePage", () => {
     expect(await screen.findByText(/You haven’t joined any initiatives yet/)).toBeInTheDocument();
     // The directory is the way in, so it takes the page over from the rail.
     expect(screen.getByRole("button", { name: "Join" })).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Community tools" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Community activity" })
+    ).not.toBeInTheDocument();
   });
 
   it("does not call a failed lookup an empty membership", async () => {
@@ -901,7 +575,9 @@ describe("CommunityHomePage", () => {
 
     // A request that never answered is not proof the reader is in nothing —
     // saying so would be a confident lie about their own access.
-    expect(await screen.findByRole("navigation", { name: "Community tools" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("navigation", { name: "Community activity" })
+    ).toBeInTheDocument();
     expect(screen.queryByText(/You haven’t joined any initiatives yet/)).not.toBeInTheDocument();
   });
 
@@ -951,19 +627,5 @@ describe("CommunityHomePage", () => {
 
     // The wizard opens on its first question, not on a form of everything.
     expect(await screen.findByRole("dialog")).toHaveTextContent("What is it called?");
-  });
-
-  it("keeps files on the same table shape as projects", async () => {
-    stubInitiatives();
-    stubTools({
-      files: [buildFileSummary({ id: 5, name: "Flight Rules", initiative_id: INITIATIVE_ID })],
-    });
-
-    renderHome({ tool: "files" });
-
-    expect(await screen.findByRole("link", { name: "Flight Rules" })).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole("columnheader", { name: /type/i })).toBeInTheDocument()
-    );
   });
 });

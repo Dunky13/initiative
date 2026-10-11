@@ -1,9 +1,7 @@
 /**
  * The one tool table. Every tool renders through it — the columns are fixed
  * and the tool only supplies the rows (see `lib/toolRows`), so switching tools
- * swaps the data, not the layout. So do the two pages that show it: a
- * community's front page and My Tools differ by a column and by which headers
- * sort, not by a second table.
+ * swaps the data, not the layout.
  *
  * Rows are read a server page at a time, and the search box and the sortable
  * headers go to the server with them. Nothing here filters or sorts the page

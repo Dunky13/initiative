@@ -97,8 +97,8 @@ export const InitiativeDetailPage = ({ tool }: InitiativeDetailPageProps = {}) =
 
   // The path names the tab, so it is shareable and survives a reload. A tool
   // this member can't view falls back to the first one they can, rather than
-  // dead-ending a bookmark the moment a permission changes — the same rule the
-  // community home applies to its `?tool=` param.
+  // dead-ending a bookmark the moment a permission changes — the same rule My
+  // Tools applies to its `?tool=` param.
   const activeTab =
     tool && availableTabs.includes(tool) ? tool : (availableTabs[0] ?? Tool.project);
 

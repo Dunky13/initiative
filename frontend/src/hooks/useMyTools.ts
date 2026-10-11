@@ -4,9 +4,7 @@
  *
  * One `/me/*` list per tool, and one counts call. The lists are the community-wide
  * ones with the community boundary taken off — same rows, same filters, merged
- * server-side — so the rows they produce go through the same `lib/toolRows`
- * builder the community front page uses, and the query that lists each tool
- * comes from the same `TOOL_HOOKS` table its community-wide twin reads.
+ * server-side — so the rows they produce go through the `lib/toolRows` builder.
  */
 
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
@@ -57,8 +55,8 @@ export interface MyToolQuery {
 /**
  * One cross-community page of whatever tool My Tools is showing.
  *
- * Twin of `useCommunityToolRows`: all nine lists are asked so the fan-out never
- * changes shape, and every one but the selected tool is gated off.
+ * All nine lists are asked so the fan-out never changes shape, and every one
+ * but the selected tool is gated off.
  */
 export function useMyToolRows(tool: Tool, page: number, pageSize: number, view: MyToolQuery = {}) {
   const { t } = useTranslation("communityHome");
