@@ -18,12 +18,15 @@ columns); what a person narrows a list to, and how they sort it, are theirs. So 
   and is stored only if that says anything;
 * the default is kept where it is not the shipped one (a project's table);
 * an item layout keeps its definition, under its item kind;
-* the views that only filtered a list are not kept.
+* the views that only filtered a list become the presets of the list of their
+  kind, in their order, with their sort on a table. A shipped one no one
+  renamed is kept by its slug alone, so each reader reads its name in their
+  own language; a project whose presets are the shipped ones stores none.
 
 The downgrade gives every project holding a layout the six views a project
 shipped, each list view with what its layout drew and the default it opened
 on, and its task layout back. A shared tool's list layouts, which views could
-not hold, are not kept.
+not hold, and the presets, are not kept.
 
 Revision ID: 20261010_0493
 Revises: 20261010_0492
@@ -53,6 +56,18 @@ _LISTS: dict[str, tuple[str, ...]] = {
 #: What a list layout holds.
 _LIST_KEYS = ("card", "columns")
 _DEFAULT = "default"
+#: How many presets a list may offer, as the server allows at this revision.
+_MAX_PRESETS = 20
+#: The filters a calendar preset holds; a project's hold every task filter.
+_CALENDAR_FILTERS = ("status_categories", "priorities", "properties")
+#: A view's sort fields as a preset's.
+_SORT_FIELDS = {
+    "title": "title",
+    "startDate": "start_date",
+    "dueDate": "due_date",
+    "priority": "priority",
+    "tags": "tag_name",
+}
 #: The views a project shipped before this revision: (slug, name, layout,
 #: filters).
 _SHIPPED: tuple[tuple[str, str, str, Optional[dict[str, Any]]], ...] = (
@@ -160,12 +175,49 @@ def _layout_of(view: Any) -> Optional[str]:
     return layout.get("type") if isinstance(layout, dict) else None
 
 
+def _set(value: Any) -> bool:
+    return value not in (None, False, [], {})
+
+
+def _preset(
+    tool: str, kind: str, slug: str, name: str, definition: dict[str, Any]
+) -> dict[str, Any]:
+    """A view that only filtered a list, as a preset of it: unset filters
+    left out, a calendar's narrowed to what a calendar filters by, and its sort
+    kept only on a table, which a person sorts."""
+    shipped = next((each[1] for each in _SHIPPED if each[0] == slug), None)
+    filters = {
+        key: value
+        for key, value in (definition.get("filters") or {}).items()
+        if _set(value) and (tool != "calendar" or key in _CALENDAR_FILTERS)
+    }
+    preset: dict[str, Any] = {"slug": slug, "filters": filters}
+    if name != shipped:
+        preset["name"] = name
+    sort = [
+        {"field": _SORT_FIELDS[entry["field"]], "dir": entry.get("direction", "asc")}
+        for entry in definition.get("sort") or ()
+        if entry.get("field") in _SORT_FIELDS
+    ]
+    if sort and kind == "table":
+        preset["sort"] = sort
+    return preset
+
+
+#: The presets a project's table ships, as :func:`_preset` writes them.
+_SHIPPED_PRESETS = [
+    _preset("project", "table", slug, name, {"filters": filters})
+    for slug, name, _, filters in _SHIPPED
+    if filters is not None
+]
+
+
 def _views_to_layouts() -> None:
     bind = op.get_bind()
     targets: dict[tuple[Any, ...], list[Any]] = {}
     for row in bind.execute(
         sa.text(
-            "SELECT initiative_id, tool, tool_id, kind, item_kind, slug,"
+            "SELECT initiative_id, tool, tool_id, kind, item_kind, name, slug,"
             " is_default, definition, created_by, created_at, updated_at"
             " FROM tool_views ORDER BY position, id"
         )
@@ -200,15 +252,32 @@ def _views_to_layouts() -> None:
             view = next((view for view in drawn if view.slug == kind), None) or next(
                 iter(drawn), None
             )
-            if view is None:
-                continue
-            definition = {
-                key: view.definition[key]
-                for key in _LIST_KEYS
-                if key in view.definition
-            }
+            definition = (
+                {
+                    key: view.definition[key]
+                    for key in _LIST_KEYS
+                    if key in view.definition
+                }
+                if view is not None
+                else {}
+            )
+            filtering = [
+                each
+                for each in views
+                if _layout_of(each) == kind and "filters" in each.definition
+            ]
+            presets = [
+                _preset(tool, kind, each.slug, each.name, each.definition)
+                for each in filtering
+            ][:_MAX_PRESETS]
+            # A project's lists ship presets, so a table holding exactly those
+            # stores none, and one whose views were all removed but for its
+            # lists stores an empty list.
+            ships = tool == "project" and kind == "table"
+            if views and presets != (_SHIPPED_PRESETS if ships else []):
+                definition["presets"] = presets
             if definition:
-                layout(kind, definition, view)
+                layout(kind, definition, view or next(iter(filtering), rows[0]))
         opened = next((view for view in views if view.is_default), None)
         if opened is not None and lists:
             kind = _layout_of(opened)
@@ -337,7 +406,11 @@ def _layouts_to_views() -> None:
                     definition["filters"] = filters
                 drawn = stored.get(slug)
                 if drawn is not None:
-                    definition.update(drawn.definition)
+                    definition.update(
+                        (key, drawn.definition[key])
+                        for key in _LIST_KEYS
+                        if key in drawn.definition
+                    )
                 rows.append(
                     {
                         **base,
