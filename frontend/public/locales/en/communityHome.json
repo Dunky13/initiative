@@ -1,7 +1,7 @@
 {
   "title": "Community",
   "subtitle": "Everything in this community, one tool at a time.",
-  "toolRail": "Community tools",
+  "nodeRail": "Community activity",
   "loading": "Loading…",
   "loadError": "Failed to load this tool. Please try again later.",
   "communityWide": "Community-wide",

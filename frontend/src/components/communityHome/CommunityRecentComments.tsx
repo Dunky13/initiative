@@ -1,9 +1,9 @@
 /**
  * The community home's activity strip: the latest comments anywhere in the community.
  *
- * It sits under the tool table and stays put while the rail switches tools —
- * the feed is community-wide, not a view of the selected tool. The endpoint only
- * returns comments on entities the user may see, so no filtering happens here.
+ * It fills the tray under the front page's rail.
+ * The endpoint only returns comments on entities the user may see, so no
+ * filtering happens here.
  */
 
 import { Link } from "@tanstack/react-router";

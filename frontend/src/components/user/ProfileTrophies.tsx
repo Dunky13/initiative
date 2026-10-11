@@ -2,7 +2,7 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ProfileDecorationsOutput } from "@/api/generated/initiativeAPI.schemas";
-import { TOOL_TRAY_SURFACE } from "@/components/toolBrowser/ToolRail";
+import { TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
 import { decorationSrc, resolveTrophies } from "@/lib/profileDecorations";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * The same rail a community puts its tools in: a row of circles standing out
  * of a tray, each with its name printed on the tray under it, and a goo filter
  * welding the two into one silhouette — blur the shapes and push the alpha back
- * to a hard edge (https://css-tricks.com/gooey-effect/). See `ToolRail`,
+ * to a hard edge (https://css-tricks.com/gooey-effect/). See `NodeRail`,
  * whose circles these are the size of and whose tray this is the same surface
  * as.
  *
@@ -90,13 +90,13 @@ export const ProfileTrophies = ({
               className={cn(
                 "absolute inset-x-0 top-13 bottom-0",
                 continues ? "rounded-t-2xl" : "rounded-2xl",
-                TOOL_TRAY_SURFACE
+                TRAY_SURFACE
               )}
             />
             <div className="flex justify-center px-2">
               {trophies.map((trophy) => (
                 <div key={trophy.id} className="flex w-24 justify-center pt-5">
-                  <div className={cn("size-16 rounded-full", TOOL_TRAY_SURFACE)} />
+                  <div className={cn("size-16 rounded-full", TRAY_SURFACE)} />
                 </div>
               ))}
             </div>
