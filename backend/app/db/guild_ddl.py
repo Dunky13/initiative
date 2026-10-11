@@ -40,6 +40,7 @@ from app.db.plugin_rls import (
 )
 from app.db.initiative_rls import (
     ANSWERED,
+    COMMENT_PARENTS,
     INITIATIVE_PATHS,
     NAMED_PEOPLE,
     NamedPerson,
@@ -67,6 +68,7 @@ from app.db.authorization import (
 )
 from app.db.frozen import (
     FROZEN_TABLES,
+    LIFECYCLE_COLUMNS,
     freeze_leg,
     frozen_write_triggers,
     frozen_guard_trigger,
@@ -82,6 +84,8 @@ from app.db.tenancy import (
     LEDGER_TABLES,
     MANAGED_TABLES,
     OWN_ROW_TABLES,
+    MEMBER_CREDENTIAL_TABLES,
+    MEMBER_SECRET_TABLES,
     PRIVATE_ROW_SHARED_READ,
     PRIVATE_ROW_TABLES,
     SEAT_READ_TABLES,
@@ -186,9 +190,10 @@ _HEADER = """\
 -- rendered policies automatically (the provisioning stamp includes this
 -- rendering, so a registry change triggers the one-time sweep).
 --
--- One table deviates on INSERT: the change log (event_outbox) is written by the
--- capture trigger and by nothing else, so its insert policy admits the trigger
--- rather than re-deciding the writer's access — see _TRIGGER_WRITTEN_INSERT.
+-- A few tables deviate: the change log (event_outbox) is written by the capture
+-- trigger and by nothing else, so its insert policy admits the trigger rather
+-- than re-deciding the writer's access, and engagement levels are written by the
+-- system engine alone — see _WRITTEN_BY.
 --
 -- Soft-delete tables additionally carry a RESTRICTIVE FOR DELETE policy
 -- (soft_delete_admin_purge): hard delete = purge, and only a community's
@@ -334,22 +339,30 @@ _COMMANDS = (
     ("delete", "DELETE", "USING", True),
 )
 
-# Tables written only by a trigger or the system engine: their INSERT policy
-# admits that writer instead of re-deciding the writer's access.
+# Tables written only by a trigger or the system engine: the policy for each
+# command named here admits that writer instead of re-deciding the writer's
+# access.
 #
-# ``event_outbox`` is the one. A row lands there as a consequence of a content
+# ``event_outbox`` is the model. A row lands there as a consequence of a content
 # write that already cleared its own table's gate, so the log RECORDS what
 # happened rather than deciding it a second time — including a change that ends
 # the writer's own access, which it must still be able to record. Who may READ
 # the log is unchanged: the initiative gate, via the other three policies.
-_TRIGGER_WRITTEN_INSERT: dict[str, str] = {
-    "event_outbox": "pg_trigger_depth() > 0",
+_WRITTEN_BY: dict[str, dict[str, str]] = {
+    "event_outbox": {"INSERT": "pg_trigger_depth() > 0"},
     # The search index is derived: rows arrive from the refresh trigger as a
     # consequence of a content write that already cleared its own table's gate.
     # The reindex sweep routes as the guild admin, which is the second leg.
-    "search_entries": f"pg_trigger_depth() > 0 OR {IN_POLICY.system} OR {IN_POLICY.admin}",
+    "search_entries": {
+        "INSERT": f"pg_trigger_depth() > 0 OR {IN_POLICY.system} OR {IN_POLICY.admin}"
+    },
     # A plug-in's events are written by the system engine, on the plug-in's behalf.
-    "plugin_event_outbox": IN_POLICY.system,
+    "plugin_event_outbox": {"INSERT": IN_POLICY.system},
+    # Levels are the hourly pass's alone to write, whatever the command: no
+    # member keeps one, and a reader only reads it.
+    "engagement_levels": dict.fromkeys(
+        ("INSERT", "UPDATE", "DELETE"), IN_POLICY.system
+    ),
 }
 
 
@@ -373,8 +386,8 @@ def _table_block(table: str, path: InitiativePath) -> str:
             # task means reaching the project it goes in.
             if sharing is not None and sharing != ANSWERED:
                 pred = f"{pred} AND {sharing}"
-        if command == "INSERT" and table in _TRIGGER_WRITTEN_INSERT:
-            pred = _TRIGGER_WRITTEN_INSERT[table]
+        if (writer := _WRITTEN_BY.get(table, {}).get(command)) is not None:
+            pred = writer
         name = f"initiative_member_{suffix}"
         lines.append(f"DROP POLICY IF EXISTS {name} ON {table};")
         lines.append(f"CREATE POLICY {name} ON {table} AS PERMISSIVE FOR {command}")
@@ -450,6 +463,244 @@ def _private_row_block(table: str, owner_col: str) -> str:
     return "\n".join(_policies(table, "private_row", read, pred, restrictive=True))
 
 
+_AUTHORED_SECTION = """\
+-- ===========================================================================
+-- What one person says, written by that person.
+--
+-- initiative_join_requests: read by the requester and by whoever answers the
+--   initiative's queue (its managers, the community's admin, the system
+--   engine); filed by the requester, answered by those who read the queue.
+-- tr_<t>_stamp_author (AUTHORED_TABLES): the person writing a comment, a post
+--   or a reaction is its author. An import keeps the author it maps, and the
+--   system engine writes what it is given. Only the system engine changes an
+--   author afterwards.
+-- tr_comments_author_guard: only its author changes a comment. Someone else
+--   moves it in or out of the trash only with what it is on: trashing it, the
+--   thing it is on goes to the trash at the same moment, which
+--   tr_comments_trash_follows checks at commit, after the cascade has stamped
+--   it; restoring it, they are the one who trashed it, or the community's
+--   admin. The system engine moderates, and the admin's purge leaves
+--   tombstones.
+-- calendar_event_answers: an answer is filed by the person it names, an
+--   import, or the system engine. tr_calendar_event_answers_owner_guard keeps
+--   who answered and what they answered theirs; the event's editors may still
+--   move an answer with the event, or clear it.
+-- ==========================================================================="""
+
+#: Where what someone writes carries them as its author.
+AUTHORED_TABLES: tuple[str, ...] = ("comments", "posts", "reactions")
+
+#: The requester of a join request, or the system engine.
+_REQUESTER = f"(user_id = {gucs.USER_ID.once} OR {IN_POLICY.system})"
+
+_STAMP_AUTHOR_FN = f"""
+CREATE OR REPLACE FUNCTION public.fn_stamp_author() RETURNS trigger
+    LANGUAGE plpgsql AS $stamp_author$
+BEGIN
+    IF {IN_POLICY.system} THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.created_by IS DISTINCT FROM OLD.created_by THEN
+            RAISE EXCEPTION 'an author does not change' USING ERRCODE = '42501';
+        END IF;
+    ELSIF ({gucs.IMPORTING}) IS NOT TRUE AND {gucs.USER_ID.once} IS NOT NULL THEN
+        NEW.created_by := {gucs.USER_ID.once};
+    END IF;
+    RETURN NEW;
+END;
+$stamp_author$;
+"""
+
+_COMMENT_AUTHOR_GUARD_FN = f"""
+CREATE OR REPLACE FUNCTION public.fn_comment_author_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $comment_author$
+DECLARE
+    lifecycle text[] := ARRAY[{", ".join(f"'{c}'" for c in LIFECYCLE_COLUMNS)}];
+BEGIN
+    IF {IN_POLICY.system} OR ({IN_POLICY.admin} AND {gucs.PURGING})
+       OR OLD.created_by = {gucs.USER_ID.once} THEN
+        RETURN NEW;
+    END IF;
+    IF (to_jsonb(NEW) - lifecycle) IS NOT DISTINCT FROM (to_jsonb(OLD) - lifecycle) AND (
+        (OLD.deleted_at IS NULL AND NEW.deleted_by = {gucs.USER_ID.once})
+        OR (NEW.deleted_at IS NULL
+            AND ({IN_POLICY.admin} OR OLD.deleted_by = {gucs.USER_ID.once}))
+    ) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'only its author changes a comment' USING ERRCODE = '42501';
+END;
+$comment_author$;
+"""
+
+
+def _trashed_with(table: str, column: str) -> str:
+    return (
+        f"EXISTS (SELECT 1 FROM {table} c WHERE c.id = NEW.{column}"  # noqa: S608
+        " AND c.deleted_at = NEW.deleted_at)"
+    )
+
+
+_COMMENT_TRASH_FOLLOWS_FN = f"""
+CREATE OR REPLACE FUNCTION public.fn_comment_trash_follows() RETURNS trigger
+    LANGUAGE plpgsql AS $trash_follows$
+BEGIN
+    IF {IN_POLICY.system} OR OLD.created_by = {gucs.USER_ID.once}
+       OR {_trashed_with("comments", "parent_comment_id")}
+       OR {" OR ".join(_trashed_with(p.table, p.column) for p in COMMENT_PARENTS.values())} THEN
+        RETURN NULL;
+    END IF;
+    RAISE EXCEPTION 'a comment goes to the trash with what it is on'
+        USING ERRCODE = '42501';
+END;
+$trash_follows$;
+"""
+
+
+_ANSWER_OWNER_GUARD_FN = f"""
+CREATE OR REPLACE FUNCTION public.fn_calendar_event_answer_owner_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $answer_owner$
+BEGIN
+    IF {IN_POLICY.system} OR (NEW.user_id = OLD.user_id AND (
+        NEW.rsvp_status = OLD.rsvp_status OR OLD.user_id = {gucs.USER_ID.once}
+    )) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'only its member changes an answer' USING ERRCODE = '42501';
+END;
+$answer_owner$;
+"""
+
+
+def _authored_block() -> str:
+    queue = managed_write("initiative_id")
+    return "\n".join(
+        [
+            "ALTER TABLE initiative_join_requests ENABLE ROW LEVEL SECURITY;",
+            "ALTER TABLE initiative_join_requests FORCE ROW LEVEL SECURITY;",
+            *_policies(
+                "initiative_join_requests",
+                "join_request",
+                f"({_REQUESTER} OR {queue})",
+                queue,
+                insert=f"({_REQUESTER} AND status = 'pending')",
+            ),
+            _STAMP_AUTHOR_FN,
+            *(
+                f"CREATE OR REPLACE TRIGGER tr_{t}_stamp_author"
+                f" BEFORE INSERT OR UPDATE OF created_by ON {t} FOR EACH ROW"
+                " EXECUTE FUNCTION public.fn_stamp_author();"
+                for t in AUTHORED_TABLES
+            ),
+            _COMMENT_AUTHOR_GUARD_FN,
+            "CREATE OR REPLACE TRIGGER tr_comments_author_guard"
+            " BEFORE UPDATE ON comments FOR EACH ROW"
+            " EXECUTE FUNCTION public.fn_comment_author_guard();",
+            _COMMENT_TRASH_FOLLOWS_FN,
+            "DROP TRIGGER IF EXISTS tr_comments_trash_follows ON comments;",
+            "CREATE CONSTRAINT TRIGGER tr_comments_trash_follows"
+            " AFTER UPDATE ON comments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW"
+            " WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)"
+            " EXECUTE FUNCTION public.fn_comment_trash_follows();",
+            "DROP POLICY IF EXISTS owner_insert ON calendar_event_answers;",
+            "CREATE POLICY owner_insert ON calendar_event_answers AS RESTRICTIVE"
+            f" FOR INSERT WITH CHECK ({_REQUESTER} OR ({gucs.IMPORTING}) IS TRUE);",
+            _ANSWER_OWNER_GUARD_FN,
+            "CREATE OR REPLACE TRIGGER tr_calendar_event_answers_owner_guard"
+            " BEFORE UPDATE ON calendar_event_answers FOR EACH ROW"
+            " EXECUTE FUNCTION public.fn_calendar_event_answer_owner_guard();",
+        ]
+    )
+
+
+_MEMBER_CREDENTIAL_SECTION = """\
+-- ===========================================================================
+-- A member's credentials (app.db.tenancy.MEMBER_CREDENTIAL_TABLES): that they
+-- gave an AI connection a key, their connection to a plug-in's vendor. Read and
+-- written by the member, the community's seat (a lent seat writing beside a
+-- read_write grant) and the system engine; not by a plain admin or a settings
+-- rung. A key for a platform AI connection is the member's and the platform's
+-- alone, so the seat reaches only the community's own.
+--
+-- What they hold (app.db.tenancy.MEMBER_SECRET_TABLES) is the member's and the
+-- system engine's alone: member_secret_* admit the member the credential row
+-- names. Deleting that row takes the secret with it.
+--
+-- tr_plugin_connection_secrets_fields: each write to a connection's secret
+-- values rewrites guild_plugin_user_connections.secret_fields, the keys that
+-- hold a value and a digest of each, as whoever made the write.
+-- ==========================================================================="""
+
+
+def _member_credential_block(table: str, owner: str, seat_rows: str | None) -> str:
+    def seat(leg: str) -> str:
+        return f"({leg} AND {seat_rows})" if seat_rows else leg
+
+    mine = f"{owner} = {gucs.USER_ID.once} OR {IN_POLICY.system}"
+    read = f"({mine} OR {seat(POLICY_SEAT)})"
+    write = f"({mine} OR {seat(_SEAT_WRITES)})"
+    return "\n".join(
+        [
+            f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;",
+            # The shape before this one: the own-row policies.
+            *(f"DROP POLICY IF EXISTS own_row_{c[0]} ON {table};" for c in _COMMANDS),
+            *_policies(table, "member_credential", read, write),
+        ]
+    )
+
+
+def _member_secret_block(table: str, parent: str, column: str) -> str:
+    pred = (
+        f"(EXISTS (SELECT 1 FROM {parent} p WHERE p.id = {table}.{column}"
+        f" AND p.user_id = {gucs.USER_ID.once}) OR {IN_POLICY.system})"
+    )
+    return "\n".join(
+        [
+            f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
+            f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;",
+            *_policies(table, "member_secret", pred, pred),
+        ]
+    )
+
+
+PLUGIN_CONNECTION_SECRET_FIELDS_FN = """
+CREATE OR REPLACE FUNCTION public.fn_plugin_connection_secret_fields() RETURNS trigger
+    LANGUAGE plpgsql AS $connection_fields$
+DECLARE
+    v_row integer;
+    v_secrets jsonb := '{}'::jsonb;
+    v_fields jsonb;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_row := OLD.connection_row_id;
+    ELSE
+        v_row := NEW.connection_row_id;
+        v_secrets := NEW.secrets;
+    END IF;
+    SELECT COALESCE(jsonb_object_agg(
+        f.key, encode(sha256(convert_to(f.value, 'UTF8')), 'hex')
+    ), '{}'::jsonb)
+    INTO v_fields
+    FROM jsonb_each_text(v_secrets) f;
+    EXECUTE format(
+        $q$UPDATE %I.guild_plugin_user_connections SET secret_fields = $1
+            WHERE id = $2 AND secret_fields IS DISTINCT FROM $1$q$,
+        TG_TABLE_SCHEMA
+    ) USING v_fields, v_row;
+    RETURN NULL;
+END;
+$connection_fields$;
+"""
+
+PLUGIN_CONNECTION_SECRET_FIELDS_TRIGGER = (
+    "CREATE OR REPLACE TRIGGER tr_plugin_connection_secrets_fields"
+    " AFTER INSERT OR UPDATE OR DELETE ON plugin_connection_secrets FOR EACH ROW"
+    " EXECUTE FUNCTION public.fn_plugin_connection_secret_fields();"
+)
+
+
 _SEAT_SECTION = """\
 -- ===========================================================================
 -- Seat-held guild-level tables (app.db.tenancy.SEAT_TABLES): configuration the
@@ -469,7 +720,10 @@ _SEAT_SECTION = """\
 
 _SEAT_READ_PREDICATE = f"({IN_POLICY.system} OR {POLICY_SEAT})"
 
-_SEAT_WRITE_PREDICATE = f"({IN_POLICY.system} OR ({POLICY_SEAT} AND ({IN_POLICY.admin} OR {IN_POLICY.pam_write})))"
+#: The seat writing: its holder, or a lent seat beside a read_write grant.
+_SEAT_WRITES = f"({POLICY_SEAT} AND ({IN_POLICY.admin} OR {IN_POLICY.pam_write}))"
+
+_SEAT_WRITE_PREDICATE = f"({IN_POLICY.system} OR {_SEAT_WRITES})"
 
 
 # Seat tables a trigger also writes: table -> the leg OR'd into the INSERT
@@ -849,7 +1103,7 @@ def _plugin_predicates(table: str) -> dict[str, str]:
                 f"{_plugin_placed_initiatives()})"
             )
             return dict.fromkeys(("SELECT", "INSERT", "UPDATE", "DELETE"), placed)
-        if table not in _TRIGGER_WRITTEN_INSERT:
+        if "INSERT" not in _WRITTEN_BY.get(table, {}):
             return {}
         by_trigger = f"({_IID} IS NULL OR pg_trigger_depth() > 0)"
         predicates = dict.fromkeys(("SELECT", "INSERT", "UPDATE", "DELETE"), by_trigger)
@@ -1160,6 +1414,7 @@ def render_retired_functions_ddl() -> str:
 
 
 def render_guild_rls_ddl() -> str:
+    from app.db.guest_access import render_guest_rls_ddl
     from app.db.holds import render_holds_ddl
     from app.db.moderation_log import render_moderation_log_ddl
 
@@ -1201,6 +1456,22 @@ def render_guild_rls_ddl() -> str:
         out += "\n\n" + _OWN_ROW_SECTION + "\n\n" + "\n\n".join(own_rows)
     private = [_private_row_block(t, c) for t, c in sorted(PRIVATE_ROW_TABLES.items())]
     out += "\n\n" + _PRIVATE_ROW_SECTION + "\n\n" + "\n\n".join(private)
+    out += "\n\n" + _AUTHORED_SECTION + "\n" + _authored_block()
+    credentials = [
+        _member_credential_block(t, owner, seat_rows)
+        for t, (owner, seat_rows) in sorted(MEMBER_CREDENTIAL_TABLES.items())
+    ]
+    credentials += [
+        _member_secret_block(t, parent, column)
+        for t, (parent, column) in sorted(MEMBER_SECRET_TABLES.items())
+    ]
+    out += "\n\n" + _MEMBER_CREDENTIAL_SECTION + "\n\n" + "\n\n".join(credentials)
+    out += (
+        "\n"
+        + PLUGIN_CONNECTION_SECRET_FIELDS_FN
+        + "\n"
+        + PLUGIN_CONNECTION_SECRET_FIELDS_TRIGGER
+    )
     seats = [_seat_block(t) for t in sorted(SEAT_TABLES)]
     out += "\n\n" + _SEAT_SECTION + "\n\n" + "\n\n".join(seats)
     out += "\n" + PLUGIN_SECRET_FIELDS_FN + "\n" + PLUGIN_SECRET_FIELDS_TRIGGER
@@ -1211,6 +1482,7 @@ def render_guild_rls_ddl() -> str:
     # policies join the ones already there.
     plugin_blocks = [_plugin_block(t) for t in sorted(PLUGIN_POLICY_TABLES)]
     out += "\n\n" + _PLUGIN_SECTION + "\n\n" + "\n\n".join(plugin_blocks)
+    out += "\n\n" + render_guest_rls_ddl()
     out += "\n\n" + _SHARING_SECTION + "\n\n" + _sharing_block()
     out += "\n\n" + _DRAFT_SECTION + "\n\n" + _draft_block()
     out += "\n\n" + render_holds_ddl()
@@ -1358,17 +1630,19 @@ def _schema_relative_trigger(triggerdef: str) -> str:
     return triggerdef + ";"
 
 
-_TRIGGER_NAME_RE = re.compile(r"CREATE (?:OR REPLACE )?TRIGGER (\w+)")
+_TRIGGER_NAME_RE = re.compile(r"CREATE (?:OR REPLACE )?(?:CONSTRAINT )?TRIGGER (\w+)")
 _CONSTRAINT_NAME_RE = re.compile(r"ADD CONSTRAINT (\w+)")
 
 
 def _registry_ddl() -> str:
     """Everything the registries render into a guild schema, as one text."""
     from app.db.event_capture import render_guild_capture_ddl
+    from app.db.registry_checks import render_guild_registry_check_ddl
     from app.db.search_index import render_guild_search_ddl
 
     return "\n".join(
         (
+            render_guild_registry_check_ddl(),
             render_guild_rls_ddl(),
             render_guild_capture_ddl(),
             render_guild_search_ddl(None),
@@ -1391,9 +1665,10 @@ def rendered_trigger_names() -> frozenset[str]:
 def rendered_constraint_names() -> frozenset[str]:
     """Every constraint name the registries render into a guild schema.
 
-    Today that is the search index's entity-type CHECK, which names the
-    indexed set and is re-asserted per guild so a source added to the registry
-    is admitted everywhere. Read off the rendered DDL, like the triggers.
+    Today those are the CHECKs that follow a registry
+    (``app.db.registry_checks``), re-asserted per guild so a value added to the
+    registry is admitted everywhere. Read off the rendered DDL, like the
+    triggers.
     """
     return frozenset(_CONSTRAINT_NAME_RE.findall(_registry_ddl()))
 

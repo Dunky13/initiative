@@ -4,26 +4,29 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import ColumnElement, case, exists, func, or_, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import aliased
-from sqlmodel import select, delete
+from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.guild_auth_options import CommunityAuthOption
 from app.core.intake import IntakeStream
+from app.core.tools import Tool
 from app.core.encryption import encrypt_field, normalize_email, SALT_EMAIL
 from app.core.errors import CodedError
 from app.core.messages import GuildMessages
 from app.db import cohorts, post_commit
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.guild_migrations import GUILD_SCHEMA_REGEX
-from app.db.query import apply_pagination
+from app.db.query import apply_pagination, ids_in
 from app.models.platform.guild import (
     BANNER_TEXT_COLORS,
     GUILD_ADMIN_ROLES,
@@ -42,6 +45,9 @@ from app.models.platform.guild import (
 from app.models.platform.access_grant import AccessGrant, AccessGrantPurpose
 from app.models.platform.guild_administration import GuildAdministration
 from app.models.platform.notification import NotificationType
+from app.models.tenant.guest_invite_grant import GuestInviteGrant
+from app.models.tenant.resource_grant import ResourceAccessLevel
+from app.schemas.platform.guild import CommunityInviteGrant
 from app.models.tenant.guild_setting import GuildSetting
 from app.models.platform.user import User, UserStatus
 from app.services import audit as audit_service
@@ -62,6 +68,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_INVITE_EXPIRATION_DAYS = 7
+#: The rungs above ``guest`` a guest may hold on the demo deployment.
+DEMO_GUEST_ROLES = (CommunityRole.member, CommunityRole.admin, CommunityRole.superadmin)
 INVITE_CODE_BYTES = 16
 
 
@@ -70,9 +78,36 @@ class GuildInviteError(CodedError):
 
 
 class GuildCapacityError(CodedError):
-    """Raised when adding a member would exceed the guild's ``max_users`` cap."""
+    """Raised when adding a member would exceed the guild's ``max_users`` cap,
+    or a guest its ``max_guests``."""
 
     status_code = 403
+
+
+class GuestsDisabledError(CodedError):
+    """Raised when a guest would be made while the deployment allows none."""
+
+    status_code = 403
+
+
+class NotAGuestError(CodedError):
+    """Raised when a guest's terms are changed for somebody who is not one."""
+
+    status_code = 404
+
+
+class GuestGrantError(CodedError):
+    """Raised when a guest invite names an initiative or item the community
+    does not hold."""
+
+    status_code = 404
+
+
+class GuestTimeEndedError(CodedError):
+    """Raised when somebody whose time as a guest has just ended joins again
+    before the sweep has removed their old membership."""
+
+    status_code = 409
 
 
 class CommunityJoinError(CodedError):
@@ -315,13 +350,16 @@ async def ensure_membership(
     actor_user_id: int | None = None,
     via: str = "direct",
     invite_id: int | None = None,
+    guest_until: datetime | None = None,
 ) -> GuildMembership:
     """Put ``user_id`` in ``guild_id``, or return the membership they hold.
 
     ``actor_user_id`` is who brought them in; it defaults to the person joining,
     which is what every self-service path is. ``via`` names the way in — the
     value rides the record — and ``invite_id`` says which standing offer was
-    redeemed, where one was.
+    redeemed, where one was. ``guest_until`` makes the new membership a
+    guest's, until then: it takes no seat, so the guest cap applies instead of
+    the member cap, and it joins no initiative on its own.
     """
     stmt = select(GuildMembership).where(
         GuildMembership.guild_id == guild_id,
@@ -345,7 +383,10 @@ async def ensure_membership(
     # (re-joins / role updates return above), so an existing member is never
     # blocked. SSO/OIDC provisioning uses a separate insert path
     # (oidc_sync._create_guild_membership) and is intentionally exempt.
-    await _assert_member_capacity(session, guild_id=guild_id)
+    if guest_until is None:
+        await _assert_member_capacity(session, guild_id=guild_id)
+    else:
+        await _assert_guest_capacity(session, guild_id=guild_id)
     # A listed community never gains somebody who has answered the age question
     # as under the minimum, by any route. The paths with a person at the
     # keyboard ask the question first (``assert_age_confirmed``); this is the
@@ -368,10 +409,13 @@ async def ensure_membership(
         role=role,
         position=next_position,
         oidc_provider_id=oidc_provider_id,
+        guest_until=guest_until,
     )
     session.add(membership)
     await session.flush()
     detail: dict[str, object] = {"role": role.value, "via": via}
+    if guest_until is not None:
+        detail["guest_until"] = guest_until.isoformat()
     if invite_id is not None:
         detail["invite_id"] = invite_id
     await audit_service.record(
@@ -392,9 +436,10 @@ async def ensure_membership(
     # Nudge billing that this guild's membership changed. No-op unless a
     # hosted deployment configured the outbound billing settings.
     billing_ping.notify_membership_changed(guild_id)
-    enroll_new_member_in_auto_join_initiatives(
-        session, guild_id=guild_id, user_id=user_id, role=role
-    )
+    if guest_until is None:
+        enroll_new_member_in_auto_join_initiatives(
+            session, guild_id=guild_id, user_id=user_id, role=role
+        )
     return membership
 
 
@@ -504,6 +549,129 @@ async def _assert_member_capacity(
         await advisory_lock(session, LockNamespace.MEMBER_CAP, guild_id)
     if await count_members(session, guild_id=guild_id) >= administration.max_users:
         raise GuildCapacityError(GuildMessages.COMMUNITY_USER_LIMIT_REACHED)
+
+
+async def _assert_guest_capacity(
+    session: AsyncSession, *, guild_id: int, claiming_seat: bool = True
+) -> None:
+    """Raise ``GuildCapacityError`` if the guild is at its ``max_guests`` cap.
+
+    The guest half of :func:`_assert_member_capacity`: the same session
+    requirement and the same ``claiming_seat``, with the lock under its own
+    namespace so guests and members do not queue behind each other. A cap of 0
+    takes no new guests.
+    """
+    administration = await get_administration(session, guild_id=guild_id)
+    if administration.max_guests is None:
+        return
+    if claiming_seat:
+        await advisory_lock(session, LockNamespace.GUEST_CAP, guild_id)
+    if await count_guests(session, guild_id=guild_id) >= administration.max_guests:
+        raise GuildCapacityError(GuildMessages.COMMUNITY_GUEST_LIMIT_REACHED)
+
+
+async def _guest_days(session: AsyncSession, *, guild_id: int, days: int) -> int:
+    """``days`` held to the community's longest guest stay and the
+    deployment's. Raises ``GuestsDisabledError`` while the deployment allows no
+    guests."""
+    from app.services.platform import app_settings as app_settings_service
+
+    settings_row = await app_settings_service.get_app_settings(session)
+    if not settings_row.guests_enabled:
+        raise GuestsDisabledError(GuildMessages.COMMUNITY_GUESTS_DISABLED)
+    guild = await get_guild(session, guild_id=guild_id)
+    limits = (days, settings_row.max_guest_days, guild.guest_max_days)
+    return min(limit for limit in limits if limit is not None)
+
+
+async def _refuse_ended_guest(
+    session: AsyncSession, *, guild_id: int, user_id: int
+) -> None:
+    """Refuse a join by somebody whose guest membership has ended and not yet
+    been removed. Joining would return that membership unchanged; the sweep
+    removes it, and what it carried, within minutes."""
+    membership = await get_membership(session, guild_id=guild_id, user_id=user_id)
+    if (
+        membership is not None
+        and membership.guest_until is not None
+        and membership.guest_until <= datetime.now(timezone.utc)
+    ):
+        raise GuestTimeEndedError(GuildMessages.GUEST_TIME_ENDED)
+
+
+async def extend_guest(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    user_id: int,
+    days: int,
+    actor_user_id: int,
+) -> GuildMembership:
+    """End ``user_id``'s time as a guest ``days`` from now, held to the same
+    limits as a new guest's. Raises ``NotAGuestError`` unless they are one."""
+    membership = await get_membership(
+        session, guild_id=guild_id, user_id=user_id, for_update=True
+    )
+    if membership is None or membership.guest_until is None:
+        raise NotAGuestError(GuildMessages.NOT_A_GUEST)
+    before = membership.guest_until
+    days = await _guest_days(session, guild_id=guild_id, days=days)
+    if before <= datetime.now(timezone.utc):
+        # An ended guest no longer counts against the cap, so bringing one back
+        # takes a place as a new guest does.
+        await _assert_guest_capacity(session, guild_id=guild_id)
+    membership.guest_until = datetime.now(timezone.utc) + timedelta(days=days)
+    session.add(membership)
+    await session.flush()
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.GUILD_GUEST_EXTENDED,
+        actor_user_id=actor_user_id,
+        target_user_id=user_id,
+        guild_id=guild_id,
+        target_type="guild",
+        target_id=guild_id,
+        detail={
+            "from": before.isoformat(),
+            "to": membership.guest_until.isoformat(),
+        },
+    )
+    return membership
+
+
+async def make_guest_a_member(
+    session: AsyncSession, *, guild_id: int, user_id: int, actor_user_id: int
+) -> GuildMembership:
+    """Make a guest a member: their time no longer ends and they take a seat,
+    so the member cap applies. Raises ``NotAGuestError`` unless they are a
+    guest."""
+    membership = await get_membership(
+        session, guild_id=guild_id, user_id=user_id, for_update=True
+    )
+    if membership is None or membership.guest_until is None:
+        raise NotAGuestError(GuildMessages.NOT_A_GUEST)
+    await _assert_member_capacity(session, guild_id=guild_id)
+    membership.guest_until = None
+    if membership.role == CommunityRole.guest:
+        membership.role = CommunityRole.member
+    session.add(membership)
+    await session.flush()
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.GUILD_GUEST_MADE_MEMBER,
+        actor_user_id=actor_user_id,
+        target_user_id=user_id,
+        guild_id=guild_id,
+        target_type="guild",
+        target_id=guild_id,
+        detail={"role": membership.role.value},
+    )
+    account_stream.queue_account_signal(session, user_id, "membership")
+    billing_ping.notify_membership_changed(guild_id)
+    enroll_new_member_in_auto_join_initiatives(
+        session, guild_id=guild_id, user_id=user_id, role=membership.role
+    )
+    return membership
 
 
 async def _next_membership_position(session: AsyncSession, *, user_id: int) -> int:
@@ -744,15 +912,39 @@ async def count_members_by_guild(
     rows = (
         await session.exec(
             select(GuildMembership.guild_id, func.count())
-            .where(GuildMembership.guild_id.in_(list(guild_ids)))
+            .where(
+                GuildMembership.guild_id.in_(list(guild_ids)),
+                GuildMembership.guest_until.is_(None),
+            )
             .group_by(GuildMembership.guild_id)
         )
     ).all()
     return {guild_id: total for guild_id, total in rows}
 
 
+async def guest_ends(
+    session: AsyncSession, *, guild_id: int, user_ids: Sequence[int]
+) -> dict[int, datetime]:
+    """When each of these people's time in the guild ends, for those who are
+    its guests. Read under the caller's session: a guest reads their own row
+    alone, so to them nobody else is marked."""
+    if not user_ids:
+        return {}
+    rows = (
+        await session.exec(
+            select(GuildMembership.user_id, GuildMembership.guest_until).where(
+                GuildMembership.guild_id == guild_id,
+                ids_in(GuildMembership.user_id, user_ids),
+                GuildMembership.guest_until.is_not(None),
+            )
+        )
+    ).all()
+    return {user_id: until for user_id, until in rows}
+
+
 async def count_members(session: AsyncSession, *, guild_id: int) -> int:
-    """Total number of members in a guild.
+    """Total number of members in a guild. A guest takes no seat, so guests
+    are not counted.
 
     The caller must already hold a session that can see the guild's
     ``guild_memberships`` rows — a system-engine session, or one whose RLS
@@ -763,7 +955,26 @@ async def count_members(session: AsyncSession, *, guild_id: int) -> int:
         await session.exec(
             select(func.count())
             .select_from(GuildMembership)
-            .where(GuildMembership.guild_id == guild_id)
+            .where(
+                GuildMembership.guild_id == guild_id,
+                GuildMembership.guest_until.is_(None),
+            )
+        )
+    ).one()
+
+
+async def count_guests(session: AsyncSession, *, guild_id: int) -> int:
+    """How many guests a guild has now: those whose time has not ended. A
+    guest whose time ran out leaves room at once, before the sweep removes
+    the row. Same session requirement as :func:`count_members`."""
+    return (
+        await session.exec(
+            select(func.count())
+            .select_from(GuildMembership)
+            .where(
+                GuildMembership.guild_id == guild_id,
+                col(GuildMembership.guest_until) > func.now(),
+            )
         )
     ).one()
 
@@ -1089,6 +1300,8 @@ async def update_guild(
     max_storage_bytes_provided: bool = False,
     max_users: int | None = None,
     max_users_provided: bool = False,
+    max_guests: int | None = None,
+    max_guests_provided: bool = False,
     auth_options: list[CommunityAuthOption] | None = None,
     banner_image_enabled: bool | None = None,
     support_enabled: bool | None = None,
@@ -1165,6 +1378,7 @@ async def update_guild(
     if (
         max_storage_bytes_provided
         or max_users_provided
+        or max_guests_provided
         or auth_options is not None
         or banner_image_enabled is not None
         or support_enabled is not None
@@ -1179,6 +1393,9 @@ async def update_guild(
             administration_updated = True
         if max_users_provided and administration.max_users != max_users:
             administration.max_users = max_users
+            administration_updated = True
+        if max_guests_provided and administration.max_guests != max_guests:
+            administration.max_guests = max_guests
             administration_updated = True
         # An explicit ``null`` is meaningless for an entitlement (unlike the
         # caps, where null resets to unlimited), so guard on ``is not None`` and
@@ -1248,11 +1465,32 @@ async def set_guild_status(
     """
     guild = await get_guild(session, guild_id=guild_id)
     if guild.status != status.value:
+        # A suspension remembers where it began, so lifting it can go back;
+        # any other move leaves nothing to go back to.
+        guild.status_before_suspension = (
+            guild.status if status is CommunityStatus.suspended else None
+        )
         guild.status = status.value
         guild.status_changed_at = datetime.now(timezone.utc)
         session.add(guild)
         await session.flush()
     return guild
+
+
+def lifted_status(
+    guild: Guild, *, billing_status: CommunityStatus | None
+) -> CommunityStatus:
+    """Where lifting ``guild``'s suspension returns it: the status it was
+    suspended from. A deleted community goes back to ``deleted``. Where billing
+    sets plans, a live one goes to the status billing last wrote, which is the
+    only one the database lets anything but billing move it to.
+    """
+    before = guild.status_before_suspension
+    if before == CommunityStatus.deleted.value:
+        return CommunityStatus.deleted
+    if billing_service.billing_managed():
+        return billing_status or CommunityStatus.active
+    return CommunityStatus(before) if before else CommunityStatus.active
 
 
 async def get_guild_retention_days(session: AsyncSession) -> int | None:
@@ -1274,8 +1512,15 @@ async def get_guild_retention_days(session: AsyncSession) -> int | None:
     return row.retention_days
 
 
+def _hash_code(code: str) -> str:
+    """The stored form of an invite code. Codes are random
+    (``INVITE_CODE_BYTES``), so one unsalted SHA-256 is enough and keeps the
+    lookup indexed, as for ``user_tokens``."""
+    return sha256(code.encode("utf-8")).hexdigest()
+
+
 async def _invite_code_exists(session: AsyncSession, code: str) -> bool:
-    stmt = select(GuildInvite.id).where(GuildInvite.code == code)
+    stmt = select(GuildInvite.id).where(GuildInvite.code_hash == _hash_code(code))
     result = await session.exec(stmt)
     return result.first() is not None
 
@@ -1308,14 +1553,29 @@ async def create_guild_invite(
     expires_at: datetime | None = None,
     max_uses: int | None = 1,
     invitee_email: str | None = None,
+    guest_days: int | None = None,
+    guest_role: CommunityRole = CommunityRole.guest,
+    grants: Sequence[CommunityInviteGrant] = (),
     actor_user_id: int | None = None,
-    role: CommunityRole = CommunityRole.member,
-) -> GuildInvite:
-    """Mint an invite that makes whoever accepts it ``role``. ``actor_user_id``
-    names who for the record; without one the invite is minted unrecorded."""
+) -> tuple[GuildInvite, str]:
+    """Mint an invite, and return it with its code, which is not kept.
+    ``guest_days`` makes it a guest invite: redeeming it makes a guest for
+    that long, held to the community's and the deployment's limits, and gives
+    them ``grants``. The session is routed into the community, where those are
+    kept. ``guest_role`` is the rung the guest holds: ``guest``, or on the demo
+    deployment a rung above it. ``actor_user_id`` names who for the record;
+    without one the invite is minted unrecorded."""
+    if guest_role is not CommunityRole.guest and not (
+        settings.DEMO_MODE and guest_role in DEMO_GUEST_ROLES
+    ):
+        raise GuildInviteError(GuildMessages.COMMUNITY_ROLE_NOT_ASSIGNABLE)
     # A full guild mints no new invites: every seat is taken, so any code handed
     # out now could only fail at redemption. Raises ``GuildCapacityError``.
-    await _assert_member_capacity(session, guild_id=guild_id, claiming_seat=False)
+    if guest_days is None:
+        await _assert_member_capacity(session, guild_id=guild_id, claiming_seat=False)
+    else:
+        guest_days = await _guest_days(session, guild_id=guild_id, days=guest_days)
+        await _assert_guest_capacity(session, guild_id=guild_id, claiming_seat=False)
     code = await _generate_unique_invite_code(session)
     if expires_at is None:
         expiry = datetime.now(timezone.utc) + timedelta(
@@ -1326,17 +1586,29 @@ async def create_guild_invite(
             expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
         )
     invite = GuildInvite(
-        code=code,
+        code_hash=_hash_code(code),
         guild_id=guild_id,
         created_by=created_by,
         expires_at=expiry,
         max_uses=max_uses,
-        role=role,
         invitee_email_encrypted=encrypt_field(invitee_email, SALT_EMAIL)
         if invitee_email
         else None,
+        guest_days=guest_days,
+        guest_role=guest_role if guest_days is not None else None,
     )
     session.add(invite)
+    await session.flush()
+    for asked in grants:
+        grant = GuestInviteGrant(
+            invite_id=cast(int, invite.id),
+            initiative_id=asked.initiative_id,
+            resource_type=asked.resource_type,
+            resource_id=asked.resource_id,
+            level=ResourceAccessLevel(asked.level) if asked.level else None,
+        )
+        await _assert_grantable(session, grant)
+        session.add(grant)
     await session.flush()
     if actor_user_id is not None:
         await audit_service.record(
@@ -1348,7 +1620,105 @@ async def create_guild_invite(
             target_id=invite.id,
             detail=_invite_detail(invite),
         )
-    return invite
+    return invite, code
+
+
+async def _assert_grantable(session: AsyncSession, grant: GuestInviteGrant) -> None:
+    """Raise ``GuestGrantError`` unless the community holds the initiative a
+    guest invite names, and the item, where it names one, in that initiative."""
+    from app.db.base import MODELS_BY_TABLE
+    from app.models.tenant.initiative import Initiative
+
+    if await session.get(Initiative, grant.initiative_id) is None:
+        raise GuestGrantError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+    if grant.resource_type is None:
+        return
+    model = MODELS_BY_TABLE[Tool(grant.resource_type).plural]
+    row = await session.get(model, grant.resource_id)
+    if row is None or row.initiative_id != grant.initiative_id:
+        raise GuestGrantError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+
+
+async def guest_invite_grants(
+    session: AsyncSession, *, invite_ids: Sequence[int]
+) -> dict[int, list[GuestInviteGrant]]:
+    """What each of these guest invites gives, by invite. The session is
+    routed into the community."""
+    if not invite_ids:
+        return {}
+    rows = await session.exec(
+        select(GuestInviteGrant)
+        .where(ids_in(GuestInviteGrant.invite_id, invite_ids))
+        .order_by(GuestInviteGrant.id)
+    )
+    found: dict[int, list[GuestInviteGrant]] = {}
+    for row in rows:
+        found.setdefault(row.invite_id, []).append(row)
+    return found
+
+
+def _give_guest_invite_grants(
+    session: AsyncSession, *, invite: GuildInvite, user_id: int
+) -> None:
+    """Once ``session`` commits, give ``user_id`` what ``invite`` names: each
+    initiative joined with the role their standing earns, each item shared at
+    its level. Run in the community's cohort, as auto-join enrolment is, and
+    recorded as its administrator's. Each is given on its own: one deleted or
+    archived since is skipped, and the rest are still given."""
+    from app.db.base import MODELS_BY_TABLE
+    from app.db.session import set_rls_context
+    from app.models.tenant.initiative import Initiative
+    from app.services import permissions as permissions_service
+    from app.services.tenant import initiatives as initiatives_service
+
+    guild_id, invite_id, actor = invite.guild_id, invite.id, invite.created_by
+
+    async def give() -> None:
+        async with cohorts.system_session(guild_id) as guild_session:
+            await set_rls_context(guild_session, SystemGuild(guild_id))
+            grants = await guest_invite_grants(guild_session, invite_ids=[invite_id])
+            for grant in grants.get(invite_id, []):
+                try:
+                    async with guild_session.begin_nested():
+                        await give_one(guild_session, grant)
+                except DBAPIError:
+                    logger.info(
+                        "guest invite %s: %s %s not given to user %s",
+                        invite_id,
+                        grant.resource_type or "initiative",
+                        grant.resource_id or grant.initiative_id,
+                        user_id,
+                    )
+            await guild_session.commit()
+
+    async def give_one(guild_session: AsyncSession, grant: GuestInviteGrant) -> None:
+        if grant.resource_type is None:
+            initiative = await guild_session.get(Initiative, grant.initiative_id)
+            if initiative is not None:
+                await initiatives_service.self_join(
+                    guild_session,
+                    initiative=initiative,
+                    user_id=user_id,
+                    actor_user_id=actor,
+                    via="guest_invite",
+                )
+            return
+        tool = Tool(grant.resource_type)
+        row = await guild_session.get(MODELS_BY_TABLE[tool.plural], grant.resource_id)
+        if row is None or grant.level is None:
+            return
+        await permissions_service.grant_to_person(
+            guild_session,
+            resource_type=tool,
+            resource_id=row.id,
+            guild_id=guild_id,
+            initiative_id=row.initiative_id,
+            user_id=user_id,
+            level=grant.level,
+            actor_user_id=actor,
+        )
+
+    post_commit.after_commit(session, give)
 
 
 def _invite_detail(invite: GuildInvite) -> dict[str, object]:
@@ -1361,6 +1731,7 @@ def _invite_detail(invite: GuildInvite) -> dict[str, object]:
         "max_uses": invite.max_uses,
         "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
         "addressed": invite.invitee_email_encrypted is not None,
+        "guest_days": invite.guest_days,
     }
 
 
@@ -1380,6 +1751,9 @@ async def delete_guild_invite(
     result = await session.exec(stmt)
     invite = result.one_or_none()
     if invite:
+        await session.exec(
+            delete(GuestInviteGrant).where(col(GuestInviteGrant.invite_id) == invite.id)
+        )
         if actor_user_id is not None:
             await audit_service.record(
                 session,
@@ -1924,8 +2298,14 @@ async def restore_guild(
     return guild
 
 
-async def get_invite_by_code(session: AsyncSession, *, code: str) -> GuildInvite | None:
-    stmt = select(GuildInvite).where(GuildInvite.code == code)
+async def get_invite_by_code(
+    session: AsyncSession, *, code: str, lock: bool = False
+) -> GuildInvite | None:
+    """The invite ``code`` opens. ``lock`` holds its row until the transaction
+    ends, so two redemptions are counted one after the other."""
+    stmt = select(GuildInvite).where(GuildInvite.code_hash == _hash_code(code))
+    if lock:
+        stmt = stmt.with_for_update()
     result = await session.exec(stmt)
     return result.one_or_none()
 
@@ -1938,8 +2318,19 @@ def invite_is_active(invite: GuildInvite) -> bool:
     return True
 
 
-async def _live_invite(session: AsyncSession, *, code: str) -> GuildInvite:
-    invite = await get_invite_by_code(session, code=code)
+async def _live_invite(
+    session: AsyncSession,
+    *,
+    code: str | None = None,
+    invite_id: int | None = None,
+    lock: bool = False,
+) -> GuildInvite:
+    """The invite named by its ``code`` or, for one a sign-up already holds,
+    its ``invite_id``, while it can still be redeemed."""
+    if code is not None:
+        invite = await get_invite_by_code(session, code=code, lock=lock)
+    else:
+        invite = await session.get(GuildInvite, invite_id, with_for_update=lock)
     if not invite:
         raise GuildInviteError(GuildMessages.INVITE_NOT_FOUND)
     if not invite_is_active(invite):
@@ -1982,10 +2373,13 @@ async def invite_awaiting_address(
 async def redeem_invite_for_user(
     session: AsyncSession,
     *,
-    code: str,
     user: User,
+    code: str | None = None,
+    invite_id: int | None = None,
 ) -> Guild:
-    invite = await _live_invite(session, code=code)
+    """Join ``user`` to the community of the invite named by ``code`` or
+    ``invite_id``."""
+    invite = await _live_invite(session, code=code, invite_id=invite_id, lock=True)
 
     # A grant reaches the community for its window and makes nobody a
     # member; joining waits until the grant has ended. A billing grant
@@ -2024,14 +2418,24 @@ async def redeem_invite_for_user(
     if await is_listed_in_directory(session, guild_id=invite.guild_id):
         await assert_age_confirmed(session, user=user)
 
+    await _refuse_ended_guest(session, guild_id=invite.guild_id, user_id=user.id)
+    guest_until = None
+    if invite.guest_days is not None:
+        days = await _guest_days(
+            session, guild_id=invite.guild_id, days=invite.guest_days
+        )
+        guest_until = datetime.now(timezone.utc) + timedelta(days=days)
     await ensure_membership(
         session,
         guild_id=invite.guild_id,
         user_id=user.id,
-        role=CommunityRole(invite.role),
+        role=invite.guest_role or CommunityRole.member,
         via="invite",
         invite_id=invite.id,
+        guest_until=guest_until,
     )
+    if guest_until is not None:
+        _give_guest_invite_grants(session, invite=invite, user_id=user.id)
     invite.uses += 1
     session.add(invite)
     guild = await get_guild(session, guild_id=invite.guild_id)
@@ -2303,7 +2707,10 @@ async def list_community_guilds(
     member_count = (
         select(func.count())
         .select_from(GuildMembership)
-        .where(GuildMembership.guild_id == Guild.id)
+        .where(
+            GuildMembership.guild_id == Guild.id,
+            GuildMembership.guest_until.is_(None),
+        )
         .correlate(Guild)
         .scalar_subquery()
     )
@@ -2393,6 +2800,7 @@ async def join_community_guild(
     # Asked before the seat is taken, so the box is what joins rather than
     # something checked once they are already in.
     await assert_age_confirmed(session, user=user)
+    await _refuse_ended_guest(session, guild_id=guild_id, user_id=user.id)
     # Capacity is enforced inside ensure_membership, which is also where a
     # repeat join short-circuits to the existing membership.
     await ensure_membership(
@@ -2566,8 +2974,14 @@ async def remove_user_from_guild(
     user_id: int,
     actor_user_id: int | None,
     via: str | None = None,
-) -> None:
-    """Remove a user from a guild, its initiatives, and its plug-ins.
+    only_if: ColumnElement[bool] | None = None,
+) -> bool:
+    """Remove a user from a guild, its initiatives, and its plug-ins. Says
+    whether there was a membership to remove.
+
+    With ``only_if``, the membership row goes first and only while it still
+    matches: one statement checks and deletes it, and nothing else is touched
+    when it no longer does.
 
     Leaving, being removed by an admin and being released by sign-in sync all
     come here: ``actor_user_id`` is the person themselves when they leave, and
@@ -2594,16 +3008,26 @@ async def remove_user_from_guild(
         )
     else:
         reason = via
-    # Read before the delete below takes the row: the record says which standing
-    # the person held when they left.
-    previous_role = (
-        await session.exec(
-            select(GuildMembership.role).where(
-                GuildMembership.guild_id == guild_id,
-                GuildMembership.user_id == user_id,
+    this_row = (
+        GuildMembership.guild_id == guild_id,
+        GuildMembership.user_id == user_id,
+    )
+    if only_if is not None:
+        previous_role = (
+            await session.exec(
+                delete(GuildMembership)
+                .where(*this_row, only_if)
+                .returning(GuildMembership.role)
             )
-        )
-    ).one_or_none()
+        ).scalar_one_or_none()
+        if previous_role is None:
+            return False
+    else:
+        # Read before the delete below takes the row: the record says which
+        # standing the person held when they left.
+        previous_role = (
+            await session.exec(select(GuildMembership.role).where(*this_row))
+        ).one_or_none()
 
     # Remove from all initiatives in this guild
     await initiatives_service.remove_user_from_guild_initiatives(
@@ -2627,15 +3051,13 @@ async def remove_user_from_guild(
     await api_keys_service.delete_resource_keys(user_id=user_id, guild_id=guild_id)
 
     # Remove guild membership
-    stmt = delete(GuildMembership).where(
-        GuildMembership.guild_id == guild_id,
-        GuildMembership.user_id == user_id,
+    removed = only_if is not None or bool(
+        (await session.exec(delete(GuildMembership).where(*this_row))).rowcount
     )
-    result = await session.exec(stmt)
     # Only a real removal is a membership change — mirror the insert side,
     # which pings only on a genuine insert (a no-op remove of a non-member
     # must not nudge billing).
-    if result.rowcount:
+    if removed:
         await audit_service.record(
             session,
             event_type=AuditEventType.GUILD_MEMBER_REMOVED,
@@ -2659,3 +3081,4 @@ async def remove_user_from_guild(
         # than run here: the sweep reads the state this delete leaves behind,
         # and this delete is not committed yet.
         contact_grants_service.queue_stale_grant_sweep(session, user_id)
+    return removed

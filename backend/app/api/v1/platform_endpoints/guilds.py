@@ -54,7 +54,9 @@ from app.core.security import (
 )
 from app.services.platform.identity_refs import billing_refs
 from app.services.marketplace import plugin_refs
-from app.db import post_commit
+from app.db import cohorts, post_commit
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
 from app.services import email as email_service
@@ -91,6 +93,9 @@ from app.schemas.platform.guild import (
     CommunityRead,
     CommunityInviteAcceptRequest,
     CommunityInviteCreate,
+    CommunityGuestExtend,
+    CommunityInviteGrant,
+    CommunityInviteCreated,
     CommunityInviteRead,
     CommunityPaymentIssueRead,
     CommunityBillingSummaryRead,
@@ -102,8 +107,9 @@ from app.schemas.platform.guild import (
     MemberDisplayNameUpdate,
 )
 from app.models.platform.auth_provider import AuthProvider
-from app.models.platform.guild_auth_policy import GuildAuthPolicy
+from app.models.platform.guild_auth_policy import GuildAuthPolicy, SignInHalf
 from app.core.guild_auth_options import CommunityAuthOption, effective_options
+from app.services.platform import app_settings as app_settings_service
 from app.services.platform import auth_posture
 from app.services.platform import notification_policy
 from app.services.platform import billing as billing_service
@@ -115,6 +121,7 @@ from app.services.platform import guilds as guilds_service
 from app.services.platform import intake as intake_service
 from app.services.content_sockets import sockets as content_sockets
 from app.services.tenant import plugin_connections as plugin_connections_service
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 
@@ -134,6 +141,7 @@ def _can_of(guild_context: GuildContext, *, use_api: bool) -> CommunityCan:
         configure=guild_context.writes_settings,
         administer_content=holds_guild_role(guild_context, CommunityRole.admin),
         seat=guild_context.guild_seat,
+        community_wide=not guild_context.routes_as_guest,
         use_api=use_api,
     )
 
@@ -153,6 +161,7 @@ def _can_of_membership(
         configure=administers,
         administer_content=administers,
         seat=role.reaches(CommunityRole.superadmin),
+        community_wide=role is not CommunityRole.guest,
         use_api=use_api,
     )
 
@@ -217,6 +226,7 @@ def _serialize_guild(
         # Operator-set caps, shown against usage on the admin settings page.
         max_storage_bytes=admin_row.max_storage_bytes if admin_row else None,
         max_users=admin_row.max_users if admin_row else None,
+        max_guests=admin_row.max_guests if admin_row else None,
         # Display-only plan label (never an enforcement input); the SPA shows
         # it only when a billing portal is configured.
         tier_name=admin_row.tier_name if admin_row else None,
@@ -542,7 +552,9 @@ async def join_directory_community(
 
 
 @router.get("/invite/{code}", response_model=CommunityInviteStatus)
+@limiter.limit("30/minute")
 async def get_invite_status(
+    request: Request,
     code: str,
     session: SystemSessionDep,
 ) -> CommunityInviteStatus:
@@ -558,6 +570,7 @@ async def get_invite_status(
         expires_at=invite.expires_at if invite else None,
         max_uses=invite.max_uses if invite else None,
         uses=invite.uses if invite else None,
+        guest_days=invite.guest_days if invite else None,
     )
 
 
@@ -690,7 +703,20 @@ async def list_community_invites(
     session: SettingsRLSSessionDep,
 ) -> List[CommunityInviteRead]:
     invites = await guilds_service.list_guild_invites(session, guild_id=guild_id)
-    return [CommunityInviteRead.model_validate(invite) for invite in invites]
+    grants = await guilds_service.guest_invite_grants(
+        session, invite_ids=[invite.id for invite in invites if invite.guest_days]
+    )
+    return [
+        CommunityInviteRead.model_validate(invite).model_copy(
+            update={
+                "grants": [
+                    CommunityInviteGrant.model_validate(grant)
+                    for grant in grants.get(invite.id, [])
+                ]
+            }
+        )
+        for invite in invites
+    ]
 
 
 @router.get("/{community_id}", response_model=CommunityRead)
@@ -859,7 +885,7 @@ async def read_community_image(
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=GuildMessages.IMAGE_NOT_FOUND,
+            detail=ImageMessages.IMAGE_NOT_FOUND,
         )
     return Response(
         content=image.data,
@@ -1096,21 +1122,21 @@ async def read_community_billing_summary(
 
 
 def _auth_policy_read(
-    policy_row,
+    half: SignInHalf | None,
     provider_display_name: str | None = None,
     *,
     factor_required_by_platform: bool = False,
 ) -> CommunityAuthPolicyRead:
-    if policy_row is None or policy_row.policy == "open":
+    if half is None or half.policy == "open":
         return CommunityAuthPolicyRead(
             policy="open", factor_required_by_platform=factor_required_by_platform
         )
     return CommunityAuthPolicyRead(
         policy="required",
-        provider_id=policy_row.provider_id,
-        provider_slug=policy_row.provider_slug,
+        provider_id=half.provider_id,
+        provider_slug=half.provider_slug,
         provider_display_name=provider_display_name,
-        require_methods=list(policy_row.require_methods or ()),
+        require_methods=list(half.require_methods),
         factor_required_by_platform=factor_required_by_platform,
     )
 
@@ -1138,11 +1164,15 @@ async def _auth_settings_response(
         seat_session, guild_id=guild_id
     )
     platform = await notification_policy.resolve(seat_session, None)
+    settings_row = await app_settings_service.get_app_settings(seat_session)
     return CommunityAuthSettingsRead(
         auth_options=sorted(effective_options(administration.auth_options))
         if administration
         else [],
         auth_policy=await _auth_policy_response(system_session, guild_id),
+        guest_auth_policy=await _auth_policy_response(
+            system_session, guild_id, guest=True
+        ),
         enforce_compliance_session=guild.enforce_compliance_session,
         require_second_factor=guild.require_second_factor,
         allow_push_notifications=guild.allow_push_notifications,
@@ -1151,6 +1181,10 @@ async def _auth_settings_response(
         push_allowed_by_platform=platform.push,
         email_allowed_by_platform=platform.email,
         redacted_by_platform=platform.redact,
+        allow_engagement_ranking=guild.allow_engagement_ranking,
+        engagement_ranking_allowed_by_platform=settings_row.engagement_ranking_enabled,
+        guest_max_days=guild.guest_max_days,
+        guest_max_days_by_platform=settings_row.max_guest_days,
     )
 
 
@@ -1165,15 +1199,16 @@ async def get_community_auth_settings(
 
 
 async def _auth_policy_response(
-    system_session: AsyncSession, guild_id: int
+    system_session: AsyncSession, guild_id: int, *, guest: bool = False
 ) -> CommunityAuthPolicyRead:
     policy_row = await system_session.get(GuildAuthPolicy, guild_id)
+    half = policy_row.half(guest) if policy_row is not None else None
     display_name = None
-    if policy_row is not None and policy_row.provider_id is not None:
-        provider = await system_session.get(AuthProvider, policy_row.provider_id)
+    if half is not None and half.provider_id is not None:
+        provider = await system_session.get(AuthProvider, half.provider_id)
         display_name = provider.display_name if provider else None
     return _auth_policy_read(
-        policy_row,
+        half,
         display_name,
         factor_required_by_platform=await _platform_asks_everyone(system_session),
     )
@@ -1203,26 +1238,33 @@ async def update_community_auth_settings(
     keeps an admin from locking the community behind a sign-in they have not
     completed.
 
+    The guests' requirement takes the same shapes and is asked of guests
+    instead of the members' one. Its writer is not a guest, so is not asked
+    to meet it.
+
     Nobody is signed out by a change. Existing API
     keys are left alone when keys are refused, so accepting them again
     restores them. Every notification answer only narrows what the deployment
     permits.
     """
+    requirements = {"auth_policy", "guest_auth_policy"}
     changes: dict[str, object] = {
         key: value
-        for key, value in payload.model_dump(exclude={"auth_policy"}).items()
+        for key, value in payload.model_dump(exclude=requirements).items()
         if value is not None
+        # ``null`` is an answer for the guests' limit: no limit of its own.
+        or (key == "guest_max_days" and key in payload.model_fields_set)
     }
-    if payload.auth_policy is not None:
-        changes["auth_policy"] = (
-            auth_posture.SignInRequirement(
-                "required",
-                payload.auth_policy.provider_id,
-                frozenset(payload.auth_policy.require_methods),
+    for key in requirements:
+        asked = getattr(payload, key)
+        if asked is not None:
+            changes[key] = (
+                auth_posture.SignInRequirement(
+                    "required", asked.provider_id, frozenset(asked.require_methods)
+                )
+                if asked.policy == "required"
+                else auth_posture.SignInRequirement()
             )
-            if payload.auth_policy.policy == "required"
-            else auth_posture.SignInRequirement()
-        )
     await auth_posture.change(
         auth_posture.RuleContext.community(
             seat_session, system_session, current_user, guild_id
@@ -1301,7 +1343,22 @@ async def delete_community(
     #
     # From here the guild is gone as far as everybody in it is concerned:
     # absent from their guild lists and refused on every path, admins included.
-    guild_row = await guilds_service.get_guild(system_session, guild_id=guild_id)
+    # Locked and read again: the status may have moved since the access check,
+    # and a community suspended in the meantime is the platform's now, not its
+    # seat's to delete.
+    guild_row = (
+        await system_session.exec(
+            select(Guild)
+            .where(Guild.id == guild_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).one_or_none()
+    if guild_row is None or guild_row.status not in LIVE_STATUS_VALUES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildMessages.COMMUNITY_ACCESS_DENIED,
+        )
     notice = await guilds_service.soft_delete_guild(
         system_session, guild_row, actor_user_id=current_user.id, via="admin"
     )
@@ -1322,7 +1379,7 @@ async def delete_community(
 
 @router.post(
     "/{community_id}/invites",
-    response_model=CommunityInviteRead,
+    response_model=CommunityInviteCreated,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_community_invite(
@@ -1331,18 +1388,26 @@ async def create_community_invite(
     invite_in: CommunityInviteCreate,
     session: SettingsRLSSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
-) -> CommunityInviteRead:
-    invite = await guilds_service.create_guild_invite(
+) -> CommunityInviteCreated:
+    invite, code = await guilds_service.create_guild_invite(
         session,
         guild_id=guild_id,
         created_by=current_user.id,
         expires_at=invite_in.expires_at,
         max_uses=invite_in.max_uses,
         invitee_email=invite_in.invitee_email,
+        guest_days=invite_in.guest_days,
+        grants=invite_in.grants,
         actor_user_id=current_user.id,
     )
     await session.commit()
-    return CommunityInviteRead.model_validate(invite)
+    return CommunityInviteCreated.model_validate(
+        {
+            **CommunityInviteRead.model_validate(invite).model_dump(),
+            "code": code,
+            "grants": invite_in.grants,
+        }
+    )
 
 
 @router.delete(
@@ -1447,6 +1512,13 @@ async def update_community_membership(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=GuildMessages.USER_NOT_FOUND_IN_COMMUNITY,
         )
+    # A guest's rung is set where guests are made; becoming a member is its
+    # own step, which also ends the guest's time.
+    if target_membership.guest_until is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=GuildMessages.COMMUNITY_ROLE_NOT_ASSIGNABLE,
+        )
 
     # And taking the seat away is the same authority as giving it. Asked of the
     # *locked* row, so the role this decides on is the role as it stands now.
@@ -1511,6 +1583,56 @@ async def update_community_membership(
     # Guild-level access change (e.g. admin → member loses the guild-admin
     # bypass): re-check this user's live content streams now so the change takes
     # effect immediately, not on the next bounded re-auth tick.
+    await content_sockets.revoke_user(guild_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{community_id}/guests/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def extend_community_guest(
+    guild_id: CommunityIdPath,
+    _guild_context: SettingsAdminWriteContextDep,
+    user_id: int,
+    payload: CommunityGuestExtend,
+    session: SystemSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Set when a guest's time ends, ``days`` from now. On the system engine,
+    as a role change is: the guild role holds no UPDATE on memberships."""
+    await guilds_service.extend_guest(
+        session,
+        guild_id=guild_id,
+        user_id=user_id,
+        days=payload.days,
+        actor_user_id=current_user.id,
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{community_id}/guests/{user_id}/member",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def make_community_guest_a_member(
+    guild_id: CommunityIdPath,
+    _guild_context: SettingsAdminWriteContextDep,
+    user_id: int,
+    session: SystemSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Make a guest a member. They take a seat, so the member cap applies."""
+    await guilds_service.lock_guild_seats(session, guild_id)
+    await guilds_service.make_guest_a_member(
+        session, guild_id=guild_id, user_id=user_id, actor_user_id=current_user.id
+    )
+    await session.commit()
+    await post_commit.settle(session)
+    # Routed as a guest until now: their live streams re-check as a member.
     await content_sockets.revoke_user(guild_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1727,6 +1849,22 @@ async def leave_community(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=GuildMessages.CANNOT_VACATE_LAST_SUPERADMIN,
         )
+
+    if membership.guest_until is not None:
+        # A guest's own role changes none of what leaving takes away, so their
+        # departure runs as the expiry sweep runs it, on the community's
+        # cohort, recorded as theirs.
+        async with cohorts.system_session(guild_id) as guild_session:
+            await set_rls_context(guild_session, SystemGuild(guild_id))
+            await guilds_service.remove_user_from_guild(
+                guild_session,
+                guild_id=guild_id,
+                user_id=current_user.id,
+                actor_user_id=current_user.id,
+            )
+            await guild_session.commit()
+        await content_sockets.revoke_user(guild_id, current_user.id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Ownership release happens inside remove_user_from_guild, while the
     # leaver's membership rows are still in place for RLS to match.

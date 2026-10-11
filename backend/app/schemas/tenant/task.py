@@ -17,6 +17,7 @@ from app.schemas.base import (
 from app.schemas.query import PageMeta
 from app.schemas.recurrence import OccurrenceScope, TaskRule
 
+from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.platform.user import PersonShape, UserPublic
 from app.schemas.tenant.evidence import EvidenceRead
 from app.schemas.tenant.plugin_data import PluginValueSummary
@@ -30,7 +31,7 @@ from app.schemas.tenant.property import (
 )
 
 from app.core.intake import Conversation, IntakeStream
-from app.models.tenant.task import TaskPriority
+from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.models.platform.user import UserStatus
 
 
@@ -143,9 +144,14 @@ class TaskUpdate(PropertiesOnUpdate):
     description: Optional[RichMentionStr] = None
     #: The description this ``description`` was written over. Given and no
     #: longer the stored one, the update is refused with
-    #: ``TASK_DESCRIPTION_CHANGED``.
+    #: ``DESCRIPTION_CHANGED``.
     description_base: Optional[RichMentionStr] = None
     task_status_id: Optional[int] = None
+    #: Move the task to its project's column of this category (the nearest
+    #: one before it where the project has none), for a caller that knows
+    #: "done" but not which column that is. Ignored with ``task_status_id``,
+    #: and a task already in this category stays in its column.
+    status_category: Optional[TaskStatusCategory] = None
     priority: Optional[TaskPriority] = None
     assignee_ids: Optional[List[PersonId]] = None
     start_date: Optional[datetime] = None
@@ -342,6 +348,9 @@ class TaskCaseRead(SanitizedBaseModel):
     messages: List[CaseMessageRead] = Field(default_factory=list)
     #: What was attached to the case, oldest first.
     evidence: List[CaseEvidenceRead] = Field(default_factory=list)
+    #: The access grants asked for this case, newest first: who holds each,
+    #: on which community, at what level, and where it stands.
+    grants: List[AccessGrantRead] = Field(default_factory=list)
     #: What the case is about, as it was opened with: the community, and the
     #: kind and id of the thing in it, where it names them.
     subject_community_id: Optional[int] = None

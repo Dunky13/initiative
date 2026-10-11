@@ -260,6 +260,7 @@ class Guild(SQLModel, table=True):
             postgresql_using="gin",
             postgresql_where=text("is_community"),
         ),
+        CheckConstraint("guest_max_days >= 1", name="ck_guilds_guest_max_days"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -306,6 +307,13 @@ class Guild(SQLModel, table=True):
     # When the status last changed; NULL until the first operator change.
     status_changed_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    # Where a suspended guild was before it was suspended, so lifting the
+    # suspension puts it back there — ``deleted`` included, which a suspension
+    # pulls out of its purge countdown. NULL while it is not suspended, and for
+    # a suspension made before this was recorded.
+    status_before_suspension: Optional[str] = Field(
+        default=None, sa_column=Column(String(16), nullable=True)
     )
     # Community directory opt-in. False means the guild is reachable only by
     # invite; True publishes its name, description, icon, categories, and roster
@@ -394,6 +402,22 @@ class Guild(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
 
+    # Whether search orders this community's content by how many members
+    # engaged with it lately. Also asked of the deployment on ``app_settings``,
+    # and off wins. Here for the reason the notification answers are: the seat
+    # sets it under ``restrictions``, and it has to survive the community
+    # lifting its sign-in requirement.
+    allow_engagement_ranking: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
+    # The longest a guest may stay, in days, under the deployment's ceiling
+    # (``app_settings.max_guest_days``). NULL leaves the ceiling alone. The
+    # seat sets it with the guests' sign-in rule.
+    guest_max_days: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
+
     # The operator-set caps, plan label, and sign-in entitlement — everything
     # this row is NOT. See GuildAdministration for why they live apart.
     administration: Optional["GuildAdministration"] = Relationship(
@@ -422,6 +446,11 @@ class CommunityRole(str, Enum):
     # through a settings grant. An ordinary guild admin cannot — the hand that
     # administers a community is not the hand that decides who may enter it.
     superadmin = "superadmin"
+    # An outside person in the community for a set time: a membership row
+    # with ``guest_until`` set, which no seat count or member list includes.
+    # Below ``member``: what a guest reaches is what they were given, not
+    # what the community's members see.
+    guest = "guest"
     # A time-bound PAM/support access grantee acting inside a guild they are
     # NOT a member of. Synthesized for the request only — never a persisted
     # ``guild_memberships`` row (the member-role endpoint rejects assigning
@@ -455,6 +484,7 @@ class CommunityRole(str, Enum):
 #: rather than restating which rungs are which.
 GUILD_LADDER: tuple[CommunityRole, ...] = (
     CommunityRole.support,
+    CommunityRole.guest,
     CommunityRole.member,
     CommunityRole.admin,
     CommunityRole.superadmin,
@@ -504,6 +534,10 @@ class GuildMembership(SQLModel, table=True):
         # The primary key is (guild_id, user_id); this is the other direction,
         # for "which guilds is this user in".
         Index("idx_guild_memberships_user_guild", "user_id", "guild_id"),
+        CheckConstraint(
+            "role <> 'guest' OR guest_until IS NOT NULL",
+            name="ck_guild_memberships_guest_ends",
+        ),
     )
 
     guild_id: int = Field(foreign_key="guilds.id", ondelete="CASCADE", primary_key=True)
@@ -555,6 +589,13 @@ class GuildMembership(SQLModel, table=True):
         ),
     )
 
+    #: When a guest's membership ends; ``NULL`` for a member. A row with it
+    #: set is a guest's: it admits them only until then, and no seat count or
+    #: member list includes it.
+    guest_until: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
     guild: Optional[Guild] = Relationship(back_populates="members")
     user: Optional["MemberProfile"] = Relationship(
         sa_relationship_kwargs={
@@ -567,15 +608,19 @@ class GuildMembership(SQLModel, table=True):
 class GuildInvite(SQLModel, table=True):
     __tablename__ = "guild_invites"
     __table_args__ = (
+        CheckConstraint("guest_days >= 1", name="ck_guild_invites_guest_days"),
         CheckConstraint(
-            "role IN ('member', 'admin', 'superadmin')", name="ck_guild_invites_role"
+            "(guest_days IS NULL) = (guest_role IS NULL)",
+            name="ck_guild_invites_guest_terms",
         ),
     )
     __allow_unmapped__ = True
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    code: str = Field(index=True, unique=True, nullable=False, max_length=64)
+    # SHA-256 of the code, in hex. The code itself is shown once, when the
+    # invite is made.
+    code_hash: str = Field(index=True, unique=True, nullable=False, max_length=64)
     guild_id: int = Field(foreign_key="guilds.id", ondelete="CASCADE", nullable=False)
     # The invite outlives the admin who issued it.
     created_by: Optional[int] = Field(
@@ -587,11 +632,6 @@ class GuildInvite(SQLModel, table=True):
     #: ``None`` for no limit.
     max_uses: Optional[int] = Field(default=1, sa_column=Column(Integer, nullable=True))
     uses: int = Field(default=0, nullable=False)
-    #: What accepting the invite makes somebody in the community.
-    role: CommunityRole = Field(
-        default=CommunityRole.member,
-        sa_column=Column(String, nullable=False, server_default="member"),
-    )
     invitee_email_encrypted: Optional[str] = Field(
         default=None,
         sa_column=Column(String(2000), nullable=True, info={FERNET_SALT: SALT_EMAIL}),
@@ -599,6 +639,15 @@ class GuildInvite(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    # A guest invite: redeeming it makes a guest with ``guest_role`` for
+    # ``guest_days``. Both are NULL on a member invite.
+    guest_days: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
+    guest_role: Optional[CommunityRole] = Field(
+        default=None,
+        sa_column=Column(SQLEnum(CommunityRole, name="guild_role"), nullable=True),
     )
 
     @property

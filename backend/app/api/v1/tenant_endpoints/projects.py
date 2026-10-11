@@ -123,12 +123,10 @@ async def _get_project_or_404(
     )
     if not project:
         raise await reachability.missing_or_denied(
-            Tool.project.plural,
+            Tool.project,
             project_id,
             user_id,
             guild_id,
-            not_found=Tool.project.not_found_code,
-            denied=Tool.project.no_access_code,
         )
     return project
 
@@ -231,7 +229,7 @@ def _slim_project_reads(
 ) -> List[ProjectRead]:
     """Build lightweight ``ProjectRead`` rows for the slim projection.
 
-    Carries only ``{id, name, icon, initiative_id, can}`` plus
+    Carries only ``{id, name, icon, initiative_id, can}``, its dates, plus
     the cheap scalar flags and who owns it (``owner_id``, or ``owner_plugin`` as
     the caller annotated it); files/grants/tags/the owner's profile/nested
     initiative are left at their defaults so no heavy relationship is
@@ -246,6 +244,8 @@ def _slim_project_reads(
                 name=project.name,
                 description=None,
                 icon=project.icon,
+                start_date=project.start_date,
+                end_date=project.end_date,
                 owner_id=ownership_service.owner_user_id_of(project),
                 initiative_id=project.initiative_id,
                 created_at=project.created_at,

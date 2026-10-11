@@ -38,6 +38,7 @@ from app.models.platform.guild import GuildMembership, CommunityRole
 from app.services import audit as audit_service
 from app.services import email as email_service
 from app.services.auth import addresses
+from app.services.membership import live_membership_clause
 from app.services.auth import identity as identity_service
 from app.services.auth import sessions as session_service
 from app.services.auth import challenges as challenge_service
@@ -52,7 +53,6 @@ from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
 from app.models.tenant.project_order import ProjectOrder
 from app.models.tenant.project_favorite import ProjectFavorite
-from app.models.tenant.recent_view import RecentView
 from app.models.tenant.reaction_digest import ReactionDigestItem
 from app.models.tenant.ai_member_key import GuildAIMemberKey
 
@@ -245,7 +245,6 @@ async def _erase_in_guild(
     await guild_session.exec(
         delete(ProjectFavorite).where(ProjectFavorite.user_id == user_id)
     )
-    await guild_session.exec(delete(RecentView).where(RecentView.user_id == user_id))
     # The ledger that stops an event reminder being sent twice: one row per
     # (event, person), of no use to anyone once the person is gone.
     await guild_session.exec(
@@ -1020,17 +1019,34 @@ def visible_to_other_people(status_column=None):
     return column.notin_(sorted(ABSENT_STATUSES, key=lambda s: s.value))
 
 
-def guild_members(statement: _S, *, guild_id: int) -> _S:
+def guild_members(statement: _S, *, guild_id: int, guests: bool = False) -> _S:
     """``statement`` narrowed to the people listed as members of one community.
+    Its guests are listed only with ``guests``, and only while they are in: a
+    picker for content a guest can reach names them, and the roster does not.
 
     ``MemberProfile`` joined to each person's membership row there, so a caller
     may select its columns beside the profile, and the people
     :func:`visible_to_other_people` leaves out left out here too. A statement
     that selects no profile column names ``MemberProfile`` in ``select_from``.
     """
+    return _in_guild(
+        statement,
+        guild_id,
+        live_membership_clause() if guests else GuildMembership.guest_until.is_(None),
+    )
+
+
+def guild_guests(statement: _S, *, guild_id: int) -> _S:
+    """``statement`` narrowed to one community's guests, as
+    :func:`guild_members` narrows it to its members: every guest membership,
+    whether or not it admits its holder now, for the people who run them."""
+    return _in_guild(statement, guild_id, GuildMembership.guest_until.is_not(None))
+
+
+def _in_guild(statement: _S, guild_id: int, rows: ColumnElement[bool]) -> _S:
     return statement.join(
         GuildMembership, GuildMembership.user_id == MemberProfile.id
-    ).where(GuildMembership.guild_id == guild_id, visible_to_other_people())
+    ).where(GuildMembership.guild_id == guild_id, rows, visible_to_other_people())
 
 
 async def _reach(user_ids: List[int]) -> tuple[dict[int, str], set[int]]:

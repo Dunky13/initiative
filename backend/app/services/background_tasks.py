@@ -132,27 +132,35 @@ async def slow_pass() -> None:
 
 
 async def hourly_pass() -> None:
-    """Retention and upkeep: trash, expired exports and imports, delivered
-    webhook history, spent digest items, evidence past its keeping, and
-    plug-in auto-updates.
+    """Retention and upkeep: trash, expired exports and imports, every record
+    a community keeps for a while (``app.services.tenant.expiry``), spent
+    digest items, evidence past its keeping, plug-in auto-updates, and each
+    community's engagement levels.
 
-    Trash is purged and plug-ins updated in active communities only: a read-only
-    or suspended one is frozen until it returns. Exports and imports expire
-    wherever the schema still exists.
+    Trash is purged and plug-ins updated in active communities only: a
+    read-only or suspended one is frozen until it returns. Exports, imports,
+    expiring records and engagement levels go wherever the schema still exists.
     """
     from app.services import notifications
     from app.services.export import worker as export_worker
     from app.services.guild_sweeps import Scope, each_guild
     from app.services.import_engine import worker as import_worker
     from app.services.platform import evidence, holds
-    from app.services.tenant import plugin_updates, outbox_poller, trash_purge
+    from app.services.tenant import (
+        engagement_levels,
+        expiry,
+        plugin_updates,
+        trash_purge,
+    )
 
     await each_guild(
         [
             (Scope.ACTIVE, trash_purge.purge_guild),
             (Scope.PROVISIONED, export_worker.expire_artifacts),
             (Scope.PROVISIONED, import_worker.expire_payloads),
-            (Scope.ACTIVE, outbox_poller.expire_history),
+            (Scope.PROVISIONED, await expiry.prepare()),
+            # After expiry, so what it let go no longer counts.
+            (Scope.PROVISIONED, await engagement_levels.prepare()),
             (Scope.ACTIVE, evidence.purge_due),
             # Held content keeps its community whatever its status.
             (Scope.PROVISIONED, holds.remind_due),
@@ -233,6 +241,10 @@ def start_background_tasks() -> list[asyncio.Task]:
     from app.services.platform.access_grants import (
         GRANT_EXPIRY_POLL_SECONDS,
         process_grant_expiry,
+    )
+    from app.services.platform.guests import (
+        GUEST_EXPIRY_POLL_SECONDS,
+        end_expired_guests,
     )
     from app.services.auth.held_changes import (
         HOLD_SWEEP_POLL_SECONDS,
@@ -343,6 +355,11 @@ def start_background_tasks() -> list[asyncio.Task]:
         asyncio.create_task(
             Loop("grant-expiry", interval=GRANT_EXPIRY_POLL_SECONDS).run(
                 process_grant_expiry
+            )
+        ),
+        asyncio.create_task(
+            Loop("guest-expiry", interval=GUEST_EXPIRY_POLL_SECONDS).run(
+                end_expired_guests
             )
         ),
         asyncio.create_task(

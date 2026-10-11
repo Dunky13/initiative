@@ -9,7 +9,7 @@ import { ReportButton } from "@/components/moderation/ReportButton";
 import { PageBanner } from "@/components/PageBanner";
 import { StatusMessage } from "@/components/StatusMessage";
 import { ProfilePageSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TOOL_TRAY_SURFACE } from "@/components/toolBrowser/ToolRail";
+import { TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
 import { UserHandle } from "@/components/UserHandle";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { ProfileJoined } from "@/components/user/ProfileJoined";
@@ -141,7 +141,7 @@ export const UserProfilePage = () => {
               className={cn(
                 "px-3 pt-1 pb-3 sm:px-4 sm:pb-4",
                 hasTrophies ? "rounded-b-2xl" : "rounded-2xl",
-                TOOL_TRAY_SURFACE
+                TRAY_SURFACE
               )}
             >
               <section className="space-y-3">

@@ -16,6 +16,7 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db import cohorts
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.post import Post
 from app.services.content_sockets import sockets
@@ -31,6 +32,7 @@ from app.testing import (
     create_user,
     lexical_body,
     route_session_to_guild,
+    route_system,
 )
 
 
@@ -293,11 +295,14 @@ async def test_the_scheduler_tells_the_room_when_a_draft_comes_due(
     post_id, guild_id, initiative_id = post.id, guild.id, initiative.id
 
     async with _Room(guild_id, initiative_id) as room:
-        await route_session_to_guild(session, guild_id)
-        assert await publish_due_posts(session, now=datetime.now(timezone.utc)) == [
-            post_id
-        ]
-        await session.commit()
+        # As the sweep runs: a system session of its own, routed into the
+        # community with nobody behind it.
+        async with cohorts.system_session(guild_id) as system:
+            await route_system(system, guild_id=guild_id)
+            assert await publish_due_posts(system, now=datetime.now(timezone.utc)) == [
+                post_id
+            ]
+            await system.commit()
         await room.catch_up()
 
         changes = room.changes()
@@ -305,5 +310,6 @@ async def test_the_scheduler_tells_the_room_when_a_draft_comes_due(
         assert changes[0]["action"] == "created"
         assert changes[0]["resource"] == {"type": "posts", "id": post_id}
 
+    await route_session_to_guild(session, guild_id)
     published = (await session.exec(select(Post).where(Post.id == post_id))).one()
     assert published.published_at is not None

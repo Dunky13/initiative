@@ -23,7 +23,7 @@ import type {
   CommunityAuthOption,
   PlatformCommunityStorageRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { CommunityStatus } from "@/api/generated/initiativeAPI.schemas";
+import { CommunityAction, CommunityStatus } from "@/api/generated/initiativeAPI.schemas";
 import { BillingConsoleButton, opensBillingHere } from "@/components/platform/BillingConsoleButton";
 import { CommunityRestoreWizard } from "@/components/platform/CommunityRestoreWizard";
 import { Section, SettingRow } from "@/components/platform/SettingRow";
@@ -72,6 +72,16 @@ const parseUserLimitInput = (raw: string): { limit: number | null; invalid: bool
 
 const userLimitToInput = (limit: number | null): string => (limit == null ? "" : String(limit));
 
+/** Parse the guest cap. Blank = unlimited (null); 0 takes no new guests, so
+ *  unlike the member cap it is a value of its own. */
+const parseGuestLimitInput = (raw: string): { limit: number | null; invalid: boolean } => {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { limit: null, invalid: false };
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 0) return { limit: null, invalid: true };
+  return { limit: n, invalid: false };
+};
+
 export const CommunityOperatorSettingsSheet = ({
   community,
   open,
@@ -99,6 +109,7 @@ export const CommunityOperatorSettingsSheet = ({
     (loaded) => ({
       storage: bytesToGbInput(loaded?.max_storage_bytes ?? null),
       users: userLimitToInput(loaded?.max_users ?? null),
+      guests: userLimitToInput(loaded?.max_guests ?? null),
     }),
     [open, community?.id]
   );
@@ -148,6 +159,16 @@ export const CommunityOperatorSettingsSheet = ({
     commitCap({ max_users: limit }, sent, "users");
   };
 
+  const commitGuests = () => {
+    const sent = form.values;
+    const { limit, invalid } = parseGuestLimitInput(sent.guests);
+    if (invalid || limit === (community.max_guests ?? null)) {
+      form.reset({ guests: sent.guests });
+      return;
+    }
+    commitCap({ max_guests: limit }, sent, "guests");
+  };
+
   const options = community.auth_options ?? [];
   const toggleOption = (option: CommunityAuthOption, checked: boolean) =>
     patch({
@@ -195,7 +216,11 @@ export const CommunityOperatorSettingsSheet = ({
           {planIsBillings && !deleted ? (
             <div className="space-y-3 rounded-md border bg-muted/40 p-4">
               <p className="text-sm">{t("communities.sheet.setInBilling")}</p>
-              {billing?.operator_handoff && opensBillingHere() ? (
+              {/* The operator console changes a plan, which the row says this
+                  reader may do; the support console is in the table. */}
+              {billing?.operator_handoff &&
+              opensBillingHere() &&
+              community.allowed_actions.includes(CommunityAction.billing_operator) ? (
                 <BillingConsoleButton community={community} console="operator" size="sm">
                   {t("communities.sheet.changeInBilling")}
                 </BillingConsoleButton>
@@ -219,6 +244,29 @@ export const CommunityOperatorSettingsSheet = ({
                   value={form.values.users}
                   onChange={(event) => form.set({ users: event.target.value })}
                   onBlur={commitUsers}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                  placeholder={t("communities.unlimitedPlaceholder")}
+                  disabled={update.isPending || planLocked}
+                />
+              }
+            />
+            <SettingRow
+              label={t("communities.sheet.guestsLabel")}
+              help={t("communities.sheet.guestsHelp")}
+              htmlFor="community-max-guests"
+              control={
+                <Input
+                  id="community-max-guests"
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  className="w-32"
+                  value={form.values.guests}
+                  onChange={(event) => form.set({ guests: event.target.value })}
+                  onBlur={commitGuests}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
                   }}

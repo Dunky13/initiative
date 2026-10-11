@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from enum import Enum
 from typing import Any, List, Literal, Optional
 
 from pydantic import (
@@ -248,6 +249,8 @@ class UserCommunityMember(UserCommunityRead):
     #: SEAT-ONLY. Whether this member's personal API keys reach the guild.
     #: ``None`` for anyone who does not hold the superadmin seat.
     api_keys_allowed: Optional[bool] = None
+    #: When a guest's time ends; ``None`` for a member.
+    guest_until: Optional[datetime] = None
 
 
 class UserCommunityMemberListResponse(PageMeta):
@@ -723,6 +726,7 @@ class UserRead(UserBase):
     #: "system" (follow the browser locale), "12", or "24".
     time_format: str = "system"
     recent_tabs_limit: int = 20
+    count_toward_engagement_ranking: bool = True
     timezone: str = "UTC"
     event_reminder_minutes_before: Optional[int] = 15
     last_overdue_notification_at: Optional[datetime] = None
@@ -779,6 +783,32 @@ class UserRead(UserBase):
         )
 
 
+class UserAction(str, Enum):
+    """What the reader may do to one account on the staff roster. Worked out
+    by the server per row, from the reader's capabilities, their rung, and
+    the account's state, so a control the reader would be refused is never
+    drawn."""
+
+    rename = "rename"
+    remove_avatar = "remove_avatar"
+    clear_display_names = "clear_display_names"
+    clear_custom_status = "clear_custom_status"
+    clear_decorations = "clear_decorations"
+    suspend = "suspend"
+    unsuspend = "unsuspend"
+    change_role = "change_role"
+    revoke_api_keys = "revoke_api_keys"
+    clear_second_factor = "clear_second_factor"
+    sign_out_everywhere = "sign_out_everywhere"
+    reset_password = "reset_password"
+    resend_verification = "resend_verification"
+    lift_sign_in_lock = "lift_sign_in_lock"
+    clear_age_block = "clear_age_block"
+    reactivate = "reactivate"
+    restore = "restore"
+    delete = "delete"
+
+
 class OperatorUserRead(UserRead):
     """A staff view of somebody else's account: the address masked.
 
@@ -824,6 +854,12 @@ class OperatorUserRead(UserRead):
     #: How many of the account's API keys still work — what the sheet offers
     #: to revoke.
     api_key_count: int = 0
+
+    #: What the reader may do to this account.
+    allowed_actions: List[UserAction] = Field(default_factory=list)
+
+    #: How many open operations cases the account filed or is the subject of.
+    open_case_count: int = 0
 
     @field_validator("email", mode="after")
     @classmethod
@@ -891,6 +927,7 @@ class UserSelfUpdate(SanitizedBaseModel):
     week_starts_on: Optional[int] = None
     time_format: Optional[str] = None
     recent_tabs_limit: Optional[int] = Field(default=None, ge=1, le=100)
+    count_toward_engagement_ranking: Optional[bool] = None
     timezone: Optional[str] = None
     event_reminder_minutes_before: Optional[int] = None
     color_theme: Optional[str] = None

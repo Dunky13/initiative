@@ -17,16 +17,17 @@ import {
   buildPage,
   buildProject,
   buildProjectTaskStatus,
+  buildPropertyDefinition,
   buildPropertySummary,
   buildTask,
+  buildToolLayoutSet,
   buildUser,
 } from "@/__tests__/factories";
 import { readerCan } from "@/__tests__/factories/can";
-import { buildToolViewSet } from "@/__tests__/factories/toolView.factory";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
-import type { ToolItemLayoutRead } from "@/api/generated/initiativeAPI.schemas";
+import type { DetailLayoutRead } from "@/api/generated/initiativeAPI.schemas";
 import {
   type ProjectRead,
   type PropertySummary,
@@ -169,10 +170,10 @@ const renderTaskPage = ({
 /** A field on the page, by its label. */
 /** A task page laid out by its project: a titled section of the description,
  *  and nothing at the side. */
-const LAYOUT: ToolItemLayoutRead[] = [
+const LAYOUT: DetailLayoutRead[] = [
   {
-    id: 1,
-    item_kind: "task",
+    kind: "task",
+    updated_at: "2026-10-01T12:00:00.000Z",
     definition: {
       main: [
         {
@@ -426,7 +427,7 @@ describe("TaskEditPage", () => {
       refuse: (body) =>
         body.description_base === task.description
           ? undefined
-          : HttpResponse.json({ detail: "TASK_DESCRIPTION_CHANGED" }, { status: 409 }),
+          : HttpResponse.json({ detail: "DESCRIPTION_CHANGED" }, { status: 409 }),
     });
     await shown("Old words");
     // Somebody else saves theirs first.
@@ -483,15 +484,15 @@ describe("TaskEditPage", () => {
     expect(sent[0]).toMatchObject({ priority: "high", scope: "this" });
   });
 
-  it("lays the page out as its project's layout says, gathering what it leaves out", async () => {
+  it("lays the page out as its project's layout says, leaving out what it doesn't place", async () => {
     // The task was moved: its new project lays its page out, while the path
     // still names the one it came from.
     const MOVED_TO = PROJECT_ID + 1;
     server.use(
-      communityHttp.get("/views/", ({ request }) =>
+      communityHttp.get("/layouts/", ({ request }) =>
         HttpResponse.json(
-          buildToolViewSet({
-            item_layouts:
+          buildToolLayoutSet({
+            layouts:
               new URL(request.url).searchParams.get("tool_id") === String(MOVED_TO) ? LAYOUT : [],
           })
         )
@@ -499,15 +500,18 @@ describe("TaskEditPage", () => {
     );
     renderTaskPage({ taskProjectId: MOVED_TO });
 
-    const more = await screen.findByRole("button", { name: "More fields" });
-    expect(screen.getByRole("button", { name: "Work" })).toBeInTheDocument();
-    expect(more.closest("section")).toContainElement(await fieldNamed(/^status$/i));
+    expect(await screen.findByRole("button", { name: "Work" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /^status$/i })).not.toBeInTheDocument();
   });
 
   it("shows every field read-only to a reader", async () => {
     renderTaskPage({ canEdit: false, description: "Old words" });
 
-    expect(await screen.findByDisplayValue("Wire the doorbell")).toBeDisabled();
+    // The title is the page's heading, with no box to change it in.
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Wire the doorbell" })
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Wire the doorbell")).not.toBeInTheDocument();
     expect(within(await fieldNamed(/^status$/i)).getByRole("combobox")).toBeDisabled();
     const description = await fieldNamed(/^description$/i);
     expect(within(description).getByText("Old words")).toBeInTheDocument();
@@ -795,6 +799,97 @@ describe("TaskEditPage", () => {
     await waitFor(() => expect(written).toHaveLength(2));
     expect(written[1]).toEqual({ values: [], removed: [6], merge: true });
     expect(sent).toHaveLength(0);
+  });
+
+  it("draws a property the layout places on its own, saving it there", async () => {
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([
+          buildPropertyDefinition({ id: 9, name: "Risk", type: PropertyType.text }),
+        ])
+      ),
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "task",
+                updated_at: "2026-10-01T12:00:00.000Z",
+                definition: {
+                  side: [{ type: "field", props: { field: "property:9" } }, { type: "properties" }],
+                },
+              },
+            ],
+          })
+        )
+      )
+    );
+    // The task has no value for it yet.
+    const { task } = renderTaskPage();
+    const written: { values: { property_id: number; value: unknown }[] }[] = [];
+    server.use(
+      communityHttp.put("/properties/:target/:entityId", async ({ request }) => {
+        const body = (await request.json()) as (typeof written)[number];
+        written.push(body);
+        task.properties = [
+          buildPropertySummary({
+            property_id: 9,
+            name: "Risk",
+            type: PropertyType.text,
+            value: body.values[0]?.value,
+          }),
+        ];
+        return HttpResponse.json(task.properties);
+      })
+    );
+
+    const risk = await fieldNamed(/^risk$/i);
+    // Placed, it stays when emptied, so it has nothing to take it off the task.
+    expect(within(risk).queryByRole("button", { name: /remove/i })).not.toBeInTheDocument();
+    await userEvent.type(within(risk).getByRole("textbox"), "High");
+    await userEvent.tab();
+
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(written[0]).toEqual({ values: [{ property_id: 9, value: "High" }], merge: true });
+    // All properties leaves out the one placed on its own.
+    await waitFor(() => expect(screen.getAllByRole("group", { name: /^risk$/i })).toHaveLength(1));
+
+    // Held, it can be cleared, staying on the page.
+    await userEvent.click(within(risk).getByRole("button", { name: /^clear$/i }));
+    await waitFor(() => expect(written).toHaveLength(2));
+    expect(written[1]).toEqual({ values: [{ property_id: 9, value: null }], merge: true });
+  });
+
+  it("says when a placed property could not be loaded, and loads it again", async () => {
+    let fail = true;
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        fail
+          ? new HttpResponse(null, { status: 500 })
+          : HttpResponse.json([
+              buildPropertyDefinition({ id: 9, name: "Risk", type: PropertyType.text }),
+            ])
+      ),
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "task",
+                updated_at: "2026-10-01T12:00:00.000Z",
+                definition: { side: [{ type: "field", props: { field: "property:9" } }] },
+              },
+            ],
+          })
+        )
+      )
+    );
+    renderTaskPage();
+
+    expect(await screen.findByText(/couldn't load this property/i)).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await fieldNamed(/^risk$/i)).toBeInTheDocument();
   });
 
   it("reports duplicate progress on the trigger once the menu closes", async () => {

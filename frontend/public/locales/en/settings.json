@@ -33,7 +33,8 @@
       "security": "Security",
       "integrations": "Integrations",
       "usage": "Usage",
-      "planAndUsage": "Plan & usage"
+      "planAndUsage": "Plan & usage",
+      "guests": "Guests"
     },
     "tabBadge": {
       "paymentFailed": "Payment failed",
@@ -370,7 +371,8 @@
       "connections": "Connections",
       "jobs": "Exports and imports",
       "account": "Your account",
-      "moderation": "Moderation"
+      "moderation": "Moderation",
+      "cases": "Cases"
     },
     "reminderLeadTime": {
       "label": "Remind me",
@@ -413,7 +415,8 @@
       "connections": "Somebody asked to connect, or accepted.",
       "jobs": "An export or import you asked for has finished.",
       "account": "Something was done to your account. Always shows in the bell.",
-      "moderation": "A community's moderators took down or warned you about something you wrote. Always shows in the bell."
+      "moderation": "A community's moderators took down or warned you about something you wrote. Always shows in the bell.",
+      "cases": "A case opened where you work cases, or its requester answered and nobody has taken it."
     },
     "quietHours": {
       "title": "Quiet hours",
@@ -878,14 +881,61 @@
       "suspendHelp": "A suspended account can sign in and read why, and reaches nothing else.",
       "role": "Platform role",
       "roleLabel": "Role",
-      "roleHelp": "What this account may do across the whole deployment. You cannot grant above your own role."
+      "roleHelp": "What this account may do across the whole deployment. You cannot grant above your own role.",
+      "signOutLabel": "Sessions",
+      "signOutHelp": "End every session on every device. They sign in again; anyone else who had the account does not.",
+      "signOut": "Sign out everywhere",
+      "signOutConfirmTitle": "Sign out everywhere?",
+      "signOutConfirmBody": "Every session {{handle}} has ends now, on every device, and its open connections close. They can sign in again.",
+      "signOutDone": "Signed out everywhere.",
+      "clear": {
+        "button": "Clear",
+        "displayNames": {
+          "label": "Names in communities",
+          "help": "The names they go by in their communities, all of them. They can set them again.",
+          "action": "Clear their names in communities",
+          "confirmTitle": "Clear their names in communities?",
+          "confirmBody": "The names {{handle}} goes by in every community are cleared, and their handle shows instead. They can set them again.",
+          "done": "Names in communities cleared."
+        },
+        "customStatus": {
+          "label": "Status line",
+          "help": "The status line shown beside their name. They can set another.",
+          "action": "Clear status line",
+          "confirmTitle": "Clear this status line?",
+          "confirmBody": "The status line on {{handle}} is cleared. They can set another.",
+          "done": "Status line cleared."
+        },
+        "decorations": {
+          "label": "Decorations",
+          "help": "Their profile banner, frame and trophies. They can set them again.",
+          "action": "Clear decorations",
+          "confirmTitle": "Clear these decorations?",
+          "confirmBody": "The banner, frame and trophies on {{handle}} are taken off. They can set them again.",
+          "done": "Decorations cleared."
+        }
+      },
+      "cases": {
+        "title": "Cases",
+        "count_one": "{{count}} open case they filed or that is about them.",
+        "count_other": "{{count}} open cases they filed or that are about them.",
+        "loading": "Loading cases…",
+        "loadError": "Could not load their cases.",
+        "filed": "Filed by them",
+        "about": "About them",
+        "help": "Opening a case needs access to the project it is kept in."
+      },
+      "forCase": "For case",
+      "forCaseHelp": "Optional. What you do here is noted on the case you choose."
     },
     "deleted": "Deleted",
     "erasedOn": "Erased {{date}}",
     "erasedNever": "Kept indefinitely",
     "restore": "Restore account",
     "restoreSuccess": "Restored {{handle}}.",
-    "restoreError": "Could not restore the account. Please try again."
+    "restoreError": "Could not restore the account. Please try again.",
+    "openCases_one": "{{count}} open case",
+    "openCases_other": "{{count}} open cases"
   },
   "operatorDeleteUser": {
     "subtitle": "Delete {{email}}",
@@ -943,8 +993,6 @@
     },
     "queueTitle": "Approvals",
     "queueDescription": "Grant, deny, or revoke time-bound access requests.",
-    "communityIdLabel": "Community ID",
-    "communityIdPlaceholder": "e.g. 42",
     "levelNone": "None",
     "nothingAsked": "Choose content access, settings access, or both.",
     "levelRead": "Read-only",
@@ -987,7 +1035,22 @@
       "denied": "Denied",
       "revoked": "Revoked",
       "expired": "Expired"
-    }
+    },
+    "communityLabel": "Community",
+    "communityPlaceholder": "Choose a community",
+    "communitySearch": "Search by name or number…",
+    "communityEmpty": "No communities found.",
+    "caseLabel": "Case",
+    "casePlaceholder": "Choose a case",
+    "caseSearch": "Search by title or number…",
+    "caseEmpty": "No open cases found.",
+    "caseNone": "No case",
+    "caseYours": "yours",
+    "caseRequiredHint": "Choose the case this access is for.",
+    "caseRequiredNoneOpen": "Access is asked for on a case here, and there is no open case you can name. Open one first.",
+    "caseOptionalHint": "Optional. Without one, record what you did on the case by hand afterwards.",
+    "caseOtherCommunity": "This case is about community #{{community}}, not the one chosen.",
+    "caseMark": "Case #{{id}}"
   },
   "platformLayout": {
     "title": "Platform settings",
@@ -1124,7 +1187,7 @@
   "communities": {
     "title": "Community limits",
     "description": "Set per-community caps on storage and on the number of users. Lowering a limit below current usage blocks new uploads or members, but never removes existing files or members.",
-    "platformOnly": "You need the operator or owner role to manage community limits.",
+    "platformOnly": "You need a platform staff role to see communities.",
     "loading": "Loading communities…",
     "loadError": "Could not load communities. Please try again.",
     "filterByName": "Filter communities by name",
@@ -1178,6 +1241,7 @@
       "limits": "Limits",
       "features": "Features",
       "usersHelp": "How many people may belong. Leave blank for no limit.",
+      "guestsHelp": "How many guests they may have at once. 0 takes no new guests, and those already in stay until their time ends. Leave blank for no limit.",
       "storageHelp": "How much they may store, in gigabytes. Leave blank for no limit.",
       "bannerLabel": "Banner artwork",
       "bannerHelp": "Let them upload a banner image. Without it they pick a banner colour instead, and any banner already uploaded keeps showing.",
@@ -1195,6 +1259,7 @@
         }
       },
       "usersLabel": "Members",
+      "guestsLabel": "Guests",
       "storageLabel": "Storage limit",
       "decidesForItself": "What it decides for itself",
       "deleted": "Deleted",
@@ -1229,6 +1294,22 @@
       "confirm": "Restore",
       "done": "Restored {{name}}.",
       "error": "Could not restore the community. Please try again."
+    },
+    "suspension": {
+      "suspend": "Suspend",
+      "lift": "Lift suspension",
+      "suspendLabel": "Suspend {{name}}",
+      "liftLabel": "Lift the suspension on {{name}}",
+      "liftTitle": "Lift the suspension on {{name}}?",
+      "liftDescription": "It returns to the status it had before: {{status}}. Everyone in it has the access they had then.",
+      "liftToDeleted": "It goes back to being deleted, and the countdown to its destruction starts again from the beginning, so its owners have the whole window to restore it.",
+      "suspendDeleted": "This community is deleted. Suspending it stops the countdown to its destruction until the suspension is lifted. Nobody in it can reach it either way.",
+      "suspended": "Suspended {{name}}.",
+      "lifted": "Lifted the suspension on {{name}}."
+    },
+    "access": {
+      "request": "Request access",
+      "breakGlass": "Break glass"
     }
   },
   "operatorDashboard": {
@@ -1520,6 +1601,27 @@
       "askedByPlatform": "Your server already asks everybody here for a second factor, so there's nothing to add.",
       "saved": "Second factor saved.",
       "error": "Could not save the second-factor requirement."
+    },
+    "guestPolicy": {
+      "title": "Guests' sign-in requirement",
+      "description": "Control which sign-in a guest's session must have used before it can reach this community. You don't have to meet it yourself.",
+      "openHelp": "Any signed-in guest can reach what they were given.",
+      "requiredHelp": "Guests can only reach this community after signing in with the selected provider.",
+      "anyProviderHelp": "Guests can come in through any provider this community has set up. Signing in somewhere else on this deployment does not count.",
+      "requirePasskeyHelp": "Guests must have signed in with a passkey, or presented one, in this session. They can add one without signing out.",
+      "saved": "Guests' sign-in requirement saved",
+      "error": "Could not save the guests' sign-in requirement",
+      "save": "Save the guests' sign-in requirement"
+    },
+    "guestStay": {
+      "title": "Guest stays",
+      "description": "Guest invites and extensions never run longer than this. Guests already here keep their end date.",
+      "label": "Longest a guest may stay (days)",
+      "hint_one": "Leave blank to use the server's limit of {{count}} day, which is also the most you can set.",
+      "hint_other": "Leave blank to use the server's limit of {{count}} days, which is also the most you can set.",
+      "saved": "Longest guest stay saved",
+      "error": "Could not save the longest guest stay",
+      "save": "Save the longest guest stay"
     }
   },
   "authProviders": {
@@ -1738,7 +1840,20 @@
       "saved_other": "Deleted accounts are kept for {{count}} days.",
       "savedNever": "Deleted accounts are kept indefinitely.",
       "save": "Save how long accounts are kept"
-    }
+    },
+    "engagementRankingLabel": "Let communities rank results by engagement",
+    "engagementRankingHelpText": "When off, no community on this server ranks by engagement, whatever its own setting.",
+    "engagementRankingEnabledToast": "Communities can rank results by engagement.",
+    "engagementRankingDisabledToast": "Engagement ranking is off for every community.",
+    "guestsEnabledLabel": "Allow guests",
+    "guestsEnabledHelpText": "Communities can invite people for a set number of days. Guests take no seat and see only what they were given. While this is off, no guest gets in.",
+    "guestsEnabledToast": "Communities can have guests.",
+    "guestsDisabledToast": "Guests are turned off.",
+    "maxGuestDaysLabel": "Longest a guest may stay (days)",
+    "maxGuestDaysHelpText": "No guest stays longer than this, whatever a community sets.",
+    "maxGuestDaysSave": "Save the longest guest stay",
+    "maxGuestDaysSaved_one": "Guests stay {{count}} day at most.",
+    "maxGuestDaysSaved_other": "Guests stay {{count}} days at most."
   },
   "account": {
     "passwordTitle": "Password",
@@ -1770,8 +1885,7 @@
       "communitiesHint": "All count by default.",
       "ageLocked": "Messaging is available to people aged 16 and over. You have not told us whether you are.",
       "confirmAge": "Confirm my age",
-      "saved": "Saved.",
-      "platformDisabled": "This deployment does not offer direct messages, so there is nothing here to set. If it is switched back on, the policy and lists you had before come back with it."
+      "saved": "Saved."
     },
     "receipts": {
       "label": "Tell people when their messages reach you",
@@ -1815,6 +1929,13 @@
       "allowed": "Switched on in this browser: {{categories}}.",
       "perBrowser": "Your answer follows your account, so a new browser or device won't ask again. Answered before you signed in, it stays in that browser until you do.",
       "change": "Change"
+    },
+    "engagementRanking": {
+      "title": "Search ranking",
+      "label": "Count my activity toward search ranking",
+      "help": "When on, the items you open and change help decide what your communities' search lists first. Nobody can see what you opened. Turn it off and your activity stops counting from the next hourly update.",
+      "saved": "Search ranking saved.",
+      "error": "Couldn't save your search ranking choice. Try again."
     }
   },
   "twoFactor": {
@@ -1967,6 +2088,14 @@
       "offHelp": "Notifications about this community name what they are about once they leave the app.",
       "platformHelp": "This server hides notification details everywhere, so this community is already covered."
     }
+  },
+  "communityEngagementRanking": {
+    "title": "Search order",
+    "label": "Rank search results by community engagement",
+    "help": "Search lists what more members have recently opened or worked on higher. Only a rough level is kept for each item, never who opened it or how many times, and it's never shared outside this community.",
+    "platformHelp": "This server has turned engagement ranking off for every community.",
+    "saved": "Search order saved.",
+    "error": "Couldn't save the search order."
   },
   "billingInsights": {
     "title": "Billing insights",

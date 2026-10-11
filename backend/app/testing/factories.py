@@ -33,7 +33,7 @@ from app.core.relationships import Provenance, RelationshipType
 from app.core.search import SearchEntityType
 from app.models.tenant.relationship import EntityRelationship
 from app.services.tenant import relationships as relationships_service
-from app.core.tools import Tool
+from app.core.tools import CHILD_KINDS, Tool
 from app.core.security import (
     get_password_hash,
     mint_access_token,
@@ -54,6 +54,7 @@ from app.models.tenant.wiki import Wiki, WikiPage
 from app.models.tenant.post_poll import PostPoll, PostPollOption
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
+from app.models.tenant.plugin_connection_secret import PluginConnectionSecret
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
 from app.models.tenant.comment import Comment
@@ -237,7 +238,7 @@ async def create_guild(
     a filler account and has no members.
 
     Overrides for the operator-set fields (``max_storage_bytes``, ``max_users``,
-    ``tier_name``, ``auth_options``) land on ``guild_administration``; the rest
+    ``max_guests``, ``tier_name``, ``auth_options``) land on ``guild_administration``; the rest
     on the guild. Example: ``guild = await create_guild(session, name="Test")``.
     """
     # Test guilds hold every sign-in option by default so the guild-auth
@@ -249,7 +250,13 @@ async def create_guild(
         "auth_options": [option.value for option in CommunityAuthOption],
         **{
             field: overrides.pop(field)
-            for field in ("max_storage_bytes", "max_users", "tier_name", "auth_options")
+            for field in (
+                "max_storage_bytes",
+                "max_users",
+                "max_guests",
+                "tier_name",
+                "auth_options",
+            )
             if field in overrides
         },
     }
@@ -423,6 +430,26 @@ async def create_guild_membership(
         await session.refresh(membership)
 
     return membership
+
+
+async def create_guest(
+    session: AsyncSession,
+    guild: Guild,
+    *,
+    role: CommunityRole = CommunityRole.guest,
+    ends_in: timedelta = timedelta(hours=1),
+) -> User:
+    """A new account that is a guest of ``guild`` until ``ends_in`` from now.
+    The platform's guest switch is the caller's to set."""
+    user = await create_user(session)
+    await create_guild_membership(
+        session,
+        user=user,
+        guild=guild,
+        role=role,
+        guest_until=datetime.now(timezone.utc) + ends_in,
+    )
+    return user
 
 
 #: Where :func:`create_user` leaves the ``client``-sector reference an access
@@ -1229,10 +1256,12 @@ async def create_plugin_user_connection(
     user: User,
     *,
     connection_id: str = "github",
+    secrets: dict[str, Any] | None = None,
     **overrides: Any,
 ) -> GuildPluginUserConnection:
     """A member's credential for one of ``plugin``'s connections, as a
-    completed flow leaves it."""
+    completed flow leaves it. ``secrets`` is what it holds, ``{key:
+    ciphertext}``, kept beside it."""
     await route_session_to_guild(session, guild_of(plugin))
     row = GuildPluginUserConnection(
         **{
@@ -1246,6 +1275,9 @@ async def create_plugin_user_connection(
     )
     session.add(row)
     await session.commit()
+    if secrets:
+        session.add(PluginConnectionSecret(connection_row_id=row.id, secrets=secrets))
+        await session.commit()
     await session.refresh(row)
     return row
 
@@ -2484,6 +2516,36 @@ async def create_tool_entity(
 ) -> Any:
     """Create one instance of ``tool``'s content, whichever tool it is."""
     return await TOOL_FACTORIES[tool](session, initiative, creator, **overrides)
+
+
+# The same for what lives inside a tool, keyed by ``CHILD_KINDS``: each takes
+# its tool's row and a creator, and the ones that name no creator ignore it.
+CHILD_FACTORIES: dict[str, Any] = {
+    "task": lambda session, project, creator, **kw: create_task(session, project, **kw),
+    "queue_item": lambda session, queue, creator, **kw: create_queue_item(
+        session, queue, **kw
+    ),
+    "calendar_event": create_calendar_event,
+    "counter": lambda session, group, creator, **kw: create_counter(
+        session, group, **kw
+    ),
+    "gallery_image": create_gallery_image,
+    "wiki_page": create_wiki_page,
+}
+
+if set(CHILD_FACTORIES) != set(CHILD_KINDS):
+    raise RuntimeError(
+        f"CHILD_FACTORIES must cover CHILD_KINDS exactly "
+        f"(missing: {sorted(set(CHILD_KINDS) - set(CHILD_FACTORIES))}, "
+        f"unknown: {sorted(set(CHILD_FACTORIES) - set(CHILD_KINDS))})"
+    )
+
+
+async def create_child_entity(
+    session: AsyncSession, kind: str, tool_row: Any, creator: User, **overrides: Any
+) -> Any:
+    """Create one row of ``kind`` inside ``tool_row``, whichever kind it is."""
+    return await CHILD_FACTORIES[kind](session, tool_row, creator, **overrides)
 
 
 async def enable_all_tools(session: AsyncSession, initiative: Initiative) -> Initiative:

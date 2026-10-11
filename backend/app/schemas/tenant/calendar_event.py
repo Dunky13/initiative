@@ -13,7 +13,13 @@ from pydantic import (
 
 from app.core import recurrence
 from app.core.identity_boundary import GuildId, PersonId
-from app.schemas.base import MentionStr, SanitizedBaseModel, TitleStr, reject_null
+from app.schemas.base import (
+    MentionStr,
+    RichMentionStr,
+    SanitizedBaseModel,
+    TitleStr,
+    reject_null,
+)
 from app.schemas.recurrence import EventRule, OccurrenceScope
 
 from app.models.tenant.calendar_event import RSVPStatus
@@ -70,7 +76,7 @@ class OccurrenceRequest(SanitizedBaseModel):
 
 class CalendarEventBase(SanitizedBaseModel):
     title: str = Field(..., min_length=1, max_length=255)
-    description: Optional[MentionStr] = None
+    description: Optional[RichMentionStr] = None
     location: Optional[MentionStr] = Field(default=None, max_length=500)
     start_at: datetime
     end_at: datetime
@@ -102,7 +108,11 @@ class CalendarEventCreate(CalendarEventBase, PropertiesOnCreate):
 
 class CalendarEventUpdate(PropertiesOnUpdate):
     title: Optional[TitleStr] = Field(default=None, min_length=1, max_length=255)
-    description: Optional[MentionStr] = None
+    description: Optional[RichMentionStr] = None
+    #: The description this ``description`` was written over, as the event
+    #: being changed holds it. Given and no longer the stored one, the update
+    #: is refused with ``DESCRIPTION_CHANGED``.
+    description_base: Optional[RichMentionStr] = None
     location: Optional[MentionStr] = Field(default=None, max_length=500)
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
@@ -261,9 +271,10 @@ def serialize_calendar_event(
     *,
     context: ActorContext,
     user_id: Optional[int] = None,
-    answers: Mapping[int, RSVPStatus] | None = None,
+    answers: Mapping[int, RSVPStatus],
 ) -> CalendarEventRead:
-    """``answers`` are one occurrence's, shown in place of the series'."""
+    """``answers`` are what was answered to the event, or to the one
+    occurrence shown; someone with none is still to answer."""
     skipped, extra = (
         recurrence.exception_starts(
             event.recurrence, event.start_at, event.recurrence_shift
@@ -280,7 +291,7 @@ def serialize_calendar_event(
             from_row(
                 CalendarEventAttendeeRead,
                 attendee,
-                rsvp_status=(answers or {}).get(attendee.user_id, attendee.rsvp_status),
+                rsvp_status=answers.get(attendee.user_id, RSVPStatus.pending),
             )
             for attendee in event.attendees
         ],

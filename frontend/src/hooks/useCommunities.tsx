@@ -139,6 +139,8 @@ const grantEntry = (grant: AccessGrantRead, settingsGrant?: AccessGrantRead): Co
     configure: false,
     administer_content: false,
     seat: false,
+    // A grantee is no guest: what the grant reaches, it reaches community-wide.
+    community_wide: true,
     // A grant is never reached with a personal API key.
     use_api: false,
   },
@@ -147,6 +149,7 @@ const grantEntry = (grant: AccessGrantRead, settingsGrant?: AccessGrantRead): Co
   retention_days: null,
   max_storage_bytes: null,
   max_users: null,
+  max_guests: null,
   member_count: 0,
   tier_name: null,
   // The community's lifecycle status, so an operator on a grant sees a suspended /

@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from app.core.errors import CodedError
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -23,7 +24,7 @@ from app.api.deps import (
 )
 from app.core import recurrence
 from app.core.audit_events import AuditEventType
-from app.core.messages import ChecklistMessages, TaskMessages
+from app.core.messages import CommonMessages, ChecklistMessages, TaskMessages
 from app.db.query import build_paginated_response, paginated_query
 from app.db.session import routed_guild_id
 from app.models.platform.user import User
@@ -36,6 +37,7 @@ from app.schemas.ai_generation import (
     GenerateDescriptionResponse,
 )
 from app.schemas.recurrence import OccurrenceScope
+from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.tenant.task import (
     ChecklistItem,
     ChecklistItemToggle,
@@ -61,7 +63,7 @@ from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
 from app.services.tenant import task_creation as task_creation_service
-from app.core.tools import Tool
+from app.core.tools import KINDS, Tool
 from app.services.tenant import named_people
 from app.services.tenant import task_description as task_description_service
 from app.services.tenant import task_queries
@@ -163,13 +165,11 @@ def _touch_project(project: Project, now: datetime) -> None:
 _GOVERNING = resource_access.governing_tool("tasks")
 
 
-async def _response(session: SessionDep, task_id: int, missing: str) -> Task:
+async def _response(session: SessionDep, task_id: int) -> Task:
     """The task as a ``TaskRead`` reads it, after a change has committed."""
     task = await task_queries.load_task(session, task_id)
     if task is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=missing
-        )
+        raise KINDS["task"].not_found(status.HTTP_500_INTERNAL_SERVER_ERROR)
     return task
 
 
@@ -355,7 +355,7 @@ async def create_task(
                 entity_id=task.id,
                 tag_ids=task_in.tag_ids,
             )
-    except HTTPException:
+    except (HTTPException, CodedError):
         await session.rollback()
         raise
 
@@ -371,7 +371,7 @@ async def create_task(
     _touch_project(project, datetime.now(timezone.utc))
     await properties_service.write_on_create(session, task, task_in.properties)
     await session.commit()
-    return await _response(session, task.id, TaskMessages.MISSING_AFTER_CREATE)
+    return await _response(session, task.id)
 
 
 @router.get("/{task_id}", response_model=TaskRead)
@@ -384,9 +384,7 @@ async def read_task(
 ) -> Task:
     task = await task_queries.load_task(session, task_id)
     if task is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=TaskMessages.NOT_FOUND
-        )
+        raise KINDS["task"].not_found()
     resource_access.authorize(
         _GOVERNING, task.project, current_user, context=guild_context
     )
@@ -453,7 +451,53 @@ async def read_task_case(
             )
             for item in case.evidence
         ],
+        grants=await _case_grants(guild_context.guild_id, task_id),
     )
+
+
+@router.post("/{task_id}/case/take", response_model=TaskRead)
+async def take_task_case(
+    task_id: int,
+    session: RLSSessionDep,
+    guild_context: GuildContextDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Task:
+    """Take an operations case: the caller is assigned beside whoever already
+    has it, and a case still waiting to be picked up moves to the status its
+    stream calls active. 404 for a task no stream opened."""
+    task = await resource_access.load_child(session, Task, task_id, access="write")
+    if await cases_service.take(session, task, current_user.id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=TaskMessages.NOT_A_CASE
+        )
+    _touch_project(task.project, datetime.now(timezone.utc))
+    await session.commit()
+    return await _response(session, task.id)
+
+
+async def _case_grants(guild_id: int, task_id: int) -> list[AccessGrantRead]:
+    """The access grants asked for case ``task_id``, where this community is
+    the operations community the grants' cases are in. Read on the system
+    engine: grants are shared rows, and the reader of a case is not the
+    approver of its grants."""
+    from sqlmodel import select
+
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.access_grant import AccessGrant
+    from app.services.platform import access_grants as access_grants_service
+    from app.services.platform.intake import configured_operations_guild_id
+
+    if await configured_operations_guild_id() != guild_id:
+        return []
+    async with SystemSessionLocal() as system:
+        grants = (
+            await system.exec(
+                select(AccessGrant)
+                .where(AccessGrant.case_task_id == task_id)
+                .order_by(AccessGrant.requested_at.desc(), AccessGrant.id.desc())
+            )
+        ).all()
+        return await access_grants_service.to_read(list(grants), system_session=system)
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
@@ -478,7 +522,7 @@ async def update_task(
         if (task.description or "") != (base or ""):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=TaskMessages.DESCRIPTION_CHANGED,
+                detail=CommonMessages.DESCRIPTION_CHANGED,
             )
     assignee_ids = update_data.pop("assignee_ids", None)
     tag_ids = update_data.pop("tag_ids", None)
@@ -495,6 +539,23 @@ async def update_task(
     previous_description = task.description
     previous_status_category = task.task_status.category if task.task_status else None
     new_status_id = update_data.pop("task_status_id", None)
+    status_category = update_data.pop("status_category", None)
+
+    if (
+        new_status_id is None
+        and status_category is not None
+        and status_category != previous_status_category
+    ):
+        landing = task_statuses_service.first_by_category_preference(
+            await task_statuses_service.list_statuses(session, task.project_id),
+            task_statuses_service.CATEGORY_FALLBACK[status_category],
+        )
+        if landing is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=TaskMessages.STATUS_NOT_FOUND,
+            )
+        new_status_id = landing.id
 
     if new_status_id is not None and new_status_id != task.task_status_id:
         selected_status = await task_statuses_service.get_project_status(
@@ -605,7 +666,7 @@ async def update_task(
                 tag_ids=tag_ids,
             )
         await properties_service.write_on_update(session, task, task_in.properties)
-    except HTTPException:
+    except (HTTPException, CodedError):
         await session.rollback()
         raise
     if series:
@@ -652,7 +713,7 @@ async def update_task(
         guild_context.guild_id, let_go, pasted_only=True
     )
     attachments_service.delete_blobs(guild_context.guild_id, released_images)
-    return await _response(session, task.id, TaskMessages.MISSING_AFTER_UPDATE)
+    return await _response(session, task.id)
 
 
 @router.post("/{task_id}/move", response_model=TaskRead)
@@ -721,7 +782,7 @@ async def move_task(
     _touch_project(source_project, now)
     _touch_project(target_project, now)
     await session.commit()
-    return await _response(session, task.id, TaskMessages.MISSING_AFTER_MOVE)
+    return await _response(session, task.id)
 
 
 @router.post(
@@ -749,7 +810,7 @@ async def duplicate_task(
     )
     _touch_project(task.project, datetime.now(timezone.utc))
     await session.commit()
-    return await _response(session, copy.id, TaskMessages.DUPLICATE_NOT_FOUND)
+    return await _response(session, copy.id)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -819,7 +880,7 @@ async def skip_task(
         )
     _touch_project(task.project, now)
     await session.commit()
-    return await _response(session, task.id, TaskMessages.MISSING_AFTER_UPDATE)
+    return await _response(session, task.id)
 
 
 @router.post("/reorder", response_model=List[TaskRead])
@@ -853,9 +914,7 @@ async def reorder_tasks(
 
     missing_ids = set(task_ids) - set(task_map.keys())
     if missing_ids:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=TaskMessages.NOT_FOUND
-        )
+        raise KINDS["task"].not_found()
 
     now = datetime.now(timezone.utc)
     status_cache: dict[int, TaskStatus] = {}

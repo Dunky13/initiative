@@ -37,7 +37,8 @@ from typing import Any, Awaitable, Callable
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.db.session import routed_guild_id
+from app.db import gucs
+from app.db.session import raise_flag, routed_guild_id
 from app.core.references import format_ref, parse_ref
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
@@ -425,10 +426,11 @@ async def apply_backup(
     ``heartbeat`` is called after each asset and each entry, so the job can
     show it is still being applied. ``fetched`` is as for
     :func:`zip_bounds.open_zip`. ``anchor``, when given, moves every date the
-    envelopes carry by the whole weeks nearest from it to now, so a bundle
-    reads as if it had been exported this week. ``join`` names members of the
-    community who join every initiative the bundle creates, as members, where
-    everything the bundle made is shared with the initiative's members to edit."""
+    envelopes carry by the whole days from it to now, so a bundle reads as if
+    it had been exported today (a repeat by its own rule, :func:`shift_dates`).
+    ``join`` names members of the community who join every initiative the
+    bundle creates, as members, where everything the bundle made is shared with
+    the initiative's members to edit."""
     from app.api.deps import establish_guild_access
     from app.services.import_engine.importers import IMPORTERS
     from app.models.platform.guild import CommunityRole
@@ -439,9 +441,8 @@ async def apply_backup(
         manifest = await asyncio.to_thread(read_manifest, archive, fetched=fetched)
         max_json_bytes = json_cap(fetched=fetched)
         result = BackupImportResult()
-        # Whole weeks, so a repeat lands on the weekdays its rule names.
         shift_days = (
-            7 * round((datetime.now(timezone.utc) - anchor) / timedelta(weeks=1))
+            round((datetime.now(timezone.utc) - anchor) / timedelta(days=1))
             if anchor is not None
             else 0
         )
@@ -783,6 +784,7 @@ async def _apply_entry(
             envelope = shift_dates(Tool(entry.tool), envelope, shift_days)
         validated = importer.validate(envelope)
         async with session.begin_nested():
+            await raise_flag(session, gucs.IMPORTING)
             detail = await importer.apply(
                 session,
                 envelope=validated,
@@ -790,6 +792,7 @@ async def _apply_entry(
                 importer=user,
                 context=context,
             )
+            await raise_flag(session, gucs.IMPORTING, False)
     except ImportEngineError as exc:
         logger.warning(
             "backup entry failed path=%s tool=%s code=%s",

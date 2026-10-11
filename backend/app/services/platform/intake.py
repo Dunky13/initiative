@@ -30,10 +30,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING, Literal, Optional, Sequence
 
 from sqlalchemy import func
 from sqlmodel import select
+from sqlmodel.sql.expression import Select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.intake import (
@@ -51,10 +52,10 @@ from app.models.platform.user import User
 from app.models.tenant.comment import Comment, CommentAudience
 from app.models.tenant.intake import DEDUPE_KEY_LENGTH, IntakeBinding, IntakeCase
 from app.models.tenant.project import Project
-from app.models.tenant.property import PropertyDefinition, PropertyType
+from app.models.tenant.property import PropertyDefinition, PropertyType, PropertyValue
 from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
 from app.schemas.tenant.property import PropertyValueInput
-from app.services.platform import case_activity
+from app.services.platform import case_activity, case_notices
 from app.services.tenant import properties as properties_service
 from app.services.tenant import task_creation as task_creation_service
 from app.db.request_context import SystemGuild
@@ -620,6 +621,13 @@ async def open_case(
             )
             session.add(opening)
         await session.flush()
+        # Nobody is assigned to a new case, so everyone who works it hears.
+        await case_notices.opened(
+            session,
+            task=task,
+            stream=stream,
+            filer_id=filer.user_id if filer is not None else None,
+        )
         with evidence_service.Sealing(guild_id) as sealing:
             sealing.store(
                 session,
@@ -652,7 +660,8 @@ async def add_filer_reply(
     the "waiting on you" it moves on is the case's state now rather than when
     the page was read. Written on the writer's session, routed by ``guild_id``
     alone; the author is named explicitly, since the routing carries no user.
-    The task's assignees hear of it as they would of any comment on the task.
+    The task's assignees hear of it as they would of any comment on the task;
+    where nobody has taken it, everyone who can read it hears instead.
     ``evidence`` is stored with the answer, in the same transaction.
     """
     from app.services.platform import evidence as evidence_service
@@ -709,9 +718,15 @@ async def add_filer_reply(
                 case_id=case_id,
                 comment_id=comment.id,
             )
-            await notify_task_assignees(
-                session, comment=comment, author=filer, task=task
-            )
+            if await case_notices.is_taken(session, task_id):
+                await notify_task_assignees(
+                    session, comment=comment, author=filer, task=task
+                )
+            else:
+                # Nobody has taken it, so everyone who works it hears.
+                await case_notices.replied(
+                    session, task=task, comment=comment, filer=filer
+                )
             # Their other tabs follow the same conversation.
             ticket_stream.queue_ticket_signal(session, filer.id)
             active = binding.active_status_id if binding is not None else None
@@ -731,3 +746,214 @@ async def add_filer_reply(
             await session.commit()
             sealing.keep()
     return True
+
+
+@dataclass(frozen=True)
+class AccountCase:
+    """An open case an account filed or is the subject of, by where it lives:
+    enough to link to it, and nothing of what it says."""
+
+    task_id: int
+    stream: IntakeStream
+    project_id: int
+    initiative_id: int
+    guild_id: int
+    #: Whether the account filed it, rather than being what it is about.
+    filed: bool
+
+
+def _open_case_task() -> Select:
+    """Tasks of open cases: out of the trash and short of a ``done`` status."""
+    return (
+        select(IntakeCase.task_id, IntakeCase.stream, IntakeCase.filer_user_id)
+        .join(Task, Task.id == IntakeCase.task_id)
+        .join(TaskStatus, TaskStatus.id == Task.task_status_id)
+        .where(Task.deleted_at.is_(None))
+        .where(TaskStatus.category != TaskStatusCategory.done)
+    )
+
+
+async def _cases_about(
+    session: AsyncSession, user_ids: Sequence[int]
+) -> dict[int, dict[int, tuple[str, bool]]]:
+    """For each of ``user_ids``, its open cases by task: the stream, and
+    whether it filed the case. Two reads, whatever the number of accounts."""
+    from app.models.tenant.property import PropertyValue
+
+    found: dict[int, dict[int, tuple[str, bool]]] = {}
+    filed = await session.exec(
+        _open_case_task().where(IntakeCase.filer_user_id.in_(list(user_ids)))
+    )
+    for task_id, stream, filer in filed.all():
+        found.setdefault(int(filer), {})[int(task_id)] = (stream, True)
+    subjects = await session.exec(
+        _open_case_task()
+        .add_columns(PropertyValue.value_number)
+        .join(
+            PropertyValue,
+            (PropertyValue.entity_type == "task")
+            & (PropertyValue.entity_id == IntakeCase.task_id),
+        )
+        .join(PropertyDefinition, PropertyDefinition.id == PropertyValue.property_id)
+        .where(PropertyDefinition.name == CaseField.subject_user.value)
+        .where(PropertyValue.value_number.in_(list(user_ids)))
+    )
+    for task_id, stream, _filer, subject in subjects.all():
+        cases = found.setdefault(int(subject), {})
+        cases.setdefault(int(task_id), (stream, False))
+    return found
+
+
+async def open_case_counts(user_ids: Sequence[int]) -> dict[int, int]:
+    """How many open cases each of ``user_ids`` filed or is the subject of,
+    in the operations community. Empty where there is none."""
+    guild_id = await configured_operations_guild_id()
+    if guild_id is None or not user_ids:
+        return {}
+    async with cohorts.system_session(guild_id) as session:
+        await set_rls_context(session, SystemGuild(guild_id))
+        found = await _cases_about(session, user_ids)
+    return {user_id: len(cases) for user_id, cases in found.items()}
+
+
+async def open_cases_for(user_id: int) -> list[AccountCase]:
+    """The open cases ``user_id`` filed or is the subject of, newest first."""
+    guild_id = await configured_operations_guild_id()
+    if guild_id is None:
+        return []
+    async with cohorts.system_session(guild_id) as session:
+        await set_rls_context(session, SystemGuild(guild_id))
+        cases = (await _cases_about(session, [user_id])).get(user_id, {})
+        if not cases:
+            return []
+        places = (
+            await session.exec(
+                select(Task.id, Task.project_id, Project.initiative_id)
+                .join(Project, Project.id == Task.project_id)
+                .where(Task.id.in_(list(cases)))
+                .order_by(Task.id.desc())
+            )
+        ).all()
+    return [
+        AccountCase(
+            task_id=int(task_id),
+            stream=IntakeStream(cases[int(task_id)][0]),
+            project_id=int(project_id),
+            initiative_id=int(initiative_id),
+            guild_id=guild_id,
+            filed=cases[int(task_id)][1],
+        )
+        for task_id, project_id, initiative_id in places
+    ]
+
+
+#: What settling a case's community did: named it now, found it already
+#: named so, or found it about another community.
+ClaimOutcome = Literal["named", "held", "other"]
+
+
+async def claim_subject_guild(task_id: int, guild_id: int) -> ClaimOutcome:
+    """Settle that case ``task_id`` is about community ``guild_id``: name it
+    where the case names no community. Under a lock on the case, so two
+    settlements at once cannot each find it unnamed and both name it."""
+    operations = await configured_operations_guild_id()
+    if operations is None:
+        return "other"
+    async with cohorts.system_session(operations) as session:
+        await set_rls_context(session, SystemGuild(operations))
+        found = (
+            await session.exec(
+                select(Task, Project.initiative_id, IntakeCase.stream)
+                .join(Project, Project.id == Task.project_id)
+                .join(IntakeCase, IntakeCase.task_id == Task.id)
+                .where(Task.id == task_id)
+                .with_for_update(of=IntakeCase)
+            )
+        ).first()
+        if found is None:
+            return "other"
+        task, initiative_id, stream = found
+        definitions = await _ensure_field_definitions(
+            session, initiative_id=initiative_id, stream=IntakeStream(stream)
+        )
+        field = definitions.get(CaseField.subject_guild)
+        if field is None:
+            return "other"
+        named = (
+            await session.exec(
+                select(PropertyValue.value_number)
+                .where(PropertyValue.property_id == field.id)
+                .where(PropertyValue.entity_type == "task")
+                .where(PropertyValue.entity_id == task_id)
+            )
+        ).first()
+        if named is not None:
+            await session.rollback()
+            return "held" if int(named) == guild_id else "other"
+        # This one value alone: everything else the team set on the case
+        # stays as it is.
+        await properties_service.write_values(
+            session,
+            task,
+            [PropertyValueInput(property_id=field.id, value=guild_id)],
+            initiative_id=initiative_id,
+            removed=[],
+        )
+        await session.commit()
+        return "named"
+
+
+async def release_subject_guild(task_id: int, guild_id: int) -> None:
+    """Undo :func:`claim_subject_guild` naming ``guild_id`` on case
+    ``task_id``, for a grant that was not made after all: the case names no
+    community again, where it still names that one and no grant for it rests
+    on that name. Under the same lock as the claim."""
+    operations = await configured_operations_guild_id()
+    if operations is None:
+        return
+    async with cohorts.system_session(operations) as session:
+        await set_rls_context(session, SystemGuild(operations))
+        found = (
+            await session.exec(
+                select(IntakeCase.id)
+                .where(IntakeCase.task_id == task_id)
+                .with_for_update()
+            )
+        ).first()
+        if found is None:
+            return
+        named = (
+            await session.exec(
+                select(PropertyValue)
+                .join(
+                    PropertyDefinition,
+                    PropertyDefinition.id == PropertyValue.property_id,
+                )
+                .where(PropertyDefinition.name == CaseField.subject_guild.value)
+                .where(PropertyValue.entity_type == "task")
+                .where(PropertyValue.entity_id == task_id)
+            )
+        ).first()
+        if named is None or named.value_number != guild_id:
+            await session.rollback()
+            return
+        # Another request may have found the case named so and been made on
+        # the strength of it: then the name stays.
+        # Grants are shared rows, read on the system engine itself: this
+        # session is routed into the operations community.
+        from app.db.session import SystemSessionLocal
+        from app.models.platform.access_grant import AccessGrant, AccessGrantStatus
+
+        async with SystemSessionLocal() as shared:
+            relied_on = (
+                await shared.exec(
+                    select(AccessGrant.id)
+                    .where(AccessGrant.case_task_id == task_id)
+                    .where(AccessGrant.guild_id == guild_id)
+                    .where(AccessGrant.status != AccessGrantStatus.denied.value)
+                    .limit(1)
+                )
+            ).first()
+        if relied_on is None:
+            await session.delete(named)
+        await session.commit()

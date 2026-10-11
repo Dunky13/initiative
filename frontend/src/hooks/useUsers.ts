@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  extendCommunityGuest,
+  makeCommunityGuestAMember,
   setMemberApiAccess,
   setMemberDisplayName,
   setOwnDisplayName,
@@ -44,6 +46,8 @@ import {
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useApiMutation, useCommunityMutation } from "@/hooks/useApiMutation";
+import { useCommunities } from "@/hooks/useCommunities";
+import { useInitiative } from "@/hooks/useInitiatives";
 import { downloadBlob } from "@/lib/csv";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
@@ -76,10 +80,11 @@ const ROSTER_PAGE_SIZE = 50;
  * The active community's people roster, grown a page at a time.
  *
  * Presence is read when the page is served and not pushed, so it refetches
- * every minute while it is open.
+ * every minute while it is open. A guest has no roster to read.
  */
 export const useCommunityRoster = () => {
   const communityId = useActiveCommunityId();
+  const communityWide = Boolean(useCommunities().activeCommunity?.can.community_wide);
   return useInfiniteQuery({
     queryKey: getListRosterQueryKey(communityId),
     queryFn: ({ pageParam }) =>
@@ -89,7 +94,7 @@ export const useCommunityRoster = () => {
       }),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.has_next ? last.page + 1 : undefined),
-    enabled: communityId > 0,
+    enabled: communityId > 0 && communityWide,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -262,7 +267,8 @@ export const useUserSearch = ({
 /**
  * Slim, server-side typeahead over one initiative's members — same shape as
  * {@link useUserSearch} but scoped to `initiativeId` (assignee/linked-member
- * pickers that must not offer users outside the initiative).
+ * pickers that must not offer users outside the initiative). Asked only where
+ * the reader may read the roster, which a guest given items there may not.
  */
 export const useInitiativeMemberSearch = (
   initiativeId: number | null | undefined,
@@ -276,6 +282,11 @@ export const useInitiativeMemberSearch = (
 ) => {
   const activeCommunityId = useActiveCommunityId();
   const communityId = communityIdOverride ?? activeCommunityId;
+  const { data: initiative } = useInitiative(initiativeId ?? null, {
+    enabled: communityIdOverride == null,
+  });
+  // Another community's initiative is not in this one's cache to ask.
+  const readsRoster = communityIdOverride != null || Boolean(initiative?.can.roster);
   return useSearchInitiativeMembers(
     communityId,
     initiativeId as number,
@@ -285,7 +296,7 @@ export const useInitiativeMemberSearch = (
     },
     {
       query: {
-        enabled: enabled && communityId != null && initiativeId != null,
+        enabled: enabled && readsRoster && communityId != null && initiativeId != null,
         staleTime: 30_000,
         placeholderData: keepPreviousData,
       },
@@ -402,6 +413,37 @@ export const useSetMemberApiAccess = (options?: MutationOpts<void, SetMemberApiA
               ),
             }
         );
+        return invalidate(q.communityMembers());
+      },
+    },
+    options
+  );
+};
+
+type GuestVars = { communityId: number; userId: number };
+
+/** End a guest's time `days` from now, as far as the community's and the server's limits allow. */
+export const useExtendGuest = (options?: MutationOpts<void, GuestVars & { days: number }>) =>
+  useApiMutation<void, GuestVars & { days: number }>(
+    {
+      mutationFn: ({ communityId, userId, days }) =>
+        extendCommunityGuest(communityId, userId, { days }),
+      invalidate: () => invalidate(q.communityMembers()),
+    },
+    options
+  );
+
+/**
+ * Make a guest a member. They take a seat, so the community list — which
+ * carries the member count the invite forms read — refreshes with the roster.
+ */
+export const useMakeGuestAMember = (options?: MutationOpts<void, GuestVars>) => {
+  const { refreshCommunities } = useCommunities();
+  return useApiMutation<void, GuestVars>(
+    {
+      mutationFn: ({ communityId, userId }) => makeCommunityGuestAMember(communityId, userId),
+      invalidate: () => {
+        void refreshCommunities();
         return invalidate(q.communityMembers());
       },
     },

@@ -78,6 +78,15 @@ class AuditEventType(str, Enum):
     USER_SUSPENDED = "user.suspended", AuditCategory.MODERATION
     USER_UNSUSPENDED = "user.unsuspended", AuditCategory.MODERATION
     USER_AGE_BLOCK_CLEARED = "user.age_block_cleared", AuditCategory.MODERATION
+    #: Staff ended every session an account had, everywhere.
+    USER_SESSIONS_REVOKED = "user.sessions_revoked", AuditCategory.MODERATION, 1
+    #: Staff cleared part of how an account appears to others: its names in
+    #: communities, its custom status or its decorations.
+    USER_PROFILE_FIELD_CLEARED = (
+        "user.profile_field_cleared",
+        AuditCategory.MODERATION,
+        1,
+    )
     #: A file somebody attached to a ticket or a report was opened: by the
     #: people working it, or by whoever attached it. Who looked at evidence,
     #: and when, is a record kept as long as the privileged-access family's.
@@ -225,6 +234,11 @@ class AuditEventType(str, Enum):
     #: one is recorded, and redeeming one is a ``GUILD_MEMBER_ADDED``.
     GUILD_INVITE_CREATED = "guild.invite_created", AuditCategory.AUTHORIZATION
     GUILD_INVITE_REVOKED = "guild.invite_revoked", AuditCategory.AUTHORIZATION
+    #: A guest's end moved. Becoming a guest is a ``GUILD_MEMBER_ADDED`` with
+    #: ``guest_until`` in its detail, and leaving one a ``GUILD_MEMBER_REMOVED``.
+    GUILD_GUEST_EXTENDED = "guild.guest_extended", AuditCategory.AUTHORIZATION
+    #: A guest made a member: their time no longer ends, and they take a seat.
+    GUILD_GUEST_MADE_MEMBER = "guild.guest_made_member", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ADDED = "initiative.member_added", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_REMOVED = "initiative.member_removed", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ROLE_CHANGED = (
@@ -301,6 +315,9 @@ class AuditEventType(str, Enum):
     AI_CONNECTION_CREATED = "ai_connection.created", AuditCategory.CONFIGURATION
     AI_CONNECTION_UPDATED = "ai_connection.updated", AuditCategory.CONFIGURATION
     AI_CONNECTION_DELETED = "ai_connection.deleted", AuditCategory.CONFIGURATION
+    #: The seat took back the key a member gave one of the community's AI
+    #: connections.
+    AI_MEMBER_KEY_REVOKED = "ai_member_key.revoked", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_CREATED = "plugin_service.created", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_UPDATED = "plugin_service.updated", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_DELETED = "plugin_service.deleted", AuditCategory.CONFIGURATION

@@ -1,0 +1,179 @@
+/**
+ * A detail (a task's, an event's) laid out from a tree: its regions, where
+ * each part falls once the detail is one column, and the layout a detail is
+ * stored as. What a layout leaves out is not shown.
+ */
+
+import { createContext } from "react";
+
+import type {
+  DetailLayoutDefinitionInput,
+  DetailLayoutRead,
+} from "@/api/generated/initiativeAPI.schemas";
+
+import { PROPERTY_FIELD_PREFIX } from "./fields";
+import type { LayoutNode } from "./tree";
+
+/** A detail's regions, in the order a detail holds them. */
+export const LAYOUT_REGIONS = ["header", "main", "side"] as const;
+
+export type Region = (typeof LAYOUT_REGIONS)[number];
+
+/** A detail layout's regions, as stored: one it leaves out is drawn as shipped. */
+export type StoredRegions = Partial<Record<Region, LayoutNode[] | null>>;
+
+/** The properties a detail places on their own, by definition id: All
+ *  properties leaves them out. */
+export const placedProperties = (root: LayoutNode): Set<number> =>
+  new Set(
+    nodesIn(root.children ?? [])
+      .map((node) => String(node.props?.field ?? ""))
+      .filter((field) => field.startsWith(PROPERTY_FIELD_PREFIX))
+      .map((field) => Number(field.slice(PROPERTY_FIELD_PREFIX.length)))
+  );
+
+/** What the detail being drawn places on its own, for All properties. */
+export const PlacedProperties = createContext<ReadonlySet<number>>(new Set());
+
+/** A part of a detail's column, and where it falls once the detail is one column. */
+export const at = (order: number, node: LayoutNode): LayoutNode => ({
+  ...node,
+  props: { ...node.props, order },
+});
+
+const placedAs = (node: LayoutNode) =>
+  node.type === "field" ? `field:${String(node.props?.field)}` : node.type;
+
+const nodesIn = (nodes: LayoutNode[]): LayoutNode[] =>
+  nodes.flatMap((node) => [node, ...nodesIn(node.children ?? [])]);
+
+/** What a column's part is known by: its kind or field, or a group's first. */
+const anchorOf = (node: LayoutNode): string | undefined =>
+  node.type === "section" || node.type === "stack"
+    ? (node.children ?? []).map(anchorOf).find((anchor) => anchor !== undefined)
+    : placedAs(node);
+
+/** A part without the shipped detail's one-column `order`, at any depth: a
+ *  shipped part may have been moved into a section. */
+const withoutOrder = ({ props, children, ...node }: LayoutNode): LayoutNode => {
+  const { order: _order, ...rest } = props ?? {};
+  return {
+    ...node,
+    ...(Object.keys(rest).length > 0 ? { props: rest } : {}),
+    ...(children ? { children: children.map(withoutOrder) } : {}),
+  };
+};
+
+/** The layout a detail tree is stored as. Every region is stored, and without
+ *  the shipped detail's one-column `order`: a stored region keeps its own. */
+export const storedLayout = (root: LayoutNode): DetailLayoutDefinitionInput => {
+  const region = (index: number) => (root.children?.[index]?.children ?? []).map(withoutOrder);
+  return {
+    header: region(0),
+    main: region(1),
+    side: region(2),
+  } as DetailLayoutDefinitionInput;
+};
+
+/** The parts any detail lays out with, as against its own. */
+const LAYOUT_PARTS = new Set(["section", "stack", "field", "properties", "plugin"]);
+
+/** One kind of detail: as shipped, and as a stored layout draws it. */
+export interface DetailLayoutSpec {
+  /** What its layout is stored as. */
+  kind: DetailLayoutRead["kind"];
+  /** The regions as shipped. */
+  shipped: Record<Region, LayoutNode[]>;
+  /** The detail's own parts, each placed at most once: what the shipped
+   *  detail draws beside its fields and the parts that lay them out. */
+  ownParts: string[];
+  /** The built-in fields it edits: those the shipped detail places. */
+  detailFields: ReadonlySet<string>;
+  /** Whether a part edits a field: taken off, the field is hidden. */
+  editsAField: (node: LayoutNode) => boolean;
+  /** The detail as one tree to edit by path: the detail, holding its header,
+   *  main and side in that order. */
+  root: (stored: StoredRegions | null | undefined) => LayoutNode;
+  /**
+   * The detail from a stored layout: each region as stored, or as shipped where
+   * the layout leaves it out. A stored part carries no `order`: where it falls
+   * on one column is worked out here, so a detail laid out anew still reads as
+   * the shipped one does on a phone.
+   */
+  tree: (stored: StoredRegions | null | undefined) => LayoutNode;
+}
+
+/**
+ * A kind of detail, from how it ships: its regions, with each column
+ * part's one-column `order`, and the part types that edit a field.
+ */
+export const detailLayoutSpec = ({
+  kind,
+  shipped,
+  fieldParts,
+}: {
+  kind: DetailLayoutRead["kind"];
+  shipped: Record<Region, LayoutNode[]>;
+  fieldParts: readonly string[];
+}): DetailLayoutSpec => {
+  const editing = new Set(fieldParts);
+  const editsAField = (node: LayoutNode) => editing.has(node.type);
+  const shippedNodes = nodesIn(Object.values(shipped).flat());
+  /** Where the shipped detail puts each of its column parts on one column. */
+  const shippedOrder = new Map(
+    [...shipped.main, ...shipped.side].map((node) => [anchorOf(node), Number(node.props?.order)])
+  );
+
+  /**
+   * A column's parts with where each falls once the detail is one column, as
+   * the shipped detail interleaves its columns: a part the shipped detail has
+   * falls where it puts it, any other right after the part before it, and a
+   * column keeps its own order (a part never falls before one above it).
+   * Parts that fall together keep the main column's ahead of the side's.
+   */
+  const ordered = (parts: LayoutNode[], column: "main" | "side"): LayoutNode[] => {
+    const known = parts.map((part) => shippedOrder.get(anchorOf(part)));
+    let order =
+      known.find((each) => each !== undefined) ?? Number(shipped[column][0]?.props?.order ?? 1);
+    return parts.map((part, index) => {
+      order = Math.max(order, known[index] ?? order);
+      return at(order, part);
+    });
+  };
+
+  const regionsOf = (stored: StoredRegions | null | undefined): Record<Region, LayoutNode[]> => ({
+    header: stored?.header ?? shipped.header,
+    main: stored?.main ?? shipped.main,
+    side: stored?.side ?? shipped.side,
+  });
+
+  return {
+    kind,
+    shipped,
+    ownParts: [
+      ...new Set(shippedNodes.map((node) => node.type).filter((type) => !LAYOUT_PARTS.has(type))),
+    ],
+    detailFields: new Set(
+      shippedNodes.filter((node) => node.type === "field").map((node) => String(node.props?.field))
+    ),
+    editsAField,
+    root: (stored) => {
+      const regions = regionsOf(stored);
+      return {
+        type: "layout",
+        children: LAYOUT_REGIONS.map((region) => ({ type: region, children: regions[region] })),
+      };
+    },
+    tree: (stored) => {
+      const regions = regionsOf(stored);
+      return {
+        type: "layout",
+        children: [
+          { type: "header", children: regions.header },
+          { type: "main", children: ordered(regions.main, "main") },
+          { type: "side", children: ordered(regions.side, "side") },
+        ],
+      };
+    },
+  };
+};

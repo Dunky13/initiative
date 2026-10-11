@@ -18,6 +18,8 @@ from app.testing import (
     create_calendar,
     create_calendar_event,
     create_guild_calendar,
+    create_post,
+    create_post_poll,
     create_project,
     create_task,
     get_auth_headers,
@@ -196,6 +198,43 @@ async def test_guild_entries_include_flags_skip_legs(
     assert only_events.status_code == 200
     assert len(only_events.json()["events"]) == 1
     assert only_events.json()["tasks"] == []
+    # Projects and polls are asked for by name.
+    assert only_events.json()["projects"] == []
+    assert only_events.json()["polls"] == []
+
+    a.initiative.posts_enabled = True
+    session.add(a.initiative)
+    await session.commit()
+    ending = await create_project(session, a.initiative, a.user, end_date=NOW.date())
+    await create_project(
+        session, a.initiative, a.user, start_date=(NOW + timedelta(days=60)).date()
+    )
+    closing = await create_post(session, a.initiative, a.user)
+    await create_post_poll(session, closing, closes_at=NOW + timedelta(days=1))
+    later = await create_post(session, a.initiative, a.user)
+    await create_post_poll(session, later, closes_at=NOW + timedelta(days=60))
+    # A draft's poll is not coming up for anybody yet.
+    draft = await create_post(
+        session, a.initiative, a.user, published_at=None, scheduled_for=NOW
+    )
+    await create_post_poll(session, draft, closes_at=NOW + timedelta(days=1))
+
+    dated = await client.get(
+        a.g("/calendar-entries/"),
+        headers=a.headers,
+        params={
+            "initiative_id": a.initiative.id,
+            "start_after": WINDOW_START,
+            "start_before": WINDOW_END,
+            "include_projects": "true",
+            "include_polls": "true",
+        },
+    )
+    assert dated.status_code == 200, dated.text
+    assert [p["id"] for p in dated.json()["projects"]] == [ending.id]
+    assert dated.json()["projects"][0]["end_date"] == NOW.date().isoformat()
+    assert [p["id"] for p in dated.json()["polls"]] == [closing.id]
+    assert dated.json()["polls"][0]["poll"]["closes_at"] is not None
 
 
 async def test_guild_entries_hidden_from_non_member(

@@ -2,12 +2,19 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth } from "date-fns";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildCommunity, buildTask, communityCan, writerCan } from "@/__tests__/factories";
+import {
+  buildCommunity,
+  buildTask,
+  buildToolLayoutSet,
+  communityCan,
+  writerCan,
+} from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
+import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
 import type { FilterCondition, FilterGroup } from "@/api/generated/initiativeAPI.schemas";
 import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { dateRangeParams } from "@/components/ui/date-range-field";
@@ -277,6 +284,60 @@ describe("CalendarsView calendar-entries query", () => {
   });
 });
 
+describe("CalendarsView presets", () => {
+  /** The initiative calendar's layouts, its list offering `presets`. */
+  const withPresets = (presets: unknown[]) =>
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            tool: "calendar",
+            layouts: [
+              {
+                kind: "calendar",
+                is_default: true,
+                definition: { presets } as never,
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+
+  it("applies a preset the calendar offers to its filters, and names it in the URL", async () => {
+    withPresets([{ name: "Urgent", slug: "urgent", filters: { priorities: ["urgent"] } }]);
+    const requests = stubEntries({ tasks: [] });
+    const { router } = renderCalendars();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("combobox", { name: /^layout$/i }));
+    await user.click(await screen.findByRole("option", { name: "Urgent" }));
+
+    await waitFor(() =>
+      expect(parseConditions(requests.at(-1) as URLSearchParams)).toContainEqual({
+        field: "priority",
+        op: "in_",
+        value: ["urgent"],
+      })
+    );
+    expect((router.state.location.search as { preset?: string }).preset).toBe("urgent");
+  });
+
+  it("offers no menu while the calendar has no presets", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(buildToolLayoutSet({ tool: "calendar" }))
+      )
+    );
+    const requests = stubEntries({ tasks: [] });
+    renderCalendars();
+
+    await waitFor(() => expect(requests.length).toBeGreaterThan(0));
+    expect(screen.queryByRole("combobox", { name: /^layout$/i })).toBeNull();
+  });
+});
+
 describe("CalendarsView subscribing on an initiative's tab", () => {
   it("offers a link for each of the initiative's calendars", async () => {
     const calendar = (id: number, name: string) => ({
@@ -425,10 +486,16 @@ describe("CalendarsView on the calendar plug-in's own surface", () => {
   }
 
   // The community's own calendars are its admins' to add.
+  /** What the server keeps of this reader's views, as they save them. */
+  let kept: Record<string, unknown> = {};
+  beforeEach(() => {
+    kept = keepViewPreferences();
+  });
+
   function renderCommunityScope(community = buildCommunity({ id: 1, role: "admin" })) {
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, {
-      items: { [CALENDAR_VIEW_MODE_KEY]: "list" },
+      items: { [CALENDAR_VIEW_MODE_KEY]: "list", ...kept },
     });
     return renderPage(() => <CalendarsView communityScope />, {
       queryClient,
@@ -511,7 +578,9 @@ describe("CalendarsView on the calendar plug-in's own surface", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Holidays" }));
     await waitFor(() => expect(screen.queryByText("Midsummer")).toBeNull());
 
+    // It is kept for the reader, wherever they open it next.
     unmount();
+    await waitFor(() => expect(Object.keys(kept)).toContain("view:1:calendars"));
     renderCommunityScope();
 
     // One calendar left on: the title is its name, with its settings beside it.

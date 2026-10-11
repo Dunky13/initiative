@@ -24,14 +24,13 @@ import { priorityVariant } from "@/components/projects/projectTasksConfig";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { Badge } from "@/components/ui/badge";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import { useProperties } from "@/hooks/useProperties";
 import { formatDateTime } from "@/lib/formatDate";
+import { useProjectLayoutEnv } from "@/lib/layouts/fields";
+import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
+import { TASK_CARD, taskFields } from "@/lib/layouts/tasks";
+import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/tree";
 import { cn } from "@/lib/utils";
-import { useProjectViewEnv } from "@/lib/views/fields";
-import { pluginFields, usePluginsOnItems } from "@/lib/views/plugins";
-import { TASK_CARD, taskFields } from "@/lib/views/tasks";
-import { namesField, type ViewContext, type ViewNode } from "@/lib/views/tree";
 
 import { TaskAssigneeList } from "./TaskAssigneeList";
 
@@ -56,9 +55,9 @@ type ProjectTasksKanbanViewProps = {
    *  nor for plug-ins: a listing's preview has no initiative to ask. */
   propertyDefinitions?: PropertyDefinitionRead[];
   /** The view's card, where it has its own. */
-  card?: ViewNode;
+  card?: LayoutNode;
   /** While the view is edited: the path of each part of its card. */
-  editing?: WeakMap<ViewNode, string>;
+  editing?: WeakMap<LayoutNode, string>;
 };
 
 // One empty list while the definitions load, so the fields aren't rebuilt on
@@ -100,14 +99,14 @@ export const ProjectTasksKanbanView = ({
   // the memoized cards skip re-rendering on an unrelated parent pass. What the
   // renderers share is held apart, so a change of fields redraws the cards but
   // not the values on them.
-  const env = useProjectViewEnv(taskHref);
+  const env = useProjectLayoutEnv(taskHref);
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
     [propertyDefinitions, plugins, i18n.language]
   );
-  const view = useMemo<ViewContext>(
+  const view = useMemo<LayoutContext>(
     () => ({
       fields,
       plugins,
@@ -119,17 +118,6 @@ export const ProjectTasksKanbanView = ({
     [fields, plugins, card, env, editing]
   );
 
-  // The people the cards' excerpts mention, asked about once for the board.
-  const excerpts = useMemo(
-    () =>
-      namesField(card, "description")
-        ? Object.values(groupedTasks).flatMap((tasks) =>
-            tasks.flatMap((task) => task.description_excerpt ?? [])
-          )
-        : [],
-    [groupedTasks, card]
-  );
-
   const taskStatusesLength = taskStatuses.length;
   // Basis rather than min-width: it is what the collapse animates.
   const columnBasis = cn(
@@ -138,50 +126,47 @@ export const ProjectTasksKanbanView = ({
   );
 
   return (
-    <MentionedPeopleScope>
-      <ReportMentionedPeople texts={excerpts} />
-      <DndContext
-        sensors={sensors}
-        collisionDetection={kanbanCollisionDetection}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
-        onDragCancel={onDragCancel}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={kanbanCollisionDetection}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
+    >
+      <div
+        ref={scrollContainerRef}
+        className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
+        data-kanban-scroll-container
       >
-        <div
-          ref={scrollContainerRef}
-          className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
-          data-kanban-scroll-container
-        >
-          <div className="flex gap-4">
-            {taskStatuses.map((status) => {
-              const isCollapsed = collapsedStatusIds.has(status.id);
-              return (
-                <KanbanColumn
-                  key={status.id}
-                  status={status}
-                  tasks={groupedTasks[status.id] ?? []}
-                  canWrite={canReorderTasks}
-                  view={view}
-                  collapsed={isCollapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  taskCount={groupedTasks[status.id]?.length ?? 0}
-                  className={cn(
-                    "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
-                    isCollapsed ? "grow-0 basis-12" : columnBasis
-                  )}
-                  onArchiveDoneTasks={onArchiveDoneTasks}
-                  isArchiving={isArchivingDoneTasks}
-                />
-              );
-            })}
-          </div>
+        <div className="flex gap-4">
+          {taskStatuses.map((status) => {
+            const isCollapsed = collapsedStatusIds.has(status.id);
+            return (
+              <KanbanColumn
+                key={status.id}
+                status={status}
+                tasks={groupedTasks[status.id] ?? []}
+                canWrite={canReorderTasks}
+                view={view}
+                collapsed={isCollapsed}
+                onToggleCollapse={onToggleCollapse}
+                taskCount={groupedTasks[status.id]?.length ?? 0}
+                className={cn(
+                  "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
+                  isCollapsed ? "grow-0 basis-12" : columnBasis
+                )}
+                onArchiveDoneTasks={onArchiveDoneTasks}
+                isArchiving={isArchivingDoneTasks}
+              />
+            );
+          })}
         </div>
-        <DragOverlay>
-          {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
-        </DragOverlay>
-      </DndContext>
-    </MentionedPeopleScope>
+      </div>
+      <DragOverlay>
+        {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
+      </DragOverlay>
+    </DndContext>
   );
 };
 
@@ -214,7 +199,7 @@ const getDroppableType = (
   id: UniqueIdentifier
 ): string | undefined => containers.find((container) => container.id === id)?.data.current?.type;
 
-const TaskDragOverlay = ({ task, card }: { task: TaskListRead; card: ViewNode }) => {
+const TaskDragOverlay = ({ task, card }: { task: TaskListRead; card: LayoutNode }) => {
   const { t } = useTranslation("projects");
   // The thing being dragged is the card, so it shows what the card names.
   const shows = (fieldId: string) => namesField(card, fieldId);

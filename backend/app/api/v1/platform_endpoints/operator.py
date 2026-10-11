@@ -1,12 +1,19 @@
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Annotated, Literal, Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import case, func
 from sqlmodel import select
 
-from app.api.deps import UserSessionDep, require_capability, SystemSessionDep
+from app.api.deps import (
+    SystemSessionDep,
+    UserSessionDep,
+    get_current_active_user,
+    require_capability,
+)
 from app.api.v1.platform_endpoints.session_opening import require_login_method
 from app.core.login_methods import LoginMethod
 from app.db.query import build_paginated_response, paginated_query
@@ -16,7 +23,9 @@ from app.core.capabilities import (
     Capability,
     capabilities_for,
     can_assign_role,
+    may_act_on,
     role_rank,
+    user_has_capability,
 )
 from app.models.platform.user import User, UserStatus
 from app.models.platform.user_email import UserEmail
@@ -25,10 +34,13 @@ from app.schemas.platform.user import (
     OperatorUserListResponse,
     OperatorUserRead,
     AccountDeletionResponse,
+    UserAction,
 )
 from app.schemas.platform.auth import VerificationSendResponse
 from app.schemas.platform.operator import (
+    OperatorAccountCaseRead,
     OperatorSuspensionUpdate,
+    ProfileField,
     OperatorUsernameUpdate,
     PlatformRoleUpdate,
     OperatorUserDeleteRequest,
@@ -43,6 +55,7 @@ from app.core.messages import (
     UserMessages,
 )
 from app.services.platform import account_stream
+from app.services.platform import case_activity, grant_cases
 from app.services.platform import api_keys as api_keys_service
 from app.services.platform import user_tokens
 from app.services.platform import csv_export
@@ -80,6 +93,12 @@ UsersDeleteDep = Annotated[User, Depends(require_capability(Capability.USERS_DEL
 GuildsManageDep = Annotated[
     User, Depends(require_capability(Capability.COMMUNITIES_MANAGE))
 ]
+CommunitiesReadDep = Annotated[
+    User, Depends(require_capability(Capability.COMMUNITIES_READ))
+]
+CommunitiesSuspendDep = Annotated[
+    User, Depends(require_capability(Capability.COMMUNITIES_SUSPEND))
+]
 BillingInsightsDep = Annotated[
     User, Depends(require_capability(Capability.BILLING_INSIGHTS))
 ]
@@ -89,11 +108,91 @@ RolesAssignDep = Annotated[User, Depends(require_capability(Capability.ROLES_ASS
 ConfigManageDep = Annotated[User, Depends(require_capability(Capability.CONFIG_MANAGE))]
 
 
+#: What each account act is called on the case it was taken for.
+_ACT_NAMES: dict[str, str] = {
+    "clear_second_factor": "cleared the second factor of",
+    "sign_user_out_everywhere": "signed out everywhere",
+    "clear_profile_field": "cleared part of the profile of",
+    "trigger_password_reset": "sent a password reset to",
+    "reactivate_user": "reactivated",
+    "restore_deleted_user": "called off the deletion of",
+    "remove_user_avatar": "took down the picture of",
+    "set_user_username": "renamed",
+    "set_user_suspension": "changed the suspension of",
+    "lift_sign_in_lock": "turned password sign-in back on for",
+    "revoke_user_api_keys": "revoked the API keys of",
+    "clear_age_block": "let answer the age question again",
+    "update_platform_role": "changed the platform role of",
+    "delete_user": "deleted",
+}
+
+
+@dataclass
+class ActCase:
+    """The operations case an act on an account is taken for, where one is
+    named. ``what`` says what the act did, where the route knows better than
+    its name."""
+
+    task_id: Optional[int] = None
+    what: Optional[str] = None
+
+
+async def _act_case(
+    request: Request,
+    actor: Annotated[User, Depends(get_current_active_user)],
+    case_task_id: Annotated[
+        Optional[int],
+        Query(
+            gt=0,
+            description=(
+                "The operations case this act is for: one the caller can read, "
+                "still open. The case is told of the act."
+            ),
+        ),
+    ] = None,
+) -> AsyncIterator[ActCase]:
+    """Hold the case an act names to one the actor reads and that is open,
+    before the act; tell it of the act once the act is done."""
+    act = ActCase(task_id=case_task_id)
+    if case_task_id is not None:
+        try:
+            await grant_cases.check_account_case(actor, case_task_id=case_task_id)
+        except grant_cases.GrantCaseError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.code) from exc
+    yield act
+    if act.task_id is None:
+        return
+    route = getattr(request.scope.get("route"), "name", "")
+    target_id = request.path_params.get("user_id")
+    target = None
+    if target_id is not None:
+        from app.db.session import SystemSessionLocal
+
+        async with SystemSessionLocal() as session:
+            target = await session.get(User, int(target_id))
+    named = (
+        f"account {handle_of(target)} (#{target_id})"
+        if target is not None
+        else f"account #{target_id}"
+    )
+    what = act.what or _ACT_NAMES.get(route, "acted on")
+    await grant_cases.note(
+        act.task_id,
+        case_activity.ActivityKind.account_act,
+        f"{handle_of(actor)} {what} {named}.",
+    )
+
+
+#: The case an act on an account is taken for. See :func:`_act_case`.
+ActCaseDep = Annotated[ActCase, Depends(_act_case)]
+
+
 async def _account_within_rank(
     session: SystemSessionDep, user_id: int, actor: User, *, lock: bool = False
 ) -> User:
-    """The account an operator action names, when it sits at or below the
-    actor's own rung — the bound a role change and a suspension apply."""
+    """The account an operator action names, when the actor may act on it
+    (:func:`~app.core.capabilities.may_act_on`): not their own, and at or
+    below their own rung — the bound a role change and a suspension apply."""
     stmt = select(User).where(User.id == user_id)
     if lock:
         stmt = stmt.with_for_update()
@@ -102,12 +201,123 @@ async def _account_within_rank(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=AuthMessages.USER_NOT_FOUND
         )
-    if role_rank(user.role) > role_rank(actor.role):
+    if not may_act_on(actor, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=OperatorMessages.CANNOT_MANAGE_HIGHER_ROLE,
+            detail=(
+                OperatorMessages.CANNOT_ACT_ON_SELF
+                if user.id == actor.id
+                else OperatorMessages.CANNOT_MANAGE_HIGHER_ROLE
+            ),
         )
     return user
+
+
+def _user_actions(
+    actor: User,
+    target: User,
+    read: OperatorUserRead,
+    *,
+    community_names: bool,
+    password_sign_in: bool,
+) -> list[UserAction]:
+    """What ``actor`` may do to ``target``, from their capabilities, their
+    rung and the account's state: each route's own refusals, asked up front."""
+    can = lambda capability: user_has_capability(actor, capability)  # noqa: E731
+    acts = may_act_on(actor, target)
+    live = target.status in (UserStatus.active, UserStatus.suspended)
+    actions: list[UserAction] = []
+    if acts and can(Capability.CONTENT_MODERATE):
+        if target.status != UserStatus.anonymized:
+            actions.append(UserAction.rename)
+        if target.avatar_url:
+            actions.append(UserAction.remove_avatar)
+        if community_names:
+            actions.append(UserAction.clear_display_names)
+        if target.custom_status:
+            actions.append(UserAction.clear_custom_status)
+        if target.profile_decorations:
+            actions.append(UserAction.clear_decorations)
+    if acts and can(Capability.USERS_MANAGE):
+        if target.status == UserStatus.active:
+            actions.append(UserAction.suspend)
+        if target.status == UserStatus.suspended:
+            actions.append(UserAction.unsuspend)
+    if (
+        can(Capability.ROLES_ASSIGN)
+        and target.id != actor.id
+        and target.status == UserStatus.active
+        and can_assign_role(actor, target.role)
+    ):
+        actions.append(UserAction.change_role)
+    if acts and can(Capability.USERS_MANAGE):
+        if read.api_key_count > 0:
+            actions.append(UserAction.revoke_api_keys)
+        if read.second_factor_enrolled:
+            actions.append(UserAction.clear_second_factor)
+        if live:
+            actions.append(UserAction.sign_out_everywhere)
+        if target.status == UserStatus.active and password_sign_in:
+            actions.append(UserAction.reset_password)
+        if target.status == UserStatus.active and not read.email_verified:
+            actions.append(UserAction.resend_verification)
+        if read.sign_in_locked_until is not None:
+            actions.append(UserAction.lift_sign_in_lock)
+    if (
+        acts
+        and can(Capability.USERS_AGE_UNBLOCK)
+        and (read.age_below_minimum_at or read.birthdate_on_file)
+    ):
+        actions.append(UserAction.clear_age_block)
+    if acts and can(Capability.USERS_MANAGE):
+        if target.status == UserStatus.deactivated:
+            actions.append(UserAction.reactivate)
+        if target.status == UserStatus.deleted:
+            actions.append(UserAction.restore)
+    if acts and can(Capability.USERS_DELETE) and target.status != UserStatus.anonymized:
+        actions.append(UserAction.delete)
+    return actions
+
+
+async def _rows(users: list[User], actor: User) -> list[OperatorUserRead]:
+    """The roster rows for ``users``, as ``actor`` may act on them: what they
+    may do to each, and how many open cases each account has."""
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.guild import GuildMembership
+    from app.services.platform import auth_posture
+    from app.services.platform import intake as intake_service
+
+    reads = await users_service.to_operator_read(users)
+    ids = [int(u.id) for u in users]
+    async with SystemSessionLocal() as system:
+        named = set(
+            (
+                await system.exec(
+                    select(GuildMembership.user_id)
+                    .where(GuildMembership.user_id.in_(ids))
+                    .where(GuildMembership.display_name.is_not(None))
+                    .distinct()
+                )
+            ).all()
+        )
+        password_sign_in = await auth_posture.login_method_allowed(
+            system, LoginMethod.password
+        )
+    cases = await intake_service.open_case_counts(ids)
+    for read, user in zip(reads, users):
+        read.allowed_actions = _user_actions(
+            actor,
+            user,
+            read,
+            community_names=user.id in named,
+            password_sign_in=password_sign_in,
+        )
+        read.open_case_count = cases.get(int(user.id), 0)
+    return reads
+
+
+async def _row(user: User, actor: User) -> OperatorUserRead:
+    return (await _rows([user], actor))[0]
 
 
 #: Accounts ordered by how much of the app is left to them, so sorting on
@@ -130,7 +340,7 @@ _USER_SORT_FIELDS = {
 @router.get("/users", response_model=OperatorUserListResponse)
 async def list_all_users(
     session: UserSessionDep,
-    _current_user: UsersReadDep,
+    current_user: UsersReadDep,
     search: Optional[str] = Query(
         default=None,
         description=(
@@ -180,7 +390,7 @@ async def list_all_users(
     )
     return OperatorUserListResponse(
         **build_paginated_response(
-            await users_service.to_operator_read(users),
+            await _rows(list(users), current_user),
             total_count,
             actual_page,
             page_size,
@@ -284,6 +494,7 @@ async def clear_second_factor(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> None:
     """Remove somebody's second factor for them.
 
@@ -319,11 +530,121 @@ async def clear_second_factor(
     await email_service.announce_second_factor_change(session, user, enabled=False)
 
 
+@router.delete("/users/{user_id}/sessions", response_model=OperatorUserRead)
+async def sign_user_out_everywhere(
+    user_id: int,
+    session: SystemSessionDep,
+    current_user: UsersManageDep,
+    act_case: ActCaseDep,
+) -> OperatorUserRead:
+    """End every session an account has, on every device (``users.manage``).
+
+    For an account somebody else may be signed in to: its holder signs in
+    again, and whoever else had it does not. Its open connections close now.
+    """
+    user = await _account_within_rank(session, user_id, current_user, lock=True)
+    await challenge_service.revoke_for_user(session, user_id=user_id)
+    await session_service.revoke_all_for_user(session, user_id=user_id)
+    # The access tokens already handed out stop working with the sessions.
+    user.token_version += 1
+    user.updated_at = datetime.now(timezone.utc)
+    session.add(user)
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.USER_SESSIONS_REVOKED,
+        actor_user_id=current_user.id,
+        target_user_id=user_id,
+        target_type="user",
+        target_id=user_id,
+    )
+    await session.commit()
+    await content_sockets.revoke_user_everywhere(user_id)
+    await session.refresh(user)
+    return await _row(user, current_user)
+
+
+@router.delete("/users/{user_id}/profile/{field}", response_model=OperatorUserRead)
+async def clear_profile_field(
+    user_id: int,
+    field: ProfileField,
+    session: SystemSessionDep,
+    current_user: ContentModerateDep,
+    act_case: ActCaseDep,
+) -> OperatorUserRead:
+    """Clear part of how an account appears to others (``content.moderate``).
+
+    ``display_names`` clears the names it goes by in its communities, all of
+    them; ``custom_status`` its status line; ``decorations`` its banner, frame
+    and trophies. Like a picture takedown, for what breaches the terms of use:
+    its holder may set them again.
+    """
+    from sqlalchemy import update
+
+    from app.models.platform.guild import GuildMembership
+
+    user = await _account_within_rank(session, user_id, current_user)
+    act_case.what = {
+        "display_names": "cleared the names in communities of",
+        "custom_status": "cleared the status line of",
+        "decorations": "cleared the decorations of",
+    }[field]
+    if field == "display_names":
+        await session.exec(
+            update(GuildMembership)
+            .where(GuildMembership.user_id == user_id)
+            .where(GuildMembership.display_name.is_not(None))
+            .values(display_name=None)
+        )
+    elif field == "custom_status":
+        user.custom_status = {}
+    else:
+        user.profile_decorations = {}
+    user.updated_at = datetime.now(timezone.utc)
+    session.add(user)
+    await audit_service.record(
+        session,
+        event_type=AuditEventType.USER_PROFILE_FIELD_CLEARED,
+        actor_user_id=current_user.id,
+        target_user_id=user_id,
+        target_type="user",
+        target_id=user_id,
+        detail={"field": field},
+    )
+    # Their open tabs read their own profile again.
+    account_stream.queue_account_signal(session, user_id, "profile")
+    await session.commit()
+    await session.refresh(user)
+    return await _row(user, current_user)
+
+
+@router.get("/users/{user_id}/cases", response_model=list[OperatorAccountCaseRead])
+async def list_account_cases(
+    user_id: int,
+    _current_user: UsersReadDep,
+) -> list[OperatorAccountCaseRead]:
+    """The open operations cases an account filed or is the subject of
+    (``users.read``): where each lives, to open it, and nothing it says."""
+    from app.services.platform import intake as intake_service
+
+    return [
+        OperatorAccountCaseRead(
+            task_id=case.task_id,
+            stream=case.stream,
+            community_id=case.guild_id,
+            initiative_id=case.initiative_id,
+            project_id=case.project_id,
+            filed=case.filed,
+        )
+        for case in await intake_service.open_cases_for(user_id)
+    ]
+
+
 @router.post("/users/{user_id}/reset-password", response_model=VerificationSendResponse)
 async def trigger_password_reset(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> VerificationSendResponse:
     """Trigger a password reset email for a user (``users.manage``).
 
@@ -434,6 +755,7 @@ async def reactivate_user(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Reactivate a deactivated user account (``users.manage``).
 
@@ -475,7 +797,7 @@ async def reactivate_user(
     await session.refresh(user)
     # Platform user management stays platform-table-only: initiative
     # membership is guild-schema content this path cannot read.
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.post("/users/{user_id}/restore", response_model=OperatorUserRead)
@@ -483,6 +805,7 @@ async def restore_deleted_user(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Call off a pending erasure from the users table (``users.manage``).
 
@@ -510,7 +833,7 @@ async def restore_deleted_user(
     )
     await session.commit()
     await session.refresh(user)
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.delete("/users/{user_id}/avatar", status_code=status.HTTP_204_NO_CONTENT)
@@ -518,6 +841,7 @@ async def remove_user_avatar(
     user_id: int,
     session: SystemSessionDep,
     current_user: ContentModerateDep,
+    act_case: ActCaseDep,
 ) -> Response:
     """Take down a user's profile picture.
 
@@ -570,6 +894,7 @@ async def set_user_username(
     payload: OperatorUsernameUpdate,
     session: SystemSessionDep,
     current_user: ContentModerateDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Change someone's username.
 
@@ -608,7 +933,7 @@ async def set_user_username(
     )
     await session.commit()
     await session.refresh(user)
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.post("/users/{user_id}/suspension", response_model=OperatorUserRead)
@@ -617,6 +942,7 @@ async def set_user_suspension(
     payload: OperatorSuspensionUpdate,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Freeze an account, or let it go.
 
@@ -663,8 +989,11 @@ async def set_user_suspension(
 
     already = user.status == UserStatus.suspended
     if already == payload.suspended:
-        return await users_service.to_operator_read_one(user)
+        # Nothing changed, so there is nothing to tell a case.
+        act_case.task_id = None
+        return await _row(user, current_user)
 
+    act_case.what = "suspended" if payload.suspended else "lifted the suspension of"
     user.status = UserStatus.suspended if payload.suspended else UserStatus.active
     user.updated_at = datetime.now(timezone.utc)
     user.status_changed_at = user.updated_at
@@ -703,7 +1032,7 @@ async def set_user_suspension(
         # guild to name.
         await content_sockets.revoke_user_everywhere(user_id)
 
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.delete("/users/{user_id}/sign-in-lock", response_model=OperatorUserRead)
@@ -711,6 +1040,7 @@ async def lift_sign_in_lock(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Turn an account's password and code sign-in back on.
 
@@ -736,7 +1066,7 @@ async def lift_sign_in_lock(
         detail={},
     )
     await session.commit()
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.delete("/users/{user_id}/api-keys", response_model=OperatorUserRead)
@@ -744,6 +1074,7 @@ async def revoke_user_api_keys(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersManageDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Switch off every API key on an account that still works.
 
@@ -761,7 +1092,7 @@ async def revoke_user_api_keys(
             detail=UserMessages.NO_LIVE_API_KEYS,
         )
     await session.commit()
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.delete("/users/{user_id}/age-block", response_model=OperatorUserRead)
@@ -769,6 +1100,7 @@ async def clear_age_block(
     user_id: int,
     session: SystemSessionDep,
     current_user: UsersAgeUnblockDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Let an account answer the age question again.
 
@@ -813,7 +1145,7 @@ async def clear_age_block(
     account_stream.queue_account_signal(session, user_id, "age")
     await session.commit()
     await session.refresh(user)
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.patch("/users/{user_id}/platform-role", response_model=OperatorUserRead)
@@ -822,6 +1154,7 @@ async def update_platform_role(
     payload: PlatformRoleUpdate,
     session: SystemSessionDep,
     current_user: RolesAssignDep,
+    act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Update a user's platform role (``roles.assign``).
 
@@ -873,6 +1206,9 @@ async def update_platform_role(
         )
 
     previous_role = user.role
+    act_case.what = (
+        f"changed the platform role ({previous_role.value} to {payload.role.value}) of"
+    )
     user.role = payload.role
     user.updated_at = datetime.now(timezone.utc)
     session.add(user)
@@ -891,7 +1227,7 @@ async def update_platform_role(
     await session.commit()
     await session.refresh(user)
     # Platform user management stays platform-table-only (see reactivate).
-    return await users_service.to_operator_read_one(user)
+    return await _row(user, current_user)
 
 
 @router.get(
@@ -940,6 +1276,7 @@ async def delete_user(
     payload: OperatorUserDeleteRequest,
     session: SystemSessionDep,
     current_user: UsersDeleteDep,
+    act_case: ActCaseDep,
 ) -> AccountDeletionResponse:
     """Delete, anonymize, or deactivate a user account (``users.delete``).
 
@@ -963,6 +1300,11 @@ async def delete_user(
         )
 
     user = await _account_within_rank(session, user_id, current_user, lock=True)
+    act_case.what = {
+        "deactivate": "deactivated",
+        "soft_delete": "scheduled the deletion of",
+        "hard_delete": "permanently deleted",
+    }[payload.action]
 
     await users_service.ensure_config_manager_remains(session, user_id, for_update=True)
 

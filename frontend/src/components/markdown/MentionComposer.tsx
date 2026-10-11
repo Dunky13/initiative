@@ -17,13 +17,9 @@ import { CommentReferences } from "@/components/comments/CommentReferences";
 import type { MentionChoice } from "@/components/comments/MentionPopover";
 import { MentionPopover } from "@/components/comments/MentionPopover";
 import { CreateReferencedThingDialog } from "@/components/references/CreateReferencedThingDialog";
-import {
-  MentionedPeopleScope,
-  ReportMentionedPeople,
-  useMentionedPeople,
-} from "@/hooks/useMentionedPeople";
+import { useMentionedPeople } from "@/hooks/useMentionedPeople";
 import { getCaretCoordinates } from "@/lib/caretCoordinates";
-import { withMentionNames } from "@/lib/commentReferences";
+import { collectCommentReferences, withMentionNames } from "@/lib/commentReferences";
 import type { ActiveMention } from "@/lib/mentions";
 import {
   activeMention,
@@ -105,14 +101,7 @@ interface MentionComposerProps
  * changes nothing; once they do, it carries the names, which the server leaves
  * out again on save.
  */
-export const MentionComposer = (props: MentionComposerProps) => (
-  <MentionedPeopleScope>
-    <ReportMentionedPeople texts={[props.value]} />
-    <Composer {...props} />
-  </MentionedPeopleScope>
-);
-
-const Composer = ({
+export const MentionComposer = ({
   value,
   onChange,
   initiativeId,
@@ -126,15 +115,16 @@ const Composer = ({
   ...composerProps
 }: MentionComposerProps) => {
   const { t } = useTranslation("comments");
-  const { find } = useMentionedPeople();
+  const mentioned = useMemo(() => collectCommentReferences([value]).userIds, [value]);
+  const people = useMentionedPeople(mentioned);
   // What the field shows and edits: the value, with every person named.
   const text = useMemo(
     () =>
       withMentionNames(value, (userId) => {
-        const person = find(userId);
+        const person = people.get(userId);
         return person && getUserDisplayName(person);
       }),
-    [value, find]
+    [value, people]
   );
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = callerRef ?? ownRef;

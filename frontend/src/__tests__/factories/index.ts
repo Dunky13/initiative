@@ -1,3 +1,8 @@
+export {
+  buildCalendarEvent,
+  buildEventAttendee,
+  resetCounter as resetCalendarEventCounter,
+} from "./calendarEvent.factory";
 export { ownerCan, readerCan, writerCan } from "./can";
 export {
   buildComment,
@@ -82,13 +87,7 @@ export {
   buildTaskListResponse,
   resetCounter as resetTaskCounter,
 } from "./task.factory";
-export {
-  buildSavedViewSet,
-  buildShippedProjectViews,
-  buildToolView,
-  buildToolViewSet,
-  resetCounter as resetToolViewCounter,
-} from "./toolView.factory";
+export { buildSavedLayoutSet, buildToolLayoutSet } from "./toolLayout.factory";
 export {
   buildOwnedDecoration,
   buildUser,
@@ -101,6 +100,7 @@ export {
 } from "./user.factory";
 export { buildWiki, buildWikiPage } from "./wiki.factory";
 
+import { resetCounter as resetCalendarEventCounter } from "./calendarEvent.factory";
 import { resetCounter as resetCommentCounter } from "./comment.factory";
 import { resetCounter as resetCommunityCounter } from "./community.factory";
 import { resetCounter as resetDmCounter } from "./dm.factory";
@@ -117,7 +117,6 @@ import { resetRecentCounter } from "./recent.factory";
 import { resetCounter as resetSearchCounter } from "./search.factory";
 import { resetCounter as resetTagCounter } from "./tag.factory";
 import { resetCounter as resetTaskCounter } from "./task.factory";
-import { resetCounter as resetToolViewCounter } from "./toolView.factory";
 import { resetCounter as resetUserCounter } from "./user.factory";
 import { resetCounter as resetWikiCounter } from "./wiki.factory";
 
@@ -139,10 +138,10 @@ export function resetFactories(): void {
   resetPropertyCounter();
   resetRecentCounter();
   resetMarketplaceCounter();
-  resetToolViewCounter();
   resetSearchCounter();
   resetDmCounter();
   resetPostCounter();
   resetGalleryCounter();
   resetWikiCounter();
+  resetCalendarEventCounter();
 }

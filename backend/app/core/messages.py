@@ -4,8 +4,6 @@ These constants are used as HTTPException detail strings. The frontend
 maps these codes to localized user-facing messages via errors.json.
 """
 
-from app.core.tools import Tool
-
 
 class CommonMessages:
     """Codes that belong to no one tool."""
@@ -30,6 +28,42 @@ class CommonMessages:
     #: The request body is larger than its route takes. Answered by the
     #: transport (``app.core.body_limit``) before any handler runs.
     REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
+
+    #: An update named a description that is no longer the stored one.
+    DESCRIPTION_CHANGED = "DESCRIPTION_CHANGED"
+    #: A write named a version of the content that is no longer current.
+    CONTENT_CHANGED = "CONTENT_CHANGED"
+    #: Content with a live collaboration room has that room as its writer; a
+    #: save from outside the session is refused.
+    LIVE_SESSION_OWNS_CONTENT = "LIVE_SESSION_OWNS_CONTENT"
+    VERSION_NOT_FOUND = "VERSION_NOT_FOUND"
+    CANNOT_DELETE_LAST_VERSION = "CANNOT_DELETE_LAST_VERSION"
+    #: Somebody else uploaded a version at the same moment.
+    VERSION_CONFLICT = "VERSION_CONFLICT"
+
+
+class KindMessages:
+    """Refusals about one kind of thing — a tool, or what lives inside one.
+
+    Raised with ``params={"kind": <its KINDS value>}`` (``app.core.tools``), and
+    worded once with the kind's name filled in, so a new tool or kind needs its
+    name in each locale rather than a sentence per refusal.
+    """
+
+    NOT_FOUND = "NOT_FOUND"
+    #: In the initiative, but not shared it.
+    NO_ACCESS = "NO_ACCESS"
+    OWNER_REQUIRED = "OWNER_REQUIRED"
+    #: Shared to read, not to change.
+    WRITE_ACCESS_REQUIRED = "WRITE_ACCESS_REQUIRED"
+    #: The initiative role may not create this tool.
+    CREATE_PERMISSION_REQUIRED = "CREATE_PERMISSION_REQUIRED"
+    #: The initiative has this tool switched off.
+    TOOL_NOT_ENABLED = "TOOL_NOT_ENABLED"
+    #: A temporary access grant reaches content, not who may see it.
+    GRANT_CANNOT_MANAGE_MEMBERS = "GRANT_CANNOT_MANAGE_MEMBERS"
+    #: Sharing was addressed to somebody whose role does not reach the tool.
+    GRANTEE_LACKS_ACCESS = "GRANTEE_LACKS_ACCESS"
 
 
 class AuthMessages:
@@ -142,6 +176,7 @@ class ImageMessages:
     IMAGE_INVALID = "IMAGE_INVALID"
     IMAGE_WRONG_SIZE = "IMAGE_WRONG_SIZE"
     IMAGE_WRONG_RATIO = "IMAGE_WRONG_RATIO"
+    IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
 
 
 class GuildMessages:
@@ -196,6 +231,12 @@ class GuildMessages:
     #: ``deleted`` is reached by deleting a guild and left by restoring it,
     #: never by setting the status control to it.
     COMMUNITY_STATUS_NOT_SETTABLE = "COMMUNITY_STATUS_NOT_SETTABLE"
+    #: Suspending a community, or lifting its suspension, needs a live
+    #: ``moderate`` grant on it.
+    COMMUNITY_SUSPENSION_NEEDS_GRANT = "COMMUNITY_SUSPENSION_NEEDS_GRANT"
+    #: It is in no status a suspension starts from, or has none to lift.
+    COMMUNITY_NOT_SUSPENDABLE = "COMMUNITY_NOT_SUSPENDABLE"
+    COMMUNITY_NOT_SUSPENDED = "COMMUNITY_NOT_SUSPENDED"
     #: The deployment's billing service sets this community's caps and
     #: entitlements; they are changed there.
     COMMUNITY_PLAN_SET_BY_BILLING = "COMMUNITY_PLAN_SET_BY_BILLING"
@@ -207,6 +248,11 @@ class GuildMessages:
     COMMUNITY_RESTORE_STATUS_SET_BY_BILLING = "COMMUNITY_RESTORE_STATUS_SET_BY_BILLING"
     COMMUNITY_MEMBERSHIP_MISSING = "COMMUNITY_MEMBERSHIP_MISSING"
     COMMUNITY_USER_LIMIT_REACHED = "COMMUNITY_USER_LIMIT_REACHED"
+    COMMUNITY_GUEST_LIMIT_REACHED = "COMMUNITY_GUEST_LIMIT_REACHED"
+    COMMUNITY_GUESTS_DISABLED = "COMMUNITY_GUESTS_DISABLED"
+    NOT_A_GUEST = "NOT_A_GUEST"
+    GUEST_TIME_ENDED = "GUEST_TIME_ENDED"
+    GUEST_GRANT_NOT_FOUND = "GUEST_GRANT_NOT_FOUND"
     # Asked to join a guild that is not listed in the community directory (or
     # is no longer active). Reported as a 404 — an unlisted guild has published
     # nothing, its existence at a given id included.
@@ -236,7 +282,6 @@ class GuildMessages:
     # the one above because there is nothing to click: the answer stands, and
     # the reply has to say so rather than ask again.
     AGE_BELOW_MINIMUM = "COMMUNITY_AGE_BELOW_MINIMUM"
-    IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
     BANNER_COLOR_INVALID = "BANNER_COLOR_INVALID"
     # Banner text is black or white; nothing between the two is offered.
     BANNER_TEXT_COLOR_INVALID = "BANNER_TEXT_COLOR_INVALID"
@@ -318,49 +363,37 @@ class InitiativeMessages:
     CONTENT_KEPT_IN = "INITIATIVE_CONTENT_KEPT_IN"
 
 
-class ToolViewMessages:
-    # The tool takes no views, or the target names an instance where the tool
+class ToolLayoutMessages:
+    # The tool takes no layouts, or the target names an instance where the tool
     # has one page per initiative (or the other way round).
-    TARGET_INVALID = "TOOL_VIEWS_TARGET_INVALID"
-    # A layout or an item kind this tool does not draw.
-    LAYOUT_NOT_ALLOWED = "TOOL_VIEWS_LAYOUT_NOT_ALLOWED"
-    # A set holds exactly one default view.
-    ONE_DEFAULT = "TOOL_VIEWS_ONE_DEFAULT"
-    # More views than a target may have.
-    LIMIT_REACHED = "TOOL_VIEWS_LIMIT_REACHED"
-    DUPLICATE_SLUG = "TOOL_VIEWS_DUPLICATE_SLUG"
-    DUPLICATE_ITEM_LAYOUT = "TOOL_VIEWS_DUPLICATE_ITEM_LAYOUT"
-    # A view or item layout over its node, depth or size limit.
-    TOO_LARGE = "TOOL_VIEWS_TOO_LARGE"
+    TARGET_INVALID = "TOOL_LAYOUTS_TARGET_INVALID"
+    # A kind of layout this tool does not draw, or a part or field a detail
+    # does not.
+    KIND_NOT_ALLOWED = "TOOL_LAYOUTS_KIND_NOT_ALLOWED"
+    # A layout over its node, depth or size limit.
+    TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
     # More of one plug-in's parts on an item than it may place there.
-    TOO_MANY_PLUGIN_PARTS = "TOOL_VIEWS_TOO_MANY_PLUGIN_PARTS"
+    TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
 
 
 class ProjectMessages:
     INVALID_TEMPLATE = "PROJECT_INVALID_TEMPLATE"
     INITIATIVE_REQUIRED = "PROJECT_INITIATIVE_REQUIRED"
-    # Configuring the project itself (pinning, default view, its views) — a
+    # Configuring the project itself (pinning, its layouts) — a
     # project manager, the project owner, or a guild admin.
     CONFIGURE_REQUIRED = "PROJECT_CONFIGURE_REQUIRED"
 
 
 class TaskMessages:
-    NOT_FOUND = "TASK_NOT_FOUND"
     #: The task was not opened by an intake stream.
     NOT_A_CASE = "TASK_NOT_A_CASE"
-    MISSING_AFTER_CREATE = "TASK_MISSING_AFTER_CREATE"
-    MISSING_AFTER_UPDATE = "TASK_MISSING_AFTER_UPDATE"
-    MISSING_AFTER_MOVE = "TASK_MISSING_AFTER_MOVE"
     ALREADY_IN_PROJECT = "TASK_ALREADY_IN_PROJECT"
     CANNOT_MOVE_TO_TEMPLATE = "TASK_CANNOT_MOVE_TO_TEMPLATE"
     PROJECT_MISMATCH = "TASK_PROJECT_MISMATCH"
     STATUS_NOT_FOUND = "TASK_STATUS_NOT_FOUND_FOR_PROJECT"
     INVALID_ASSIGNEE_ID = "TASK_INVALID_ASSIGNEE_ID"
-    DUPLICATE_NOT_FOUND = "TASK_DUPLICATE_NOT_FOUND"
     NOT_REPEATING = "TASK_NOT_REPEATING"
     NO_LATER_OCCURRENCE = "TASK_NO_LATER_OCCURRENCE"
-    #: An update named a description that is no longer the stored one.
-    DESCRIPTION_CHANGED = "TASK_DESCRIPTION_CHANGED"
 
 
 class ChecklistMessages:
@@ -448,7 +481,6 @@ class AuthProviderMessages:
 
 
 class TagMessages:
-    NOT_FOUND = "TAG_NOT_FOUND"
     NAME_ALREADY_EXISTS = "TAG_NAME_ALREADY_EXISTS"
     # Shared by every set-tags / bulk-tags surface: one or more of the
     # submitted tag ids does not resolve to an active tag in this guild.
@@ -467,7 +499,6 @@ class PropertyMessages:
 
 class AttachmentMessages:
     IMAGE_ONLY = "ATTACHMENT_IMAGE_ONLY"
-    FILE_EMPTY = "ATTACHMENT_FILE_EMPTY"
     INVALID_IMAGE = "ATTACHMENT_INVALID_IMAGE"
     TOO_LARGE = "ATTACHMENT_TOO_LARGE"
     STORAGE_QUOTA_EXCEEDED = "ATTACHMENT_STORAGE_QUOTA_EXCEEDED"
@@ -476,9 +507,6 @@ class AttachmentMessages:
 class FileMessages:
     NAME_ALREADY_EXISTS = "FILE_NAME_ALREADY_EXISTS"
     NAME_REQUIRED = "FILE_NAME_REQUIRED"
-    LIVE_SESSION_OWNS_CONTENT = "FILE_LIVE_SESSION_OWNS_CONTENT"
-    #: A write named a version of the content that is no longer current.
-    CONTENT_CHANGED = "FILE_CONTENT_CHANGED"
     COLLABORATION_UPDATE_INVALID = "FILE_COLLABORATION_UPDATE_INVALID"
     AI_NATIVE_ONLY = "FILE_AI_NATIVE_ONLY"
     SMART_LINK_URL_REQUIRED = "FILE_SMART_LINK_URL_REQUIRED"
@@ -487,10 +515,7 @@ class FileMessages:
     SPREADSHEET_FILE_TOO_LARGE = "FILE_SPREADSHEET_FILE_TOO_LARGE"
     SMART_LINK_URL_INVALID = "FILE_SMART_LINK_URL_INVALID"
     NOT_AN_UPLOADED_FILE = "FILE_NOT_AN_UPLOADED_FILE"
-    VERSION_NOT_FOUND = "FILE_VERSION_NOT_FOUND"
-    CANNOT_DELETE_LAST_VERSION = "FILE_CANNOT_DELETE_LAST_VERSION"
     VERSION_TYPE_MISMATCH = "FILE_VERSION_TYPE_MISMATCH"
-    VERSION_CONFLICT = "FILE_VERSION_CONFLICT"
     INVALID_FILE = "FILE_INVALID_FILE"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
 
@@ -499,7 +524,6 @@ class CommentMessages:
     NOT_FOUND = "COMMENT_NOT_FOUND"
     PERMISSION_DENIED = "COMMENT_PERMISSION_DENIED"
     PARENT_NOT_FOUND = "COMMENT_PARENT_NOT_FOUND"
-    TARGET_NOT_FOUND = "COMMENT_TARGET_NOT_FOUND"
     PARENT_MISMATCH = "COMMENT_PARENT_MISMATCH"
     PROVIDE_ONE_ENTITY = "COMMENT_PROVIDE_ONE_ENTITY"
     AUTHOR_ONLY_EDIT = "COMMENT_AUTHOR_ONLY_EDIT"
@@ -519,22 +543,12 @@ class CommentMessages:
 
 
 class SharingMessages:
-    """Refusals from the sharing flow.
-
-    One code per tool, derived from the enum rather than written out, so a new
-    tool has one the day it exists. ``tools_test`` fails if a locale has not
-    been given the wording for it.
-    """
+    """Refusals from the sharing flow."""
 
     #: A grant naming an installed plug-in, sent to a resource's own sharing. What
     #: a plug-in may reach is granted by the community's seat, so this list
     #: neither writes nor removes one.
     PLUGIN_INSTALL_GRANT_NOT_SET_HERE = "SHARING_PLUGIN_INSTALL_GRANT_NOT_SET_HERE"
-
-    @staticmethod
-    def grantee_lacks_tool(tool: "Tool") -> str:
-        """Sharing was addressed to somebody whose role does not reach ``tool``."""
-        return f"GRANTEE_LACKS_{tool.value.upper()}_ACCESS"
 
 
 class ReactionMessages:
@@ -751,6 +765,9 @@ class OperatorMessages:
     CANNOT_ASSIGN_HIGHER_ROLE = "OPERATOR_CANNOT_ASSIGN_HIGHER_ROLE"
     USE_SELF_DELETION = "OPERATOR_USE_SELF_DELETION"
     CANNOT_DELETE_SELF = "OPERATOR_CANNOT_DELETE_SELF"
+    #: Staff do not act on their own account from the operator dashboard; it
+    #: is theirs to change from their own settings.
+    CANNOT_ACT_ON_SELF = "OPERATOR_CANNOT_ACT_ON_SELF"
 
 
 class AccessGrantMessages:
@@ -768,6 +785,17 @@ class AccessGrantMessages:
     GRANTEE_INELIGIBLE = "ACCESS_GRANT_GRANTEE_INELIGIBLE"
     #: A ``moderate`` grant is for those who hold ``content.moderate``.
     MODERATE_NOT_HELD = "ACCESS_GRANT_MODERATE_NOT_HELD"
+    #: A request names the operations case it is for, where the operations
+    #: community takes cases a grant may serve.
+    CASE_REQUIRED = "ACCESS_GRANT_CASE_REQUIRED"
+    #: No case by that id that the requester can read.
+    CASE_NOT_FOUND = "ACCESS_GRANT_CASE_NOT_FOUND"
+    #: A case of a kind no grant serves (feedback, say).
+    CASE_NOT_LINKABLE = "ACCESS_GRANT_CASE_NOT_LINKABLE"
+    #: The case is closed.
+    CASE_CLOSED = "ACCESS_GRANT_CASE_CLOSED"
+    #: The case is about another community.
+    CASE_OTHER_COMMUNITY = "ACCESS_GRANT_CASE_OTHER_COMMUNITY"
     #: A settings rung reads; changing what it reaches takes a read_write
     #: content grant beside it.
     WRITE_GRANT_REQUIRED = "ACCESS_GRANT_WRITE_REQUIRED"
@@ -1030,7 +1058,6 @@ class NotificationMessages:
 
 class AnnouncementMessages:
     NOT_FOUND = "ANNOUNCEMENT_NOT_FOUND"
-    IMAGE_NOT_FOUND = "ANNOUNCEMENT_IMAGE_NOT_FOUND"
     IMAGE_TOO_LARGE = "ANNOUNCEMENT_IMAGE_TOO_LARGE"
 
 
@@ -1046,7 +1073,6 @@ class CalendarMessages:
 
 
 class CalendarEventMessages:
-    NOT_FOUND = "CALENDAR_EVENT_NOT_FOUND"
     ICAL_PARSE_FAILED = "ICAL_PARSE_FAILED"
     ICAL_NO_EVENTS = "ICAL_NO_EVENTS_FOUND"
     ENDS_BEFORE_START = "CALENDAR_EVENT_ENDS_BEFORE_START"
@@ -1137,21 +1163,12 @@ class PostMessages:
 
 
 class GalleryMessages:
-    IMAGE_NOT_FOUND = "GALLERY_IMAGE_NOT_FOUND"
-    #: The bytes are not a raster image this app can show — or are an SVG,
-    #: which is a document rather than a picture.
-    INVALID_IMAGE = "GALLERY_INVALID_IMAGE"
     IMAGE_TOO_LARGE = "GALLERY_IMAGE_TOO_LARGE"
-    IMAGE_EMPTY = "GALLERY_IMAGE_EMPTY"
-    VERSION_NOT_FOUND = "GALLERY_VERSION_NOT_FOUND"
-    CANNOT_DELETE_LAST_VERSION = "GALLERY_CANNOT_DELETE_LAST_VERSION"
-    VERSION_CONFLICT = "GALLERY_VERSION_CONFLICT"
     #: A cover has to be one of the gallery's own pictures.
     COVER_NOT_IN_GALLERY = "GALLERY_COVER_NOT_IN_GALLERY"
 
 
 class WikiMessages:
-    PAGE_NOT_FOUND = "WIKI_PAGE_NOT_FOUND"
     #: A page cannot be its own parent.
     PAGE_PARENT_ITSELF = "WIKI_PAGE_PARENT_ITSELF"
     #: Filing a page under one of its own descendants would detach the branch
@@ -1161,11 +1178,6 @@ class WikiMessages:
     HOME_NOT_IN_WIKI = "WIKI_HOME_NOT_IN_WIKI"
     #: So does the page new ones are copied from.
     TEMPLATE_NOT_IN_WIKI = "WIKI_TEMPLATE_NOT_IN_WIKI"
-    #: A page with a live collaboration room has that room as the writer of
-    #: its content; a save from outside the session is refused.
-    LIVE_SESSION_OWNS_CONTENT = "WIKI_LIVE_SESSION_OWNS_CONTENT"
-    #: A write named a version of the content that is no longer current.
-    CONTENT_CHANGED = "WIKI_CONTENT_CHANGED"
 
 
 class MarketplaceMessages:
@@ -1260,14 +1272,12 @@ class MarketplaceRegistryMessages:
 
 
 class QueueMessages:
-    ITEM_NOT_FOUND = "QUEUE_ITEM_NOT_FOUND"
     NO_ITEMS = "QUEUE_NO_ITEMS"
     NO_CURRENT_ITEM = "QUEUE_NO_CURRENT_ITEM"
     ITEM_NOT_HELD = "QUEUE_ITEM_NOT_HELD"
 
 
 class CounterMessages:
-    NOT_FOUND = "COUNTER_NOT_FOUND"
     VIEW_MODE_REQUIRES_BOUNDS = "COUNTER_VIEW_MODE_REQUIRES_BOUNDS"
     MIN_GREATER_THAN_MAX = "COUNTER_MIN_GREATER_THAN_MAX"
     STEP_MUST_BE_POSITIVE = "COUNTER_STEP_MUST_BE_POSITIVE"
@@ -1630,6 +1640,7 @@ class AIMessages:
     INVALID_BASE_URL = "AI_INVALID_BASE_URL"
     CONNECTION_NOT_FOUND = "AI_CONNECTION_NOT_FOUND"
     MEMBER_KEYS_DISABLED = "AI_MEMBER_KEYS_DISABLED"
+    MEMBER_KEY_NOT_FOUND = "AI_MEMBER_KEY_NOT_FOUND"
     INVALID_API_KEY = "AI_INVALID_API_KEY"
     NOT_ENABLED = "AI_NOT_ENABLED"
     #: No provider is chosen, or the chosen one needs a key and has none.

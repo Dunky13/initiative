@@ -19,6 +19,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import Tool
 from app.models.platform.guild import CommunityRole
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
@@ -26,7 +27,7 @@ from app.models.tenant.initiative import InitiativeRoleModel
 from app.models.tenant.project_favorite import ProjectFavorite
 from app.models.tenant.project_order import ProjectOrder
 from app.models.tenant.resource_grant import ResourceAccessLevel
-from app.models.tenant.task import TaskStatusCategory
+from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.services.tenant import tags as tags_service
 from app.testing.factories import (
     create_comment,
@@ -454,7 +455,7 @@ async def test_create_refuses_when_projects_are_switched_off(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "PROJECTS_NOT_ENABLED"
+    assert response.json() == Tool.project.disabled().body
 
 
 async def test_a_guild_admin_does_not_list_projects_of_a_switched_off_initiative(
@@ -544,7 +545,8 @@ async def test_create_from_template_shifts_task_dates(
     """Template task dates are re-anchored to the new project's start date.
 
     A task due three weeks after the template's start lands three weeks after
-    the new start, keeping its time of day.
+    the new start, keeping its time of day; one repeating on the 15th stays
+    on the 15th.
     """
     admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
     template = await create_project(
@@ -568,6 +570,13 @@ async def test_create_from_template_shifts_task_dates(
         template,
         title="Three weeks in",
         due_date=datetime(2026, 1, 26, 12, 0, tzinfo=timezone.utc),
+    )
+    await create_task(
+        session,
+        template,
+        title="Invoices",
+        due_date=datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=MONTHLY",
     )
 
     response = await client.post(
@@ -593,6 +602,9 @@ async def test_create_from_template_shifts_task_dates(
     )
     assert _as_utc(tasks["Three weeks in"]["due_date"]) == datetime(
         2026, 4, 27, 12, 0, tzinfo=timezone.utc
+    )
+    assert _as_utc(tasks["Invoices"]["due_date"]) == datetime(
+        2026, 4, 15, 12, 0, tzinfo=timezone.utc
     )
 
 
@@ -1538,40 +1550,32 @@ async def test_plain_write_edits_but_cannot_pin(
     assert response.status_code == 200
 
 
-# ── Views travel with the project ─────────────────────────────────────
+# ── Layouts travel with the project ───────────────────────────────────
 
 
-async def test_duplicating_a_project_copies_its_views(
+async def test_duplicating_a_project_copies_its_layouts(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
-    source_status = await create_task_status(session, project=a.project, name="Review")
-    views_url = a.g("/views/")
-    saved = await client.put(
-        views_url,
-        params={"tool": "project", "tool_id": a.project.id},
-        json={
-            "views": [
-                {
-                    "name": "Table",
-                    "slug": "table",
-                    "definition": {"layout": {"type": "table"}},
-                },
-                {
-                    "name": "In review",
-                    "is_default": True,
-                    "definition": {
-                        "layout": {"type": "board"},
-                        "filters": {"status_ids": [source_status.id]},
-                    },
-                },
-            ]
-        },
-        headers=a.headers,
-    )
-    assert saved.status_code == 200, saved.text
+    review = await create_task_status(session, a.project, name="Review")
+    url = a.g("/layouts/")
+    source = {"tool": "project", "tool_id": a.project.id}
+    in_review = {
+        "name": "In review",
+        "slug": "in-review",
+        "filters": {"status_ids": [review.id]},
+    }
+    columns = {
+        "kind": "table",
+        "definition": {"columns": ["title", "dueDate"], "presets": [in_review]},
+    }
+    for path, body in (("", columns), ("default", {"kind": "board"})):
+        saved = await client.put(
+            f"{url}{path}", params=source, json=body, headers=a.headers
+        )
+        assert saved.status_code == 200, saved.text
 
     duplicated = await client.post(
         a.g(f"/projects/{a.project.id}/duplicate"),
@@ -1581,21 +1585,27 @@ async def test_duplicating_a_project_copies_its_views(
     assert duplicated.status_code == 201
     copied = (
         await client.get(
-            views_url,
+            url,
             params={"tool": "project", "tool_id": duplicated.json()["id"]},
             headers=a.headers,
         )
     ).json()
 
-    assert copied["stored"] is True
-    assert [(v["slug"], v["is_default"]) for v in copied["views"]] == [
-        ("table", False),
-        ("in-review", True),
-    ]
-    # The status id was translated to the copy's own status, not carried over.
-    cloned_status_ids = copied["views"][1]["definition"]["filters"]["status_ids"]
-    assert cloned_status_ids
-    assert source_status.id not in cloned_status_ids
+    layouts = {layout["kind"]: layout for layout in copied["layouts"]}
+    assert layouts["table"]["definition"]["columns"] == ["title", "dueDate"]
+    assert layouts["board"]["is_default"] is True
+    # A preset's statuses are the copy's own.
+    await route_session_to_guild(session, a.guild.id)
+    copied_review = (
+        await session.exec(
+            select(TaskStatus).where(
+                TaskStatus.project_id == duplicated.json()["id"],
+                TaskStatus.name == "Review",
+            )
+        )
+    ).one()
+    [preset] = layouts["table"]["definition"]["presets"]
+    assert preset["filters"]["status_ids"] == [copied_review.id]
 
 
 async def test_activity_feed_pages_newest_first(

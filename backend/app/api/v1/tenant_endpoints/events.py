@@ -62,17 +62,17 @@ async def websocket_updates(websocket: WebSocket, guild_id: CommunityIdPath):
     """
     behind = False
 
-    async def catch_up(session: AsyncSession, sub: Subscriber) -> None:
-        # Asked under the guild access just established, so the log answers
-        # for this subscriber. Joined first, so a change committing in between
-        # reaches the socket and this can only over-answer; a read that fails
-        # says the same bit, since a gap nobody could look into is a gap.
+    async def catch_up(_session: AsyncSession, sub: Subscriber) -> None:
+        # Asked of the rooms just seated, which are what the fan-out would have
+        # sent to. Joined first, so a change committing in between reaches the
+        # socket and this can only over-answer; a read that fails says the same
+        # bit, since a gap nobody could look into is a gap.
         nonlocal behind
         away = sub.first_frame.get("away_seconds")
         if not isinstance(away, (int, float)) or away <= 0:
             return
         try:
-            behind = await missed_while_away(session, float(away))
+            behind = await missed_while_away(guild_id, sub.rooms, float(away))
         except Exception:
             logger.exception("Events WS: catch-up read failed for guild %s", guild_id)
             behind = True

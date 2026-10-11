@@ -19,6 +19,7 @@ from app.core.capabilities import Capability, user_has_capability
 from app.core.config import API_V1_STR
 from app.core.login_methods import LoginMethod
 from app.core import auth_context
+from app.services.membership import live_membership_clause
 from app.services.tenant import plugin_age
 from app.services.tenant.plugin_age import AgeViewer
 from app.services.auth import credentials
@@ -104,7 +105,7 @@ from app.models.platform.guild import (
     CommunityRole,
     CommunityStatus,
 )
-from app.models.platform.guild_auth_policy import GuildAuthPolicy
+from app.models.platform.guild_auth_policy import GuildAuthPolicy, SignInHalf
 from app.models.platform.user import (
     LOGIN_STATUSES,
     User,
@@ -472,17 +473,19 @@ AgeViewerDep = Annotated[AgeViewer, Depends(get_age_viewer)]
 FactorExemptUser = Annotated[User, Depends(get_active_user_exempt_from_factor)]
 
 
-def require_capability(capability: Capability) -> Callable:
-    """Dependency factory gating an endpoint on a platform capability.
+def require_capability(capability: Capability, *alternatives: Capability) -> Callable:
+    """Dependency factory gating an endpoint on a platform capability, or on
+    any one of several where each is reason enough.
 
     Access is expressed against the capability model rather than a hardcoded
     role name (see ``app.core.capabilities``).
     """
+    accepted = (capability, *alternatives)
 
     async def dependency(
         current_user: Annotated[User, Depends(get_current_active_user)],
     ) -> User:
-        if not user_has_capability(current_user, capability):
+        if not any(user_has_capability(current_user, held) for held in accepted):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=AuthMessages.INSUFFICIENT_PRIVILEGES,
@@ -542,7 +545,7 @@ def _sign_in(satisfied: frozenset[int], on_behalf: bool) -> SignIn:
 
 async def _enforce_guild_auth_policy(
     session: AsyncSession,
-    policy: GuildAuthPolicy | None,
+    policy: SignInHalf | None,
     guild_id: int,
     satisfied: frozenset[int],
     markers: frozenset[str] = frozenset(),
@@ -564,9 +567,10 @@ async def _enforce_guild_auth_policy(
     are one question to ``guild_connection_admits``, which also applies the
     narrowing a community put on the connection.
 
-    ``policy`` is the guild's row, read under the routed session. A second
-    factor the community asks for applies while it holds the option it needs,
-    read as the database gate reads it.
+    ``policy`` is the half of the guild's row that applies to this request
+    (its guests' for a guest), read under the routed session. A second factor
+    the community asks for applies while it holds the option it needs, read as
+    the database gate reads it.
     """
     restricts, factors_apply = (
         await session.exec(
@@ -699,6 +703,7 @@ async def _read_membership_gate(
             .where(
                 GuildMembership.guild_id == guild_id,
                 GuildMembership.user_id == user_id,
+                live_membership_clause(),
             )
         )
     ).one_or_none()
@@ -1317,9 +1322,10 @@ async def _refuse_sign_in(
     rule, under the routing, to name the step-up the caller owes.
     """
     guild_id = guild_context.guild_id
+    row = await session.get(GuildAuthPolicy, guild_id)
     await _enforce_guild_auth_policy(
         session,
-        await session.get(GuildAuthPolicy, guild_id),
+        row.half(guild_context.routes_as_guest) if row is not None else None,
         guild_id,
         satisfied,
         auth_context.current().session_amr,

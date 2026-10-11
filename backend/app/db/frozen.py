@@ -52,7 +52,7 @@ from app.core.tools import (
     ARCHIVE_TARGETS,
     KINDS,
     PROPERTY_TARGETS,
-    VIEWS_PER_INSTANCE,
+    LAYOUTS_PER_INSTANCE,
     Tool,
 )
 from app.db import gucs
@@ -185,6 +185,7 @@ _OWN_KIND_PARENTS: dict[str, tuple[str, ...]] = _derive_own_kind_parents()
 FREEZE_EXEMPT_TABLES: frozenset[str] = frozenset(
     {
         "recent_views",
+        "engagement_levels",
         "post_reads",
         "project_orders",
         "project_favorites",
@@ -202,8 +203,11 @@ FREEZE_EXEMPT_TABLES: frozenset[str] = frozenset(
 #: is somebody's access, and removing it narrows who can reach a resource
 #: without touching the resource, so it may go whatever state the resource is
 #: in — archived content is the content most worth taking somebody off. Giving
-#: or raising access is still a change, and stays refused.
-_REVOCABLE_TABLES: frozenset[str] = frozenset({"resource_grants"})
+#: or raising access is still a change, and stays refused. What a guest invite
+#: gives is the same: withdrawing the invite takes it away.
+_REVOCABLE_TABLES: frozenset[str] = frozenset(
+    {"resource_grants", "guest_invite_grants"}
+)
 
 #: Edge tables, which name two ends and belong to neither. They take the freeze
 #: on INSERT and UPDATE — no new link to or from frozen content, because a link
@@ -882,13 +886,13 @@ def _edge_leg(alias: str, trashed_ok: str) -> str:
     return "(" + " OR ".join(ends) + ")"
 
 
-def _tool_views_leg(alias: str, trashed_ok: str) -> str:
+def _tool_layouts_leg(alias: str, trashed_ok: str) -> str:
     """A view freezes with the instance it is for, or with its initiative
     when it is for a shared page."""
     arms = " ".join(
         f"WHEN '{tool.value}' THEN resource_frozen("
         f"'{tool.plural}', {alias}.tool_id, {trashed_ok})"
-        for tool in VIEWS_PER_INSTANCE
+        for tool in LAYOUTS_PER_INSTANCE
     )
     return (
         f"COALESCE((CASE WHEN {alias}.tool_id IS NULL THEN resource_frozen("
@@ -935,7 +939,7 @@ _FREEZE_DEVIATIONS: dict[str, Callable[[str, str], str]] = {
     "property_values": _property_values_leg,
     "relationships": _edge_leg,
     "resource_grants": _resource_grants_leg,
-    "tool_views": _tool_views_leg,
+    "tool_layouts": _tool_layouts_leg,
 }
 
 

@@ -67,6 +67,20 @@ type NotAFilter =
 /** What a tool's list can be narrowed by. */
 export type ToolListFilters<T extends Tool = Tool> = Omit<ToolListParams[T], NotAFilter>;
 
+/** A tool list's filters as kept, with what has the wrong type dropped: a
+ *  list of ids is numbers, everything else a switch or a value. */
+export const readToolListFilters = (raw: unknown): ToolListFilters => {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([key, value]): [string, unknown][] => {
+      if (Array.isArray(value)) {
+        return [[key, value.filter((id) => typeof id === "number")]];
+      }
+      return typeof value === "string" || typeof value === "boolean" ? [[key, value]] : [];
+    })
+  ) as ToolListFilters;
+};
+
 export type ToolFilterFieldsProps<T extends Tool = Tool> = {
   value: ToolListFilters<T>;
   onChange: (next: ToolListFilters<T>) => void;

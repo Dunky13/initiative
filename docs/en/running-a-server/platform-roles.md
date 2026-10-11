@@ -18,8 +18,8 @@ Five rungs, each adding to the one below:
 | Role | What it can do |
 |---|---|
 | **Member** | Standard access to their own communities. No server-wide privileges. This is everyone by default. |
-| **Support** | Read-only visibility of the platform's users, can **request** time-bound access to a community to help with an issue, and can let somebody answer the age question again after a typo. |
-| **Moderator** | Everything Support can do, **plus** user management (suspend/reactivate, revoke an account's API keys) and content moderation. |
+| **Support** | Read-only visibility of the platform's users and communities, can open a community's billing in the billing service's support console, can **request** time-bound access to a community to help with an issue, and can let somebody answer the age question again after a typo. |
+| **Moderator** | Everything Support can do, **plus** user management (suspend/reactivate, sign out everywhere, revoke an account's API keys), content moderation, and suspending a community under a [Moderate grant](#suspending-a-community-as-a-moderator). |
 | **Operator** | Manages users, communities, and roles platform-wide, has cross-community access (via break-glass), approves access requests, writes [announcements](announcements.md), writes [sign-in placement rules](single-sign-on.md#rules-on-a-provider), and opens [billing insights](#billing-insights). |
 | **Owner** | Full control, **including server-wide configuration** (single sign-on, email, branding, AI). The only role that can change configuration. |
 
@@ -45,11 +45,15 @@ The **first person to register** on a new server becomes the **owner**. The owne
 
 - **Username** — the handle they're addressed by. The four digits after it stay as they are.
 - **Profile picture** — take one down. Putting one up stays theirs.
+- **Names in communities**, **status line** and **decorations** — clear any of them, for one that breaches your terms. Names clear in every community they're in. They can set each again.
+- **Sign out everywhere** — ends every session the account has, on every device. For an account somebody else may have got into: its holder signs in again, and whoever else had it doesn't.
+- **Cases** — how many open cases in your [operations community](#where-operations-work-lands) the account filed or is the subject of, with a link to each. A link opens only for someone with access to where the case is kept.
+- **For case** — at the top of the panel, where you can read open cases: choose the case you're acting for, and each change you make in the panel is noted on it, by handle and name of the act. Optional.
 - **API keys** — **Revoke** switches off every key the account holds, at once. The keys stay on the owner's list marked disabled, and they can make new ones.
 - **Suspend** — puts the account in time out. They can sign in, and what they get is one screen: that they're suspended, the reason you gave, and [who to contact](#who-to-contact). Their communities, their own settings and every power their platform role carries stay out of reach until you lift it. Nothing is deleted; lifting it hands everything back exactly as it was.
 - **Platform role** — move them up or down the ladder. You can't grant a rung above your own.
 
-Each of those asks for its own capability, so a moderator opening the same panel sees everything but the platform role.
+Each of those asks for its own capability, so a moderator opening the same panel sees everything but the platform role. What's offered on each account is worked out by the server: nothing on an account above your own rung, and nothing on your own — that's yours to change from your own settings.
 
 The row's actions menu keeps the one-off jobs. It offers nothing but **Export** on an account above your own role.
 
@@ -91,8 +95,14 @@ Ask for one, the other, or both. Each is approved and recorded on its own.
 
 ### The two paths
 
-- **Request and approve** (Support and Moderator). Someone **requests** what they need, for a chosen number of hours, with a reason. An approver (Operator/Owner) grants or denies it, and it **auto-expires**.
+- **Request and approve** (Support and Moderator). Someone **requests** what they need, for a chosen number of hours, with a reason and the [case it's for](#grants-and-their-cases). An approver (Operator/Owner) grants or denies it, and it **auto-expires**.
 - **Break glass** (Operator and Owner). For urgent situations, an operator can **self-issue** an emergency grant — approved instantly, scoped to that community, expiring automatically. Breaking glass issues both halves, the settings one at superadmin, because an emergency is no time to discover you asked for the wrong shape. Each is named and recorded separately, so afterwards the log says exactly how far it went.
+
+### Grants and their cases
+
+Where your [operations community](#where-operations-work-lands) takes security, moderation or support cases, a request names the **case** it's for, picked from the open cases you can read. The case must be about the community you're asking for, or about none yet, in which case the request settles it. Feedback cases can't be named; breaking glass may name a case, and doesn't have to.
+
+The case hears what becomes of the grant: that it was asked for, how it was decided (an approval moves a case still waiting to be picked up into progress), each moderation act or suspension taken under it, and what it did — once an hour while it's live, and in full when it ends: what was read, counted by kind, and what was changed, listed, with who revoked it if somebody did. The case is only ever told ids, counts and the names of routes and acts, never what the community holds. A case lists its grants in its **Access** section, with **Request access** to ask for another.
 
 !!! info "A grant is never a membership"
     Whatever it reaches and whoever holds it, a grant runs out. Anything that would outlive it stays out of reach — a grantee can't answer a request to join an initiative, for instance, because the membership on the other side of that answer has no end date.
@@ -113,7 +123,7 @@ Operators and owners can write **announcements** — notices shown in a dialog t
 
 ## What you decide per community
 
-**Settings → Platform → Communities** lists every community on the server, and **Manage** opens what you set for one of them: its storage and member limits, whether it may configure [its own sign-in](single-sign-on.md#letting-a-community-use-a-provider), and a few features you can switch on or off. See [File & object storage](object-storage.md#per-community-storage-limits) for the limits.
+**Operator dashboard → Communities** lists every community on the server — deleted and suspended ones included — for support and above. Each row offers what your role allows: support and moderators see its members, storage and status, open its billing in the support console, and ask for access to it; operators and owners also set its status, open the operator console, and break glass. **Manage**, for operators and owners, opens what you set for one of them: its storage and member limits, whether it may configure [its own sign-in](single-sign-on.md#letting-a-community-use-a-provider), and a few features you can switch on or off. See [File & object storage](object-storage.md#per-community-storage-limits) for the limits.
 
 **Help requests** is one of those features, and it starts off. Switched on, the community's members can ask about the community itself behind **Ask for help**, and whoever holds its seat can ask for a copy of its data or for it to be deleted; what they send lands in your support project (see [Where operations work lands](#where-operations-work-lands)) — so it can only be switched on once that project is set up.
 
@@ -139,6 +149,14 @@ On hold and suspended both ask you to confirm first, because each takes everybod
 
 Neither status keeps *you* out. A [grant or break-glass](#cross-community-access-break-glass-and-time-bound-grants) reaches a community whatever its status, which is how you look inside before deciding what happens to it.
 
+### Suspending a community as a moderator
+
+A moderator suspends a community, and lifts its suspension, from its row — but only while holding a live [**Moderate** grant](#what-a-grant-can-say) on it, so they're acting on a community they're looking at. Ask for the grant first, and an operator approves it.
+
+A suspension starts from active, read-only, on hold, or **deleted**. Suspending a deleted community takes it out of its deletion countdown and keeps everything in it: the answer to a community deleting itself to destroy evidence. Lifting a suspension puts the community back where it was. One suspended out of deletion goes back to being deleted, with its countdown started again from the beginning, so its owners get the whole window to notice.
+
+Operators and owners set a community's status from its row as before, and a suspension they make is lifted back to where it began too.
+
 ### Deleted communities
 
 Deleted communities are in that list too, marked with the date everything in them is destroyed. **Restore** brings one back as it was — and where nobody is left who could run it, asks you who takes it over. See [How long deleted things are kept](configuration.md#how-long-deleted-things-are-kept).
@@ -150,6 +168,8 @@ Security notes, moderation reports, support requests and feedback each open a ca
 It's all one page, **Settings → Platform → Intake**. Pick the community, then say which of its projects each kind lands in — or choose **Set this up for me** and get a ready-made project with its own statuses and fields. Pause a kind and it stops receiving; choose no community at all and nothing is routed anywhere.
 
 Give security and moderation an initiative each, so only the people working those cases can read them. The page says so if two kinds share one.
+
+Everyone who can read a case hears when it opens: the people its project is shared with, and the community's admins. So does a requester's answer on a case nobody has taken yet. Each person can turn these down under **Cases** in their notification settings. **Take this case**, on the case's panel, assigns you beside whoever already has it and puts a case still waiting to be picked up to work. From then on, the requester's answers go to whoever took it.
 
 **Security cases open themselves.** The server watches what its audit log records, and a run of something that looks wrong opens a security case: many failed sign-ins from one address, a spent session token used again, many wrong second-factor codes, a one-time token presented twice, an account made an operator or owner, an operator breaking glass, staff clearing someone's second factor, the user list exported, an API key reaching past what it may do, and floods of refused cross-site requests, rate-limit hits or captchas from one address. A run that goes on is one case, with a note each time it carries on. The thresholds are set in code, not in settings. Each case points at a `security.threshold_crossed` line in the audit log, which names what was counted.
 

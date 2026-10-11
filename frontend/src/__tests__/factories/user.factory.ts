@@ -22,9 +22,18 @@ export function resetCounter(): void {
 // runtime; this only fills the gap in synthetic fixtures.
 const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
   member: [],
-  support: ["access.request", "users.age_unblock", "users.read"],
+  support: [
+    "access.request",
+    "billing.support",
+    "communities.read",
+    "users.age_unblock",
+    "users.read",
+  ],
   moderator: [
     "access.request",
+    "billing.support",
+    "communities.read",
+    "communities.suspend",
     "content.moderate",
     "users.age_unblock",
     "users.manage",
@@ -37,7 +46,10 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     "billing.insights",
     "content.moderate",
     "data.bypass",
+    "billing.support",
+    "communities.read",
     "communities.manage",
+    "communities.suspend",
     "roles.assign",
     "users.age_unblock",
     "users.delete",
@@ -52,7 +64,10 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     "config.manage",
     "content.moderate",
     "data.bypass",
+    "billing.support",
+    "communities.read",
     "communities.manage",
+    "communities.suspend",
     "roles.assign",
     "users.age_unblock",
     "users.delete",
@@ -169,6 +184,7 @@ export function buildUser(overrides: Partial<UserRead> = {}): UserRead {
     time_format: "system",
     timezone: "America/New_York",
     recent_tabs_limit: 20,
+    count_toward_engagement_ranking: true,
     event_reminder_minutes_before: null,
     last_overdue_notification_at: null,
     last_task_assignment_digest_at: null,
@@ -198,6 +214,7 @@ export function buildUserCommunityMember(
     status: "active",
     created_at: "2026-01-15T00:00:00.000Z",
     initiative_roles: [],
+    guest_until: null,
     ...overrides,
   };
 }

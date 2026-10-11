@@ -1,7 +1,7 @@
 {
   "title": "Communauté",
   "subtitle": "Tout ce que contient la communauté, un outil à la fois.",
-  "toolRail": "Outils de la communauté",
+  "nodeRail": "Activité de la communauté",
   "loading": "Chargement…",
   "loadError": "Impossible de charger cet outil. Veuillez réessayer plus tard.",
   "communityWide": "Toute la communauté",
@@ -80,5 +80,21 @@
     "inProject": "dans {{projectName}}",
     "readMore": "Lire la suite",
     "showLess": "Afficher moins"
+  },
+  "comingUp": {
+    "title": "À venir",
+    "description": "Tout ce qui, dans la communauté, a une date dans les sept prochains jours.",
+    "empty": "Rien de prévu cette semaine",
+    "loadError": "Impossible de charger ce qui arrive. Veuillez réessayer plus tard.",
+    "today": "Aujourd’hui",
+    "tomorrow": "Demain",
+    "kind": {
+      "event": "Événement",
+      "taskStart": "Début de la tâche",
+      "taskDue": "Échéance de la tâche",
+      "projectStart": "Début du projet",
+      "projectEnd": "Fin du projet",
+      "pollCloses": "Fin du sondage"
+    }
   }
 }

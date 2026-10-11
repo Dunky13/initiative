@@ -35,7 +35,6 @@ import { MentionText } from "@/components/user/MentionText";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { refreshAfterHolding } from "@/hooks/useHolds";
 import { useInitiativeRoster } from "@/hooks/useInitiatives";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import {
   useInitiativeSharing,
   useModerationLog,
@@ -123,21 +122,15 @@ export const ModerationPage = () => {
                 {tab === "open" ? t("empty.open") : t("empty.settled")}
               </p>
             ) : (
-              // A reported comment is shown by its opening words, and the
-              // people those mention are asked about once for the page.
-              <MentionedPeopleScope>
-                <ReportMentionedPeople
-                  texts={reports.flatMap((report) => report.target_excerpt ?? [])}
+              // A reported comment is shown by its opening words.
+              reports.map((report) => (
+                <ReportCard
+                  key={report.id}
+                  report={report}
+                  communityId={communityId ?? 0}
+                  initiativeId={initiative}
                 />
-                {reports.map((report) => (
-                  <ReportCard
-                    key={report.id}
-                    report={report}
-                    communityId={communityId ?? 0}
-                    initiativeId={initiative}
-                  />
-                ))}
-              </MentionedPeopleScope>
+              ))
             )}
 
             {(data?.has_prev || data?.has_next) && (

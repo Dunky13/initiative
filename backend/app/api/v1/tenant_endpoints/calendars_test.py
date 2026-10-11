@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import Tool
 from app.models.platform.api_key import UserApiKey
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.calendar_event import CalendarEvent
@@ -103,7 +104,7 @@ async def test_create_calendar_requires_feature_enabled(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "CALENDARS_NOT_ENABLED"
+    assert response.json() == Tool.calendar.disabled().body
 
 
 async def test_create_calendar_non_pm_forbidden(
@@ -392,7 +393,7 @@ async def test_a_write_grant_writes_a_guild_calendar_s_events(
         json={"name": "Mine now"},
     )
     assert renamed.status_code == 403
-    assert renamed.json()["detail"] == "CALENDAR_WRITE_ACCESS_REQUIRED"
+    assert renamed.json() == Tool.calendar.write_required().body
 
     archived = await client.post(
         member.g(f"/archive/calendar/{calendar.id}"), headers=member.headers
@@ -483,7 +484,11 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
     invitee comes along with their answer starting over."""
     from datetime import timedelta
 
-    from app.models.tenant.calendar_event import CalendarEventAttendee, RSVPStatus
+    from app.models.tenant.calendar_event import (
+        CalendarEventAnswer,
+        CalendarEventAttendee,
+        RSVPStatus,
+    )
     from app.testing import route_session_to_guild
 
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
@@ -504,8 +509,9 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
         end_at=week_two + timedelta(hours=3),
         overridden_fields=["title", "start_at", "end_at"],
     )
+    session.add(CalendarEventAttendee(calendar_event_id=weekly.id, user_id=a.user.id))
     session.add(
-        CalendarEventAttendee(
+        CalendarEventAnswer(
             calendar_event_id=weekly.id,
             user_id=a.user.id,
             rsvp_status=RSVPStatus.accepted,
@@ -536,14 +542,19 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
     )
     invited = (
         await session.exec(
-            select(CalendarEventAttendee).where(
+            select(CalendarEventAttendee.user_id).where(
                 CalendarEventAttendee.calendar_event_id == series.id
             )
         )
     ).all()
-    assert [(i.user_id, i.rsvp_status) for i in invited] == [
-        (a.user.id, RSVPStatus.pending)
-    ]
+    assert invited == [a.user.id]
+    # The copy invites them again; what they answered was to the original.
+    answered = await session.exec(
+        select(CalendarEventAnswer).where(
+            CalendarEventAnswer.calendar_event_id == series.id
+        )
+    )
+    assert answered.all() == []
 
 
 async def test_a_copy_elsewhere_lets_go_of_invitees_who_cannot_read_it(

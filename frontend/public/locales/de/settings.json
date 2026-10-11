@@ -33,7 +33,8 @@
       "security": "Sicherheit",
       "integrations": "Integrationen",
       "usage": "Nutzung",
-      "planAndUsage": "Tarif & Nutzung"
+      "planAndUsage": "Tarif & Nutzung",
+      "guests": "Gäste"
     },
     "tabBadge": {
       "paymentFailed": "Zahlung fehlgeschlagen",
@@ -370,7 +371,8 @@
       "connections": "Kontakte",
       "jobs": "Exporte und Importe",
       "account": "Dein Konto",
-      "moderation": "Moderation"
+      "moderation": "Moderation",
+      "cases": "Fälle"
     },
     "reminderLeadTime": {
       "label": "Erinnere mich",
@@ -413,7 +415,8 @@
       "connections": "Jemand möchte sich vernetzen oder hat angenommen.",
       "jobs": "Ein Export oder Import, den du angefordert hast, ist fertig.",
       "account": "An deinem Konto wurde etwas geändert. Erscheint immer in der Glocke.",
-      "moderation": "Die Moderatoren einer Community haben etwas von dir entfernt oder dich deswegen verwarnt. Erscheint immer in der Glocke."
+      "moderation": "Die Moderatoren einer Community haben etwas von dir entfernt oder dich deswegen verwarnt. Erscheint immer in der Glocke.",
+      "cases": "Ein Fall wurde dort eröffnet, wo du Fälle bearbeitest, oder seine anfragende Person hat geantwortet und niemand hat ihn übernommen."
     },
     "quietHours": {
       "title": "Ruhezeiten",
@@ -878,14 +881,61 @@
       "suspendHelp": "Ein gesperrtes Konto kann sich anmelden und nachlesen, warum, und erreicht sonst nichts.",
       "role": "Plattformrolle",
       "roleLabel": "Rolle",
-      "roleHelp": "Was dieses Konto in der gesamten Installation darf. Du kannst nichts oberhalb deiner eigenen Rolle vergeben."
+      "roleHelp": "Was dieses Konto in der gesamten Installation darf. Du kannst nichts oberhalb deiner eigenen Rolle vergeben.",
+      "signOutLabel": "Sitzungen",
+      "signOutHelp": "Beendet jede Sitzung auf jedem Gerät. Die Person meldet sich neu an; wer das Konto sonst noch hatte, nicht.",
+      "signOut": "Überall abmelden",
+      "signOutConfirmTitle": "Überall abmelden?",
+      "signOutConfirmBody": "Jede Sitzung von {{handle}} endet jetzt, auf jedem Gerät, und offene Verbindungen werden getrennt. Die Person kann sich wieder anmelden.",
+      "signOutDone": "Überall abgemeldet.",
+      "clear": {
+        "button": "Entfernen",
+        "displayNames": {
+          "label": "Namen in Communities",
+          "help": "Die Namen, unter denen die Person in ihren Communities auftritt, alle. Sie kann sie wieder festlegen.",
+          "action": "Namen in Communities entfernen",
+          "confirmTitle": "Namen in Communities entfernen?",
+          "confirmBody": "Die Namen von {{handle}} in allen Communities werden entfernt, stattdessen erscheint das Handle. Die Person kann sie wieder festlegen.",
+          "done": "Namen in Communities entfernt."
+        },
+        "customStatus": {
+          "label": "Statuszeile",
+          "help": "Die Statuszeile neben dem Namen. Die Person kann eine neue festlegen.",
+          "action": "Statuszeile entfernen",
+          "confirmTitle": "Diese Statuszeile entfernen?",
+          "confirmBody": "Die Statuszeile von {{handle}} wird entfernt. Die Person kann eine neue festlegen.",
+          "done": "Statuszeile entfernt."
+        },
+        "decorations": {
+          "label": "Verzierungen",
+          "help": "Profilbanner, Rahmen und Trophäen. Die Person kann sie wieder festlegen.",
+          "action": "Verzierungen entfernen",
+          "confirmTitle": "Diese Verzierungen entfernen?",
+          "confirmBody": "Banner, Rahmen und Trophäen von {{handle}} werden entfernt. Die Person kann sie wieder festlegen.",
+          "done": "Verzierungen entfernt."
+        }
+      },
+      "cases": {
+        "title": "Vorgänge",
+        "count_one": "{{count}} offener Vorgang, den die Person eingereicht hat oder der sie betrifft.",
+        "count_other": "{{count}} offene Vorgänge, die die Person eingereicht hat oder die sie betreffen.",
+        "loading": "Vorgänge werden geladen…",
+        "loadError": "Die Vorgänge konnten nicht geladen werden.",
+        "filed": "Von der Person eingereicht",
+        "about": "Betrifft die Person",
+        "help": "Um einen Vorgang zu öffnen, brauchst du Zugriff auf das Projekt, in dem er geführt wird."
+      },
+      "forCase": "Für Fall",
+      "forCaseHelp": "Optional. Was du hier tust, wird im gewählten Fall vermerkt."
     },
     "deleted": "Gelöscht",
     "erasedOn": "Löschung am {{date}}",
     "erasedNever": "Unbegrenzt aufbewahrt",
     "restore": "Konto wiederherstellen",
     "restoreSuccess": "{{handle}} wiederhergestellt.",
-    "restoreError": "Das Konto konnte nicht wiederhergestellt werden. Bitte erneut versuchen."
+    "restoreError": "Das Konto konnte nicht wiederhergestellt werden. Bitte erneut versuchen.",
+    "openCases_one": "{{count}} offener Vorgang",
+    "openCases_other": "{{count}} offene Vorgänge"
   },
   "operatorDeleteUser": {
     "subtitle": "{{email}} löschen",
@@ -943,8 +993,6 @@
     },
     "queueTitle": "Genehmigungen",
     "queueDescription": "Gewähre, verweigere oder widerrufe zeitlich begrenzte Zugriffsanfragen.",
-    "communityIdLabel": "Community-ID",
-    "communityIdPlaceholder": "z. B. 42",
     "levelNone": "Keiner",
     "nothingAsked": "Wähle Zugriff auf Inhalte, auf Einstellungen oder beides.",
     "levelRead": "Nur Lesen",
@@ -987,7 +1035,22 @@
       "denied": "Verweigert",
       "revoked": "Widerrufen",
       "expired": "Abgelaufen"
-    }
+    },
+    "communityLabel": "Community",
+    "communityPlaceholder": "Community auswählen",
+    "communitySearch": "Nach Name oder Nummer suchen…",
+    "communityEmpty": "Keine Communities gefunden.",
+    "caseLabel": "Fall",
+    "casePlaceholder": "Fall auswählen",
+    "caseSearch": "Nach Titel oder Nummer suchen…",
+    "caseEmpty": "Keine offenen Fälle gefunden.",
+    "caseNone": "Kein Fall",
+    "caseYours": "deiner",
+    "caseRequiredHint": "Wähle den Fall, für den du diesen Zugriff brauchst.",
+    "caseRequiredNoneOpen": "Zugriff wird hier für einen Fall beantragt, und es gibt keinen offenen Fall, den du angeben kannst. Eröffne zuerst einen.",
+    "caseOptionalHint": "Optional. Ohne Fall hältst du danach von Hand im Fall fest, was du getan hast.",
+    "caseOtherCommunity": "Dieser Fall betrifft Community #{{community}}, nicht die ausgewählte.",
+    "caseMark": "Fall #{{id}}"
   },
   "platformLayout": {
     "title": "Plattformeinstellungen",
@@ -1203,7 +1266,7 @@
   "communities": {
     "title": "Community-Limits",
     "description": "Lege pro Community Obergrenzen für Speicher und Benutzeranzahl fest. Ein Limit unter die aktuelle Nutzung zu senken, blockiert neue Uploads oder Mitglieder, entfernt aber nie vorhandene Dateien oder Mitglieder.",
-    "platformOnly": "Du benötigst die Operator- oder Eigentümerrolle, um Community-Limits zu verwalten.",
+    "platformOnly": "Du benötigst eine Plattform-Mitarbeiterrolle, um Communities zu sehen.",
     "loading": "Communitys werden geladen…",
     "loadError": "Communitys konnten nicht geladen werden. Bitte versuche es erneut.",
     "filterByName": "Communitys nach Namen filtern",
@@ -1257,6 +1320,7 @@
       "limits": "Grenzen",
       "features": "Funktionen",
       "usersHelp": "Wie viele Personen dazugehören dürfen. Für unbegrenzt leer lassen.",
+      "guestsHelp": "Wie viele Gäste sie gleichzeitig haben dürfen. Bei 0 kommen keine neuen Gäste hinzu, und wer schon da ist, bleibt bis zum Ende seiner Zeit. Für unbegrenzt leer lassen.",
       "storageHelp": "Wie viel sie speichern dürfen, in Gigabyte. Für unbegrenzt leer lassen.",
       "bannerLabel": "Bannerbild",
       "bannerHelp": "Erlaubt das Hochladen eines Bannerbilds. Ohne das wählen sie stattdessen eine Bannerfarbe; ein bereits hochgeladenes Banner bleibt sichtbar.",
@@ -1274,6 +1338,7 @@
         }
       },
       "usersLabel": "Mitglieder",
+      "guestsLabel": "Gäste",
       "storageLabel": "Speicherlimit",
       "decidesForItself": "Was sie selbst entscheidet",
       "deleted": "Gelöscht",
@@ -1308,6 +1373,22 @@
       "confirm": "Wiederherstellen",
       "done": "{{name}} wiederhergestellt.",
       "error": "Die Community konnte nicht wiederhergestellt werden. Bitte erneut versuchen."
+    },
+    "suspension": {
+      "suspend": "Sperren",
+      "lift": "Sperre aufheben",
+      "suspendLabel": "{{name}} sperren",
+      "liftLabel": "Sperre von {{name}} aufheben",
+      "liftTitle": "Sperre von {{name}} aufheben?",
+      "liftDescription": "Sie kehrt zu ihrem vorherigen Status zurück: {{status}}. Alle darin haben wieder den Zugriff, den sie vorher hatten.",
+      "liftToDeleted": "Sie ist dann wieder gelöscht, und der Countdown bis zu ihrer Vernichtung beginnt von vorn, damit ihre Eigentümer das ganze Zeitfenster haben, sie wiederherzustellen.",
+      "suspendDeleted": "Diese Community ist gelöscht. Eine Sperre hält den Countdown bis zu ihrer Vernichtung an, bis sie aufgehoben wird. Niemand darin erreicht sie so oder so.",
+      "suspended": "{{name}} gesperrt.",
+      "lifted": "Sperre von {{name}} aufgehoben."
+    },
+    "access": {
+      "request": "Zugriff anfordern",
+      "breakGlass": "Notfallzugriff"
     }
   },
   "storage": {
@@ -1520,6 +1601,27 @@
       "askedByPlatform": "Ihr Server verlangt bereits von allen hier einen zweiten Faktor; es gibt nichts hinzuzufügen.",
       "saved": "Zweiter Faktor gespeichert.",
       "error": "Die Anforderung für den zweiten Faktor konnte nicht gespeichert werden."
+    },
+    "guestPolicy": {
+      "title": "Anmeldeanforderung für Gäste",
+      "description": "Lege fest, welche Anmeldung die Sitzung eines Gastes verwendet haben muss, bevor sie diese Community erreicht. Du musst sie nicht selbst erfüllen.",
+      "openHelp": "Jeder angemeldete Gast erreicht, was ihm gegeben wurde.",
+      "requiredHelp": "Gäste erreichen diese Community erst nach der Anmeldung über den ausgewählten Anbieter.",
+      "anyProviderHelp": "Gäste können über jeden Anbieter kommen, den diese Community eingerichtet hat. Eine Anmeldung anderswo auf dieser Installation zählt nicht.",
+      "requirePasskeyHelp": "Gäste müssen sich in dieser Sitzung mit einem Passkey angemeldet oder einen vorgelegt haben. Sie können ihn ohne Abmelden nachreichen.",
+      "saved": "Anmeldeanforderung für Gäste gespeichert",
+      "error": "Die Anmeldeanforderung für Gäste konnte nicht gespeichert werden",
+      "save": "Anmeldeanforderung für Gäste speichern"
+    },
+    "guestStay": {
+      "title": "Aufenthalt von Gästen",
+      "description": "Gasteinladungen und Verlängerungen laufen nie länger als das. Gäste, die schon da sind, behalten ihr Enddatum.",
+      "label": "Längster Aufenthalt eines Gastes (Tage)",
+      "hint_one": "Leer lassen, um das Limit des Servers von {{count}} Tag zu verwenden. Mehr kannst du auch nicht festlegen.",
+      "hint_other": "Leer lassen, um das Limit des Servers von {{count}} Tagen zu verwenden. Mehr kannst du auch nicht festlegen.",
+      "saved": "Längster Gastaufenthalt gespeichert",
+      "error": "Der längste Gastaufenthalt konnte nicht gespeichert werden",
+      "save": "Längsten Gastaufenthalt speichern"
     }
   },
   "authProviders": {
@@ -1738,7 +1840,20 @@
       "saved_other": "Gelöschte Konten werden {{count}} Tage aufbewahrt.",
       "savedNever": "Gelöschte Konten werden unbegrenzt aufbewahrt.",
       "save": "Aufbewahrungsdauer für Konten speichern"
-    }
+    },
+    "engagementRankingLabel": "Communities erlauben, Ergebnisse nach Beteiligung zu ordnen",
+    "engagementRankingHelpText": "Ausgeschaltet ordnet keine Community auf diesem Server nach Beteiligung, unabhängig von ihrer eigenen Einstellung.",
+    "engagementRankingEnabledToast": "Communities können Ergebnisse nach Beteiligung ordnen.",
+    "engagementRankingDisabledToast": "Die Ordnung nach Beteiligung ist für alle Communities ausgeschaltet.",
+    "guestsEnabledLabel": "Gäste erlauben",
+    "guestsEnabledHelpText": "Communities können Personen für eine festgelegte Anzahl von Tagen einladen. Gäste belegen keinen Platz und sehen nur, was ihnen gegeben wurde. Solange dies aus ist, kommt kein Gast hinein.",
+    "guestsEnabledToast": "Communities können Gäste haben.",
+    "guestsDisabledToast": "Gäste sind ausgeschaltet.",
+    "maxGuestDaysLabel": "Längster Aufenthalt eines Gastes (Tage)",
+    "maxGuestDaysHelpText": "Kein Gast bleibt länger als das, egal was eine Community einstellt.",
+    "maxGuestDaysSave": "Längsten Gastaufenthalt speichern",
+    "maxGuestDaysSaved_one": "Gäste bleiben höchstens {{count}} Tag.",
+    "maxGuestDaysSaved_other": "Gäste bleiben höchstens {{count}} Tage."
   },
   "account": {
     "passwordTitle": "Passwort",
@@ -1770,8 +1885,7 @@
       "communitiesHint": "Standardmäßig zählen alle.",
       "ageLocked": "Nachrichten sind ab 16 Jahren verfügbar. Du hast uns noch nicht gesagt, ob du das bist.",
       "confirmAge": "Alter bestätigen",
-      "saved": "Gespeichert.",
-      "platformDisabled": "Diese Installation bietet keine Direktnachrichten, daher gibt es hier nichts einzustellen. Wird die Funktion wieder aktiviert, sind die bisherige Regel und die Listen wieder da."
+      "saved": "Gespeichert."
     },
     "receipts": {
       "label": "Anderen zeigen, wenn ihre Nachrichten dich erreichen",
@@ -1815,6 +1929,13 @@
       "allowed": "In diesem Browser aktiv: {{categories}}.",
       "perBrowser": "Ihre Antwort folgt Ihrem Konto, ein neuer Browser oder ein neues Gerät fragt also nicht erneut. Vor der Anmeldung gegeben, bleibt sie bis dahin in diesem Browser.",
       "change": "Ändern"
+    },
+    "engagementRanking": {
+      "title": "Suchreihenfolge",
+      "label": "Meine Aktivität für die Suchreihenfolge zählen",
+      "help": "Eingeschaltet helfen die Elemente, die du öffnest und änderst, zu entscheiden, was die Suche deiner Communities zuerst zeigt. Niemand kann sehen, was du geöffnet hast. Schalte es aus, und deine Aktivität zählt ab der nächsten stündlichen Aktualisierung nicht mehr.",
+      "saved": "Suchreihenfolge gespeichert.",
+      "error": "Deine Auswahl zur Suchreihenfolge konnte nicht gespeichert werden. Versuch es noch einmal."
     }
   },
   "twoFactor": {
@@ -1967,6 +2088,14 @@
       "offHelp": "Benachrichtigungen zu dieser Community nennen, worum es geht, sobald sie die App verlassen.",
       "platformHelp": "Dieser Server blendet Details überall aus – diese Community ist bereits abgedeckt."
     }
+  },
+  "communityEngagementRanking": {
+    "title": "Suchreihenfolge",
+    "label": "Suchergebnisse nach Beteiligung in der Community ordnen",
+    "help": "Die Suche zeigt weiter oben, was mehr Mitglieder in letzter Zeit geöffnet oder bearbeitet haben. Für jedes Element wird nur eine grobe Stufe gespeichert, nie wer es geöffnet hat oder wie oft, und sie wird nie außerhalb dieser Community geteilt.",
+    "platformHelp": "Dieser Server hat die Ordnung nach Beteiligung für alle Communities ausgeschaltet.",
+    "saved": "Suchreihenfolge gespeichert.",
+    "error": "Die Suchreihenfolge konnte nicht gespeichert werden."
   },
   "billingInsights": {
     "title": "Abrechnungskennzahlen",

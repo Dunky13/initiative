@@ -569,8 +569,9 @@ export const SettingsPaneSkeleton = ({ label }: LabelledSkeletonProps) => (
   </SkeletonRegion>
 );
 
-/** The community front page: its banner, the tool rail rising out of the
- *  tray with the table in it, the initiative directory, and recent comments. */
+/** The community front page: its banner, the comments circle rising out of
+ *  the tray with the comments in it, the initiative directory, and what is
+ *  coming up. */
 export const CommunityHomeSkeleton = ({ label }: LabelledSkeletonProps) => (
   <SkeletonRegion label={label} className="space-y-6">
     {/* Full-bleed like the banner it stands in for. */}
@@ -582,20 +583,15 @@ export const CommunityHomeSkeleton = ({ label }: LabelledSkeletonProps) => (
     </div>
     <div className="relative z-10 space-y-6">
       <div>
-        <div className="relative z-10 flex justify-center gap-3 px-3 sm:gap-4">
-          {keysFor(TOOLS.length).map((key, index) => (
-            <Skeleton
-              key={key}
-              className={cn(
-                "size-16 shrink-0 rounded-full bg-muted",
-                // A phone shows the first few; the rest sit off the edge.
-                index >= 4 && "max-sm:hidden"
-              )}
-            />
-          ))}
+        <div className="relative z-10 flex justify-center px-3">
+          <Skeleton className="size-16 shrink-0 rounded-full bg-muted" />
         </div>
         <div className="-mt-8 rounded-2xl bg-muted px-3 pt-11 pb-3 sm:px-4 sm:pb-4">
-          <TableSkeleton rows={5} columns={5} pagination />
+          <Card>
+            <CardContent className="pt-6">
+              <ListSkeleton rows={4} />
+            </CardContent>
+          </Card>
         </div>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">

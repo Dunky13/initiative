@@ -152,6 +152,7 @@ export interface AccessGrantCreate {
    * @maxLength 2000
    */
   reason: string;
+  case_task_id?: number | null;
 }
 
 /**
@@ -179,6 +180,36 @@ export const AccessGrantStatus = {
   revoked: "revoked",
   expired: "expired",
 } as const;
+
+export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus];
+
+export const UserStatus = {
+  active: "active",
+  suspended: "suspended",
+  deactivated: "deactivated",
+  anonymized: "anonymized",
+  deleted: "deleted",
+} as const;
+
+/**
+ * A person, minus their name.
+ *
+ * The handle (``username`` + ``discriminator``) is always here and is what
+ * renders when there is no name to show. ``status`` comes along so the
+ * frontend can mark an account that is no longer in use without replacing the
+ * identifier that keeps an old thread legible.
+ *
+ * Every shape below is this plus something, and the name is never part of the
+ * "this": a shape that draws a person in a guild declares ``display_name``
+ * itself.
+ */
+export interface UserIdentity {
+  id: number;
+  username: string;
+  discriminator: number;
+  avatar_url: string | null;
+  status: UserStatus;
+}
 
 /**
  * Lifecycle status of a guild.
@@ -246,10 +277,11 @@ export interface AccessGrantRead {
   decided_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
-  user_email: string | null;
+  case_task_id: number | null;
+  user: UserIdentity | null;
   community_name: string | null;
   community_status: CommunityStatus | null;
-  approved_by_email: string | null;
+  approved_by: UserIdentity | null;
   /** Whether this grant currently confers access (approved, unexpired). */
   readonly is_live: boolean;
 }
@@ -616,6 +648,8 @@ export interface AppConfig {
   community_directory_enabled: boolean;
   community_age_gate_enabled: boolean;
   direct_messages_enabled: boolean;
+  guests_enabled: boolean;
+  engagement_ranking_enabled: boolean;
   cookie_consent_enabled: boolean;
   light_accent_color: string;
   dark_accent_color: string;
@@ -1098,6 +1132,7 @@ export interface BreakGlassCreate {
    * @maxLength 2000
    */
   reason: string;
+  case_task_id?: number | null;
 }
 
 /**
@@ -1336,16 +1371,6 @@ export interface TaskStatusRead {
   project_id: number;
 }
 
-export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus];
-
-export const UserStatus = {
-  active: "active",
-  suspended: "suspended",
-  deactivated: "deactivated",
-  anonymized: "anonymized",
-  deleted: "deleted",
-} as const;
-
 /**
  * Minimal assignee data for task lists.
  *
@@ -1418,10 +1443,14 @@ export interface TaskListRead {
   plugin_values: PluginValueSummary[];
 }
 
-export interface CalendarEntriesResponse {
-  events: CalendarEventSummary[];
-  tasks: TaskListRead[];
-  task_occurrences: TaskListRead[];
+export interface ProjectCan {
+  edit: boolean;
+  contribute: boolean;
+  delete: boolean;
+  share: boolean;
+  export: boolean;
+  unarchive: boolean;
+  configure: boolean;
 }
 
 /**
@@ -1435,6 +1464,246 @@ export interface UserPublic {
   avatar_url: string | null;
   status: UserStatus;
   display_name: string | null;
+}
+
+/**
+ * An installed plug-in that owns a resource, or may be handed one: the
+ * install's id, its name in this community, and its listing's picture.
+ */
+export interface OwnerPluginSummary {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+}
+
+/**
+ * An initiative as something else names it: enough to label and link it.
+ *
+ * What a project, a file or a task carries about the initiative it is in.
+ * The initiative's own read is :class:`InitiativeRead`.
+ */
+export interface InitiativeSummary {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+export interface ProjectTaskSummary {
+  total: number;
+  completed: number;
+}
+
+export interface ProjectRead {
+  archived_at: string | null;
+  can: ProjectCan;
+  id: number;
+  initiative_id: number;
+  community_id: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  comments_enabled: boolean;
+  tags: TagSummary[];
+  properties: PropertySummary[];
+  grants: ResourceGrantSchema[];
+  name: string;
+  description: string | null;
+  icon: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  owner_id: number | null;
+  is_template: boolean;
+  pinned_at: string | null;
+  owner: UserPublic | null;
+  owner_plugin: OwnerPluginSummary | null;
+  initiative: InitiativeSummary | null;
+  is_favorited: boolean;
+  last_viewed_at: string | null;
+  task_summary: ProjectTaskSummary;
+  task_statuses: TaskStatusRead[];
+}
+
+/**
+ * What the caller may do to one of a tool's rows
+ * (``permissions.client_access``).
+ */
+export interface ToolCan {
+  edit: boolean;
+  contribute: boolean;
+  delete: boolean;
+  share: boolean;
+  export: boolean;
+  unarchive: boolean;
+}
+
+/**
+ * How a profile is dressed: a banner, a frame, trophies under it.
+ *
+ * Every value is an **id naming a catalog entry**, never an image. The client
+ * resolves an id to artwork it already ships, so a decorated profile takes up
+ * none of a guild's upload allowance. An id this deployment's catalog doesn't
+ * know simply renders nothing, which is what lets a profile keep wearing
+ * something the store stopped offering.
+ *
+ * ``extra="forbid"``: the set of things a profile can wear is this list, and
+ * a client sending a key that isn't here is told so rather than having it
+ * quietly stored and never rendered.
+ */
+export interface ProfileDecorationsOutput {
+  banner: string | null;
+  frame: string | null;
+  /** @maxItems 2 */
+  frame_tint: string[];
+  /** @maxItems 6 */
+  trophies: string[];
+  grad_year: number | null;
+}
+
+/**
+ * How a person appears to everyone else.
+ *
+ * Both halves of one idea, which is why it is one enum: what a person picks
+ * for themselves, and what a reader of their name is shown. The picked value
+ * is a standing preference on the account; the shown value is that preference
+ * narrowed by what the process can see — whether they have Initiative open at
+ * all, and whether anyone has touched it lately — which is decided in one
+ * place (``app.services.platform.presence``).
+ *
+ * ``idle`` is the one a person may either pick or be given: left on
+ * ``online``, an account that goes quiet is shown it anyway, and picking it
+ * outright is how someone says they would rather look that way regardless.
+ *
+ * Not to be confused with ``UserStatus`` (the account's standing, which is not
+ * the account holder's to write) or ``custom_status`` (the line they wrote).
+ */
+export type Presence = (typeof Presence)[keyof typeof Presence];
+
+export const Presence = {
+  online: "online",
+  idle: "idle",
+  busy: "busy",
+  offline: "offline",
+} as const;
+
+/**
+ * Who wrote a comment.
+ *
+ * An address never reaches a guild, so there is none here; the handle names
+ * the author, and ``display_name`` is the name they set in this guild.
+ *
+ * It carries what a picture needs to be drawn the way it is drawn everywhere
+ * else — the decorations and how they are appearing — because a comment is
+ * one of the places a person appears at a size where both are legible.
+ * Neither is private: the same two are on the public profile.
+ */
+export interface CommentAuthor {
+  id: number;
+  username: string;
+  discriminator: number;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  profile_decorations?: ProfileDecorationsOutput;
+  /**
+   * How they appear, at the moment this was serialized.
+   *
+   * Computed rather than stamped by each endpoint: a comment author is
+   * built in nine places, and what a reader is shown is not a column
+   * anything could select — it is what the account picked narrowed by which
+   * sockets are open. So it is read where the shape is made rather than
+   * passed down to it.
+   */
+  readonly presence: Presence;
+}
+
+/**
+ * Who reacted, named the way comment authors are named.
+ */
+export interface ReactionUser {
+  id: number;
+  username: string;
+  discriminator: number;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
+/**
+ * One emoji on one target, and who chose it.
+ */
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+  users: ReactionUser[];
+}
+
+export interface PollOptionRead {
+  id: number;
+  text: string;
+  position: number;
+  vote_count: number | null;
+  voted_by_me: boolean;
+}
+
+export interface PollRead {
+  id: number;
+  question: string | null;
+  allows_multiple: boolean;
+  is_anonymous: boolean;
+  hide_results: boolean;
+  closes_at: string | null;
+  is_closed: boolean;
+  options: PollOptionRead[];
+  has_voted: boolean;
+  results_visible: boolean;
+  total_voters: number | null;
+  is_locked: boolean;
+}
+
+export type PostReadBody = { [key: string]: unknown };
+
+export interface PostRead {
+  archived_at: string | null;
+  can: ToolCan;
+  id: number;
+  initiative_id: number;
+  community_id: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  comments_enabled: boolean;
+  tags: TagSummary[];
+  properties: PropertySummary[];
+  grants: ResourceGrantSchema[];
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name: string;
+  author: CommentAuthor | null;
+  excerpt: string;
+  pinned_at: string | null;
+  pinned_by: number | null;
+  pin_expires_at: string | null;
+  is_pinned: boolean;
+  published_at: string | null;
+  scheduled_for: string | null;
+  is_published: boolean;
+  is_read: boolean;
+  read_count: number;
+  reactions_enabled: boolean;
+  comments_locked_at: string | null;
+  comment_count: number;
+  reactions: ReactionGroup[];
+  body: PostReadBody;
+  poll: PollRead | null;
+}
+
+export interface CalendarEntriesResponse {
+  events: CalendarEventSummary[];
+  tasks: TaskListRead[];
+  task_occurrences: TaskListRead[];
+  projects: ProjectRead[];
+  polls: PostRead[];
 }
 
 export type RSVPStatus = (typeof RSVPStatus)[keyof typeof RSVPStatus];
@@ -1524,6 +1793,7 @@ export interface CalendarEventUpdate {
   properties?: PropertyValueInput[] | null;
   title?: string | null;
   description?: string | null;
+  description_base?: string | null;
   location?: string | null;
   start_at?: string | null;
   end_at?: string | null;
@@ -1538,16 +1808,39 @@ export interface CalendarEventUpdate {
 }
 
 /**
- * What the caller may do to one of a tool's rows
- * (``permissions.client_access``).
+ * Comparison operators for filter conditions.
+ *
+ * Negation is handled by the ``negate`` flag on FilterCondition,
+ * not by separate operators.
  */
-export interface ToolCan {
-  edit: boolean;
-  contribute: boolean;
-  delete: boolean;
-  share: boolean;
-  export: boolean;
-  unarchive: boolean;
+export type FilterOp = (typeof FilterOp)[keyof typeof FilterOp];
+
+export const FilterOp = {
+  eq: "eq",
+  lt: "lt",
+  lte: "lte",
+  gt: "gt",
+  gte: "gte",
+  in_: "in_",
+  ilike: "ilike",
+  is_null: "is_null",
+} as const;
+
+export interface PresetPropertyFilter {
+  property_id: number;
+  op?: FilterOp;
+  value?: unknown;
+}
+
+/**
+ * The filters a preset on the initiative's calendar holds: what its tasks
+ * are, and the properties its events and tasks carry.
+ */
+export interface CalendarFilterSpec {
+  status_categories?: TaskStatusCategory[];
+  priorities?: TaskPriority[];
+  /** @maxItems 5 */
+  properties?: PresetPropertyFilter[];
 }
 
 export interface CalendarSummary {
@@ -1625,7 +1918,10 @@ export const Capability = {
   usersage_unblock: "users.age_unblock",
   usersmanage: "users.manage",
   usersdelete: "users.delete",
+  communitiesread: "communities.read",
   communitiesmanage: "communities.manage",
+  communitiessuspend: "communities.suspend",
+  billingsupport: "billing.support",
   billinginsights: "billing.insights",
   announcementsmanage: "announcements.manage",
   rolesassign: "roles.assign",
@@ -1896,85 +2192,6 @@ export const CommentAudience = {
   filer: "filer",
 } as const;
 
-/**
- * How a profile is dressed: a banner, a frame, trophies under it.
- *
- * Every value is an **id naming a catalog entry**, never an image. The client
- * resolves an id to artwork it already ships, so a decorated profile takes up
- * none of a guild's upload allowance. An id this deployment's catalog doesn't
- * know simply renders nothing, which is what lets a profile keep wearing
- * something the store stopped offering.
- *
- * ``extra="forbid"``: the set of things a profile can wear is this list, and
- * a client sending a key that isn't here is told so rather than having it
- * quietly stored and never rendered.
- */
-export interface ProfileDecorationsOutput {
-  banner: string | null;
-  frame: string | null;
-  /** @maxItems 2 */
-  frame_tint: string[];
-  /** @maxItems 6 */
-  trophies: string[];
-  grad_year: number | null;
-}
-
-/**
- * How a person appears to everyone else.
- *
- * Both halves of one idea, which is why it is one enum: what a person picks
- * for themselves, and what a reader of their name is shown. The picked value
- * is a standing preference on the account; the shown value is that preference
- * narrowed by what the process can see — whether they have Initiative open at
- * all, and whether anyone has touched it lately — which is decided in one
- * place (``app.services.platform.presence``).
- *
- * ``idle`` is the one a person may either pick or be given: left on
- * ``online``, an account that goes quiet is shown it anyway, and picking it
- * outright is how someone says they would rather look that way regardless.
- *
- * Not to be confused with ``UserStatus`` (the account's standing, which is not
- * the account holder's to write) or ``custom_status`` (the line they wrote).
- */
-export type Presence = (typeof Presence)[keyof typeof Presence];
-
-export const Presence = {
-  online: "online",
-  idle: "idle",
-  busy: "busy",
-  offline: "offline",
-} as const;
-
-/**
- * Who wrote a comment.
- *
- * An address never reaches a guild, so there is none here; the handle names
- * the author, and ``display_name`` is the name they set in this guild.
- *
- * It carries what a picture needs to be drawn the way it is drawn everywhere
- * else — the decorations and how they are appearing — because a comment is
- * one of the places a person appears at a size where both are legible.
- * Neither is private: the same two are on the public profile.
- */
-export interface CommentAuthor {
-  id: number;
-  username: string;
-  discriminator: number;
-  display_name?: string | null;
-  avatar_url?: string | null;
-  profile_decorations?: ProfileDecorationsOutput;
-  /**
-   * How they appear, at the moment this was serialized.
-   *
-   * Computed rather than stamped by each endpoint: a comment author is
-   * built in nine places, and what a reader is shown is not a column
-   * anything could select — it is what the account picked narrowed by which
-   * sockets are open. So it is read where the shape is made rather than
-   * passed down to it.
-   */
-  readonly presence: Presence;
-}
-
 export interface CommentCreate {
   content: string;
   task_id?: number | null;
@@ -1990,27 +2207,6 @@ export interface CommentCreate {
   wiki_id?: number | null;
   parent_comment_id?: number | null;
   audience?: CommentAudience;
-}
-
-/**
- * Who reacted, named the way comment authors are named.
- */
-export interface ReactionUser {
-  id: number;
-  username: string;
-  discriminator: number;
-  display_name?: string | null;
-  avatar_url?: string | null;
-}
-
-/**
- * One emoji on one target, and who chose it.
- */
-export interface ReactionGroup {
-  emoji: string;
-  count: number;
-  reacted: boolean;
-  users: ReactionUser[];
 }
 
 /**
@@ -2101,6 +2297,24 @@ export interface CommentUpdate {
   content: string;
 }
 
+/**
+ * What the reader may do to one community on the staff list. Worked out
+ * by the server per row, so a control the reader would be refused is never
+ * drawn.
+ */
+export type CommunityAction = (typeof CommunityAction)[keyof typeof CommunityAction];
+
+export const CommunityAction = {
+  manage: "manage",
+  set_status: "set_status",
+  suspend: "suspend",
+  lift: "lift",
+  billing_support: "billing_support",
+  billing_operator: "billing_operator",
+  request_access: "request_access",
+  break_glass: "break_glass",
+} as const;
+
 export type CommunityAuthOption = (typeof CommunityAuthOption)[keyof typeof CommunityAuthOption];
 
 export const CommunityAuthOption = {
@@ -2170,6 +2384,7 @@ export interface CommunityAuthPolicyUpdate {
 export interface CommunityAuthSettingsRead {
   auth_options: CommunityAuthOption[];
   auth_policy: CommunityAuthPolicyRead;
+  guest_auth_policy: CommunityAuthPolicyRead;
   enforce_compliance_session: boolean;
   require_second_factor: boolean;
   allow_push_notifications: boolean;
@@ -2178,6 +2393,10 @@ export interface CommunityAuthSettingsRead {
   push_allowed_by_platform: boolean;
   email_allowed_by_platform: boolean;
   redacted_by_platform: boolean;
+  allow_engagement_ranking: boolean;
+  engagement_ranking_allowed_by_platform: boolean;
+  guest_max_days: number | null;
+  guest_max_days_by_platform: number;
 }
 
 /**
@@ -2190,11 +2409,14 @@ export interface CommunityAuthSettingsRead {
  */
 export interface CommunityAuthSettingsUpdate {
   auth_policy?: CommunityAuthPolicyUpdate | null;
+  guest_auth_policy?: CommunityAuthPolicyUpdate | null;
   enforce_compliance_session?: boolean | null;
   require_second_factor?: boolean | null;
   allow_push_notifications?: boolean | null;
   allow_email_notifications?: boolean | null;
   redact_notification_content?: boolean | null;
+  allow_engagement_ranking?: boolean | null;
+  guest_max_days?: number | null;
 }
 
 /**
@@ -2291,6 +2513,7 @@ export interface CommunityCan {
   configure: boolean;
   administer_content: boolean;
   seat: boolean;
+  community_wide: boolean;
   use_api: boolean;
 }
 
@@ -2500,19 +2723,49 @@ export interface CommunityExportStatus {
   latest_started_by: string | null;
 }
 
+export interface CommunityGuestExtend {
+  /** @minimum 1 */
+  days: number;
+}
+
 export interface CommunityInviteAcceptRequest {
   code: string;
+}
+
+export type CommunityInviteGrantLevel =
+  | (typeof CommunityInviteGrantLevel)[keyof typeof CommunityInviteGrantLevel]
+  | null;
+
+export const CommunityInviteGrantLevel = {
+  read: "read",
+  write: "write",
+} as const;
+
+/**
+ * What a guest invite gives: an initiative to join, or one item in it at
+ * ``read`` or ``write``.
+ */
+export interface CommunityInviteGrant {
+  initiative_id: number;
+  resource_type?: Tool | null;
+  resource_id?: number | null;
+  level?: CommunityInviteGrantLevel;
 }
 
 export interface CommunityInviteCreate {
   expires_at?: string | null;
   max_uses?: number | null;
   invitee_email?: string | null;
+  guest_days?: number | null;
+  /** @maxItems 100 */
+  grants?: CommunityInviteGrant[];
 }
 
-export interface CommunityInviteRead {
+/**
+ * A new invite, with its code: the one time the code is shown.
+ */
+export interface CommunityInviteCreated {
   id: number;
-  code: string;
   community_id: number;
   created_by: number | null;
   expires_at: string | null;
@@ -2520,6 +2773,22 @@ export interface CommunityInviteRead {
   uses: number;
   invitee_email: string | null;
   created_at: string;
+  guest_days: number | null;
+  grants: CommunityInviteGrant[];
+  code: string;
+}
+
+export interface CommunityInviteRead {
+  id: number;
+  community_id: number;
+  created_by: number | null;
+  expires_at: string | null;
+  max_uses: number | null;
+  uses: number;
+  invitee_email: string | null;
+  created_at: string;
+  guest_days: number | null;
+  grants: CommunityInviteGrant[];
 }
 
 export interface CommunityInviteStatus {
@@ -2531,6 +2800,7 @@ export interface CommunityInviteStatus {
   expires_at: string | null;
   max_uses: number | null;
   uses: number | null;
+  guest_days: number | null;
 }
 
 /**
@@ -2579,12 +2849,23 @@ export interface CommunityLocationOutput {
   longitude: number | null;
 }
 
+/**
+ * That a member gave one of the community's AI connections a key, as the
+ * seat sees it. Never the key.
+ */
+export interface CommunityMemberAIKey {
+  user_id: number;
+  connection_id: number;
+  updated_at: string;
+}
+
 export type CommunityRole = (typeof CommunityRole)[keyof typeof CommunityRole];
 
 export const CommunityRole = {
   admin: "admin",
   member: "member",
   superadmin: "superadmin",
+  guest: "guest",
   support: "support",
 } as const;
 
@@ -3160,6 +3441,7 @@ export interface CommunityRead {
   max_storage_bytes: number | null;
   max_users: number | null;
   member_count: number;
+  max_guests: number | null;
   tier_name: string | null;
   status: CommunityStatus | null;
   content_read_only: boolean;
@@ -3256,6 +3538,9 @@ export interface CommunitySettingsResponse {
   deleted_community_retention_days: number | null;
   deleted_account_retention_days: number | null;
   on_hold_community_deletion_days: number | null;
+  engagement_ranking_enabled: boolean;
+  guests_enabled: boolean;
+  max_guest_days: number;
 }
 
 export interface CommunitySettingsUpdate {
@@ -3263,14 +3548,24 @@ export interface CommunitySettingsUpdate {
   age_gate_enabled?: boolean | null;
   default_dm_policy?: DmPolicy | null;
   direct_messages_enabled?: boolean | null;
+  engagement_ranking_enabled?: boolean | null;
   deleted_community_retention_days?: number | null;
   deleted_account_retention_days?: number | null;
   on_hold_community_deletion_days?: number | null;
+  guests_enabled?: boolean | null;
+  max_guest_days?: number | null;
 }
 
 export interface CommunityStorageUsageRead {
   community_id: number;
   usage_bytes: number;
+}
+
+/**
+ * Suspend a community, or lift its suspension.
+ */
+export interface CommunitySuspensionUpdate {
+  suspended: boolean;
 }
 
 /**
@@ -3994,25 +4289,6 @@ export interface DecorationPackListResponse {
 }
 
 /**
- * Comparison operators for filter conditions.
- *
- * Negation is handled by the ``negate`` flag on FilterCondition,
- * not by separate operators.
- */
-export type FilterOp = (typeof FilterOp)[keyof typeof FilterOp];
-
-export const FilterOp = {
-  eq: "eq",
-  lt: "lt",
-  lte: "lte",
-  gt: "gt",
-  gte: "gte",
-  in_: "in_",
-  ilike: "ilike",
-  is_null: "is_null",
-} as const;
-
-/**
  * One condition a new statement about this dataset starts with.
  *
  * Shaped as the builder's own condition so a client seeds its filter rows
@@ -4032,6 +4308,231 @@ export interface DeletionEligibilityResponse {
   can_delete: boolean;
   last_owner: boolean;
   sole_superadmin_communities: string[];
+}
+
+export type TaskDetailFieldId = (typeof TaskDetailFieldId)[keyof typeof TaskDetailFieldId];
+
+export const TaskDetailFieldId = {
+  title: "title",
+  description: "description",
+  assignees: "assignees",
+  recurrence: "recurrence",
+  checklist: "checklist",
+  priority: "priority",
+  tags: "tags",
+} as const;
+
+/**
+ * What an event's detail edits as a field. Its dates, its properties and
+ * your answer are parts of their own.
+ */
+export type EventDetailFieldId = (typeof EventDetailFieldId)[keyof typeof EventDetailFieldId];
+
+export const EventDetailFieldId = {
+  title: "title",
+  description: "description",
+  location: "location",
+  recurrence: "recurrence",
+  attendees: "attendees",
+  tags: "tags",
+} as const;
+
+export interface DetailFieldProps {
+  field: TaskDetailFieldId | EventDetailFieldId | string;
+}
+
+export interface DetailFieldPart {
+  type: "field";
+  props: DetailFieldProps;
+}
+
+export interface SectionProps {
+  title?: string | null;
+  collapsed?: boolean | null;
+}
+
+export type OwnPartType = (typeof OwnPartType)[keyof typeof OwnPartType];
+
+export const OwnPartType = {
+  status: "status",
+  dates: "dates",
+  byline: "byline",
+  notice: "notice",
+  actions: "actions",
+  relations: "relations",
+  case: "case",
+  comments: "comments",
+  rsvp: "rsvp",
+} as const;
+
+/**
+ * One of a detail's own parts.
+ */
+export interface OwnPart {
+  type: OwnPartType;
+}
+
+/**
+ * A bordered group of a detail layout's parts.
+ */
+export interface SectionPartInput {
+  type: "section";
+  props?: SectionProps | null;
+  children?: (
+    | DetailStackPartInput
+    | SectionPartInput
+    | DetailFieldPart
+    | PropertiesPart
+    | PluginPart
+    | OwnPart
+  )[];
+}
+
+export interface DetailStackPartInput {
+  type: "stack";
+  props?: StackProps | null;
+  children?: (
+    | DetailStackPartInput
+    | SectionPartInput
+    | DetailFieldPart
+    | PropertiesPart
+    | PluginPart
+    | OwnPart
+  )[];
+}
+
+/**
+ * How one task (or event) is shown on its own, in three regions, each its
+ * parts in order. A region it leaves out is drawn as shipped; what it places
+ * nowhere is not shown.
+ */
+export interface DetailLayoutDefinitionInput {
+  header?:
+    | (
+        | DetailStackPartInput
+        | SectionPartInput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+  main?:
+    | (
+        | DetailStackPartInput
+        | SectionPartInput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+  side?:
+    | (
+        | DetailStackPartInput
+        | SectionPartInput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+}
+
+/**
+ * A bordered group of a detail layout's parts.
+ */
+export interface SectionPartOutput {
+  type: "section";
+  props?: SectionProps | null;
+  children?: (
+    | DetailStackPartOutput
+    | SectionPartOutput
+    | DetailFieldPart
+    | PropertiesPart
+    | PluginPart
+    | OwnPart
+  )[];
+}
+
+export interface DetailStackPartOutput {
+  type: "stack";
+  props?: StackProps | null;
+  children?: (
+    | DetailStackPartOutput
+    | SectionPartOutput
+    | DetailFieldPart
+    | PropertiesPart
+    | PluginPart
+    | OwnPart
+  )[];
+}
+
+/**
+ * How one task (or event) is shown on its own, in three regions, each its
+ * parts in order. A region it leaves out is drawn as shipped; what it places
+ * nowhere is not shown.
+ */
+export interface DetailLayoutDefinitionOutput {
+  header?:
+    | (
+        | DetailStackPartOutput
+        | SectionPartOutput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+  main?:
+    | (
+        | DetailStackPartOutput
+        | SectionPartOutput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+  side?:
+    | (
+        | DetailStackPartOutput
+        | SectionPartOutput
+        | DetailFieldPart
+        | PropertiesPart
+        | PluginPart
+        | OwnPart
+      )[]
+    | null;
+}
+
+export type DetailLayoutReadKind = (typeof DetailLayoutReadKind)[keyof typeof DetailLayoutReadKind];
+
+export const DetailLayoutReadKind = {
+  task: "task",
+  calendar_event: "calendar_event",
+} as const;
+
+/**
+ * How a target shows one of its items: as shipped until it is changed.
+ */
+export interface DetailLayoutRead {
+  kind: DetailLayoutReadKind;
+  definition: DetailLayoutDefinitionOutput;
+  updated_at: string | null;
+}
+
+export type DetailLayoutWriteKind =
+  (typeof DetailLayoutWriteKind)[keyof typeof DetailLayoutWriteKind];
+
+export const DetailLayoutWriteKind = {
+  task: "task",
+  calendar_event: "calendar_event",
+} as const;
+
+export interface DetailLayoutWrite {
+  kind: DetailLayoutWriteKind;
+  definition: DetailLayoutDefinitionInput;
 }
 
 /**
@@ -4551,6 +5052,17 @@ export interface EmailTestResponse {
   status: string;
 }
 
+/**
+ * The references to show in full, as `kind:id`.
+ */
+export interface EmbedRead {
+  /**
+   * References to read. `task:12` names a thing, `task:12:status` a fact about it. One that names nothing is ignored.
+   * @maxItems 25
+   */
+  refs?: string[];
+}
+
 export type SearchEntityType = (typeof SearchEntityType)[keyof typeof SearchEntityType];
 
 export const SearchEntityType = {
@@ -4754,28 +5266,6 @@ export interface FileCreate {
   content?: FileCreateContent;
   file_type?: FileCreateFileType;
   grants?: ResourceGrantSchema[];
-}
-
-/**
- * An initiative as something else names it: enough to label and link it.
- *
- * What a project, a file or a task carries about the initiative it is in.
- * The initiative's own read is :class:`InitiativeRead`.
- */
-export interface InitiativeSummary {
-  id: number;
-  name: string;
-  color: string | null;
-}
-
-/**
- * An installed plug-in that owns a resource, or may be handed one: the
- * install's id, its name in this community, and its listing's picture.
- */
-export interface OwnerPluginSummary {
-  id: number;
-  name: string;
-  avatar_url: string | null;
 }
 
 /**
@@ -5183,6 +5673,26 @@ export interface GenerateFileSummaryResponse {
   summary: string;
 }
 
+/**
+ * An open operations case the reader may name as the reason for a grant.
+ */
+export interface GrantCaseRead {
+  task_id: number;
+  title: string;
+  stream: IntakeStream;
+  subject_community_id: number | null;
+  mine: boolean;
+}
+
+/**
+ * The open cases the reader may name, theirs first. ``required`` says
+ * whether a request must name one here.
+ */
+export interface GrantCaseList {
+  items: GrantCaseRead[];
+  required: boolean;
+}
+
 export type ValidationErrorCtx = { [key: string]: unknown };
 
 export interface ValidationError {
@@ -5387,6 +5897,7 @@ export interface ImportJobRead {
 export interface InitiativeCan {
   manage: boolean;
   moderate: boolean;
+  roster: boolean;
   view: Tool[];
   create: Tool[];
 }
@@ -5558,6 +6069,7 @@ export interface InitiativeMemberRead {
   joined_at: string;
   oidc_managed: boolean;
   presence: Presence;
+  guest_until: string | null;
 }
 
 /**
@@ -5717,6 +6229,129 @@ export interface InitiativeTaskStatusRead {
   projects_total: number;
 }
 
+export type ListLayoutReadKind = (typeof ListLayoutReadKind)[keyof typeof ListLayoutReadKind];
+
+export const ListLayoutReadKind = {
+  table: "table",
+  board: "board",
+  calendar: "calendar",
+} as const;
+
+export type TaskColumnFieldId = (typeof TaskColumnFieldId)[keyof typeof TaskColumnFieldId];
+
+export const TaskColumnFieldId = {
+  title: "title",
+  startDate: "startDate",
+  dueDate: "dueDate",
+  priority: "priority",
+  comments: "comments",
+  tags: "tags",
+} as const;
+
+export type TaskFilterSpecDue = (typeof TaskFilterSpecDue)[keyof typeof TaskFilterSpecDue] | null;
+
+export const TaskFilterSpecDue = {
+  overdue: "overdue",
+  today: "today",
+  "7_days": "7_days",
+  "30_days": "30_days",
+} as const;
+
+/**
+ * The task filters a preset holds, the shape every task list filters by.
+ * Unknown keys are refused.
+ */
+export interface TaskFilterSpec {
+  /** @maxItems 50 */
+  status_ids?: number[];
+  status_categories?: TaskStatusCategory[];
+  priorities?: TaskPriority[];
+  /** @maxItems 50 */
+  community_ids?: number[];
+  /** @maxItems 25 */
+  assignees?: string[];
+  /** @maxItems 25 */
+  tag_ids?: number[];
+  /** @maxItems 5 */
+  properties?: PresetPropertyFilter[];
+  due?: TaskFilterSpecDue;
+  include_archived?: boolean;
+}
+
+export type PresetSortField = (typeof PresetSortField)[keyof typeof PresetSortField];
+
+export const PresetSortField = {
+  title: "title",
+  due_date: "due_date",
+  start_date: "start_date",
+  date_group: "date_group",
+  priority: "priority",
+  status_position: "status_position",
+  tag_name: "tag_name",
+} as const;
+
+export type SortDir = (typeof SortDir)[keyof typeof SortDir];
+
+export const SortDir = {
+  asc: "asc",
+  desc: "desc",
+} as const;
+
+export interface PresetSort {
+  field: PresetSortField;
+  dir?: SortDir;
+}
+
+/**
+ * Filters, and for a table a sort, that a person can pick to start from.
+ * Picking one makes them that person's own.
+ */
+export interface LayoutPreset {
+  name?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 64
+   * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+   */
+  slug: string;
+  filters?: TaskFilterSpec | CalendarFilterSpec;
+  /** @maxItems 7 */
+  sort?: PresetSort[];
+}
+
+/**
+ * How a list draws its items, and the presets it offers. What it leaves
+ * out is drawn as shipped: a board with no ``card`` draws the shipped card, a
+ * table with no ``columns`` the shipped columns, a list with no ``presets``
+ * the shipped presets.
+ */
+export interface ListLayoutDefinitionOutput {
+  card?: CardPartOutput | null;
+  columns?: (TaskColumnFieldId | string)[] | null;
+  presets?: LayoutPreset[] | null;
+}
+
+/**
+ * One way a target lists its items: as shipped until it is changed.
+ */
+export interface ListLayoutRead {
+  kind: ListLayoutReadKind;
+  is_default: boolean;
+  definition: ListLayoutDefinitionOutput;
+  updated_at: string | null;
+}
+
+/**
+ * One instance's layouts, as its initiative's list of them shows them.
+ */
+export interface InitiativeToolLayoutsRead {
+  layouts: (ListLayoutRead | DetailLayoutRead)[];
+  can_configure: boolean;
+  tool: Tool;
+  tool_id: number;
+  name: string;
+}
+
 export interface InitiativeUpdate {
   projects_enabled?: boolean | null;
   files_enabled?: boolean | null;
@@ -5855,188 +6490,6 @@ export const ItemKind = {
   post: "post",
 } as const;
 
-export interface SectionProps {
-  title?: string | null;
-  collapsed?: boolean | null;
-}
-
-export type TaskPageFieldId = (typeof TaskPageFieldId)[keyof typeof TaskPageFieldId];
-
-export const TaskPageFieldId = {
-  title: "title",
-  description: "description",
-  assignees: "assignees",
-  recurrence: "recurrence",
-  checklist: "checklist",
-  priority: "priority",
-  tags: "tags",
-} as const;
-
-export interface PageFieldProps {
-  field: TaskPageFieldId | string;
-}
-
-export interface PageFieldPart {
-  type: "field";
-  props: PageFieldProps;
-}
-
-export type TaskPagePartType = (typeof TaskPagePartType)[keyof typeof TaskPagePartType];
-
-export const TaskPagePartType = {
-  status: "status",
-  dates: "dates",
-  byline: "byline",
-  notice: "notice",
-  actions: "actions",
-  relations: "relations",
-  case: "case",
-  comments: "comments",
-} as const;
-
-/**
- * One of a task page's own parts, which edit or show more than one field:
- * its status, its start and due dates, who made it, its read-only notice, its
- * menu, its relations, its case and its comments.
- */
-export interface TaskPagePart {
-  type: TaskPagePartType;
-}
-
-/**
- * A bordered group of an item page's parts.
- */
-export interface SectionPartInput {
-  type: "section";
-  props?: SectionProps | null;
-  children?: (
-    | PageStackPartInput
-    | SectionPartInput
-    | PageFieldPart
-    | PropertiesPart
-    | PluginPart
-    | TaskPagePart
-  )[];
-}
-
-export interface PageStackPartInput {
-  type: "stack";
-  props?: StackProps | null;
-  children?: (
-    | PageStackPartInput
-    | SectionPartInput
-    | PageFieldPart
-    | PropertiesPart
-    | PluginPart
-    | TaskPagePart
-  )[];
-}
-
-/**
- * An item's page, in three regions, each its parts in order. A region it
- * leaves out is drawn as shipped, and a field placed in none of them is
- * drawn in a "More fields" section.
- */
-export interface ItemLayoutDefinitionInput {
-  header?:
-    | (
-        | PageStackPartInput
-        | SectionPartInput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-  main?:
-    | (
-        | PageStackPartInput
-        | SectionPartInput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-  side?:
-    | (
-        | PageStackPartInput
-        | SectionPartInput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-}
-
-/**
- * A bordered group of an item page's parts.
- */
-export interface SectionPartOutput {
-  type: "section";
-  props?: SectionProps | null;
-  children?: (
-    | PageStackPartOutput
-    | SectionPartOutput
-    | PageFieldPart
-    | PropertiesPart
-    | PluginPart
-    | TaskPagePart
-  )[];
-}
-
-export interface PageStackPartOutput {
-  type: "stack";
-  props?: StackProps | null;
-  children?: (
-    | PageStackPartOutput
-    | SectionPartOutput
-    | PageFieldPart
-    | PropertiesPart
-    | PluginPart
-    | TaskPagePart
-  )[];
-}
-
-/**
- * An item's page, in three regions, each its parts in order. A region it
- * leaves out is drawn as shipped, and a field placed in none of them is
- * drawn in a "More fields" section.
- */
-export interface ItemLayoutDefinitionOutput {
-  header?:
-    | (
-        | PageStackPartOutput
-        | SectionPartOutput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-  main?:
-    | (
-        | PageStackPartOutput
-        | SectionPartOutput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-  side?:
-    | (
-        | PageStackPartOutput
-        | SectionPartOutput
-        | PageFieldPart
-        | PropertiesPart
-        | PluginPart
-        | TaskPagePart
-      )[]
-    | null;
-}
-
 /**
  * Response for checking if a user can leave a guild.
  *
@@ -6067,6 +6520,31 @@ export interface LegalDocumentRead {
 export interface LegalIndexRead {
   documents: LegalDocumentRead[];
   required: string[];
+}
+
+/**
+ * How a list draws its items, and the presets it offers. What it leaves
+ * out is drawn as shipped: a board with no ``card`` draws the shipped card, a
+ * table with no ``columns`` the shipped columns, a list with no ``presets``
+ * the shipped presets.
+ */
+export interface ListLayoutDefinitionInput {
+  card?: CardPartInput | null;
+  columns?: (TaskColumnFieldId | string)[] | null;
+  presets?: LayoutPreset[] | null;
+}
+
+export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof ListLayoutWriteKind];
+
+export const ListLayoutWriteKind = {
+  table: "table",
+  board: "board",
+  calendar: "calendar",
+} as const;
+
+export interface ListLayoutWrite {
+  kind: ListLayoutWriteKind;
+  definition: ListLayoutDefinitionInput;
 }
 
 /**
@@ -6615,6 +7093,8 @@ export const NotificationType = {
   ticket_updated: "ticket_updated",
   moderation_removal: "moderation_removal",
   moderation_warning: "moderation_warning",
+  case_opened: "case_opened",
+  case_replied: "case_replied",
 } as const;
 
 export type NotificationReadData = { [key: string]: unknown };
@@ -6666,6 +7146,7 @@ export const NotificationCategory = {
   jobs: "jobs",
   account: "account",
   moderation: "moderation",
+  cases: "cases",
 } as const;
 
 /**
@@ -6807,6 +7288,20 @@ export interface OperationsCommunityUpdate {
 }
 
 /**
+ * An open case an account filed or is the subject of: where it lives, to
+ * link to it, and nothing of what it says. Opening it is the case's
+ * initiative's to allow.
+ */
+export interface OperatorAccountCaseRead {
+  task_id: number;
+  stream: IntakeStream;
+  community_id: number;
+  initiative_id: number;
+  project_id: number;
+  filed: boolean;
+}
+
+/**
  * A manifest the scan would not publish, named so it can be fixed.
  */
 export interface OperatorCatalogProblem {
@@ -6874,6 +7369,35 @@ export interface UserInitiativeRole {
 }
 
 /**
+ * What the reader may do to one account on the staff roster. Worked out
+ * by the server per row, from the reader's capabilities, their rung, and
+ * the account's state, so a control the reader would be refused is never
+ * drawn.
+ */
+export type UserAction = (typeof UserAction)[keyof typeof UserAction];
+
+export const UserAction = {
+  rename: "rename",
+  remove_avatar: "remove_avatar",
+  clear_display_names: "clear_display_names",
+  clear_custom_status: "clear_custom_status",
+  clear_decorations: "clear_decorations",
+  suspend: "suspend",
+  unsuspend: "unsuspend",
+  change_role: "change_role",
+  revoke_api_keys: "revoke_api_keys",
+  clear_second_factor: "clear_second_factor",
+  sign_out_everywhere: "sign_out_everywhere",
+  reset_password: "reset_password",
+  resend_verification: "resend_verification",
+  lift_sign_in_lock: "lift_sign_in_lock",
+  clear_age_block: "clear_age_block",
+  reactivate: "reactivate",
+  restore: "restore",
+  delete: "delete",
+} as const;
+
+/**
  * A staff view of somebody else's account: the address masked.
  *
  * Everything staff do to an account — reset its password, rename
@@ -6911,6 +7435,7 @@ export interface OperatorUserRead {
   week_starts_on: number;
   time_format: string;
   recent_tabs_limit: number;
+  count_toward_engagement_ranking: boolean;
   timezone: string;
   event_reminder_minutes_before: number | null;
   last_overdue_notification_at: string | null;
@@ -6929,6 +7454,8 @@ export interface OperatorUserRead {
   sign_in_locked_until: string | null;
   second_factor_enrolled: boolean;
   api_key_count: number;
+  allowed_actions: UserAction[];
+  open_case_count: number;
   readonly can_create_communities: boolean;
   /**
    * Platform capabilities granted by this user's standing role — none
@@ -7367,6 +7894,7 @@ export interface PlatformCommunityStorageRead {
   tier_name: string | null;
   max_storage_bytes: number | null;
   max_users: number | null;
+  max_guests: number | null;
   status: CommunityStatus;
   status_changed_at: string | null;
   status_choices: CommunityStatus[];
@@ -7375,6 +7903,8 @@ export interface PlatformCommunityStorageRead {
   auth_options: CommunityAuthOption[];
   banner_image_enabled: boolean;
   support_enabled: boolean;
+  lifts_to: CommunityStatus | null;
+  allowed_actions: CommunityAction[];
 }
 
 /**
@@ -7402,6 +7932,7 @@ export interface PlatformCommunityStorageListResponse {
 export interface PlatformCommunityStorageUpdate {
   max_storage_bytes?: number | null;
   max_users?: number | null;
+  max_guests?: number | null;
   status?: CommunityStatus | null;
   auth_options?: CommunityAuthOption[] | null;
   banner_image_enabled?: boolean | null;
@@ -7895,14 +8426,6 @@ export interface PluginWidgetCatalogResponse {
   items?: PluginWidgetCatalogEntry[];
 }
 
-export interface PollOptionRead {
-  id: number;
-  text: string;
-  position: number;
-  vote_count: number | null;
-  voted_by_me: boolean;
-}
-
 /**
  * One person on a poll's roster, named the way readers and reactors are.
  */
@@ -7929,21 +8452,6 @@ export interface PollOptionWrite {
    * @maxLength 200
    */
   text: string;
-}
-
-export interface PollRead {
-  id: number;
-  question: string | null;
-  allows_multiple: boolean;
-  is_anonymous: boolean;
-  hide_results: boolean;
-  closes_at: string | null;
-  is_closed: boolean;
-  options: PollOptionRead[];
-  has_voted: boolean;
-  results_visible: boolean;
-  total_voters: number | null;
-  is_locked: boolean;
 }
 
 /**
@@ -8010,45 +8518,6 @@ export interface PostCreate {
   grants?: ResourceGrantSchema[];
   scheduled_for?: string | null;
   poll?: PollWrite | null;
-}
-
-export type PostReadBody = { [key: string]: unknown };
-
-export interface PostRead {
-  archived_at: string | null;
-  can: ToolCan;
-  id: number;
-  initiative_id: number;
-  community_id: number;
-  created_by: number | null;
-  created_at: string;
-  updated_at: string;
-  comments_enabled: boolean;
-  tags: TagSummary[];
-  properties: PropertySummary[];
-  grants: ResourceGrantSchema[];
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  name: string;
-  author: CommentAuthor | null;
-  excerpt: string;
-  pinned_at: string | null;
-  pinned_by: number | null;
-  pin_expires_at: string | null;
-  is_pinned: boolean;
-  published_at: string | null;
-  scheduled_for: string | null;
-  is_published: boolean;
-  is_read: boolean;
-  read_count: number;
-  reactions_enabled: boolean;
-  comments_locked_at: string | null;
-  comment_count: number;
-  reactions: ReactionGroup[];
-  body: PostReadBody;
-  poll: PollRead | null;
 }
 
 export interface PostListResponse {
@@ -8175,16 +8644,6 @@ export interface ProjectActivityResponse {
   items: ProjectActivityEntry[];
 }
 
-export interface ProjectCan {
-  edit: boolean;
-  contribute: boolean;
-  delete: boolean;
-  share: boolean;
-  export: boolean;
-  unarchive: boolean;
-  configure: boolean;
-}
-
 export interface ProjectCreate {
   properties?: PropertyValueInput[];
   name: string;
@@ -8196,41 +8655,6 @@ export interface ProjectCreate {
   is_template?: boolean;
   template_id?: number | null;
   grants?: ResourceGrantSchema[];
-}
-
-export interface ProjectTaskSummary {
-  total: number;
-  completed: number;
-}
-
-export interface ProjectRead {
-  archived_at: string | null;
-  can: ProjectCan;
-  id: number;
-  initiative_id: number;
-  community_id: number;
-  created_by: number | null;
-  created_at: string;
-  updated_at: string;
-  comments_enabled: boolean;
-  tags: TagSummary[];
-  properties: PropertySummary[];
-  grants: ResourceGrantSchema[];
-  name: string;
-  description: string | null;
-  icon: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  owner_id: number | null;
-  is_template: boolean;
-  pinned_at: string | null;
-  owner: UserPublic | null;
-  owner_plugin: OwnerPluginSummary | null;
-  initiative: InitiativeSummary | null;
-  is_favorited: boolean;
-  last_viewed_at: string | null;
-  task_summary: ProjectTaskSummary;
-  task_statuses: TaskStatusRead[];
 }
 
 export interface ProjectListResponse {
@@ -8781,13 +9205,44 @@ export interface RecentItemRead {
   original_filename: string | null;
 }
 
+export type RecentKind = (typeof RecentKind)[keyof typeof RecentKind];
+
+export const RecentKind = {
+  project: "project",
+  file: "file",
+  queue: "queue",
+  counter_group: "counter_group",
+  calendar: "calendar",
+  dashboard: "dashboard",
+  post: "post",
+  gallery: "gallery",
+  wiki: "wiki",
+  task: "task",
+  queue_item: "queue_item",
+  calendar_event: "calendar_event",
+  counter: "counter",
+  gallery_image: "gallery_image",
+  wiki_page: "wiki_page",
+} as const;
+
 /**
- * Response body for POST .../{id}/view, common across entity types.
+ * Where an open came from.
+ */
+export type ViewSource = (typeof ViewSource)[keyof typeof ViewSource];
+
+export const ViewSource = {
+  direct: "direct",
+  search: "search",
+} as const;
+
+/**
+ * Response body for recording an open, common across kinds.
  */
 export interface RecentViewWrite {
-  entity_type: RecentEntityType;
+  entity_type: RecentKind;
   entity_id: number;
   last_viewed_at: string;
+  source: ViewSource;
 }
 
 /**
@@ -8851,6 +9306,21 @@ export interface ReferenceEmbed {
  */
 export interface ReferenceEmbedList {
   items: ReferenceEmbed[];
+}
+
+/**
+ * The references one page asks about, read together.
+ *
+ * A body rather than a query string: what a page points at is its own
+ * business, and a URL is rewritten and recorded by whatever it passes
+ * through.
+ */
+export interface ReferenceRead {
+  /**
+   * References to read. `task:12` names a thing, `task:12:status` a fact about it. One that names nothing is ignored. Chips: calendar_event:when, counter:value, project:progress, task:assignee, task:due, task:priority, task:status, task:checklist
+   * @maxItems 500
+   */
+  refs?: string[];
 }
 
 /**
@@ -9516,21 +9986,11 @@ export interface TaskCaseRead {
   active_status_id?: number | null;
   messages?: CaseMessageRead[];
   evidence?: CaseEvidenceRead[];
+  grants?: AccessGrantRead[];
   subject_community_id?: number | null;
   resource_type?: string | null;
   resource_id?: number | null;
 }
-
-export type TaskColumnFieldId = (typeof TaskColumnFieldId)[keyof typeof TaskColumnFieldId];
-
-export const TaskColumnFieldId = {
-  title: "title",
-  startDate: "startDate",
-  dueDate: "dueDate",
-  priority: "priority",
-  comments: "comments",
-  tags: "tags",
-} as const;
 
 export type TaskCreateRecurrenceStrategy =
   (typeof TaskCreateRecurrenceStrategy)[keyof typeof TaskCreateRecurrenceStrategy];
@@ -9556,38 +10016,6 @@ export interface TaskCreate {
   /** @maxItems 100 */
   tag_ids?: number[];
   checklist?: ChecklistItemInput[];
-}
-
-export type TaskFilterSpecDue = (typeof TaskFilterSpecDue)[keyof typeof TaskFilterSpecDue] | null;
-
-export const TaskFilterSpecDue = {
-  overdue: "overdue",
-  today: "today",
-  "7_days": "7_days",
-  "30_days": "30_days",
-} as const;
-
-export interface TaskPropertyFilter {
-  property_id: number;
-  op?: FilterOp;
-  value?: unknown;
-}
-
-/**
- * The filter values a task view holds. Unknown keys are rejected.
- */
-export interface TaskFilterSpec {
-  /** @maxItems 50 */
-  status_ids?: number[];
-  status_categories?: TaskStatusCategory[];
-  /** @maxItems 25 */
-  assignees?: string[];
-  /** @maxItems 25 */
-  tag_ids?: number[];
-  /** @maxItems 5 */
-  properties?: TaskPropertyFilter[];
-  due?: TaskFilterSpecDue;
-  include_archived?: boolean;
 }
 
 export interface TaskListResponse {
@@ -9673,16 +10101,6 @@ export interface TaskReorderRequest {
   items: TaskReorderItem[];
 }
 
-export type TaskSortFieldId = (typeof TaskSortFieldId)[keyof typeof TaskSortFieldId];
-
-export const TaskSortFieldId = {
-  title: "title",
-  startDate: "startDate",
-  dueDate: "dueDate",
-  priority: "priority",
-  tags: "tags",
-} as const;
-
 export interface TaskStatusCreate {
   /**
    * @minLength 1
@@ -9741,6 +10159,7 @@ export interface TaskUpdate {
   description?: string | null;
   description_base?: string | null;
   task_status_id?: number | null;
+  status_category?: TaskStatusCategory | null;
   priority?: TaskPriority | null;
   assignee_ids?: number[] | null;
   start_date?: string | null;
@@ -9837,119 +10256,29 @@ export interface ToolDuplicateRequest {
   target_initiative_id?: number | null;
 }
 
-export interface ToolItemLayoutRead {
-  id: number;
-  item_kind: "task";
-  definition: ItemLayoutDefinitionOutput;
-}
+export type ToolLayoutDefaultWriteKind =
+  (typeof ToolLayoutDefaultWriteKind)[keyof typeof ToolLayoutDefaultWriteKind];
 
-export interface ToolItemLayoutWrite {
-  item_kind: "task";
-  definition: ItemLayoutDefinitionInput;
-}
-
-export type ViewLayoutType = (typeof ViewLayoutType)[keyof typeof ViewLayoutType];
-
-export const ViewLayoutType = {
+export const ToolLayoutDefaultWriteKind = {
   table: "table",
   board: "board",
   calendar: "calendar",
 } as const;
 
-export interface ViewLayout {
-  type: ViewLayoutType;
+/**
+ * The list a target opens on.
+ */
+export interface ToolLayoutDefaultWrite {
+  kind: ToolLayoutDefaultWriteKind;
 }
-
-export type ViewSortDirection = (typeof ViewSortDirection)[keyof typeof ViewSortDirection];
-
-export const ViewSortDirection = {
-  asc: "asc",
-  desc: "desc",
-} as const;
-
-export interface ViewSort {
-  field: TaskSortFieldId;
-  direction?: ViewSortDirection;
-}
-
-export type ViewDefinitionOutputOpens =
-  | (typeof ViewDefinitionOutputOpens)[keyof typeof ViewDefinitionOutputOpens]
-  | null;
-
-export const ViewDefinitionOutputOpens = {
-  panel: "panel",
-  page: "page",
-} as const;
 
 /**
- * A view. What it leaves out is drawn as shipped: a view with no ``card``
- * draws the shipped card, one with no ``columns`` the shipped columns.
+ * A target's layouts, one of each kind its tool draws: its lists, then its
+ * items, in the order the tool names them.
  */
-export interface ViewDefinitionOutput {
-  layout: ViewLayout;
-  filters?: TaskFilterSpec | null;
-  card?: CardPartOutput | null;
-  columns?: (TaskColumnFieldId | string)[] | null;
-  sort?: ViewSort[] | null;
-  opens?: ViewDefinitionOutputOpens;
-}
-
-export interface ToolViewRead {
-  id: number | null;
-  name: string;
-  slug: string;
-  position: number;
-  is_default: boolean;
-  definition: ViewDefinitionOutput;
-}
-
-export interface ToolViewSetRead {
-  views: ToolViewRead[];
-  item_layouts: ToolItemLayoutRead[];
-  stored: boolean;
+export interface ToolLayoutSetRead {
+  layouts: (ListLayoutRead | DetailLayoutRead)[];
   can_configure: boolean;
-}
-
-export type ViewDefinitionInputOpens =
-  | (typeof ViewDefinitionInputOpens)[keyof typeof ViewDefinitionInputOpens]
-  | null;
-
-export const ViewDefinitionInputOpens = {
-  panel: "panel",
-  page: "page",
-} as const;
-
-/**
- * A view. What it leaves out is drawn as shipped: a view with no ``card``
- * draws the shipped card, one with no ``columns`` the shipped columns.
- */
-export interface ViewDefinitionInput {
-  layout: ViewLayout;
-  filters?: TaskFilterSpec | null;
-  card?: CardPartInput | null;
-  columns?: (TaskColumnFieldId | string)[] | null;
-  sort?: ViewSort[] | null;
-  opens?: ViewDefinitionInputOpens;
-}
-
-export interface ToolViewWrite {
-  /**
-   * @minLength 1
-   * @maxLength 100
-   */
-  name: string;
-  slug?: string | null;
-  is_default?: boolean;
-  definition: ViewDefinitionInput;
-}
-
-/**
- * A target's whole set, in order. It replaces whatever was stored.
- */
-export interface ToolViewSetWrite {
-  /** @minItems 1 */
-  views: ToolViewWrite[];
-  item_layouts?: ToolItemLayoutWrite[];
 }
 
 export interface TrashItem {
@@ -10015,6 +10344,7 @@ export interface UserCommunityMember {
   oidc_managed: boolean;
   display_name: string | null;
   api_keys_allowed: boolean | null;
+  guest_until: string | null;
 }
 
 /**
@@ -10127,6 +10457,7 @@ export interface UserRead {
   week_starts_on: number;
   time_format: string;
   recent_tabs_limit: number;
+  count_toward_engagement_ranking: boolean;
   timezone: string;
   event_reminder_minutes_before: number | null;
   last_overdue_notification_at: string | null;
@@ -10162,6 +10493,7 @@ export interface UserSelfUpdate {
   week_starts_on?: number | null;
   time_format?: string | null;
   recent_tabs_limit?: number | null;
+  count_toward_engagement_ranking?: boolean | null;
   timezone?: string | null;
   event_reminder_minutes_before?: number | null;
   color_theme?: string | null;
@@ -10752,13 +11084,6 @@ export interface FilterGroup {
   conditions: (FilterCondition | FilterGroup)[];
 }
 
-export type SortDir = (typeof SortDir)[keyof typeof SortDir];
-
-export const SortDir = {
-  asc: "asc",
-  desc: "desc",
-} as const;
-
 export interface SortField {
   field: string;
   dir?: SortDir;
@@ -10993,6 +11318,104 @@ export type ExportPlatformUsersCsvParams = {
   user_id?: number[] | null;
 };
 
+export type ClearSecondFactorParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type SignUserOutEverywhereParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type ClearProfileFieldParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type TriggerPasswordResetParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type ReactivateUserParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type RestoreDeletedUserParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type RemoveUserAvatarParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type SetUserUsernameParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type SetUserSuspensionParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type LiftSignInLockParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type RevokeUserApiKeysParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type ClearAgeBlockParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type UpdatePlatformRoleParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
+export type DeleteUserParams = {
+  /**
+   * The operations case this act is for: one the caller can read, still open. The case is told of the act.
+   */
+  case_task_id?: number | null;
+};
+
 export type ListDirectoryCommunitiesParams = {
   search?: string | null;
   /**
@@ -11050,6 +11473,13 @@ export type ListAccessGrantQueueParams = {
    * @maximum 200
    */
   page_size?: number;
+};
+
+export type ListGrantCasesParams = {
+  /**
+   * A title holding this, or the case with this number.
+   */
+  search?: string | null;
 };
 
 export type GetFcmConfigParams = {
@@ -11604,19 +12034,29 @@ export type ReadProjectParams = {
   include_deleted?: boolean;
 };
 
-export type GetViewsParams = {
+export type GetLayoutsParams = {
   tool: Tool;
   tool_id?: number | null;
   initiative_id?: number | null;
 };
 
-export type PutViewsParams = {
+export type PutLayoutParams = {
   tool: Tool;
   tool_id?: number | null;
   initiative_id?: number | null;
 };
 
-export type DeleteViewsParams = {
+export type GetInitiativeLayoutsParams = {
+  initiative_id: number;
+};
+
+export type PutDefaultLayoutParams = {
+  tool: Tool;
+  tool_id?: number | null;
+  initiative_id?: number | null;
+};
+
+export type ResetLayoutParams = {
   tool: Tool;
   tool_id?: number | null;
   initiative_id?: number | null;
@@ -12207,6 +12647,8 @@ export type ListCalendarEntriesParams = {
   tz?: string | null;
   include_events?: boolean;
   include_tasks?: boolean;
+  include_projects?: boolean;
+  include_polls?: boolean;
   start_after: string;
   start_before: string;
 };
@@ -12345,22 +12787,6 @@ export type SuggestCommunityParams = {
   limit?: number;
 };
 
-export type ReadSmartChipsParams = {
-  /**
-   * A chip to read, as `kind:id:aspect` — `task:12:status`. Repeat it for every chip on the page; they are read together. Pairs that name no chip are ignored. Available: calendar_event:when, counter:value, project:progress, task:assignee, task:due, task:priority, task:status, task:checklist
-   * @maxItems 100
-   */
-  ref?: string[];
-};
-
-export type ReadReferenceEmbedsParams = {
-  /**
-   * A reference to show in full, as `kind:id` — `task:12`.
-   * @maxItems 100
-   */
-  ref?: string[];
-};
-
 export type ListPropertyDefinitionsParams = {
   initiative_id?: number | null;
 };
@@ -12391,6 +12817,10 @@ export type ListUsersParams = {
    * @maximum 100
    */
   page_size?: number;
+  /**
+   * The community's guests instead of its members. For its administrators.
+   */
+  guests?: boolean;
 };
 
 export type SearchUsersParams = {
@@ -12437,6 +12867,10 @@ export type ListRosterParams = {
 
 export type ExportUsersCsvParams = {
   user_id?: number[] | null;
+};
+
+export type RecordRecentParams = {
+  source?: ViewSource;
 };
 
 export type ListMyTasksParams = {

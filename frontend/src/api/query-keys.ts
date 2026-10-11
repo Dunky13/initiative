@@ -494,10 +494,29 @@ const wikiPages = (wikiId: number): Spec => ({
 /** One page's own read. */
 const wikiPage = (pageId: number): Spec => ({ communityExact: [`/api/v1/wiki-pages/${pageId}`] });
 
-// ── Views (community) ────────────────────────────────────────────────────────
+// ── References (community) ───────────────────────────────────────────────────
 
-/** Every set of views. One path serves them all, its target in the params. */
-const views = (): Spec => ({ communityExact: ["/api/v1/views/"] });
+/** Every chip, link and embed answer about one thing. `useSmartChips` keeps
+ *  them at the thing's address, so a change to it names them all. */
+const references = (kind: string, id: number): Spec => ({
+  communityExact: [`/api/v1/smart-chips/${kind}/${id}`, `/api/v1/smart-chips/embeds/${kind}/${id}`],
+});
+
+/** Every chip and embed answer, or every one about a kind of thing. */
+const allReferences = (kind?: string): Spec => ({
+  communityPrefix: kind
+    ? [`/api/v1/smart-chips/${kind}/`, `/api/v1/smart-chips/embeds/${kind}/`]
+    : ["/api/v1/smart-chips/"],
+});
+
+// ── Layouts (community) ──────────────────────────────────────────────────────
+
+/** An initiative's list of its tools' layouts, for its settings. */
+const initiativeLayouts = (): Spec => ({ communityExact: ["/api/v1/layouts/initiative"] });
+
+/** Every set of layouts (one path serves them all, its target in the params),
+ *  and the initiatives' lists of them. */
+const layouts = (): Spec => compose({ communityExact: ["/api/v1/layouts/"] }, initiativeLayouts());
 
 // ── Version (personal) ───────────────────────────────────────────────────────
 
@@ -520,14 +539,20 @@ const toolCounts = (): Spec => ({ communityExact: ["/api/v1/tools/counts/by-init
  * Every list of one tool — its community-wide list and the cross-community `/me` twin
  * every tool has — and its page's counts, whose tag tree moves when a row's
  * tags do. A calendar's also reaches the events and entries views, which show
- * its name and colour. Not the sidebar's counts: changing what a row says
+ * its name and colour, and a project's or post's the entries, which show their
+ * dates. Not the sidebar's counts: changing what a row says
  * leaves those where they were.
  */
 const toolLists = (which: Tool): Spec => {
   const lists = compose(resourceAndMe(toolRouteSegment(which)), {
     communityPrefix: [`/api/v1/tools/${which}/counts`],
   });
-  return which === Tool.calendar ? compose(lists, allCalendarEvents()) : lists;
+  if (which === Tool.calendar) return compose(lists, allCalendarEvents());
+  // An initiative's list of layouts names its projects, by name. The entries
+  // carry projects by their dates and posts by their polls' closing.
+  if (which === Tool.project) return compose(lists, initiativeLayouts(), allCalendarEntries());
+  if (which === Tool.post) return compose(lists, allCalendarEntries());
+  return lists;
 };
 
 /** Every list of one tool and the counts beside them — what adding or
@@ -597,7 +622,7 @@ const allPropertyHolders = (): Spec =>
 // name its rows one by one says so instead, and this is the answer.
 
 const communityContent = (): Spec =>
-  compose(allInitiatives(), ...TOOLS.map(toolList), allTasks(), allComments());
+  compose(allInitiatives(), ...TOOLS.map(toolList), allTasks(), allComments(), allReferences());
 
 /** Every description, by name. The only export a call site needs beside `invalidate`. */
 export const q = {
@@ -616,6 +641,7 @@ export const q = {
   allProjects,
   allProperties,
   allPropertyHolders,
+  allReferences,
   allQueues,
   allSettings,
   allTags,
@@ -625,6 +651,7 @@ export const q = {
   appConfig,
   pluginServices,
   plugins,
+  references,
   authProviders,
   communityNarrowings,
   authSettings,
@@ -689,7 +716,8 @@ export const q = {
   toolSubtree,
   userStats,
   version,
-  views,
+  initiativeLayouts,
+  layouts,
   wiki,
   wikiPage,
   wikiPages,

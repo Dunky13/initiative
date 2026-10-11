@@ -279,11 +279,18 @@ class User(SQLModel, table=True):
     )
     # How many recently-opened items the header tabs bar keeps and shows for
     # this user, across all entity types and guilds. Drives both the display
-    # count and the per-guild prune cap (see app.services.recent_views).
+    # count and how many each guild keeps (app.services.tenant.recent_views).
     # Clamped to [1, 100] on write; default 20 preserves the historic behavior.
     recent_tabs_limit: int = Field(
         default=20,
         sa_column=Column(Integer, nullable=False, server_default="20"),
+    )
+    #: Whether what this person opens and changes counts toward the engagement
+    #: levels search orders by (app.services.tenant.engagement_levels). Theirs
+    #: to turn off, and on until they do.
+    count_toward_engagement_ranking: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
     #: When this account said it belongs to somebody old enough to join a
     #: community the whole deployment can browse. NULL means it never has,

@@ -40,9 +40,11 @@ from app.core.relationships import (
 from app.core.tools import (
     DEFAULT_ENABLED_TOOLS,
     INSTALL_METADATA_KIND,
+    CONTENT_KINDS,
     ITEM_KINDS,
+    KINDS,
     PROPERTY_TARGETS,
-    VIEWS_PER_INSTANCE,
+    LAYOUTS_PER_INSTANCE,
     Tool,
 )
 from app.db.authorization import (
@@ -882,7 +884,7 @@ def entity_tables() -> dict[str, str]:
     for kind, table in (
         *((k.value, e.table) for k, e in ENDPOINT_KINDS.items()),
         *((t.value, t.table) for t in ReactionTarget),
-        *RECENT_ENTITY_TABLES.items(),
+        *CONTENT_KIND_TABLES.items(),
         *((p.kind, p.table) for p in _COMMENT_PARENTS),
     ):
         if tables.setdefault(kind, table) != table:
@@ -1102,24 +1104,40 @@ def plugin_metadata_path() -> InitiativePath:
     )
 
 
+#: The community's administration: its admin, a settings rung writing beside
+#: a read_write grant, or the system engine.
+_ADMINISTRATION = (
+    f"({_P.system} OR {_P.admin} OR ({POLICY_SETTINGS_ADMIN} AND {_P.pam_write}))"
+)
+
+
 def managed_write(initiative_expr: str) -> str:
     """Who changes what an initiative is set up with: its managers by the
-    standing, the community's admin, a settings rung writing beside a
-    read_write grant, or the system engine. The structural initiative tables'
-    ``managed_*`` policies, and a shared page's views."""
+    standing, or the community's administration. The structural initiative
+    tables' ``managed_*`` policies, and a shared page's views."""
     return (
-        f"({_P.system} OR {_P.admin} OR ({POLICY_SETTINGS_ADMIN} AND {_P.pam_write})"
-        f" OR ({_P.this_guild}"
+        f"({_ADMINISTRATION} OR ({_P.this_guild}"
         f" AND ({initiative_expr}) = ANY ({_P.field('manager_initiatives')})))"
     )
 
 
-def tool_views_path() -> InitiativePath:
-    """A view is read by the members of its initiative. A view of one instance
-    of a tool is written by whoever may write that instance, in the view's own
-    initiative: :data:`ENTITY_ACCESS_FN` asks the instance's own entry, sharing
-    included, as a property value's write does. A view of a shared page (no
-    instance) is written as the initiative's setup is (:func:`managed_write`).
+def administration_path() -> InitiativePath:
+    """A row the community's administration alone reads and writes, whatever
+    initiative it names: what a guest invite gives, which the invites
+    themselves answer to."""
+    return InitiativePath(
+        predicate=lambda t, w: _ADMINISTRATION,
+        initiative_expr=lambda r: f"{r}.initiative_id",
+    )
+
+
+def tool_layouts_path() -> InitiativePath:
+    """A layout is read by the members of its initiative. A layout of one
+    instance of a tool is written by whoever may write that instance, in the
+    layout's own initiative: :data:`ENTITY_ACCESS_FN` asks the instance's own
+    entry, sharing included, as a property value's write does. A layout of a
+    shared tool (no instance) is written as the initiative's setup is
+    (:func:`managed_write`).
     """
 
     def build(t: str, w: bool) -> str:
@@ -1214,11 +1232,10 @@ def relationships_path() -> InitiativePath:
     return InitiativePath(predicate=build, initiative_expr=locate)
 
 
-# recent_views is polymorphic over (entity_type, entity_id). Every entity it can
-# point at is an initiative-scoped table with a direct initiative_id, so the path
-# is a per-type EXISTS join. Derived from the canonical Tool enum: entity_type is
-# the tool's string value, its table is the pluralized stem.
-RECENT_ENTITY_TABLES: dict[str, str] = {t.value: t.plural for t in Tool}
+# The tables that name a piece of content by (entity_type, entity_id), recent
+# views and engagement levels, take every tool and everything inside one, keyed
+# by its wire name, with the table its ids point at.
+CONTENT_KIND_TABLES: dict[str, str] = {k: KINDS[k].table for k in CONTENT_KINDS}
 
 
 def webhook_subscription_path() -> InitiativePath:
@@ -1248,16 +1265,17 @@ def webhook_subscription_path() -> InitiativePath:
     )
 
 
-def _search_tool_gate(t: str, write: bool) -> str:
-    """Gates 3 and 4 for a search entry, keyed on the tool it names.
+def _named_tool_gate(t: str, write: bool) -> str:
+    """Gates 3 and 4 for a row that names its governing tool: a search entry,
+    a change in the change log.
 
-    Every other table has one governing tool rendered into its policy. An entry
-    names its own in ``dac_tool``, so the switch and the role key are a CASE
-    over that column — one arm per tool, and rows naming none (the guild's
+    Every other table has one governing tool rendered into its policy. These
+    rows name their own in ``dac_tool``, so the switch and the role key are a
+    CASE over that column — one arm per tool, and rows naming none (the guild's
     vocabulary) fall through the ELSE.
 
-    An entry outlives the content it describes by as long as the sweep takes,
-    so it answers the same three questions the source does rather than trusting
+    A row outlives the content it describes by as long as the sweep takes, so
+    it answers the same three questions the source does rather than trusting
     that it was right when it was written.
     """
     # The switch no longer needs an arm per tool: the pair the standing carries
@@ -1282,12 +1300,14 @@ def _search_tool_gate(t: str, write: bool) -> str:
     )
 
 
-def search_entries_path() -> InitiativePath:
-    """The search index is reached exactly like the content it describes.
+def named_tool_path() -> InitiativePath:
+    """A row about content, reached exactly like the content it describes: the
+    search index, and the change log.
 
-    It stores ``initiative_id`` directly, so unlike ``recent_views`` this needs
-    no per-type EXISTS join — the row was stamped with its source's initiative
-    by the same registry that renders that source's own policies.
+    It stores ``initiative_id`` and its governing ``dac_tool``/``dac_id``
+    directly, so unlike ``recent_views`` this needs no per-type EXISTS join —
+    the row was stamped by the same registries that render the source's own
+    policies.
 
     A NULL initiative is the guild-level case (a tag, a guild calendar): the
     initiative gate has nothing to decide, and these are rows every member
@@ -1305,7 +1325,7 @@ def search_entries_path() -> InitiativePath:
         # The index stores the governing pair, so the legs need no join. Which
         # tool governs an entry differs per row, so the two that name a tool are
         # a CASE over it rather than a rendered constant.
-        dac=DacPath(predicate=lambda t, c, w: _search_tool_gate(t, w)),
+        dac=DacPath(predicate=lambda t, c, w: _named_tool_gate(t, w)),
     )
 
 
@@ -1367,11 +1387,11 @@ def evidence_path() -> InitiativePath:
     )
 
 
-def recent_views_path() -> InitiativePath:
-    """A reader's own record of visiting something, reached exactly like the
-    thing itself: ``(entity_type, entity_id)`` is the pair the entity function
-    takes, and every recentable kind is one of its arms. Keeping the record
-    asks nothing of sharing beyond reading."""
+def content_kind_path() -> InitiativePath:
+    """A row about one piece of content, reached exactly like the content
+    itself: ``(entity_type, entity_id)`` is the pair the entity function takes,
+    and every content kind is one of its arms. Writing the row asks nothing of
+    sharing beyond reading."""
 
     def folded(t: str, w: WriteFlag, sw: WriteFlag) -> str:
         return _entity_call(f"{t}.entity_type", f"{t}.entity_id", w, sw)
@@ -1379,8 +1399,8 @@ def recent_views_path() -> InitiativePath:
     def locate(r: str) -> str:
         arms = " ".join(
             f"WHEN '{etype}' THEN "
-            f"(SELECT {tbl}.initiative_id FROM {tbl} WHERE {tbl}.id = {r}.entity_id)"  # noqa: S608
-            for etype, tbl in RECENT_ENTITY_TABLES.items()
+            f"(SELECT {initiative_of(tbl, 're')} FROM {tbl} re WHERE re.id = {r}.entity_id)"  # noqa: S608
+            for etype, tbl in CONTENT_KIND_TABLES.items()
         )
         return f"(CASE {r}.entity_type {arms} END)"
 
@@ -1406,23 +1426,23 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # reads this table, so a policy here that called it would not resolve.
     # ``direct()`` derives none, because the table is no tool's own.
     "resource_grants": direct(),
-    # The change log itself. Scoped like the rows it describes, which is what
-    # lets the poller read it AS the subscriber (see EVENT_SOURCES below).
-    # Reading is the question this path answers; writing is the capture
-    # trigger's alone (app.db.guild_ddl._TRIGGER_WRITTEN_INSERT).
-    # No sharing leg, decided 2026-09-10: the envelope is identifiers and
-    # changed column names, and every consumer reads current state back
-    # through the REST path, where sharing decides. The initiative gate is
-    # what scopes it. See outbox_poller's module docstring.
-    "event_outbox": direct(),
+    # The change log itself, read like the content each change describes: a
+    # person reads a change only where they can open the tool instance that
+    # governs it (``dac_tool``/``dac_id``, stamped by the capture trigger), as
+    # with the search index. The poller and the levels pass read it as the
+    # system, so a subscription's reach is still the scope it names (see
+    # outbox_poller's module docstring). Writing is the capture trigger's alone
+    # (app.db.guild_ddl._WRITTEN_BY).
+    "event_outbox": named_tool_path(),
     # The events installed plug-ins emit, scoped by the initiative an event names
     # like the change log beside it. Written by the system engine alone
-    # (app.db.guild_ddl._TRIGGER_WRITTEN_INSERT) and read by the poller.
+    # (app.db.guild_ddl._WRITTEN_BY) and read by the poller.
     "plugin_event_outbox": direct(),
     # The search index. Derived from the content tables, and gated like them.
-    "search_entries": search_entries_path(),
+    "search_entries": named_tool_path(),
     # Integration config, reached by whoever can reach what it watches.
     "webhook_subscriptions": webhook_subscription_path(),
+    "guest_invite_grants": administration_path(),
     # Stored files, reached through the initiative whose content shows them.
     "uploads": uploads_path(),
     # Reports a community settles. Reached by whoever already sees everything
@@ -1476,7 +1496,7 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # entity_id).
     "plugin_metadata": plugin_metadata_path(),
     # An initiative's views of one tool instance, or of a shared page.
-    "tool_views": tool_views_path(),
+    "tool_layouts": tool_layouts_path(),
     "comments": comments_path(),
     # Polymorphic over what it is on; gated by that thing's own path.
     "reactions": reactions_path(),
@@ -1489,7 +1509,8 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # queued line is gated exactly like the gesture it describes.
     "reaction_digest_items": reactions_path(),
     "event_reminder_dispatches": via_event_calendar("event_id"),
-    "recent_views": recent_views_path(),
+    "recent_views": content_kind_path(),
+    "engagement_levels": content_kind_path(),
 }
 
 # Derived — the classification follows the registry, never duplicates it.
@@ -1520,10 +1541,11 @@ NAMED_PEOPLE: tuple[NamedPerson, ...] = (
 def initiative_of(table: str, row: str, *, qualify: str = "") -> str:
     """The initiative a row of ``table`` belongs to, as a sub-select, walked
     through the hops its policies declare. ``qualify`` goes before each table
-    name (a schema). A table that names its subject as a ``(kind, id)`` pair
-    has no hops to walk, and answers through its own ``initiative_expr``."""
+    name (a schema). A table that names its subject as a ``(kind, id)`` pair,
+    or holds its own ``initiative_id``, has no hops to walk, and answers
+    through its own ``initiative_expr``."""
     path = INITIATIVE_PATHS[table]
-    if path.dac is None:
+    if path.dac is None or not path.dac.via:
         return path.initiative_expr(row)
     hops = path.dac.via
     joins = f"{qualify}{hops[0][1]} h1"
@@ -1839,15 +1861,15 @@ def values_report_on_their_target(kinds: Iterable[str], facet: str) -> ReportsAs
     )
 
 
-def views_report_on_their_target() -> ReportsAs:
-    """A view is a facet of the instance it is for, or of its initiative when
-    it is for a shared page. Whoever shows the set re-reads it."""
-    arms = " ".join(f"WHEN '{t.value}' THEN '{t.plural}'" for t in VIEWS_PER_INSTANCE)
+def layouts_report_on_their_target() -> ReportsAs:
+    """A layout is a facet of the instance it is for, or of its initiative when
+    it is for a shared tool. Whoever shows the set re-reads it."""
+    arms = " ".join(f"WHEN '{t.value}' THEN '{t.plural}'" for t in LAYOUTS_PER_INSTANCE)
     return ReportsAs(
-        resource_types=frozenset(t.plural for t in VIEWS_PER_INSTANCE)
+        resource_types=frozenset(t.plural for t in LAYOUTS_PER_INSTANCE)
         | {"initiatives"},
         id_expr=lambda r: f"COALESCE({r}.tool_id, {r}.initiative_id)",
-        facet="views",
+        facet="layouts",
         type_expr=lambda r: (
             f"(CASE WHEN {r}.tool_id IS NULL THEN 'initiatives'"
             f" ELSE (CASE {r}.tool {arms} END) END)"
@@ -1953,6 +1975,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     # content, so every subscription would pay for pure noise.
     "recent_views": Silent("one member's own viewing state"),
     "search_entries": Silent("derived index, rebuilt from the content it mirrors"),
+    "engagement_levels": Silent("derived ranking, rewritten by the hourly pass"),
     "project_orders": Silent("one member's own ordering state"),
     "project_favorites": Silent("one member's own pinning state"),
     "task_assignment_digest_items": Silent("internal digest bookkeeping"),
@@ -1962,6 +1985,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
         "integration config; it reports on content, not on itself"
     ),
     "intake_bindings": Silent("routing config; it reports on no content"),
+    "guest_invite_grants": Silent("an invite's terms; redeeming it is recorded"),
     "moderation_reports": Silent("who reported whom is not an automation signal"),
     "moderation_report_reporters": Silent("the reporters behind one report"),
     "moderation_actions": Silent("the moderation log, read on its own surface"),
@@ -2024,9 +2048,13 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     "property_definitions": Emit(
         reports_as=reports_as("initiatives", "initiative_id", "properties")
     ),
-    # A view is read in its instance's set, or its initiative's for a shared
-    # page, so a change reports as that.
-    "tool_views": Emit(reports_as=views_report_on_their_target()),
+    # A layout is read in its instance's set, or its initiative's for a shared
+    # tool, so a change reports as that.
+    "tool_layouts": Emit(reports_as=layouts_report_on_their_target()),
+    # An answer is read with the event it answers, as its attendees are.
+    "calendar_event_answers": Emit(
+        reports_as=reports_as("calendar_events", "calendar_event_id", "answers")
+    ),
     "file_versions": Emit(reports_as=reports_as("files", "file_id", "versions")),
     # A picture is read through its gallery rather than at an address of its
     # own, so every change to one reports as the gallery it is in — its tags

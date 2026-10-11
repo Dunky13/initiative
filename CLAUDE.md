@@ -284,9 +284,9 @@ All user-facing strings must be externalized for localization. **Never hardcode 
 
 Translation files live in `frontend/public/locales/en/<namespace>.json`. The app uses `i18next-http-backend` to lazy-load namespaces on first use.
 
-**Namespaces**: `common`, `auth`, `nav`, `projects`, `tasks`, `files`, `initiatives`, `settings`, `tags`, `communities`, `imports`, `stats`, `landing`, `errors`, `dates`, `access`, `command`, `counterGroups`, `dashboards`, `communityHome`, `calendars`, `properties`, `queues`, `trash`, `search`, `comments`, `announcements`, `myTools`, `editor`
+**Namespaces**: `common`, `auth`, `nav`, `projects`, `tasks`, `files`, `initiatives`, `settings`, `tags`, `communities`, `imports`, `stats`, `landing`, `errors`, `dates`, `access`, `command`, `counterGroups`, `dashboards`, `communityHome`, `calendars`, `properties`, `queues`, `trash`, `search`, `comments`, `announcements`, `myTools`, `editor`, `layouts`
 
-Each tool owns the namespace named after its camel plural (`projects`, `files`, `queues`, `counterGroups`, `calendars`, `dashboards`) — `lib/tools.test.ts` fails if one is missing. `communityHome` is the community front page, which is not a tool. `comments` is the cross-tool comment surface (composer, thread, mention help); it is not owned by `files`, which is where it used to live. `editor` is the shared rich-text editor (toolbar, smart chips, embeds, references, outline) that files, wikis and posts all use; it is not owned by `files` either.
+Each tool owns the namespace named after its camel plural (`projects`, `files`, `queues`, `counterGroups`, `calendars`, `dashboards`) — `lib/tools.test.ts` fails if one is missing. `communityHome` is the community front page, which is not a tool. `comments` is the cross-tool comment surface (composer, thread, mention help); it is not owned by `files`, which is where it used to live. `editor` is the shared rich-text editor (toolbar, smart chips, embeds, references, outline) that files, wikis and posts all use; it is not owned by `files` either. `layouts` is the layout editor, which lays out every tool's lists and item pages; it is not owned by `projects`.
 
 **Rules:**
 

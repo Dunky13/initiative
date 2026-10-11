@@ -30,6 +30,7 @@ from app.api.deps import (
     SessionDep,
     UserSessionDep,
     get_current_active_user,
+    holds_guild_role,
     require_first_party_session,
     SystemSessionDep,
     GuildAdminContext,
@@ -299,6 +300,11 @@ async def list_users(
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
+    guests: bool = Query(
+        default=False,
+        description="The community's guests instead of its members. For its "
+        "administrators.",
+    ),
 ) -> UserCommunityMemberListResponse:
     """The community's roster, a page at a time.
 
@@ -309,13 +315,22 @@ async def list_users(
     Ordered like ``/search``: nearest first while searching, otherwise by name
     where the guild shows names, then by handle.
     """
-    base = users_service.guild_members(
+    if guests and not holds_guild_role(
+        guild_context, CommunityRole.admin, settings=True
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildMessages.COMMUNITY_ADMIN_REQUIRED,
+        )
+    narrow = users_service.guild_guests if guests else users_service.guild_members
+    base = narrow(
         select(
             MemberProfile,
             GuildMembership.role,
             GuildMembership.oidc_provider_id,
             GuildMembership.display_name,
             GuildMembership.api_keys_allowed,
+            GuildMembership.guest_until,
         ),
         guild_id=guild_context.guild_id,
     )
@@ -342,8 +357,16 @@ async def list_users(
     # set, so only the seat is told it.
     seat = guild_context.guild_seat
     items = []
-    for user, guild_role, oidc_provider_id, display_name, api_keys_allowed in rows:
+    for (
+        user,
+        guild_role,
+        oidc_provider_id,
+        display_name,
+        api_keys_allowed,
+        guest_until,
+    ) in rows:
         member = UserCommunityMember.model_validate(user)
+        member.guest_until = guest_until
         member.community_role = guild_role.value
         member.oidc_managed = oidc_provider_id is not None
         member.display_name = display_name
@@ -495,8 +518,15 @@ async def search_users(
             page=page,
             page_size=page_size,
         )
+    # Scoped to content, or naming people already chosen, the picker lists the
+    # community's guests too; across the whole community it is the roster.
+    scoped = (
+        initiative_id is not None
+        or bool(user_id)
+        or (tool is not None and resource_id is not None)
+    )
     base = users_service.guild_members(
-        select(MemberProfile), guild_id=guild_context.guild_id
+        select(MemberProfile), guild_id=guild_context.guild_id, guests=scoped
     )
     if initiative_id is not None:
         base = base.where(_in_initiative(initiative_id))
@@ -1455,6 +1485,10 @@ async def update_me(
         current_user.recent_tabs_limit = recent_views_service.clamp_recent_limit(
             update_data["recent_tabs_limit"]
         )
+    if update_data.get("count_toward_engagement_ranking") is not None:
+        current_user.count_toward_engagement_ranking = update_data[
+            "count_toward_engagement_ranking"
+        ]
     if "timezone" in update_data:
         normalized_timezone = normalize_timezone(update_data["timezone"])
         if normalized_timezone:
@@ -1956,7 +1990,7 @@ async def remove_member(
 def _image_not_found() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=GuildMessages.IMAGE_NOT_FOUND,
+        detail=ImageMessages.IMAGE_NOT_FOUND,
     )
 
 

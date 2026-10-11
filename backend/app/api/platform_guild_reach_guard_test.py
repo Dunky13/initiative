@@ -127,6 +127,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "enrolls a new member in the auto-join initiatives after the membership "
         "commits, on the community's cohort session"
     ),
+    (f"{_SERVICES}/guilds.py", "_give_guest_invite_grants.give"): (
+        "gives a new guest what their invite names after the membership "
+        "commits, on the community's cohort session"
+    ),
     (f"{_SERVICES}/users.py", "_in_each_guild"): (
         "an account's per-community part of deactivation and erasure, one "
         "cohort session per community it belonged to"
@@ -161,6 +165,39 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ),
     (f"{_SERVICES}/intake.py", "open_case"): (
         "intake: opens a case in the operations community on the deployment's behalf"
+    ),
+    (f"{_SERVICES}/intake.py", "release_subject_guild"): (
+        "intake: unnames a case's community again, for a grant that was not "
+        "made after all"
+    ),
+    (f"{_SERVICES}/intake.py", "claim_subject_guild"): (
+        "intake: settles the community a case is about, as an access grant for "
+        "it is asked for"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "_as_reader"): (
+        "grant cases: routes the person naming a case into the operations "
+        "community through the seam, as themselves, to read it"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "note"): (
+        "grant cases: notes on an operations case what became of a grant for it"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "case_exists"): (
+        "grant cases: reads whether a case a grant serves is still there to be told"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "activate"): (
+        "grant cases: puts a case to work when access for it is approved"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "cases_required"): (
+        "grant cases: reads whether the operations community takes cases a "
+        "grant may serve"
+    ),
+    (f"{_SERVICES}/intake.py", "open_case_counts"): (
+        "intake: counts the open cases about an account, for the staff roster, "
+        "naming no case's content"
+    ),
+    (f"{_SERVICES}/intake.py", "open_cases_for"): (
+        "intake: lists where an account's open cases are, for staff to link to; "
+        "opening one is its initiative's to allow"
     ),
     (f"{_SERVICES}/tickets.py", "reply"): (
         "tickets: writes a filer's answer in the operations community the "

@@ -95,6 +95,8 @@ async def test_a_failed_test_email_answers_with_a_code_and_logs_the_cause(
 _GUILD_DIALS = [
     pytest.param("max_storage_bytes", 5_000_000, None, -1, id="storage-cap"),
     pytest.param("max_users", 25, None, 0, id="user-cap"),
+    # 0 is a setting here: the community takes no new guests.
+    pytest.param("max_guests", 0, None, -1, id="guest-cap"),
     pytest.param(
         "status",
         CommunityStatus.suspended.value,
@@ -181,6 +183,7 @@ async def test_each_dial_moves_on_its_own(
     before = {
         "max_storage_bytes": 2048,
         "max_users": 5,
+        "max_guests": 2,
         "status": CommunityStatus.read_only.value,
     }
     guild = await create_guild(session, **before)
@@ -379,7 +382,7 @@ async def test_raising_cap_reopens_joins(
     invitee = await acting_user()
     # Minted while the seat is still free, redeemed after it is taken —
     # minting itself is capacity-gated, so the order here is the scenario.
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=operator.user.id, max_uses=5
     )
     await guild_service.ensure_membership(
@@ -392,7 +395,7 @@ async def test_raising_cap_reopens_joins(
     blocked = await client.post(
         "/api/v1/communities/invite/accept",
         headers=invitee.headers,
-        json={"code": invite.code},
+        json={"code": invite_code},
     )
     assert blocked.status_code == 403
     assert blocked.json()["detail"] == "COMMUNITY_USER_LIMIT_REACHED"
@@ -405,7 +408,7 @@ async def test_raising_cap_reopens_joins(
     accepted = await client.post(
         "/api/v1/communities/invite/accept",
         headers=invitee.headers,
-        json={"code": invite.code},
+        json={"code": invite_code},
     )
     assert accepted.status_code == 200
     # The cap itself is an admin-only field, and the invitee joins as a plain
@@ -1050,6 +1053,43 @@ async def test_owner_switches_the_community_directory_on_and_off(
 
 
 # ---------------------------------------------------------------------------
+# Ranking by engagement
+# ---------------------------------------------------------------------------
+
+
+async def test_the_deployment_and_a_community_each_turn_engagement_ranking_off(
+    client: AsyncClient, session: AsyncSession, owner, acting_user
+) -> None:
+    """The owner answers for the deployment and the seat for its community,
+    and the community's page is told the deployment's answer beside its own."""
+    seat = await acting_user(guild_role=CommunityRole.superadmin)
+    await guild_administration(session, seat.guild, auth_options=["restrictions"])
+    community = f"/api/v1/communities/{seat.guild.id}/auth-settings"
+
+    written = await client.patch(
+        community, json={"allow_engagement_ranking": False}, headers=seat.headers
+    )
+    assert written.status_code == 200, written.text
+    assert written.json()["allow_engagement_ranking"] is False
+    assert written.json()["engagement_ranking_allowed_by_platform"] is True
+
+    resp = await client.put(
+        "/api/v1/settings/community",
+        json={
+            "community_directory_enabled": False,
+            "engagement_ranking_enabled": False,
+        },
+        headers=owner.headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["engagement_ranking_enabled"] is False
+
+    body = (await client.get(community, headers=seat.headers)).json()
+    assert body["engagement_ranking_allowed_by_platform"] is False
+    assert body["allow_engagement_ranking"] is False
+
+
+# ---------------------------------------------------------------------------
 # How long somebody stays signed in
 # ---------------------------------------------------------------------------
 
@@ -1101,6 +1141,7 @@ async def test_a_zero_hour_limit_is_refused(client: AsyncClient, owner):
 
 _CONFIG_MANAGE = "config.manage"  # owner only
 _GUILDS_MANAGE = "communities.manage"  # operator and owner
+_GUILDS_READ = "communities.read"  # support and above
 _BILLING_INSIGHTS = "billing.insights"  # operator and owner
 
 #: (capability, method, path — ``{community_id}`` is filled in, json body or None)
@@ -1122,10 +1163,15 @@ _ROUTES: list[tuple[str, str, str, dict | None]] = [
         "/api/v1/settings/auth/platform",
         {"session_max_hours": 12},
     ),
-    (_GUILDS_MANAGE, "get", GUILDS, None),
+    (_GUILDS_READ, "get", GUILDS, None),
     (_GUILDS_MANAGE, "patch", GUILDS + "/{community_id}", {"max_storage_bytes": 1024}),
     (_GUILDS_MANAGE, "patch", GUILDS + "/{community_id}", {"status": "suspended"}),
-    (_GUILDS_MANAGE, "post", GUILDS + "/{community_id}/billing/service-handoff", None),
+    (
+        _GUILDS_MANAGE,
+        "post",
+        GUILDS + "/{community_id}/billing/service-handoff?console=operator",
+        None,
+    ),
     (_BILLING_INSIGHTS, "post", "/api/v1/settings/billing/insights-handoff", None),
 ]
 
@@ -1138,6 +1184,7 @@ _BELOW_THE_BAR: dict[str, list[UserRole]] = {
         UserRole.operator,
     ],
     _GUILDS_MANAGE: [UserRole.member, UserRole.support, UserRole.moderator],
+    _GUILDS_READ: [UserRole.member],
     _BILLING_INSIGHTS: [UserRole.member, UserRole.support, UserRole.moderator],
 }
 

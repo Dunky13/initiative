@@ -23,6 +23,7 @@ import type { CommentRead } from "@/api/generated/initiativeAPI.schemas";
 import { setInvalidationCommunity } from "@/api/query-keys";
 import { commentThreadQueryOptions } from "@/hooks/useComments";
 import { applyChanges, useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
+import { chipKey } from "@/hooks/useSmartChips";
 import { dashboardDataKey } from "@/hooks/useSqlQuery";
 import { queryClient } from "@/lib/queryClient";
 import { TOOLS, toolIdParam, toolPlural, toolRouteSegment } from "@/lib/tools";
@@ -311,9 +312,12 @@ describe("realtime resource frames", () => {
     }
   });
 
-  it("refreshes a task's project from the task's own frame", () => {
+  it("refreshes a task's project and the chips about both from the task's own frame", () => {
     const task = seed([`/api/v1/c/${COMMUNITY}/tasks/${ENTITY_ID}`]);
     const project = seed([`/api/v1/c/${COMMUNITY}/projects/7`]);
+    const status = seed(chipKey(COMMUNITY, `task:${ENTITY_ID}:status`));
+    const progress = seed(chipKey(COMMUNITY, "project:7:progress"));
+    const otherTask = seed(chipKey(COMMUNITY, `task:${ENTITY_ID + 1}:status`));
 
     applyChanges(
       [
@@ -328,12 +332,37 @@ describe("realtime resource frames", () => {
 
     expect(task(), "task").toBe(true);
     expect(project(), "project").toBe(true);
+    expect(status(), "the task's chip").toBe(true);
+    expect(progress(), "the project's progress chip").toBe(true);
+    expect(otherTask(), "another task's chip").toBe(false);
   });
 
-  it("refreshes a project's views when they change, and not on any other update", () => {
-    // The views are read at an address of their own, so the project's own
+  it("refreshes every task's chip when a project's columns change", () => {
+    // A renamed or recoloured column changes what a status chip says, and the
+    // change names the project, not the tasks in it.
+    const status = seed(chipKey(COMMUNITY, `task:${ENTITY_ID}:status`));
+    const counter = seed(chipKey(COMMUNITY, "counter:4:value"));
+
+    applyChanges(
+      [
+        {
+          resource: { type: "projects", id: 7 },
+          parents: [],
+          action: "updated",
+          changed: ["statuses"],
+        },
+      ],
+      COMMUNITY
+    );
+
+    expect(status(), "a task's status chip").toBe(true);
+    expect(counter(), "a counter's chip").toBe(false);
+  });
+
+  it("refreshes a project's layouts when they change, and not on any other update", () => {
+    // The layouts are read at an address of their own, so the project's own
     // refresh does not reach them.
-    const views = seed([`/api/v1/c/${COMMUNITY}/views/`, { tool: "project", tool_id: 7 }]);
+    const layouts = seed([`/api/v1/c/${COMMUNITY}/layouts/`, { tool: "project", tool_id: 7 }]);
     const project = (changed: string[]) => ({
       resource: { type: "projects", id: 7 },
       parents: [],
@@ -342,10 +371,10 @@ describe("realtime resource frames", () => {
     });
 
     applyChanges([project(["name"])], COMMUNITY);
-    expect(views(), "after a rename").toBe(false);
+    expect(layouts(), "after a rename").toBe(false);
 
-    applyChanges([project(["views"])], COMMUNITY);
-    expect(views(), "after a views change").toBe(true);
+    applyChanges([project(["layouts"])], COMMUNITY);
+    expect(layouts(), "after a layouts change").toBe(true);
   });
 
   it("refreshes the roster, the roles, what they permit and the properties", () => {

@@ -33,6 +33,7 @@ export function communityCan(
     configure: administers,
     administer_content: administers,
     seat: role === "superadmin",
+    community_wide: role !== "guest",
     use_api: true,
     ...overrides,
   };
@@ -63,6 +64,7 @@ export function buildCommunity(overrides: Partial<CommunityRead> = {}): Communit
     retention_days: null,
     max_storage_bytes: null,
     max_users: null,
+    max_guests: null,
     member_count: 1,
     tier_name: null,
     status: null,
@@ -91,6 +93,7 @@ export function buildCommunityInviteStatus(
     expires_at: null,
     max_uses: null,
     uses: 0,
+    guest_days: null,
     ...overrides,
   };
 }

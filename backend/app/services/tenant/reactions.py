@@ -27,7 +27,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
-from app.core.messages import ReactionMessages
+from app.core.messages import KindMessages, ReactionMessages
 from app.core.reactions import ReactionTarget
 from app.core.tools import Tool
 from app.db import session as db_session
@@ -167,7 +167,9 @@ async def _resolve_post(
             access="read",
         )
     except Exception as exc:  # the DAC engine raises its own HTTP error type
-        raise ReactionPermissionError(Tool.post.no_access_code) from exc
+        raise ReactionPermissionError(
+            KindMessages.NO_ACCESS, params={"kind": Tool.post.value}
+        ) from exc
 
     return TargetContext(
         target=ReactionTarget.post,
@@ -501,8 +503,10 @@ async def purge_reactions_for(
     """Hard-delete every reaction on targets that are being purged.
 
     Reactions name their target polymorphically, so no foreign key carries them
-    out with it — the purge path says so explicitly instead.
+    out with it — the purge path says so explicitly instead. A reaction is its
+    reactor's alone, so the platform drops them.
     """
+    from app.db.cohorts import exec_as_system
     from app.models.tenant.reaction_digest import ReactionDigestItem
 
     if not target_ids:
@@ -514,9 +518,10 @@ async def purge_reactions_for(
             ReactionDigestItem.target_id.in_(ids),
         )
     )
-    await session.exec(
+    await exec_as_system(
+        session,
         sa_delete(Reaction).where(
             Reaction.target_type == target.value,
             Reaction.target_id.in_(ids),
-        )
+        ),
     )

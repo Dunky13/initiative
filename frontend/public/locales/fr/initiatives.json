@@ -87,6 +87,7 @@
     "noAccess": "Vous n'avez accès à aucune fonctionnalité de cette initiative. Contactez un responsable de l'initiative pour obtenir de l'aide.",
     "member_one": "{{count}} membre",
     "member_other": "{{count}} membres",
+    "guest": "Invité",
     "online_one": "{{count}} en ligne",
     "online_other": "{{count}} en ligne",
     "initiativeSettings": "Paramètres de l'initiative",
@@ -272,7 +273,15 @@
       "turnedOffHeading": "Désactivés pour cette initiative",
       "turnedOffNote": "Ils n'accordent rien tant que l'outil n'est pas réactivé dans Détails. Rien de ce qu'ils contiennent n'est perdu entre-temps."
     },
-    "managerDescription": "Les gestionnaires dirigent cette initiative — ses membres, ses rôles et ses réglages — et peuvent voir et créer dans chaque outil. Les éléments précis qu'ils peuvent ouvrir dépendent toujours du partage de chacun."
+    "managerDescription": "Les gestionnaires dirigent cette initiative — ses membres, ses rôles et ses réglages — et peuvent voir et créer dans chaque outil. Les éléments précis qu'ils peuvent ouvrir dépendent toujours du partage de chacun.",
+    "layoutsTab": "Dispositions",
+    "layouts": {
+      "heading": "Dispositions",
+      "description": "Comment chaque outil de cette initiative présente ce qu'il contient : chaque disposition, sa dernière modification, et la liste sur laquelle un projet s'ouvre. Elles se modifient dans l'éditeur de chacun.",
+      "noProjects": "Cette initiative n'a encore aucun projet.",
+      "loadError": "Impossible de charger les dispositions.",
+      "calendar": "Calendrier"
+    }
   },
   "advancedTools": "Outils",
   "advancedToolsDescription": "Choisissez ce qui compose cette initiative. Les projets et les fichiers sont actifs dès le départ ; le reste, c'est à vous de l'ajouter.",

@@ -1,7 +1,7 @@
 {
   "title": "Community",
   "subtitle": "Everything in this community, one tool at a time.",
-  "toolRail": "Community tools",
+  "nodeRail": "Community activity",
   "loading": "Loading…",
   "loadError": "Failed to load this tool. Please try again later.",
   "communityWide": "Community-wide",
@@ -80,5 +80,21 @@
     "inProject": "in {{projectName}}",
     "readMore": "Read more",
     "showLess": "Show less"
+  },
+  "comingUp": {
+    "title": "Coming up",
+    "description": "Everything in the community with a date in the next seven days.",
+    "empty": "Nothing coming up this week",
+    "loadError": "Failed to load what's coming up. Please try again later.",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "kind": {
+      "event": "Event",
+      "taskStart": "Task starts",
+      "taskDue": "Task due",
+      "projectStart": "Project starts",
+      "projectEnd": "Project ends",
+      "pollCloses": "Poll closes"
+    }
   }
 }

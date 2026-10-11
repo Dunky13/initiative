@@ -149,6 +149,13 @@
     "fromTeam": "The team ({{name}})",
     "someone": "Someone",
     "conversationLabel": "Conversation with {{name}}",
+    "access": {
+      "title": "Access",
+      "listLabel": "Access asked for on this case",
+      "none": "No access has been asked for on this case.",
+      "request": "Request access",
+      "endsIn": "ends in {{minutes}}m"
+    },
     "holds": {
       "title": "Holds",
       "none": "Nothing is held on this case.",
@@ -195,7 +202,10 @@
       "problem": "Problem",
       "praise": "Praise",
       "appeal": "Suspension appeal"
-    }
+    },
+    "take": "Take this case",
+    "taken": "You're on this case",
+    "takeFailed": "Couldn't take this case."
   },
   "evidence": {
     "attach": "Attach files",

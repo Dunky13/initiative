@@ -55,6 +55,12 @@ ALLOWED_DYNAMIC_SQL: dict[str, str] = {
     "app/db/schema_provisioning.py::apply_guild_schema": (
         "int-derived schema name + reflected guild_template DDL"
     ),
+    "app/db/schema_provisioning.py::_write_stamp": (
+        "int-derived guild_<id> schema name + hex-digest stamp"
+    ),
+    "app/db/schema_provisioning.py::apply_guild_checks": (
+        "int-derived schema name + CHECKs rendered from model declarations (constants)"
+    ),
     "app/db/schema_provisioning.py::apply_guild_rls": (
         "int-derived schema name + registry-rendered RLS DDL (constants)"
     ),
@@ -80,10 +86,6 @@ ALLOWED_DYNAMIC_SQL: dict[str, str] = {
     "app/models/tenant/property.py::PropertyValue": (
         "model DDL: the CHECK lists the PROPERTY_TARGETS constant, the partial "
         "indexes name the model's own value columns"
-    ),
-    "app/models/tenant/tool_view.py::ToolView": (
-        "model DDL: the CHECKs list the VIEW_TOOLS constants, the partial "
-        "indexes the kind constants"
     ),
     "app/db/schema_provisioning.py::strip_template_registry_objects": (
         "the TEMPLATE_SCHEMA constant; policy, trigger and table names read "

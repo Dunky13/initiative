@@ -19,8 +19,9 @@ from sqlalchemy import text
 from app.core.reactions import ReactionTarget
 from app.db.initiative_rls import (
     COMMENT_PARENTS,
-    RECENT_ENTITY_TABLES,
+    CONTENT_KIND_TABLES,
     entity_tables,
+    initiative_of,
     render_entity_access_fn,
 )
 from app.db.schema_provisioning import (
@@ -426,21 +427,23 @@ _NO_SINGLE_PARENT = {
     "reactions": "one of eight tools, per row",
     "reaction_digest_items": "gated exactly like the reaction it describes",
     "recent_views": "one of eight tools, per row",
+    "engagement_levels": "any tool or sub-tool, per row",
     "property_values": "any tool or sub-tool, per row: read through its own table, written through entity_access",
     "plugin_metadata": "any item, per row, read through its own table, or the install itself",
     "search_entries": "names its tool in dac_tool",
-    "tool_views": "any viewable tool, per row, or its initiative for a shared page",
+    "tool_layouts": "any viewable tool, per row, or its initiative for a shared tool",
     # One tool, two parents: a link must clear the gate on BOTH files, so
     # there is no single row to authorize against.
     # Two parents of any kind: an edge clears the gate on each end through
     # entity_access, which asks each end's own entry here.
     "relationships": "source and target must both clear it, whatever they are",
     # No sharing leg at all — see the registry for each.
-    "event_outbox": "the change log is no tool's own table",
+    "event_outbox": "names its tool in dac_tool",
     "plugin_event_outbox": "the events plug-ins emit are no tool's own table",
     "property_definitions": "initiative configuration, not a tool's content",
     "resource_grants": "sharing itself; resource_access reads this table",
     "webhook_subscriptions": "integration config, gated by the initiative",
+    "guest_invite_grants": "an invite's terms, the community's administration's",
     "uploads": "a stored file, gated by the initiative whose content shows it",
     # Gated on full access rather than sharing: the standing that opens these
     # is the one that already reaches every resource, so there is no per-resource
@@ -637,11 +640,18 @@ def test_every_comment_parent_is_a_kind_the_entity_function_answers_for():
         assert tables[parent.kind] == parent.table, parent.column
 
 
+def test_initiative_of_reads_its_own_column_or_walks_to_it():
+    assert initiative_of("projects", "x") == "x.initiative_id"
+    assert initiative_of("tasks", "x") == (
+        "(SELECT h1.initiative_id FROM projects h1 WHERE h1.id = x.project_id)"
+    )
+
+
 def test_every_reaction_target_and_recentable_kind_is_an_arm():
     tables = entity_tables()
     for target in ReactionTarget:
         assert tables[target.value] == target.table
-    for kind, table in RECENT_ENTITY_TABLES.items():
+    for kind, table in CONTENT_KIND_TABLES.items():
         assert tables[kind] == table
 
 
