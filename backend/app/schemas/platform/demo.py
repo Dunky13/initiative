@@ -38,10 +38,12 @@ class DemoLeadCreate(SanitizedBaseModel):
 
 
 class DemoCopyRead(SanitizedBaseModel):
-    """A demo visitor's own copy, and whether its import has finished."""
+    """A demo visitor's own copy, and whether its import has finished, or
+    failed and left the copy unusable."""
 
     community_id: int
     ready: bool
+    failed: bool = False
     expires_at: Optional[datetime] = None
 
 

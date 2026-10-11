@@ -195,4 +195,19 @@ describe("the demo page", () => {
     await waitFor(() => expect(mounted.state.location.pathname).toBe("/c/9"));
     expect(redeemed).not.toHaveBeenCalled();
   });
+
+  it("says a copy that could not be filled failed, and stops waiting on it", async () => {
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    server.use(
+      http.get(COPY, () => HttpResponse.json({ community_id: 9, ready: false, failed: true }))
+    );
+    const { router: mounted } = await openLink("tok-3", {
+      auth: { user: buildUser({ demo_expires_at: expiresAt, demo_community_id: 9 }) },
+      communities: { communities: [buildCommunity({ id: 9 })] },
+    });
+
+    expect(await screen.findByText(/couldn't be set up/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+    expect(mounted.state.location.pathname).not.toBe("/c/9");
+  });
 });

@@ -84,10 +84,14 @@ export const DemoPage = () => {
     query: {
       enabled: destination !== null && !timedOut,
       refetchInterval: (query) =>
-        query.state.data?.ready || query.state.status === "error" ? false : READY_POLL_MS,
+        query.state.data?.ready || query.state.data?.failed || query.state.status === "error"
+          ? false
+          : READY_POLL_MS,
     },
   });
   const ready = filling.data?.ready === true && filling.data.community_id === destination;
+  // The copy could not be filled, so there is nothing to wait for.
+  const failed = filling.data?.failed === true && filling.data.community_id === destination;
 
   useEffect(() => {
     if (destination === null || ready || timedOut) return;
@@ -140,7 +144,7 @@ export const DemoPage = () => {
     }
   };
 
-  const stuck = destination !== null && (timedOut || filling.isError);
+  const stuck = destination !== null && (timedOut || filling.isError || failed);
 
   if (stuck) {
     return (
@@ -149,22 +153,26 @@ export const DemoPage = () => {
           <CardHeader>
             <CardTitle>{t("demo.title")}</CardTitle>
             <CardDescription role="alert">
-              {filling.isError
-                ? getErrorMessage(filling.error, "auth:demo.failed")
-                : t("demo.slow")}
+              {failed
+                ? t("demo.setupFailed")
+                : filling.isError
+                  ? getErrorMessage(filling.error, "auth:demo.failed")
+                  : t("demo.slow")}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button
-              className="w-full"
-              onClick={() => {
-                setTimedOut(false);
-                void filling.refetch();
-              }}
-            >
-              {t("demo.checkAgain")}
-            </Button>
-          </CardContent>
+          {failed ? null : (
+            <CardContent>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  setTimedOut(false);
+                  void filling.refetch();
+                }}
+              >
+                {t("demo.checkAgain")}
+              </Button>
+            </CardContent>
+          )}
         </Card>
       </SignInFrame>
     );

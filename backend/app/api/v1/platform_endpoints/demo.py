@@ -47,6 +47,7 @@ from app.demo import accounts, copies, pitches, sales
 from app.models.platform.guild import CommunityRole
 from app.models.platform.guild_image import IMAGE_SPECS, GuildImageVariant
 from app.models.platform.identity_ref import IdentityEntity
+from app.models.tenant.import_job import ImportJobStatus
 from app.models.platform.user import User
 from app.schemas.platform.demo import (
     DemoCopyRead,
@@ -149,11 +150,13 @@ async def _own_copy(user: User) -> copies.AccountCopy:
 @router.get("/copy", response_model=DemoCopyRead)
 async def read_demo_copy(current_user: CurrentUserDep, _demo: DemoOnly) -> DemoCopyRead:
     """The signed-in visitor's copy, and whether the import filling it has
-    finished. 404 for an account not made for a copy."""
+    finished, or failed. 404 for an account not made for a copy."""
     copy = await _own_copy(current_user)
+    filled = await copies.copy_import(copy)
     return DemoCopyRead(
         community_id=copy.guild_id,
-        ready=await copies.copy_ready(copy),
+        ready=filled is ImportJobStatus.done,
+        failed=filled is ImportJobStatus.failed,
         expires_at=copy.expires_at,
     )
 

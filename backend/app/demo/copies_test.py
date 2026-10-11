@@ -932,3 +932,20 @@ async def test_a_guest_invited_into_a_copy_has_no_copy_of_its_own(
     copy = await client.get("/api/v1/demo/copy", headers=get_auth_headers(invited))
 
     assert copy.status_code == 404
+
+
+async def test_a_copy_whose_import_failed_says_so(pitch, client, session):
+    link, _bea, _source = pitch
+    copy_id = await copies.build_copy()
+    opened, visitor, _me = await _open(client, await link())
+    await route_session_to_guild(session, copy_id)
+    job = await session.get(ImportJob, opened["import_job_id"])
+    assert job is not None
+    job.status = ImportJobStatus.failed
+    session.add(job)
+    await session.commit()
+
+    copy = await client.get("/api/v1/demo/copy", headers=visitor)
+
+    assert copy.json()["ready"] is False
+    assert copy.json()["failed"] is True
