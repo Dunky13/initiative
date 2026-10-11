@@ -29,8 +29,8 @@ interface UserMentionProps {
  * Somebody named, inside prose.
  *
  * The name is read rather than stored: a comment written a year ago says what
- * that person is called today, resolved from the page's one request for
- * everyone it mentions (`MentionedPeopleScope`). Somebody the answer does not
+ * that person is called today: each mention asks for its person, and a page's
+ * asks go out as one request (`useMentionedPerson`). Somebody the answer does not
  * include has left the community, or no longer has an account, and reads as a
  * former member. Until the answer arrives the chip holds its place without
  * guessing at a name.

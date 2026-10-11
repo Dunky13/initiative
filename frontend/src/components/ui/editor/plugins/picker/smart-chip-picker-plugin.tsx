@@ -38,17 +38,12 @@ export function SmartChipPickerPlugins(
 
 /** The `/` entry for `![[ ]]`, for whoever does not know the syntax: a thing
  *  shown in full, or the tasks a filter matches, in a callout. */
-export function EmbedPickerPlugin(
-  t: TFunction<"editor">,
-  initiativeId: number | null
-): ComponentPickerOption {
+export function EmbedPickerPlugin(t: TFunction<"editor">): ComponentPickerOption {
   const title = t("embeds.insert");
   return new ComponentPickerOption(title, {
     icon: <PanelTop className="size-4" />,
     keywords: ["embed", "description", "details", "card", "transclude", "callout"],
     onSelect: (_, editor, showModal) =>
-      showModal(title, (onClose) => (
-        <EmbedDialog initiativeId={initiativeId} activeEditor={editor} onClose={onClose} />
-      )),
+      showModal(title, (onClose) => <EmbedDialog activeEditor={editor} onClose={onClose} />),
   });
 }

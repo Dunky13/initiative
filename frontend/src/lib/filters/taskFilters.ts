@@ -262,27 +262,38 @@ export function taskSpecConditions(spec: TaskFilterSpec): (FilterCondition | Fil
 }
 
 /** Compile a spec into the endpoint's `conditions`. */
+/** Where a task list reads from: one project, or every project in an
+ *  initiative. */
+export type TaskScope = { projectId: number } | { initiativeId: number };
+
+const scopeCondition = (scope: TaskScope): FilterCondition =>
+  "projectId" in scope
+    ? { field: "project_id", op: "eq", value: scope.projectId }
+    : { field: "initiative_ids", op: "in_", value: [scope.initiativeId] };
+
+/** Compile a spec into the endpoint's `conditions`, inside its scope. */
 export function buildTaskConditions(
   spec: TaskFilterSpec,
-  options: { projectId: number }
+  scope: TaskScope
 ): (FilterCondition | FilterGroup)[] {
-  return [{ field: "project_id", op: "eq", value: options.projectId }, ...taskSpecConditions(spec)];
+  return [scopeCondition(scope), ...taskSpecConditions(spec)];
 }
 
 /**
  * The full list params, including archived. `include_archived` is a query
  * param rather than a condition, so it can't live in `conditions`.
  *
- * `page_size: 0` walks every page — the board and the drag-reorder need the
- * whole list, not a window.
+ * Without a `page`, `page_size: 0` walks every page — the board and the
+ * drag-reorder need the whole list, not a window.
  */
 export function buildTaskListParams(
   spec: TaskFilterSpec,
-  options: { projectId: number }
+  scope: TaskScope,
+  page: { page: number; page_size: number } = { page: 1, page_size: 0 }
 ): ListTasksParams {
   return {
-    conditions: buildTaskConditions(spec, options),
-    page_size: 0,
+    conditions: buildTaskConditions(spec, scope),
+    ...(page.page_size === 0 ? { page_size: 0 } : page),
     ...(spec.include_archived && { include_archived: true }),
   };
 }

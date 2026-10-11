@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -126,7 +126,8 @@ describe("CommentContent", () => {
 
     const { container } = renderResolvedContent("thanks @[](12) and @[Ada Lovelace](13)!");
 
-    expect(await screen.findAllByText("@Former member")).toHaveLength(2);
+    // Each mention settles on its own, so both are waited for.
+    await waitFor(() => expect(screen.getAllByText("@Former member")).toHaveLength(2));
     expect(container.querySelector("a")).toBeNull();
   });
 

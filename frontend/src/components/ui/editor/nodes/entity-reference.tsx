@@ -14,7 +14,7 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useReferenceTitle } from "@/hooks/useSmartChips";
 import { communityPath } from "@/lib/communityUrl";
 import { entityRefTypeFor } from "@/lib/entityResolver";
-import { hitIcon } from "@/lib/searchResults";
+import { entityIcon } from "@/lib/searchResults";
 import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
@@ -52,13 +52,7 @@ export function EntityReference({
   const refType = entityRefTypeFor(entityType);
   const reachable = live !== undefined && refType !== null;
   const label = live ?? fallback ?? t("references.gone");
-  const Icon = hitIcon({
-    entity_type: entityType,
-    entity_id: entityId,
-    initiative_id: null,
-    tool: null,
-    tool_id: null,
-  });
+  const Icon = entityIcon(entityType);
 
   const shared = "mx-0.5 inline-flex items-baseline gap-1 rounded px-1 align-baseline";
 

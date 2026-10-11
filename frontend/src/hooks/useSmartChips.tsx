@@ -7,6 +7,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { readReferenceEmbeds, readSmartChips } from "@/api/generated/smart-chips/smart-chips";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { batchedReader } from "@/lib/batchedReader";
 import { referenceRef, storedEntityType } from "@/lib/smartChips";
 
 /** How long an answer is trusted when nothing has said it changed — what a
@@ -29,65 +30,15 @@ const BACKSTOP_MS = 5 * 60_000;
 export const REFS_PER_REQUEST = 500;
 export const EMBEDS_PER_REQUEST = 25;
 
-interface Waiter<T> {
-  resolve: (value: T | null) => void;
-  reject: (error: unknown) => void;
-}
-
-/**
- * One request for everything asked in the same moment.
- *
- * Every chip asks for itself, and a page of thirty still makes one call: the
- * asks made while a render commits are held for a tick, then sent together,
- * split at `limit`. Each ask is answered with its own item, or `null` where
- * the server left it out — gone, or not this reader's to see.
- */
-export const batchedReader = <T extends { ref: string }>(
-  read: (communityId: number, refs: string[]) => Promise<T[]>,
-  limit: number
-) => {
-  const pending = new Map<number, Map<string, Waiter<T>[]>>();
-
-  const send = (communityId: number, waiting: Map<string, Waiter<T>[]>) => {
-    const refs = [...waiting.keys()];
-    for (let index = 0; index < refs.length; index += limit) {
-      const chunk = refs.slice(index, index + limit);
-      const settle = (answer: (waiter: Waiter<T>, ref: string) => void) => {
-        for (const ref of chunk) for (const waiter of waiting.get(ref) ?? []) answer(waiter, ref);
-      };
-      read(communityId, chunk).then(
-        (items) => {
-          const byRef = new Map(items.map((item) => [item.ref, item]));
-          settle((waiter, ref) => waiter.resolve(byRef.get(ref) ?? null));
-        },
-        (error) => settle((waiter) => waiter.reject(error))
-      );
-    }
-  };
-
-  return (communityId: number, ref: string): Promise<T | null> =>
-    new Promise((resolve, reject) => {
-      let waiting = pending.get(communityId);
-      if (!waiting) {
-        const held = new Map<string, Waiter<T>[]>();
-        waiting = held;
-        pending.set(communityId, held);
-        setTimeout(() => {
-          pending.delete(communityId);
-          send(communityId, held);
-        }, 0);
-      }
-      waiting.set(ref, [...(waiting.get(ref) ?? []), { resolve, reject }]);
-    });
-};
-
-const loadChip = batchedReader(
+const loadChip = batchedReader<string, SmartChipState>(
   (communityId, refs) => readSmartChips(communityId, { refs }).then((answer) => answer.items),
+  (state) => state.ref,
   REFS_PER_REQUEST
 );
 
-const loadEmbed = batchedReader(
+const loadEmbed = batchedReader<string, ReferenceEmbed>(
   (communityId, refs) => readReferenceEmbeds(communityId, { refs }).then((answer) => answer.items),
+  (embed) => embed.ref,
   EMBEDS_PER_REQUEST
 );
 

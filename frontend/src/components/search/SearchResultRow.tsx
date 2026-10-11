@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 
 import type { SearchHit } from "@/api/generated/initiativeAPI.schemas";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { FROM_SEARCH, hitIcon, searchHitPath } from "@/lib/searchResults";
 
@@ -91,14 +90,9 @@ function SearchResultRow({ hit }: { hit: SearchHit }) {
   );
 }
 
-/** A list of results, with the people their words mention asked about once. */
+/** A list of results. */
 export function SearchResultList({ hits }: { hits: SearchHit[] }) {
-  return (
-    <MentionedPeopleScope>
-      <ReportMentionedPeople texts={hits.flatMap((hit) => [hit.title, hit.snippet ?? ""])} />
-      {hits.map((hit) => (
-        <SearchResultRow key={`${hit.entity_type}-${hit.entity_id}`} hit={hit} />
-      ))}
-    </MentionedPeopleScope>
-  );
+  return hits.map((hit) => (
+    <SearchResultRow key={`${hit.entity_type}-${hit.entity_id}`} hit={hit} />
+  ));
 }

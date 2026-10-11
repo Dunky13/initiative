@@ -29,7 +29,6 @@ import { TagBadgeList } from "@/components/tags/TagBadge";
 import { DataTable } from "@/components/ui/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import { communityPath } from "@/lib/communityUrl";
 import type { AppColumn, AppColumnDef } from "@/lib/table";
 import { TOOL_HAS_DETAIL, type ToolRow } from "@/lib/toolRows";
@@ -222,17 +221,6 @@ export const ToolTable = ({
     [initiatives]
   );
 
-  // The people the rows' words mention, asked about once per community on the
-  // page rather than once per row.
-  const detailsByCommunity = useMemo(() => {
-    const byCommunity = new Map<number, string[]>();
-    for (const row of rows) {
-      if (typeof row.detail !== "string") continue;
-      byCommunity.set(row.communityId, [...(byCommunity.get(row.communityId) ?? []), row.detail]);
-    }
-    return [...byCommunity];
-  }, [rows]);
-
   const columns = useMemo<AppColumnDef<ToolRow>[]>(() => {
     /** A header that sorts where the page allows it, and plain text where it
      *  does not — a control that cannot act would only mislead. */
@@ -301,48 +289,43 @@ export const ToolTable = ({
   }, [t, tool, initiativesByKey, communities, sortFields]);
 
   return (
-    <MentionedPeopleScope>
-      {detailsByCommunity.map(([communityId, texts]) => (
-        <ReportMentionedPeople key={communityId} communityId={communityId} texts={texts} />
-      ))}
-      <DataTable
-        columns={columns}
-        data={rows}
-        // Ids repeat across communities, so the community is half the row key.
-        getRowId={(row: ToolRow) => `${row.communityId}:${row.id}`}
-        enableFilterInput
-        filterInputPlaceholder={t("searchPlaceholder")}
-        filterValue={search}
-        onFilterValueChange={onSearchChange}
-        enableColumnVisibilityDropdown
-        manualSorting
-        // Controlled, not seeded: the order lives in the address, so the back
-        // button can change it after this mounts and the headers have to follow.
-        sorting={[{ id: COLUMN_BY_SORT_FIELD[sortBy], desc: sortDir === "desc" }]}
-        onSortingChange={(sorting) => {
-          // Clearing the sort altogether lands back on the page's own default
-          // rather than on whatever each endpoint would do unsorted.
-          const next = sorting[0];
-          const field = next ? SORT_FIELD_BY_COLUMN[next.id] : undefined;
-          if (!field) {
-            onSortChange("updated_at", "desc");
-            return;
-          }
-          onSortChange(field, next.desc ? "desc" : "asc");
-        }}
-        enablePagination
-        manualPagination
-        pageCount={pageCount}
-        rowCount={totalCount}
-        pageIndex={page - 1}
-        onPaginationChange={(pagination: PaginationState) => {
-          if (pagination.pageSize !== pageSize) {
-            onPageSizeChange(pagination.pageSize);
-          } else {
-            onPageChange(pagination.pageIndex + 1);
-          }
-        }}
-      />
-    </MentionedPeopleScope>
+    <DataTable
+      columns={columns}
+      data={rows}
+      // Ids repeat across communities, so the community is half the row key.
+      getRowId={(row: ToolRow) => `${row.communityId}:${row.id}`}
+      enableFilterInput
+      filterInputPlaceholder={t("searchPlaceholder")}
+      filterValue={search}
+      onFilterValueChange={onSearchChange}
+      enableColumnVisibilityDropdown
+      manualSorting
+      // Controlled, not seeded: the order lives in the address, so the back
+      // button can change it after this mounts and the headers have to follow.
+      sorting={[{ id: COLUMN_BY_SORT_FIELD[sortBy], desc: sortDir === "desc" }]}
+      onSortingChange={(sorting) => {
+        // Clearing the sort altogether lands back on the page's own default
+        // rather than on whatever each endpoint would do unsorted.
+        const next = sorting[0];
+        const field = next ? SORT_FIELD_BY_COLUMN[next.id] : undefined;
+        if (!field) {
+          onSortChange("updated_at", "desc");
+          return;
+        }
+        onSortChange(field, next.desc ? "desc" : "asc");
+      }}
+      enablePagination
+      manualPagination
+      pageCount={pageCount}
+      rowCount={totalCount}
+      pageIndex={page - 1}
+      onPaginationChange={(pagination: PaginationState) => {
+        if (pagination.pageSize !== pageSize) {
+          onPageSizeChange(pagination.pageSize);
+        } else {
+          onPageChange(pagination.pageIndex + 1);
+        }
+      }}
+    />
   );
 };

@@ -2,14 +2,14 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { useLexicalEditable } from "@lexical/react/useLexicalEditable";
 import { useNavigate } from "@tanstack/react-router";
 import { $getNodeByKey, type NodeKey, type SerializedEditorState } from "lexical";
-import { ChevronDown, Link2 } from "lucide-react";
-import { createContext, lazy, Suspense, useContext, useState } from "react";
+import { Link2 } from "lucide-react";
+import { createContext, lazy, Suspense, useContext } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { SearchEntityType } from "@/api/generated/initiativeAPI.schemas";
 import { TaskDescription } from "@/components/tasks/TaskDescription";
 import { Button } from "@/components/ui/button";
-import { EmbedSettingsButton } from "@/components/ui/editor/nodes/embed-settings-button";
+import { EmbedCallout, useEmbedFold } from "@/components/ui/editor/nodes/embed-callout";
 import {
   $isReferenceEmbedNode,
   $showAsLink,
@@ -23,7 +23,7 @@ import { communityPath } from "@/lib/communityUrl";
 import type { EmbedDisplay, TaskQuery } from "@/lib/embeds";
 import { entityRefTypeFor } from "@/lib/entityResolver";
 import { hasBody } from "@/lib/posts";
-import { hitIcon } from "@/lib/searchResults";
+import { entityIcon } from "@/lib/searchResults";
 import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
@@ -101,8 +101,8 @@ export function ReferenceEmbed(props: ReferenceEmbedProps) {
  * keeps the name it had, dimmed, and says so; the two look the same on
  * purpose, as they do for a link.
  *
- * Shown as `fields`, it is the facts about the thing chosen for this page —
- * its status, who has it, when it is due — as live chips under its name.
+ * Shown as `fields`, it holds a smart chip for each fact chosen for this page —
+ * its status, who has it, when it is due — under its name.
  */
 function ItemEmbed({
   entityType,
@@ -119,37 +119,16 @@ function ItemEmbed({
   const communityId = useActiveCommunityId();
   const { data: embed, isFetched } = useReferenceEmbed(entityType, entityId);
   const depth = useContext(EmbedDepth);
-  // A reader who cannot edit the page folds it for themselves; the page's
-  // own answer returns when they reload, or when somebody who can changes it.
-  const [readerFolded, setReaderFolded] = useState<boolean | null>(null);
-  const folded = editable ? collapsed : (readerFolded ?? collapsed);
+  const fold = useEmbedFold(nodeKey, collapsed);
 
   const refType = entityRefTypeFor(entityType);
   const reachable = embed != null && refType !== null;
-  const Icon = hitIcon({
-    entity_type: entityType,
-    entity_id: entityId,
-    initiative_id: null,
-    tool: null,
-    tool_id: null,
-  });
 
   const card = display.mode === "card";
   const facts = card ? [] : (display.fields ?? []);
   const showBody = card && Boolean(embed?.body && hasBody(embed.body) && depth < MAX_BODY_DEPTH);
   const showDescription = card && Boolean(embed?.description);
   const foldable = facts.length > 0 || showBody || showDescription;
-
-  const toggleFolded = () => {
-    if (!editable) {
-      setReaderFolded(!folded);
-      return;
-    }
-    editor.update(() => {
-      const node = $getNodeByKey(nodeKey);
-      if ($isReferenceEmbedNode(node)) node.setCollapsed(!folded);
-    });
-  };
 
   const showAsLink = () =>
     editor.update(() => {
@@ -158,74 +137,57 @@ function ItemEmbed({
     });
 
   return (
-    <>
-      <span className="callout-icon" aria-hidden="true" />
-      <div className="callout-body space-y-2">
-        <div className="flex items-start gap-2">
-          <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" />
-          <button
+    <EmbedCallout
+      icon={entityIcon(entityType)}
+      nodeKey={nodeKey}
+      title={
+        <button
+          type="button"
+          onClick={() => {
+            if (reachable && refType) {
+              void navigate({ to: communityPath(communityId, entityRefRoute(refType, entityId)) });
+            }
+          }}
+          aria-disabled={!reachable}
+          className={cn(
+            "min-w-0 flex-1 text-left font-semibold",
+            reachable ? "cursor-pointer hover:underline" : "cursor-default text-muted-foreground"
+          )}
+        >
+          {embed?.title ?? fallback}
+        </button>
+      }
+      meta={t(`search:types.${entityType}` as never)}
+      actions={
+        editable ? (
+          <Button
             type="button"
-            onClick={() => {
-              if (reachable && refType) {
-                void navigate({
-                  to: communityPath(communityId, entityRefRoute(refType, entityId)),
-                });
-              }
-            }}
-            aria-disabled={!reachable}
-            className={cn(
-              "min-w-0 flex-1 text-left font-semibold",
-              reachable ? "cursor-pointer hover:underline" : "cursor-default text-muted-foreground"
-            )}
+            variant="ghost"
+            size="icon"
+            className="-my-1 size-7 shrink-0"
+            onClick={showAsLink}
+            aria-label={t("embeds.showAsLink")}
+            title={t("embeds.showAsLink")}
           >
-            {embed?.title ?? fallback}
-          </button>
-          <span className="shrink-0 pt-0.5 text-muted-foreground text-xs">
-            {t(`search:types.${entityType}` as never)}
-          </span>
-          {editable ? <EmbedSettingsButton nodeKey={nodeKey} /> : null}
-          {editable ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="-my-1 size-7 shrink-0"
-              onClick={showAsLink}
-              aria-label={t("embeds.showAsLink")}
-              title={t("embeds.showAsLink")}
-            >
-              <Link2 className="size-3.5" />
-            </Button>
-          ) : null}
-          {foldable ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="-my-1 size-7 shrink-0"
-              onClick={toggleFolded}
-              aria-expanded={!folded}
-              aria-label={t(folded ? "embeds.expand" : "embeds.collapse")}
-              title={t(folded ? "embeds.expand" : "embeds.collapse")}
-            >
-              <ChevronDown className={cn("size-4 transition-transform", folded && "-rotate-90")} />
-            </Button>
-          ) : null}
+            <Link2 className="size-3.5" />
+          </Button>
+        ) : null
+      }
+      fold={foldable ? fold : null}
+    >
+      {fold.folded && foldable ? null : facts.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1">
+          {facts.map((kind) => (
+            <SmartChip key={kind} chipKind={kind} entityId={entityId} fallback="" />
+          ))}
         </div>
-        {folded && foldable ? null : facts.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1">
-            {facts.map((kind) => (
-              <SmartChip key={kind} chipKind={kind} entityId={entityId} fallback="" />
-            ))}
-          </div>
-        ) : showBody && embed?.body ? (
-          <EmbeddedBody body={embed.body} />
-        ) : showDescription && embed?.description ? (
-          <TaskDescription content={embed.description} />
-        ) : isFetched && !embed ? (
-          <p className="text-muted-foreground text-sm">{t("references.unavailable")}</p>
-        ) : null}
-      </div>
-    </>
+      ) : showBody && embed?.body ? (
+        <EmbeddedBody body={embed.body} />
+      ) : showDescription && embed?.description ? (
+        <TaskDescription content={embed.description} />
+      ) : isFetched && !embed ? (
+        <p className="text-muted-foreground text-sm">{t("references.unavailable")}</p>
+      ) : null}
+    </EmbedCallout>
   );
 }

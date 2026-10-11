@@ -434,7 +434,7 @@ export const useBlockInsertActions = ({
       icon: <PanelTop className="size-4" />,
       run: () =>
         showModal(t("embeds.insert"), (onClose) => (
-          <EmbedDialog initiativeId={initiativeId} activeEditor={activeEditor} onClose={onClose} />
+          <EmbedDialog activeEditor={activeEditor} onClose={onClose} />
         )),
     });
   }

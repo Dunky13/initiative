@@ -150,6 +150,16 @@ export const hitIcon = (target: SearchTarget): LucideIcon => {
   return TOOL_ICONS[tool] ?? Tag;
 };
 
+/** The mark for a kind of thing, where there is no search hit to read it from. */
+export const entityIcon = (entityType: SearchEntityType): LucideIcon =>
+  hitIcon({
+    entity_type: entityType,
+    entity_id: 0,
+    initiative_id: null,
+    tool: null,
+    tool_id: null,
+  });
+
 /** The history state a hit is opened with, so its open is recorded as a search's. */
 export const FROM_SEARCH = { viewSource: ViewSource.search };
 

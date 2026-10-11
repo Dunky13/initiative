@@ -40,7 +40,6 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDirectMessagesEnabled } from "@/hooks/useDirectMessages";
 import { useGlobalCreateAccess } from "@/hooks/useInitiativeAccess";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 import { useRecents } from "@/hooks/useRecents";
 import { useCommunitySearchSuggest } from "@/hooks/useSearch";
 import { useTasks } from "@/hooks/useTasks";
@@ -365,70 +364,65 @@ export function CommandCenter() {
             keyed on the query itself rather than re-filtered here. A comment
             is found by its opening words, which can mention people. */}
         {isSearching && (
-          <MentionedPeopleScope>
-            <ReportMentionedPeople texts={suggestions.map(({ hit }) => hit.title)} />
-            <CommandGroup heading={t("groups.results")}>
-              {members.map((member) => (
-                // A profile belongs to the person rather than to the community
-                // the search ran in, so this leaves the community tree.
+          <CommandGroup heading={t("groups.results")}>
+            {members.map((member) => (
+              // A profile belongs to the person rather than to the community
+              // the search ran in, so this leaves the community tree.
+              <CommandItem
+                key={`member-${member.id}`}
+                value={`member-${member.id}`}
+                keywords={[effectiveSearch, getUserDisplayName(member)]}
+                onSelect={() => handleSelect(`/u/${getUrlHandle(member)}`)}
+              >
+                <Avatar className="size-4">
+                  <AvatarImage src={getAvatarSrc(member)} alt="" />
+                  <AvatarFallback className="text-3xs">{getInitialsForUser(member)}</AvatarFallback>
+                </Avatar>
+                <span>{getUserDisplayName(member)}</span>
+              </CommandItem>
+            ))}
+            {suggestions.map(({ hit, path }) => {
+              const Icon = hitIcon(hit);
+              return (
                 <CommandItem
-                  key={`member-${member.id}`}
-                  value={`member-${member.id}`}
-                  keywords={[effectiveSearch, getUserDisplayName(member)]}
-                  onSelect={() => handleSelect(`/u/${getUrlHandle(member)}`)}
-                >
-                  <Avatar className="size-4">
-                    <AvatarImage src={getAvatarSrc(member)} alt="" />
-                    <AvatarFallback className="text-3xs">
-                      {getInitialsForUser(member)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span>{getUserDisplayName(member)}</span>
-                </CommandItem>
-              ))}
-              {suggestions.map(({ hit, path }) => {
-                const Icon = hitIcon(hit);
-                return (
-                  <CommandItem
-                    key={`result-${hit.entity_type}-${hit.entity_id}`}
-                    value={`result-${hit.entity_type}-${hit.entity_id}`}
-                    keywords={[effectiveSearch, hit.title.replace(USER_MENTION_PATTERN, " ")]}
-                    onSelect={() =>
-                      handleSelect(
-                        activeCommunityId ? communityPath(activeCommunityId, path) : path,
-                        FROM_SEARCH
-                      )
-                    }
-                  >
-                    <Icon className="text-muted-foreground" />
-                    <span>
-                      <MentionText text={hit.title} disableLink />
-                    </span>
-                  </CommandItem>
-                );
-              })}
-              {(scopeQuery.isError || scopeIsEmpty) && (
-                <div className="py-3 text-center text-muted-foreground text-sm">
-                  {scopeQuery.isError ? t("search:failed.title") : t("noResults")}
-                </div>
-              )}
-              {activeCommunityId !== null && (
-                <CommandItem
-                  value="result-see-all"
-                  keywords={[effectiveSearch]}
+                  key={`result-${hit.entity_type}-${hit.entity_id}`}
+                  value={`result-${hit.entity_type}-${hit.entity_id}`}
+                  keywords={[effectiveSearch, hit.title.replace(USER_MENTION_PATTERN, " ")]}
                   onSelect={() =>
                     handleSelect(
-                      `${getCommunityPath("/search")}?q=${encodeURIComponent(effectiveSearch)}` +
-                        (scope === DEFAULT_SEARCH_CATEGORY ? "" : `&tab=${scope}`)
+                      activeCommunityId ? communityPath(activeCommunityId, path) : path,
+                      FROM_SEARCH
                     )
                   }
                 >
-                  <Search className="text-muted-foreground" />
-                  <span>{t("seeAllResults", { query: effectiveSearch })}</span>
+                  <Icon className="text-muted-foreground" />
+                  <span>
+                    <MentionText text={hit.title} disableLink />
+                  </span>
                 </CommandItem>
-              )}
-            </CommandGroup>
-          </MentionedPeopleScope>
+              );
+            })}
+            {(scopeQuery.isError || scopeIsEmpty) && (
+              <div className="py-3 text-center text-muted-foreground text-sm">
+                {scopeQuery.isError ? t("search:failed.title") : t("noResults")}
+              </div>
+            )}
+            {activeCommunityId !== null && (
+              <CommandItem
+                value="result-see-all"
+                keywords={[effectiveSearch]}
+                onSelect={() =>
+                  handleSelect(
+                    `${getCommunityPath("/search")}?q=${encodeURIComponent(effectiveSearch)}` +
+                      (scope === DEFAULT_SEARCH_CATEGORY ? "" : `&tab=${scope}`)
+                  )
+                }
+              >
+                <Search className="text-muted-foreground" />
+                <span>{t("seeAllResults", { query: effectiveSearch })}</span>
+              </CommandItem>
+            )}
+          </CommandGroup>
         )}
 
         {/* Actions — each shown only when the user can land its wizard
