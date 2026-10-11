@@ -444,6 +444,27 @@ async def test_a_case_a_hold_names_keeps_its_files_until_the_hold_is_released(
     assert await _sweep(session, desk) == 1
 
 
+async def test_the_sweep_waits_while_a_hold_naming_the_case_is_placed(
+    client, session, acting_user, desk
+):
+    """A hold placed on a long-closed case holds the case's task as the sweep
+    locks it, so the sweep finishes first or finds the hold committed."""
+    from sqlalchemy import text
+
+    from app.services.platform.intake import case_locked
+
+    task_id = await _with_file(client, acting_user)
+    await _set_state(session, desk, task_id, done_days_ago=400)
+    async with case_locked(task_id):
+        await set_rls_context(session, SystemGuild(desk["guild_id"]))
+        await session.exec(text("SET LOCAL lock_timeout = '200ms'"))
+        with pytest.raises(DBAPIError):
+            await evidence_service.purge_due(session, desk["guild_id"])
+        await session.rollback()
+    assert len(await _evidence(session, desk["guild_id"])) == 1
+    assert await _sweep(session, desk) == 1
+
+
 async def test_a_reopened_case_keeps_its_files(client, session, acting_user, desk):
     task_id = await _with_file(client, acting_user)
     await _set_state(session, desk, task_id, done_days_ago=200)

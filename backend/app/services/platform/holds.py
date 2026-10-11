@@ -28,6 +28,8 @@ Nothing is said to the author: held content reads as absent.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -394,71 +396,84 @@ async def place(
     # Every hold is worked on a case: the platform's names one it is working,
     # and any other opens its own.
     case_task_id = request.case_task_id
+    naming = via is HoldVia.platform and opened_case_task_id is None
     if opened_case_task_id is not None:
         case_task_id = opened_case_task_id
-    elif via is HoldVia.platform and case_task_id is not None:
-        from app.services.platform.intake import claim_subject_guild
-
+    elif naming and case_task_id is not None:
         await _require_case(case_task_id)
-        # A case's holds sit in the community it is about: that is where the
-        # keeping of its files looks for them.
-        if await claim_subject_guild(case_task_id, guild_id) == "other":
-            raise HoldError(
-                HoldMessages.CASE_OTHER_COMMUNITY, status.HTTP_400_BAD_REQUEST
-            )
     else:
         case_task_id = await _open_case(guild_id, request)
 
-    async with cohorts.system_session(guild_id) as system:
-        await set_rls_context(system, SystemGuild(guild_id))
-        await _community_stays(system, guild_id)
-        # Writing the hold columns of archived or trashed rows is a write to
-        # frozen content on purpose, as a purge's is (``gucs.PURGING``).
-        await raise_flag(system, gucs.PURGING)
-        target = (
-            await system.exec(
-                select_including_deleted(model)
-                .where(model.id == request.target_id)
-                .with_for_update()
+    from app.services.platform.intake import case_locked, claim_subject_guild
+
+    # A case named here may be one long closed, whose files the retention
+    # sweep is deciding. Its task is held locked, as the sweep locks it, until
+    # the hold is committed, so the sweep either finishes first or sees it.
+    keeping = (
+        case_locked(case_task_id)
+        if naming and request.case_task_id is not None
+        else nullcontext()
+    )
+    async with keeping:
+        if naming and request.case_task_id is not None:
+            # A case's holds sit in the community it is about: that is where
+            # the keeping of its files looks for them.
+            if await claim_subject_guild(case_task_id, guild_id) == "other":
+                raise HoldError(
+                    HoldMessages.CASE_OTHER_COMMUNITY, status.HTTP_400_BAD_REQUEST
+                )
+        async with cohorts.system_session(guild_id) as system:
+            await set_rls_context(system, SystemGuild(guild_id))
+            await _community_stays(system, guild_id)
+            # Writing the hold columns of archived or trashed rows is a write to
+            # frozen content on purpose, as a purge's is (``gucs.PURGING``).
+            await raise_flag(system, gucs.PURGING)
+            target = (
+                await system.exec(
+                    select_including_deleted(model)
+                    .where(model.id == request.target_id)
+                    .with_for_update()
+                )
+            ).one()
+            if target.held_at is not None:
+                raise HoldError(HoldMessages.ALREADY_HELD, status.HTTP_409_CONFLICT)
+            hold = ContentHold(
+                target_type=request.target_type,
+                target_id=request.target_id,
+                case_task_id=case_task_id,
+                placed_by=placed_by,
+                placed_via=via.value,
+                reason=request.reason.value,
+                legal_basis=request.legal_basis.value if request.legal_basis else None,
+                note=encrypt_field(request.note, SALT_HOLD_NOTE)
+                if request.note
+                else None,
             )
-        ).one()
-        if target.held_at is not None:
-            raise HoldError(HoldMessages.ALREADY_HELD, status.HTTP_409_CONFLICT)
-        hold = ContentHold(
-            target_type=request.target_type,
-            target_id=request.target_id,
-            case_task_id=case_task_id,
-            placed_by=placed_by,
-            placed_via=via.value,
-            reason=request.reason.value,
-            legal_basis=request.legal_basis.value if request.legal_basis else None,
-            note=encrypt_field(request.note, SALT_HOLD_NOTE) if request.note else None,
-        )
-        system.add(hold)
-        await system.flush()
-        covered = await _covered(system, target)
-        names = await _shown_uploads(system, covered)
-        await _stamp(system, covered, names, hold)
-        await raise_flag(system, gucs.PURGING, False)
-        await audit_service.record(
-            system,
-            event_type=AuditEventType.HOLD_PLACED,
-            actor_user_id=placed_by,
-            guild_id=guild_id,
-            target_type=request.target_type,
-            target_id=request.target_id,
-            detail={
-                "hold_id": hold.id,
-                "via": via.value,
-                "reason": hold.reason,
-                "legal_basis": hold.legal_basis,
-                "case_task_id": case_task_id,
-                "rows": sum(len(ids) for ids in covered.values()),
-                "uploads": len(names),
-            },
-        )
-        await system.commit()
-        await system.refresh(hold)
+            system.add(hold)
+            await system.flush()
+            covered = await _covered(system, target)
+            names = await _shown_uploads(system, covered)
+            await _stamp(system, covered, names, hold)
+            await raise_flag(system, gucs.PURGING, False)
+            await audit_service.record(
+                system,
+                event_type=AuditEventType.HOLD_PLACED,
+                actor_user_id=placed_by,
+                guild_id=guild_id,
+                target_type=request.target_type,
+                target_id=request.target_id,
+                detail={
+                    "hold_id": hold.id,
+                    "via": via.value,
+                    "reason": hold.reason,
+                    "legal_basis": hold.legal_basis,
+                    "case_task_id": case_task_id,
+                    "rows": sum(len(ids) for ids in covered.values()),
+                    "uploads": len(names),
+                },
+            )
+            await system.commit()
+            await system.refresh(hold)
 
     await _note_on_case(
         case_task_id,

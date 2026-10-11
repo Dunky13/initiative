@@ -28,9 +28,10 @@ case was closed opens a new one.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Literal, Optional, Sequence
+from typing import TYPE_CHECKING, AsyncIterator, Literal, Optional, Sequence
 
 from sqlalchemy import func
 from sqlmodel import select
@@ -47,6 +48,7 @@ from app.core.intake import (
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import set_rls_context
+from app.db.soft_delete_filter import select_including_deleted
 from app.models.platform.app_setting import AppSetting
 from app.models.platform.user import User
 from app.models.tenant.comment import Comment, CommentAudience
@@ -901,6 +903,29 @@ async def claim_subject_guild(task_id: int, guild_id: int) -> ClaimOutcome:
         )
         await session.commit()
         return "named"
+
+
+@asynccontextmanager
+async def case_locked(task_id: int) -> AsyncIterator[None]:
+    """Hold case ``task_id``'s task locked for as long as the block runs, as
+    the evidence retention sweep locks it: what the block commits elsewhere
+    about the case — a hold naming it — is there before the sweep decides
+    the case's files."""
+    operations = await configured_operations_guild_id()
+    if operations is None:
+        yield
+        return
+    async with cohorts.system_session(operations) as session:
+        await set_rls_context(session, SystemGuild(operations))
+        await session.exec(
+            select_including_deleted(Task.id)
+            .where(Task.id == task_id)
+            .with_for_update()
+        )
+        try:
+            yield
+        finally:
+            await session.rollback()
 
 
 async def release_subject_guild(task_id: int, guild_id: int) -> None:
