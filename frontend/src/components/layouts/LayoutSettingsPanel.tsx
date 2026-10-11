@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
@@ -73,7 +73,7 @@ export const ListLayoutSettings = ({
           <p className="text-muted-foreground text-sm">{translate(help)}</p>
           {opensFirst !== undefined ? (
             <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="layout-default">{translate("layoutEditor.opensFirst")}</Label>
+              <Label htmlFor="layout-default">{translate("layouts:opensFirst")}</Label>
               <Switch
                 id="layout-default"
                 checked={opensFirst}
@@ -107,7 +107,7 @@ export const ListLayoutSettings = ({
 const Shipped = ({
   stored,
   edits,
-  shipped = "layoutEditor.shipped",
+  shipped = "layouts:shipped",
 }: {
   stored: boolean;
   edits: LayoutEdits;
@@ -118,7 +118,7 @@ const Shipped = ({
   const translate = t as TranslateFn;
   return stored ? (
     <Button type="button" variant="outline" size="sm" onClick={edits.resetLayout}>
-      {translate("layoutEditor.useShipped")}
+      {translate("layouts:useShipped")}
     </Button>
   ) : (
     <p className="text-muted-foreground text-xs">{translate(shipped)}</p>
@@ -174,16 +174,16 @@ const ColumnSettings = ({
   fields: ReadonlyMap<string, FieldDef>;
   edits: LayoutEdits;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const keeps = fields.get(field)?.hideable === false;
   return (
-    <Panel heading={t("layoutEditor.column")}>
+    <Panel heading={t("layouts:column")}>
       <p className="text-muted-foreground text-sm">
-        {t(keeps ? "layoutEditor.titleHelp" : "layoutEditor.columnHelp")}
+        {t(keeps ? "layouts:titleHelp" : "layouts:columnHelp")}
       </p>
       {keeps ? null : (
         <Button type="button" variant="outline" size="sm" onClick={() => edits.removeColumn(field)}>
-          {t("layoutEditor.remove")}
+          {t("layouts:remove")}
         </Button>
       )}
     </Panel>
@@ -212,16 +212,16 @@ const PartSettings = ({
   if (!node) return null;
   if (node.type === "card") {
     return (
-      <Panel heading={translate("layoutEditor.card")}>
-        <p className="text-muted-foreground text-sm">{translate("layoutEditor.cardHelp")}</p>
+      <Panel heading={translate("layouts:card")}>
+        <p className="text-muted-foreground text-sm">{translate("layouts:cardHelp")}</p>
       </Panel>
     );
   }
   if ((LAYOUT_REGIONS as readonly string[]).includes(node.type)) {
     return (
-      <Panel heading={translate(`layoutEditor.parts.${node.type}`)}>
+      <Panel heading={translate(`layouts:parts.${node.type}`)}>
         <p className="text-muted-foreground text-sm">
-          {translate(`layoutEditor.regionHelp.${node.type}`)}
+          {translate(`layouts:regionHelp.${node.type}`)}
         </p>
       </Panel>
     );
@@ -229,10 +229,10 @@ const PartSettings = ({
   const canRemove = removable(node, fields);
   const remove = canRemove ? (
     <Button type="button" variant="outline" size="sm" onClick={() => edits.removePart(path)}>
-      {translate("layoutEditor.remove")}
+      {translate("layouts:remove")}
     </Button>
   ) : (
-    <p className="text-muted-foreground text-xs">{translate("layoutEditor.holdsTitle")}</p>
+    <p className="text-muted-foreground text-xs">{translate("layouts:holdsTitle")}</p>
   );
   const change = (next: LayoutNode) => edits.changePart(path, next);
 
@@ -252,20 +252,20 @@ const PartSettings = ({
   }
   const help =
     node.type === "plugin"
-      ? "layoutEditor.pluginPartHelp"
+      ? "layouts:pluginPartHelp"
       : !canRemove
         ? on
           ? on.words.titleHelp
-          : "layoutEditor.titleHelp"
+          : "layouts:titleHelp"
         : on?.spec.editsAField(node)
           ? on.words.hiddenHelp
           : on
-            ? `${on.words.parts}.partHelp.${node.type}`
+            ? `${on.words.parts}partHelp.${node.type}`
             : node.type === "properties"
-              ? "layoutEditor.propertiesHelp"
-              : "layoutEditor.fieldHelp";
+              ? "layouts:propertiesHelp"
+              : "layouts:fieldHelp";
   return (
-    <Panel heading={translate("layoutEditor.settings")}>
+    <Panel heading={translate("layouts:settings")}>
       <p className="text-muted-foreground text-sm">{translate(help)}</p>
       {canRemove ? remove : null}
     </Panel>
@@ -290,7 +290,7 @@ const GroupSettings = ({
   onChange: (next: LayoutNode) => void;
   children: ReactNode;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const props = node.props ?? {};
   const set = (key: string, value: unknown) => {
     const { [key]: _left, ...rest } = props;
@@ -307,9 +307,9 @@ const GroupSettings = ({
     </div>
   );
   return (
-    <Panel heading={t("layoutEditor.group")}>
+    <Panel heading={t("layouts:group")}>
       <div className="space-y-2">
-        <Label htmlFor="group-direction">{t("layoutEditor.arrange")}</Label>
+        <Label htmlFor="group-direction">{t("layouts:arrange")}</Label>
         <Select
           value={props.direction === "row" ? "row" : "column"}
           onValueChange={(direction) => set("direction", direction === "row" ? "row" : undefined)}
@@ -318,13 +318,13 @@ const GroupSettings = ({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="column">{t("layoutEditor.stacked")}</SelectItem>
-            <SelectItem value="row">{t("layoutEditor.sideBySide")}</SelectItem>
+            <SelectItem value="column">{t("layouts:stacked")}</SelectItem>
+            <SelectItem value="row">{t("layouts:sideBySide")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="group-gap">{t("layoutEditor.spacing")}</Label>
+        <Label htmlFor="group-gap">{t("layouts:spacing")}</Label>
         <Select
           value={props.gap === "sm" ? "sm" : "xs"}
           onValueChange={(gap) => set("gap", gap === "sm" ? "sm" : undefined)}
@@ -333,14 +333,14 @@ const GroupSettings = ({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="xs">{t("layoutEditor.tight")}</SelectItem>
-            <SelectItem value="sm">{t("layoutEditor.roomy")}</SelectItem>
+            <SelectItem value="xs">{t("layouts:tight")}</SelectItem>
+            <SelectItem value="sm">{t("layouts:roomy")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
-      {props.direction === "row" ? flag("wrap", true, t("layoutEditor.wrap")) : null}
-      {flag("align", "start", t("layoutEditor.ownWidth"))}
-      {flag("tone", "muted", t("layoutEditor.muted"))}
+      {props.direction === "row" ? flag("wrap", true, t("layouts:wrap")) : null}
+      {flag("align", "start", t("layouts:ownWidth"))}
+      {flag("tone", "muted", t("layouts:muted"))}
       {children}
     </Panel>
   );
@@ -357,7 +357,7 @@ const SectionSettings = ({
   onChange: (next: LayoutNode) => void;
   children: ReactNode;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const props = node.props ?? {};
   const title = typeof props.title === "string" ? props.title : "";
   const set = (key: string, value: unknown) => {
@@ -365,12 +365,16 @@ const SectionSettings = ({
     onChange({ ...node, props: value === undefined ? rest : { ...rest, [key]: value } });
   };
   return (
-    <Panel heading={t("layoutEditor.section")}>
+    // Titled, it is an accordion that opens and closes; untitled, a box.
+    <Panel heading={t(title ? "layouts:blocks.accordion" : "layouts:blocks.box")}>
+      <p className="text-muted-foreground text-sm">{t("layouts:sectionHelp")}</p>
       <div className="space-y-2">
-        <Label htmlFor="section-title">{t("layoutEditor.sectionTitle")}</Label>
+        <Label htmlFor="section-title">{t("layouts:sectionTitle")}</Label>
         <CommittedInput
           id="section-title"
           value={title}
+          // An accordion just added is named by typing over its title.
+          selectOn={title === t("layouts:blocks.accordion") ? node : undefined}
           optional
           onCommit={(next) => {
             const { title: _title, collapsed: _collapsed, ...rest } = props;
@@ -384,7 +388,7 @@ const SectionSettings = ({
         />
       </div>
       <div className="flex items-center justify-between gap-2">
-        <Label htmlFor="section-collapsed">{t("layoutEditor.startFolded")}</Label>
+        <Label htmlFor="section-collapsed">{t("layouts:startFolded")}</Label>
         <Switch
           id="section-collapsed"
           checked={props.collapsed === true}
@@ -404,15 +408,30 @@ const CommittedInput = ({
   id,
   value,
   optional = false,
+  selectOn,
   onCommit,
 }: {
   id: string;
   value: string;
   optional?: boolean;
+  /** Focused with its text selected whenever this changes, while set: the
+   *  part it names, so a part newly selected is named by typing. */
+  selectOn?: unknown;
   onCommit: (value: string) => void;
 }) => {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
+  const input = useRef<HTMLInputElement>(null);
+  const selected = useRef<unknown>(undefined);
+  // Once the box shows what it names: a box kept for another part still
+  // holds the last one's text for a render.
+  useEffect(() => {
+    if (selectOn === undefined || selected.current === selectOn || text !== value) return;
+    selected.current = selectOn;
+    input.current?.focus();
+    input.current?.select();
+  }, [selectOn, text, value]);
+
   const commit = () => {
     const trimmed = text.trim();
     if (trimmed === value || (!trimmed && !optional)) setText(value);
@@ -422,6 +441,7 @@ const CommittedInput = ({
     <Input
       id={id}
       value={text}
+      ref={input}
       maxLength={MAX_TITLE_LENGTH}
       onChange={(event) => setText(event.target.value)}
       onBlur={commit}

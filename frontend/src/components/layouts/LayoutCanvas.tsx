@@ -160,7 +160,7 @@ export const CanvasFrame = ({
   tools: CanvasTools;
   children: ReactNode;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const content = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   // The element pointed at, and the one last clicked: a board draws a part on
@@ -335,7 +335,7 @@ export const CanvasFrame = ({
           onDropCapture={refuse}
           onMouseOver={(event) => point(event.target)}
           onFocus={(event) => point(event.target)}
-          aria-label={t("layoutEditor.canvas")}
+          aria-label={t("layouts:canvas")}
           role="region"
         >
           {children}
@@ -350,7 +350,7 @@ export const CanvasFrame = ({
                 <button
                   type="button"
                   className="pointer-events-auto -ml-0.5 cursor-grab touch-none"
-                  aria-label={t("layoutEditor.move", { name: tools.nameOf(selection) })}
+                  aria-label={t("layouts:move", { name: tools.nameOf(selection) })}
                   onPointerDown={(event) => {
                     event.preventDefault();
                     setHovered(null);
@@ -375,10 +375,9 @@ export const CanvasFrame = ({
                     {tools.addAt(
                       around[side],
                       <AddPoint
-                        label={t(
-                          side === "before" ? "layoutEditor.addBefore" : "layoutEditor.addAfter",
-                          { name }
-                        )}
+                        label={t(side === "before" ? "layouts:addBefore" : "layouts:addAfter", {
+                          name,
+                        })}
                       />,
                       setPicking
                     )}
@@ -396,7 +395,7 @@ export const CanvasFrame = ({
             >
               {tools.addAt(
                 inside,
-                <AddPoint label={t("layoutEditor.addInto", { name: tools.nameOf(hovered.of) })} />,
+                <AddPoint label={t("layouts:addInto", { name: tools.nameOf(hovered.of) })} />,
                 setPicking
               )}
             </div>
@@ -494,7 +493,7 @@ export const LayoutCanvas = ({
   onSelect: (selection: Selection) => void;
   tools: CanvasTools;
 }) => {
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const { definition, kind: layout } = open;
   // Every task, in the project's order: filters and sorts are each person's.
   const params = useMemo(() => buildTaskListParams(EMPTY_TASK_FILTERS, { projectId }), [projectId]);
@@ -559,7 +558,7 @@ export const LayoutCanvas = ({
         />
       ) : null}
       {layout === "calendar" ? (
-        <p className="text-muted-foreground text-sm">{t("layoutEditor.calendarNote")}</p>
+        <p className="text-muted-foreground text-sm">{t("layouts:calendarNote")}</p>
       ) : null}
     </CanvasFrame>
   );

@@ -10,7 +10,7 @@ import { formatDateTime } from "@/lib/formatDate";
  * is drawn as shipped, and the list it opens on marked.
  */
 export const LayoutList = ({ layouts }: { layouts: (ListLayoutRead | DetailLayoutRead)[] }) => {
-  const { t } = useTranslation(["projects", "common"]);
+  const { t } = useTranslation(["projects", "layouts", "common"]);
   return (
     <ul className="divide-y rounded-md border text-sm">
       {layouts.map((layout) => {
@@ -23,7 +23,7 @@ export const LayoutList = ({ layouts }: { layouts: (ListLayoutRead | DetailLayou
               {"is_default" in layout && layout.is_default ? (
                 <Star
                   className="h-3 w-3 shrink-0 fill-current text-muted-foreground"
-                  aria-label={t("layoutEditor.opensFirst")}
+                  aria-label={t("layouts:opensFirst")}
                   role="img"
                 />
               ) : null}
@@ -32,7 +32,7 @@ export const LayoutList = ({ layouts }: { layouts: (ListLayoutRead | DetailLayou
               {layout.updated_at ? (
                 <time dateTime={layout.updated_at}>{formatDateTime(layout.updated_at)}</time>
               ) : (
-                <span aria-label={t("layoutEditor.asShipped")}>—</span>
+                <span aria-label={t("layouts:asShipped")}>—</span>
               )}
             </span>
           </li>

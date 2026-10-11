@@ -28,7 +28,7 @@ export const ProjectSettingsLayoutsPage = () => {
     projectId?: string;
     initiativeId?: string;
   };
-  const { t } = useTranslation("projects");
+  const { t } = useTranslation(["projects", "layouts"]);
   const gp = useCommunityPath();
   const wide = atLeast(useWidthClass(), "md");
   const parsedId = projectId ? Number(projectId) : Number.NaN;
@@ -53,11 +53,11 @@ export const ProjectSettingsLayoutsPage = () => {
           <Button asChild variant="outline" size="sm">
             <Link to={editor}>
               <Pencil className="h-4 w-4" />
-              {t("layoutEditor.open")}
+              {t("layouts:open")}
             </Link>
           </Button>
         ) : (
-          <p className="text-muted-foreground text-sm">{t("layoutEditor.compact")}</p>
+          <p className="text-muted-foreground text-sm">{t("layouts:compact")}</p>
         )}
       </CardContent>
     </Card>

@@ -142,7 +142,7 @@ export const useSaveLayouts = (
       },
       // The set is each answer; the initiative's list of layouts reads anew.
       invalidate: () => invalidate(q.initiativeLayouts()),
-      errorKey: "projects:layoutEditor.saveError",
+      errorKey: "layouts:saveError",
     },
     options
   );
