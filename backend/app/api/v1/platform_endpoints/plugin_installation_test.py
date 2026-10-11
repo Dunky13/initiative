@@ -46,6 +46,7 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.models.tenant.plugin_placement import PluginPlacement
+from app.models.tenant.project import Project
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import plugin_channels as channels_service
 from app.services.tenant import plugin_metadata as metadata_service
@@ -1188,6 +1189,64 @@ class TestShownValues:
         )
         await session.commit()
         assert await drawn() == [], "an install not placed there"
+
+    async def test_a_task_list_filters_by_a_field_where_it_is_drawn(
+        self, client: AsyncClient, session: AsyncSession, acting_user, role_session
+    ):
+        """By the value's number, and by whether there is one; for a reader
+        not drawn the field, the filter narrows nothing."""
+        installed, member, task = await _shown_board(
+            client, session, acting_user, role_session
+        )
+        await route_session_to_guild(session, installed.guild.id)
+        project = await session.get(Project, task.project_id)
+        assert project is not None
+        other = await create_task(session, project)
+        manager = await acting_user(
+            guild_role=CommunityRole.member,
+            guild=installed.guild,
+            initiative=installed.placed,
+            initiative_role="project_manager",
+        )
+        field = f"plugin:{installed.plugin.id}:github.issue"
+
+        async def listed(op: str, value, actor=member) -> set[int]:
+            conditions = json.dumps(
+                [
+                    {"field": "project_id", "op": "eq", "value": task.project_id},
+                    {
+                        "field": "plugin_values",
+                        "op": op,
+                        "value": {"field": field, "value": value},
+                    },
+                ]
+            )
+            got = await client.get(
+                actor.g(f"/tasks/?conditions={conditions}"), headers=actor.headers
+            )
+            assert got.status_code == 200, got.text
+            return {row["id"] for row in got.json()["items"]}
+
+        assert await listed("eq", 123) == {task.id}
+        assert await listed("gt", 200) == set()
+        assert await listed("is_null", True) == {other.id}
+        assert await listed("is_null", False) == {task.id}
+        assert await listed("eq", 123, manager) == {task.id, other.id}
+
+    def test_a_value_is_compared_by_its_words_and_its_number(self):
+        assert metadata_service.forms("2026-10-11") == ("2026-10-11", 1791676800.0)
+        assert metadata_service.forms(True) == (None, 1.0)
+        assert metadata_service.forms({"text": "passing", "tone": "positive"}) == (
+            "passing",
+            None,
+        )
+        assert metadata_service.forms({"url": "https://ci.example/1"}) == (
+            "https://ci.example/1",
+            None,
+        )
+        assert metadata_service.forms({"value": 3, "max": 4}) == (None, 0.75)
+        # Too large to be a float, so kept with no number.
+        assert metadata_service.forms(10**400) == (None, None)
 
     async def test_only_a_shown_value_is_heard_as_a_change_to_the_task(
         self, client: AsyncClient, session: AsyncSession, acting_user, role_session

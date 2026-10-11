@@ -15,6 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.plugin_placement import PluginPlacement
+from app.models.tenant.tool_layout import ToolLayout
 from app.services.export.guild_sections import SectionContext, _build_plugins
 from app.services.tenant.guild_plugins import (
     PlacementError,
@@ -23,6 +24,7 @@ from app.services.tenant.guild_plugins import (
     place_in_every_initiative,
     placed_initiative_ids,
     set_placed_initiatives,
+    show_on_saved_details,
     surface_access,
 )
 from app.services.tenant.initiatives import get_moderator_role
@@ -31,6 +33,7 @@ from app.testing import (
     create_guild_plugin,
     create_initiative,
     create_marketplace_listing,
+    create_project,
     create_user,
     marketplace_uid,
     route_session_to_guild,
@@ -323,3 +326,88 @@ class TestSurfaceAccess:
     def test_an_earlier_member_surface_follows_the_placement(self):
         legacy = {**self.PAGE, "visibility": "member"}
         assert self._decide(legacy) is SurfaceAccess.open
+
+
+def _on_items(*fields: tuple[str, str], parts: tuple[str, ...] = ()) -> dict:
+    """A definition declaring fields (key, the kind of item) and task parts."""
+    return {
+        **DEFINITION,
+        "fields": [
+            {"key": key, "name": key, "kind": "text", "on": [on]} for key, on in fields
+        ],
+        "parts": [
+            {"id": part, "name": part, "on": ["task"], "tree": {"type": "stack"}}
+            for part in parts
+        ],
+    }
+
+
+class TestShowingOnSavedDetails:
+    async def test_placing_adds_its_task_fields_then_parts_to_saved_details(
+        self, session: AsyncSession
+    ):
+        user, guild, first, second = await _guild_with_two_initiatives(session)
+        project = await create_project(session, first, user)
+        plugin = await create_guild_plugin(
+            session,
+            guild,
+            user,
+            definition=_on_items(
+                ("build", "task"),
+                ("venue", "calendar_event"),
+                parts=("one", "two", "three", "four"),
+            ),
+        )
+        await route_session_to_guild(session, guild.id)
+        priority = {"type": "field", "props": {"field": "priority"}}
+        layout = ToolLayout(
+            initiative_id=first.id,
+            tool="project",
+            tool_id=project.id,
+            kind="task",
+            definition={"header": [], "main": [], "side": [priority]},
+        )
+        session.add(layout)
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await set_placed_initiatives(session, plugin, {first.id, second.id})
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await session.refresh(layout)
+        build = {"type": "field", "props": {"field": f"plugin:{plugin.id}:build"}}
+        # Up to the parts a layout holds of one plug-in; the other initiative
+        # has nothing saved, and draws them as shipped.
+        assert layout.definition["side"] == [
+            priority,
+            build,
+            *(
+                {"type": "plugin", "props": {"plugin": plugin.id, "part": name}}
+                for name in ("one", "two", "three")
+            ),
+        ]
+        rows = await session.exec(
+            select(ToolLayout).where(ToolLayout.initiative_id == second.id)
+        )
+        assert rows.all() == []
+
+        # Taken off, a part stays off; a version adds only what is new.
+        layout.definition = {**layout.definition, "side": [priority, build]}
+        session.add(layout)
+        await session.commit()
+        previous = plugin.definition
+        plugin.definition = _on_items(
+            ("build", "task"), ("commit", "task"), parts=("one", "two", "three", "four")
+        )
+        await route_session_to_guild(session, guild.id)
+        await show_on_saved_details(session, plugin, [first.id], previous=previous)
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await session.refresh(layout)
+        assert layout.definition["side"] == [
+            priority,
+            build,
+            {"type": "field", "props": {"field": f"plugin:{plugin.id}:commit"}},
+        ]

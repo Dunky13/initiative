@@ -2,6 +2,41 @@
   "title": "Communauté",
   "subtitle": "Tout ce que contient la communauté, un outil à la fois.",
   "nodeRail": "Activité de la communauté",
+  "feed": {
+    "nodes": {
+      "all": "Tout",
+      "yours": "Les vôtres",
+      "comments": "Commentaires"
+    },
+    "empty": {
+      "all": "Rien n'a changé ici cette semaine.",
+      "yours": "Rien ne s'est passé sur vos éléments cette semaine.",
+      "comments": "Personne n'a commenté cette semaine."
+    },
+    "loadError": "Impossible de charger ce qui s'est passé. Veuillez réessayer plus tard.",
+    "loadMore": "Afficher plus",
+    "new": "Nouveau",
+    "others_one": "{{count}} autre personne",
+    "others_other": "{{count}} autres personnes",
+    "sentence_one": "{{people}} a {{actions}}",
+    "sentence_other": "{{people}} ont {{actions}}",
+    "verbs": {
+      "created_one": "créé",
+      "created_other": "créé",
+      "completed_one": "terminé",
+      "completed_other": "terminé",
+      "commented_one": "commenté",
+      "commented_other": "commenté",
+      "edited_one": "modifié",
+      "edited_other": "modifié",
+      "moved_one": "déplacé",
+      "moved_other": "déplacé",
+      "scheduled_one": "reprogrammé",
+      "scheduled_other": "reprogrammé",
+      "published_one": "publié",
+      "published_other": "publié"
+    }
+  },
   "loading": "Chargement…",
   "loadError": "Impossible de charger cet outil. Veuillez réessayer plus tard.",
   "communityWide": "Toute la communauté",
@@ -72,7 +107,6 @@
     }
   },
   "recentComments": {
-    "title": "Commentaires récents",
     "noComments": "Aucun commentaire pour l'instant",
     "loadError": "Impossible de charger les commentaires récents. Veuillez réessayer plus tard.",
     "unknownAuthor": "Inconnu",

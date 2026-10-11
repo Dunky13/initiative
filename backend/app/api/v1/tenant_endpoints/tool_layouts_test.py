@@ -391,6 +391,20 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         (_table(presets=[_preset("Mine!")]), 422, None),
         (_table(presets=[_preset(filters={"assignees": ["bob"]})]), 422, None),
         (
+            _table(
+                presets=[
+                    _preset(
+                        filters={
+                            "properties": [{"property_id": 9}] * 3,
+                            "plugins": [{"field": "plugin:3:ci"}] * 3,
+                        }
+                    )
+                ]
+            ),
+            422,
+            None,
+        ),
+        (
             {"kind": "board", "definition": {"presets": [_preset(sort=[_SORT])]}},
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
@@ -420,6 +434,7 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "two presets with one slug",
         "a preset's slug outside its characters",
         "a preset naming someone by name",
+        "a preset past the limit of property and plug-in filters together",
         "a sort on a board's preset, which a board does not sort by",
         "a date alone on a task",
         "a card on a task",
@@ -445,6 +460,9 @@ async def test_a_layout_is_refused_unless_every_part_is_one_we_draw(
     assert response.status_code == status, response.text
     if detail is not None:
         assert response.json()["detail"] == detail
+    if detail == "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS":
+        # The wording names the contract's limit.
+        assert response.json()["params"] == {"max": str(MAX_PLUGIN_PARTS)}
 
 
 async def test_a_list_offers_the_presets_it_keeps(client: AsyncClient, acting_user):

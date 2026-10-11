@@ -57,6 +57,7 @@ from app.models.tenant.initiative import (
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.core.messages import GuildPluginMessages
 from app.db.session import routed_guild_id
+from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services import audit as audit_service
 from app.services.marketplace import registration_lookup
 from app.services.marketplace.service_plugins import is_admin_only
@@ -66,6 +67,7 @@ from app.services.tenant import calendars as calendars_service
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant import plugin_member_consents as consents_service
+from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant import webhook_subscriptions as webhook_subscriptions_service
 from app.services.tenant.plugin_revocation import queue_install_revocations
 from app.services.tenant.soft_delete import soft_delete_entity
@@ -802,6 +804,7 @@ async def set_placement_roles(
         placement = PluginPlacement(
             install_id=plugin.id, initiative_id=initiative_id, role_ids=sorted(wanted)
         )
+        await show_on_saved_details(session, plugin, [initiative_id])
     else:
         placement.role_ids = sorted(wanted)
         placement.updated_at = datetime.now(timezone.utc)
@@ -847,6 +850,7 @@ async def set_placed_initiatives(
                 role_ids=_default_role_ids(roles, initiative_id),
             )
         )
+    await show_on_saved_details(session, plugin, added)
     await session.flush()
 
 
@@ -869,6 +873,7 @@ async def place_in_every_initiative(session: AsyncSession, plugin: GuildPlugin) 
                 role_ids=_default_role_ids(roles, initiative_id),
             )
         )
+    await show_on_saved_details(session, plugin, added)
     await session.flush()
 
 
@@ -914,8 +919,59 @@ async def place_with_roles(
                 role_ids=sorted(roles.get(initiative_id, [])),
             )
         )
+    await show_on_saved_details(session, plugin, placed)
     await session.flush()
     return placed
+
+
+def _on_tasks(definition: Any, block: str, id_key: str) -> list[str]:
+    """What a definition declares in one block on tasks, in its order."""
+    return [
+        entry[id_key]
+        for entry in _declared(
+            definition if isinstance(definition, dict) else {}, block, id_key
+        )
+        if tool_layouts_service.PLUGIN_DETAIL in (entry.get("on") or ())
+    ]
+
+
+async def show_on_saved_details(
+    session: AsyncSession,
+    plugin: GuildPlugin,
+    initiative_ids: Iterable[int],
+    *,
+    previous: Any = None,
+) -> None:
+    """Show the install's fields, then its parts, on the saved task details of
+    these initiatives, as it declares them: what placing it does. After an
+    upgrade, ``previous`` is the definition it replaced, and only what that
+    did not declare is added. Once added, one a manager takes off stays off."""
+
+    def arriving(block: str, id_key: str) -> list[str]:
+        had = set(_on_tasks(previous, block, id_key))
+        return [
+            each
+            for each in _on_tasks(plugin.definition, block, id_key)
+            if each not in had
+        ]
+
+    await tool_layouts_service.add_to_saved_details(
+        session,
+        initiative_ids,
+        [
+            *(
+                {
+                    "type": "field",
+                    "props": {"field": f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"},
+                }
+                for key in arriving("fields", "key")
+            ),
+            *(
+                {"type": "plugin", "props": {"plugin": plugin.id, "part": part}}
+                for part in arriving("parts", "id")
+            ),
+        ],
+    )
 
 
 # --- opening a surface ------------------------------------------------------

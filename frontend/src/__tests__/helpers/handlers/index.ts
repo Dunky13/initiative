@@ -1,3 +1,4 @@
+import { activityHandlers } from "./activity.handlers";
 import { authHandlers } from "./auth.handlers";
 import { commentHandlers } from "./comment.handlers";
 import { communityHandlers } from "./community.handlers";
@@ -23,6 +24,7 @@ export const handlers = [
   ...taskHandlers,
   ...tagHandlers,
   ...fileHandlers,
+  ...activityHandlers,
   ...commentHandlers,
   ...userHandlers,
   ...propertyHandlers,

@@ -163,6 +163,9 @@ export const entityIcon = (entityType: SearchEntityType): LucideIcon =>
 /** The history state a hit is opened with, so its open is recorded as a search's. */
 export const FROM_SEARCH = { viewSource: ViewSource.search };
 
+/** The same for an entry of the activity feed, which also orders by the level. */
+export const FROM_FEED = { viewSource: ViewSource.feed };
+
 /**
  * The community-relative address of a hit, or `null` when it has none — an entity
  * type this build doesn't route, or a child whose parent didn't come back.

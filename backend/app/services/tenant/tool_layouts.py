@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.errors import CodedError
 from app.core.messages import ToolLayoutMessages
 from app.core.tools import DETAIL_LAYOUTS, LAYOUT_DEFAULT, LIST_LAYOUTS, Tool
 from app.db.advisory_locks import LockNamespace, advisory_lock
@@ -189,7 +190,10 @@ def _within_limits(stored: dict[str, Any], roots: list[Any], loose: int) -> None
         part.props.plugin for part, _ in parts if isinstance(part, PluginPart)
     )
     if any(count > MAX_PLUGIN_PARTS for count in installs.values()):
-        raise _bad_request(ToolLayoutMessages.TOO_MANY_PLUGIN_PARTS)
+        raise CodedError(
+            ToolLayoutMessages.TOO_MANY_PLUGIN_PARTS,
+            params={"max": str(MAX_PLUGIN_PARTS)},
+        )
 
 
 def _drawn_on(part: Any, kind: str) -> bool:
@@ -392,3 +396,87 @@ async def drop_for_instances(
                 ToolLayout.tool == tool.value, col(ToolLayout.tool_id).in_(ids)
             )
         )
+
+
+#: The detail plug-ins are drawn on so far.
+PLUGIN_DETAIL = "task"
+
+
+async def add_to_saved_details(
+    session: AsyncSession, initiative_ids: Iterable[int], nodes: list[dict[str, Any]]
+) -> None:
+    """Add parts to the end of the side of every saved task detail in these
+    initiatives: what a plug-in shows as it arrives. A detail already holding
+    one keeps it where it is, a plug-in's parts stop at its limit, and a detail
+    the parts would take past its limits is left as it is. A detail not saved
+    draws them as shipped."""
+    ids = sorted(set(initiative_ids))
+    if not ids or not nodes:
+        return
+    rows = await session.exec(
+        select(ToolLayout)
+        .where(
+            col(ToolLayout.initiative_id).in_(ids),
+            ToolLayout.kind == PLUGIN_DETAIL,
+        )
+        .with_for_update()
+    )
+    for row in rows.all():
+        side = row.definition.get("side")
+        if not isinstance(side, list):
+            continue
+        held = [
+            node
+            for region in ("header", "main", "side")
+            for node in _nodes(row.definition.get(region) or [])
+        ]
+        placed = {_placed_as(node) for node in held}
+        installs = Counter(
+            node["props"]["plugin"] for node in held if node.get("type") == "plugin"
+        )
+        added: list[dict[str, Any]] = []
+        for node in nodes:
+            if _placed_as(node) in placed:
+                continue
+            if node["type"] == "plugin":
+                install = node["props"]["plugin"]
+                if installs[install] >= MAX_PLUGIN_PARTS:
+                    continue
+                installs[install] += 1
+            added.append(node)
+        if not added:
+            continue
+        definition = {**row.definition, "side": [*side, *added]}
+        target = Target(Tool(row.tool), row.tool_id, row.initiative_id)
+        try:
+            check(
+                target,
+                DetailLayoutWrite.model_validate(
+                    {"kind": row.kind, "definition": definition}
+                ),
+            )
+        except (HTTPException, CodedError, ValidationError):
+            continue
+        row.definition = definition
+        row.updated_at = datetime.now(timezone.utc)
+        session.add(row)
+    await session.flush()
+
+
+def _placed_as(node: dict[str, Any]) -> tuple[Any, ...]:
+    """What a part is placed as: its kind and what it draws."""
+    props = node.get("props") or {}
+    return (
+        node.get("type"),
+        props.get("field"),
+        props.get("plugin"),
+        props.get("part"),
+    )
+
+
+def _nodes(nodes: list[Any]) -> Iterable[dict[str, Any]]:
+    """Every part in stored regions, at any depth."""
+    for node in nodes:
+        if isinstance(node, dict):
+            yield node
+            yield from _nodes(node.get("children") or [])
