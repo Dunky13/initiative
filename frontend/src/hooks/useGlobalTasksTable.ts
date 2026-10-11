@@ -85,7 +85,8 @@ export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
     const mode = items[CALENDAR_VIEW_MODE_KEY];
     if (!old && !table && !columns && typeof mode !== "string") return null;
     const sorting = old?.sorting;
-    const filters = old ? fromOldNames(old) : {};
+    // What was never kept reads as the default, as it did then.
+    const filters = old ? { ...FILTER_DEFAULTS, ...fromOldNames(old) } : {};
     return {
       mode: typeof mode === "string" ? mode : null,
       parts: {

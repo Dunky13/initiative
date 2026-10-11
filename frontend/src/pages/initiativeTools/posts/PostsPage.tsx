@@ -15,7 +15,7 @@ import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateAc
 import { parsePropertyFilters } from "@/components/properties/PropertyFilter";
 import { CardGridSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { TimelineRail } from "@/components/timeline/TimelineRail";
-import type { ToolListFilters } from "@/components/tools/ToolFilterFields";
+import { readToolListFilters, type ToolListFilters } from "@/components/tools/ToolFilterFields";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -89,7 +89,7 @@ type PostsViewProps = {
 type PostsFilters = ToolListFilters<typeof Tool.post> & { read: ReadFilter };
 
 const readPostsFilters = (raw: unknown): PostsFilters => {
-  const kept = (raw !== null && typeof raw === "object" ? raw : {}) as Partial<PostsFilters>;
+  const kept = readToolListFilters(raw) as Partial<PostsFilters>;
   return { ...kept, read: kept.read === "unread" ? "unread" : "all" };
 };
 
@@ -207,9 +207,9 @@ export const PostsView = ({ fixedInitiativeId, canCreate }: PostsViewProps) => {
     parsePropertyFilters(listFilters.property_filters).length +
     (readFilter === "unread" ? 1 : 0);
   const clearFilters = useCallback(() => {
-    setListFilters({});
-    setReadFilter("all");
-  }, []);
+    setSearchText("");
+    keepFilters(null);
+  }, [keepFilters]);
 
   // The page itself scrolls, not a box inside it, so the virtualizer measures
   // against the app's scroller rather than a container of its own.

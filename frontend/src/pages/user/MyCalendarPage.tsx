@@ -63,23 +63,28 @@ import { entityRefRoute, toolSettingsRoute } from "@/lib/tools";
 /** Where one person's view of their calendar is kept. What an older release
  *  kept (its filters and month or week as one preference, what was switched
  *  off on the device) is carried over. */
+/** Match My Tasks: hide done tasks unless the person opts in. */
+const MY_CALENDAR_FILTERS: CalendarViewFilters = {
+  ...EMPTY_CALENDAR_VIEW_FILTERS,
+  status_categories: ["backlog", "todo", "in_progress"],
+};
+
 const MY_CALENDAR_VIEW: ListViewSpec<CalendarViewFilters> = {
   key: viewKey("me", "calendar"),
   read: calendarViewFiltersFromStored,
-  defaults: {
-    // Match My Tasks: hide done tasks unless the person opts in.
-    filters: {
-      ...EMPTY_CALENDAR_VIEW_FILTERS,
-      status_categories: ["backlog", "todo", "in_progress"],
-    },
-    ...NO_PART_VIEW,
-  },
+  defaults: { filters: MY_CALENDAR_FILTERS, ...NO_PART_VIEW },
   carryOver: (items) => {
     const carried = carriedCalendarView({
       prefs: items["initiative-my-calendar-prefs"],
       visibility: deviceJSON("initiative-my-calendar-visibility"),
     });
-    return carried && { mode: carried.mode, parts: { [LIST]: { filters: carried.filters } } };
+    // What was never kept reads as the default, as it did then.
+    return (
+      carried && {
+        mode: carried.mode,
+        parts: { [LIST]: { filters: { ...MY_CALENDAR_FILTERS, ...carried.filters } } },
+      }
+    );
   },
 };
 

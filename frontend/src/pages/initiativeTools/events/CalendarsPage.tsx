@@ -255,10 +255,11 @@ export const CalendarsView = ({
   );
   const { showCalendar, tasksHidden } = visibility;
 
-  // A deep-linked calendar is always shown, whatever the stored toggles say.
+  // A deep-linked calendar is always shown, whatever the stored toggles say,
+  // once they are in.
   useEffect(() => {
-    if (focusCalendarId !== undefined) showCalendar(communityId, focusCalendarId);
-  }, [focusCalendarId, communityId, showCalendar]);
+    if (view.loaded && focusCalendarId !== undefined) showCalendar(communityId, focusCalendarId);
+  }, [view.loaded, focusCalendarId, communityId, showCalendar]);
 
   // The initiative calendar's layout, and the presets its list offers. The
   // community surfaces belong to no initiative, so they have none.

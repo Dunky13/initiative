@@ -67,7 +67,11 @@ import { parsePropertyFilters } from "@/components/properties/PropertyFilter";
 import { CardGridSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TagBrowseLayout } from "@/components/tags/TagBrowseLayout";
-import { ToolFilterFields, type ToolListFilters } from "@/components/tools/ToolFilterFields";
+import {
+  readToolListFilters,
+  ToolFilterFields,
+  type ToolListFilters,
+} from "@/components/tools/ToolFilterFields";
 import { SortableCards } from "@/components/tools/ToolIndexSortable";
 import {
   TABLE_SORT_FIELDS,
@@ -486,9 +490,6 @@ const useListPage = (tool: Tool) => {
 
 /** Newest first, the way a table opens until its reader picks an order. */
 const NEWEST_FIRST: SortingState = [{ id: "updated_at", desc: true }];
-
-const readToolListFilters = (raw: unknown): ToolListFilters =>
-  raw !== null && typeof raw === "object" && !Array.isArray(raw) ? (raw as ToolListFilters) : {};
 
 /**
  * Where one person's view of an initiative's tool list is kept: how it is

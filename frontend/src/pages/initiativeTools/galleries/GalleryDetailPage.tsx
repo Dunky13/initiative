@@ -155,10 +155,13 @@ export function GalleryDetailPage() {
   );
 
   const [searchQuery, setSearchQuery] = useState("");
+  // The wall narrows by the kept ids at once; the picker shows their names
+  // once the community's tags arrive.
+  const tagIds = wallView.filters.tag_ids;
   const { data: communityTags = [] } = useTags();
   const tagFilters = useMemo<TagSummary[]>(
-    () => communityTags.filter((tag) => wallView.filters.tag_ids.includes(tag.id)),
-    [communityTags, wallView.filters.tag_ids]
+    () => communityTags.filter((tag) => tagIds.includes(tag.id)),
+    [communityTags, tagIds]
   );
   const setTagFilters = useCallback(
     (next: TagSummary[]) => keepFilters({ tag_ids: next.map((tag) => tag.id) }),
@@ -186,10 +189,10 @@ export function GalleryDetailPage() {
   const filters = useMemo(
     () => ({
       ...(search.trim() ? { search: search.trim() } : {}),
-      ...(tagFilters.length > 0 ? { tag_ids: tagFilters.map((tag) => tag.id) } : {}),
+      ...(tagIds.length > 0 ? { tag_ids: tagIds } : {}),
       ...(order === "oldest" ? { oldest_first: true } : {}),
     }),
-    [search, tagFilters, order]
+    [search, tagIds, order]
   );
 
   const feed = useGalleryImagesFeed(Number.isFinite(parsedId) ? parsedId : null, {
@@ -317,7 +320,7 @@ export function GalleryDetailPage() {
   );
 
   const activeFilterCount =
-    (search.trim() ? 1 : 0) + (tagFilters.length > 0 ? 1 : 0) + (order === "oldest" ? 1 : 0);
+    (search.trim() ? 1 : 0) + (tagIds.length > 0 ? 1 : 0) + (order === "oldest" ? 1 : 0);
   const clearFilters = useCallback(() => {
     setSearchQuery("");
     keepFilters(null);

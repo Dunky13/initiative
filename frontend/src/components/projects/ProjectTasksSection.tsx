@@ -1011,29 +1011,31 @@ export const ProjectTasksSection = ({
                 isArchiving={bulkArchiveTasks.isPending}
               />
             )}
-            <ProjectTasksTableView
-              // The table seeds its grouping and sorting once, at mount, and
-              // each view keeps its own, so moving between projects or views has
-              // to be a fresh table rather than the previous one's.
-              key={`${projectId}:${kind}`}
-              projectId={projectId}
-              initiativeId={initiativeId}
-              tasks={statusFilteredTasks}
-              taskStatuses={sortedTaskStatuses}
-              sensors={listSensors}
-              canReorderTasks={canReorderTasks}
-              canEditTaskDetails={canEditTaskDetails}
-              taskActionsDisabled={taskActionsDisabled}
-              onDragStart={handleTaskDragStart}
-              onDragEnd={handleListDragEnd}
-              onDragCancel={handleListDragCancel}
-              onStatusChange={changeTaskStatus}
-              taskHref={taskHref}
-              onTaskSelectionChange={setSelectedTasks}
-              onExitSelection={() => setSelectedTasks([])}
-              tableState={tableState}
-              viewColumns={layout?.definition.columns}
-            />
+            {/* The table seeds its grouping and sorting once, at mount, so it
+                waits for this person's view; and each layout keeps its own, so
+                moving between projects or layouts is a fresh table. */}
+            {filtersLoaded ? (
+              <ProjectTasksTableView
+                key={`${projectId}:${kind}`}
+                projectId={projectId}
+                initiativeId={initiativeId}
+                tasks={statusFilteredTasks}
+                taskStatuses={sortedTaskStatuses}
+                sensors={listSensors}
+                canReorderTasks={canReorderTasks}
+                canEditTaskDetails={canEditTaskDetails}
+                taskActionsDisabled={taskActionsDisabled}
+                onDragStart={handleTaskDragStart}
+                onDragEnd={handleListDragEnd}
+                onDragCancel={handleListDragCancel}
+                onStatusChange={changeTaskStatus}
+                taskHref={taskHref}
+                onTaskSelectionChange={setSelectedTasks}
+                onExitSelection={() => setSelectedTasks([])}
+                tableState={tableState}
+                viewColumns={layout?.definition.columns}
+              />
+            ) : null}
             {canEditTaskDetails && (
               <div className="flex justify-end">
                 <Button

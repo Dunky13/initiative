@@ -19,13 +19,16 @@
  * one visit.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ColumnVisibilityState, GroupingState, SortingState } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
+import type { UserViewPreferencesMap } from "@/api/generated/initiativeAPI.schemas";
 import { useViewPreference } from "@/hooks/useViewPreference";
 import type { Preset } from "@/lib/layouts/presets";
 import { getItem } from "@/lib/storage";
+import { VIEW_PREFERENCES_QUERY_KEY } from "@/lib/viewPreferences";
 
 /** What this device kept under `key` before views followed a person, read
  *  for a carry-over; null where nothing, or nothing readable, is kept. */
@@ -176,12 +179,13 @@ export function useListView<F>(
   spec: ListViewSpec<F>,
   pick: string | ((view: StoredListView) => string) = LIST
 ) {
+  const queryClient = useQueryClient();
   const [, setRaw, { isLoaded: loaded, items }] = useViewPreference<unknown>(spec.key, null);
   const specRef = useRef(spec);
   specRef.current = spec;
   const { read, defaults } = spec;
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
 
   // What an older release kept is read once the map is in, until the person
   // changes something, which keeps it here whole: opening a list writes
@@ -200,20 +204,20 @@ export function useListView<F>(
     [view, part, read, defaults]
   );
 
-  /** Change the kept view, from what is kept now. */
+  /** Change the kept view, from what is kept now: the cache, so changes made
+   *  together compose. Nothing is written before the view is in, which the
+   *  write would replace, or when the change leaves it as it was. */
   const change = useCallback(
-    (patch: (kept: StoredListView) => StoredListView) =>
-      setRaw((prev: unknown) => {
-        const kept =
-          prev == null
-            ? keptView(itemsRef.current, {
-                key: specRef.current.key,
-                carryOver: specRef.current.carryOver,
-              }).view
-            : sanitizeListView(prev);
-        return patch(kept);
-      }),
-    [setRaw]
+    (patch: (kept: StoredListView) => StoredListView) => {
+      if (!loadedRef.current) return;
+      const kept = keptView(
+        queryClient.getQueryData<UserViewPreferencesMap>(VIEW_PREFERENCES_QUERY_KEY)?.items,
+        specRef.current
+      ).view;
+      const next = patch(kept);
+      if (JSON.stringify(next) !== JSON.stringify(kept)) setRaw(next);
+    },
+    [queryClient, setRaw]
   );
 
   /** Change this part, keeping `layout` as the one last shown. */

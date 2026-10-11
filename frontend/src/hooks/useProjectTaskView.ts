@@ -194,9 +194,14 @@ export function useProjectTaskView({
     },
     [setSorting, rememberLayout, kind]
   );
+  /** Make `next`'s filters and sort this person's own, on the layout it
+   *  opened on, which is the one they come back to. */
   const applyPreset = useCallback(
-    (next: Preset) => apply({ filters: next.filters, sorting: next.sorting }),
-    [apply]
+    (next: Preset) => {
+      apply({ filters: next.filters, sorting: next.sorting });
+      rememberLayout(kind);
+    },
+    [apply, rememberLayout, kind]
   );
   const { preset, pick: pickPreset } = usePresetLink({
     slug: search.preset,

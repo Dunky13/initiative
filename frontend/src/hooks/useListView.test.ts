@@ -1,6 +1,19 @@
+import { act, waitFor } from "@testing-library/react";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { keptView, LIST, NO_PART_VIEW, partOf, sanitizeListView, viewKey } from "./useListView";
+import { renderWithProviders } from "@/__tests__/helpers/render";
+import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
+
+import {
+  keptView,
+  LIST,
+  NO_PART_VIEW,
+  partOf,
+  sanitizeListView,
+  useListView,
+  viewKey,
+} from "./useListView";
 
 const spec = {
   key: viewKey(4, "initiative", 2, "files"),
@@ -43,5 +56,25 @@ describe("a person's view of a list", () => {
       sorting: [{ id: "name", desc: true }],
       grouping: [],
     });
+  });
+
+  it("saves nothing before it is in, or when a change leaves it as it was", async () => {
+    const kept = keepViewPreferences();
+    kept[spec.key] = { layout: "list" };
+    let view!: ReturnType<typeof useListView<{ tag_ids: number[] }>>;
+    const Probe = () => {
+      view = useListView(spec);
+      return null;
+    };
+    renderWithProviders(createElement(Probe));
+
+    act(() => view.rememberLayout("tags"));
+    await waitFor(() => expect(view.loaded).toBe(true));
+    expect(view.layout).toBe("list");
+    act(() => view.rememberLayout("list"));
+
+    // Past the save's debounce: nothing reached the server.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(kept[spec.key]).toEqual({ layout: "list" });
   });
 });
