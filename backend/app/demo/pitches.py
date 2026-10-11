@@ -29,8 +29,8 @@ from app.db import cohorts
 from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
 from app.demo import accounts
-from app.models.platform.demo import DemoAccount, DemoSandbox
-from app.models.platform.guild import CommunityRole, Guild, GuildInvite
+from app.models.platform.demo import DemoSandbox
+from app.models.platform.guild import CommunityRole, Guild, GuildInvite, GuildMembership
 from app.models.platform.guild_image import IMAGE_SPECS, GuildImageVariant
 from app.models.platform.user import User
 from app.models.tenant.export_job import ExportJob, ExportJobStatus
@@ -45,7 +45,9 @@ from app.services.platform import guilds as guilds_service
 #: How long a link lasts unless it is made for longer, or for good.
 LINK_LIFETIME = timedelta(days=30)
 #: What a visitor may be in their copy.
-LINK_ROLES = (CommunityRole.member, CommunityRole.admin, CommunityRole.superadmin)
+LINK_ROLES = guilds_service.DEMO_GUEST_ROLES
+#: How long a visitor's copy lasts.
+COPY_DAYS = 1
 #: How long making a pitch waits for its import, and how often it looks.
 IMPORT_TIMEOUT_SECONDS = 30 * 60
 IMPORT_POLL_SECONDS = 1.0
@@ -62,8 +64,8 @@ async def seat_cast(
     people a bundle names, under the names it gives them. Returns their ids by
     handle, as an import maps people.
 
-    A persona is an account nobody signs in to that is not a visitor's and not
-    the demo host."""
+    A persona is an account nobody signs in to that is not the demo host and
+    not a visitor, who is a guest of their copy."""
     named: dict[tuple[str, int], BackupPlanPerson] = {}
     for person in people:
         name, digits = usernames.parse_handle(person.handle)
@@ -76,7 +78,10 @@ async def seat_cast(
             tuple_(func.lower(User.username), User.discriminator).in_(list(named)),
             accounts.unloginable(),
             User.id != actor_id,
-            ~exists().where(DemoAccount.user_id == User.id),
+            ~exists().where(
+                GuildMembership.user_id == User.id,
+                GuildMembership.guest_until.is_not(None),
+            ),
         )
     )
     seated: dict[str, int] = {}
@@ -275,11 +280,11 @@ async def make_link(
     role: CommunityRole = CommunityRole.admin,
     lifetime: timedelta = LINK_LIFETIME,
     max_redemptions: int | None = None,
-) -> GuildInvite:
-    """A new invite into the pitch ``pitch_id`` for ``lifetime``, opened at
-    most ``max_redemptions`` times; each opening is a copy of the pitch with
-    the visitor in it as ``role``. Its code is the link's token. Staged; the
-    caller commits."""
+) -> tuple[GuildInvite, str]:
+    """A new guest invite into the pitch ``pitch_id`` for ``lifetime``, opened
+    at most ``max_redemptions`` times, and its code, which is the link's token.
+    Each opening is a copy of the pitch with the visitor in it as a ``role``
+    guest for :data:`COPY_DAYS`. Staged; the caller commits."""
     if role not in LINK_ROLES:
         raise ValueError(f"a link gives member, admin or superadmin, not {role}")
     if not await is_pitch(session, pitch_id):
@@ -290,7 +295,8 @@ async def make_link(
         created_by=None,
         expires_at=datetime.now(timezone.utc) + lifetime,
         max_uses=max_redemptions,
-        role=role,
+        guest_days=COPY_DAYS,
+        guest_role=role,
     )
 
 

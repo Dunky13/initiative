@@ -1,9 +1,8 @@
-"""The demo deployment's copies and the accounts that hold them. A link
-handing a pitch out is an ordinary invite into the pitch.
+"""The demo deployment's copies. A link handing a pitch out is a guest invite
+into the pitch, and the visitor it lets in is a guest of their copy.
 
-Only a deployment started with ``DEMO_MODE`` writes these; everywhere else
-they stay empty. Both are the system engine's alone: a request-path role
-reaches neither.
+Only a deployment started with ``DEMO_MODE`` writes this; everywhere else it
+stays empty. It is the system engine's alone: no request-path role reaches it.
 """
 
 from datetime import datetime
@@ -24,7 +23,7 @@ from sqlmodel import Field, SQLModel
 class DemoSandboxState(str, Enum):
     #: Built and waiting for a visitor.
     pooled = "pooled"
-    #: Claimed by a link; deleted when it expires.
+    #: Claimed by a link; deleted once its guest's time is up.
     live = "live"
 
 
@@ -58,28 +57,5 @@ class DemoSandbox(SQLModel, table=True):
     claimed_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    expires_at: Optional[datetime] = Field(
-        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
-    )
     #: The import filling the copy, in the copy's own schema.
     import_job_id: Optional[int] = Field(default=None)
-
-
-class DemoAccount(SQLModel, table=True):
-    """An account made for a visitor, tied to the copy it was made for."""
-
-    __tablename__ = "demo_accounts"
-
-    user_id: int = Field(
-        sa_column=Column(
-            Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-        )
-    )
-    sandbox_guild_id: int = Field(
-        sa_column=Column(
-            Integer,
-            ForeignKey("demo_sandboxes.guild_id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )

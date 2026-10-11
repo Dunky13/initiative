@@ -12,11 +12,7 @@ from app.core.messages import DemoMessages, GuildMessages
 from app.db import cohorts
 from app.demo import accounts, copies, pitches
 from app.models.platform.auth_session import AuthSession
-from app.models.platform.demo import (
-    DemoAccount,
-    DemoSandbox,
-    DemoSandboxState,
-)
+from app.models.platform.demo import DemoSandbox, DemoSandboxState
 from app.models.platform.guild import (
     CommunityRole,
     Guild,
@@ -32,6 +28,7 @@ from app.services.export import worker as export_worker
 from app.services.guild_sweeps import Scope, each_guild
 from app.services.import_engine import engine as import_engine
 from app.services.import_engine import worker as import_worker
+from app.services.platform import app_settings as app_settings_service
 from app.services.platform import users as users_service
 from app.testing import (
     create_export_job,
@@ -47,10 +44,19 @@ REDEEM = "/api/v1/demo/redeem"
 
 
 @pytest.fixture
-async def pitch(client, acting_user, session, monkeypatch):
+async def demo(session, monkeypatch):
+    """The demo deployment, as boot records it."""
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
+    row = await app_settings_service.ensure_settings_row(session)
+    row.demo_mode = row.guests_enabled = True
+    session.add(row)
+    await session.commit()
+
+
+@pytest.fixture
+async def pitch(demo, client, acting_user, session):
     """A pitch with a task assigned to a persona, published, and a way to make
     links to it."""
-    monkeypatch.setattr(settings, "DEMO_MODE", True)
     a = await acting_user(
         guild_role=CommunityRole.superadmin, initiative=True, project=True
     )
@@ -68,9 +74,9 @@ async def pitch(client, acting_user, session, monkeypatch):
     await session.commit()
 
     async def link(role: CommunityRole = CommunityRole.admin) -> str:
-        invite = await pitches.make_link(session, pitch_id=a.guild.id, role=role)
+        _, code = await pitches.make_link(session, pitch_id=a.guild.id, role=role)
         await session.commit()
-        return invite.code
+        return code
 
     return link, bea.id, a.guild.id
 
@@ -179,7 +185,7 @@ async def test_an_expired_copy_leaves_no_community_and_no_account(
     link, _bea, _source = pitch
     copy_id = await copies.build_copy()
     _opened, _headers, me = await _open(client, await link(CommunityRole.superadmin))
-    later = datetime.now(timezone.utc) + copies.COPY_LIFETIME + timedelta(minutes=1)
+    later = datetime.now(timezone.utc) + timedelta(days=pitches.COPY_DAYS, minutes=1)
 
     async def fails(*_args, **_kwargs) -> None:
         raise RuntimeError("account deletion failed")
@@ -189,7 +195,7 @@ async def test_an_expired_copy_leaves_no_community_and_no_account(
         await copies.expire_copies(later)
     session.expire_all()
     assert await session.get(DemoSandbox, copy_id) is not None
-    assert await session.get(DemoAccount, me["id"]) is not None
+    assert await session.get(User, me["id"]) is not None
 
     await copies.expire_copies(later)
     session.expire_all()
@@ -218,7 +224,11 @@ async def test_a_failed_opening_spends_nothing(pitch, session, monkeypatch):
     assert sandbox is not None and sandbox.state == DemoSandboxState.pooled
     assert sandbox.import_job_id is None
     assert (await session.exec(select(GuildInvite.uses))).one() == 0
-    assert (await session.exec(select(DemoAccount))).all() == []
+    assert (
+        await session.exec(
+            select(GuildMembership).where(GuildMembership.guest_until.is_not(None))
+        )
+    ).all() == []
     assert (await session.exec(select(func.count()).select_from(User))).one() == users
 
 
@@ -338,7 +348,7 @@ async def test_making_a_pitch_imports_and_publishes(pitch, session):
     assert (await session.exec(select(Task.title))).all() == ["Proof the dough"]
 
 
-async def test_cleanup_removes_an_idle_pitch_and_leftovers(session):
+async def test_cleanup_removes_an_idle_pitch_and_leftovers(demo, session):
     host = await accounts.demo_host(session)
     now = datetime.now(timezone.utc)
     old = now - copies.CLEANUP_AFTER - timedelta(days=10)
@@ -347,7 +357,7 @@ async def test_cleanup_removes_an_idle_pitch_and_leftovers(session):
     seeded = await create_guild(session, creator=host, created_at=old)
     links = {}
     for name, guild in (("idle", idle), ("live", kept), ("stale", kept)):
-        links[name] = await pitches.make_link(session, pitch_id=guild.id)
+        links[name], _ = await pitches.make_link(session, pitch_id=guild.id)
     links["idle"].expires_at = old
     links["stale"].expires_at = old
     session.add_all(links.values())

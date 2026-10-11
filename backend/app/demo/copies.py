@@ -2,10 +2,10 @@
 
 The pool loop keeps empty communities built ahead of time, so opening a link
 builds nothing while the visitor waits. Opening one claims a pooled community,
-names it after the pitch, makes the visitor an account in it, and queues an
-import of the pitch's newest export into it. A copy lives for a day; then its
-visitors' accounts and the community are deleted. Copies are destroyed and
-rebuilt, never reused.
+names it after the pitch, makes the visitor an account and seats it as the
+copy's guest on the link's terms, and queues an import of the pitch's newest
+export into it. Once no guest's time is left, the copy's guest accounts and
+the community are deleted. Copies are destroyed and rebuilt, never reused.
 """
 
 from __future__ import annotations
@@ -27,11 +27,7 @@ from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
 from app.demo import accounts, pitches
-from app.models.platform.demo import (
-    DemoAccount,
-    DemoSandbox,
-    DemoSandboxState,
-)
+from app.models.platform.demo import DemoSandbox, DemoSandboxState
 from app.models.platform.guild import (
     CommunityRole,
     CommunityStatus,
@@ -55,8 +51,6 @@ logger = logging.getLogger(__name__)
 POOL_SIZE = 20
 #: The most pool communities and copies there may be at once.
 CEILING = 200
-#: How long a copy lives.
-COPY_LIFETIME = timedelta(hours=24)
 #: How long the daily cleanup keeps an ended link, and an idle pitch.
 CLEANUP_AFTER = timedelta(days=30)
 #: How often the pool loop runs the cleanup.
@@ -88,9 +82,10 @@ class Redemption:
 
 async def redeem(session: AsyncSession, token: str) -> Redemption:
     """Open the link ``token`` names: claim a pooled community as the visitor's
-    copy, make their account in it with the link's role, and queue the import
-    of the pitch's newest export, its dates moved from the pitch's creation to
-    now. ``session`` is a platform system session."""
+    copy, seat their account in it as a guest on the link's terms (its rung,
+    for its days), and queue the import of the pitch's newest export, its dates
+    moved from the pitch's creation to now. ``session`` is a platform system
+    session."""
     await set_rls_context(session, Unattributed())
     source_id = (await _live(session, await _link(session, token))).guild_id
     if not await _count(session, DemoSandbox.state == DemoSandboxState.pooled):
@@ -107,7 +102,8 @@ async def redeem(session: AsyncSession, token: str) -> Redemption:
         # Checked again once the link is locked.
         link = await _live(session, await _link(session, token, lock=True))
         now = datetime.now(timezone.utc)
-        role = CommunityRole(link.role)
+        role = CommunityRole(link.guest_role)
+        expires_at = now + timedelta(days=link.guest_days or 1)
         sandbox = (
             await session.exec(
                 select(DemoSandbox)
@@ -137,11 +133,12 @@ async def redeem(session: AsyncSession, token: str) -> Redemption:
             role=role,
             actor_user_id=host.id,
             via="demo",
+            invite_id=link.id,
+            guest_until=expires_at,
         )
         seated = await pitches.seat_cast(
             session, guild_id=guild_id, people=plan.people, actor_id=host.id
         )
-        expires_at = now + COPY_LIFETIME
         host_id, visitor_id = host.id, visitor.id
         token_version = visitor.token_version
         async with cohorts.system_session(guild_id) as guild_session:
@@ -163,10 +160,8 @@ async def redeem(session: AsyncSession, token: str) -> Redemption:
             sandbox.state = DemoSandboxState.live
             sandbox.invite_id = link.id
             sandbox.claimed_at = now
-            sandbox.expires_at = expires_at
             sandbox.import_job_id = job_id
             session.add(sandbox)
-            session.add(DemoAccount(user_id=visitor.id, sandbox_guild_id=guild_id))
             link.uses += 1
             session.add(link)
             # The job is committed only once the claim is.
@@ -188,6 +183,7 @@ async def redeem(session: AsyncSession, token: str) -> Redemption:
 async def _live(session: AsyncSession, link: GuildInvite | None) -> GuildInvite:
     if (
         link is None
+        or link.guest_role is None
         or not guilds_service.invite_is_active(link)
         or not await pitches.is_pitch(session, link.guild_id)
     ):
@@ -198,10 +194,10 @@ async def _live(session: AsyncSession, link: GuildInvite | None) -> GuildInvite:
 async def _link(
     session: AsyncSession, token: str, *, lock: bool = False
 ) -> GuildInvite | None:
-    stmt = select(GuildInvite).where(GuildInvite.code == token)
-    if lock:
-        stmt = stmt.with_for_update().execution_options(populate_existing=True)
-    return (await session.exec(stmt)).one_or_none()
+    link = await guilds_service.get_invite_by_code(session, code=token, lock=lock)
+    if lock and link is not None:
+        await session.refresh(link)
+    return link
 
 
 async def _count(session: AsyncSession, *where) -> int:
@@ -261,14 +257,17 @@ async def _hand_over_seat(session: AsyncSession, guild_id: int, host_id: int) ->
 
 
 async def copy_expiry(user_id: int) -> datetime | None:
-    """When the copy this account was made for is deleted, or ``None`` for an
-    account made some other way."""
+    """When this account's time as a guest of its copy ends, and the copy and
+    the account with it, or ``None`` for an account that is no copy's guest."""
     async with cohorts.system_session(None) as session:
         return (
             await session.exec(
-                select(DemoSandbox.expires_at)
-                .join(DemoAccount, DemoAccount.sandbox_guild_id == DemoSandbox.guild_id)
-                .where(DemoAccount.user_id == user_id)
+                select(GuildMembership.guest_until)
+                .join(DemoSandbox, DemoSandbox.guild_id == GuildMembership.guild_id)
+                .where(
+                    GuildMembership.user_id == user_id,
+                    GuildMembership.guest_until.is_not(None),
+                )
             )
         ).first()
 
@@ -300,15 +299,18 @@ async def pool_pass() -> None:
 
 
 async def expire_copies(now: datetime) -> None:
-    """Delete every copy whose time is up, and then the accounts made for it,
-    with no retention window."""
+    """Delete every copy with no guest whose time is left, and then its guests'
+    accounts, with no retention window."""
     async with cohorts.system_session(None) as session:
         await set_rls_context(session, Unattributed())
         due = (
             await session.exec(
                 select(DemoSandbox.guild_id).where(
                     DemoSandbox.state == DemoSandboxState.live,
-                    DemoSandbox.expires_at <= now,
+                    ~exists().where(
+                        GuildMembership.guild_id == DemoSandbox.guild_id,
+                        GuildMembership.guest_until > now,
+                    ),
                 )
             )
         ).all()
@@ -321,10 +323,11 @@ async def expire_copies(now: datetime) -> None:
 
 
 async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
-    """Delete the copy's accounts, each taking its record with it, and then
-    the community. Marked deleted first, which closes it to its visitors and
-    lets its seat holder go. A step that fails leaves the copy recorded for
-    the next pass."""
+    """Delete the copy's guest accounts, each taking its record with it, and
+    then the community. Marked deleted first, which closes it to its visitors
+    and lets its seat holder go. A step that fails leaves the copy recorded for
+    the next pass. A guest the expiry sweep took out first is left to the
+    daily cleanup."""
     guild = await session.get(Guild, guild_id)
     if guild is None:
         return
@@ -335,7 +338,10 @@ async def _destroy_copy(session: AsyncSession, guild_id: int) -> None:
         await session.commit()
     visitors = (
         await session.exec(
-            select(DemoAccount.user_id).where(DemoAccount.sandbox_guild_id == guild_id)
+            select(GuildMembership.user_id).where(
+                GuildMembership.guild_id == guild_id,
+                GuildMembership.guest_until.is_not(None),
+            )
         )
     ).all()
     for user_id in visitors:
