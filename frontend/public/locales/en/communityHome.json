@@ -37,6 +37,11 @@
       "published_other": "published"
     }
   },
+  "activityDrawer": {
+    "title": "Activity",
+    "expand": "Expand activity sidebar",
+    "collapse": "Collapse activity sidebar"
+  },
   "loading": "Loading…",
   "loadError": "Failed to load this tool. Please try again later.",
   "communityWide": "Community-wide",

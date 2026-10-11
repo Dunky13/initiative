@@ -7,7 +7,12 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRecentItem } from "@/__tests__/factories/recent.factory";
-import { getActiveRecentKey, recentKeyMatches, recentRoute } from "@/lib/recentRoute";
+import {
+  activityScope,
+  getActiveRecentKey,
+  recentKeyMatches,
+  recentRoute,
+} from "@/lib/recentRoute";
 
 describe("recentRoute", () => {
   it("addresses an entity inside its community and initiative", () => {
@@ -69,6 +74,27 @@ describe("getActiveRecentKey", () => {
     expect(getActiveRecentKey("/c/1/i/2/widgets/3")).toBeNull();
     // A non-numeric id must not parse as one.
     expect(getActiveRecentKey("/c/1/i/2/projects/gallery")).toBeNull();
+  });
+});
+
+describe("activityScope", () => {
+  it("narrows to the tool a page is in, including what lives inside it", () => {
+    expect(activityScope("/c/1/i/2/projects/3")).toEqual({ tool: "project", toolId: 3 });
+    expect(activityScope("/c/1/i/2/projects/3/tasks/9")).toEqual({ tool: "project", toolId: 3 });
+    expect(activityScope("/c/1/calendars/4")).toEqual({ tool: "calendar", toolId: 4 });
+  });
+
+  it("narrows to an initiative on its own page, and nowhere under it", () => {
+    expect(activityScope("/c/1/i/2")).toEqual({ initiativeId: 2 });
+    expect(activityScope("/c/1/i/2/")).toEqual({ initiativeId: 2 });
+    expect(activityScope("/c/1/i/2/settings")).toBeNull();
+    expect(activityScope("/c/1/i/2/projects")).toBeNull();
+  });
+
+  it("shows nothing for a tool that opted out, or a page about no tool", () => {
+    expect(activityScope("/c/1/i/2/wikis/5")).toBeNull();
+    expect(activityScope("/c/1")).toBeNull();
+    expect(activityScope("/profile")).toBeNull();
   });
 });
 

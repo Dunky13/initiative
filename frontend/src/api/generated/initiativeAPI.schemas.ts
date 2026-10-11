@@ -8661,24 +8661,6 @@ export interface ProfileDecorationsInput {
   grad_year?: number | null;
 }
 
-export interface ProjectActivityEntry {
-  comment_id: number;
-  content: string;
-  created_at: string;
-  author?: CommentAuthor | null;
-  task_id: number;
-  task_title: string;
-}
-
-export interface ProjectActivityResponse {
-  total_count: number;
-  page: number;
-  page_size: number;
-  has_next: boolean;
-  has_prev: boolean;
-  items: ProjectActivityEntry[];
-}
-
 export interface ProjectCreate {
   properties?: PropertyValueInput[];
   name: string;
@@ -12046,18 +12028,6 @@ export type ListWikisParams = {
   /**
    * @minimum 0
    * @maximum 500
-   */
-  page_size?: number;
-};
-
-export type ProjectActivityFeedParams = {
-  /**
-   * @minimum 1
-   */
-  page?: number;
-  /**
-   * @minimum 1
-   * @maximum 20
    */
   page_size?: number;
 };
