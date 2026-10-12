@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API: filing a ticket and answering one take `multipart/form-data`.** `POST /api/v1/me/tickets` takes the ticket as JSON in a `payload` field, and `POST /api/v1/me/tickets/{task_id}/replies` takes the answer in a `body` field, each beside any `files`.
 - **Signing out of the phone or desktop app keeps your encrypted messages.** Sign back in with the same account and they are all there, with nothing to sync, along with anything sent while you were away. Signing in to another account on the same app keeps each account's messages apart instead of deleting the first one's. A browser still clears its messages when you sign out.
 
+- **Editing a wiki page keeps its toolbar in reach.** The editor is the height of the window and scrolls inside itself, as a document's does, so the formatting toolbar stays at the top however long the page runs.
 ### Fixed
 
 - **An invite with no use limit takes any number of people.** One made with the uses left at 0 stopped working after the first person joined.
