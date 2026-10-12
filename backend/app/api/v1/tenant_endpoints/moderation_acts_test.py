@@ -450,6 +450,47 @@ async def test_an_edit_waits_on_a_lock_being_placed_and_is_refused_by_it(
     assert edited.json()["detail"] == CommentMessages.LOCKED
 
 
+async def test_a_lock_waits_its_turn_behind_a_comment_being_written(
+    client, session, scene
+):
+    """A lock placed while a comment is being written waits for it, holding
+    nothing the comment's write still needs, so neither is cancelled."""
+    import asyncio
+
+    from sqlalchemy import text as sql
+
+    from app.db import cohorts
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+    from app.services.tenant.comments import thread_key
+
+    guild_id = scene["mod"].guild.id
+    task_id = scene["task"].id
+    async with cohorts.system_session(guild_id) as writing:
+        await set_rls_context(writing, SystemGuild(guild_id))
+        await advisory_lock(
+            writing,
+            LockNamespace.COMMENT_THREAD,
+            thread_key(guild_id, "tasks", task_id),
+        )
+        locking = asyncio.create_task(
+            _act(client, scene["mod"], "lock_comments", "task", task_id)
+        )
+        await asyncio.sleep(0.3)
+        assert not locking.done()
+        # What a comment's insert takes on its parent: refused while the lock
+        # act holds the row, which it must not yet.
+        await writing.exec(sql("SET LOCAL lock_timeout = '2s'"))
+        await writing.exec(
+            sql("SELECT id FROM tasks WHERE id = :id FOR KEY SHARE").bindparams(
+                id=task_id
+            )
+        )
+        await writing.commit()
+
+    locked = await locking
+    assert locked.status_code == 201, locked.text
+
+
 async def test_clearing_reactions_takes_every_one_off(client, session, scene):
     comment = scene["comment"]
     await create_reaction(session, scene["mod"].user, comment=comment)

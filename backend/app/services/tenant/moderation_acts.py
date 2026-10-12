@@ -533,8 +533,24 @@ async def act(
         actor_id=actor_id, report_id=report_id, via_grant_id=platform_grant_id(context)
     )
     let_go: set[str] = set()
+    locks_thread = request.act in (
+        ModerationAct.lock_comments,
+        ModerationAct.unlock_comments,
+    )
     async with cohorts.system_session(guild_id) as system:
         await set_rls_context(system, SystemGuild(guild_id))
+        if locks_thread:
+            from app.db.advisory_locks import LockNamespace, advisory_lock
+            from app.services.tenant.comments import thread_key
+
+            # Takes turns with a comment being written in the thread, so one
+            # landing now is either in before the lock or refused by it. Taken
+            # before the row, in the order a comment's write takes the two.
+            await advisory_lock(
+                system,
+                LockNamespace.COMMENT_THREAD,
+                thread_key(guild_id, str(model.__tablename__), request.target_id),
+            )
         row = (
             await system.exec(
                 select_including_deleted(model)
@@ -557,29 +573,10 @@ async def act(
                 note=note,
             )
             action, let_go = removed.action, removed.let_go
-        elif request.act in (
-            ModerationAct.lock_comments,
-            ModerationAct.unlock_comments,
-        ):
-            from app.db.advisory_locks import LockNamespace, advisory_lock
-            from app.services.tenant.comments import thread_key
-
+        elif locks_thread:
             locking = request.act is ModerationAct.lock_comments
-            # Takes turns with a comment being written in the thread, so one
-            # landing now is either in before the lock or refused by it.
-            await advisory_lock(
-                system,
-                LockNamespace.COMMENT_THREAD,
-                thread_key(guild_id, str(model.__tablename__), request.target_id),
-            )
-            # Read again now that it is this act's turn.
-            locked = (
-                await system.exec(
-                    select_including_deleted(model.comments_locked_at).where(  # type: ignore[attr-defined]
-                        model.id == request.target_id
-                    )  # type: ignore[attr-defined]
-                )
-            ).first() is not None
+            # Read under this act's turn on the thread, taken above.
+            locked = getattr(row, "comments_locked_at", None) is not None
             if locking and locked:
                 raise ActError(
                     ModerationMessages.ALREADY_LOCKED, status.HTTP_409_CONFLICT
