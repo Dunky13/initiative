@@ -90,9 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API: `DELETE /comments/{id}` is the author's alone**, and the comment list says whether the thread is locked and whether the reader moderates it.
 - **API: filing a ticket and answering one take `multipart/form-data`.** `POST /api/v1/me/tickets` takes the ticket as JSON in a `payload` field, and `POST /api/v1/me/tickets/{task_id}/replies` takes the answer in a `body` field, each beside any `files`.
 - **Signing out of the phone or desktop app keeps your encrypted messages.** Sign back in with the same account and they are all there, with nothing to sync, along with anything sent while you were away. Signing in to another account on the same app keeps each account's messages apart instead of deleting the first one's. A browser still clears its messages when you sign out.
+- **Pictures in a document, wiki page or post open full size.** Being read, a click opens the picture in the lightbox, where it zooms and pages through the others in it. Being edited, a click still selects it to resize; double-click it, or use the full-size button on the selected picture.
+- **Editing a wiki page keeps its toolbar in reach.** The editor is the height of the window and scrolls inside itself, as a document's does, so the formatting toolbar stays at the top however long the page runs.
 
 ### Fixed
 
+- **Pictures show on a wiki page being read.** A picture nobody had captioned showed "An error was thrown." in its place until the page was opened for editing.
 - **An invite with no use limit takes any number of people.** One made with the uses left at 0 stopped working after the first person joined.
 - **Whoever added a queue item isn't offered a report of it.**
 - **A closed case keeps its attachments while a hold names it.** The files on a case are no longer deleted at the end of their keeping while content held for the platform is worked on that case.

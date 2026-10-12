@@ -27,11 +27,12 @@ import {
   SELECTION_CHANGE_COMMAND,
   TextNode,
 } from "lexical";
-import { Star } from "lucide-react";
+import { Maximize2, Star } from "lucide-react";
 import { type JSX, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 // import brokenImage from '@/components/ui/editor/images/image-broken.svg';
+import { useImageLightbox } from "@/components/markdown/ProseImage";
 import { Button } from "@/components/ui/button";
 import {
   canBeFeatured,
@@ -152,7 +153,26 @@ export default function ImageComponent({
   const activeEditorRef = useRef<LexicalEditor | null>(null);
   const [isLoadError, setIsLoadError] = useState<boolean>(false);
   const isEditable = useLexicalEditable();
-  const { t } = useTranslation("editor");
+  const { t } = useTranslation(["editor", "common"]);
+  // A picture opens full size, paging with the others in the document. Being
+  // read, a click opens it; being written, a click selects it to resize, so it
+  // opens from a button on the selected picture or a double click instead.
+  const lightbox = useImageLightbox();
+  const [lightboxTarget, setLightboxTarget] = useState<HTMLDivElement | null>(null);
+  const opensFullSize = lightbox !== null && !isLoadError;
+  useEffect(
+    () =>
+      lightbox && lightboxTarget && !isLoadError
+        ? lightbox.register(lightboxTarget, { src: resolvedSrc, alt: altText })
+        : undefined,
+    [lightbox, lightboxTarget, isLoadError, resolvedSrc, altText]
+  );
+  const openFullSize = () => {
+    if (lightboxTarget) lightbox?.open(lightboxTarget);
+  };
+  const openLabel = altText
+    ? t("common:lightbox.openNamed", { name: altText })
+    : t("common:lightbox.open");
   const featured = useFeaturedImage();
   // The caption last shown or written from here, so the echo of an edit is
   // not shown again over what has been typed since.
@@ -165,7 +185,11 @@ export default function ImageComponent({
     if (!captionState || captionState === shownCaptionRef.current) return;
     shownCaptionRef.current = captionState;
     if (captionState === JSON.stringify(caption.getEditorState().toJSON())) return;
-    caption.setEditorState(caption.parseEditorState(captionState), { tag: CAPTION_FROM_NODE });
+    const next = caption.parseEditorState(captionState);
+    // A caption nobody wrote is stored as a root with nothing in it, which
+    // Lexical refuses as a state. The caption editor starts out showing that.
+    if (next.isEmpty()) return;
+    caption.setEditorState(next, { tag: CAPTION_FROM_NODE });
   }, [caption, captionState]);
 
   // What is typed into the caption is written onto the node, which is what
@@ -369,9 +393,31 @@ export default function ImageComponent({
   return (
     <Suspense fallback={null}>
       <>
-        <div draggable={draggable}>
+        {/* Being written, a double click is a shortcut to full size; the
+            button on the selected picture is the way in. */}
+        <div
+          ref={setLightboxTarget}
+          draggable={draggable}
+          onDoubleClick={opensFullSize && isEditable ? openFullSize : undefined}
+        >
           {isLoadError ? (
             <BrokenImage />
+          ) : opensFullSize && !isEditable ? (
+            <button
+              type="button"
+              aria-label={openLabel}
+              onClick={openFullSize}
+              className="block max-w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LazyImage
+                className="max-w-full"
+                src={resolvedSrc}
+                altText={altText}
+                imageRef={imageRef}
+                width={width}
+                onError={() => setIsLoadError(true)}
+              />
+            </button>
           ) : (
             <LazyImage
               className={`max-w-full cursor-default ${
@@ -420,6 +466,19 @@ export default function ImageComponent({
           >
             <Star className={cn("h-3.5 w-3.5", isFeatured && "fill-current")} aria-hidden />
             {isFeatured ? t("featuredImage.isFeatured") : t("featuredImage.makeFeatured")}
+          </Button>
+        ) : null}
+        {opensFullSize && isFocused && !isResizing ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="absolute top-1 right-1 size-7"
+            aria-label={openLabel}
+            title={openLabel}
+            onClick={openFullSize}
+          >
+            <Maximize2 className="h-3.5 w-3.5" aria-hidden />
           </Button>
         ) : null}
         {resizable && $isNodeSelection(selection) && isFocused && (

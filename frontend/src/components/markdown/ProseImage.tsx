@@ -25,6 +25,10 @@ interface Scope {
 
 const ScopeContext = createContext<Scope | null>(null);
 
+/** The `ImageLightboxScope` a picture is drawn inside, or null outside one —
+ *  for a picture that is not a `ProseImage`, such as an editor's. */
+export const useImageLightbox = () => useContext(ScopeContext);
+
 /** Set by a rendered link: a picture inside one is what the link opens, so
  *  the link keeps the click. */
 const InLinkContext = createContext(false);
@@ -38,8 +42,9 @@ const inReadingOrder = ([a]: [Node, Picture], [b]: [Node, Picture]) =>
 
 /**
  * One block of rendered prose whose pictures open full size. Every
- * `ProseImage` inside it pages with the others, in the order they are read,
- * so a description with five screenshots is one lightbox rather than five.
+ * `ProseImage` inside it — and every picture in an editor being read — pages
+ * with the others, in the order they are read, so a description with five
+ * screenshots is one lightbox rather than five.
  */
 export const ImageLightboxScope = ({ children }: { children: ReactNode }) => {
   const pictures = useRef(new Map<HTMLElement, Picture>());

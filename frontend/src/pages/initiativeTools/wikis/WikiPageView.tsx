@@ -438,7 +438,15 @@ export const WikiPageView = () => {
         />
 
         <div ref={setRow} className="flex min-h-0 flex-1">
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          {/* Read, the page scrolls here. Written, the editor is the height
+              of what is left and scrolls itself, the way a document's does, so
+              its toolbar stays in reach however long the page runs. */}
+          <div
+            className={cn(
+              "min-w-0 flex-1",
+              isEditing ? "flex flex-col overflow-hidden" : "overflow-y-auto"
+            )}
+          >
             {/* The measure. The surface is the window; the words are not, so
                 the column is centred in whatever space is left and capped at a
                 line length somebody can actually read. Capping it is also what
@@ -447,7 +455,8 @@ export const WikiPageView = () => {
             <div
               className={cn(
                 "mx-auto w-full px-6 py-8 md:px-10",
-                isComfortable ? "max-w-3xl" : "max-w-6xl"
+                isComfortable ? "max-w-3xl" : "max-w-6xl",
+                isEditing && "flex min-h-0 flex-1 flex-col"
               )}
             >
               {/* The row has to BE this page: a body from the page before it
@@ -469,7 +478,11 @@ export const WikiPageView = () => {
                     // document draws itself comes off. Wiki-local: the class
                     // overrides the variant here and changes nothing about how
                     // a document renders.
-                    className={cn(!isEditing && "rounded-none border-0 bg-transparent shadow-none")}
+                    className={cn(
+                      isEditing
+                        ? "min-h-0 flex-1"
+                        : "rounded-none border-0 bg-transparent shadow-none"
+                    )}
                     collaborative={collaboration.isReady}
                     providerFactory={collaboration.providerFactory}
                     // Always on, so the body the room is handed stays current
