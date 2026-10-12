@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import {
   $createNodeSelection,
   $createParagraphNode,
@@ -66,6 +66,37 @@ const imageWithCaption = (text: string) => ({
         ],
       },
     ],
+  },
+});
+
+/** A paragraph per picture, named and sourced by `names`, in that order. */
+const pictures = (...names: string[]) => ({
+  root: {
+    type: "root",
+    version: 1,
+    direction: null,
+    format: "",
+    indent: 0,
+    children: names.map((name) => ({
+      type: "paragraph",
+      version: 1,
+      direction: null,
+      format: "",
+      indent: 0,
+      children: [
+        {
+          type: "image",
+          version: 1,
+          src: `/uploads/${name}.png`,
+          altText: name,
+          width: 0,
+          height: 0,
+          maxWidth: 500,
+          showCaption: false,
+          caption: { editorState: captionText("") },
+        },
+      ],
+    })),
   },
 });
 
@@ -236,5 +267,43 @@ describe("an image", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.querySelector('img[src="/uploads/picture.png"]')).not.toBeNull();
+  });
+
+  it("pages through the document's pictures in the order they are read", async () => {
+    const { container } = renderPage(() => (
+      <Editor
+        readOnly
+        showToolbar={false}
+        editorSerializedState={
+          pictures("first", "second", "third") as unknown as SerializedEditorState
+        }
+      />
+    ));
+    const shown = () => within(screen.getByRole("dialog")).getByRole("img").getAttribute("alt");
+
+    fireEvent.click(await screen.findByRole("button", { name: /second/ }));
+    await screen.findByRole("dialog");
+    expect(shown()).toBe("second");
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await waitFor(() => expect(shown()).toBe("third"));
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    await waitFor(() => expect(shown()).toBe("first"));
+
+    // A picture taken out of the document is taken out of the pages too.
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const document = container.querySelector<Editable>('[data-lexical-editor="true"]') as Editable;
+    document.__lexicalEditor.update(() => {
+      $getRoot().getChildAtIndex(1)?.remove();
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: /second/ })).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /third/ }));
+    await screen.findByRole("dialog");
+    expect(shown()).toBe("third");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    await waitFor(() => expect(shown()).toBe("first"));
   });
 });
