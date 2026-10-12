@@ -1,8 +1,10 @@
-import { waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import {
+  $createNodeSelection,
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $setSelection,
   type LexicalEditor,
   type ParagraphNode,
   type SerializedEditorState,
@@ -134,5 +136,105 @@ describe("an image caption", () => {
     });
 
     await waitFor(() => expect(caption).toHaveTextContent("From elsewhere"));
+  });
+
+  it("is no error when it was never written, on a page being read", async () => {
+    // How an image is saved before anybody captions it: a root with nothing in
+    // it, which Lexical refuses as an editor state.
+    const state = imageWithCaption("unused");
+    const image = (state.root.children[0] as { children: Record<string, unknown>[] }).children[0];
+    image.showCaption = false;
+    image.caption = {
+      editorState: {
+        root: { type: "root", format: "", indent: 0, version: 1, children: [], direction: null },
+      },
+    };
+    const { container } = renderPage(() => (
+      <Editor
+        readOnly
+        showToolbar={false}
+        editorSerializedState={state as unknown as SerializedEditorState}
+      />
+    ));
+
+    await waitFor(() => expect(container.querySelector('img[alt="a picture"]')).not.toBeNull());
+    expect(container).not.toHaveTextContent("An error was thrown");
+  });
+});
+
+describe("an image", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "Image",
+      class {
+        onload: (() => void) | null = null;
+        set src(_value: string) {
+          queueMicrotask(() => this.onload?.());
+        }
+      }
+    );
+  });
+
+  it("opens full size from a page being read", async () => {
+    renderPage(() => (
+      <Editor
+        readOnly
+        showToolbar={false}
+        editorSerializedState={imageWithCaption("x") as unknown as SerializedEditorState}
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: /a picture/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector('img[src="/uploads/picture.png"]')).not.toBeNull();
+  });
+
+  it("opens full size from a double click while the page is written", async () => {
+    const { container } = renderPage(() => (
+      <Editor
+        showToolbar={false}
+        editorSerializedState={imageWithCaption("x") as unknown as SerializedEditorState}
+      />
+    ));
+
+    // A click selects it to resize, so it is no button of its own.
+    const picture = await waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('img[alt="a picture"]');
+      expect(image).not.toBeNull();
+      return image as HTMLImageElement;
+    });
+    expect(screen.queryByRole("button", { name: /a picture/ })).toBeNull();
+
+    fireEvent.doubleClick(picture);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector('img[src="/uploads/picture.png"]')).not.toBeNull();
+  });
+
+  it("offers full size once it is selected while the page is written", async () => {
+    const { container } = renderPage(() => (
+      <Editor
+        showToolbar={false}
+        editorSerializedState={imageWithCaption("x") as unknown as SerializedEditorState}
+      />
+    ));
+    const document = await waitFor(() => {
+      const editable = container.querySelector<Editable>('[data-lexical-editor="true"]');
+      expect(container.querySelector('img[alt="a picture"]')).not.toBeNull();
+      return editable as Editable;
+    });
+
+    document.__lexicalEditor.update(() => {
+      const image = $getRoot().getFirstChildOrThrow<ParagraphNode>().getFirstChild();
+      const selection = $createNodeSelection();
+      if (image) selection.add(image.getKey());
+      $setSelection(selection);
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /a picture/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector('img[src="/uploads/picture.png"]')).not.toBeNull();
   });
 });
