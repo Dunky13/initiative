@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { buildComment } from "@/__tests__/factories/comment.factory";
@@ -352,6 +353,39 @@ describe("CommentSection", () => {
     await screen.findByText("What I said");
     expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^delete/i })).toBeInTheDocument();
+  });
+
+  it("closes an edit left open when the thread is locked, keeping what was typed", async () => {
+    const author = buildUser({ id: 40 });
+    const mine = buildComment({ id: 8, task_id: 3, content: "What I said", created_by: author.id });
+    const Toggled = () => {
+      const [locked, setLocked] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setLocked(!locked)}>
+            toggle lock
+          </button>
+          <CommentSection
+            entityType="task"
+            entityId={3}
+            comments={[mine]}
+            initiativeId={7}
+            locked={locked}
+          />
+        </>
+      );
+    };
+    renderPage(Toggled, { auth: { user: author } });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^edit/i }));
+    await user.type(await screen.findByDisplayValue("What I said"), " and more");
+
+    await user.click(screen.getByRole("button", { name: "toggle lock" }));
+    expect(screen.queryByDisplayValue(/and more/)).not.toBeInTheDocument();
+
+    // Reopened, the draft is where it was left.
+    await user.click(screen.getByRole("button", { name: "toggle lock" }));
+    expect(await screen.findByDisplayValue("What I said and more")).toBeInTheDocument();
   });
 
   it("offers an author the edit on their comment while the thread is open", async () => {

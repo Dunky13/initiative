@@ -407,6 +407,49 @@ async def test_a_locked_thread_keeps_its_comments_as_they_were(client, session, 
     assert edited.status_code == 200, edited.text
 
 
+async def test_an_edit_waits_on_a_lock_being_placed_and_is_refused_by_it(
+    client, session, scene
+):
+    """Locking and writing take turns on the thread: an edit arriving while a
+    lock is being placed waits for it, then finds the thread locked."""
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.db import cohorts
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+    from app.models.tenant.task import Task
+    from app.services.tenant.comments import thread_key
+
+    guild_id = scene["mod"].guild.id
+    task_id = scene["task"].id
+    async with cohorts.system_session(guild_id) as locking:
+        await set_rls_context(locking, SystemGuild(guild_id))
+        await advisory_lock(
+            locking,
+            LockNamespace.COMMENT_THREAD,
+            thread_key(guild_id, "tasks", task_id),
+        )
+        task = (await locking.exec(select(Task).where(Task.id == task_id))).one()
+        task.comments_locked_at = datetime.now(timezone.utc)
+        locking.add(task)
+        await locking.flush()
+
+        edit = asyncio.create_task(
+            client.patch(
+                scene["member"].g(f"/comments/{scene['comment'].id}"),
+                json={"content": "Rewritten"},
+                headers=scene["member"].headers,
+            )
+        )
+        await asyncio.sleep(0.3)
+        assert not edit.done()
+        await locking.commit()
+
+    edited = await edit
+    assert edited.status_code == 403, edited.text
+    assert edited.json()["detail"] == CommentMessages.LOCKED
+
+
 async def test_clearing_reactions_takes_every_one_off(client, session, scene):
     comment = scene["comment"]
     await create_reaction(session, scene["mod"].user, comment=comment)

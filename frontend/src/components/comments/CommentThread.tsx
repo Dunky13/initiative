@@ -143,6 +143,10 @@ export const CommentThread = ({
   // A comment still in its author's trash takes no replies; a moderator's
   // tombstone does, since the conversation around it goes on.
   const replyable = canReply && (!removal || removal.by === "moderator");
+  // A form opened before the thread was locked goes with the lock; what was
+  // typed in it stays, for when the thread is reopened.
+  const editing = isEditing && canEdit;
+  const replying = isReplying && replyable;
 
   const handleReplySubmit = (content: string) => {
     onReply(comment.id, content);
@@ -229,7 +233,7 @@ export const CommentThread = ({
                   {isEdited && <span className="ml-1 text-muted-foreground">{t("edited")}</span>}
                 </span>
                 {isUnread && <UnreadDot />}
-                {!isEditing && (
+                {!editing && (
                   <div className="ml-auto flex items-center gap-1">
                     {replyable && (
                       <Button
@@ -286,7 +290,7 @@ export const CommentThread = ({
                 )}
               </div>
               <div className="mt-2 text-foreground text-sm">
-                {isEditing ? (
+                {editing ? (
                   <CommentInput
                     value={editContent}
                     onChange={setEditContent}
@@ -304,7 +308,7 @@ export const CommentThread = ({
                   <CommentContent content={comment.content} />
                 )}
               </div>
-              {!isEditing && (
+              {!editing && (
                 <ReactionBar
                   className="mt-2"
                   targetType={ReactionTarget.comment}
@@ -319,7 +323,7 @@ export const CommentThread = ({
       )}
 
       {/* Reply input */}
-      {isReplying && (
+      {replying && (
         <div className="mt-2 ml-4">
           <CommentInput
             value={replyContent}

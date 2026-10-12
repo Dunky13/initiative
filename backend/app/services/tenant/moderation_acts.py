@@ -561,8 +561,25 @@ async def act(
             ModerationAct.lock_comments,
             ModerationAct.unlock_comments,
         ):
+            from app.db.advisory_locks import LockNamespace, advisory_lock
+            from app.services.tenant.comments import thread_key
+
             locking = request.act is ModerationAct.lock_comments
-            locked = getattr(row, "comments_locked_at", None) is not None
+            # Takes turns with a comment being written in the thread, so one
+            # landing now is either in before the lock or refused by it.
+            await advisory_lock(
+                system,
+                LockNamespace.COMMENT_THREAD,
+                thread_key(guild_id, str(model.__tablename__), request.target_id),
+            )
+            # Read again now that it is this act's turn.
+            locked = (
+                await system.exec(
+                    select_including_deleted(model.comments_locked_at).where(  # type: ignore[attr-defined]
+                        model.id == request.target_id
+                    )  # type: ignore[attr-defined]
+                )
+            ).first() is not None
             if locking and locked:
                 raise ActError(
                     ModerationMessages.ALREADY_LOCKED, status.HTTP_409_CONFLICT
