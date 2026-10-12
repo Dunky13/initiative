@@ -144,9 +144,16 @@ export const CommentSection = ({
   // is here, and the thread scrolls to it.
   const linkedId = typeof window !== "undefined" ? linkedCommentId(window.location.hash) : null;
   const linkedLoaded = linkedId !== null && comments.some((comment) => comment.id === linkedId);
+  // How many comments the thread held when it last asked for older ones. A
+  // read that brought nothing — it failed, say — stops the search, and the
+  // reader's own Load older is left to try again.
+  const askedAt = useRef<number | null>(null);
   useEffect(() => {
-    if (linkedId !== null && !linkedLoaded && hasOlder && !isLoadingOlder) onLoadOlder?.();
-  }, [linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder]);
+    if (linkedId === null || linkedLoaded || !hasOlder || isLoadingOlder) return;
+    if (askedAt.current !== null && comments.length <= askedAt.current) return;
+    askedAt.current = comments.length;
+    onLoadOlder?.();
+  }, [linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder, comments.length]);
   const { activeCommunityReadOnly } = useCommunities();
   // A moderator closes or reopens the thread from the thread itself, the
   // same on every kind of thing that takes comments.

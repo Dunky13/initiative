@@ -507,6 +507,43 @@ describe("CommentSection", () => {
       await screen.findByText("Newer");
       await waitFor(() => expect(onLoadOlder).toHaveBeenCalled());
     });
+
+    it("stops reading older conversations when a read brings nothing", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      const comments = [buildComment({ id: 7, task_id: 3, content: "Newer" })];
+      const Thread = ({ loading }: { loading: boolean }) => (
+        <CommentSection
+          entityType="task"
+          entityId={3}
+          comments={comments}
+          initiativeId={7}
+          hasOlder
+          isLoadingOlder={loading}
+          onLoadOlder={onLoadOlder}
+        />
+      );
+      const Flipping = () => {
+        const [loading, setLoading] = useState(false);
+        return (
+          <>
+            <button type="button" onClick={() => setLoading(!loading)}>
+              flip
+            </button>
+            <Thread loading={loading} />
+          </>
+        );
+      };
+      renderPage(Flipping);
+      const user = userEvent.setup();
+      await screen.findByText("Newer");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
+
+      // The read runs and fails: nothing new arrives, so nothing more is asked.
+      await user.click(screen.getByRole("button", { name: "flip" }));
+      await user.click(screen.getByRole("button", { name: "flip" }));
+      expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("offers members no moderation", async () => {
