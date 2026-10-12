@@ -1,5 +1,5 @@
 import { Pencil, Reply, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ReactionTarget } from "@/api/generated/initiativeAPI.schemas";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { UserHoverLink } from "@/components/user/UserHoverLink";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { linkedCommentId } from "@/lib/entityResolver";
 import { getUserDisplayName, isAnonymizedUser } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +128,14 @@ export const CommentThread = ({
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const isEdited = Boolean(comment.updated_at);
   const isUnread = unreadIds?.has(comment.id) ?? false;
+  // A link to this comment (`/go/comment/{id}`) lands here: it is scrolled to
+  // and marked out from the rest of the thread.
+  const isLinked =
+    typeof window !== "undefined" && linkedCommentId(window.location.hash) === comment.id;
+  const anchor = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isLinked) anchor.current?.scrollIntoView?.({ block: "center" });
+  }, [isLinked]);
 
   // A tombstone: a comment a moderator took down, or one its author deleted
   // with replies under it. It keeps its place for them and says nothing else.
@@ -168,6 +177,8 @@ export const CommentThread = ({
 
   return (
     <div
+      id={`comment-${comment.id}`}
+      ref={anchor}
       className={visualDepth > 0 ? "ml-4 border-l-2 pl-4" : ""}
       style={visualDepth > 0 ? { borderColor: threadLineColor(visualDepth) } : undefined}
     >
@@ -190,9 +201,11 @@ export const CommentThread = ({
       ) : (
         <div
           data-unread={isUnread || undefined}
+          data-linked={isLinked || undefined}
           className={cn(
             "rounded-md border border-border p-3",
-            isUnread && "border-primary/50 bg-primary/5"
+            isUnread && "border-primary/50 bg-primary/5",
+            isLinked && "ring-2 ring-primary ring-offset-2 ring-offset-background"
           )}
         >
           <div className="flex gap-3">

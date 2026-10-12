@@ -17,6 +17,7 @@ import { useCreateComment, useDeleteComment, useUpdateComment } from "@/hooks/us
 import { useCommunities } from "@/hooks/useCommunities";
 import { useModerate } from "@/hooks/useModeration";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { linkedCommentId } from "@/lib/entityResolver";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import { referenceTypeFor } from "@/lib/references";
@@ -138,6 +139,14 @@ export const CommentSection = ({
   canModerate = false,
 }: CommentSectionProps) => {
   const { t } = useTranslation(["comments", "moderation"]);
+  // A link to one comment lands on this thread: where it is in an older
+  // conversation than the first page holds, the older ones are read until it
+  // is here, and the thread scrolls to it.
+  const linkedId = typeof window !== "undefined" ? linkedCommentId(window.location.hash) : null;
+  const linkedLoaded = linkedId !== null && comments.some((comment) => comment.id === linkedId);
+  useEffect(() => {
+    if (linkedId !== null && !linkedLoaded && hasOlder && !isLoadingOlder) onLoadOlder?.();
+  }, [linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder]);
   const { activeCommunityReadOnly } = useCommunities();
   // A moderator closes or reopens the thread from the thread itself, the
   // same on every kind of thing that takes comments.

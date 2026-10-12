@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildComment } from "@/__tests__/factories/comment.factory";
 import { buildUser } from "@/__tests__/factories/user.factory";
@@ -470,6 +470,43 @@ describe("CommentSection", () => {
     ));
     expect(await screen.findByRole("button", { name: "Unlock comments" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Lock comments" })).toBeNull();
+  });
+
+  describe("a link to one comment", () => {
+    afterEach(() => {
+      window.location.hash = "";
+    });
+
+    it("marks out the comment it names", async () => {
+      window.location.hash = "#comment-7";
+      const named = buildComment({ id: 7, task_id: 3, content: "This one" });
+      const other = buildComment({ id: 8, task_id: 3, content: "Not this one" });
+      const { container } = renderPage(() => (
+        <CommentSection entityType="task" entityId={3} comments={[named, other]} initiativeId={7} />
+      ));
+
+      await screen.findByText("This one");
+      expect(container.querySelector("#comment-7 [data-linked]")).not.toBeNull();
+      expect(container.querySelector("#comment-8 [data-linked]")).toBeNull();
+    });
+
+    it("reads older conversations until the comment it names is there", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      renderPage(() => (
+        <CommentSection
+          entityType="task"
+          entityId={3}
+          comments={[buildComment({ id: 7, task_id: 3, content: "Newer" })]}
+          initiativeId={7}
+          hasOlder
+          onLoadOlder={onLoadOlder}
+        />
+      ));
+
+      await screen.findByText("Newer");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalled());
+    });
   });
 
   it("offers members no moderation", async () => {
