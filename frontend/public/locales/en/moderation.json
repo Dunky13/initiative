@@ -188,7 +188,8 @@
     "clearTitle": "Clear every reaction?",
     "clearDescription": "Every reaction on this is taken off. This can't be undone.",
     "cleared": "Reactions cleared.",
-    "hold": "Hold for the platform…"
+    "hold": "Hold for the platform…",
+    "warn": "Warn…"
   },
   "act": {
     "error": "Couldn't do that."

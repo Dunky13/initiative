@@ -188,7 +188,8 @@
     "clearTitle": "¿Quitar todas las reacciones?",
     "clearDescription": "Se quitan todas las reacciones. No se puede deshacer.",
     "cleared": "Reacciones quitadas.",
-    "hold": "Retener para la plataforma…"
+    "hold": "Retener para la plataforma…",
+    "warn": "Avisar…"
   },
   "act": {
     "error": "No se pudo hacer."

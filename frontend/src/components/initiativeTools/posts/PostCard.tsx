@@ -138,7 +138,6 @@ const PostCardInner = ({ post, canPin = false, canModerate = false, className }:
               targetType="post"
               targetId={post.id}
               canModerate={canModerate}
-              commentsLocked={post.comments_locked_at != null}
               reactable
               communityId={post.community_id}
             />

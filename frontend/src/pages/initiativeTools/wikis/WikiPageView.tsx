@@ -423,7 +423,6 @@ export const WikiPageView = () => {
                     targetType={SearchEntityType.wiki_page}
                     targetId={page.id}
                     canModerate={canModerate}
-                    commentsLocked={page.comments_locked_at != null}
                     communityId={page.community_id}
                     className="size-8"
                     onGone={() =>

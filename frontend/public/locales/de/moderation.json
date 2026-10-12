@@ -188,7 +188,8 @@
     "clearTitle": "Alle Reaktionen entfernen?",
     "clearDescription": "Alle Reaktionen hierauf werden entfernt. Das lässt sich nicht rückgängig machen.",
     "cleared": "Reaktionen entfernt.",
-    "hold": "Für die Plattform sichern…"
+    "hold": "Für die Plattform sichern…",
+    "warn": "Verwarnen…"
   },
   "act": {
     "error": "Das hat nicht geklappt."

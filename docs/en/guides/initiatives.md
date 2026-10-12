@@ -145,12 +145,14 @@ Open the reported thing to see it where it lives, then come back and settle it, 
 
 A report of something illegal shows **Platform notified**: it went to whoever runs the server as well, and they look at it whatever you decide here.
 
-You don't need a report to act. Moderators and community admins get a shield menu on comments, posts, pictures, wiki pages, queue items and events:
+You don't need a report to act. Moderators and community admins get a shield menu on comments, posts, pictures, wiki pages, queue items, events and tasks:
 
 - **Remove…**, as above.
-- **Lock comments** — the thread still reads, and only moderators add to it. Its owner can't unlock it.
+- **Warn…** — sends whoever wrote it what you type, as above, and leaves it up.
 - **Clear reactions**, on comments and posts.
 - **Hold for the platform…** — below. You won't see it either once it's held.
+
+**Lock comments**, at the top of any comment thread — on a task, a wiki page or any tool — closes it. The thread still reads, nobody adds to it or edits what's in it, moderators included, and authors can still delete their own comments. Its owner can't unlock it; a moderator can.
 
 A project manager runs the work and doesn't moderate it: they can delete their own comments, not other people's. Give a role **Full access** if it should moderate.
 

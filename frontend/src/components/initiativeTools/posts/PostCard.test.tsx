@@ -129,10 +129,11 @@ describe("PostCard", () => {
     renderCard({ created_by: 999, comments_locked_at: "2026-03-01T00:00:00.000Z" }, false, true);
     await user.click(await screen.findByRole("button", { name: /moderate/i }));
 
-    // A post has a thread and takes reactions, so both are offered; its thread
-    // is locked, so the lock offers the way back.
-    expect(await screen.findByRole("menuitem", { name: /unlock comments/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /clear reactions/i })).toBeInTheDocument();
+    // A post takes reactions, so clearing them is offered. Its lock is on its
+    // thread, not here.
+    expect(await screen.findByRole("menuitem", { name: /clear reactions/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /warn/i })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /lock comments/i })).not.toBeInTheDocument();
   });
 
   // Reacting is a read-level gesture, so it is offered on the board itself
