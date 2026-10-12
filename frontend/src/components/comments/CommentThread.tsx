@@ -58,8 +58,12 @@ interface CommentThreadProps {
   isSubmitting?: boolean;
   /** False while the viewer may read the thread but not write to it. */
   canReact?: boolean;
-  /** False while nobody but the moderators adds to the thread. */
+  /** False while the thread takes no replies: it is locked, or the community
+   *  is read-only. */
   canReply?: boolean;
+  /** False while a moderator has the thread locked: what is in it stands as
+   *  it was, and its authors may only take their own words back. */
+  canEdit?: boolean;
   /** Whether the viewer moderates the initiative the thread is in. */
   canModerate?: boolean;
   deleteError?: string | null;
@@ -83,6 +87,7 @@ export const CommentThread = ({
   isSubmitting = false,
   canReact = true,
   canReply = true,
+  canEdit: editable = true,
   canModerate = false,
   deleteError,
   userDisplayNames = new Map(),
@@ -118,7 +123,7 @@ export const CommentThread = ({
       : getUserDisplayName(comment.author ?? { id: comment.created_by }));
   // The server says who may delete, from the rule the delete route applies.
   const canDelete = comment.can_remove;
-  const canEdit = currentUserId === comment.created_by;
+  const canEdit = editable && currentUserId === comment.created_by;
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const isEdited = Boolean(comment.updated_at);
   const isUnread = unreadIds?.has(comment.id) ?? false;
@@ -138,6 +143,10 @@ export const CommentThread = ({
   // A comment still in its author's trash takes no replies; a moderator's
   // tombstone does, since the conversation around it goes on.
   const replyable = canReply && (!removal || removal.by === "moderator");
+  // A form opened before the thread was locked goes with the lock; what was
+  // typed in it stays, for when the thread is reopened.
+  const editing = isEditing && canEdit;
+  const replying = isReplying && replyable;
 
   const handleReplySubmit = (content: string) => {
     onReply(comment.id, content);
@@ -224,7 +233,7 @@ export const CommentThread = ({
                   {isEdited && <span className="ml-1 text-muted-foreground">{t("edited")}</span>}
                 </span>
                 {isUnread && <UnreadDot />}
-                {!isEditing && (
+                {!editing && (
                   <div className="ml-auto flex items-center gap-1">
                     {replyable && (
                       <Button
@@ -281,7 +290,7 @@ export const CommentThread = ({
                 )}
               </div>
               <div className="mt-2 text-foreground text-sm">
-                {isEditing ? (
+                {editing ? (
                   <CommentInput
                     value={editContent}
                     onChange={setEditContent}
@@ -299,7 +308,7 @@ export const CommentThread = ({
                   <CommentContent content={comment.content} />
                 )}
               </div>
-              {!isEditing && (
+              {!editing && (
                 <ReactionBar
                   className="mt-2"
                   targetType={ReactionTarget.comment}
@@ -314,7 +323,7 @@ export const CommentThread = ({
       )}
 
       {/* Reply input */}
-      {isReplying && (
+      {replying && (
         <div className="mt-2 ml-4">
           <CommentInput
             value={replyContent}
@@ -374,6 +383,7 @@ export const CommentThread = ({
               isSubmitting={isSubmitting}
               canReact={canReact}
               canReply={canReply}
+              canEdit={editable}
               canModerate={canModerate}
               deleteError={deleteError}
               userDisplayNames={userDisplayNames}

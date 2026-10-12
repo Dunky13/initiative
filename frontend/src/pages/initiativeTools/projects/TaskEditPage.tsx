@@ -17,6 +17,7 @@ import type { TaskRead } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { getReadTaskQueryKey, readTask } from "@/api/generated/tasks/tasks";
 import { invalidate, q } from "@/api/query-keys";
+import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { StatusMessage } from "@/components/StatusMessage";
 import { TaskEditSkeleton } from "@/components/skeletons/PageSkeletons";
@@ -299,7 +300,7 @@ export const TaskEditPage = () => {
 
   // Everything a task supports beyond its fields lives behind the overflow
   // menu, so the header stays readable at any width.
-  const actions =
+  const menu =
     isReadOnly && pluginActions.items.length === 0 ? null : (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -384,6 +385,31 @@ export const TaskEditPage = () => {
         </DropdownMenuContent>
       </DropdownMenu>
     );
+  // A moderator's shield sits beside the menu rather than in it: a moderator
+  // who may not edit the task has no menu, and still moderates it.
+  const canModerate = Boolean(initiativeQuery.data?.can.moderate);
+  const actions =
+    menu || canModerate ? (
+      <div className="flex items-center gap-1">
+        <ModerationMenu
+          targetType="task"
+          targetId={parsedTaskId}
+          canModerate={canModerate}
+          onGone={() => {
+            leavingRef.current = true;
+            const returnProjectId = lastProjectIdRef.current;
+            router.navigate({
+              to: gp(
+                returnProjectId === null
+                  ? toolListRoute(Tool.project, initiativeId)
+                  : toolDetailRoute(Tool.project, initiativeId, returnProjectId)
+              ),
+            });
+          }}
+        />
+        {menu}
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-6">

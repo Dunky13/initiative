@@ -22,6 +22,7 @@ import {
   buildTask,
   buildToolLayoutSet,
   buildUser,
+  initiativeCan,
 } from "@/__tests__/factories";
 import { readerCan } from "@/__tests__/factories/can";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -69,6 +70,7 @@ const renderTaskPage = ({
   description = null,
   dueDate = null,
   canEdit = true,
+  moderates = false,
   refuse,
   userId,
 }: {
@@ -84,6 +86,8 @@ const renderTaskPage = ({
   description?: string | null;
   dueDate?: string | null;
   canEdit?: boolean;
+  /** Whether the reader moderates the task's initiative. */
+  moderates?: boolean;
   /** An answer to an update in place of saving it, when it returns one; it
    *  may hold the update until it settles. */
   refuse?: (body: Record<string, unknown>) => Response | undefined | Promise<Response | undefined>;
@@ -141,7 +145,13 @@ const renderTaskPage = ({
     }),
     communityHttp.get("/projects/writable", () => HttpResponse.json([project])),
     communityHttp.get("/initiatives/:id", () =>
-      HttpResponse.json(buildInitiative({ id: INITIATIVE_ID, keep_content_in: keepContentIn }))
+      HttpResponse.json(
+        buildInitiative({
+          id: INITIATIVE_ID,
+          keep_content_in: keepContentIn,
+          can: initiativeCan({ moderate: moderates }),
+        })
+      )
     ),
     communityHttp.get("/projects/:projectId", () => HttpResponse.json(project)),
     communityHttp.get("/projects/:id/task-statuses/", () => HttpResponse.json(statuses)),
@@ -236,6 +246,23 @@ describe("TaskEditPage", () => {
       expect(await screen.findByRole("menuitem", { name })).toBeInTheDocument();
     }
     expect(screen.queryByRole("button", { name: /^save/i })).not.toBeInTheDocument();
+  });
+
+  it("gives a moderator a shield on the task, even read-only", async () => {
+    renderTaskPage({ moderates: true, canEdit: false });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Moderate" }));
+    for (const name of ["Remove…", "Warn…", "Hold for the platform…"]) {
+      expect(await screen.findByRole("menuitem", { name })).toBeInTheDocument();
+    }
+    // The lock is on the comment thread, where every kind of thread has one.
+    expect(screen.queryByRole("menuitem", { name: /lock comments/i })).toBeNull();
+  });
+
+  it("gives nobody else a shield", async () => {
+    renderTaskPage();
+    await screen.findByRole("button", { name: /more actions/i });
+    expect(screen.queryByRole("button", { name: "Moderate" })).toBeNull();
   });
 
   it("saves a status as it is chosen, and offers to undo the move", async () => {

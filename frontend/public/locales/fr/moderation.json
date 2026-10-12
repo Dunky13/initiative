@@ -188,7 +188,8 @@
     "clearTitle": "Effacer toutes les réactions ?",
     "clearDescription": "Toutes les réactions sont retirées. C'est irréversible.",
     "cleared": "Réactions effacées.",
-    "hold": "Conserver pour la plateforme…"
+    "hold": "Conserver pour la plateforme…",
+    "warn": "Avertir…"
   },
   "act": {
     "error": "Impossible de le faire."

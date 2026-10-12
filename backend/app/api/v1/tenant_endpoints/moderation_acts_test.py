@@ -332,9 +332,7 @@ async def test_a_removed_post_goes_to_the_trash_and_comes_back(client, session, 
     assert row.deleted_at is None
 
 
-async def test_a_locked_thread_reads_and_only_moderators_add_to_it(
-    client, session, scene
-):
+async def test_a_locked_thread_reads_and_nobody_adds_to_it(client, session, scene):
     task_id = scene["task"].id
     locked = await _act(client, scene["mod"], "lock_comments", "task", task_id)
     assert locked.status_code == 201, locked.text
@@ -346,15 +344,13 @@ async def test_a_locked_thread_reads_and_only_moderators_add_to_it(
     assert len(page["comments"]) == 1
 
     body = {"content": "One more thing", "task_id": task_id}
-    refused = await client.post(
-        scene["member"].g("/comments/"), json=body, headers=scene["member"].headers
-    )
-    assert refused.status_code == 403
-    assert refused.json()["detail"] == CommentMessages.LOCKED
-    allowed = await client.post(
-        scene["mod"].g("/comments/"), json=body, headers=scene["mod"].headers
-    )
-    assert allowed.status_code == 201, allowed.text
+    # Nobody, the moderators included: reopening it is how anyone adds to it.
+    for actor in (scene["member"], scene["mod"]):
+        refused = await client.post(
+            actor.g("/comments/"), json=body, headers=actor.headers
+        )
+        assert refused.status_code == 403
+        assert refused.json()["detail"] == CommentMessages.LOCKED
 
     unlocked = await _act(client, scene["mod"], "unlock_comments", "task", task_id)
     assert unlocked.status_code == 201, unlocked.text
@@ -368,6 +364,131 @@ async def test_a_locked_thread_reads_and_only_moderators_add_to_it(
         client, scene["mod"], "lock_comments", "comment", scene["comment"].id
     )
     assert not_taken.json()["detail"] == ModerationMessages.ACT_NOT_TAKEN
+
+
+async def test_a_locked_thread_keeps_its_comments_as_they_were(client, session, scene):
+    """Nothing in a locked thread is edited, by its author or a moderator;
+    taking one's own comment back is still a delete."""
+    task_id = scene["task"].id
+    said = await client.post(
+        scene["mod"].g("/comments/"),
+        json={"content": "Please keep it civil.", "task_id": task_id},
+        headers=scene["mod"].headers,
+    )
+    assert said.status_code == 201, said.text
+    locked = await _act(client, scene["mod"], "lock_comments", "task", task_id)
+    assert locked.status_code == 201, locked.text
+
+    for actor, comment_id in (
+        (scene["member"], scene["comment"].id),
+        (scene["mod"], said.json()["id"]),
+    ):
+        edited = await client.patch(
+            actor.g(f"/comments/{comment_id}"),
+            json={"content": "Rewritten"},
+            headers=actor.headers,
+        )
+        assert edited.status_code == 403, edited.text
+        assert edited.json()["detail"] == CommentMessages.LOCKED
+
+    taken_back = await client.delete(
+        scene["member"].g(f"/comments/{scene['comment'].id}"),
+        headers=scene["member"].headers,
+    )
+    assert taken_back.status_code == 204, taken_back.text
+
+    # Reopened, it can be edited again.
+    await _act(client, scene["mod"], "unlock_comments", "task", task_id)
+    edited = await client.patch(
+        scene["mod"].g(f"/comments/{said.json()['id']}"),
+        json={"content": "Please keep it civil, all."},
+        headers=scene["mod"].headers,
+    )
+    assert edited.status_code == 200, edited.text
+
+
+async def test_an_edit_waits_on_a_lock_being_placed_and_is_refused_by_it(
+    client, session, scene
+):
+    """Locking and writing take turns on the thread: an edit arriving while a
+    lock is being placed waits for it, then finds the thread locked."""
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.db import cohorts
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+    from app.models.tenant.task import Task
+    from app.services.tenant.comments import thread_key
+
+    guild_id = scene["mod"].guild.id
+    task_id = scene["task"].id
+    async with cohorts.system_session(guild_id) as locking:
+        await set_rls_context(locking, SystemGuild(guild_id))
+        await advisory_lock(
+            locking,
+            LockNamespace.COMMENT_THREAD,
+            thread_key(guild_id, "tasks", task_id),
+        )
+        task = (await locking.exec(select(Task).where(Task.id == task_id))).one()
+        task.comments_locked_at = datetime.now(timezone.utc)
+        locking.add(task)
+        await locking.flush()
+
+        edit = asyncio.create_task(
+            client.patch(
+                scene["member"].g(f"/comments/{scene['comment'].id}"),
+                json={"content": "Rewritten"},
+                headers=scene["member"].headers,
+            )
+        )
+        await asyncio.sleep(0.3)
+        assert not edit.done()
+        await locking.commit()
+
+    edited = await edit
+    assert edited.status_code == 403, edited.text
+    assert edited.json()["detail"] == CommentMessages.LOCKED
+
+
+async def test_a_lock_waits_its_turn_behind_a_comment_being_written(
+    client, session, scene
+):
+    """A lock placed while a comment is being written waits for it, holding
+    nothing the comment's write still needs, so neither is cancelled."""
+    import asyncio
+
+    from sqlalchemy import text as sql
+
+    from app.db import cohorts
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+    from app.services.tenant.comments import thread_key
+
+    guild_id = scene["mod"].guild.id
+    task_id = scene["task"].id
+    async with cohorts.system_session(guild_id) as writing:
+        await set_rls_context(writing, SystemGuild(guild_id))
+        await advisory_lock(
+            writing,
+            LockNamespace.COMMENT_THREAD,
+            thread_key(guild_id, "tasks", task_id),
+        )
+        locking = asyncio.create_task(
+            _act(client, scene["mod"], "lock_comments", "task", task_id)
+        )
+        await asyncio.sleep(0.3)
+        assert not locking.done()
+        # What a comment's insert takes on its parent: refused while the lock
+        # act holds the row, which it must not yet.
+        await writing.exec(sql("SET LOCAL lock_timeout = '2s'"))
+        await writing.exec(
+            sql("SELECT id FROM tasks WHERE id = :id FOR KEY SHARE").bindparams(
+                id=task_id
+            )
+        )
+        await writing.commit()
+
+    locked = await locking
+    assert locked.status_code == 201, locked.text
 
 
 async def test_clearing_reactions_takes_every_one_off(client, session, scene):

@@ -184,7 +184,6 @@ export function PostDetailPage() {
                 targetType="post"
                 targetId={post.id}
                 canModerate={canModerate}
-                commentsLocked={post.comments_locked_at != null}
                 reactable
                 communityId={post.community_id}
                 onGone={() => void navigate({ to: gp(toolListRoute(Tool.post, initiativeId)) })}

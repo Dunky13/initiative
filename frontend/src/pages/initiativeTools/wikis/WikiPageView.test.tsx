@@ -285,8 +285,9 @@ describe("moderating a page", () => {
     renderPageView(READING);
 
     await user.click(await screen.findByRole("button", { name: "Moderate" }));
-    // A page has a thread, so its lock is offered; nobody reacts to one.
-    expect(await screen.findByRole("menuitem", { name: "Lock comments" })).toBeInTheDocument();
+    // Nobody reacts to a page, and its lock is on its thread, not here.
+    expect(await screen.findByRole("menuitem", { name: "Warn…" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Clear reactions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Lock comments" })).not.toBeInTheDocument();
   });
 });

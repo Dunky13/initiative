@@ -243,6 +243,8 @@ async def test_add_queue_item(client: AsyncClient, acting_user):
     assert data["label"] == "Player 1"
     assert data["position"] == 15
     assert data["color"] == "#FF0000"
+    # Who added it, so whoever wrote it is not offered a report of it.
+    assert data["created_by"] == a.user.id
 
     # A queue item names only someone who can open the queue.
     outsider = await acting_user(guild_role=CommunityRole.member, guild=a.guild)

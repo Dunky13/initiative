@@ -1102,6 +1102,23 @@ async def announce_second_factor_change(
     )
 
 
+async def announce_recovery_codes_issued(session: AsyncSession, user: User) -> None:
+    """Tell the account a new set of recovery codes was made, and the old
+    ones stopped working."""
+    await _queue_account_notice(
+        user, section="secondFactor", key="secondFactor.recoveryRegenerated"
+    )
+
+
+async def announce_identity_linked(
+    session: AsyncSession, user: User, *, provider: str
+) -> None:
+    """Tell the account it can now be signed in to through ``provider``."""
+    await _queue_account_notice(
+        user, section="identity", key="identity.linked", provider=provider
+    )
+
+
 async def announce_passkey_change(
     session: AsyncSession,
     user: User,

@@ -318,3 +318,14 @@ describe("notificationText — cases", () => {
     expect(notificationLink(notice("case_opened", { task_id: 4 }))).toBe("/go/task/4");
   });
 });
+
+describe("notificationText — a profile cleared by staff", () => {
+  it("names what went, and still reads for a part it doesn't know", () => {
+    expect(notificationText(notice("profile_field_cleared", { field: "custom_status" }), t)).toBe(
+      'notifications.profileCleared.custom_status({"defaultValue":"notifications.profileCleared.other"})'
+    );
+    expect(notificationLink(notice("profile_field_cleared", { target_path: "/profile" }))).toBe(
+      "/profile"
+    );
+  });
+});

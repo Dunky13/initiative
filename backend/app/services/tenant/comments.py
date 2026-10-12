@@ -40,7 +40,7 @@ from app.db.initiative_rls import (
     COMMENT_PARENT_COLUMNS as RLS_COMMENT_PARENT_COLUMNS,
 )
 from app.db.query import ids_in
-from app.db.session import guild_context, install_context
+from app.db.session import guild_context, install_context, routed_guild_id
 from app.db.soft_delete_filter import select_including_deleted
 from app.models.tenant._mixins import tool_models
 from app.models.tenant.calendar import Calendar
@@ -586,7 +586,7 @@ async def _resolved_parent(
 def moderates_thread(session: AsyncSession, initiative_id: Optional[int]) -> bool:
     """Whether this request is in the moderation set of the initiative a
     thread is in (``moderation_acts.may_moderate``): it may take comments down
-    and add to a locked thread.
+    and lock or unlock the thread.
 
     Read off the standing the seam computed, so it costs no query. An
     installed plug-in moderates nothing.
@@ -599,8 +599,38 @@ def moderates_thread(session: AsyncSession, initiative_id: Optional[int]) -> boo
     return may_moderate(context, initiative_id)
 
 
+async def _locked_now(session: AsyncSession, ctx: _ParentContext) -> bool:
+    """Whether the thread is locked, read after taking its turn: a lock being
+    placed at the same moment is committed first, and seen, or waits until
+    this write has committed."""
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+
+    row = ctx.extra_row if ctx.extra is not None else ctx.resource
+    await advisory_lock(
+        session,
+        LockNamespace.COMMENT_THREAD,
+        thread_key(routed_guild_id(session), str(row.__tablename__), int(row.id)),
+    )
+    model = type(row)
+    if not hasattr(model, "comments_locked_at"):
+        return False
+    # Read again now that it is this write's turn.
+    return (
+        await session.exec(
+            select_including_deleted(model.comments_locked_at).where(model.id == row.id)
+        )
+    ).first() is not None
+
+
+def thread_key(guild_id: Optional[int], table: str, row_id: int) -> str:
+    """The advisory key one thread takes turns on, for writing in it and for
+    locking it (``moderation_acts``)."""
+    return f"{guild_id}:{table}:{row_id}"
+
+
 def thread_locked(ctx: _ParentContext) -> bool:
-    """Whether a moderator closed this thread to new comments."""
+    """Whether a moderator closed this thread: nothing is added to it or
+    edited in it, by anyone, until it is reopened."""
     row = ctx.extra_row if ctx.extra is not None else ctx.resource
     return getattr(row, "comments_locked_at", None) is not None
 
@@ -750,7 +780,9 @@ async def create_comment(
         # parent is the gate, and its comment switch is the other half.
         access="read",
     )
-    if thread_locked(ctx) and not moderates_thread(session, ctx.initiative_id):
+    # A locked thread takes nothing new, a moderator's words included:
+    # reopening it is how anyone adds to it.
+    if await _locked_now(session, ctx):
         raise CommentPermissionError(CommentMessages.LOCKED)
     if parent_comment and getattr(parent_comment, column) != ctx.entity_id:
         raise CommentValidationError(CommentMessages.PARENT_MISMATCH)
@@ -1224,6 +1256,10 @@ async def update_comment(
     if ctx is None:
         raise CommentNotFoundError(CommentMessages.NOT_FOUND)
     await _ensure_parent_access(session, ctx, user=user, access="read")
+    # A locked thread stands as it was when it was locked, moderators' words
+    # included. Taking one's own comment back is still a delete.
+    if await _locked_now(session, ctx):
+        raise CommentPermissionError(CommentMessages.LOCKED)
     _stamp_parent(session, ctx, comment)
 
     previous_content = comment.content

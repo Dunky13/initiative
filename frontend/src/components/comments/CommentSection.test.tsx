@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { buildComment } from "@/__tests__/factories/comment.factory";
@@ -324,7 +325,7 @@ describe("CommentSection", () => {
     expect(await screen.findAllByRole("button", { name: "Report" })).toHaveLength(1);
   });
 
-  it("keeps the composer from members while a moderator has the thread locked", async () => {
+  it("hides the composer and replies while the thread is locked", async () => {
     renderPage(() => (
       <CommentSection entityType="task" entityId={3} comments={[]} initiativeId={7} locked />
     ));
@@ -333,7 +334,72 @@ describe("CommentSection", () => {
     expect(screen.queryByRole("button", { name: /post comment/i })).not.toBeInTheDocument();
   });
 
-  it("lets a moderator write in a locked thread and act on comments", async () => {
+  it("leaves an author only the delete on their comment while the thread is locked", async () => {
+    const author = buildUser({ id: 40 });
+    const mine = buildComment({
+      id: 8,
+      task_id: 3,
+      content: "What I said",
+      created_by: author.id,
+      can_remove: true,
+    });
+    renderPage(
+      () => (
+        <CommentSection entityType="task" entityId={3} comments={[mine]} initiativeId={7} locked />
+      ),
+      { auth: { user: author } }
+    );
+
+    await screen.findByText("What I said");
+    expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^delete/i })).toBeInTheDocument();
+  });
+
+  it("closes an edit left open when the thread is locked, keeping what was typed", async () => {
+    const author = buildUser({ id: 40 });
+    const mine = buildComment({ id: 8, task_id: 3, content: "What I said", created_by: author.id });
+    const Toggled = () => {
+      const [locked, setLocked] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setLocked(!locked)}>
+            toggle lock
+          </button>
+          <CommentSection
+            entityType="task"
+            entityId={3}
+            comments={[mine]}
+            initiativeId={7}
+            locked={locked}
+          />
+        </>
+      );
+    };
+    renderPage(Toggled, { auth: { user: author } });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^edit/i }));
+    await user.type(await screen.findByDisplayValue("What I said"), " and more");
+
+    await user.click(screen.getByRole("button", { name: "toggle lock" }));
+    expect(screen.queryByDisplayValue(/and more/)).not.toBeInTheDocument();
+
+    // Reopened, the draft is where it was left.
+    await user.click(screen.getByRole("button", { name: "toggle lock" }));
+    expect(await screen.findByDisplayValue("What I said and more")).toBeInTheDocument();
+  });
+
+  it("offers an author the edit on their comment while the thread is open", async () => {
+    const author = buildUser({ id: 40 });
+    const mine = buildComment({ id: 8, task_id: 3, content: "What I said", created_by: author.id });
+    renderPage(
+      () => <CommentSection entityType="task" entityId={3} comments={[mine]} initiativeId={7} />,
+      { auth: { user: author } }
+    );
+    await screen.findByText("What I said");
+    expect(screen.getByRole("button", { name: /^edit/i })).toBeInTheDocument();
+  });
+
+  it("hides the composer from a moderator too, who still acts on comments", async () => {
     const theirs = buildComment({ id: 7, task_id: 3, content: "Out of line" });
     renderPage(() => (
       <CommentSection
@@ -346,13 +412,64 @@ describe("CommentSection", () => {
       />
     ));
 
-    expect(await screen.findByRole("button", { name: /post comment/i })).toBeInTheDocument();
+    await screen.findByText("Out of line");
+    // Reopening it is how a moderator adds to it.
+    expect(screen.queryByRole("button", { name: /post comment/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^reply/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Moderate" }));
     expect(await screen.findByRole("menuitem", { name: "Remove…" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Clear reactions" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Hold for the platform…" })).toBeInTheDocument();
     // A comment has no thread of its own to lock.
     expect(screen.queryByRole("menuitem", { name: "Lock comments" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["task", 3],
+    ["wiki_page", 4],
+    [Tool.queue, 42],
+    [Tool.counter_group, 9],
+    [Tool.file, 11],
+  ] as const)(
+    "lets a moderator lock the thread on a %s from the thread itself",
+    async (type, id) => {
+      let acted: Record<string, unknown> | undefined;
+      server.use(
+        communityHttp.post("/moderation/acts", async ({ request }) => {
+          acted = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ id: 1 }, { status: 201 });
+        })
+      );
+      renderPage(() => (
+        <CommentSection
+          entityType={type}
+          entityId={id}
+          comments={[]}
+          initiativeId={7}
+          canModerate
+        />
+      ));
+
+      await userEvent.click(await screen.findByRole("button", { name: "Lock comments" }));
+      await waitFor(() =>
+        expect(acted).toEqual({ target_type: type, target_id: id, act: "lock_comments" })
+      );
+    }
+  );
+
+  it("offers a locked thread's moderator to unlock it", async () => {
+    renderPage(() => (
+      <CommentSection
+        entityType="task"
+        entityId={3}
+        comments={[]}
+        initiativeId={7}
+        locked
+        canModerate
+      />
+    ));
+    expect(await screen.findByRole("button", { name: "Unlock comments" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Lock comments" })).toBeNull();
   });
 
   it("offers members no moderation", async () => {
@@ -363,5 +480,6 @@ describe("CommentSection", () => {
 
     await screen.findByText("Out of line");
     expect(screen.queryByRole("button", { name: "Moderate" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /lock comments/i })).not.toBeInTheDocument();
   });
 });

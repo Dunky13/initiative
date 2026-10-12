@@ -152,7 +152,11 @@ export const EditQueueItemDialog = ({
             <div className="flex items-center justify-between gap-2">
               <DialogDescription className="min-w-0 truncate">{item.label}</DialogDescription>
               <div className="flex shrink-0 items-center gap-1">
-                <ReportButton targetType="queue_item" targetId={item.id} />
+                <ReportButton
+                  targetType="queue_item"
+                  targetId={item.id}
+                  authorId={item.created_by}
+                />
                 {/* Taken down or held, the item is off the queue, so the dialog
                     about it closes. */}
                 <ModerationMenu

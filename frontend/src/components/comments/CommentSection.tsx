@@ -1,16 +1,24 @@
-import { HelpCircle, Lock, MessageSquarePlus } from "lucide-react";
+import { HelpCircle, Lock, LockOpen, MessageSquarePlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CommentCreate, CommentRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import {
+  type CommentCreate,
+  type CommentRead,
+  ModerationAct,
+  type Tool,
+} from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useCreateComment, useDeleteComment, useUpdateComment } from "@/hooks/useComments";
 import { useCommunities } from "@/hooks/useCommunities";
+import { useModerate } from "@/hooks/useModeration";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { getErrorMessage } from "@/lib/errorMessage";
+import { toast } from "@/lib/mascotToast";
 import { referenceTypeFor } from "@/lib/references";
 import { referenceRef } from "@/lib/smartChips";
 import { getUserDisplayName } from "@/lib/userDisplay";
@@ -44,8 +52,8 @@ interface CommentSectionProps {
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
   initiativeId: number;
-  /** A moderator closed the thread: it reads as before, and only the
-   *  moderators add to it. */
+  /** A moderator closed the thread: it reads as before, and nothing is
+   *  added to it until a moderator reopens it. */
   locked?: boolean;
   /** Whether this reader moderates the initiative the thread is in. */
   canModerate?: boolean;
@@ -129,8 +137,23 @@ export const CommentSection = ({
   locked = false,
   canModerate = false,
 }: CommentSectionProps) => {
-  const { t } = useTranslation("comments");
+  const { t } = useTranslation(["comments", "moderation"]);
   const { activeCommunityReadOnly } = useCommunities();
+  // A moderator closes or reopens the thread from the thread itself, the
+  // same on every kind of thing that takes comments.
+  const moderate = useModerate(useActiveCommunityId() ?? 0);
+  const toggleLock = () =>
+    moderate.mutate(
+      {
+        target_type: entityType,
+        target_id: entityId,
+        act: locked ? ModerationAct.unlock_comments : ModerationAct.lock_comments,
+      },
+      {
+        onSuccess: () =>
+          toast.success(locked ? t("moderation:menu.unlocked") : t("moderation:menu.locked")),
+      }
+    );
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -277,27 +300,47 @@ export const CommentSection = ({
               <MessageSquarePlus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <h3>{title ?? t("title")}</h3>
             </div>
-            <HoverCard>
-              <HoverCardTrigger asChild>
-                <button type="button" className="text-muted-foreground hover:text-foreground">
-                  <HelpCircle className="h-4 w-4" />
-                </button>
-              </HoverCardTrigger>
-              <HoverCardContent side="left" align="start" className="w-56">
-                <p className="font-medium text-sm">{t("mentionSyntax")}</p>
-                <ul className="mt-2 space-y-1.5 text-sm">
-                  <li>
-                    <code className="rounded bg-muted px-1 text-xs">@</code> {t("mentionUser")}
-                  </li>
-                  <li>
-                    <code className="rounded bg-muted px-1 text-xs">#</code> {t("mentionAnything")}
-                  </li>
-                  <li className="text-muted-foreground">{t("mentionNarrow")}</li>
-                </ul>
-                <p className="mt-3 font-medium text-sm">{t("formattingSyntax")}</p>
-                <p className="mt-1 text-muted-foreground text-sm">{t("markdownHint")}</p>
-              </HoverCardContent>
-            </HoverCard>
+            <div className="flex items-center gap-1">
+              {canModerate && !activeCommunityReadOnly ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 font-normal text-muted-foreground"
+                  disabled={moderate.isPending}
+                  onClick={toggleLock}
+                >
+                  {locked ? (
+                    <LockOpen className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Lock className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {locked ? t("moderation:menu.unlock") : t("moderation:menu.lock")}
+                </Button>
+              ) : null}
+              <HoverCard>
+                <HoverCardTrigger asChild>
+                  <button type="button" className="text-muted-foreground hover:text-foreground">
+                    <HelpCircle className="h-4 w-4" />
+                  </button>
+                </HoverCardTrigger>
+                <HoverCardContent side="left" align="start" className="w-56">
+                  <p className="font-medium text-sm">{t("mentionSyntax")}</p>
+                  <ul className="mt-2 space-y-1.5 text-sm">
+                    <li>
+                      <code className="rounded bg-muted px-1 text-xs">@</code> {t("mentionUser")}
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 text-xs">#</code>{" "}
+                      {t("mentionAnything")}
+                    </li>
+                    <li className="text-muted-foreground">{t("mentionNarrow")}</li>
+                  </ul>
+                  <p className="mt-3 font-medium text-sm">{t("formattingSyntax")}</p>
+                  <p className="mt-1 text-muted-foreground text-sm">{t("markdownHint")}</p>
+                </HoverCardContent>
+              </HoverCard>
+            </div>
           </CardTitle>
         </CardHeader>
 
@@ -310,7 +353,7 @@ export const CommentSection = ({
           )}
           {activeCommunityReadOnly ? (
             <p className="text-muted-foreground text-sm">{t("readOnlyNote")}</p>
-          ) : locked && !canModerate ? null : (
+          ) : locked ? null : (
             <CommentInput
               value={content}
               onChange={setContent}
@@ -345,7 +388,8 @@ export const CommentSection = ({
                       createComment.isPending || deleteComment.isPending || updateComment.isPending
                     }
                     canReact={!activeCommunityReadOnly}
-                    canReply={!activeCommunityReadOnly && (!locked || canModerate)}
+                    canReply={!activeCommunityReadOnly && !locked}
+                    canEdit={!locked}
                     canModerate={canModerate}
                     deleteError={deleteComment.variables === comment.id ? deleteError : null}
                     userDisplayNames={userDisplayNames}

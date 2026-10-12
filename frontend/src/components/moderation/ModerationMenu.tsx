@@ -8,11 +8,14 @@
  * The server refuses the rest anyway.
  *
  * - **Remove…** takes it down, with a reason its author is told.
- * - **Lock comments** closes its thread to everyone but the moderators, for
- *   things a thread hangs off. Its owner can't reopen it.
+ * - **Warn…** tells its author it crossed a line, in the moderator's words,
+ *   and leaves it up.
  * - **Clear reactions**, for things people react to.
  * - **Hold for the platform** keeps it exactly as it is, out of everyone's
  *   sight, the moderator's included, until the platform releases it.
+ *
+ * Locking a thread is not here: it is on the thread itself, wherever one is
+ * shown (`CommentSection`).
  */
 import { Shield } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { ModerationAct } from "@/api/generated/initiativeAPI.schemas";
 import { HoldDialog } from "@/components/moderation/HoldDialog";
 import { RemovalDialog } from "@/components/moderation/RemovalDialog";
+import { WarnDialog } from "@/components/moderation/WarnDialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -42,9 +46,6 @@ export interface ModerationMenuProps {
   /** Whether this reader moderates the thing's initiative. Nothing renders
    *  otherwise. */
   canModerate: boolean;
-  /** Its thread's lock, for things a thread hangs off. Left out for things
-   *  with no thread, which then offer no lock. */
-  commentsLocked?: boolean;
   /** Whether people react to it. */
   reactable?: boolean;
   /** Defaults to the community the reader is standing in. */
@@ -59,7 +60,6 @@ export const ModerationMenu = ({
   targetType,
   targetId,
   canModerate,
-  commentsLocked,
   reactable = false,
   communityId,
   onGone,
@@ -71,12 +71,12 @@ export const ModerationMenu = ({
   const [removing, setRemoving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [warning, setWarning] = useState(false);
   const act = useModerate(community);
 
   if (!canModerate || !community) return null;
 
   const target = { target_type: targetType, target_id: targetId };
-  const lockable = commentsLocked !== undefined;
 
   return (
     <>
@@ -96,27 +96,7 @@ export const ModerationMenu = ({
           <DropdownMenuLabel>{t("menu.label")}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setRemoving(true)}>{t("menu.remove")}</DropdownMenuItem>
-          {lockable && (
-            <DropdownMenuItem
-              disabled={act.isPending}
-              onSelect={() =>
-                act.mutate(
-                  {
-                    ...target,
-                    act: commentsLocked
-                      ? ModerationAct.unlock_comments
-                      : ModerationAct.lock_comments,
-                  },
-                  {
-                    onSuccess: () =>
-                      toast.success(commentsLocked ? t("menu.unlocked") : t("menu.locked")),
-                  }
-                )
-              }
-            >
-              {commentsLocked ? t("menu.unlock") : t("menu.lock")}
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem onSelect={() => setWarning(true)}>{t("menu.warn")}</DropdownMenuItem>
           {reactable && (
             <DropdownMenuItem onSelect={() => setClearing(true)}>
               {t("menu.clearReactions")}
@@ -142,6 +122,22 @@ export const ModerationMenu = ({
                 setRemoving(false);
                 toast.success(t("remove.done"));
                 onGone?.();
+              },
+            }
+          )
+        }
+      />
+      <WarnDialog
+        open={warning}
+        onOpenChange={setWarning}
+        pending={act.isPending}
+        onConfirm={(message) =>
+          act.mutate(
+            { ...target, act: ModerationAct.warn, note: message },
+            {
+              onSuccess: () => {
+                setWarning(false);
+                toast.success(t("warn.done"));
               },
             }
           )

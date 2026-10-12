@@ -260,6 +260,11 @@
       "subject": "L'authentification à deux facteurs va être désactivée",
       "title": "L'authentification à deux facteurs va être désactivée",
       "body": "L'authentification à deux facteurs sera désactivée le <strong>{{date}}</strong>. D'ici là, votre compte demande toujours un code à la connexion, et vous pouvez l'annuler dans Sécurité, dans vos paramètres."
+    },
+    "recoveryRegenerated": {
+      "subject": "De nouveaux codes de récupération ont été créés pour votre compte",
+      "title": "De nouveaux codes de récupération ont été créés pour votre compte",
+      "body": "Un nouveau jeu de codes de récupération a été créé pour votre compte, et ceux que vous aviez ne fonctionnent plus. Conservez les nouveaux en lieu sûr."
     }
   },
   "passwordRemoved": {
@@ -492,6 +497,14 @@
       "subject": "Une réponse sur un dossier que personne n'a pris",
       "title": "Une réponse sur un dossier que personne n'a pris",
       "body": "La personne qui a soumis un dossier y a répondu, et personne ne l'a encore pris. Ouvrez-le dans Initiative pour le lire."
+    }
+  },
+  "identity": {
+    "fallbackText": "Si ce n'était pas vous, changez votre mot de passe immédiatement et prévenez les responsables du site.",
+    "linked": {
+      "subject": "Une nouvelle façon de vous connecter à votre compte",
+      "title": "Une nouvelle façon de vous connecter à votre compte",
+      "body": "Il est désormais possible de se connecter à votre compte via <strong>{{provider}}</strong>, car l'une de vos adresses y a été vérifiée."
     }
   }
 }

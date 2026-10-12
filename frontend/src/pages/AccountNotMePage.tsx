@@ -36,6 +36,7 @@ const SUBJECT_KEYS = {
   secondFactor: "notMe.subject.secondFactor",
   passwordChanged: "notMe.subject.password",
   passwordRemoved: "notMe.subject.password",
+  identity: "notMe.subject.identity",
 } as const;
 
 const subjectKey = (notice: string) => {

@@ -260,6 +260,11 @@
       "subject": "Se va a desactivar la autenticación en dos pasos",
       "title": "Se va a desactivar la autenticación en dos pasos",
       "body": "La autenticación en dos pasos se desactivará el <strong>{{date}}</strong>. Hasta entonces tu cuenta sigue pidiendo un código al iniciar sesión, y puedes cancelarlo en Seguridad, dentro de tus ajustes."
+    },
+    "recoveryRegenerated": {
+      "subject": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "title": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "body": "Se creó un nuevo conjunto de códigos de recuperación para tu cuenta y los que tenías ya no funcionan. Guarda los nuevos en un lugar seguro."
     }
   },
   "passwordRemoved": {
@@ -492,6 +497,14 @@
       "subject": "Una respuesta en un caso que nadie ha tomado",
       "title": "Una respuesta en un caso que nadie ha tomado",
       "body": "Quien presentó un caso respondió en él y nadie lo ha tomado todavía. Ábrelo en Initiative para leerlo."
+    }
+  },
+  "identity": {
+    "fallbackText": "Si no has sido tú, cambia la contraseña de inmediato y avisa a quien gestiona este sitio.",
+    "linked": {
+      "subject": "Una nueva forma de iniciar sesión en tu cuenta",
+      "title": "Una nueva forma de iniciar sesión en tu cuenta",
+      "body": "Ahora se puede iniciar sesión en tu cuenta a través de <strong>{{provider}}</strong>, porque allí se comprobó una de tus direcciones."
     }
   }
 }

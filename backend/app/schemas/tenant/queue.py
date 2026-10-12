@@ -82,6 +82,8 @@ class QueueItemRead(QueueItemBase):
     # auto-releases the item at its natural slot in ``held_at_round + 1`` so
     # held participants can't be forgotten.
     held_at_round: Optional[int] = None
+    #: Who added it: whoever wrote it is not offered a report of it.
+    created_by: Optional[PersonId] = None
     created_at: datetime
 
 

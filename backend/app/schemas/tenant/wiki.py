@@ -232,8 +232,8 @@ class WikiPageRead(WikiPageSummary):
     #: ``PATCH`` of ``content`` so the write merges into the body only if
     #: nobody has changed it since. ``null`` when the body was left out.
     content_version: Optional[str] = None
-    #: When a moderator closed its comments: they still read, and only the
-    #: moderators add to them. Null while it is open.
+    #: When a moderator closed its comments: they still read, and nothing is
+    #: added or edited until it is reopened. Null while it is open.
     comments_locked_at: Optional[datetime] = None
 
 

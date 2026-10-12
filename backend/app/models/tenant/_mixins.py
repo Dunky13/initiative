@@ -229,8 +229,8 @@ class CommentLockMixin(SQLModel):
 
     On everything a thread hangs off — every tool, and the content-level
     extras with threads of their own. While ``comments_locked_at`` is set the
-    thread still reads, but only the community's moderators add to it, and
-    only they lift the lock: it is not the owner's comment switch
+    thread still reads, nobody adds to it or edits what is in it, and only
+    the community's moderators lift the lock: it is not the owner's comment switch
     (``CommentsToggleMixin``), which hides the thread altogether and is
     theirs to flip.
     """

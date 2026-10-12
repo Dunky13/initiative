@@ -2530,6 +2530,28 @@ async def queue_avatar_removed(session: AsyncSession, *, user: User) -> None:
     )
 
 
+async def queue_profile_field_cleared(
+    session: AsyncSession, *, user: User, field: str
+) -> None:
+    """Tell a user staff cleared part of their profile: their names in
+    communities, their status line or their decorations, by ``field``.
+
+    In-app only, and queued rather than sent, for the same reasons as
+    :func:`queue_avatar_removed`.
+    """
+    await notice_outbox.enqueue(
+        session,
+        [
+            notice_outbox.row(
+                cast(int, user.id),
+                None,
+                NotificationType.profile_field_cleared,
+                {"field": field, "target_path": "/profile"},
+            )
+        ],
+    )
+
+
 async def queue_username_changed(
     session: AsyncSession, *, user: User, previous_handle: str
 ) -> None:
