@@ -51,6 +51,7 @@ _IN_APP_ONLY = {
     # the inbox next to the settings page they are about, and none of them is
     # urgent enough to interrupt someone on a device.
     NotificationType.username_changed,
+    NotificationType.profile_field_cleared,
     NotificationType.account_suspended,
     NotificationType.account_unsuspended,
     # A community put on hold: an inbox notice beside its email, about paying

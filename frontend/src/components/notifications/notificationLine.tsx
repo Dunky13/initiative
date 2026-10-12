@@ -454,6 +454,13 @@ export const notificationText = (
       });
     case "avatar_removed":
       return t("notifications.avatarRemoved");
+    // Names what went, never who took it.
+    case "profile_field_cleared": {
+      const field = typeof data.field === "string" ? data.field : "other";
+      return t(`notifications.profileCleared.${field}`, {
+        defaultValue: t("notifications.profileCleared.other"),
+      });
+    }
     case "account_suspended":
       return typeof data.reason === "string" && data.reason.trim()
         ? t("notifications.accountSuspendedWithReason", { reason: data.reason.trim() })

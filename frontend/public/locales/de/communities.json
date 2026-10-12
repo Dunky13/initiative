@@ -383,6 +383,12 @@
       "moderation": "Moderation",
       "support": "Support",
       "feedback": "Feedback"
+    },
+    "profileCleared": {
+      "display_names": "Deine Namen in Communities wurden von einem Moderator entfernt.",
+      "custom_status": "Deine Statuszeile wurde von einem Moderator geleert.",
+      "decorations": "Deine Profildekorationen wurden von einem Moderator entfernt.",
+      "other": "Ein Teil deines Profils wurde von einem Moderator entfernt."
     }
   },
   "version": {

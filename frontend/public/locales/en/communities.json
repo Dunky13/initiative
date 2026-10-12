@@ -383,6 +383,12 @@
       "moderation": "moderation",
       "support": "support",
       "feedback": "feedback"
+    },
+    "profileCleared": {
+      "display_names": "Your names in communities were cleared by a moderator.",
+      "custom_status": "Your status line was cleared by a moderator.",
+      "decorations": "Your profile decorations were cleared by a moderator.",
+      "other": "Part of your profile was cleared by a moderator."
     }
   },
   "version": {

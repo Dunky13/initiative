@@ -277,6 +277,7 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
             {
                 NotificationType.avatar_removed,
                 NotificationType.username_changed,
+                NotificationType.profile_field_cleared,
                 NotificationType.account_suspended,
                 NotificationType.account_unsuspended,
                 NotificationType.community_on_hold,

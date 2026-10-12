@@ -610,6 +610,10 @@ async def clear_profile_field(
         target_id=user_id,
         detail={"field": field},
     )
+    # Told what went, never by whom, as for a picture taken down.
+    await notifications_service.queue_profile_field_cleared(
+        session, user=user, field=field
+    )
     # Their open tabs read their own profile again.
     account_stream.queue_account_signal(session, user_id, "profile")
     await session.commit()

@@ -37,6 +37,9 @@ class NotificationType(str, Enum):
     import_failed = "import_failed"
     avatar_removed = "avatar_removed"
     username_changed = "username_changed"
+    #: Staff cleared part of the recipient's profile: names in communities,
+    #: status line or decorations. Names which, never who.
+    profile_field_cleared = "profile_field_cleared"
     account_suspended = "account_suspended"
     account_unsuspended = "account_unsuspended"
     #: A community this account holds the seat of was put on hold. Written once,

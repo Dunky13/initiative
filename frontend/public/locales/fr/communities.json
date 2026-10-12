@@ -383,6 +383,12 @@
       "moderation": "modération",
       "support": "assistance",
       "feedback": "retours"
+    },
+    "profileCleared": {
+      "display_names": "Vos noms dans les communautés ont été effacés par un modérateur.",
+      "custom_status": "Votre ligne de statut a été effacée par un modérateur.",
+      "decorations": "Les décorations de votre profil ont été retirées par un modérateur.",
+      "other": "Une partie de votre profil a été effacée par un modérateur."
     }
   },
   "version": {
