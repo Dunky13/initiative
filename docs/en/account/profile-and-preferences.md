@@ -95,7 +95,7 @@ One change waits at a time. Ask for another and you'll be pointed at the first.
 
 ### "This wasn't me"
 
-Every email about a change to how you sign in — an address, a passkey, two-factor authentication, your password — carries a **This wasn't me** button. It opens **Wasn't you?**, where **Sign out everywhere** signs your account out of every browser, phone and computer and turns off its API keys. On its own it changes nothing else.
+Every email about a change to how you sign in — an address, a passkey, two-factor authentication, a new set of recovery codes, your password, a sign-in provider newly able to open your account — carries a **This wasn't me** button. It opens **Wasn't you?**, where **Sign out everywhere** signs your account out of every browser, phone and computer and turns off its API keys. On its own it changes nothing else.
 
 Sometimes it can do more. When a change looks out of place — not made with a passkey, not from somewhere you'd been signed in for a day, or one of several in a row — the emails to your older addresses can undo it as well:
 

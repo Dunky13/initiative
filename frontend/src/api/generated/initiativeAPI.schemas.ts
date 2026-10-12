@@ -7168,6 +7168,7 @@ export const NotificationType = {
   import_failed: "import_failed",
   avatar_removed: "avatar_removed",
   username_changed: "username_changed",
+  profile_field_cleared: "profile_field_cleared",
   account_suspended: "account_suspended",
   account_unsuspended: "account_unsuspended",
   community_on_hold: "community_on_hold",
@@ -9109,6 +9110,7 @@ export interface QueueItemRead {
   properties: PropertySummary[];
   attachment_count: number;
   held_at_round: number | null;
+  created_by: number | null;
   created_at: string;
 }
 

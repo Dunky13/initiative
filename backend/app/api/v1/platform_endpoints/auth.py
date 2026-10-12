@@ -1649,6 +1649,12 @@ async def _complete_provider_login(
     system_session.add(user)
     await system_session.commit()
     await system_session.refresh(user)
+    if matched:
+        # A new way into the account: its holder is told, with the way to say
+        # it wasn't them.
+        await email_service.announce_identity_linked(
+            system_session, user, provider=provider_row.display_name
+        )
     if proved_address is not None:
         # A sign-in at a provider is no place the account already uses, so a
         # proof that arrives with it can be undone by the addresses before it.

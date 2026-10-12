@@ -260,6 +260,11 @@
       "subject": "Two-factor authentication will be turned off",
       "title": "Two-factor authentication will be turned off",
       "body": "Two-factor authentication will be turned off on <strong>{{date}}</strong>. Until then your account still asks for a code when you sign in, and you can cancel it under Security in your settings."
+    },
+    "recoveryRegenerated": {
+      "subject": "New recovery codes were made for your account",
+      "title": "New recovery codes were made for your account",
+      "body": "A new set of recovery codes was made for your account, and the ones you had no longer work. Keep the new ones somewhere safe."
     }
   },
   "passwordRemoved": {
@@ -492,6 +497,14 @@
       "subject": "A reply on a case nobody has taken",
       "title": "A reply on a case nobody has taken",
       "body": "Whoever filed a case answered on it, and nobody has taken it yet. Open it in Initiative to read it."
+    }
+  },
+  "identity": {
+    "fallbackText": "If this wasn't you, change your password straight away and get in touch with whoever runs this site.",
+    "linked": {
+      "subject": "A new way to sign in to your account",
+      "title": "A new way to sign in to your account",
+      "body": "Your account can now be signed in to through <strong>{{provider}}</strong>, because it proved an address of yours."
     }
   }
 }
