@@ -41,8 +41,10 @@ export const EditCounterDialog = ({
 }: EditCounterDialogProps) => {
   const { t } = useTranslation(["counterGroups", "common"]);
   const communityId = useActiveCommunityId();
+  // The group's counter is drawn until its own read, which also carries the
+  // plug-ins' values, answers.
   const read = useReadCounter(communityId, listed.id, undefined, {
-    query: { initialData: listed, enabled: open },
+    query: { placeholderData: listed, enabled: open },
   });
   const counter = usePendingShown(counterSaves(groupId), listed.id, read.data) ?? listed;
   // A community's own group has no layouts of its own: it draws the shipped one.
