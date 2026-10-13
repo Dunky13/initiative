@@ -2,6 +2,7 @@ import {
   type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { ItemDraftContext } from "@/hooks/useFieldSave";
 import { getErrorMessage, getHttpStatus } from "@/lib/errorMessage";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +102,7 @@ export const useFieldDraft = <V,>(
   same: (a: V, b: V) => boolean = Object.is,
   valid: (value: V) => boolean = () => true
 ): FieldDraft<V> => {
+  const drafting = useContext(ItemDraftContext);
   const [draft, setDraft] = useState<Draft<V> | null>(null);
   // Read by the handlers rather than the render, as two can run in one event:
   // a picker that commits on Enter, then the Enter itself.
@@ -111,7 +114,10 @@ export const useFieldDraft = <V,>(
 
   const change = (value: V) => {
     const current = held.current;
-    set({ value, from: current && !current.saving ? current.from : saved, saving: false });
+    const from = current && !current.saving ? current.from : saved;
+    set({ value, from, saving: false });
+    // An item being added takes each change as it is made.
+    if (drafting && valid(value)) void commit(value, from);
   };
   const restore = () => set(null);
   const finish = () => {
@@ -142,7 +148,7 @@ export const useFieldDraft = <V,>(
       change(value);
       if (!isTyping(document.activeElement)) finish();
     },
-    changed: draft !== null && !draft.saving && !same(draft.from, saved),
+    changed: !drafting && draft !== null && !draft.saving && !same(draft.from, saved),
     keys: {
       onBlur: (event) => {
         if (isTyping(event.target)) finish();
@@ -152,6 +158,7 @@ export const useFieldDraft = <V,>(
         if (event.key === "Enter" && !(event.target instanceof HTMLTextAreaElement)) {
           event.preventDefault();
           finish();
+          drafting?.submit();
         } else if (event.key === "Escape") {
           restore();
         }

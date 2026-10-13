@@ -15,11 +15,13 @@ import type {
   SearchEntityType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
+import { EntityLinkField } from "@/components/entities/EntityLinkField";
 import type { RelationsLayout } from "@/components/entities/RelationsSection";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import type { FieldSaveKind } from "@/hooks/useFieldSave";
+import { type FieldSaveKind, ItemDraftContext } from "@/hooks/useFieldSave";
 import { useCommunityPath } from "@/lib/communityUrl";
+import type { LinkedRef } from "@/lib/relationships";
 import type { ToolRelationEntity } from "@/lib/tools";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -90,6 +92,8 @@ export interface DetailKind<I extends Item, C, P> {
   taskRoute?: (item: I, context: C, taskId: number) => string;
   /** Holds what its parts keep across a change of layout. */
   Shell?: ComponentType<{ context: C; children: ReactNode }>;
+  /** Its own parts an item being added draws: those that need nothing saved. */
+  addingParts?: readonly string[];
 }
 
 interface Drawn {
@@ -165,17 +169,50 @@ const ItemRelations = () => {
 
 const ItemActions = () => <>{useDrawn().home.actions}</>;
 
-/** The parts every item's detail has, then its kind's own. */
-const partsOf = <I extends Item>(own: Parts<I> = {}): Parts<I> => ({
-  ...LAYOUT_PARTS,
-  field: (node: LayoutNode, item: I, view: LayoutContext) => (
-    <ItemField id={String(node.props?.field)} item={item} view={view} />
-  ),
-  properties: (_node: LayoutNode, item: I) => <ItemProperties item={item} />,
-  relations: () => <ItemRelations />,
-  actions: () => <ItemActions />,
-  ...own,
-});
+/** The links an item being added is to be made with. */
+export const AddingLinks = createContext<{
+  value: LinkedRef[];
+  onChange: (next: LinkedRef[]) => void;
+} | null>(null);
+
+/** What an item being added is to be linked to, written once it is made. */
+const LinksToMake = () => {
+  const { t } = useTranslation("relations");
+  const { home } = useDrawn();
+  const links = useContext(AddingLinks);
+  if (!links || home.initiativeId === null) return null;
+  return (
+    <EntityLinkField
+      label={t("groups.attached.title")}
+      initiativeId={home.initiativeId}
+      value={links.value}
+      onChange={links.onChange}
+    />
+  );
+};
+
+/** The parts every item's detail has, then its kind's own. One being added
+ *  draws what needs nothing saved: its fields and properties, the links to
+ *  make, and the parts of its kind's own it names; nothing a plug-in draws
+ *  and nothing it could be done with yet. */
+const partsOf = <I extends Item>(own: Parts<I> = {}, adding?: readonly string[]): Parts<I> => {
+  const parts: Parts<I> = {
+    ...LAYOUT_PARTS,
+    field: (node: LayoutNode, item: I, view: LayoutContext) => (
+      <ItemField id={String(node.props?.field)} item={item} view={view} />
+    ),
+    properties: (_node: LayoutNode, item: I) => <ItemProperties item={item} />,
+    relations: () => (adding ? <LinksToMake /> : <ItemRelations />),
+    actions: () => <ItemActions />,
+    ...own,
+  };
+  if (!adding) return parts;
+  return Object.fromEntries(
+    Object.entries(parts).filter(([type]) =>
+      Object.hasOwn(own, type) ? adding.includes(type) : type !== "plugin" && type !== "actions"
+    )
+  );
+};
 
 type ViewProps<I extends Item, C, P> = {
   detail: DetailKind<I, C, P>;
@@ -230,7 +267,11 @@ const ItemDetail = <I extends Item, C, P>({
     }),
     [detail, plugins, i18n.language, env, editing, tree]
   );
-  const parts = useMemo(() => partsOf(detail.parts), [detail]);
+  const adding = useContext(ItemDraftContext) !== null;
+  const parts = useMemo(
+    () => partsOf(detail.parts, adding ? (detail.addingParts ?? []) : undefined),
+    [detail, adding]
+  );
   // The parts every item has read the kind whatever its item is.
   const drawn = { detail, context, home } as unknown as Drawn;
   const body = (

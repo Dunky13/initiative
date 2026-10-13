@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Adding a queue item or a counter shows its layout.** Add Item and Add Counter show the same fields, in the same places, as opening one, and nothing is saved until you press Add; closing the dialog drops what you typed. Properties and links can be set as you add one.
 - **Properties save the same way everywhere.** On files, wikis, queue items, counters, gallery pictures, posts and every tool's settings, each property now saves on its own as you change it, says when it's saved, and offers Undo when you clear one, as on a task's or an event's page. Someone who can't change them sees the values themselves rather than greyed-out boxes.
 
 - **Every act on an account is on its Manage panel.** Reset password, resend verification, reactivate, restore, turn password sign-in back on, clear two-factor authentication, reset the age question and delete moved off the roster's row menu, which now only exports, so the case they're for can be named for each.

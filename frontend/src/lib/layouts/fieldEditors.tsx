@@ -6,7 +6,7 @@
 
 import { useBlocker } from "@tanstack/react-router";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { type RefObject, useRef, useState } from "react";
+import { type RefObject, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -38,6 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   type FieldSaveKind,
   type FieldSaveOptions,
+  ItemDraftContext,
   type ItemEdit,
   type ItemFieldSave,
   useHeldItem,
@@ -75,8 +76,10 @@ export const TitleField = <I, P>({
    *  which falls back to its file's name). */
   optional?: boolean;
 }) => {
+  // One being added may be emptied while it is typed; Add waits for a title.
+  const adding = useContext(ItemDraftContext) !== null;
   const draft = useFieldDraft(value, async (text) => {
-    const title = text.trim() ? text : optional ? null : undefined;
+    const title = text.trim() ? text : optional || adding ? null : undefined;
     return title === undefined
       ? false
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
@@ -540,9 +543,16 @@ export const DescriptionField = <I, P>({
   };
 
   const current = value ?? "";
+  // One being added is written straight into it: nothing is saved until Add.
+  const adding = useContext(ItemDraftContext) !== null;
+  const write = (text: string) =>
+    void save.save({
+      patch: { [field]: text || null } as P,
+      shows: { [field]: text || null } as Partial<I>,
+    });
   // A reader who can no longer edit keeps the draft on the device, but sees
   // the saved description and nothing that would write.
-  const open = readOnly || preview ? null : draft;
+  const open = readOnly || preview || adding ? null : draft;
   const conflict = open !== null && getHttpStatus(save.error) === 409;
   const dirty = open !== null && open.text !== (open.base ?? "");
   const blocker = useBlocker({
@@ -601,7 +611,9 @@ export const DescriptionField = <I, P>({
           <MentionComposer
             id={htmlId}
             value={open?.text ?? current}
-            onChange={(text) => setDraft({ text, base: open ? open.base : value })}
+            onChange={(text) =>
+              adding ? write(text) : setDraft({ text, base: open ? open.base : value })
+            }
             initiativeId={initiativeId ?? 0}
             subject={subject}
             renderPreview={renderDescription}

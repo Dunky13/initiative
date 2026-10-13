@@ -14,7 +14,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { PropertyTarget, PropertyValueInput } from "@/api/generated/initiativeAPI.schemas";
@@ -40,6 +40,19 @@ export type ItemFieldSave<I, P> = FieldSave & {
   error: unknown;
   reset: () => void;
 };
+
+/**
+ * An item being added, which nothing has saved yet: its fields' saves change
+ * the copy the dialog holds, and Add makes it whole.
+ */
+export interface ItemDraft {
+  /** Takes in one field's change. */
+  edit: (edit: ItemEdit<unknown, unknown>) => void;
+  /** Adds it, as Enter in a typed field does. */
+  submit: () => void;
+}
+
+export const ItemDraftContext = createContext<ItemDraft | null>(null);
 
 /** How one kind of item is saved field by field. */
 export interface FieldSaveKind<I, P> {
@@ -205,6 +218,7 @@ export const useItemFieldSave = <I, P>(
   options: FieldSaveOptions<I, P> = {}
 ): ItemFieldSave<I, P> => {
   const { t } = useTranslation("common");
+  const drafting = useContext(ItemDraftContext);
   const communityId = useActiveCommunityId();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -332,6 +346,19 @@ export const useItemFieldSave = <I, P>(
     return prepared === null ? false : send(prepared, undo);
   };
 
+  // An item being added holds what is changed until Add.
+  if (drafting) {
+    return {
+      state: "idle",
+      retry: () => {},
+      error: null,
+      reset: () => {},
+      save: async (edit) => {
+        drafting.edit(edit as ItemEdit<unknown, unknown>);
+        return true;
+      },
+    };
+  }
   const field: FieldSave = {
     state,
     retry: () => {

@@ -14,16 +14,16 @@ import {
 } from "@dnd-kit/sortable";
 import { useParams } from "@tanstack/react-router";
 import { ArrowDownUp, LayoutGrid, List, Plus, RotateCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CounterRead } from "@/api/generated/initiativeAPI.schemas";
+import type { CounterCreate, CounterRead } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
-import { CounterFormDialog } from "@/components/initiativeTools/counters/CounterFormDialog";
 import { type CounterLayout, CounterRow } from "@/components/initiativeTools/counters/CounterRow";
 import { EditCounterDialog } from "@/components/initiativeTools/counters/EditCounterDialog";
+import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import { computeMidpoint } from "@/components/projects/taskOrdering";
 import {
@@ -45,6 +45,7 @@ import {
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import {
+  useAddCounter,
   useCounterGroup,
   useDeleteCounter,
   useDuplicateCounter,
@@ -60,7 +61,10 @@ import { layoutViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
+import { instanceTarget } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { pickRandomCounterColor } from "@/lib/counter-color";
+import { blankCounter, COUNTER_DETAIL, counterReady } from "@/lib/layouts/counterLayout";
 import { toast } from "@/lib/mascotToast";
 import { counterRoute, toolListRoute, toolSettingsRoute } from "@/lib/tools";
 
@@ -96,6 +100,8 @@ export function CounterGroupDetailPage() {
   const updateGroup = useUpdateCounterGroup(groupId ?? 0);
 
   const [addOpen, setAddOpen] = useState(false);
+  const addCounter = useAddCounter(groupId ?? 0);
+  const leaving = useRef(false);
   const [editing, setEditing] = useState<CounterRead | null>(null);
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CounterRead | null>(null);
@@ -346,11 +352,34 @@ export function CounterGroupDetailPage() {
       <ToolCommentsPanel tool={Tool.counter_group} entity={group} />
 
       {canWrite && (
-        <CounterFormDialog
+        <AddItemDialog
           open={addOpen}
           onOpenChange={setAddOpen}
-          groupId={groupId}
-          defaultPosition={nextPosition}
+          detail={COUNTER_DETAIL}
+          blank={blankCounter(groupId, pickRandomCounterColor())}
+          context={{
+            readOnly: false,
+            groupId,
+            initiativeId: group.initiative_id,
+            leaving,
+            actions: null,
+          }}
+          layouts={
+            group.initiative_id === null ? null : instanceTarget(Tool.counter_group, groupId)
+          }
+          title={t("addCounter")}
+          ready={counterReady}
+          create={({ item, fields, properties }) =>
+            addCounter.mutateAsync({
+              color: item.color,
+              position: nextPosition,
+              // It starts at the count it is reset to.
+              count: item.initial_count,
+              ...fields,
+              properties,
+            } as CounterCreate)
+          }
+          onAdded={() => setAddOpen(false)}
         />
       )}
 
