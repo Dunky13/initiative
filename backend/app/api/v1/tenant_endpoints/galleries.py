@@ -37,6 +37,7 @@ from fastapi import (
 )
 from sqlalchemy import func
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
@@ -51,6 +52,7 @@ from app.api.deps import (
     plugin_scope,
 )
 from app.core.messages import (
+    CommonMessages,
     ImageMessages,
     GalleryMessages,
 )
@@ -78,6 +80,7 @@ from app.services import storage_config
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import file_versions
 from app.services.tenant import galleries as galleries_service
+from app.services.tenant import plugin_metadata
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import timeline as timeline_service
@@ -555,7 +558,19 @@ async def read_gallery_image(
         session, GalleryImage, image_id, parent_id=gallery_id
     )
     await galleries_service.annotate_version_counts(session, [image])
-    return serialize_gallery_image(image, context=guild_context)
+    return await _serialized_image(session, image, guild_context)
+
+
+async def _serialized_image(
+    session: AsyncSession, image: GalleryImage, context: ActorContext
+) -> GalleryImageRead:
+    """One picture as its own read answers it: with the plug-ins' values on it."""
+    values = await plugin_metadata.values_on(
+        session, "gallery_image", {image.id: cast(Gallery, image.gallery).initiative_id}
+    )
+    return serialize_gallery_image(
+        image, context=context, plugin_values=values.get(image.id, ())
+    )
 
 
 @router.patch("/{gallery_id}/images/{image_id}", response_model=GalleryImageRead)
@@ -572,7 +587,16 @@ async def update_gallery_image(
     image = await resource_access.load_child(
         session, GalleryImage, image_id, access="write", parent_id=gallery_id
     )
-    update_data = image_in.model_dump(exclude_unset=True)
+    if "caption_base" in image_in.model_fields_set:
+        # As an event's description: a caption is written over whole, so one
+        # written over a version that has since moved on is refused.
+        await session.refresh(image, ["caption"], with_for_update=True)
+        if (image.caption or "") != (image_in.caption_base or ""):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=CommonMessages.DESCRIPTION_CHANGED,
+            )
+    update_data = image_in.model_dump(exclude_unset=True, exclude={"caption_base"})
     if "title" in update_data:
         image.title = (update_data["title"] or "").strip() or None
     if "caption" in update_data:
@@ -591,7 +615,7 @@ async def update_gallery_image(
     await attachments_service.claim_uploads(session, image)
     await session.commit()
     hydrated = await _refetch_image(session, image.id)
-    return serialize_gallery_image(hydrated, context=guild_context)
+    return await _serialized_image(session, hydrated, guild_context)
 
 
 @router.delete(

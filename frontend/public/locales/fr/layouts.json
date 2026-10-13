@@ -176,5 +176,27 @@
     "noItems": "Ajoutez un élément à la file pour voir sa mise en page ici."
   },
   "tab": "Mises en page",
-  "settingsDescription": "Comment il dispose ce qu'il contient : chaque mise en page, sa dernière modification et l'accès à l'éditeur. Tous ceux qui peuvent l'ouvrir les voient ; ce que chacun filtre et trie lui appartient."
+  "settingsDescription": "Comment il dispose ce qu'il contient : chaque mise en page, sa dernière modification et l'accès à l'éditeur. Tous ceux qui peuvent l'ouvrir les voient ; ce que chacun filtre et trie lui appartient.",
+  "galleryImageDetail": {
+    "name": "Détail de l'image",
+    "help": "Comment chaque image de cette galerie s'affiche quand on l'ouvre. Ce qu'il laisse de côté est masqué.",
+    "shipped": "Voici la mise en page d'origine. La modifier en fait celle de la galerie.",
+    "titleHelp": "Chaque image affiche son titre.",
+    "hiddenHelp": "Chaque image peut afficher ceci. Retiré, il est masqué, et Ajouter le remet.",
+    "parts": {
+      "actions": "Menu",
+      "relations": "Relations",
+      "picture": "Image",
+      "about": "Provenance",
+      "versions": "Versions"
+    },
+    "partHelp": {
+      "actions": "Ce qu'on peut faire d'autre avec l'image : signaler, télécharger, utiliser comme couverture et retirer.",
+      "relations": "Ce à quoi l'image est liée.",
+      "picture": "L'image elle-même.",
+      "about": "Qui l'a ajoutée et quand, et son fichier.",
+      "versions": "Chaque version envoyée, et en envoyer une nouvelle."
+    },
+    "noItems": "Ajoutez une image à la galerie pour voir sa mise en page ici."
+  }
 }

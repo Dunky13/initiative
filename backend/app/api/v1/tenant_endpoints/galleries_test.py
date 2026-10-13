@@ -159,6 +159,31 @@ async def test_list_carries_newest_picture_as_cover(
     assert chosen.json()["cover_image_id"] == older.id
 
 
+async def test_a_caption_written_over_another_is_refused(
+    client: AsyncClient, acting_user, session
+):
+    """As a description is: a caption saved over one that has since changed."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    await _galleries_enabled(session, a.initiative)
+    gallery = await create_gallery(session, a.initiative, a.user)
+    image = await create_gallery_image(session, gallery, a.user, write_blob=False)
+    path = a.g(f"/galleries/{gallery.id}/images/{image.id}")
+
+    first = await client.patch(path, headers=a.headers, json={"caption": "Dawn"})
+    stale = await client.patch(
+        path, headers=a.headers, json={"caption": "Dusk", "caption_base": None}
+    )
+    current = await client.patch(
+        path, headers=a.headers, json={"caption": "Dusk", "caption_base": "Dawn"}
+    )
+
+    assert first.status_code == 200, first.text
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "DESCRIPTION_CHANGED"
+    assert current.json()["caption"] == "Dusk"
+    assert current.json()["plugin_values"] == []
+
+
 async def test_preview_is_capped_at_the_newest_few(
     client: AsyncClient, acting_user, session
 ):

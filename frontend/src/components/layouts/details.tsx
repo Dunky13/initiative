@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
+import { useGalleryImagesFeed } from "@/hooks/useGalleries";
 import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
@@ -27,6 +28,8 @@ import type { DetailLayoutSpec, StoredRegions } from "@/lib/layouts/detailLayout
 import { EventLayoutView } from "@/lib/layouts/eventLayout";
 import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
+import { GalleryImageLayoutView } from "@/lib/layouts/galleryImageLayout";
+import { GALLERY_IMAGE_LAYOUT, galleryImageFields } from "@/lib/layouts/galleryImages";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
 import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
 import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
@@ -201,6 +204,44 @@ const QueueItemPreview = ({
   ) : null;
 };
 
+/** The gallery's picture detail drawn with its first picture. */
+const GalleryImagePreview = ({
+  galleryId,
+  initiativeId,
+  tree,
+}: {
+  galleryId: number;
+  initiativeId: number;
+  tree: LayoutNode;
+}) => {
+  const { t } = useTranslation("layouts");
+  const leaving = useRef(true);
+  const pictures = useGalleryImagesFeed(galleryId);
+  const first = pictures.data?.pages[0]?.items[0];
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <GalleryImageLayoutView
+        image={first}
+        layout={layout}
+        editing
+        context={{
+          readOnly: false,
+          galleryId,
+          initiativeId,
+          canDeleteVersions: false,
+          leaving,
+          actions: <ActionsPreview />,
+          preview: true,
+        }}
+      />
+    );
+  }
+  return pictures.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("galleryImageDetail.noItems")}</p>
+  ) : null;
+};
+
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
@@ -246,12 +287,30 @@ export const queueItemDetail = (queueId: number, initiativeId: number): Editable
   preview: (tree) => <QueueItemPreview queueId={queueId} initiativeId={initiativeId} tree={tree} />,
 });
 
+/** A gallery's picture detail. */
+export const galleryImageDetail = (galleryId: number, initiativeId: number): EditableDetail => ({
+  spec: GALLERY_IMAGE_LAYOUT,
+  words: {
+    name: "layouts:galleryImageDetail.name",
+    help: "layouts:galleryImageDetail.help",
+    shipped: "layouts:galleryImageDetail.shipped",
+    titleHelp: "layouts:galleryImageDetail.titleHelp",
+    hiddenHelp: "layouts:galleryImageDetail.hiddenHelp",
+    parts: "layouts:galleryImageDetail.",
+  },
+  fields: galleryImageFields,
+  preview: (tree) => (
+    <GalleryImagePreview galleryId={galleryId} initiativeId={initiativeId} tree={tree} />
+  ),
+});
+
 /** The item detail each tool lays out on its own, with no list of its own to
  *  lay out beside it: what its editor offers. */
 export const ITEM_DETAILS: Partial<
   Record<Tool, (id: number, initiativeId: number) => EditableDetail>
 > = {
   [Tool.queue]: queueItemDetail,
+  [Tool.gallery]: galleryImageDetail,
 };
 
 /** A project's lists' presets: its tasks' filters, and a table's sort. */

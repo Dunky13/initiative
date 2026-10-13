@@ -2,6 +2,7 @@ import {
   Calendar,
   CalendarDays,
   FileText,
+  Image,
   Kanban,
   ListOrdered,
   type LucideIcon,
@@ -49,6 +50,7 @@ export const detailLayoutLooks: Record<DetailLayoutRead["kind"], Look> = {
   task: { icon: FileText, labelKey: "layouts:taskLayout" },
   calendar_event: { icon: CalendarDays, labelKey: "layouts:eventDetail.name" },
   queue_item: { icon: ListOrdered, labelKey: "layouts:queueItemDetail.name" },
+  gallery_image: { icon: Image, labelKey: "layouts:galleryImageDetail.name" },
 };
 
 /** Any layout's icon and name. */

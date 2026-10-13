@@ -61,6 +61,7 @@ export const TitleField = <I, P>({
   readOnly,
   placeholder,
   field = "title",
+  optional = false,
 }: {
   id: string;
   label: string;
@@ -69,15 +70,21 @@ export const TitleField = <I, P>({
   readOnly: boolean;
   placeholder: string;
   field?: string;
+  /** It may be emptied, and then reads as `placeholder` (a picture's title,
+   *  which falls back to its file's name). */
+  optional?: boolean;
 }) => {
-  const draft = useFieldDraft(value, async (title) =>
-    title.trim()
-      ? save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> })
-      : false
-  );
+  const draft = useFieldDraft(value, async (text) => {
+    const title = text.trim() ? text : optional ? null : undefined;
+    return title === undefined
+      ? false
+      : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
+  });
   if (readOnly) {
     return (
-      <h1 className="min-w-0 flex-1 break-words font-semibold text-3xl tracking-tight">{value}</h1>
+      <h1 className="min-w-0 flex-1 break-words font-semibold text-3xl tracking-tight">
+        {value || placeholder}
+      </h1>
     );
   }
   return (
@@ -433,6 +440,7 @@ export const DescriptionField = <I, P>({
   leaving,
   placeholder,
   suggest,
+  maxLength,
 }: {
   /** What the item calls it (a queue item's `notes`). A save names the text
    *  it was written over as `<field>_base`, which the server refuses once
@@ -458,6 +466,8 @@ export const DescriptionField = <I, P>({
   placeholder: string;
   /** Writes a description for the reader to start from (AI). */
   suggest?: { label: string; run: () => Promise<string> };
+  /** The most characters it may hold, as the server allows. */
+  maxLength?: number;
 }) => {
   const { t } = useTranslation("common");
   const communityId = useActiveCommunityId();
@@ -559,6 +569,7 @@ export const DescriptionField = <I, P>({
             onUploadImage={uploadImage}
             defaultMode="preview"
             placeholder={placeholder}
+            maxLength={maxLength}
             onKeyDown={(event) => {
               if (!open) return;
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

@@ -22,6 +22,7 @@ from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import MAX_DEPTH, MAX_NODES, MAX_PLUGIN_PARTS
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.testing import (
+    create_gallery,
     create_project,
     create_queue,
     create_resource_grant,
@@ -333,12 +334,13 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     ]
 
 
-async def test_a_queue_lays_out_its_items(
+async def test_a_queue_and_a_gallery_lay_out_their_items(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    """Its own item detail, listed among the initiative's layouts."""
+    """Each its own item detail, listed among the initiative's layouts."""
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
     queue = await create_queue(session, a.initiative, a.user, name="Turns")
+    gallery = await create_gallery(session, a.initiative, a.user, name="Wall")
     detail = _detail(
         "queue_item",
         {"type": "section", "children": [_field("person"), _field("property:12")]},
@@ -359,10 +361,22 @@ async def test_a_queue_lays_out_its_items(
         headers=a.headers,
     )
 
+    pictures = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "gallery", "tool_id": gallery.id},
+        json=_detail("gallery_image", {"type": "picture"}, _field("caption")),
+        headers=a.headers,
+    )
+
     assert saved.status_code == 200, saved.text
     assert [layout["kind"] for layout in saved.json()["layouts"]] == ["queue_item"]
-    assert [(each["tool"], each["name"]) for each in listed.json()] == [
-        ("queue", "Turns")
+    assert pictures.status_code == 200, pictures.text
+    assert [layout["kind"] for layout in pictures.json()["layouts"]] == [
+        "gallery_image"
+    ]
+    assert sorted((each["tool"], each["name"]) for each in listed.json()) == [
+        ("gallery", "Wall"),
+        ("queue", "Turns"),
     ]
 
 
