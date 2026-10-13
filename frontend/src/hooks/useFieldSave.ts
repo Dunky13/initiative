@@ -50,6 +50,9 @@ export interface ItemDraft {
   edit: (edit: ItemEdit<unknown, unknown>) => void;
   /** Adds it, as Enter in a typed field does. */
   submit: () => void;
+  /** Whether the field `id` shows a value it cannot take (a number left
+   *  empty), which Add waits for. */
+  hold: (id: string, holding: boolean) => void;
 }
 
 export const ItemDraftContext = createContext<ItemDraft | null>(null);

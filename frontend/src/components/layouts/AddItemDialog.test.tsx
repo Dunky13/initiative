@@ -87,4 +87,29 @@ describe("adding an item", () => {
     expect(await screen.findByPlaceholderText("Item name")).toHaveValue("");
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("waits while a field is emptied or shows what it cannot take", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <Adding create={create} />);
+    const user = userEvent.setup();
+    const add = await screen.findByRole("button", { name: "Add Item" });
+    const label = screen.getByPlaceholderText("Item name");
+
+    await user.type(label, "Imp");
+    await user.clear(label);
+    expect(add).toBeDisabled();
+
+    await user.type(label, "Imp");
+    const position = within(screen.getByRole("group", { name: "Position" })).getByRole(
+      "spinbutton"
+    );
+    await user.type(position, "4");
+    await user.clear(position);
+    expect(add).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(create).not.toHaveBeenCalled();
+
+    await user.type(position, "7");
+    expect(add).toBeEnabled();
+  });
 });

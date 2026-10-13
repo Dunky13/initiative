@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -103,6 +104,7 @@ export const useFieldDraft = <V,>(
   valid: (value: V) => boolean = () => true
 ): FieldDraft<V> => {
   const drafting = useContext(ItemDraftContext);
+  const id = useId();
   const [draft, setDraft] = useState<Draft<V> | null>(null);
   // Read by the handlers rather than the render, as two can run in one event:
   // a picker that commits on Enter, then the Enter itself.
@@ -116,10 +118,18 @@ export const useFieldDraft = <V,>(
     const current = held.current;
     const from = current && !current.saving ? current.from : saved;
     set({ value, from, saving: false });
-    // An item being added takes each change as it is made.
-    if (drafting && valid(value)) void commit(value, from);
+    // An item being added takes each change as it is made, and is not added
+    // while one it cannot take is shown.
+    if (drafting) {
+      const fits = valid(value);
+      drafting.hold(id, !fits);
+      if (fits) void commit(value, from);
+    }
   };
-  const restore = () => set(null);
+  const restore = () => {
+    set(null);
+    drafting?.hold(id, false);
+  };
   const finish = () => {
     const current = held.current;
     if (!current || current.saving || !valid(current.value)) return;
@@ -138,6 +148,7 @@ export const useFieldDraft = <V,>(
   const leaving = useRef(finish);
   leaving.current = finish;
   useEffect(() => () => leaving.current(), []);
+  useEffect(() => () => drafting?.hold(id, false), [drafting, id]);
 
   return {
     value: draft ? draft.value : saved,

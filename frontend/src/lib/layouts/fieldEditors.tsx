@@ -76,10 +76,10 @@ export const TitleField = <I, P>({
    *  which falls back to its file's name). */
   optional?: boolean;
 }) => {
-  // One being added may be emptied while it is typed; Add waits for a title.
+  // One being added may be emptied while it is typed: Add waits for a title.
   const adding = useContext(ItemDraftContext) !== null;
   const draft = useFieldDraft(value, async (text) => {
-    const title = text.trim() ? text : optional || adding ? null : undefined;
+    const title = text.trim() ? text : optional ? null : adding ? "" : undefined;
     return title === undefined
       ? false
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });

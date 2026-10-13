@@ -273,8 +273,9 @@ export const blankCounter = (groupId: number, color: string): CounterRead => ({
   updated_at: "",
 });
 
-/** Whether a counter can be added as it stands: named, and bounded where it
- *  is drawn as a bar or a clock. */
+/** Whether a counter can be added as it stands: named, stepping up by more
+ *  than nothing, and bounded where it is drawn as a bar or a clock. */
 export const counterReady = (counter: CounterRead) =>
   counter.name.trim() !== "" &&
+  Number(counter.step) > 0 &&
   (counter.view_mode === CounterViewMode.number || (counter.min != null && counter.max != null));

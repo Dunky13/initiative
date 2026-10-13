@@ -84,9 +84,16 @@ const Adding = <I extends Item, C, P>({
   const [item, setItem] = useState(blank);
   const [links, setLinks] = useState<LinkedRef[]>([]);
   const [adding, setAdding] = useState(false);
+  // The fields showing a value they cannot take, which Add waits for.
+  const [holding, setHolding] = useState<ReadonlySet<string>>(new Set());
   // Read by Add, which can run in the same event as the change it follows
   // (leaving a field, or Enter in it), before the render that shows it.
-  const latest = useRef({ item, fields: {} as Partial<P>, values: new Map<number, unknown>() });
+  const latest = useRef({
+    item,
+    fields: {} as Partial<P>,
+    values: new Map<number, unknown>(),
+    holding: new Set<string>(),
+  });
   const layout = detailLayoutOf(useToolLayouts(layouts).data, detail.spec.kind);
   const home = detail.home(blank, context);
   const target = home.links.target;
@@ -112,8 +119,8 @@ const Adding = <I extends Item, C, P>({
   };
 
   const add = async () => {
-    const { item: now, fields, values } = latest.current;
-    if (adding || !ready(now)) return;
+    const { item: now, fields, values, holding: held } = latest.current;
+    if (adding || held.size > 0 || !ready(now)) return;
     setAdding(true);
     try {
       if (made.current === null) {
@@ -145,11 +152,24 @@ const Adding = <I extends Item, C, P>({
           for (const { property_id, value } of edit.properties.values) {
             held.values.set(property_id, value);
           }
-          for (const id of edit.properties.removed ?? []) held.values.delete(id);
+          // A property taken off shows as gone: nothing reads it back.
+          const removed = edit.properties.removed ?? [];
+          for (const id of removed) held.values.delete(id);
+          held.item = {
+            ...held.item,
+            properties: held.item.properties.filter((each) => !removed.includes(each.property_id)),
+          };
         }
         setItem(held.item);
       },
       submit: () => void submit.current(),
+      hold: (id: string, holds: boolean) => {
+        const held = latest.current.holding;
+        if (held.has(id) === holds) return;
+        if (holds) held.add(id);
+        else held.delete(id);
+        setHolding(new Set(held));
+      },
     }),
     []
   );
@@ -172,7 +192,11 @@ const Adding = <I extends Item, C, P>({
         </AddingLinks.Provider>
       </ItemDraftContext.Provider>
       <DialogFooter>
-        <Button type="button" onClick={() => void add()} disabled={adding || !ready(item)}>
+        <Button
+          type="button"
+          onClick={() => void add()}
+          disabled={adding || holding.size > 0 || !ready(item)}
+        >
           {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {adding ? t("adding") : title}
         </Button>
