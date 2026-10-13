@@ -132,6 +132,9 @@ export const useFieldDraft = <V,>(
   };
   const finish = () => {
     const current = held.current;
+    // An item being added took each change as it was made, and keeps showing
+    // it: what it shows of a change may be nothing until it is made.
+    if (drafting) return;
     if (!current || current.saving || !valid(current.value)) return;
     if (same(current.value, saved)) {
       restore();

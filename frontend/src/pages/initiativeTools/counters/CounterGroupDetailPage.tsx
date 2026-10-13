@@ -364,7 +364,7 @@ export function CounterGroupDetailPage() {
             leaving,
             actions: null,
           }}
-          layouts={
+          layouts={() =>
             group.initiative_id === null ? null : instanceTarget(Tool.counter_group, groupId)
           }
           title={t("addCounter")}

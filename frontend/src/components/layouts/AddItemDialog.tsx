@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -35,21 +35,25 @@ export interface Written<I, P> {
   properties: PropertyValueInput[];
 }
 
-type AddItemProps<I extends Item, C, P> = {
+type AddItemProps<I extends Item, C, P, R extends { id: number }> = {
   detail: DetailKind<I, C, P>;
   /** The item as it starts, before anything is changed. */
   blank: I;
   context: C;
-  /** Where its kind's layout is kept; none draws it as shipped. */
-  layouts: GetLayoutsParams | null;
+  /** Where its kind's layout is kept, given the item as it stands (an event's
+   *  is its calendar's initiative's); none draws it as shipped. */
+  layouts: (item: I) => GetLayoutsParams | null;
+  /** Drawn above its layout, given the item: what it is added to, where
+   *  that is picked here. */
+  before?: (item: I) => ReactNode;
   /** The dialog's title, and what its button says. */
   title: string;
   /** Whether it can be added as it stands: it has a name. */
   ready: (item: I) => boolean;
   /** Makes it from what was changed, answering it. */
-  create: (written: Written<I, P>) => Promise<{ id: number }>;
+  create: (written: Written<I, P>) => Promise<R>;
   /** Once it is made, and its links with it. */
-  onAdded: () => void;
+  onAdded: (made: R) => void;
 };
 
 /**
@@ -57,29 +61,41 @@ type AddItemProps<I extends Item, C, P> = {
  * editor. Nothing is saved until Add, which makes it from everything changed
  * and then writes the links picked; closing the dialog drops it all.
  */
-export const AddItemDialog = <I extends Item, C, P>({
+export const AddItemDialog = <I extends Item, C, P, R extends { id: number }>({
   open,
   onOpenChange,
   ...props
-}: DialogProps & AddItemProps<I, C, P>) => (
-  <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl">
-      <Adding {...props} />
-    </DialogContent>
-  </Dialog>
-);
+}: DialogProps & AddItemProps<I, C, P, R>) => {
+  // Once something is changed, a stray click outside does not drop it; Esc
+  // and the close button still do.
+  const changed = useRef(false);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl"
+        onInteractOutside={(event) => {
+          if (changed.current) event.preventDefault();
+        }}
+      >
+        <Adding {...props} changed={changed} />
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 // Drawn only while the dialog is open, so each opening starts blank.
-const Adding = <I extends Item, C, P>({
+const Adding = <I extends Item, C, P, R extends { id: number }>({
   detail,
   blank,
   context,
   layouts,
+  before,
   title,
   ready,
   create,
   onAdded,
-}: AddItemProps<I, C, P>) => {
+  changed,
+}: AddItemProps<I, C, P, R> & { changed: RefObject<boolean> }) => {
   const { t } = useTranslation("common");
   const [item, setItem] = useState(blank);
   const [links, setLinks] = useState<LinkedRef[]>([]);
@@ -94,28 +110,28 @@ const Adding = <I extends Item, C, P>({
     values: new Map<number, unknown>(),
     holding: new Set<string>(),
   });
-  const layout = detailLayoutOf(useToolLayouts(layouts).data, detail.spec.kind);
-  const home = detail.home(blank, context);
+  const layout = detailLayoutOf(useToolLayouts(layouts(item)).data, detail.spec.kind);
+  const home = detail.home(item, context);
   const target = home.links.target;
   const setLinksOn = useSetItemLinks(home.canOpen.tool, home.canOpen.id);
   // The item this sitting made, whose links did not all land: Add again
   // finishes it rather than making a second. And the links last asked for,
   // which a retry writes against.
-  const made = useRef<number | null>(null);
+  const made = useRef<R | null>(null);
   const asked = useRef<LinkedRef[]>([]);
 
-  const finish = async (id: number) => {
+  const finish = async (item: R) => {
     if (target && (links.length > 0 || asked.current.length > 0)) {
       const previous = asked.current;
       asked.current = links;
       await setLinksOn.mutateAsync({
-        item: { type: target.type, id },
+        item: { type: target.type, id: item.id },
         links,
         previous,
         force: previous.length > 0,
       });
     }
-    onAdded();
+    onAdded(item);
   };
 
   const add = async () => {
@@ -129,7 +145,7 @@ const Adding = <I extends Item, C, P>({
           Object.entries(fields).filter(([key]) => !key.endsWith("_base"))
         ) as Partial<P>;
         const properties = [...values].map(([property_id, value]) => ({ property_id, value }));
-        made.current = (await create({ item: now, fields: sent, properties })).id;
+        made.current = await create({ item: now, fields: sent, properties });
       }
       await finish(made.current);
     } catch {
@@ -141,9 +157,13 @@ const Adding = <I extends Item, C, P>({
   const submit = useRef(add);
   submit.current = add;
 
+  useEffect(() => {
+    changed.current = false;
+  }, [changed]);
   const draft = useMemo<ItemDraft>(
     () => ({
       edit: (edit: ItemEdit<unknown, unknown>) => {
+        changed.current = true;
         const held = latest.current;
         held.item = { ...held.item, ...(edit.shows as Partial<I>) };
         if ("patch" in edit) {
@@ -171,9 +191,18 @@ const Adding = <I extends Item, C, P>({
         setHolding(new Set(held));
       },
     }),
-    []
+    [changed]
   );
-  const picking = useMemo(() => ({ value: links, onChange: setLinks }), [links]);
+  const picking = useMemo(
+    () => ({
+      value: links,
+      onChange: (next: LinkedRef[]) => {
+        changed.current = true;
+        setLinks(next);
+      },
+    }),
+    [links, changed]
+  );
 
   return (
     <>
@@ -182,6 +211,7 @@ const Adding = <I extends Item, C, P>({
         <DialogDescription className="sr-only">{title}</DialogDescription>
       </DialogHeader>
       <ItemDraftContext.Provider value={draft}>
+        {before?.(item)}
         <AddingLinks.Provider value={picking}>
           <DetailLayoutView
             detail={detail}

@@ -1,6 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, MapPin, Repeat } from "lucide-react";
-import { type ComponentType, type ReactNode, type RefObject, useMemo, useState } from "react";
+import {
+  type ComponentType,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -8,6 +15,7 @@ import {
   type RSVPStatus,
   SearchEntityType,
   Tool,
+  type UserPublic,
 } from "@/api/generated/initiativeAPI.schemas";
 import { isRepeating, utcDateKey } from "@/components/calendar/eventCalendarEntry";
 import {
@@ -41,6 +49,7 @@ import {
   useOccurrenceAction,
   useUpdateEventRSVP,
 } from "@/hooks/useCalendarEvents";
+import { ItemDraftContext } from "@/hooks/useFieldSave";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import { dateTimeFormat } from "@/lib/intl";
@@ -241,7 +250,13 @@ const timingOf = (start: string, end: string, allDay: boolean): EventTiming => {
  *  about. */
 const DatesEditor = ({ event }: { event: CalendarEventRead }) => {
   const { t } = useTranslation(["calendars", "common"]);
-  const { readOnly, shownStart, shownEnd } = useEventLayout();
+  const context = useEventLayout();
+  const { readOnly } = context;
+  // One being added shows its own dates; one opened, the date it was opened at.
+  const adding = useContext(ItemDraftContext) !== null;
+  const [shownStart, shownEnd] = adding
+    ? [event.start_at, event.end_at]
+    : [context.shownStart, context.shownEnd];
   const label = t("eventPage.when");
   const save = useSave(event, label);
   const repeating = isRepeating(event);
@@ -298,18 +313,19 @@ const RepeatEditor = ({ item: event, label }: EditorProps) => {
     event.recurrence_shift,
     event.all_day
   );
-  // The rule picked, until it is saved or put back.
+  // The rule picked, until it is saved or put back. One being added takes it
+  // as it is picked, and keeps showing it: it has no dates of its own to lose.
+  const adding = useContext(ItemDraftContext) !== null;
   const [picked, setPicked] = useState<RecurrenceRule | "custom" | null | undefined>(undefined);
-  const changed = picked !== undefined && !sameJson(picked, saved);
-  const commit = async () => {
-    if (picked === undefined || picked === "custom") return;
-    const rule = picked;
+  const changed = !adding && picked !== undefined && !sameJson(picked, saved);
+  const commit = async (rule = picked) => {
+    if (rule === undefined || rule === "custom") return;
     const sent = await save.save({
       patch: rulePayload(rule, { allDay: event.all_day }),
       shows: {},
     });
     // A rule picked while this one was saving is still to be saved.
-    if (sent) setPicked((current) => (current === rule ? undefined : current));
+    if (sent && !adding) setPicked((current) => (current === rule ? undefined : current));
   };
   const openAlone = useOccurrenceAction(event.id, "open", { onSuccess: onMoved });
   const restoreDate = useOccurrenceAction(event.id, "restore", {
@@ -359,7 +375,10 @@ const RepeatEditor = ({ item: event, label }: EditorProps) => {
       <RecurrenceEditor
         kind="event"
         value={picked === undefined ? saved : picked}
-        onChange={setPicked}
+        onChange={(rule) => {
+          setPicked(rule);
+          if (adding) void commit(rule);
+        }}
         referenceDate={event.all_day ? allDayReference(event.start_at) : event.start_at}
         allDay={event.all_day}
         stored={event.recurrence ? { rule: event.recurrence, shift: event.recurrence_shift } : null}
@@ -602,6 +621,7 @@ export const EVENT_DETAIL: DetailKind<CalendarEventRead, EventLayoutContext, Eve
     dates: (_node, event) => <DatesEditor event={event} />,
     rsvp: (_node, event) => <MyAnswer event={event} />,
   },
+  addingParts: ["dates"],
   home: (event, context) => ({
     saves: eventSaves(context.occurrence),
     readOnly: context.readOnly,
@@ -615,3 +635,39 @@ export const EVENT_DETAIL: DetailKind<CalendarEventRead, EventLayoutContext, Eve
     actions: context.actions,
   }),
 };
+
+/** An event not yet added to `calendar`, over `range`, as its detail draws it
+ *  while it is: `attendee`, who adds it, attends. */
+export const blankEvent = (
+  calendar: { id: number; initiative_id: number | null } | undefined,
+  range: { start_at: string; end_at: string },
+  attendee: UserPublic | null
+): CalendarEventRead => ({
+  id: 0,
+  title: "",
+  description: null,
+  location: null,
+  ...range,
+  all_day: false,
+  rsvp_open: true,
+  recurrence: null,
+  recurrence_shift: 0,
+  original_start: null,
+  series_id: null,
+  calendar_id: calendar?.id ?? 0,
+  initiative_id: calendar?.initiative_id ?? null,
+  community_id: 0,
+  created_by: null,
+  properties: [],
+  tags: [],
+  can: { edit: true },
+  created_at: "",
+  updated_at: "",
+  attendees: attendee
+    ? [{ user_id: attendee.id, user: attendee, rsvp_status: "pending", created_at: "" }]
+    : [],
+  overridden_fields: [],
+  skipped_starts: [],
+  extra_starts: [],
+  plugin_values: [],
+});

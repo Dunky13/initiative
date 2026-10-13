@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  TaskCreate,
   TaskListRead,
   TaskRead,
   TaskReorderRequest,
@@ -32,8 +33,8 @@ import {
 import { ToolFilterPanel } from "@/components/initiativeTools/shared/ToolFilterPanel";
 import { ToolLayoutSelect } from "@/components/initiativeTools/shared/ToolLayoutSelect";
 import { ToolListToolbar } from "@/components/initiativeTools/shared/ToolListToolbar";
+import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
-import { ProjectTaskComposer } from "@/components/projects/ProjectTaskComposer";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
@@ -51,12 +52,6 @@ import { ExportTasksButton } from "@/components/tasks/ExportTasksButton";
 import { TaskBulkEditDialog } from "@/components/tasks/TaskBulkEditDialog";
 import { TaskBulkEditPanel } from "@/components/tasks/TaskBulkEditPanel";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
-import {
-  emptyTaskFormValue,
-  serializeTaskFormValue,
-  type TaskFormValue,
-  taskFormPropertyValues,
-} from "@/components/tasks/TaskForm";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -81,6 +76,7 @@ import {
   useTasks,
   useUpdateTask,
 } from "@/hooks/useTasks";
+import { instanceTarget } from "@/hooks/useToolLayouts";
 import {
   buildTaskConditions,
   buildTaskListParams,
@@ -88,10 +84,10 @@ import {
   taskFilterCount,
 } from "@/lib/filters/taskFilters";
 import { presetName } from "@/lib/layouts/presets";
+import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import { toast } from "@/lib/mascotToast";
 import { getProjectColor } from "@/lib/projectColor";
-import { rulePayload } from "@/lib/recurrence";
 import { getItem, setItem } from "@/lib/storage";
 import { taskReadToListRow } from "@/lib/taskUtils";
 import { browserTimezone } from "@/lib/timezones";
@@ -137,11 +133,6 @@ export const ProjectTasksSection = ({
       return a.position - b.position;
     });
   }, [taskStatuses]);
-  // Single source of truth for the aligned create dialog's fields (title,
-  // description, status, priority, assignees, dates, recurrence, tags, and
-  // custom properties). TaskForm mutates it via onChange; submit creates the
-  // task and its property values in one request.
-  const [composerValue, setComposerValue] = useState<TaskFormValue>(() => emptyTaskFormValue());
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ProjectViewSearch;
   const {
@@ -222,6 +213,8 @@ export const ProjectTasksSection = ({
 
   const [localOverride, setLocalOverride] = useState<TaskListRead[] | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(initialComposerOpen ?? false);
+  // An archived project takes no new tasks until it is unarchived.
+  const canAddTasks = canEditTaskDetails && !projectIsArchived;
   useEffect(() => {
     if (initialComposerOpen) {
       setIsComposerOpen(true);
@@ -233,7 +226,7 @@ export const ProjectTasksSection = ({
 
   // Drive the app-wide bottom-nav add button for this route.
   useRegisterPrimaryCreateAction(
-    canEditTaskDetails ? { run: () => setIsComposerOpen(true), label: t("tasks.addTask") } : null
+    canAddTasks ? { run: () => setIsComposerOpen(true), label: t("tasks.addTask") } : null
   );
 
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
@@ -352,8 +345,6 @@ export const ProjectTasksSection = ({
 
   const createTask = useCreateTask({
     onSuccess: (newTask) => {
-      setComposerValue(emptyTaskFormValue({ statusId: defaultStatusId }));
-      setIsComposerOpen(false);
       setLocalOverride((prev) => [
         ...(prev ?? projectTasks),
         taskReadToListRow(newTask, communityId),
@@ -362,40 +353,10 @@ export const ProjectTasksSection = ({
     },
   });
 
-  // Seed the composer's status from the project default whenever it opens so
-  // the user starts at the default but can override it. Also reset a status
-  // that belongs to a different project — this section instance is reused when
-  // navigating between projects, so a status id picked in the previous project
-  // would otherwise linger and be submitted against the new one.
-  useEffect(() => {
-    if (isComposerOpen) {
-      setComposerValue((prev) => {
-        if (prev.statusId == null) {
-          return { ...prev, statusId: defaultStatusId };
-        }
-        const belongsToProject = sortedTaskStatuses.some((status) => status.id === prev.statusId);
-        if (!belongsToProject && sortedTaskStatuses.length > 0) {
-          return { ...prev, statusId: defaultStatusId };
-        }
-        return prev;
-      });
-    }
-  }, [isComposerOpen, defaultStatusId, sortedTaskStatuses]);
-
-  // Dirty = the composer differs from a fresh form seeded at the default
-  // status. Used to keep a backdrop click from discarding in-progress input.
-  const composerDirty = useMemo(
-    () =>
-      serializeTaskFormValue(composerValue) !==
-      serializeTaskFormValue(emptyTaskFormValue({ statusId: defaultStatusId })),
-    [composerValue, defaultStatusId]
-  );
-
-  // Close and discard the composer draft so reopening starts fresh.
-  const closeComposer = useCallback(() => {
-    setComposerValue(emptyTaskFormValue({ statusId: defaultStatusId }));
-    setIsComposerOpen(false);
-  }, [defaultStatusId]);
+  // A task is added to the project's default status unless another is picked.
+  const defaultStatus = sortedTaskStatuses.find((status) => status.id === defaultStatusId);
+  const leaving = useRef(false);
+  const neverAsks = useCallback(async () => null, []);
 
   /**
    * Whether an updated row still belongs in the filtered list.
@@ -658,7 +619,7 @@ export const ProjectTasksSection = ({
   );
 
   useEffect(() => {
-    if (!canEditTaskDetails) {
+    if (!canAddTasks) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -683,7 +644,7 @@ export const ProjectTasksSection = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canEditTaskDetails, isComposerOpen]);
+  }, [canAddTasks, isComposerOpen]);
 
   const moveTaskInOrder = useCallback(
     (taskId: number, targetStatusId: number, overTaskId: number | null, insertAfter: boolean) => {
@@ -913,7 +874,7 @@ export const ProjectTasksSection = ({
             )
           }
           actions={
-            canEditTaskDetails ? (
+            canAddTasks ? (
               <TooltipProvider>
                 <Tooltip delayDuration={400}>
                   <TooltipTrigger asChild>
@@ -1075,56 +1036,37 @@ export const ProjectTasksSection = ({
 
       {canEditTaskDetails ? (
         <>
-          <Dialog
-            open={isComposerOpen}
-            onOpenChange={(open) => (open ? setIsComposerOpen(true) : closeComposer())}
-          >
-            <ProjectTaskComposer
-              canWrite={canEditTaskDetails}
-              isArchived={projectIsArchived}
-              isSubmitting={createTask.isPending}
-              hasError={Boolean(createTask.isError)}
-              isDirty={composerDirty}
-              form={{
-                value: composerValue,
-                onChange: setComposerValue,
+          {canAddTasks && defaultStatus ? (
+            <AddItemDialog
+              open={isComposerOpen}
+              onOpenChange={setIsComposerOpen}
+              detail={TASK_DETAIL}
+              blank={blankTask(projectId, defaultStatus)}
+              context={{
+                readOnly: false,
+                readOnlyMessage: null,
                 statuses: sortedTaskStatuses,
-                projectId,
                 initiativeId,
                 currentUserId: user?.id,
-                autoFocusTitle: true,
+                askScope: neverAsks,
+                actions: null,
+                leaving,
               }}
-              onSubmit={() => {
-                const selectedStatusId = composerValue.statusId ?? defaultStatusId;
-                if (!selectedStatusId) {
-                  toast.error(t("tasks.createError"));
-                  return;
-                }
-                const payload: Record<string, unknown> = {
+              layouts={() => instanceTarget(Tool.project, projectId)}
+              title={t("taskComposer.createTask")}
+              ready={(task) => task.title.trim() !== ""}
+              create={({ item, fields, properties }) =>
+                createTask.mutateAsync({
                   project_id: projectId,
-                  title: composerValue.title,
-                  description: composerValue.description,
-                  priority: composerValue.priority,
-                  assignee_ids: composerValue.assigneeIds,
-                  start_date: composerValue.startDate
-                    ? new Date(composerValue.startDate).toISOString()
-                    : null,
-                  due_date: composerValue.dueDate
-                    ? new Date(composerValue.dueDate).toISOString()
-                    : null,
-                  task_status_id: selectedStatusId,
-                  tag_ids: composerValue.tags.map((tg) => tg.id),
-                  properties: taskFormPropertyValues(composerValue),
-                };
-                Object.assign(payload, rulePayload(composerValue.recurrence));
-                payload.recurrence_strategy = composerValue.recurrence
-                  ? composerValue.recurrenceStrategy
-                  : "fixed";
-                createTask.mutate(payload as never);
-              }}
-              onCancel={closeComposer}
+                  task_status_id: item.task_status_id,
+                  priority: item.priority,
+                  ...fields,
+                  properties,
+                } as TaskCreate)
+              }
+              onAdded={() => setIsComposerOpen(false)}
             />
-          </Dialog>
+          ) : null}
           <Dialog open={isBulkEditDialogOpen} onOpenChange={setIsBulkEditDialogOpen}>
             <TaskBulkEditDialog
               selectedTasks={selectedTasks}

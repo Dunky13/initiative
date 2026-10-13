@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { type ReactNode, type RefObject, useMemo } from "react";
+import { type ReactNode, type RefObject, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useAIEnabled } from "@/hooks/useAIEnabled";
 import { useComments, useCommentsCache, useCommentThreadState } from "@/hooks/useComments";
 import { useDateLocale } from "@/hooks/useDateLocale";
+import { ItemDraftContext } from "@/hooks/useFieldSave";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
 import {
   TASK_SAVES,
@@ -106,6 +107,8 @@ const DescriptionEditor = ({ item: task, label }: EditorProps) => {
   const { readOnly, initiativeId, leaving, askScope, preview } = useTaskLayout();
   const { isEnabled: aiEnabled } = useAIEnabled();
   const generate = useGenerateTaskDescription();
+  // A task being added has nothing yet for AI to write from.
+  const adding = useContext(ItemDraftContext) !== null;
   return (
     <DescriptionField
       kind={TASK_SAVES}
@@ -121,7 +124,7 @@ const DescriptionEditor = ({ item: task, label }: EditorProps) => {
       leaving={leaving}
       placeholder={t("edit.descriptionPlaceholder")}
       suggest={
-        aiEnabled
+        aiEnabled && !adding
           ? {
               label: t("edit.aiGenerate"),
               run: async () => {
@@ -390,6 +393,8 @@ const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
 
 const Checklist = ({ item: task }: EditorProps) => {
   const { readOnly } = useTaskLayout();
+  // Its items are each saved on a task that exists.
+  if (useContext(ItemDraftContext) !== null) return null;
   return <TaskChecklist taskId={task.id} items={task.checklist ?? []} canEdit={!readOnly} />;
 };
 
@@ -518,4 +523,42 @@ export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = 
     actions: context.actions,
   }),
   taskRoute: (task, context, taskId) => taskRoute(context.initiativeId, task.project_id, taskId),
+  addingParts: ["status", "dates"],
 };
+
+/** A task not yet added to `projectId`, in `status`, as its detail draws it
+ *  while it is. */
+export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead => ({
+  id: 0,
+  project_id: projectId,
+  title: "",
+  description: null,
+  priority: "medium",
+  start_date: null,
+  due_date: null,
+  recurrence: null,
+  recurrence_strategy: "fixed",
+  recurrence_occurrence_count: 0,
+  recurrence_shift: 0,
+  recurrence_until: null,
+  series_id: null,
+  series_size: 0,
+  task_status_id: status.id,
+  task_status: status,
+  created_at: "",
+  updated_at: "",
+  completed_at: null,
+  position: 0,
+  archived_at: null,
+  created_by: null,
+  creator: null,
+  assignees: [],
+  comment_count: 0,
+  blocked_by_open_count: 0,
+  project: null,
+  checklist: [],
+  checklist_progress: null,
+  tags: [],
+  properties: [],
+  plugin_values: [],
+});
