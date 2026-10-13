@@ -281,7 +281,7 @@ async def apply_version(
                 definition=previous,
             )
     # What the new version adds to tasks shows where it is placed.
-    await guild_plugins_service.show_on_saved_details(
+    await guild_plugins_service.show_on_saved_layouts(
         session,
         plugin,
         await guild_plugins_service.placed_initiative_ids(session, plugin.id),

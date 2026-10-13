@@ -35,9 +35,10 @@ import { TableRow } from "@/components/ui/table";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
 import { fieldColumnId } from "@/lib/layouts/columns";
+import { columnsOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
-import { TASK_COLUMNS, taskFields } from "@/lib/layouts/tasks";
+import { taskFields } from "@/lib/layouts/tasks";
 import type { AppColumnDef } from "@/lib/table";
 import { cn } from "@/lib/utils";
 
@@ -207,7 +208,10 @@ const ProjectTasksTableViewComponent = ({
   // The columns the view shows, in its order: its own, or the shipped ones.
   // What the view leaves out is hidden, as are the columns that only group.
   const shown = useMemo(
-    () => (viewColumns ?? TASK_COLUMNS).filter((id) => fields.has(id)).map(fieldColumnId),
+    () =>
+      columnsOf({ columns: viewColumns }, fields)
+        .filter((id) => fields.has(id))
+        .map(fieldColumnId),
     [viewColumns, fields]
   );
   const columnVisibility = useMemo(

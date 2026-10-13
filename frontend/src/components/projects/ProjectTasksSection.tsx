@@ -87,8 +87,8 @@ import {
   matchesDueWindow,
   taskFilterCount,
 } from "@/lib/filters/taskFilters";
-import { cardOf } from "@/lib/layouts/draft";
 import { presetName } from "@/lib/layouts/presets";
+import type { LayoutNode } from "@/lib/layouts/tree";
 import { toast } from "@/lib/mascotToast";
 import { getProjectColor } from "@/lib/projectColor";
 import { rulePayload } from "@/lib/recurrence";
@@ -978,7 +978,7 @@ export const ProjectTasksSection = ({
                 : undefined
             }
             isArchivingDoneTasks={archiveDoneTasks.isPending}
-            card={layout ? cardOf(layout.definition) : undefined}
+            card={layout?.definition.card as LayoutNode | null | undefined}
           />
         ) : null}
 

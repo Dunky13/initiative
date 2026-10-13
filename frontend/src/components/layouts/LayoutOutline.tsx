@@ -141,7 +141,7 @@ export const listChoices = (
   translate: TranslateFn
 ): AddChoices => {
   if (layout.kind === "calendar") return { fields: [], plugins: [], parts: [] };
-  const card = cardOf(layout.definition);
+  const card = cardOf(layout.definition, fields);
   const board = layout.kind === "board";
   return {
     fields: addableFields(layout, fields),
@@ -325,8 +325,8 @@ export const ListLayoutOutline = ({
   const sensors = useOutlineSensors();
   const { labelOf, partLabel } = usePartLabel(fields, plugins);
   const { definition, kind: layout } = open;
-  const card = cardOf(definition);
-  const columns = columnsOf(definition);
+  const card = cardOf(definition, fields);
+  const columns = columnsOf(definition, fields);
   const isSelected = (other: Selection) => sameSelection(selection, other);
 
   const onColumnDragEnd = ({ active, over }: DragEndEvent) => {

@@ -49,6 +49,7 @@ from app.schemas.tenant.tool_layout import (
     QueueItemDetailFieldId,
     ListLayoutDefinition,
     ListLayoutRead,
+    ListLayoutWrite,
     PluginPart,
     SectionPart,
     StackPart,
@@ -475,21 +476,90 @@ async def add_to_saved_details(
             added.append(node)
         if not added:
             continue
-        definition = {**row.definition, "side": [*side, *added]}
-        target = Target(Tool(row.tool), row.tool_id, row.initiative_id)
-        try:
-            check(
-                target,
-                DetailLayoutWrite.model_validate(
-                    {"kind": row.kind, "definition": definition}
-                ),
-            )
-        except (HTTPException, CodedError, ValidationError):
-            continue
-        row.definition = definition
-        row.updated_at = datetime.now(timezone.utc)
-        session.add(row)
+        _rewrite(
+            session, row, DetailLayoutWrite, {**row.definition, "side": [*side, *added]}
+        )
     await session.flush()
+
+
+#: The lists that draw a task's fields: a board's card and a table's columns.
+TASK_FIELD_LISTS = ("board", "table")
+
+
+async def add_to_saved_lists(
+    session: AsyncSession, initiative_ids: Iterable[int], fields: list[str]
+) -> None:
+    """Add a task's fields to the end of every saved board card and table in
+    these initiatives: what a plug-in shows as it arrives. A list already
+    showing one keeps it where it is, and a list the fields would take past
+    its limits is left as it is. A card or columns not saved draw them as
+    shipped."""
+    ids = sorted(set(initiative_ids))
+    if not ids or not fields:
+        return
+    rows = await session.exec(
+        select(ToolLayout)
+        .where(
+            col(ToolLayout.initiative_id).in_(ids),
+            col(ToolLayout.kind).in_(TASK_FIELD_LISTS),
+        )
+        .with_for_update()
+    )
+    for row in rows.all():
+        if row.kind == "board":
+            card = row.definition.get("card")
+            if not isinstance(card, dict):
+                continue
+            shown = {
+                (node.get("props") or {}).get("field")
+                for node in _nodes([card])
+                if node.get("type") == "field"
+            }
+            added = [
+                {"type": "field", "props": {"field": field}}
+                for field in fields
+                if field not in shown
+            ]
+            if added:
+                children = [*(card.get("children") or []), *added]
+                _rewrite(
+                    session,
+                    row,
+                    ListLayoutWrite,
+                    {**row.definition, "card": {**card, "children": children}},
+                )
+        else:
+            columns = row.definition.get("columns")
+            if not isinstance(columns, list):
+                continue
+            added_columns = [field for field in fields if field not in columns]
+            if added_columns:
+                _rewrite(
+                    session,
+                    row,
+                    ListLayoutWrite,
+                    {**row.definition, "columns": [*columns, *added_columns]},
+                )
+    await session.flush()
+
+
+def _rewrite(
+    session: AsyncSession,
+    row: ToolLayout,
+    write: type[ListLayoutWrite] | type[DetailLayoutWrite],
+    definition: dict[str, Any],
+) -> None:
+    """Store ``definition`` on ``row``, unless it is not a layout it could hold."""
+    target = Target(Tool(row.tool), row.tool_id, row.initiative_id)
+    try:
+        check(
+            target, write.model_validate({"kind": row.kind, "definition": definition})
+        )
+    except (HTTPException, CodedError, ValidationError):
+        return
+    row.definition = definition
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
 
 
 def _placed_as(node: dict[str, Any]) -> tuple[Any, ...]:

@@ -19,18 +19,41 @@ import type { LayoutNode } from "./tree";
  *  what it lists. */
 export type ListLayout = { kind: ListLayoutReadKind; definition: ListLayoutDefinitionInput };
 
-/** A board's card: its own, or the shipped one. */
-export const cardOf = (definition: ListLayoutDefinitionInput): LayoutNode =>
-  (definition.card as LayoutNode | null | undefined) ?? TASK_CARD;
+/** The fields of the plug-ins placed on the tasks, which a list as shipped
+ *  shows after its own: a plug-in shows as it arrives. */
+const pluginFieldIds = (fields: ReadonlyMap<string, FieldDef>): string[] =>
+  [...fields.values()].filter((field) => field.source === "plugin").map((field) => field.id);
+
+/** A board's card: its own, or the shipped one with the plug-ins' fields. */
+export const cardOf = (
+  definition: ListLayoutDefinitionInput,
+  fields: ReadonlyMap<string, FieldDef>
+): LayoutNode => {
+  const own = definition.card as LayoutNode | null | undefined;
+  if (own) return own;
+  const plugins = pluginFieldIds(fields);
+  return plugins.length === 0
+    ? TASK_CARD
+    : {
+        ...TASK_CARD,
+        children: [
+          ...(TASK_CARD.children ?? []),
+          ...plugins.map((field): LayoutNode => ({ type: "field", props: { field } })),
+        ],
+      };
+};
 
 export const withCard = (
   definition: ListLayoutDefinitionInput,
   card: LayoutNode
 ): ListLayoutDefinitionInput => ({ ...definition, card: card as CardPartInput });
 
-/** A table's columns, as field ids in order: its own, or the shipped ones. */
-export const columnsOf = (definition: ListLayoutDefinitionInput): string[] =>
-  definition.columns ?? TASK_COLUMNS;
+/** A table's columns, as field ids in order: its own, or the shipped ones
+ *  with the plug-ins' fields. */
+export const columnsOf = (
+  definition: ListLayoutDefinitionInput,
+  fields: ReadonlyMap<string, FieldDef>
+): string[] => definition.columns ?? [...TASK_COLUMNS, ...pluginFieldIds(fields)];
 
 /** Where a node is in a tree: the child it is at each level below the root. */
 export type NodePath = readonly number[];
@@ -116,7 +139,7 @@ export const addableFields = (
 ): FieldDef[] => {
   const all = [...fields.values()];
   if (kind === "board") {
-    const card = cardOf(definition);
+    const card = cardOf(definition, fields);
     const named = namedFields(card);
     const showsProperties = holdsPart(card, "properties");
     return all.filter(
@@ -124,7 +147,7 @@ export const addableFields = (
     );
   }
   if (kind === "table") {
-    const columns = new Set(columnsOf(definition));
+    const columns = new Set(columnsOf(definition, fields));
     return all.filter(
       (field) =>
         !columns.has(field.id) && (field.source !== "builtin" || TABLE_BUILTINS.has(field.id))

@@ -24,7 +24,7 @@ from app.services.tenant.guild_plugins import (
     place_in_every_initiative,
     placed_initiative_ids,
     set_placed_initiatives,
-    show_on_saved_details,
+    show_on_saved_layouts,
     surface_access,
 )
 from app.services.tenant.initiatives import get_moderator_role
@@ -401,7 +401,7 @@ class TestShowingOnSavedDetails:
             ("build", "task"), ("commit", "task"), parts=("one", "two", "three", "four")
         )
         await route_session_to_guild(session, guild.id)
-        await show_on_saved_details(session, plugin, [first.id], previous=previous)
+        await show_on_saved_layouts(session, plugin, [first.id], previous=previous)
         await session.commit()
 
         await route_session_to_guild(session, guild.id)
@@ -411,6 +411,52 @@ class TestShowingOnSavedDetails:
             build,
             {"type": "field", "props": {"field": f"plugin:{plugin.id}:commit"}},
         ]
+
+    async def test_placing_adds_its_task_fields_to_saved_boards_and_tables(
+        self, session: AsyncSession
+    ):
+        user, guild, first, _ = await _guild_with_two_initiatives(session)
+        project = await create_project(session, first, user)
+        plugin = await create_guild_plugin(
+            session,
+            guild,
+            user,
+            definition=_on_items(("build", "task"), ("venue", "calendar_event")),
+        )
+        await route_session_to_guild(session, guild.id)
+        title = {"type": "field", "props": {"field": "title"}}
+        board, table, shipped = (
+            ToolLayout(
+                initiative_id=first.id,
+                tool="project",
+                tool_id=project.id,
+                kind=kind,
+                definition=definition,
+            )
+            for kind, definition in (
+                ("board", {"card": {"type": "card", "children": [title]}}),
+                ("table", {"columns": ["title"]}),
+                ("calendar", {}),
+            )
+        )
+        session.add_all([board, table, shipped])
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        await set_placed_initiatives(session, plugin, {first.id})
+        await session.commit()
+
+        await route_session_to_guild(session, guild.id)
+        for layout in (board, table, shipped):
+            await session.refresh(layout)
+        build = f"plugin:{plugin.id}:build"
+        assert board.definition["card"]["children"] == [
+            title,
+            {"type": "field", "props": {"field": build}},
+        ]
+        assert table.definition["columns"] == ["title", build]
+        # What a list does not keep of its own it draws as shipped, with them.
+        assert shipped.definition == {}
 
     async def test_placing_adds_its_event_fields_to_the_saved_event_detail(
         self, session: AsyncSession
