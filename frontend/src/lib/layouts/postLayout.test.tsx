@@ -7,7 +7,8 @@ import { buildPost } from "@/__tests__/factories";
 import { renderPage } from "@/__tests__/helpers/render";
 import type { PostRead } from "@/api/generated/initiativeAPI.schemas";
 
-import { PostLayoutView } from "./postLayout";
+import { DetailLayoutView } from "./DetailLayoutView";
+import { POST_DETAIL } from "./postLayout";
 
 /** A notice whose layout a manager moves the poll in, while it is open. */
 const Moved = ({ post }: { post: PostRead }) => {
@@ -17,8 +18,9 @@ const Moved = ({ post }: { post: PostRead }) => {
       <button type="button" onClick={() => setMoved(true)}>
         Move the poll
       </button>
-      <PostLayoutView
-        post={post}
+      <DetailLayoutView
+        detail={POST_DETAIL}
+        item={post}
         layout={moved ? { main: [{ type: "poll" }], side: [] } : null}
         context={{ canEdit: true, canPin: false }}
       />

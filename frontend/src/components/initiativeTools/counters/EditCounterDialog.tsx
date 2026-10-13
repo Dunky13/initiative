@@ -17,7 +17,8 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { counterSaves, type SteppedCount, useResetCounter } from "@/hooks/useCounters";
 import { usePendingShown } from "@/hooks/useFieldSave";
 import { detailLayoutOf, instanceTarget, useToolLayouts } from "@/hooks/useToolLayouts";
-import { CounterLayoutView } from "@/lib/layouts/counterLayout";
+import { COUNTER_DETAIL } from "@/lib/layouts/counterLayout";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
 import type { DialogProps } from "@/types/dialog";
@@ -90,8 +91,9 @@ export const EditCounterDialog = ({
         <DialogContent className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl">
           <DialogTitle className="sr-only">{t("editCounter")}</DialogTitle>
           <DialogDescription className="sr-only">{counter.name}</DialogDescription>
-          <CounterLayoutView
-            counter={counter}
+          <DetailLayoutView
+            detail={COUNTER_DETAIL}
+            item={counter}
             layout={detailLayoutOf(layouts.data, "counter") as StoredRegions | null}
             context={{ readOnly, groupId, initiativeId, leaving, actions, stepper }}
           />

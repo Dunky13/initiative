@@ -88,6 +88,8 @@ const toolsWithRelationsPanel = (): Set<string> => {
     for (const [, tool] of source.matchAll(/<ToolRelationsPanel[^>]*?tool=\{Tool\.(\w+)\}/gs)) {
       found.add(tool);
     }
+    // An item's detail draws its links for the tool it is opened in.
+    for (const [, tool] of source.matchAll(/canOpen: \{ tool: Tool\.(\w+)/g)) found.add(tool);
   }
   return found;
 };

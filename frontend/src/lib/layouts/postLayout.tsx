@@ -6,7 +6,6 @@ import {
   lazy,
   type ReactNode,
   Suspense,
-  useCallback,
   useContext,
   useMemo,
   useState,
@@ -15,12 +14,12 @@ import { useTranslation } from "react-i18next";
 
 import {
   type PostRead,
+  type PostUpdate,
   ReactionTarget,
   SearchEntityType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
-import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { PinnedBanner } from "@/components/initiativeTools/posts/PinnedBanner";
 import {
   emptyPollDraft,
@@ -39,7 +38,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { POST_SAVES, useDeletePostPoll, useSetPostPoll, useUpdatePost } from "@/hooks/usePosts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { normalizeEditorState } from "@/lib/editorState";
@@ -49,13 +47,8 @@ import { MAX_POST_TEXT_CHARS } from "@/lib/posts";
 import { referenceRef } from "@/lib/smartChips";
 import { cn } from "@/lib/utils";
 
-import { DetailLayoutView } from "./DetailLayoutView";
-import { PlacedProperties, type StoredRegions } from "./detailLayout";
-import { PlacedPropertyField, PropertiesField } from "./fieldEditors";
-import { type FieldDef, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
-import { PluginFieldOnDetail } from "./plugins";
+import { type DetailKind, useItemContext } from "./DetailLayoutView";
 import { POST_LAYOUT, postFields } from "./posts";
-import { LAYOUT_PARTS, type LayoutContext, type Parts } from "./tree";
 
 const Editor = lazy(() =>
   import("@/components/ui/editor/editor").then((m) => ({ default: m.Editor }))
@@ -71,13 +64,7 @@ export interface PostLayoutContext {
   preview?: boolean;
 }
 
-const DetailContext = createContext<PostLayoutContext | null>(null);
-
-const usePostLayout = (): PostLayoutContext => {
-  const context = useContext(DetailContext);
-  if (!context) throw new Error("A notice's detail part is drawn outside its detail");
-  return context;
-};
+const usePostLayout = useItemContext<PostLayoutContext>;
 
 /** The notice's unsaved body and poll, kept above the layout so a part the
  *  layout moves keeps its draft. */
@@ -307,7 +294,7 @@ const Poll = ({ post }: { post: PostRead }) => {
 };
 
 /** Its tags, each opening every item that carries it. Changed in its header. */
-const Tags = ({ post }: { post: PostRead }) => {
+const Tags = ({ item: post }: { item: PostRead }) => {
   const gp = useCommunityPath();
   return post.tags.length > 0 ? (
     <div className="flex flex-wrap gap-1">
@@ -318,102 +305,8 @@ const Tags = ({ post }: { post: PostRead }) => {
   ) : null;
 };
 
-const propsOf = (post: PostRead, context: PostLayoutContext) => ({
-  kind: POST_SAVES,
-  id: post.id,
-  properties: post.properties,
-  readOnly: !context.canEdit || Boolean(context.preview),
-  initiativeId: post.initiative_id,
-  canOpen: { tool: Tool.post, id: post.id },
-});
-
-/** One field of the notice, by its id: its own, a property or a plug-in's. */
-const PostField = ({ id, post, view }: { id: string; post: PostRead; view: LayoutContext }) => {
-  const context = usePostLayout();
-  if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
-    return (
-      <PlacedPropertyField
-        {...propsOf(post, context)}
-        propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))}
-      />
-    );
-  }
-  const field = view.fields.get(id);
-  if (field?.source === "plugin") return <PluginFieldOnDetail field={field} item={post} />;
-  return id === "tags" ? <Tags post={post} /> : null;
-};
-
-/** Its properties, but for those the layout places on their own. */
-const Properties = ({ post }: { post: PostRead }) => (
-  <PropertiesField {...propsOf(post, usePostLayout())} except={useContext(PlacedProperties)} />
-);
-
-const Relations = ({ post }: { post: PostRead }) => (
-  <ToolRelationsPanel
-    tool={Tool.post}
-    entity={post}
-    canEdit={usePostLayout().canEdit}
-    entityTitle={post.name}
-  />
-);
-
-/** The parts a notice's detail is drawn from. */
-const POST_PARTS: Parts<PostRead> = {
-  ...LAYOUT_PARTS,
-  field: (node, post, view) => <PostField id={String(node.props?.field)} post={post} view={view} />,
-  properties: (_node, post) => <Properties post={post} />,
-  byline: (_node, post) => <Byline post={post} />,
-  schedule: (_node, post) => <Schedule post={post} />,
-  body: (_node, post) => <Body post={post} />,
-  reactions: (_node, post) => <Reactions post={post} />,
-  poll: (_node, post) => <Poll post={post} />,
-  relations: (_node, post) => <Relations post={post} />,
-  comments: (_node, post) => <ToolCommentsPanel tool={Tool.post} entity={post} />,
-};
-
-const POST_DETAIL_FIELDS = (plugins: FieldDef[]) => postFields([], plugins);
-
-// A notice's detail draws no task, so nothing asks it for a task's address.
-const NO_TASK = () => "";
-
-/** A notice's detail, drawn from its initiative's layout, or as shipped. */
-export const PostLayoutView = ({
-  post,
-  context,
-  layout,
-  editing,
-}: {
-  post: PostRead;
-  context: PostLayoutContext;
-  layout?: StoredRegions | null;
-  /** The layout is being edited: each part is marked with its path. */
-  editing?: boolean;
-}): ReactNode => {
-  const communityId = useActiveCommunityId();
-  // Another notice's detail starts afresh, with none of this one's drafts.
-  return (
-    <PostDetail
-      key={`${communityId}:${post.id}`}
-      post={post}
-      context={context}
-      layout={layout}
-      editing={editing}
-    />
-  );
-};
-
-const PostDetail = ({
-  post,
-  context,
-  layout,
-  editing,
-}: {
-  post: PostRead;
-  context: PostLayoutContext;
-  layout?: StoredRegions | null;
-  editing?: boolean;
-}) => {
-  const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
+/** Holds the notice's drafts above its layout, and asks before leaving them. */
+const PostShell = ({ context, children }: { context: PostLayoutContext; children: ReactNode }) => {
   const [body, setBody] = useState<SerializedEditorState | null>(null);
   const [poll, setPoll] = useState<PollDraft | null>(null);
   const drafts = useMemo(() => ({ body, setBody, poll, setPoll }), [body, poll]);
@@ -421,20 +314,33 @@ const PostDetail = ({
     context.canEdit && !context.preview && (body !== null || poll !== null)
   );
   return (
-    <DetailContext.Provider value={context}>
-      <Drafts.Provider value={drafts}>
-        <DetailLayoutView
-          spec={POST_LAYOUT}
-          item={post}
-          initiativeId={post.initiative_id}
-          layout={layout}
-          editing={editing}
-          fields={POST_DETAIL_FIELDS}
-          env={env}
-          parts={POST_PARTS}
-        />
-      </Drafts.Provider>
+    <Drafts.Provider value={drafts}>
+      {children}
       {guard}
-    </DetailContext.Provider>
+    </Drafts.Provider>
   );
+};
+
+/** A notice's detail: its tags, its own parts and where it lives. */
+export const POST_DETAIL: DetailKind<PostRead, PostLayoutContext, PostUpdate> = {
+  spec: POST_LAYOUT,
+  fields: postFields,
+  namespaces: ["posts", "common"],
+  editors: { tags: Tags },
+  parts: {
+    byline: (_node, post) => <Byline post={post} />,
+    schedule: (_node, post) => <Schedule post={post} />,
+    body: (_node, post) => <Body post={post} />,
+    reactions: (_node, post) => <Reactions post={post} />,
+    poll: (_node, post) => <Poll post={post} />,
+    comments: (_node, post) => <ToolCommentsPanel tool={Tool.post} entity={post} />,
+  },
+  home: (post, context) => ({
+    saves: POST_SAVES,
+    readOnly: !context.canEdit || Boolean(context.preview),
+    initiativeId: post.initiative_id,
+    canOpen: { tool: Tool.post, id: post.id },
+    links: { entity: post, title: post.name },
+  }),
+  Shell: PostShell,
 };

@@ -24,7 +24,7 @@ from app.api.deps import (
 )
 from app.core import recurrence
 from app.core.audit_events import AuditEventType
-from app.core.messages import CommonMessages, ChecklistMessages, TaskMessages
+from app.core.messages import ChecklistMessages, TaskMessages
 from app.db.query import build_paginated_response, paginated_query
 from app.db.session import routed_guild_id
 from app.models.platform.user import User
@@ -58,6 +58,7 @@ from app.services import notifications as notifications_service
 from app.services.ai_settings import resolve_ai_settings
 from app.services.tenant import archive as archive_service
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from app.services.tenant import cases as cases_service
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
@@ -513,17 +514,9 @@ async def update_task(
 
     update_data = task_in.model_dump(exclude_unset=True)
     if "description_base" in update_data:
-        base = update_data.pop("description_base")
-        # Locked until this write commits, so a write naming the same base
-        # reads this one's description.
-        await session.refresh(task, ["description"], with_for_update=True)
-        # A description is written over whole, so one written over a version
-        # that has since moved on is refused: writing it would undo the move.
-        if (task.description or "") != (base or ""):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=CommonMessages.DESCRIPTION_CHANGED,
-            )
+        await overwrites.refuse_written_over(
+            session, task, "description", update_data.pop("description_base")
+        )
     assignee_ids = update_data.pop("assignee_ids", None)
     tag_ids = update_data.pop("tag_ids", None)
     update_data.pop("properties", None)

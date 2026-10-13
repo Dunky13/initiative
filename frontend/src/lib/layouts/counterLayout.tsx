@@ -1,5 +1,5 @@
 import { Minus, Plus } from "lucide-react";
-import { createContext, type ReactNode, type RefObject, useCallback, useContext } from "react";
+import type { ComponentType, ReactNode, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -9,10 +9,8 @@ import {
   SearchEntityType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { CounterView } from "@/components/initiativeTools/counters/views/CounterView";
 import { Button } from "@/components/ui/button";
-import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -21,19 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { counterSaves, type SteppedCount, useCounterGroup, useSetCount } from "@/hooks/useCounters";
 import { type ItemFieldSave, useItemFieldSave } from "@/hooks/useFieldSave";
 import { isAtMax, isAtMin } from "@/lib/counter-math";
 
-import { COUNTER_FIELDS, COUNTER_LAYOUT, counterFields } from "./counters";
-import { DetailLayoutView } from "./DetailLayoutView";
-import { PlacedProperties, type StoredRegions } from "./detailLayout";
-import { FieldFrame, useFieldDraft } from "./editing";
-import { PlacedPropertyField, PropertiesField, TitleField } from "./fieldEditors";
-import { type FieldDef, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
-import { PluginFieldOnDetail } from "./plugins";
-import { LAYOUT_PARTS, type LayoutContext, type Parts } from "./tree";
+import { type COUNTER_FIELDS, COUNTER_LAYOUT, counterFields } from "./counters";
+import { type DetailKind, useItemContext } from "./DetailLayoutView";
+import { FieldFrame, ReadField, useFieldDraft } from "./editing";
+import { ColorField, TitleField } from "./fieldEditors";
 
 /** What a counter's detail shares with its parts, beside the counter itself. */
 export interface CounterLayoutContext {
@@ -52,22 +45,16 @@ export interface CounterLayoutContext {
   stepper?: SteppedCount;
 }
 
-const DetailContext = createContext<CounterLayoutContext | null>(null);
+const useCounterLayout = useItemContext<CounterLayoutContext>;
 
-const useCounterLayout = (): CounterLayoutContext => {
-  const context = useContext(DetailContext);
-  if (!context) throw new Error("A counter detail part is drawn outside its detail");
-  return context;
-};
-
-type EditorProps = { counter: CounterRead; label: string };
+type EditorProps = { item: CounterRead; label: string };
 type Save = ItemFieldSave<CounterRead, CounterUpdate>;
 
 /** A field's save, for the group the counter is in. */
 const useSave = (counter: CounterRead, label: string): Save =>
   useItemFieldSave(counterSaves(useCounterLayout().groupId), counter.id, label);
 
-const NameEditor = ({ counter, label }: EditorProps) => {
+const NameEditor = ({ item: counter, label }: EditorProps) => {
   const { t } = useTranslation("counterGroups");
   return (
     <TitleField
@@ -82,33 +69,14 @@ const NameEditor = ({ counter, label }: EditorProps) => {
   );
 };
 
-const ColorEditor = ({ counter, label }: EditorProps) => {
-  const { readOnly } = useCounterLayout();
-  const save = useSave(counter, label);
-  if (readOnly) {
-    return counter.color ? (
-      <div className="space-y-1">
-        <p className="font-medium text-sm">{label}</p>
-        <span
-          className="block h-5 w-5 rounded-full border"
-          style={{ backgroundColor: counter.color }}
-        >
-          <span className="sr-only">{counter.color}</span>
-        </span>
-      </div>
-    ) : null;
-  }
-  return (
-    <FieldFrame label={label} save={save}>
-      <ColorPickerPopover
-        value={counter.color ?? ""}
-        onChangeComplete={(color) => void save.save({ patch: { color }, shows: { color } })}
-        triggerLabel={label}
-        className="h-9"
-      />
-    </FieldFrame>
-  );
-};
+const ColorEditor = ({ item, label }: EditorProps) => (
+  <ColorField
+    label={label}
+    value={item.color}
+    save={useSave(item, label)}
+    readOnly={useCounterLayout().readOnly}
+  />
+);
 
 /** Which of the counter's numbers a field edits, and whether it may be empty. */
 const NUMBERS = {
@@ -121,7 +89,7 @@ const NUMBERS = {
 /** One of the numbers it counts by: a bound, its step or where it starts. A
  *  bound left empty is no bound. */
 const NumberEditor = ({
-  counter,
+  item: counter,
   label,
   number,
 }: EditorProps & { number: keyof typeof NUMBERS }) => {
@@ -141,10 +109,9 @@ const NumberEditor = ({
   const id = `counter-${number}`;
   if (readOnly) {
     return saved ? (
-      <div className="space-y-1">
-        <p className="font-medium text-sm">{label}</p>
+      <ReadField label={label}>
         <p className="text-sm tabular-nums">{saved}</p>
-      </div>
+      </ReadField>
     ) : null;
   }
   return (
@@ -162,7 +129,7 @@ const NumberEditor = ({
 
 /** How it is drawn: a number, a bar or a clock. A bar and a clock need both
  *  bounds. */
-const ViewEditor = ({ counter, label }: EditorProps) => {
+const ViewEditor = ({ item: counter, label }: EditorProps) => {
   const { t } = useTranslation("counterGroups");
   const { readOnly } = useCounterLayout();
   const save = useSave(counter, label);
@@ -174,10 +141,9 @@ const ViewEditor = ({ counter, label }: EditorProps) => {
   };
   if (readOnly) {
     return (
-      <div className="space-y-1">
-        <p className="font-medium text-sm">{label}</p>
+      <ReadField label={label}>
         <p className="text-sm">{names[counter.view_mode]}</p>
-      </div>
+      </ReadField>
     );
   }
   return (
@@ -210,77 +176,6 @@ const ViewEditor = ({ counter, label }: EditorProps) => {
         <p className="text-muted-foreground text-xs">{t("viewModeRequiresBounds")}</p>
       )}
     </FieldFrame>
-  );
-};
-
-/** Each field's editor on the counter's detail, by its id. */
-const FIELD_EDITORS: Record<keyof typeof COUNTER_FIELDS, (props: EditorProps) => ReactNode> = {
-  name: NameEditor,
-  color: ColorEditor,
-  min: (props) => <NumberEditor {...props} number="min" />,
-  max: (props) => <NumberEditor {...props} number="max" />,
-  step: (props) => <NumberEditor {...props} number="step" />,
-  start: (props) => <NumberEditor {...props} number="start" />,
-  view: ViewEditor,
-};
-
-const propsOf = (counter: CounterRead, context: CounterLayoutContext) => ({
-  kind: counterSaves(context.groupId),
-  id: counter.id,
-  properties: counter.properties,
-  readOnly: context.readOnly,
-  initiativeId: context.initiativeId,
-  canOpen: { tool: Tool.counter_group, id: context.groupId },
-});
-
-/** One field of the counter, by its id: its own, a property or a plug-in's. */
-const CounterField = ({
-  id,
-  counter,
-  view,
-}: {
-  id: string;
-  counter: CounterRead;
-  view: LayoutContext;
-}) => {
-  const { t } = useTranslation(["counterGroups", "common"]);
-  const context = useCounterLayout();
-  if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
-    return (
-      <PlacedPropertyField
-        {...propsOf(counter, context)}
-        propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))}
-      />
-    );
-  }
-  const field = view.fields.get(id);
-  if (field?.source === "plugin") return <PluginFieldOnDetail field={field} item={counter} />;
-  if (!Object.hasOwn(FIELD_EDITORS, id)) return null;
-  const Editor = FIELD_EDITORS[id as keyof typeof FIELD_EDITORS];
-  return (
-    <Editor counter={counter} label={t(COUNTER_FIELDS[id as keyof typeof FIELD_EDITORS].label)} />
-  );
-};
-
-/** Its properties, but for those the layout places on their own. A
- *  community's own group has no definitions to offer. */
-const Properties = ({ counter }: { counter: CounterRead }) => {
-  const context = useCounterLayout();
-  const placed = useContext(PlacedProperties);
-  if (context.initiativeId === null) return null;
-  return <PropertiesField {...propsOf(counter, context)} except={placed} />;
-};
-
-const Relations = ({ counter }: { counter: CounterRead }) => {
-  const { groupId, initiativeId, readOnly } = useCounterLayout();
-  return (
-    <ToolRelationsPanel
-      tool={Tool.counter_group}
-      entity={{ id: groupId, initiative_id: initiativeId }}
-      target={{ type: SearchEntityType.counter, id: counter.id }}
-      canEdit={!readOnly}
-      entityTitle={counter.name}
-    />
   );
 };
 
@@ -329,53 +224,31 @@ const Count = ({ counter }: { counter: CounterRead }) => {
   );
 };
 
-const Actions = () => <>{useCounterLayout().actions}</>;
-
-/** The parts a counter's detail is drawn from. */
-const COUNTER_PARTS: Parts<CounterRead> = {
-  ...LAYOUT_PARTS,
-  field: (node, counter, view) => (
-    <CounterField id={String(node.props?.field)} counter={counter} view={view} />
-  ),
-  properties: (_node, counter) => <Properties counter={counter} />,
-  relations: (_node, counter) => <Relations counter={counter} />,
-  count: (_node, counter) => <Count counter={counter} />,
-  actions: () => <Actions />,
-};
-
-const COUNTER_DETAIL_FIELDS = (plugins: FieldDef[]) => counterFields([], plugins);
-
-// A counter's detail draws no task, so nothing asks it for a task's address.
-const NO_TASK = () => "";
-
-/** A counter's detail, drawn from its group's layout, or as shipped. */
-export const CounterLayoutView = ({
-  counter,
-  context,
-  layout,
-  editing,
-}: {
-  counter: CounterRead;
-  context: CounterLayoutContext;
-  layout?: StoredRegions | null;
-  /** The layout is being edited: each part is marked with its path. */
-  editing?: boolean;
-}) => {
-  const communityId = useActiveCommunityId();
-  const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
-  return (
-    // Another counter's detail starts afresh, with none of this one's drafts.
-    <DetailContext.Provider key={`${communityId}:${counter.id}`} value={context}>
-      <DetailLayoutView
-        spec={COUNTER_LAYOUT}
-        item={counter}
-        initiativeId={context.initiativeId}
-        layout={layout}
-        editing={editing}
-        fields={COUNTER_DETAIL_FIELDS}
-        env={env}
-        parts={COUNTER_PARTS}
-      />
-    </DetailContext.Provider>
-  );
+/** A counter's detail: its fields, its count and where it lives. */
+export const COUNTER_DETAIL: DetailKind<CounterRead, CounterLayoutContext, CounterUpdate> = {
+  spec: COUNTER_LAYOUT,
+  fields: counterFields,
+  namespaces: ["counterGroups", "common"],
+  editors: {
+    name: NameEditor,
+    color: ColorEditor,
+    min: (props) => <NumberEditor {...props} number="min" />,
+    max: (props) => <NumberEditor {...props} number="max" />,
+    step: (props) => <NumberEditor {...props} number="step" />,
+    start: (props) => <NumberEditor {...props} number="start" />,
+    view: ViewEditor,
+  } satisfies Record<keyof typeof COUNTER_FIELDS, ComponentType<EditorProps>>,
+  parts: { count: (_node, counter) => <Count counter={counter} /> },
+  home: (counter, context) => ({
+    saves: counterSaves(context.groupId),
+    readOnly: context.readOnly,
+    initiativeId: context.initiativeId,
+    canOpen: { tool: Tool.counter_group, id: context.groupId },
+    links: {
+      entity: { id: context.groupId, initiative_id: context.initiativeId },
+      target: { type: SearchEntityType.counter, id: counter.id },
+      title: counter.name,
+    },
+    actions: context.actions,
+  }),
 };

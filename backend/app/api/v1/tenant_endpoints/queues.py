@@ -9,7 +9,6 @@ from typing import Annotated, Optional, cast
 import logging
 
 from fastapi import (
-    HTTPException,
     APIRouter,
     Depends,
     WebSocket,
@@ -18,11 +17,11 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import routed_guild_id
-from app.core.messages import CommonMessages
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.services.tenant import properties as properties_service
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from app.services.tenant import relationships
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -371,14 +370,7 @@ async def update_queue_item(
     """Update a queue item. Requires write access on the queue."""
     item = await resource_access.load_child(session, QueueItem, item_id, access="write")
     if "notes_base" in item_in.model_fields_set:
-        # As an event's description: notes are written over whole, so notes
-        # written over a version that has since moved on are refused.
-        await session.refresh(item, ["notes"], with_for_update=True)
-        if (item.notes or "") != (item_in.notes_base or ""):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=CommonMessages.DESCRIPTION_CHANGED,
-            )
+        await overwrites.refuse_written_over(session, item, "notes", item_in.notes_base)
     update_data = item_in.model_dump(
         exclude_unset=True, exclude={"tag_ids", "properties", "notes_base"}
     )

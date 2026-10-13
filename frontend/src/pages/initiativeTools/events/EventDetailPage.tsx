@@ -36,8 +36,9 @@ import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { detailLayoutOf, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
-import { EventLayoutView } from "@/lib/layouts/eventLayout";
+import { EVENT_DETAIL } from "@/lib/layouts/eventLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
 import { toast } from "@/lib/mascotToast";
 import { eventRoute, toolDetailRoute, toolListRoute } from "@/lib/tools";
@@ -255,8 +256,9 @@ export function EventDetailPage() {
   return (
     <div className="space-y-6">
       <ToolBreadcrumb tool={Tool.calendar} initiativeId={initiativeId} trail={[]} />
-      <EventLayoutView
-        event={event}
+      <DetailLayoutView
+        detail={EVENT_DETAIL}
+        item={event}
         layout={detailLayoutOf(layoutsQuery.data, "calendar_event") as StoredRegions | null}
         context={{
           readOnly: !canWrite,

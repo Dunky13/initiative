@@ -189,6 +189,14 @@ const FieldSaveStatus = ({ save }: { save: FieldSave }) => {
   );
 };
 
+/** A field as a reader reads it: its label, then its value. */
+export const ReadField = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="space-y-1">
+    <p className="font-medium text-sm">{label}</p>
+    {children}
+  </div>
+);
+
 /** The answers that refuse a value, rather than fail to save it. */
 const REFUSED: ReadonlySet<number> = new Set([400, 422]);
 
