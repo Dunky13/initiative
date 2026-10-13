@@ -259,6 +259,7 @@
     "description": "Jedes Banner, das du hast, kann oben in dieser Ansicht stehen, und jede Ansicht kann ein anderes tragen.",
     "useProfile": "Mein Profilbanner verwenden",
     "none": "Kein Banner",
-    "more": "Mehr Banner holen"
+    "more": "Mehr Banner holen",
+    "loadError": "Deine Banner konnten nicht geladen werden."
   }
 }

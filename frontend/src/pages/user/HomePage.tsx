@@ -171,24 +171,24 @@ export const HomePage = () => {
         <div ref={setRegion} className="space-y-4">
           <h1 className="sr-only">{t("title")}</h1>
           <div className="space-y-4">
-            {bannerSrc ? (
-              // The tabs and controls ride at the top of the view's banner, on
-              // a frosted ground so they read over any artwork — a bar only
-              // when there are tabs to put on it. The ground's padding is taken
-              // back out of its margin, so the tab bar sits where it does on a
-              // view with no banner.
-              <HomeViewBanner imageUrl={bannerSrc}>
-                {showsBar ? (
-                  <div className="-m-2 space-y-2 rounded-xl bg-background/80 p-2 shadow-sm backdrop-blur">
-                    {controls}
-                  </div>
-                ) : (
-                  controls
+            {/* One tree whether or not the view wears a banner, so the banner
+                arriving never remounts the tabs (and whatever dialog they have
+                open). On a banner the controls ride at its top on a frosted
+                ground — a bar only when there are tabs to put on it — whose
+                padding is taken back out of its margin, so the tab bar sits
+                where it does on a view with no banner. */}
+            <HomeViewBanner imageUrl={bannerSrc}>
+              <div
+                className={cn(
+                  "space-y-2",
+                  bannerSrc &&
+                    showsBar &&
+                    "-m-2 rounded-xl bg-background/80 p-2 shadow-sm backdrop-blur"
                 )}
-              </HomeViewBanner>
-            ) : (
-              controls
-            )}
+              >
+                {controls}
+              </div>
+            </HomeViewBanner>
             {/* The widgets rise over the lower half of a banner as it fades. */}
             <div className={cn("relative z-10 space-y-4", bannerSrc && "-mt-28 md:-mt-36")}>
               {!isLoaded ? (

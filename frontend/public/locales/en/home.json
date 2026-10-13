@@ -259,6 +259,7 @@
     "description": "Any banner you have can sit at the top of this view, and each view can wear a different one.",
     "useProfile": "Use my profile banner",
     "none": "No banner",
-    "more": "Get more banners"
+    "more": "Get more banners",
+    "loadError": "Couldn't load your banners."
   }
 }

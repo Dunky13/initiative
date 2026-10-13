@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SlotPicker } from "@/components/user/DecorationPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyDecorations } from "@/hooks/useUsers";
@@ -69,9 +70,31 @@ export function HomeBannerDialog({ open, onOpenChange, value, onChange }: HomeBa
             {t("banner.none")}
           </Button>
         </div>
-        <div>
+        {/* Only an answer is shown as the library: while it is on its way, or
+            if it could not be read, the picker would say there is nothing in
+            it, which is not true. */}
+        {library.isError ? (
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground text-sm">
+            <span>{t("banner.loadError")}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void library.refetch()}
+            >
+              {t("common:tryAgain")}
+            </Button>
+          </div>
+        ) : owned ? (
           <SlotPicker kind="banner" value={value} onChange={onChange} owned={owned} />
-        </div>
+        ) : (
+          <div className="grid grid-cols-fill-32/4 gap-2" aria-busy="true">
+            {Array.from({ length: 4 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list of skeletons has no id to key from
+              <Skeleton key={i} className="h-16 rounded-md" />
+            ))}
+          </div>
+        )}
         <DialogFooter className="items-center gap-2 sm:justify-between">
           <Button asChild variant="link" className="h-auto p-0">
             <Link to="/marketplace" onClick={() => onOpenChange(false)}>

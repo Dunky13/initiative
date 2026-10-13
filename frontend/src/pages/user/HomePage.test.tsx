@@ -633,4 +633,54 @@ describe("HomePage", () => {
     await screen.findByRole("heading", { name: "Coming up" });
     expect(second.container.querySelector('img[src*="aurora"]')).toBeNull();
   });
+
+  it("keeps a dialog the tabs opened when the view's banner arrives", async () => {
+    const user = userEvent.setup();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get("/api/v1/me/decorations", async () => {
+        await gate;
+        return HttpResponse.json({
+          items: [buildOwnedDecoration({ id: "core.aurora", kind: "banner" })],
+        });
+      })
+    );
+    const kept = keepLayout({ ...comingUpAndCommunities, banner: "core.aurora" });
+    kept[HOME_VIEWS_KEY] = {
+      version: 1,
+      views: [
+        { id: MAIN_VIEW_ID, name: "Home" },
+        { id: "scouts", name: "Scouts" },
+      ],
+    } satisfies HomeViews;
+    const { container } = renderHome();
+
+    await user.click(await screen.findByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "Options for Home" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    await user.clear(name);
+    await user.type(name, "Work");
+
+    // The banner lands while the rename is open.
+    release();
+    await waitFor(() => expect(container.querySelector('img[src*="aurora"]')).not.toBeNull());
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Work");
+  });
+
+  it("says when the banner library could not be read, rather than that it is empty", async () => {
+    const user = userEvent.setup();
+    server.use(http.get("/api/v1/me/decorations", () => new HttpResponse(null, { status: 500 })));
+    keepLayout(comingUpAndCommunities);
+    renderHome();
+
+    await user.click(await screen.findByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "Banner" }));
+    const picker = await screen.findByRole("dialog", { name: "This view's banner" });
+    expect(await within(picker).findByText("Couldn't load your banners.")).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
 });
