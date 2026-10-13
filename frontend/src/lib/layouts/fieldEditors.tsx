@@ -42,14 +42,12 @@ import {
   useItemFieldSave,
 } from "@/hooks/useFieldSave";
 import { usePastedImages } from "@/hooks/usePastedImages";
-import { useProperties } from "@/hooks/useProperties";
+import { useHeldProperties, useProperties } from "@/hooks/useProperties";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
 
-import { FieldFrame, useFieldDraft } from "./editing";
-
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+import { FieldFrame, sameJson, useFieldDraft } from "./editing";
 
 /** An item's title, which is its detail's heading. It cannot be emptied:
  *  leaving it blank puts the saved one back. A reader who cannot change it
@@ -295,13 +293,17 @@ export const PlacedPropertyField = <I extends { properties: PropertySummary[] },
 
 export const PropertiesField = <I extends { properties: PropertySummary[] }, P>({
   except,
+  hideLabel = false,
   ...props
 }: PropertiesProps<I, P> & {
   /** Properties the layout places on their own, which are not repeated here. */
   except?: ReadonlySet<number>;
+  /** Under a heading the host draws. */
+  hideLabel?: boolean;
 }) => {
   const { t } = useTranslation("properties");
-  const { kind, id, properties, readOnly, initiativeId } = props;
+  const { kind, id, readOnly, initiativeId } = props;
+  const properties = useHeldProperties(kind, id, props.properties);
   const listed = except ? properties.filter((each) => !except.has(each.property_id)) : properties;
   const label = t("title");
   const save = useItemFieldSave(kind, id, label);
@@ -319,7 +321,7 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
   if (readOnly) {
     return (
       <div className="space-y-2">
-        <p className="font-medium text-sm">{label}</p>
+        {hideLabel ? null : <p className="font-medium text-sm">{label}</p>}
         {sorted.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("noProperties")}</p>
         ) : (
@@ -345,12 +347,19 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
     );
   }
   return (
-    <FieldFrame label={label} save={save}>
+    <FieldFrame label={label} save={save} hideLabel={hideLabel}>
       {sorted.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t("noProperties")}</p>
       ) : (
         sorted.map((property) => (
-          <PropertyField key={property.property_id} {...props} property={property} />
+          // Keyed by the row too: a host that moves to another row starts
+          // its edits afresh.
+          <PropertyField
+            key={`${id}:${property.property_id}`}
+            {...props}
+            properties={properties}
+            property={property}
+          />
         ))
       )}
       <AddPropertyButton

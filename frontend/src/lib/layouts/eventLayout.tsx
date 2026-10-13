@@ -67,10 +67,10 @@ import { eventRoute } from "@/lib/tools";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
 
-import { PlacedProperties, placedProperties, type StoredRegions } from "./detailLayout";
-import { indexPaths } from "./draft";
-import { FieldFrame, useFieldDraft } from "./editing";
-import { EVENT_FIELDS, EVENT_LAYOUT } from "./events";
+import { DetailLayoutView } from "./DetailLayoutView";
+import { PlacedProperties, type StoredRegions } from "./detailLayout";
+import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
+import { EVENT_FIELDS, EVENT_LAYOUT, eventFields } from "./events";
 import {
   DescriptionField,
   PlacedPropertyField,
@@ -78,16 +78,9 @@ import {
   TagsField,
   TitleField,
 } from "./fieldEditors";
-import { PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
-import {
-  FieldsInParts,
-  fieldsInParts,
-  PluginFieldOnDetail,
-  pluginFields,
-  shippedPluginParts,
-  usePluginsOnItems,
-} from "./plugins";
-import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
+import { type FieldDef, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
+import { PluginFieldOnDetail } from "./plugins";
+import { LAYOUT_PARTS, type LayoutContext, type Parts } from "./tree";
 
 /** What an event's detail shares with its parts, beside the event itself. */
 export interface EventLayoutContext {
@@ -130,8 +123,6 @@ type EditorProps = { event: CalendarEventRead; label: string };
 /** A field's save, for the page it is on. */
 const useSave = (event: CalendarEventRead, label: string) =>
   useEventFieldSave(event, label, useEventLayout());
-
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const RSVP_LABEL_KEYS: Record<
   string,
@@ -488,8 +479,6 @@ const RepeatEditor = ({ event, label }: EditorProps) => {
   );
 };
 
-const sameIds = (a: number[], b: number[]) => sameJson([...a].sort(), [...b].sort());
-
 /** Who is coming, each with their answer; who is asked, saved as they are
  *  picked; and whether anyone who can see it may answer. */
 const AttendeesEditor = ({ event }: { event: CalendarEventRead }) => {
@@ -723,6 +712,8 @@ const EVENT_PARTS: Parts<CalendarEventRead> = {
   actions: () => <Actions />,
 };
 
+const EVENT_DETAIL_FIELDS = (plugins: FieldDef[]) => eventFields([], plugins);
+
 // An event's detail draws no task, so nothing asks it for a task's address.
 const NO_TASK = () => "";
 
@@ -740,35 +731,21 @@ export const EventLayoutView = ({
    *  the editor's detail tree shares. */
   editing?: boolean;
 }) => {
-  const { i18n } = useTranslation();
   const communityId = useActiveCommunityId();
   const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
-  const plugins = usePluginsOnItems(event.initiative_id, true, "calendar_event");
-  const tree = useMemo(
-    () => EVENT_LAYOUT.tree(layout, shippedPluginParts(plugins)),
-    [layout, plugins]
-  );
-  const placed = useMemo(() => placedProperties(tree), [tree]);
-  const inParts = useMemo(() => fieldsInParts(tree, plugins), [tree, plugins]);
-  // The detail's own fields draw themselves; the plug-ins' are found here.
-  const view = useMemo<LayoutContext>(
-    () => ({
-      fields: new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field])),
-      plugins,
-      variant: "detail",
-      env,
-      editing: editing ? indexPaths(tree) : undefined,
-    }),
-    [plugins, i18n.language, env, editing, tree]
-  );
   return (
     // Another event's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${event.id}`} value={context}>
-      <PlacedProperties.Provider value={placed}>
-        <FieldsInParts.Provider value={inParts}>
-          {renderNode(tree, event, view, EVENT_PARTS)}
-        </FieldsInParts.Provider>
-      </PlacedProperties.Provider>
+      <DetailLayoutView
+        spec={EVENT_LAYOUT}
+        item={event}
+        initiativeId={event.initiative_id}
+        layout={layout}
+        editing={editing}
+        fields={EVENT_DETAIL_FIELDS}
+        env={env}
+        parts={EVENT_PARTS}
+      />
     </DetailContext.Provider>
   );
 };

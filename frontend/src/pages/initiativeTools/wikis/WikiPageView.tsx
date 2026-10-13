@@ -22,7 +22,6 @@ import { WikiPageNav } from "@/components/initiativeTools/wikis/WikiPageNav";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { ReportButton } from "@/components/moderation/ReportButton";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
-import { PropertyPanel } from "@/components/properties";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Editor } from "@/components/ui/editor/editor";
@@ -33,10 +32,12 @@ import { useCollaboration } from "@/hooks/useCollaboration";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { propertySaves } from "@/hooks/useProperties";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { atLeast, useRegionWidthClass } from "@/hooks/useWidthClass";
 import { useAddWikiPage, useUpdateWikiPage, useWiki, useWikiPage } from "@/hooks/useWikis";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import { toast } from "@/lib/mascotToast";
 import { toolDetailRoute, toolRouteSegment, wikiPageRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
@@ -546,13 +547,14 @@ export const WikiPageView = () => {
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {page && propertiesInitiativeId !== null ? (
-              <PropertyPanel
-                target={PropertyTarget.wiki_page}
-                entityId={page.id}
-                saved={page.properties}
+              <PropertiesField
+                kind={propertySaves[PropertyTarget.wiki_page]}
+                id={page.id}
+                properties={page.properties ?? []}
+                readOnly={!canWrite}
                 initiativeId={propertiesInitiativeId}
                 canOpen={{ tool: Tool.wiki, id: wikiId }}
-                disabled={!canWrite}
+                hideLabel
               />
             ) : null}
           </div>

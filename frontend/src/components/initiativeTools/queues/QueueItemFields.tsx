@@ -10,7 +10,6 @@ import {
 import { EntityLinkField } from "@/components/entities/EntityLinkField";
 import type { useQueueItemForm } from "@/components/initiativeTools/queues/useQueueItemForm";
 import { MemberSelect } from "@/components/members/MemberSearchSelect";
-import { PropertyPanel } from "@/components/properties";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
@@ -18,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { propertySaves } from "@/hooks/useProperties";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 
 interface QueueItemFieldsProps {
   form: ReturnType<typeof useQueueItemForm>;
@@ -128,13 +129,14 @@ export const QueueItemFields = ({
       {item && (
         <div className="space-y-2">
           <Label>{t("properties:title")}</Label>
-          <PropertyPanel
-            target={PropertyTarget.queue_item}
-            entityId={item.id}
-            saved={item.properties}
+          <PropertiesField
+            kind={propertySaves[PropertyTarget.queue_item]}
+            id={item.id}
+            properties={item.properties ?? []}
+            readOnly={readOnly}
             initiativeId={initiativeId}
             canOpen={{ tool: Tool.queue, id: queueId }}
-            disabled={readOnly}
+            hideLabel
           />
         </div>
       )}

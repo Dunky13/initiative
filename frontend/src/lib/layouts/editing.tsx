@@ -1,4 +1,11 @@
-import { type FocusEvent, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -63,6 +70,12 @@ export interface FieldDraft<V> {
   };
 }
 
+/** Whether two values read the same, as a field compares its draft. */
+export const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Whether two id lists name the same ids, in any order. */
+export const sameIds = (a: number[], b: number[]) => sameJson([...a].sort(), [...b].sort());
+
 /**
  * One field's value while it is being changed, saved by the kind of change:
  * a pick the moment it is made, typing on Enter or on leaving the field.
@@ -111,6 +124,11 @@ export const useFieldDraft = <V,>(
       if (held.current === saving) set(null);
     });
   };
+  // Leaving with a change not yet sent (Back while still typing) sends it,
+  // as a blur would have.
+  const leaving = useRef(finish);
+  leaving.current = finish;
+  useEffect(() => () => leaving.current(), []);
 
   return {
     value: draft ? draft.value : saved,

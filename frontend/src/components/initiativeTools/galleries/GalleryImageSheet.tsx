@@ -16,7 +16,6 @@ import {
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { ReportButton } from "@/components/moderation/ReportButton";
-import { PropertyPanel } from "@/components/properties";
 import { LazyImage } from "@/components/shared/LazyImage";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { UserName } from "@/components/UserHandle";
@@ -42,8 +41,10 @@ import {
   useUpdateGalleryImage,
   useUploadGalleryImageVersion,
 } from "@/hooks/useGalleries";
+import { propertySaves } from "@/hooks/useProperties";
 import { formatBytes } from "@/lib/fileUtils";
 import { ACCEPT_ATTRIBUTE, imageLabel, imageSrc, refuseFile } from "@/lib/galleries";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import { toast } from "@/lib/mascotToast";
 import { resolveUploadUrl } from "@/lib/uploadUrl";
 import { cn } from "@/lib/utils";
@@ -237,13 +238,14 @@ export const GalleryImageSheet = ({
           {initiativeId !== null && (
             <div className="space-y-1.5">
               <Label>{t("properties:title")}</Label>
-              <PropertyPanel
-                target={PropertyTarget.gallery_image}
-                entityId={image.id}
-                saved={image.properties}
+              <PropertiesField
+                kind={propertySaves[PropertyTarget.gallery_image]}
+                id={image.id}
+                properties={image.properties ?? []}
+                readOnly={!canEdit}
                 initiativeId={initiativeId}
                 canOpen={{ tool: Tool.gallery, id: galleryId }}
-                disabled={!canEdit}
+                hideLabel
               />
             </div>
           )}

@@ -46,7 +46,7 @@ export const propertyStubFromDefinition = (
  * Presentational, fully-controlled list of custom property inputs. It owns no
  * persistence, debounce, or draft state — the parent holds the values and
  * decides when/how to save (immediate PUT vs batch into a create/update
- * request). ``PropertyPanel`` wraps it for the rows that save as they change.
+ * request).
  */
 export const PropertyFields = ({
   properties,
