@@ -314,8 +314,13 @@ async def list_listings(
         count_statement = count_statement.where(condition)
 
     total = (await session.exec(count_statement)).one()
+    # By name, then by id: listings may share a name, and without a unique
+    # last key their order could change between one page's query and the
+    # next, showing one twice and another never.
     statement = apply_pagination(
-        statement.order_by(MarketplaceListing.name), page, page_size
+        statement.order_by(MarketplaceListing.name, MarketplaceListing.id),
+        page,
+        page_size,
     )
     return (await session.exec(statement)).all(), int(total)
 

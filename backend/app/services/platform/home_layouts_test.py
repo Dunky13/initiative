@@ -16,12 +16,15 @@ async def test_the_shelf_reads_every_page_of_layouts(session, monkeypatch):
         manifest = copy.deepcopy(template)
         manifest["uid"] = f"HMPAGETESTXY{n:02d}"
         manifest["public_id"] = f"core.home-page-test-{n}"
+        # One name for all of them: pages must still split them the same way
+        # every time they are read.
+        manifest["name"] = "Same name"
         await marketplace_catalog.upsert_listing(session, manifest, source="builtin")
     await session.commit()
     monkeypatch.setattr(home_layouts, "_PAGE", 2)
 
     offered = await home_layouts.available_home_layouts(session)
 
-    assert {each.listing.public_id for each in offered} >= {
-        f"core.home-page-test-{n}" for n in range(5)
-    }
+    ids = [each.listing.public_id for each in offered]
+    assert len(ids) == len(set(ids))
+    assert set(ids) >= {f"core.home-page-test-{n}" for n in range(5)}
