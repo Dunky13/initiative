@@ -1,14 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, MapPin, Repeat } from "lucide-react";
-import {
-  createContext,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from "react";
+import { type ComponentType, type ReactNode, type RefObject, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -18,7 +10,6 @@ import {
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { isRepeating, utcDateKey } from "@/components/calendar/eventCalendarEntry";
-import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import {
   EventDateTimeFields,
   type EventTiming,
@@ -41,9 +32,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import {
+  type EventPatch,
   eventSaveOptions,
   eventSaves,
   useEventFieldSave,
@@ -67,20 +58,10 @@ import { eventRoute } from "@/lib/tools";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
 
-import { DetailLayoutView } from "./DetailLayoutView";
-import { PlacedProperties, type StoredRegions } from "./detailLayout";
+import { type DetailKind, useItemContext } from "./DetailLayoutView";
 import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
-import { EVENT_FIELDS, EVENT_LAYOUT, eventFields } from "./events";
-import {
-  DescriptionField,
-  PlacedPropertyField,
-  PropertiesField,
-  TagsField,
-  TitleField,
-} from "./fieldEditors";
-import { type FieldDef, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
-import { PluginFieldOnDetail } from "./plugins";
-import { LAYOUT_PARTS, type LayoutContext, type Parts } from "./tree";
+import { type EVENT_FIELDS, EVENT_LAYOUT, eventFields } from "./events";
+import { DescriptionField, TagsField, TitleField } from "./fieldEditors";
 
 /** What an event's detail shares with its parts, beside the event itself. */
 export interface EventLayoutContext {
@@ -110,15 +91,9 @@ export interface EventLayoutContext {
   preview?: boolean;
 }
 
-const DetailContext = createContext<EventLayoutContext | null>(null);
+const useEventLayout = useItemContext<EventLayoutContext>;
 
-const useEventLayout = (): EventLayoutContext => {
-  const context = useContext(DetailContext);
-  if (!context) throw new Error("An event detail part is drawn outside its detail");
-  return context;
-};
-
-type EditorProps = { event: CalendarEventRead; label: string };
+type EditorProps = { item: CalendarEventRead; label: string };
 
 /** A field's save, for the page it is on. */
 const useSave = (event: CalendarEventRead, label: string) =>
@@ -173,7 +148,7 @@ const formatRange = (start: string, end: string, allDay: boolean): string => {
 };
 
 /** The event's title, which is the detail's heading. */
-const TitleEditor = ({ event, label }: EditorProps) => {
+const TitleEditor = ({ item: event, label }: EditorProps) => {
   const { t } = useTranslation("calendars");
   const { readOnly } = useEventLayout();
   return (
@@ -189,7 +164,7 @@ const TitleEditor = ({ event, label }: EditorProps) => {
 };
 
 /** The description, as a task's is ({@link DescriptionField}). */
-const DescriptionEditor = ({ event, label }: EditorProps) => {
+const DescriptionEditor = ({ item: event, label }: EditorProps) => {
   const { t } = useTranslation("calendars");
   const context = useEventLayout();
   return (
@@ -210,7 +185,7 @@ const DescriptionEditor = ({ event, label }: EditorProps) => {
   );
 };
 
-const LocationEditor = ({ event, label }: EditorProps) => {
+const LocationEditor = ({ item: event, label }: EditorProps) => {
   const { t } = useTranslation("calendars");
   const { readOnly } = useEventLayout();
   const save = useSave(event, label);
@@ -312,7 +287,7 @@ const DatesEditor = ({ event }: { event: CalendarEventRead }) => {
  * that have changes and answers of their own, and some rules take more than
  * one pick to say (an end date is picked after choosing to end on one).
  */
-const RepeatEditor = ({ event, label }: EditorProps) => {
+const RepeatEditor = ({ item: event, label }: EditorProps) => {
   const { t } = useTranslation(["calendars", "common"]);
   const { readOnly, occurrence, occurrenceStart, onMoved, initiativeId } = useEventLayout();
   const gp = useCommunityPath();
@@ -481,7 +456,7 @@ const RepeatEditor = ({ event, label }: EditorProps) => {
 
 /** Who is coming, each with their answer; who is asked, saved as they are
  *  picked; and whether anyone who can see it may answer. */
-const AttendeesEditor = ({ event }: { event: CalendarEventRead }) => {
+const AttendeesEditor = ({ item: event }: EditorProps) => {
   const { t } = useTranslation(["calendars", "common"]);
   const { readOnly } = useEventLayout();
   const label = `${t("attendees")} (${event.attendees.length})`;
@@ -593,7 +568,7 @@ const MyAnswer = ({ event }: { event: CalendarEventRead }) => {
   );
 };
 
-const TagsEditor = ({ event, label }: EditorProps) => {
+const TagsEditor = ({ item: event, label }: EditorProps) => {
   const { t } = useTranslation("calendars");
   const { readOnly } = useEventLayout();
   const save = useSave(event, label);
@@ -610,142 +585,33 @@ const TagsEditor = ({ event, label }: EditorProps) => {
   );
 };
 
-/** Its custom properties, defined per initiative: an event on a
- *  community-level calendar has none to offer. */
-const PropertiesEditor = ({ event }: { event: CalendarEventRead }) => {
-  const { readOnly, occurrence } = useEventLayout();
-  const placed = useContext(PlacedProperties);
-  if (event.initiative_id === null) return null;
-  if (readOnly && event.properties.length === 0) return null;
-  return (
-    <PropertiesField
-      kind={eventSaves(occurrence)}
-      id={event.id}
-      properties={event.properties}
-      readOnly={readOnly}
-      initiativeId={event.initiative_id}
-      canOpen={{ tool: Tool.calendar, id: event.calendar_id }}
-      except={placed}
-    />
-  );
-};
-
-/** One property the layout places on its own. */
-const PropertyEditor = ({
-  event,
-  propertyId,
-}: {
-  event: CalendarEventRead;
-  propertyId: number;
-}) => {
-  const { readOnly, occurrence } = useEventLayout();
-  if (event.initiative_id === null) return null;
-  return (
-    <PlacedPropertyField
-      kind={eventSaves(occurrence)}
-      id={event.id}
-      properties={event.properties}
-      readOnly={readOnly}
-      initiativeId={event.initiative_id}
-      canOpen={{ tool: Tool.calendar, id: event.calendar_id }}
-      propertyId={propertyId}
-    />
-  );
-};
-
-/** Each field's editor on the event's detail, by its id. */
-const FIELD_EDITORS: Record<keyof typeof EVENT_FIELDS, (props: EditorProps) => ReactNode> = {
-  title: TitleEditor,
-  description: DescriptionEditor,
-  location: LocationEditor,
-  recurrence: RepeatEditor,
-  attendees: AttendeesEditor,
-  tags: TagsEditor,
-};
-
-/** One field of the event, by its id, labelled in the event's own words. */
-const EventField = ({
-  id,
-  event,
-  view,
-}: {
-  id: string;
-  event: CalendarEventRead;
-  view: LayoutContext;
-}) => {
-  const { t } = useTranslation(["calendars", "common"]);
-  if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
-    return (
-      <PropertyEditor event={event} propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))} />
-    );
-  }
-  // A plug-in's value is the plug-in's to change.
-  const plugin = view.fields.get(id);
-  if (plugin?.source === "plugin") return <PluginFieldOnDetail field={plugin} item={event} />;
-  if (!Object.hasOwn(FIELD_EDITORS, id)) return null;
-  const Editor = FIELD_EDITORS[id as keyof typeof FIELD_EDITORS];
-  return <Editor event={event} label={t(EVENT_FIELDS[id as keyof typeof EVENT_FIELDS].label)} />;
-};
-
-const Actions = () => <>{useEventLayout().actions}</>;
-
-const Relations = ({ event }: { event: CalendarEventRead }) => (
-  <ToolRelationsPanel
-    tool={Tool.calendar}
-    entity={event}
-    target={{ type: SearchEntityType.calendar_event, id: event.id }}
-    canEdit={!useEventLayout().readOnly}
-    entityTitle={event.title}
-  />
-);
-
-/** The parts an event's detail is drawn from. */
-const EVENT_PARTS: Parts<CalendarEventRead> = {
-  ...LAYOUT_PARTS,
-  field: (node, event, view) => (
-    <EventField id={String(node.props?.field)} event={event} view={view} />
-  ),
-  dates: (_node, event) => <DatesEditor event={event} />,
-  rsvp: (_node, event) => <MyAnswer event={event} />,
-  properties: (_node, event) => <PropertiesEditor event={event} />,
-  relations: (_node, event) => <Relations event={event} />,
-  actions: () => <Actions />,
-};
-
-const EVENT_DETAIL_FIELDS = (plugins: FieldDef[]) => eventFields([], plugins);
-
-// An event's detail draws no task, so nothing asks it for a task's address.
-const NO_TASK = () => "";
-
-/** An event's detail, drawn from its initiative's layout, or as shipped. */
-export const EventLayoutView = ({
-  event,
-  context,
-  layout,
-  editing,
-}: {
-  event: CalendarEventRead;
-  context: EventLayoutContext;
-  layout?: StoredRegions | null;
-  /** The layout is being edited: each part is marked with its path, which
-   *  the editor's detail tree shares. */
-  editing?: boolean;
-}) => {
-  const communityId = useActiveCommunityId();
-  const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
-  return (
-    // Another event's detail starts afresh, with none of this one's drafts.
-    <DetailContext.Provider key={`${communityId}:${event.id}`} value={context}>
-      <DetailLayoutView
-        spec={EVENT_LAYOUT}
-        item={event}
-        initiativeId={event.initiative_id}
-        layout={layout}
-        editing={editing}
-        fields={EVENT_DETAIL_FIELDS}
-        env={env}
-        parts={EVENT_PARTS}
-      />
-    </DetailContext.Provider>
-  );
+/** An event's detail: its fields, its own parts and where it lives. */
+export const EVENT_DETAIL: DetailKind<CalendarEventRead, EventLayoutContext, EventPatch> = {
+  spec: EVENT_LAYOUT,
+  fields: eventFields,
+  namespaces: ["calendars", "common"],
+  editors: {
+    title: TitleEditor,
+    description: DescriptionEditor,
+    location: LocationEditor,
+    recurrence: RepeatEditor,
+    attendees: AttendeesEditor,
+    tags: TagsEditor,
+  } satisfies Record<keyof typeof EVENT_FIELDS, ComponentType<EditorProps>>,
+  parts: {
+    dates: (_node, event) => <DatesEditor event={event} />,
+    rsvp: (_node, event) => <MyAnswer event={event} />,
+  },
+  home: (event, context) => ({
+    saves: eventSaves(context.occurrence),
+    readOnly: context.readOnly,
+    initiativeId: event.initiative_id,
+    canOpen: { tool: Tool.calendar, id: event.calendar_id },
+    links: {
+      entity: event,
+      target: { type: SearchEntityType.calendar_event, id: event.id },
+      title: event.title,
+    },
+    actions: context.actions,
+  }),
 };

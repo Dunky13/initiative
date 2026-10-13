@@ -52,9 +52,10 @@ import {
 import { detailLayoutOf, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getHttpStatus } from "@/lib/errorMessage";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
-import { TaskLayoutView } from "@/lib/layouts/taskLayout";
+import { TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import { toast } from "@/lib/mascotToast";
 import { queryClient } from "@/lib/queryClient";
 import { taskRoute, toolDetailRoute, toolListRoute } from "@/lib/tools";
@@ -422,8 +423,9 @@ export const TaskEditPage = () => {
             : []
         }
       />
-      <TaskLayoutView
-        task={task}
+      <DetailLayoutView
+        detail={TASK_DETAIL}
+        item={task}
         layout={detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null}
         context={{
           readOnly: isReadOnly,

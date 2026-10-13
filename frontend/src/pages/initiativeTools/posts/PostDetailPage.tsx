@@ -24,9 +24,10 @@ import { usePost, useUpdatePost } from "@/hooks/usePosts";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { detailLayoutOf, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
-import { PostLayoutView } from "@/lib/layouts/postLayout";
+import { POST_DETAIL } from "@/lib/layouts/postLayout";
 import { toast } from "@/lib/mascotToast";
 import { toolListRoute, toolSettingsRoute } from "@/lib/tools";
 
@@ -125,8 +126,9 @@ export function PostDetailPage() {
         <DetailHeaderSkeleton actions={0} description={false} />
       )}
       {post ? (
-        <PostLayoutView
-          post={post}
+        <DetailLayoutView
+          detail={POST_DETAIL}
+          item={post}
           layout={detailLayoutOf(layouts.data, "post") as StoredRegions | null}
           context={{ canEdit, canPin }}
         />

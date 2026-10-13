@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import recurrence
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from sqlmodel import select
 
 from app.api.actor_route import ActorRoute
@@ -38,7 +39,7 @@ from app.models.tenant.calendar_event import (
 )
 from app.models.platform.notification import NotificationType
 from app.models.platform.user import User
-from app.core.messages import CommonMessages, CalendarEventMessages
+from app.core.messages import CalendarEventMessages
 from app.schemas.tenant.calendar_event import (
     CalendarEventCreate,
     CalendarEventUpdate,
@@ -464,17 +465,11 @@ async def update_calendar_event(
         session, CalendarEvent, event_id, action=Action.contribute
     )
     if "description_base" in event_in.model_fields_set:
-        # Locked until this write commits, so a write naming the same base
-        # reads this one's description. Checked against the event as its
-        # reader saw it, whichever occurrences the change is then for.
-        await session.refresh(event, ["description"], with_for_update=True)
-        # A description is written over whole, so one written over a version
-        # that has since moved on is refused: writing it would undo the move.
-        if (event.description or "") != (event_in.description_base or ""):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=CommonMessages.DESCRIPTION_CHANGED,
-            )
+        # Checked against the event as its reader saw it, whichever
+        # occurrences the change is then for.
+        await overwrites.refuse_written_over(
+            session, event, "description", event_in.description_base
+        )
     changes = event_in.model_dump(
         exclude_unset=True,
         exclude={"scope", "occurrence", "tz", "description_base"},

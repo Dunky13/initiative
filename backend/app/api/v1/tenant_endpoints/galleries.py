@@ -52,7 +52,6 @@ from app.api.deps import (
     plugin_scope,
 )
 from app.core.messages import (
-    CommonMessages,
     ImageMessages,
     GalleryMessages,
 )
@@ -78,6 +77,7 @@ from app.schemas.tenant.timeline import TimelineResponse
 from app.services.permissions import Action
 from app.services import storage_config
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from app.services.tenant import file_versions
 from app.services.tenant import galleries as galleries_service
 from app.services.tenant import plugin_metadata
@@ -588,14 +588,9 @@ async def update_gallery_image(
         session, GalleryImage, image_id, access="write", parent_id=gallery_id
     )
     if "caption_base" in image_in.model_fields_set:
-        # As an event's description: a caption is written over whole, so one
-        # written over a version that has since moved on is refused.
-        await session.refresh(image, ["caption"], with_for_update=True)
-        if (image.caption or "") != (image_in.caption_base or ""):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=CommonMessages.DESCRIPTION_CHANGED,
-            )
+        await overwrites.refuse_written_over(
+            session, image, "caption", image_in.caption_base
+        )
     update_data = image_in.model_dump(exclude_unset=True, exclude={"caption_base"})
     if "title" in update_data:
         image.title = (update_data["title"] or "").strip() or None

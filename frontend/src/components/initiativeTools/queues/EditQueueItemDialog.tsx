@@ -20,9 +20,10 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { usePendingShown } from "@/hooks/useFieldSave";
 import { queueItemSaves, useDeleteQueueItem, useDuplicateQueueItem } from "@/hooks/useQueues";
 import { detailLayoutOf, instanceTarget, useToolLayouts } from "@/hooks/useToolLayouts";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
-import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
+import { QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
 import { toast } from "@/lib/mascotToast";
 import type { DialogProps } from "@/types/dialog";
 
@@ -145,7 +146,8 @@ export const EditQueueItemDialog = ({
         <DialogContent className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl">
           <DialogTitle className="sr-only">{t("editItem")}</DialogTitle>
           <DialogDescription className="sr-only">{item.label}</DialogDescription>
-          <QueueItemLayoutView
+          <DetailLayoutView
+            detail={QUEUE_ITEM_DETAIL}
             item={item}
             layout={detailLayoutOf(layouts.data, "queue_item") as StoredRegions | null}
             context={{ readOnly, queueId, initiativeId, leaving, actions }}

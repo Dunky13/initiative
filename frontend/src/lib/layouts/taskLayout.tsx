@@ -1,13 +1,5 @@
 import { format } from "date-fns";
-import {
-  type ComponentType,
-  createContext,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useContext,
-  useMemo,
-} from "react";
+import { type ReactNode, type RefObject, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -15,10 +7,10 @@ import {
   type TaskPriority,
   type TaskRead,
   type TaskStatusRead,
+  type TaskUpdate,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { CommentSection } from "@/components/comments/CommentSection";
-import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
 import type { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
@@ -37,7 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAIEnabled } from "@/hooks/useAIEnabled";
 import { useComments, useCommentsCache, useCommentThreadState } from "@/hooks/useComments";
 import { useDateLocale } from "@/hooks/useDateLocale";
@@ -49,7 +40,6 @@ import {
   useTaskFieldSave,
   useTaskSaveOptions,
 } from "@/hooks/useTasks";
-import { useCommunityPath } from "@/lib/communityUrl";
 import { dateRangeBounds } from "@/lib/dateRange";
 import { toast } from "@/lib/mascotToast";
 import { fromStored, type RecurrenceRule, rulePayload } from "@/lib/recurrence";
@@ -64,25 +54,10 @@ import {
   isAnonymizedUser,
 } from "@/lib/userDisplay";
 
-import { DetailLayoutView } from "./DetailLayoutView";
-import { PlacedProperties, type StoredRegions } from "./detailLayout";
+import { type DetailKind, useItemContext } from "./DetailLayoutView";
 import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
-import {
-  DescriptionField,
-  PlacedPropertyField,
-  PropertiesField,
-  TagsField,
-  TitleField,
-} from "./fieldEditors";
-import {
-  type FieldDef,
-  type FieldKind,
-  PROPERTY_FIELD_PREFIX,
-  useProjectLayoutEnv,
-} from "./fields";
-import { PluginFieldOnDetail } from "./plugins";
+import { DescriptionField, TagsField, TitleField } from "./fieldEditors";
 import { TASK_LAYOUT, taskFields } from "./tasks";
-import { LAYOUT_PARTS, type Parts } from "./tree";
 
 /** What the task's detail shares with its parts, beside the task itself. */
 export interface TaskLayoutContext {
@@ -104,18 +79,12 @@ export interface TaskLayoutContext {
   preview?: boolean;
 }
 
-const DetailContext = createContext<TaskLayoutContext | null>(null);
+const useTaskLayout = useItemContext<TaskLayoutContext>;
 
-const useTaskLayout = (): TaskLayoutContext => {
-  const context = useContext(DetailContext);
-  if (!context) throw new Error("A task detail part is drawn outside its detail");
-  return context;
-};
-
-type EditorProps = { task: TaskRead; label: string };
+type EditorProps = { item: TaskRead; label: string };
 
 /** The task's title, which is the detail's heading. */
-const TitleEditor = ({ task, label }: EditorProps) => {
+const TitleEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, askScope } = useTaskLayout();
   return (
@@ -132,7 +101,7 @@ const TitleEditor = ({ task, label }: EditorProps) => {
 
 /** The description ({@link DescriptionField}), which AI can write a first
  *  draft of where it is on. */
-const DescriptionEditor = ({ task, label }: EditorProps) => {
+const DescriptionEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, initiativeId, leaving, askScope, preview } = useTaskLayout();
   const { isEnabled: aiEnabled } = useAIEnabled();
@@ -212,7 +181,7 @@ const StatusEditor = ({ task }: { task: TaskRead }) => {
   );
 };
 
-const PriorityEditor = ({ task, label }: EditorProps) => {
+const PriorityEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
@@ -241,7 +210,7 @@ const PriorityEditor = ({ task, label }: EditorProps) => {
   );
 };
 
-const AssigneesEditor = ({ task, label }: EditorProps) => {
+const AssigneesEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, currentUserId, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
@@ -277,7 +246,7 @@ const AssigneesEditor = ({ task, label }: EditorProps) => {
   );
 };
 
-const TagsEditor = ({ task, label }: EditorProps) => {
+const TagsEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, askScope } = useTaskLayout();
   return (
@@ -372,7 +341,7 @@ const DatesEditor = ({ task }: { task: TaskRead }) => {
 
 type Repeat = { rule: RecurrenceRule | "custom" | null; strategy: TaskRead["recurrence_strategy"] };
 
-const TaskRecurrenceEditor = ({ task, label }: EditorProps) => {
+const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
   const { readOnly, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
   const start = task.due_date ?? task.start_date;
@@ -419,54 +388,9 @@ const TaskRecurrenceEditor = ({ task, label }: EditorProps) => {
   );
 };
 
-/** The task's custom properties, each saved on its own, and adding one;
- *  those the layout places on their own are drawn there instead. */
-const PropertiesEditor = ({ task }: { task: TaskRead }) => {
-  const { readOnly, initiativeId } = useTaskLayout();
-  const placed = useContext(PlacedProperties);
-  return (
-    <PropertiesField
-      kind={TASK_SAVES}
-      id={task.id}
-      properties={task.properties}
-      readOnly={readOnly}
-      initiativeId={initiativeId}
-      canOpen={{ tool: Tool.project, id: task.project_id }}
-      except={placed}
-    />
-  );
-};
-
-/** One property the layout places on its own. */
-const PropertyEditor = ({ task, propertyId }: { task: TaskRead; propertyId: number }) => {
-  const { readOnly, initiativeId } = useTaskLayout();
-  return (
-    <PlacedPropertyField
-      kind={TASK_SAVES}
-      id={task.id}
-      properties={task.properties}
-      readOnly={readOnly}
-      initiativeId={initiativeId}
-      canOpen={{ tool: Tool.project, id: task.project_id }}
-      propertyId={propertyId}
-    />
-  );
-};
-
-const Checklist = ({ task }: EditorProps) => {
+const Checklist = ({ item: task }: EditorProps) => {
   const { readOnly } = useTaskLayout();
   return <TaskChecklist taskId={task.id} items={task.checklist ?? []} canEdit={!readOnly} />;
-};
-
-/** Each field's editor on the task's detail, by its kind. */
-const FIELD_EDITORS: Partial<Record<FieldKind, ComponentType<EditorProps>>> = {
-  title: TitleEditor,
-  excerpt: DescriptionEditor,
-  people: AssigneesEditor,
-  priority: PriorityEditor,
-  recurrence: TaskRecurrenceEditor,
-  tags: TagsEditor,
-  checklist: Checklist,
 };
 
 /** Who made the task and when. */
@@ -520,24 +444,6 @@ const Notice = () => {
   ) : null;
 };
 
-const Actions = () => <>{useTaskLayout().actions}</>;
-
-/** What the task is waiting on. A task is addressed inside its project, so
- *  that is the tool a link refreshes. */
-const Relations = ({ task }: { task: TaskRead }) => {
-  const { readOnly } = useTaskLayout();
-  return (
-    <ToolRelationsPanel
-      tool={Tool.project}
-      entity={{ id: task.project_id, initiative_id: task.project?.initiative_id ?? null }}
-      target={{ type: SearchEntityType.task, id: task.id }}
-      canEdit={!readOnly}
-      entityTitle={task.title}
-      defaultLayout="rows"
-    />
-  );
-};
-
 const Case = ({ task }: { task: TaskRead }) => (
   <CasePanel
     taskId={task.id}
@@ -575,73 +481,41 @@ const Comments = ({ task }: { task: TaskRead }) => {
   );
 };
 
-/** The parts a task's detail is drawn from. */
-const TASK_PARTS: Parts<TaskRead> = {
-  ...LAYOUT_PARTS,
-  field: (node, task, view) => {
-    const id = String(node.props?.field);
-    // A property is the initiative's, found by its id rather than in the
-    // fields the page names.
-    if (id.startsWith(PROPERTY_FIELD_PREFIX)) {
-      return (
-        <PropertyEditor task={task} propertyId={Number(id.slice(PROPERTY_FIELD_PREFIX.length))} />
-      );
-    }
-    const field = view.fields.get(id);
-    if (!field) return null;
-    // A plug-in's value is the plug-in's to change.
-    if (field.source === "plugin") return <PluginFieldOnDetail field={field} item={task} />;
-    const Editor = FIELD_EDITORS[field.kind];
-    return Editor ? <Editor task={task} label={view.env.t(field.label)} /> : null;
+/** A task's detail: its fields, its own parts and where it lives. A task is
+ *  addressed inside its project, so that is the tool its links refresh. */
+export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = {
+  spec: TASK_LAYOUT,
+  fields: taskFields,
+  namespaces: ["projects"],
+  editors: {
+    title: TitleEditor,
+    description: DescriptionEditor,
+    assignees: AssigneesEditor,
+    priority: PriorityEditor,
+    recurrence: TaskRecurrenceEditor,
+    tags: TagsEditor,
+    checklist: Checklist,
   },
-  status: (_node, task) => <StatusEditor task={task} />,
-  dates: (_node, task) => <DatesEditor task={task} />,
-  properties: (_node, task) => <PropertiesEditor task={task} />,
-  byline: (_node, task) => <Byline task={task} />,
-  notice: () => <Notice />,
-  actions: () => <Actions />,
-  relations: (_node, task) => <Relations task={task} />,
-  case: (_node, task) => <Case task={task} />,
-  comments: (_node, task) => <Comments task={task} />,
-};
-
-// The detail's labels are the fields' own.
-const TASK_DETAIL_FIELDS = (plugins: FieldDef[]) => taskFields([], plugins);
-
-/** A task's detail, drawn from its project's layout, or as shipped. */
-export const TaskLayoutView = ({
-  task,
-  context,
-  layout,
-  editing,
-}: {
-  task: TaskRead;
-  context: TaskLayoutContext;
-  layout?: StoredRegions | null;
-  /** The layout is being edited: each part is marked with its path, which
-   *  the editor's detail tree shares. */
-  editing?: boolean;
-}) => {
-  const communityId = useActiveCommunityId();
-  const gp = useCommunityPath();
-  const taskHref = useCallback(
-    (taskId: number) => gp(taskRoute(context.initiativeId, task.project_id, taskId)),
-    [gp, context.initiativeId, task.project_id]
-  );
-  const env = useProjectLayoutEnv(taskHref);
-  return (
-    // Another task's detail starts afresh, with none of this one's drafts.
-    <DetailContext.Provider key={`${communityId}:${task.id}`} value={context}>
-      <DetailLayoutView
-        spec={TASK_LAYOUT}
-        item={task}
-        initiativeId={context.initiativeId}
-        layout={layout}
-        editing={editing}
-        fields={TASK_DETAIL_FIELDS}
-        env={env}
-        parts={TASK_PARTS}
-      />
-    </DetailContext.Provider>
-  );
+  parts: {
+    status: (_node, task) => <StatusEditor task={task} />,
+    dates: (_node, task) => <DatesEditor task={task} />,
+    byline: (_node, task) => <Byline task={task} />,
+    notice: () => <Notice />,
+    case: (_node, task) => <Case task={task} />,
+    comments: (_node, task) => <Comments task={task} />,
+  },
+  home: (task, context) => ({
+    saves: TASK_SAVES,
+    readOnly: context.readOnly,
+    initiativeId: context.initiativeId,
+    canOpen: { tool: Tool.project, id: task.project_id },
+    links: {
+      entity: { id: task.project_id, initiative_id: task.project?.initiative_id ?? null },
+      target: { type: SearchEntityType.task, id: task.id },
+      title: task.title,
+      layout: "rows",
+    },
+    actions: context.actions,
+  }),
+  taskRoute: (task, context, taskId) => taskRoute(context.initiativeId, task.project_id, taskId),
 };

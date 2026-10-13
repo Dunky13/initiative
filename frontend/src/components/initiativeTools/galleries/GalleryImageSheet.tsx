@@ -21,8 +21,9 @@ import { usePendingShown } from "@/hooks/useFieldSave";
 import { galleryImageSaves, useDeleteGalleryImage } from "@/hooks/useGalleries";
 import { detailLayoutOf, instanceTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { imageLabel, imageSrc } from "@/lib/galleries";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
-import { GalleryImageLayoutView } from "@/lib/layouts/galleryImageLayout";
+import { GALLERY_IMAGE_DETAIL } from "@/lib/layouts/galleryImageLayout";
 import { usePluginMenuActions } from "@/lib/layouts/plugins";
 import { toast } from "@/lib/mascotToast";
 
@@ -164,8 +165,9 @@ const PictureSheet = ({
         </SheetTitle>
         <SheetDescription className="sr-only">{t("sheet.description")}</SheetDescription>
         <div className="py-4">
-          <GalleryImageLayoutView
-            image={image}
+          <DetailLayoutView
+            detail={GALLERY_IMAGE_DETAIL}
+            item={image}
             layout={detailLayoutOf(layouts.data, "gallery_image") as StoredRegions | null}
             context={{
               readOnly: !canEdit,

@@ -28,20 +28,21 @@ import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
-import { CounterLayoutView } from "@/lib/layouts/counterLayout";
+import { COUNTER_DETAIL } from "@/lib/layouts/counterLayout";
 import { COUNTER_LAYOUT, counterFields } from "@/lib/layouts/counters";
+import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { DetailLayoutSpec, StoredRegions } from "@/lib/layouts/detailLayout";
-import { EventLayoutView } from "@/lib/layouts/eventLayout";
+import { EVENT_DETAIL } from "@/lib/layouts/eventLayout";
 import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
-import { GalleryImageLayoutView } from "@/lib/layouts/galleryImageLayout";
+import { GALLERY_IMAGE_DETAIL } from "@/lib/layouts/galleryImageLayout";
 import { GALLERY_IMAGE_LAYOUT, galleryImageFields } from "@/lib/layouts/galleryImages";
-import { PostLayoutView } from "@/lib/layouts/postLayout";
+import { POST_DETAIL } from "@/lib/layouts/postLayout";
 import { POST_LAYOUT, postFields } from "@/lib/layouts/posts";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
-import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
+import { QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
 import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
-import { TaskLayoutView } from "@/lib/layouts/taskLayout";
+import { TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import { TASK_LAYOUT, taskFields } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 
@@ -102,8 +103,9 @@ const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNo
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (task) {
     return (
-      <TaskLayoutView
-        task={task}
+      <DetailLayoutView
+        detail={TASK_DETAIL}
+        item={task}
         layout={layout}
         editing
         context={{
@@ -149,8 +151,9 @@ const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layo
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (event) {
     return (
-      <EventLayoutView
-        event={event}
+      <DetailLayoutView
+        detail={EVENT_DETAIL}
+        item={event}
         layout={layout}
         editing
         context={{
@@ -192,7 +195,8 @@ const QueueItemPreview = ({
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
-      <QueueItemLayoutView
+      <DetailLayoutView
+        detail={QUEUE_ITEM_DETAIL}
         item={first}
         layout={layout}
         editing
@@ -229,8 +233,9 @@ const GalleryImagePreview = ({
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
-      <GalleryImageLayoutView
-        image={first}
+      <DetailLayoutView
+        detail={GALLERY_IMAGE_DETAIL}
+        item={first}
         layout={layout}
         editing
         context={{
@@ -272,8 +277,9 @@ const CounterPreview = ({
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
-      <CounterLayoutView
-        counter={first}
+      <DetailLayoutView
+        detail={COUNTER_DETAIL}
+        item={first}
         layout={layout}
         editing
         context={{
@@ -301,8 +307,9 @@ const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layou
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
-      <PostLayoutView
-        post={first}
+      <DetailLayoutView
+        detail={POST_DETAIL}
+        item={first}
         layout={layout}
         editing
         context={{ canEdit: true, canPin: false, preview: true }}

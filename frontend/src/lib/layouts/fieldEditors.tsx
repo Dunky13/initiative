@@ -30,6 +30,7 @@ import { TagPicker } from "@/components/tags";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TaskDescription } from "@/components/tasks/TaskDescription";
 import { Button } from "@/components/ui/button";
+import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -48,7 +49,7 @@ import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
 
-import { FieldFrame, sameJson, useFieldDraft } from "./editing";
+import { FieldFrame, ReadField, sameJson, useFieldDraft } from "./editing";
 
 /** An item's title, which is its detail's heading, saved as `field` (a queue
  *  item's is its `label`). It cannot be emptied: leaving it blank puts the
@@ -261,6 +262,45 @@ const PropertyField = <I extends { properties: PropertySummary[] }, P>({
   );
 };
 
+/** Its colour, picked and saved at once. A reader sees the swatch, and
+ *  nothing where it has none. */
+export const ColorField = <
+  I extends { color?: string | null },
+  P extends { color?: string | null },
+>({
+  label,
+  value,
+  save,
+  readOnly,
+}: {
+  label: string;
+  value: string | null | undefined;
+  save: ItemFieldSave<I, P>;
+  readOnly: boolean;
+}) => {
+  if (readOnly) {
+    return value ? (
+      <ReadField label={label}>
+        <span className="block h-5 w-5 rounded-full border" style={{ backgroundColor: value }}>
+          <span className="sr-only">{value}</span>
+        </span>
+      </ReadField>
+    ) : null;
+  }
+  return (
+    <FieldFrame label={label} save={save}>
+      <ColorPickerPopover
+        value={value ?? ""}
+        onChangeComplete={(color) =>
+          void save.save({ patch: { color } as P, shows: { color } as Partial<I> })
+        }
+        triggerLabel={label}
+        className="h-9"
+      />
+    </FieldFrame>
+  );
+};
+
 /** An item's custom properties, each saved on its own, and adding one. */
 /**
  * One property placed on the layout on its own: drawn whether or not the item
@@ -294,10 +334,9 @@ export const PlacedPropertyField = <I extends { properties: PropertySummary[] },
   if (props.readOnly) {
     if (isEmptyPropertyValue(property.value)) return null;
     return (
-      <div className="space-y-1">
-        <p className="font-medium text-sm">{property.name}</p>
+      <ReadField label={property.name}>
         <PropertyValueCell summary={property} variant="cell" />
-      </div>
+      </ReadField>
     );
   }
   return <PropertyField {...props} property={property} placed />;
