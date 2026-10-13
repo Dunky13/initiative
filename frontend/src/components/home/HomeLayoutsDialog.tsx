@@ -4,12 +4,18 @@
  * Two uses. From the view tabs, picking one opens it as a new view beside the
  * others, so nothing the reader arranged is lost, and a blank page is one of
  * the choices. From an empty view, picking one fills that view.
+ *
+ * More are in the marketplace, which the dialog sends the reader to rather
+ * than lists: a page of them is a choice of its own.
  */
 
-import { LayoutTemplate, type LucideIcon, Timer } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { LayoutTemplate, type LucideIcon, Store, Timer } from "lucide-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { HOME_WIDGETS } from "@/components/home/widgets";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -70,6 +76,33 @@ export function LayoutMap({ layout }: { layout: HomeLayout }) {
   );
 }
 
+/** One layout to pick: its map, its name, and what it is for. */
+function LayoutChoice({
+  map,
+  name,
+  description,
+  onPick,
+}: {
+  map: ReactNode;
+  name: string;
+  description: string;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="flex h-full w-full flex-col gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent"
+    >
+      {map}
+      <span className="space-y-1">
+        <span className="block font-medium text-sm">{name}</span>
+        <span className="block text-muted-foreground text-xs">{description}</span>
+      </span>
+    </button>
+  );
+}
+
 export function HomeLayoutsDialog({ open, onOpenChange, mode, onPick }: HomeLayoutsDialogProps) {
   const { t } = useTranslation("home");
   const choices: HomeLayoutChoice[] =
@@ -87,38 +120,42 @@ export function HomeLayoutsDialog({ open, onOpenChange, mode, onPick }: HomeLayo
         <ul className="grid grid-cols-fill-56/3 gap-3">
           {choices.map((choice) => (
             <li key={choice}>
-              <button
-                type="button"
-                onClick={() => {
+              <LayoutChoice
+                map={
+                  choice === "blank" ? (
+                    <div
+                      aria-hidden="true"
+                      className="flex h-28 items-center justify-center rounded-md border border-dashed bg-muted/50 text-muted-foreground"
+                    >
+                      <LayoutTemplate className="size-5" />
+                    </div>
+                  ) : (
+                    <LayoutMap layout={presetLayout(choice)} />
+                  )
+                }
+                name={choice === "blank" ? t("views.blank.name") : t(`presets.${choice}.name`)}
+                description={
+                  choice === "blank"
+                    ? t("views.blank.description")
+                    : t(`presets.${choice}.description`)
+                }
+                onPick={() => {
                   onPick(choice);
                   onOpenChange(false);
                 }}
-                className="flex h-full w-full flex-col gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent"
-              >
-                {choice === "blank" ? (
-                  <div
-                    aria-hidden="true"
-                    className="flex h-28 items-center justify-center rounded-md border border-dashed bg-muted/50 text-muted-foreground"
-                  >
-                    <LayoutTemplate className="size-5" />
-                  </div>
-                ) : (
-                  <LayoutMap layout={presetLayout(choice)} />
-                )}
-                <span className="space-y-1">
-                  <span className="block font-medium text-sm">
-                    {choice === "blank" ? t("views.blank.name") : t(`presets.${choice}.name`)}
-                  </span>
-                  <span className="block text-muted-foreground text-xs">
-                    {choice === "blank"
-                      ? t("views.blank.description")
-                      : t(`presets.${choice}.description`)}
-                  </span>
-                </span>
-              </button>
+              />
             </li>
           ))}
         </ul>
+
+        <div className="flex justify-center">
+          <Button asChild variant="outline">
+            <Link to="/marketplace" onClick={() => onOpenChange(false)}>
+              <Store className="size-4" aria-hidden="true" />
+              {t("marketplace.browse")}
+            </Link>
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

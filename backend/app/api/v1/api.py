@@ -69,6 +69,7 @@ from app.api.v1.tenant_endpoints import (
 from app.api.v1.platform_endpoints import (
     account_change,
     held_changes,
+    home_layouts,
     field_catalog,
     recurrence,
     access_grants,
@@ -430,3 +431,4 @@ api_router.include_router(me_router)
 # router included without one cannot carry an empty path.
 api_router.include_router(users.me_router, prefix="/me", tags=["users"])
 api_router.include_router(held_changes.me_router, prefix="/me", tags=["users"])
+api_router.include_router(home_layouts.me_router, prefix="/me", tags=["home-layouts"])

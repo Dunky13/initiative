@@ -1110,6 +1110,7 @@ export const ListingKind = {
   dashboard: "dashboard",
   file: "file",
   gallery: "gallery",
+  home_layout: "home_layout",
   plugin: "plugin",
   post: "post",
   profile_pack: "profile_pack",
@@ -5943,6 +5944,54 @@ export interface HoldPlaced {
  */
 export interface HoldReleaseCreate {
   outcome: HoldRelease;
+}
+
+/**
+ * Where a widget sits on the twelve-column home grid, in columns and rows.
+ */
+export interface HomeLayoutGrid {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type HomeLayoutWidgetOptions = { [key: string]: unknown } | null;
+
+/**
+ * One widget a layout places. ``options`` are the few that mean the same on
+ * anybody's page — how far ahead, which tools, clock or timer.
+ */
+export interface HomeLayoutWidget {
+  id: string;
+  type: string;
+  grid: HomeLayoutGrid;
+  options: HomeLayoutWidgetOptions;
+}
+
+/**
+ * A home layout somebody can add to their home page as a new view.
+ *
+ * A marketplace listing, so the words are its publisher's; ``uid`` names it on
+ * every deployment carrying the catalog.
+ */
+export interface HomeLayoutListing {
+  uid: string;
+  public_id: string;
+  name: string;
+  publisher: string;
+  description: string;
+  long_description: string | null;
+  avatar_url: string | null;
+  version: string;
+  widgets: HomeLayoutWidget[];
+}
+
+/**
+ * Every home layout this deployment offers. Read all at once — one shelf.
+ */
+export interface HomeLayoutListResponse {
+  items: HomeLayoutListing[];
 }
 
 export interface ICalEventPreview {

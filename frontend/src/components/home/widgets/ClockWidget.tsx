@@ -23,7 +23,7 @@ import { useTimeFormat } from "@/hooks/useTimeFormat";
 import { dateTimeFormat, numberFormat } from "@/lib/intl";
 import { toast } from "@/lib/mascotToast";
 import { hour12Option } from "@/lib/timeFormat";
-import { TIMEZONE_OPTIONS } from "@/lib/timezones";
+import { isKnownTimezone, TIMEZONE_OPTIONS } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
 import type { HomeWidgetProps, HomeWidgetSettingsProps } from "./types";
@@ -50,7 +50,7 @@ const modeOf = (options: Record<string, unknown>): Mode =>
 const zonesOf = (options: Record<string, unknown>): string[] =>
   Array.isArray(options.zones)
     ? options.zones
-        .filter((zone): zone is string => TIMEZONE_OPTIONS.includes(zone as string))
+        .filter((zone): zone is string => typeof zone === "string" && isKnownTimezone(zone))
         .slice(0, MAX_CLOCK_ZONES)
     : [];
 

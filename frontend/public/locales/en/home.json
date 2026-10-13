@@ -240,5 +240,17 @@
       "name": "Blank",
       "description": "An empty page to fill however you like."
     }
+  },
+  "marketplace": {
+    "browse": "Browse the marketplace",
+    "by": "by {{publisher}}",
+    "loadError": "Couldn't load the marketplace's layouts.",
+    "empty": "No layouts in the marketplace yet."
+  },
+  "store": {
+    "title": "Home layouts",
+    "description": "Pages of widgets made for different kinds of day. Add one and it opens as a new view on your home page; the views you have stay as they are.",
+    "add": "Add to my home",
+    "added": "Added “{{name}}” to your home."
   }
 }
