@@ -240,5 +240,17 @@
       "name": "Vide",
       "description": "Une page vide à remplir comme vous voulez."
     }
+  },
+  "marketplace": {
+    "browse": "Parcourir le marketplace",
+    "by": "par {{publisher}}",
+    "loadError": "Impossible de charger les dispositions du marketplace.",
+    "empty": "Pas encore de dispositions dans le marketplace."
+  },
+  "store": {
+    "title": "Dispositions d'accueil",
+    "description": "Des pages de widgets pensées pour différentes journées. Ajoutez-en une et elle s'ouvre comme nouvelle vue sur votre accueil ; vos vues restent telles quelles.",
+    "add": "Ajouter à mon accueil",
+    "added": "« {{name}} » ajoutée à votre accueil."
   }
 }

@@ -240,5 +240,17 @@
       "name": "Leer",
       "description": "Eine leere Seite, die du füllen kannst, wie du willst."
     }
+  },
+  "marketplace": {
+    "browse": "Marktplatz durchstöbern",
+    "by": "von {{publisher}}",
+    "loadError": "Die Layouts aus dem Marktplatz konnten nicht geladen werden.",
+    "empty": "Im Marktplatz gibt es noch keine Layouts."
+  },
+  "store": {
+    "title": "Startseiten-Layouts",
+    "description": "Seiten mit Widgets für verschiedene Arten von Tagen. Füge eines hinzu, und es öffnet sich als neue Ansicht auf deiner Startseite; deine bisherigen Ansichten bleiben, wie sie sind.",
+    "add": "Zu meiner Startseite hinzufügen",
+    "added": "„{{name}}“ zu deiner Startseite hinzugefügt."
   }
 }

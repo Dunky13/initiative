@@ -3,11 +3,12 @@ import { ListingKind } from "@/api/generated/initiativeAPI.schemas";
 /**
  * Which marketplace offers a listing.
  *
- * Every kind but one installs to a **community** — a dashboard lands in an
- * initiative, a plug-in mounts in a community, and installing is something a
- * community's admins do. A profile pack installs to a **person**: its
- * decorations land in one account's library and belong to that person across
- * every community they are in.
+ * Most kinds install to a **community** — a dashboard lands in an initiative,
+ * a plug-in mounts in a community, and installing is something a community's
+ * admins do. A profile pack and a home layout install to a **person**: a
+ * pack's decorations land in one account's library, a layout becomes a view on
+ * their own home page, and either belongs to that person across every
+ * community they are in.
  *
  * That is why there are two marketplaces rather than one with a filter. They
  * have different shelves, different buyers and different answers to "do I
@@ -17,7 +18,7 @@ import { ListingKind } from "@/api/generated/initiativeAPI.schemas";
  * definitions.py``, which is the source of truth; a kind missing from both
  * lists here is offered by neither, which the test below refuses.
  */
-export const USER_SHELVES = [ListingKind.profile_pack] as const;
+export const USER_SHELVES = [ListingKind.home_layout, ListingKind.profile_pack] as const;
 
 export const COMMUNITY_SHELVES = [
   ListingKind.dashboard,

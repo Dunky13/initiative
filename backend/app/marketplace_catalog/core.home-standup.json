@@ -1,0 +1,65 @@
+{
+  "uid": "KHZ2NRREP89KD3",
+  "public_id": "core.home-standup",
+  "kind": "home_layout",
+  "name": "Stand-up",
+  "publisher": "Initiative",
+  "description": "What happened to your things, and what moved.",
+  "long_description": "Ready for the morning check-in: what changed on the things that are yours, what changed across your tools lately, and your list underneath. Read it top to bottom and you know what to say.",
+  "avatar_url": "/marketplace/core-home-standup.svg",
+  "images": [],
+  "version": "1.0.0",
+  "release_notes": "First release.",
+  "definition": {
+    "schema_version": 1,
+    "kind": "home_layout",
+    "widgets": [
+      {
+        "id": "greeting",
+        "type": "greeting",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 2
+        }
+      },
+      {
+        "id": "activity",
+        "type": "activity",
+        "grid": {
+          "x": 0,
+          "y": 2,
+          "w": 6,
+          "h": 8
+        },
+        "options": {
+          "view": "yours"
+        }
+      },
+      {
+        "id": "recent",
+        "type": "recent",
+        "grid": {
+          "x": 6,
+          "y": 2,
+          "w": 6,
+          "h": 8
+        },
+        "options": {
+          "mode": "changed"
+        }
+      },
+      {
+        "id": "tasks",
+        "type": "tasks",
+        "grid": {
+          "x": 0,
+          "y": 10,
+          "w": 12,
+          "h": 10
+        }
+      }
+    ]
+  }
+}

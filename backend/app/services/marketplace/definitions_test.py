@@ -1736,8 +1736,8 @@ class TestListingAudience:
         assert not guild & user
         assert guild | user == LISTING_KINDS
 
-    def test_a_profile_pack_installs_to_a_person(self):
-        assert kinds_for_audience("user") == {"profile_pack"}
+    def test_a_profile_pack_and_a_home_layout_install_to_a_person(self):
+        assert kinds_for_audience("user") == {"profile_pack", "home_layout"}
 
     def test_an_unknown_audience_is_named_rather_than_empty(self):
         with pytest.raises(ValueError):

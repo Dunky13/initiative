@@ -16,9 +16,9 @@ There are two, and the difference is who gets what you take.
 
 | | **Your community's** | **Yours** |
 |---|---|---|
-| What's on it | Dashboards, projects and plug-ins | Decoration packs |
+| What's on it | Dashboards, projects and plug-ins | Home layouts and decoration packs |
 | Who it's for | Everyone in that community | You, in every community you're in |
-| Where to open it | **Browse the marketplace** in a dashboards or projects list's **More actions** menu (beside the create button, while the list is empty), or at the foot of the **Plug-ins** section of the sidebar | **Browse the marketplace** on **My Settings → Profile** |
+| Where to open it | **Browse the marketplace** in a dashboards or projects list's **More actions** menu (beside the create button, while the list is empty), or at the foot of the **Plug-ins** section of the sidebar | **Browse the marketplace** when making a new home view, or on **My Settings → Profile** |
 
 ![Browsing the marketplace](../images/marketplace/browse.png)
 
@@ -139,7 +139,27 @@ Each connection shows which service it uses and what it's allowed to do there, s
 
 ## Your own marketplace
 
-Yours holds **decoration packs**: artwork for your profile, and by far the least serious part of Initiative.
+Yours holds **home layouts** and **decoration packs**.
+
+### Home layouts
+
+Ready-made pages for your [home](your-space.md#home), each arranged for a particular kind of day. Five ship with Initiative:
+
+| | |
+|---|---|
+| **Week ahead** | Your calendar front and centre, the next fortnight beside it, what's urgent underneath. |
+| **Study session** | A twenty-five minute timer, the next few things, your streak, then the whole list. |
+| **Stand-up** | What happened to your things, what changed lately, your list. Read it top to bottom and you know what to say. |
+| **Club secretary** | Every community you're in, the calendar across them, and the posts, events and files that changed. |
+| **Around the world** | Clocks for wherever your people are, plus what everybody changed while you slept. |
+
+**Add to my home** opens the layout as a new view, beside the ones you already have — nothing you arranged is touched. **Browse the marketplace** at the foot of the new-view picker brings you here.
+
+A layout is only an arrangement. It carries no tasks, no communities and nobody else's anything: every widget reads your own things when it draws.
+
+### Decoration packs
+
+Artwork for your profile, and by far the least serious part of Initiative.
 
 Each pack is built around one thing a group of people has in common, and carries banners, frames and trophies you wear in whatever combination pleases you.
 

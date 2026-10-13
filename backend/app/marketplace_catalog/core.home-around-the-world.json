@@ -1,0 +1,67 @@
+{
+  "uid": "TYJ9MTKZ8BNSPR",
+  "public_id": "core.home-around-the-world",
+  "kind": "home_layout",
+  "name": "Around the world",
+  "publisher": "Initiative",
+  "description": "For a team that's never all awake at once.",
+  "long_description": "Clocks for the places your people are, what's coming up, what needs doing now, and what everybody changed while you slept. Set the clock's time zones to your team's.",
+  "avatar_url": "/marketplace/core-home-around-the-world.svg",
+  "images": [],
+  "version": "1.0.0",
+  "release_notes": "First release.",
+  "definition": {
+    "schema_version": 1,
+    "kind": "home_layout",
+    "widgets": [
+      {
+        "id": "clock",
+        "type": "clock",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 6
+        },
+        "options": {
+          "mode": "clock",
+          "zones": [
+            "America/New_York",
+            "Europe/London",
+            "Asia/Tokyo"
+          ]
+        }
+      },
+      {
+        "id": "comingUp",
+        "type": "comingUp",
+        "grid": {
+          "x": 4,
+          "y": 0,
+          "w": 4,
+          "h": 6
+        }
+      },
+      {
+        "id": "focus",
+        "type": "focus",
+        "grid": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 6
+        }
+      },
+      {
+        "id": "activity",
+        "type": "activity",
+        "grid": {
+          "x": 0,
+          "y": 6,
+          "w": 12,
+          "h": 8
+        }
+      }
+    ]
+  }
+}

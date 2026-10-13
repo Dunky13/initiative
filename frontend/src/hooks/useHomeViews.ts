@@ -73,14 +73,12 @@ export function useHomeViews() {
     (next: HomeViews) => writeViewPreference(queryClient, HOME_VIEWS_KEY, next),
     [queryClient]
   );
+  // Home, on that view: from Home itself a tab switch, and from anywhere else
+  // (a layout added in the marketplace) the way to the view just made. A table
+  // page belongs to the view it was turned in, so none is carried.
   const show = useCallback(
     (id: string) =>
-      void router.navigate({
-        to: ".",
-        // A table page belongs to the view it was turned in.
-        search: (prev: Record<string, unknown>) => ({ ...prev, view: id, page: undefined }),
-        replace: true,
-      }),
+      void router.navigate({ href: `/?view=${encodeURIComponent(id)}`, replace: true }),
     [router]
   );
   const tooLarge = useCallback(

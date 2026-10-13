@@ -43,6 +43,8 @@ Here for more than one reason? Keep more than one home page. While customizing, 
 | *Community* | Following a club or a space: your communities, what's going on, and what's coming up. |
 | *Running the show* | Keeping a community moving: its activity, what you had open, what changed in projects and dashboards, your own list. |
 
+More are in [the marketplace](plugins-and-marketplace.md#home-layouts) — **Browse the marketplace** at the foot of the same picker.
+
 Each view gets a tab: work on one, the scout group on the other, the allotment rota on a third.
 
 The **⋯** next to the tabs renames, copies, moves or deletes the view you're on. Home opens on whichever view you had last, and the address names it, so a view is something you can bookmark. Deleting one takes its widgets with it and nothing else — your communities never notice.

@@ -1,0 +1,65 @@
+{
+  "uid": "XKNS1XFSN3RTM0",
+  "public_id": "core.home-study-session",
+  "kind": "home_layout",
+  "name": "Study session",
+  "publisher": "Initiative",
+  "description": "A timer, the next thing, and your streak.",
+  "long_description": "A twenty-five minute timer beside the few things that need doing now, your streak to keep going, and the whole list below for when the timer's done. Start the timer, do one thing, take a break.",
+  "avatar_url": "/marketplace/core-home-study-session.svg",
+  "images": [],
+  "version": "1.0.0",
+  "release_notes": "First release.",
+  "definition": {
+    "schema_version": 1,
+    "kind": "home_layout",
+    "widgets": [
+      {
+        "id": "clock",
+        "type": "clock",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 6
+        },
+        "options": {
+          "mode": "timer",
+          "timer": {
+            "duration": 1500
+          }
+        }
+      },
+      {
+        "id": "focus",
+        "type": "focus",
+        "grid": {
+          "x": 4,
+          "y": 0,
+          "w": 8,
+          "h": 6
+        }
+      },
+      {
+        "id": "progress",
+        "type": "progress",
+        "grid": {
+          "x": 0,
+          "y": 6,
+          "w": 12,
+          "h": 3
+        }
+      },
+      {
+        "id": "tasks",
+        "type": "tasks",
+        "grid": {
+          "x": 0,
+          "y": 9,
+          "w": 12,
+          "h": 10
+        }
+      }
+    ]
+  }
+}

@@ -582,4 +582,18 @@ describe("HomePage", () => {
       }
     });
   });
+
+  it("sends the reader to the marketplace for more layouts", async () => {
+    const user = userEvent.setup();
+    keepLayout(comingUpAndCommunities);
+    renderHome();
+
+    await user.click(await screen.findByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "New view" }));
+    const picker = await screen.findByRole("dialog", { name: "New view" });
+    expect(within(picker).getByRole("link", { name: "Browse the marketplace" })).toHaveAttribute(
+      "href",
+      "/marketplace"
+    );
+  });
 });

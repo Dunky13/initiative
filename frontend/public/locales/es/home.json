@@ -240,5 +240,17 @@
       "name": "En blanco",
       "description": "Una página vacía para llenar como quieras."
     }
+  },
+  "marketplace": {
+    "browse": "Explorar el marketplace",
+    "by": "de {{publisher}}",
+    "loadError": "No se pudieron cargar los diseños del marketplace.",
+    "empty": "Aún no hay diseños en el marketplace."
+  },
+  "store": {
+    "title": "Diseños de inicio",
+    "description": "Páginas de widgets pensadas para distintos tipos de día. Añade una y se abre como una vista nueva en tu inicio; tus vistas siguen como están.",
+    "add": "Añadir a mi inicio",
+    "added": "Se añadió «{{name}}» a tu inicio."
   }
 }
