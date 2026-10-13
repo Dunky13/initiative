@@ -59,6 +59,19 @@ describe("a picture, opened", () => {
     await waitFor(() => expect(sent).toEqual([{ title: "Final" }]));
   });
 
+  it("lets its title be cleared, to read as its file's name", async () => {
+    const image = buildGalleryImage({ id: 7, title: "Sketch", original_filename: "round-1.png" });
+    const sent = serve(image);
+    open(image);
+    const user = userEvent.setup();
+
+    await user.clear(await screen.findByDisplayValue("Sketch"));
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(sent).toEqual([{ title: null }]));
+    expect(screen.getByPlaceholderText("round-1.png")).toBeInTheDocument();
+  });
+
   it("shows a reader what it holds, with nothing to change it with", async () => {
     const image = buildGalleryImage({ id: 6, title: "Sketch", caption: "Round one" });
     serve(image);

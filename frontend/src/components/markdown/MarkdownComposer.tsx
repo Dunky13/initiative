@@ -43,6 +43,8 @@ interface MarkdownComposerProps {
   id?: string;
   placeholder?: string;
   rows?: number;
+  /** The most characters the text may hold, as the server allows. */
+  maxLength?: number;
   disabled?: boolean;
   autoFocus?: boolean;
   /** The caller's own handle on the field — for caret measurement, focus, and
@@ -86,6 +88,7 @@ export const MarkdownComposer = ({
   id,
   placeholder,
   rows,
+  maxLength,
   disabled = false,
   autoFocus = false,
   textareaRef,
@@ -355,6 +358,7 @@ export const MarkdownComposer = ({
             onBlur={onBlur}
             placeholder={placeholder}
             rows={rows ?? (compact ? 3 : 6)}
+            maxLength={maxLength}
             disabled={disabled}
             autoFocus={autoFocus}
             className="resize-y rounded-none rounded-b-md border-0 shadow-none focus-visible:ring-0"
