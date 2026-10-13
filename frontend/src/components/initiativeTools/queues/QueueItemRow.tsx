@@ -6,6 +6,8 @@ import type { QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { MentionText } from "@/components/user/MentionText";
+import { markdownExcerpt } from "@/lib/text";
 import { resolveUploadUrl } from "@/lib/uploadUrl";
 import { getInitialsForUser, getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
@@ -107,7 +109,9 @@ export const QueueItemRow = ({
 
         {/* Notes preview */}
         {item.notes && (
-          <p className="mt-1 line-clamp-1 text-muted-foreground text-xs">{item.notes}</p>
+          <p className="mt-1 line-clamp-1 text-muted-foreground text-xs">
+            <MentionText text={markdownExcerpt(item.notes)} />
+          </p>
         )}
       </div>
 
