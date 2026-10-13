@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { buildPropertySummary } from "@/__tests__/factories/properties";
+import { buildPropertyDefinition, buildPropertySummary } from "@/__tests__/factories/properties";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
@@ -109,6 +109,38 @@ describe("a row's properties, saved one at a time", () => {
         { at: "file/10", merge: true, values: [{ property_id: 1, value: "closed" }] },
       ])
     );
+  });
+
+  it("offers no retry of one row's failed addition once it shows another", async () => {
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([buildPropertyDefinition({ id: 3, name: "Size" })])
+      ),
+      communityHttp.put(
+        "/properties/:target/:entityId",
+        () => new HttpResponse(null, { status: 500 })
+      )
+    );
+    const { rerender } = panel([status, owner]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /add property/i }));
+    await user.click(await screen.findByRole("option", { name: /size/i }));
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
+
+    // The panel moves to another row: its Retry would add Size there.
+    rerender(
+      <PropertiesField
+        kind={propertySaves[PropertyTarget.file]}
+        id={11}
+        properties={[{ ...status, value: "draft" }]}
+        readOnly={false}
+        initiativeId={1}
+        canOpen={{ tool: Tool.file, id: 11 }}
+      />
+    );
+
+    expect(await screen.findByDisplayValue("draft")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
   });
 
   it("takes a property off the row by itself", async () => {

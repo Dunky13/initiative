@@ -166,6 +166,13 @@ export const useItemFieldSave = <I, P>(
   const [error, setError] = useState<unknown>(null);
   const sending = useRef(0);
   const last = useRef<{ edit: ItemEdit<I, P>; undo?: ItemEdit<I, P> } | null>(null);
+  // Another item (a panel moved to another row) starts with nothing to retry:
+  // what failed was the last item's.
+  useEffect(() => {
+    last.current = null;
+    setState("idle");
+    setError(null);
+  }, [kind.name, communityId, id]);
   // Who is signed in now, for answers that land later.
   const signedIn = useRef(user?.id);
   useEffect(() => {
