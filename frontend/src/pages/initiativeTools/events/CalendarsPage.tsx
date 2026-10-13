@@ -99,7 +99,7 @@ import {
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { useUpdateTask } from "@/hooks/useTasks";
-import { calendarTarget, listLayouts, useToolLayouts } from "@/hooks/useToolLayouts";
+import { listLayouts, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -264,7 +264,7 @@ export const CalendarsView = ({
   // The initiative calendar's layout, and the presets its list offers. The
   // community surfaces belong to no initiative, so they have none.
   const layoutsQuery = useToolLayouts(
-    initiativeId != null && !communityOnly ? calendarTarget(initiativeId) : null
+    initiativeId != null && !communityOnly ? sharedTarget(Tool.calendar, initiativeId) : null
   );
   const presets = useMemo(
     () => presetsOf(listLayouts(layoutsQuery.data)[0]?.definition, CALENDAR_PRESETS),

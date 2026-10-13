@@ -216,5 +216,31 @@
       "count": "Su cuenta, a pasos o fijada."
     },
     "noItems": "Añade un contador al grupo para ver aquí su diseño."
+  },
+  "postDetail": {
+    "name": "Detalle del aviso",
+    "help": "Cómo se muestra cada aviso de esta iniciativa en su propia página. Lo que deja fuera queda oculto.",
+    "shipped": "Este es el diseño tal como viene. Cambiarlo lo convierte en el de la iniciativa.",
+    "titleHelp": "Cada aviso muestra su título en la cabecera.",
+    "hiddenHelp": "Cada aviso puede mostrar esto. Si se quita, queda oculto, y Añadir lo vuelve a poner.",
+    "parts": {
+      "byline": "Autoría",
+      "schedule": "Programación",
+      "body": "Cuerpo",
+      "reactions": "Reacciones",
+      "poll": "Encuesta",
+      "relations": "Relaciones",
+      "comments": "Comentarios"
+    },
+    "partHelp": {
+      "byline": "Quién lo escribió y si está fijado.",
+      "schedule": "Cuándo se publica un aviso que aún no está publicado.",
+      "body": "Lo que dice el aviso.",
+      "reactions": "Cómo reaccionaron los lectores.",
+      "poll": "La pregunta que hace, si hace una.",
+      "relations": "Con qué está vinculado el aviso.",
+      "comments": "Lo que se dice sobre él."
+    },
+    "noItems": "Escribe un aviso en esta iniciativa para ver aquí su diseño."
   }
 }

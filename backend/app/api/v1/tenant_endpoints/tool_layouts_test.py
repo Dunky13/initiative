@@ -770,6 +770,37 @@ async def test_the_calendar_lays_out_its_event_detail(client: AsyncClient, actin
     assert layout["updated_at"] is not None
 
 
+async def test_the_posts_lay_out_their_notice_detail(client: AsyncClient, acting_user):
+    """One detail every notice in the initiative shares, as the calendar's
+    events do."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    notice = _detail(
+        "post",
+        {"type": "body"},
+        {"type": "poll"},
+        _field("tags"),
+        _field("property:12"),
+        _plugin_part(3),
+    )
+
+    saved = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "post", "initiative_id": a.initiative.id},
+        json=notice,
+        headers=a.headers,
+    )
+
+    assert saved.status_code == 200, saved.text
+    layout = {each["kind"]: each for each in saved.json()["layouts"]}["post"]
+    assert [part["type"] for part in layout["definition"]["side"]] == [
+        "body",
+        "poll",
+        "field",
+        "field",
+        "plugin",
+    ]
+
+
 @pytest.mark.parametrize(
     "params",
     [

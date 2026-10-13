@@ -279,8 +279,7 @@
       "heading": "Dispositions",
       "description": "Comment chaque outil de cette initiative présente ce qu'il contient : chaque disposition, sa dernière modification, et la liste sur laquelle un projet s'ouvre. Elles se modifient dans l'éditeur de chacun.",
       "noProjects": "Cette initiative n'a encore aucun projet.",
-      "loadError": "Impossible de charger les dispositions.",
-      "calendar": "Calendrier"
+      "loadError": "Impossible de charger les dispositions."
     }
   },
   "advancedTools": "Outils",

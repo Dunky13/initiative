@@ -53,9 +53,10 @@ export const instanceTarget = (tool: Tool, id: number): GetLayoutsParams => ({
   tool_id: id,
 });
 
-/** The initiative's calendar, whose layouts every calendar in it shares. */
-export const calendarTarget = (initiativeId: number): GetLayoutsParams => ({
-  tool: Tool.calendar,
+/** A tool the whole initiative shares (its calendar, its posts), whose
+ *  layouts are the initiative's. */
+export const sharedTarget = (tool: Tool, initiativeId: number): GetLayoutsParams => ({
+  tool,
   initiative_id: initiativeId,
 });
 

@@ -227,6 +227,14 @@ class CounterDetailFieldId(str, Enum):
     view = "view"
 
 
+class PostDetailFieldId(str, Enum):
+    """What a notice's detail draws as a field. Its title, tags and properties
+    are its tool's, in its header; what it says, asks and answers, and when it
+    goes up, are parts of their own."""
+
+    tags = "tags"
+
+
 PROPERTY_FIELD_PREFIX = "property:"
 PLUGIN_FIELD_PREFIX = "plugin:"
 #: The characters a row id is written in.
@@ -297,6 +305,7 @@ DetailFieldId = Union[
     QueueItemDetailFieldId,
     GalleryImageDetailFieldId,
     CounterDetailFieldId,
+    PostDetailFieldId,
     NamedFieldId,
 ]
 
@@ -404,7 +413,8 @@ class DetailStackPart(_Strict):
 #: The parts a detail draws as its own, which edit or show more than one
 #: field: a task's status, who made it, its read-only notice, its case and its
 #: comments; an event's answer; a picture itself, where it came from and its
-#: versions; a counter's count; and any item's dates, menu and relations. Which of them a kind of
+#: versions; a counter's count; a notice's body, schedule, reactions and poll;
+#: and any item's dates, menu and relations. Which of them a kind of
 #: detail draws is ``app.services.tenant.tool_layouts.DETAIL_PARTS``.
 OwnPartType = Literal[
     "status",
@@ -420,6 +430,10 @@ OwnPartType = Literal[
     "about",
     "versions",
     "count",
+    "body",
+    "schedule",
+    "reactions",
+    "poll",
 ]
 
 
@@ -453,7 +467,7 @@ ListLayoutKind = Literal["table", "board", "calendar"]
 #: Every kind of thing a detail layout shows one of; which a tool holds is
 #: ``app.core.tools.DETAIL_LAYOUTS``.
 DetailLayoutKind = Literal[
-    "task", "calendar_event", "queue_item", "gallery_image", "counter"
+    "task", "calendar_event", "queue_item", "gallery_image", "counter", "post"
 ]
 
 

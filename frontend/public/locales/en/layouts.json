@@ -216,5 +216,31 @@
       "count": "Its count, stepped or set."
     },
     "noItems": "Add a counter to the group to see its layout here."
+  },
+  "postDetail": {
+    "name": "Notice detail",
+    "help": "How every notice in this initiative is shown on its own page. What it leaves out is hidden.",
+    "shipped": "This is the layout as shipped. Changing it makes it the initiative's own.",
+    "titleHelp": "Every notice shows its title in its header.",
+    "hiddenHelp": "Every notice can show this. Taken off, it is hidden, and Add puts it back.",
+    "parts": {
+      "byline": "Byline",
+      "schedule": "Schedule",
+      "body": "Body",
+      "reactions": "Reactions",
+      "poll": "Poll",
+      "relations": "Relations",
+      "comments": "Comments"
+    },
+    "partHelp": {
+      "byline": "Who wrote it, and whether it's pinned.",
+      "schedule": "When a notice not yet up goes up.",
+      "body": "What the notice says.",
+      "reactions": "How readers reacted.",
+      "poll": "The question it asks, if it asks one.",
+      "relations": "What the notice is linked to.",
+      "comments": "What's said about it."
+    },
+    "noItems": "Write a notice in this initiative to see its layout here."
   }
 }

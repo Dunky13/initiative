@@ -61,6 +61,7 @@
   "/c/$communityId/i/$initiativeId/posts/$postId/settings/",
   "/c/$communityId/i/$initiativeId/posts/$postId/settings/access",
   "/c/$communityId/i/$initiativeId/posts/$postId/settings/advanced",
+  "/c/$communityId/i/$initiativeId/posts/layouts",
   "/c/$communityId/i/$initiativeId/projects/",
   "/c/$communityId/i/$initiativeId/projects/$projectId/",
   "/c/$communityId/i/$initiativeId/projects/$projectId/layouts",

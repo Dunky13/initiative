@@ -21,6 +21,7 @@ import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCounterGroup } from "@/hooks/useCounters";
 import { useGalleryImagesFeed } from "@/hooks/useGalleries";
+import { usePostsFeed } from "@/hooks/usePosts";
 import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
@@ -33,6 +34,8 @@ import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
 import { GalleryImageLayoutView } from "@/lib/layouts/galleryImageLayout";
 import { GALLERY_IMAGE_LAYOUT, galleryImageFields } from "@/lib/layouts/galleryImages";
+import { PostLayoutView } from "@/lib/layouts/postLayout";
+import { POST_LAYOUT, postFields } from "@/lib/layouts/posts";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
 import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
 import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
@@ -282,6 +285,27 @@ const CounterPreview = ({
   ) : null;
 };
 
+/** The notice detail drawn with the initiative's first notice. */
+const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
+  const { t } = useTranslation("layouts");
+  const feed = usePostsFeed({ initiative_id: initiativeId });
+  const first = feed.data?.pages[0]?.items[0];
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <PostLayoutView
+        post={first}
+        layout={layout}
+        editing
+        context={{ canEdit: true, canPin: false, preview: true }}
+      />
+    );
+  }
+  return feed.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("postDetail.noItems")}</p>
+  ) : null;
+};
+
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
@@ -359,6 +383,21 @@ export const counterDetail = (groupId: number, initiativeId: number): EditableDe
   preview: (tree) => <CounterPreview groupId={groupId} initiativeId={initiativeId} tree={tree} />,
 });
 
+/** The initiative's notice detail, which every notice in it shares. */
+export const postDetail = (initiativeId: number): EditableDetail => ({
+  spec: POST_LAYOUT,
+  words: {
+    name: "layouts:postDetail.name",
+    help: "layouts:postDetail.help",
+    shipped: "layouts:postDetail.shipped",
+    titleHelp: "layouts:postDetail.titleHelp",
+    hiddenHelp: "layouts:postDetail.hiddenHelp",
+    parts: "layouts:postDetail.",
+  },
+  fields: postFields,
+  preview: (tree) => <PostPreview initiativeId={initiativeId} tree={tree} />,
+});
+
 /** The item detail each tool lays out on its own, with no list of its own to
  *  lay out beside it: what its editor offers. */
 export const ITEM_DETAILS: Partial<
@@ -412,3 +451,15 @@ export const calendarPresets = (initiativeId: number) =>
     ),
     sortable: () => false,
   });
+
+/** What each tool the whole initiative shares lays out: its item's detail,
+ *  and the presets its list offers where it has one. */
+export const SHARED_LAYOUTS: Partial<
+  Record<
+    Tool,
+    { detail: (initiativeId: number) => EditableDetail; presets?: typeof calendarPresets }
+  >
+> = {
+  [Tool.calendar]: { detail: eventDetail, presets: calendarPresets },
+  [Tool.post]: { detail: postDetail },
+};
