@@ -3,7 +3,6 @@
   "deleteEvent": "Termin löschen",
   "eventDeleted": "Termin gelöscht",
   "eventTitle": "Titel",
-  "titlePlaceholder": "Termintitel",
   "descriptionPlaceholder": "Beschreibung hinzufügen...",
   "location": "Ort",
   "locationPlaceholder": "Ort oder Link hinzufügen...",

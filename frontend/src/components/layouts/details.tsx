@@ -7,11 +7,15 @@
  */
 
 import { MoreHorizontal } from "lucide-react";
-import { type ReactNode, useMemo, useRef } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useReadCounter } from "@/api/generated/counters/counters";
-import { type PropertyDefinitionRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import {
+  type PropertyDefinitionRead,
+  type PropertySummary,
+  Tool,
+} from "@/api/generated/initiativeAPI.schemas";
 import { PropertyFilter } from "@/components/properties/PropertyFilter";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
@@ -29,22 +33,17 @@ import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
 import { COUNTER_DETAIL } from "@/lib/layouts/counterLayout";
-import { COUNTER_LAYOUT, counterFields } from "@/lib/layouts/counters";
-import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
+import { type DetailKind, DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
 import type { DetailLayoutSpec, StoredRegions } from "@/lib/layouts/detailLayout";
 import { EVENT_DETAIL } from "@/lib/layouts/eventLayout";
-import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
 import { GALLERY_IMAGE_DETAIL } from "@/lib/layouts/galleryImageLayout";
-import { GALLERY_IMAGE_LAYOUT, galleryImageFields } from "@/lib/layouts/galleryImages";
 import { POST_DETAIL } from "@/lib/layouts/postLayout";
-import { POST_LAYOUT, postFields } from "@/lib/layouts/posts";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
 import { QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
-import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
 import { TASK_DETAIL } from "@/lib/layouts/taskLayout";
-import { TASK_LAYOUT, taskFields } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
+import type { TranslateFn } from "@/types/i18n";
 
 import { editablePresets } from "./LayoutPresets";
 import type { LayoutProject } from "./LayoutSettingsPanel";
@@ -71,6 +70,16 @@ export type EditableDetail = {
   preview: (tree: LayoutNode) => ReactNode;
 };
 
+/** A detail's words, kept under `key` in the layouts namespace. */
+const wordsOf = (key: string): EditableDetail["words"] => ({
+  name: `layouts:${key}.name`,
+  help: `layouts:${key}.help`,
+  shipped: `layouts:${key}.shipped`,
+  titleHelp: `layouts:${key}.titleHelp`,
+  hiddenHelp: `layouts:${key}.hiddenHelp`,
+  parts: `layouts:${key}.`,
+});
+
 /** The detail tree's regions, as a detail draws them. */
 const regionsOf = (tree: LayoutNode): StoredRegions => ({
   header: tree.children?.[0]?.children ?? [],
@@ -87,46 +96,75 @@ const ActionsPreview = () => (
 
 const noop = () => {};
 
+// A preview is never left with a draft open: nothing in it is saved.
+const LEFT = { current: true };
+
+/** A detail drawn with `item`, one of its own, laid out as `tree` says; or,
+ *  once there is none to draw it with, `empty`. */
+const ItemPreview = <I extends { id: number; properties: PropertySummary[] }, C, P>({
+  detail,
+  tree,
+  item,
+  none,
+  empty,
+  context,
+}: {
+  detail: DetailKind<I, C, P>;
+  tree: LayoutNode;
+  item: I | undefined;
+  none: boolean;
+  empty: string;
+  context: (item: I) => C;
+}) => {
+  const t = useTranslation("layouts").t as TranslateFn;
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (item) {
+    return (
+      <DetailLayoutView
+        detail={detail}
+        item={item}
+        layout={layout}
+        editing
+        context={context(item)}
+      />
+    );
+  }
+  return none ? <p className="text-muted-foreground text-sm">{t(empty)}</p> : null;
+};
+
 /** The task's detail drawn with the project's first task. */
 const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNode }) => {
-  const { t } = useTranslation(["projects", "layouts"]);
+  const { t } = useTranslation("layouts");
   const { user } = useAuth();
   const scopePrompt = useScopePrompt();
-  const leaving = useRef(true);
   const params = useMemo(
     () => ({ ...buildTaskListParams(EMPTY_TASK_FILTERS, { projectId: project.id }), page_size: 1 }),
     [project.id]
   );
   const listed = useTasks(params);
   const first = listed.data?.items[0]?.id ?? null;
-  const task = useTask(first).data;
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (task) {
-    return (
-      <DetailLayoutView
-        detail={TASK_DETAIL}
-        item={task}
-        layout={layout}
-        editing
-        context={{
-          readOnly: false,
-          // Drawn here so it can be placed; a reader sees it only when they
-          // cannot change the task.
-          readOnlyMessage: t("layouts:noticePreview"),
-          statuses: project.statuses,
-          initiativeId: project.initiativeId,
-          currentUserId: user?.id,
-          askScope: scopePrompt.ask,
-          actions: <ActionsPreview />,
-          leaving,
-          preview: true,
-        }}
-      />
-    );
-  }
-  return listed.isSuccess && first === null ? (
-    <p className="text-muted-foreground text-sm">{t("layouts:noTasks")}</p>
-  ) : null;
+  return (
+    <ItemPreview
+      detail={TASK_DETAIL}
+      tree={tree}
+      item={useTask(first).data}
+      none={listed.isSuccess && first === null}
+      empty="noTasks"
+      context={() => ({
+        readOnly: false,
+        // Drawn here so it can be placed; a reader sees it only when they
+        // cannot change the task.
+        readOnlyMessage: t("noticePreview"),
+        statuses: project.statuses,
+        initiativeId: project.initiativeId,
+        currentUserId: user?.id,
+        askScope: scopePrompt.ask,
+        actions: <ActionsPreview />,
+        leaving: LEFT,
+        preview: true,
+      })}
+    />
+  );
 };
 
 const YEAR = 365 * 24 * 60 * 60 * 1000;
@@ -134,8 +172,6 @@ const YEAR = 365 * 24 * 60 * 60 * 1000;
 /** The event's detail drawn with the first of the initiative's events within
  *  a year either side of today. */
 const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
-  const { t } = useTranslation(["projects", "layouts"]);
-  const leaving = useRef(true);
   const params = useMemo(() => {
     const now = Date.now();
     return {
@@ -147,35 +183,29 @@ const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layo
   }, [initiativeId]);
   const listed = useCalendarEntries(params);
   const first = listed.data?.events[0]?.id ?? null;
-  const event = useCalendarEvent(first).data;
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (event) {
-    return (
-      <DetailLayoutView
-        detail={EVENT_DETAIL}
-        item={event}
-        layout={layout}
-        editing
-        context={{
-          readOnly: false,
-          initiativeId,
-          occurrence: undefined,
-          occurrenceStart: event.start_at,
-          shownStart: event.start_at,
-          shownEnd: event.end_at,
-          askScope: async () => null,
-          onMoved: noop,
-          onShifted: noop,
-          leaving,
-          actions: <ActionsPreview />,
-          preview: true,
-        }}
-      />
-    );
-  }
-  return listed.isSuccess && first === null ? (
-    <p className="text-muted-foreground text-sm">{t("layouts:noEvents")}</p>
-  ) : null;
+  return (
+    <ItemPreview
+      detail={EVENT_DETAIL}
+      tree={tree}
+      item={useCalendarEvent(first).data}
+      none={listed.isSuccess && first === null}
+      empty="noEvents"
+      context={(event) => ({
+        readOnly: false,
+        initiativeId,
+        occurrence: undefined,
+        occurrenceStart: event.start_at,
+        shownStart: event.start_at,
+        shownEnd: event.end_at,
+        askScope: async () => null,
+        onMoved: noop,
+        onShifted: noop,
+        leaving: LEFT,
+        actions: <ActionsPreview />,
+        preview: true,
+      })}
+    />
+  );
 };
 
 /** The queue's item detail drawn with its first item. */
@@ -188,32 +218,24 @@ const QueueItemPreview = ({
   initiativeId: number;
   tree: LayoutNode;
 }) => {
-  const { t } = useTranslation("layouts");
-  const leaving = useRef(true);
   const queue = useQueue(queueId);
-  const first = queue.data?.items[0];
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (first) {
-    return (
-      <DetailLayoutView
-        detail={QUEUE_ITEM_DETAIL}
-        item={first}
-        layout={layout}
-        editing
-        context={{
-          readOnly: false,
-          queueId,
-          initiativeId,
-          leaving,
-          actions: <ActionsPreview />,
-          preview: true,
-        }}
-      />
-    );
-  }
-  return queue.isSuccess ? (
-    <p className="text-muted-foreground text-sm">{t("queueItemDetail.noItems")}</p>
-  ) : null;
+  return (
+    <ItemPreview
+      detail={QUEUE_ITEM_DETAIL}
+      tree={tree}
+      item={queue.data?.items[0]}
+      none={queue.isSuccess}
+      empty="queueItemDetail.noItems"
+      context={() => ({
+        readOnly: false,
+        queueId,
+        initiativeId,
+        leaving: LEFT,
+        actions: <ActionsPreview />,
+        preview: true,
+      })}
+    />
+  );
 };
 
 /** The gallery's picture detail drawn with its first picture. */
@@ -226,33 +248,25 @@ const GalleryImagePreview = ({
   initiativeId: number;
   tree: LayoutNode;
 }) => {
-  const { t } = useTranslation("layouts");
-  const leaving = useRef(true);
   const pictures = useGalleryImagesFeed(galleryId);
-  const first = pictures.data?.pages[0]?.items[0];
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (first) {
-    return (
-      <DetailLayoutView
-        detail={GALLERY_IMAGE_DETAIL}
-        item={first}
-        layout={layout}
-        editing
-        context={{
-          readOnly: false,
-          galleryId,
-          initiativeId,
-          canDeleteVersions: false,
-          leaving,
-          actions: <ActionsPreview />,
-          preview: true,
-        }}
-      />
-    );
-  }
-  return pictures.isSuccess ? (
-    <p className="text-muted-foreground text-sm">{t("galleryImageDetail.noItems")}</p>
-  ) : null;
+  return (
+    <ItemPreview
+      detail={GALLERY_IMAGE_DETAIL}
+      tree={tree}
+      item={pictures.data?.pages[0]?.items[0]}
+      none={pictures.isSuccess}
+      empty="galleryImageDetail.noItems"
+      context={() => ({
+        readOnly: false,
+        galleryId,
+        initiativeId,
+        canDeleteVersions: false,
+        leaving: LEFT,
+        actions: <ActionsPreview />,
+        preview: true,
+      })}
+    />
+  );
 };
 
 /** The group's counter detail drawn with its first counter. */
@@ -265,65 +279,51 @@ const CounterPreview = ({
   initiativeId: number;
   tree: LayoutNode;
 }) => {
-  const { t } = useTranslation("layouts");
-  const leaving = useRef(true);
   const group = useCounterGroup(groupId);
   const listed = group.data?.counters[0];
   // Its own read carries the plug-ins' values, which the group's list does not.
   const read = useReadCounter(useActiveCommunityId(), listed?.id ?? 0, undefined, {
     query: { placeholderData: listed, enabled: listed !== undefined },
   });
-  const first = read.data ?? listed;
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (first) {
-    return (
-      <DetailLayoutView
-        detail={COUNTER_DETAIL}
-        item={first}
-        layout={layout}
-        editing
-        context={{
-          readOnly: false,
-          groupId,
-          initiativeId,
-          leaving,
-          actions: <ActionsPreview />,
-        }}
-      />
-    );
-  }
-  return group.isSuccess ? (
-    <p className="text-muted-foreground text-sm">{t("counterDetail.noItems")}</p>
-  ) : null;
+  return (
+    <ItemPreview
+      detail={COUNTER_DETAIL}
+      tree={tree}
+      item={read.data ?? listed}
+      none={group.isSuccess}
+      empty="counterDetail.noItems"
+      context={() => ({
+        readOnly: false,
+        groupId,
+        initiativeId,
+        leaving: LEFT,
+        actions: <ActionsPreview />,
+      })}
+    />
+  );
 };
 
 /** The notice detail drawn with the initiative's first notice. */
 const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
-  const { t } = useTranslation("layouts");
   const feed = usePostsFeed({ initiative_id: initiativeId });
   const listed = feed.data?.pages[0]?.items[0];
   // Its own read carries the plug-ins' values, which the board's list does not.
-  const first = usePost(listed?.id ?? null, { placeholderData: listed }).data ?? listed;
-  const layout = useMemo(() => regionsOf(tree), [tree]);
-  if (first) {
-    return (
-      <DetailLayoutView
-        detail={POST_DETAIL}
-        item={first}
-        layout={layout}
-        editing
-        context={{ canEdit: true, canPin: false, preview: true }}
-      />
-    );
-  }
-  return feed.isSuccess ? (
-    <p className="text-muted-foreground text-sm">{t("postDetail.noItems")}</p>
-  ) : null;
+  const read = usePost(listed?.id ?? null, { placeholderData: listed });
+  return (
+    <ItemPreview
+      detail={POST_DETAIL}
+      tree={tree}
+      item={read.data ?? listed}
+      none={feed.isSuccess}
+      empty="postDetail.noItems"
+      context={() => ({ canEdit: true, canPin: false, preview: true })}
+    />
+  );
 };
 
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
-  spec: TASK_LAYOUT,
+  spec: TASK_DETAIL.spec,
   words: {
     name: "layouts:taskLayout",
     help: "layouts:detailHelp",
@@ -332,52 +332,31 @@ export const taskDetail = (project: LayoutProject): EditableDetail => ({
     hiddenHelp: "layouts:hiddenHelp",
     parts: "layouts:",
   },
-  fields: taskFields,
+  fields: TASK_DETAIL.fields,
   preview: (tree) => <TaskPreview project={project} tree={tree} />,
 });
 
 /** The initiative calendar's event detail. */
 export const eventDetail = (initiativeId: number): EditableDetail => ({
-  spec: EVENT_LAYOUT,
-  words: {
-    name: "layouts:eventDetail.name",
-    help: "layouts:eventDetail.help",
-    shipped: "layouts:eventDetail.shipped",
-    titleHelp: "layouts:eventDetail.titleHelp",
-    hiddenHelp: "layouts:eventDetail.hiddenHelp",
-    parts: "layouts:eventDetail.",
-  },
-  fields: eventFields,
+  spec: EVENT_DETAIL.spec,
+  words: wordsOf("eventDetail"),
+  fields: EVENT_DETAIL.fields,
   preview: (tree) => <EventPreview initiativeId={initiativeId} tree={tree} />,
 });
 
 /** A queue's item detail. */
 export const queueItemDetail = (queueId: number, initiativeId: number): EditableDetail => ({
-  spec: QUEUE_ITEM_LAYOUT,
-  words: {
-    name: "layouts:queueItemDetail.name",
-    help: "layouts:queueItemDetail.help",
-    shipped: "layouts:queueItemDetail.shipped",
-    titleHelp: "layouts:queueItemDetail.titleHelp",
-    hiddenHelp: "layouts:queueItemDetail.hiddenHelp",
-    parts: "layouts:queueItemDetail.",
-  },
-  fields: queueItemFields,
+  spec: QUEUE_ITEM_DETAIL.spec,
+  words: wordsOf("queueItemDetail"),
+  fields: QUEUE_ITEM_DETAIL.fields,
   preview: (tree) => <QueueItemPreview queueId={queueId} initiativeId={initiativeId} tree={tree} />,
 });
 
 /** A gallery's picture detail. */
 export const galleryImageDetail = (galleryId: number, initiativeId: number): EditableDetail => ({
-  spec: GALLERY_IMAGE_LAYOUT,
-  words: {
-    name: "layouts:galleryImageDetail.name",
-    help: "layouts:galleryImageDetail.help",
-    shipped: "layouts:galleryImageDetail.shipped",
-    titleHelp: "layouts:galleryImageDetail.titleHelp",
-    hiddenHelp: "layouts:galleryImageDetail.hiddenHelp",
-    parts: "layouts:galleryImageDetail.",
-  },
-  fields: galleryImageFields,
+  spec: GALLERY_IMAGE_DETAIL.spec,
+  words: wordsOf("galleryImageDetail"),
+  fields: GALLERY_IMAGE_DETAIL.fields,
   preview: (tree) => (
     <GalleryImagePreview galleryId={galleryId} initiativeId={initiativeId} tree={tree} />
   ),
@@ -385,31 +364,17 @@ export const galleryImageDetail = (galleryId: number, initiativeId: number): Edi
 
 /** A counter group's counter detail. */
 export const counterDetail = (groupId: number, initiativeId: number): EditableDetail => ({
-  spec: COUNTER_LAYOUT,
-  words: {
-    name: "layouts:counterDetail.name",
-    help: "layouts:counterDetail.help",
-    shipped: "layouts:counterDetail.shipped",
-    titleHelp: "layouts:counterDetail.titleHelp",
-    hiddenHelp: "layouts:counterDetail.hiddenHelp",
-    parts: "layouts:counterDetail.",
-  },
-  fields: counterFields,
+  spec: COUNTER_DETAIL.spec,
+  words: wordsOf("counterDetail"),
+  fields: COUNTER_DETAIL.fields,
   preview: (tree) => <CounterPreview groupId={groupId} initiativeId={initiativeId} tree={tree} />,
 });
 
 /** The initiative's notice detail, which every notice in it shares. */
 export const postDetail = (initiativeId: number): EditableDetail => ({
-  spec: POST_LAYOUT,
-  words: {
-    name: "layouts:postDetail.name",
-    help: "layouts:postDetail.help",
-    shipped: "layouts:postDetail.shipped",
-    titleHelp: "layouts:postDetail.titleHelp",
-    hiddenHelp: "layouts:postDetail.hiddenHelp",
-    parts: "layouts:postDetail.",
-  },
-  fields: postFields,
+  spec: POST_DETAIL.spec,
+  words: wordsOf("postDetail"),
+  fields: POST_DETAIL.fields,
   preview: (tree) => <PostPreview initiativeId={initiativeId} tree={tree} />,
 });
 

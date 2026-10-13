@@ -3,7 +3,6 @@
   "deleteEvent": "Supprimer l'événement",
   "eventDeleted": "Événement supprimé",
   "eventTitle": "Titre",
-  "titlePlaceholder": "Titre de l'événement",
   "descriptionPlaceholder": "Ajouter une description...",
   "location": "Lieu",
   "locationPlaceholder": "Ajouter un lieu ou un lien...",

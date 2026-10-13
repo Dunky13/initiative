@@ -211,24 +211,14 @@
     "editTags": "Tags bearbeiten"
   },
   "taskForm": {
-    "titleLabel": "Titel",
     "titlePlaceholder": "Aufgabentitel",
-    "descriptionLabel": "Beschreibung",
-    "descriptionPlaceholder": "Weitere Details hinzufügen (optional)",
-    "advancedDetails": "Erweiterte Details",
     "statusLabel": "Status",
-    "selectStatus": "Status auswählen",
-    "priorityLabel": "Priorität",
-    "assigneesLabel": "Zuständige",
     "assigneesEmptyMessage": "Keine Mitglieder gefunden",
     "startDateLabel": "Startdatum",
     "dueDateLabel": "Fälligkeitsdatum",
-    "tagsLabel": "Tags",
     "tagsPlaceholder": "Tags hinzufügen",
     "sections": {
-      "tracking": "Nachverfolgung",
-      "schedule": "Zeitplan",
-      "people": "Personen & Tags"
+      "schedule": "Zeitplan"
     }
   }
 }

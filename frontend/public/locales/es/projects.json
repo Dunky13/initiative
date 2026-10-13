@@ -99,13 +99,7 @@
     "pin": "Fijar proyecto"
   },
   "taskComposer": {
-    "title": "Crear tarea",
-    "description": "Agrega trabajo por hacer.",
-    "archivedMessage": "Este proyecto está archivado. Desarchívalo para agregar nuevas tareas.",
-    "noWriteAccess": "Necesitas acceso de escritura para crear tareas.",
-    "saving": "Guardando…",
-    "createTask": "Crear tarea",
-    "createError": "No se pudo crear la tarea."
+    "createTask": "Crear tarea"
   },
   "assignee": {
     "emptyMessage": "Invita a miembros de la iniciativa para asignar tareas.",

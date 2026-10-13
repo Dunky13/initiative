@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { useListedInitiative } from "@/hooks/useInitiatives";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { hexToRgba, resolveInitiativeColor } from "@/lib/initiativeColors";
+import { useFieldDraft } from "@/lib/layouts/editing";
 import { cn } from "@/lib/utils";
 
 const TITLE_CLASS = "font-semibold text-3xl tracking-tight";
@@ -140,8 +141,9 @@ export const ToolPageHeader = ({
   );
 };
 
-/** A heading that turns into a field when clicked: Enter or leaving it saves,
- *  Escape puts the name back. */
+/** A heading that turns into a field when clicked, typed into as any field
+ *  is ({@link useFieldDraft}): Enter or leaving it saves, Escape puts the
+ *  name back, and an emptied name is put back too. */
 const EditableTitle = ({
   name,
   onRename,
@@ -150,40 +152,35 @@ const EditableTitle = ({
   onRename: (name: string) => Promise<unknown>;
 }) => {
   const { t } = useTranslation("common");
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    const trimmed = draft?.trim();
-    if (!trimmed || trimmed === name) {
-      setDraft(null);
-      return;
-    }
-    setSaving(true);
-    try {
-      await onRename(trimmed);
-      setDraft(null);
-    } catch {
-      // The mutation reports its own error; the field stays open to retry.
-    } finally {
-      setSaving(false);
-    }
+  const [editing, setEditing] = useState(false);
+  // The mutation reports its own error, and the name it had shows again.
+  const draft = useFieldDraft(
+    name,
+    (text) => onRename(text.trim()).catch(() => {}),
+    (a, b) => a.trim() === b.trim()
+  );
+  const done = () => {
+    if (!draft.value.trim()) draft.restore();
+    setEditing(false);
   };
 
-  if (draft !== null) {
+  if (editing) {
     return (
       <Input
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        value={draft.value}
+        onChange={(event) => draft.change(event.target.value)}
         aria-label={t("toolHeader.rename")}
         className={cn("h-auto min-w-0 flex-1 md:text-3xl", TITLE_CLASS)}
-        disabled={saving}
         autoFocus
         onKeyDown={(event) => {
-          if (event.key === "Enter") void save();
-          if (event.key === "Escape") setDraft(null);
+          if (event.key === "Enter" && !draft.value.trim()) draft.restore();
+          draft.keys.onKeyDown(event);
+          if (event.key === "Enter" || event.key === "Escape") setEditing(false);
         }}
-        onBlur={() => void save()}
+        onBlur={(event) => {
+          if (draft.value.trim()) draft.keys.onBlur(event);
+          done();
+        }}
       />
     );
   }
@@ -193,10 +190,10 @@ const EditableTitle = ({
       <button
         type="button"
         title={t("toolHeader.rename")}
-        onClick={() => setDraft(name)}
+        onClick={() => setEditing(true)}
         className="cursor-text rounded-md text-left hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {name}
+        {draft.value}
       </button>
     </h1>
   );
