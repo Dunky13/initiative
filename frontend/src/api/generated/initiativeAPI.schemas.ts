@@ -4471,8 +4471,27 @@ export const QueueItemDetailFieldId = {
   tags: "tags",
 } as const;
 
+/**
+ * What a picture's detail edits as a field. The picture itself, where it
+ * came from, its versions, what is linked to it and what can be done with it
+ * are parts of their own.
+ */
+export type GalleryImageDetailFieldId =
+  (typeof GalleryImageDetailFieldId)[keyof typeof GalleryImageDetailFieldId];
+
+export const GalleryImageDetailFieldId = {
+  title: "title",
+  caption: "caption",
+  tags: "tags",
+} as const;
+
 export interface DetailFieldProps {
-  field: TaskDetailFieldId | EventDetailFieldId | QueueItemDetailFieldId | string;
+  field:
+    | TaskDetailFieldId
+    | EventDetailFieldId
+    | QueueItemDetailFieldId
+    | GalleryImageDetailFieldId
+    | string;
 }
 
 export interface DetailFieldPart {
@@ -4646,6 +4665,7 @@ export const DetailLayoutReadKind = {
   task: "task",
   calendar_event: "calendar_event",
   queue_item: "queue_item",
+  gallery_image: "gallery_image",
 } as const;
 
 /**
@@ -4664,6 +4684,7 @@ export const DetailLayoutWriteKind = {
   task: "task",
   calendar_event: "calendar_event",
   queue_item: "queue_item",
+  gallery_image: "gallery_image",
 } as const;
 
 export interface DetailLayoutWrite {
@@ -5646,6 +5667,7 @@ export interface GalleryImageRead {
   version_count: number;
   tags: TagSummary[];
   properties: PropertySummary[];
+  plugin_values: PluginValueSummary[];
 }
 
 export interface GalleryImageListResponse {
@@ -5662,6 +5684,7 @@ export interface GalleryImageUpdate {
   title?: string | null;
   caption?: string | null;
   tag_ids?: number[] | null;
+  caption_base?: string | null;
 }
 
 /**

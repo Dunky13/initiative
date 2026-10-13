@@ -176,5 +176,27 @@
     "noItems": "Añade un elemento a la cola para ver aquí su diseño."
   },
   "tab": "Diseños",
-  "settingsDescription": "Cómo dispone lo que contiene: cada diseño, cuándo cambió por última vez y el acceso al editor. Todos los que pueden abrirlo los ven; lo que cada persona filtra y ordena es suyo."
+  "settingsDescription": "Cómo dispone lo que contiene: cada diseño, cuándo cambió por última vez y el acceso al editor. Todos los que pueden abrirlo los ven; lo que cada persona filtra y ordena es suyo.",
+  "galleryImageDetail": {
+    "name": "Detalle de la imagen",
+    "help": "Cómo se muestra cada imagen de esta galería al abrirla. Lo que deja fuera queda oculto.",
+    "shipped": "Este es el diseño tal como viene. Cambiarlo lo convierte en el de la galería.",
+    "titleHelp": "Cada imagen muestra su título.",
+    "hiddenHelp": "Cada imagen puede mostrar esto. Si se quita, queda oculto, y Añadir lo vuelve a poner.",
+    "parts": {
+      "actions": "Menú",
+      "relations": "Relaciones",
+      "picture": "Imagen",
+      "about": "De dónde viene",
+      "versions": "Versiones"
+    },
+    "partHelp": {
+      "actions": "Qué más se puede hacer con la imagen: denunciar, descargar, usar como portada y quitar.",
+      "relations": "Con qué está vinculada la imagen.",
+      "picture": "La imagen en sí.",
+      "about": "Quién la añadió y cuándo, y su archivo.",
+      "versions": "Cada versión subida, y subir una nueva."
+    },
+    "noItems": "Añade una imagen a la galería para ver aquí su diseño."
+  }
 }

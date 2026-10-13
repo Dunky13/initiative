@@ -62,6 +62,7 @@ export function buildGalleryImage(overrides: Partial<GalleryImageRead> = {}): Ga
     version_count: 1,
     tags: [],
     properties: [],
+    plugin_values: [],
     ...overrides,
   };
 }

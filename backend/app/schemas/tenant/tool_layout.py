@@ -204,6 +204,16 @@ class QueueItemDetailFieldId(str, Enum):
     tags = "tags"
 
 
+class GalleryImageDetailFieldId(str, Enum):
+    """What a picture's detail edits as a field. The picture itself, where it
+    came from, its versions, what is linked to it and what can be done with it
+    are parts of their own."""
+
+    title = "title"
+    caption = "caption"
+    tags = "tags"
+
+
 PROPERTY_FIELD_PREFIX = "property:"
 PLUGIN_FIELD_PREFIX = "plugin:"
 #: The characters a row id is written in.
@@ -269,7 +279,11 @@ TaskDetailFieldId = Enum(
 )
 ColumnFieldId = Union[TaskColumnFieldId, NamedFieldId]
 DetailFieldId = Union[
-    TaskDetailFieldId, EventDetailFieldId, QueueItemDetailFieldId, NamedFieldId
+    TaskDetailFieldId,
+    EventDetailFieldId,
+    QueueItemDetailFieldId,
+    GalleryImageDetailFieldId,
+    NamedFieldId,
 ]
 
 
@@ -375,9 +389,9 @@ class DetailStackPart(_Strict):
 
 #: The parts a detail draws as its own, which edit or show more than one
 #: field: a task's status, who made it, its read-only notice, its case and its
-#: comments; an event's answer; and either's dates, menu and relations. Which
-#: of them a kind of detail draws is
-#: ``app.services.tenant.tool_layouts.DETAIL_PARTS``.
+#: comments; an event's answer; a picture itself, where it came from and its
+#: versions; and any item's dates, menu and relations. Which of them a kind of
+#: detail draws is ``app.services.tenant.tool_layouts.DETAIL_PARTS``.
 OwnPartType = Literal[
     "status",
     "dates",
@@ -388,6 +402,9 @@ OwnPartType = Literal[
     "case",
     "comments",
     "rsvp",
+    "picture",
+    "about",
+    "versions",
 ]
 
 
@@ -420,7 +437,7 @@ DetailStackPart.model_rebuild()
 ListLayoutKind = Literal["table", "board", "calendar"]
 #: Every kind of thing a detail layout shows one of; which a tool holds is
 #: ``app.core.tools.DETAIL_LAYOUTS``.
-DetailLayoutKind = Literal["task", "calendar_event", "queue_item"]
+DetailLayoutKind = Literal["task", "calendar_event", "queue_item", "gallery_image"]
 
 
 #: What a table can be sorted by, as the task list takes it.

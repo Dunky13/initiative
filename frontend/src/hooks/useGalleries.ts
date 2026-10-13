@@ -8,6 +8,7 @@ import {
   getGetGalleryImageTimelineQueryKey,
   getListGalleryImagesQueryKey,
   getListGalleryImageVersionsQueryKey,
+  getReadGalleryImageQueryKey,
   listGalleryImages,
   listGalleryImageVersions,
   updateGalleryImage,
@@ -25,11 +26,12 @@ import type {
   ListGalleryImagesParams,
   TimelineResponse,
 } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { invalidate, q } from "@/api/query-keys";
+import { PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { compose, invalidate, q } from "@/api/query-keys";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import type { FieldSaveKind } from "@/hooks/useFieldSave";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
 
@@ -148,20 +150,6 @@ export const useUploadGalleryImage = (
     options
   );
 
-export const useUpdateGalleryImage = (
-  galleryId: number,
-  options?: MutationOpts<GalleryImageRead, { imageId: number; data: GalleryImageUpdate }>
-) =>
-  useCommunityMutation<GalleryImageRead, { imageId: number; data: GalleryImageUpdate }>(
-    {
-      mutationFn: (communityId, { imageId, data }) =>
-        updateGalleryImage(communityId, galleryId, imageId, data),
-      invalidate: () => invalidateImages(galleryId),
-      errorKey: "galleries:error",
-    },
-    options
-  );
-
 export const useDeleteGalleryImage = (galleryId: number, options?: MutationOpts<void, number>) =>
   useCommunityMutation<void, number>(
     {
@@ -222,3 +210,15 @@ export const useDeleteGalleryImageVersion = (
     },
     options
   );
+
+/** How a gallery's pictures are saved field by field. */
+export const galleryImageSaves = (
+  galleryId: number
+): FieldSaveKind<GalleryImageRead, GalleryImageUpdate> => ({
+  name: "gallery-image",
+  readKey: (communityId, id) => getReadGalleryImageQueryKey(communityId, galleryId, id),
+  patch: (communityId, id, patch) => updateGalleryImage(communityId, galleryId, id, patch),
+  properties: PropertyTarget.gallery_image,
+  lists: () => compose(q.toolSubtree(Tool.gallery, galleryId), q.allGalleries()),
+  itself: (id) => q.galleryImage(galleryId, id),
+});
