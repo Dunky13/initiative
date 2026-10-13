@@ -23,6 +23,7 @@ import type {
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { defaultsForCategory } from "@/lib/taskStatusDefaults";
+import { markdownExcerpt } from "@/lib/text";
 
 export interface ProjectListingStatus {
   name: string;
@@ -129,15 +130,6 @@ const shifted = (value: string | null | undefined, days: number): string | null 
   return new Date(new Date(value).getTime() + days * MS_PER_DAY).toISOString();
 };
 
-/** A description as a card's excerpt: its words, without the markdown's
- *  emphasis and heading marks. */
-const excerptOf = (description: string): string =>
-  description
-    .replace(/[*_`#>]/g, "")
-    .split(/\s+/)
-    .join(" ")
-    .trim();
-
 export interface ProjectListingBoard {
   taskStatuses: TaskStatusRead[];
   groupedTasks: Record<number, TaskListRead[]>;
@@ -226,7 +218,7 @@ export const projectListingBoard = (
       recurrence_shift: task.recurrence_shift ?? 0,
       recurrence_occurrence_count: task.recurrence_occurrence_count ?? 0,
       recurrence_until: null,
-      description_excerpt: task.description ? excerptOf(task.description) : null,
+      description_excerpt: task.description ? markdownExcerpt(task.description) : null,
       has_description: Boolean(task.description),
       task_status_id: status.id,
       task_status: status,
