@@ -54,6 +54,8 @@ _TOOLS = {tool.value for tool in Tool}
 def _tools(value: Any) -> list[str]:
     if not isinstance(value, list) or not value:
         raise HomeOptionError("must be a non-empty list of tools")
+    if not all(isinstance(each, str) for each in value):
+        raise HomeOptionError("must name each tool as text")
     unknown = [each for each in value if each not in _TOOLS]
     if unknown:
         raise HomeOptionError(f"names no tool: {unknown}")
@@ -68,6 +70,8 @@ MAX_CLOCK_ZONES = 3
 def _zones(value: Any) -> list[str]:
     if not isinstance(value, list) or len(value) > MAX_CLOCK_ZONES:
         raise HomeOptionError(f"must be a list of at most {MAX_CLOCK_ZONES} time zones")
+    if not all(isinstance(each, str) for each in value):
+        raise HomeOptionError("must name each time zone as text")
     known = available_timezones() | {"UTC"}
     unknown = [each for each in value if each not in known]
     if unknown:

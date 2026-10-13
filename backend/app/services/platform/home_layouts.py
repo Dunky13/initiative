@@ -30,8 +30,8 @@ class HomeLayoutListing:
     version: MarketplaceListingVersion
 
 
-#: More layouts than a shelf would ever hold; the store reads them all at once.
-_MAX_LAYOUTS = 100
+#: How many listings are read at a time; the shelf reads every page.
+_PAGE = 100
 
 
 async def available_home_layouts(session: AsyncSession) -> list[HomeLayoutListing]:
@@ -41,9 +41,16 @@ async def available_home_layouts(session: AsyncSession) -> list[HomeLayoutListin
     one published to the deployment differ only by where they came from. A
     listing whose published version places nothing is not offered.
     """
-    listings, _total = await catalog_service.list_listings(
-        session, kind="home_layout", page_size=_MAX_LAYOUTS
-    )
+    listings: list[MarketplaceListing] = []
+    page = 1
+    while True:
+        batch, total = await catalog_service.list_listings(
+            session, kind="home_layout", page=page, page_size=_PAGE
+        )
+        listings.extend(batch)
+        if not batch or len(listings) >= total:
+            break
+        page += 1
     versions = await catalog_service.get_listing_versions(
         session, [listing.latest_version_id for listing in listings]
     )

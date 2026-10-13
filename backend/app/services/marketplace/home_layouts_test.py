@@ -79,6 +79,9 @@ def test_the_listing_kind_is_checked_by_this_validator():
             _widget("a", "clock", options={"zones": ["Mars/Olympus"]}),
             "names no time zone",
         ),
+        # Not text at all: refused with a reason, not a server error.
+        (_widget("a", "recent", options={"tools": [{}]}), "each tool as text"),
+        (_widget("a", "clock", options={"zones": [[]]}), "each time zone as text"),
         (_widget("a", "greeting", w=2, h=2), "grid.w must be between"),
         (_widget("a", "clock", x=10, w=4), "grid.x must be between"),
         (_widget("a b", "clock"), "short name"),
