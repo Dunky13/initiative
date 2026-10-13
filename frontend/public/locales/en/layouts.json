@@ -198,5 +198,23 @@
       "versions": "Every version uploaded, and uploading a new one."
     },
     "noItems": "Add a picture to the gallery to see its layout here."
+  },
+  "counterDetail": {
+    "name": "Counter detail",
+    "help": "How every counter in this group is shown when it's opened to edit. What it leaves out is hidden.",
+    "shipped": "This is the layout as shipped. Changing it makes it the group's own.",
+    "titleHelp": "Every counter shows its name.",
+    "hiddenHelp": "Every counter can show this. Taken off, it is hidden, and Add puts it back.",
+    "parts": {
+      "actions": "Menu",
+      "relations": "Relations",
+      "count": "Count"
+    },
+    "partHelp": {
+      "actions": "What else can be done with the counter: reset it.",
+      "relations": "What the counter is linked to.",
+      "count": "Its count, stepped or set."
+    },
+    "noItems": "Add a counter to the group to see its layout here."
   }
 }

@@ -198,5 +198,23 @@
       "versions": "Cada versión subida, y subir una nueva."
     },
     "noItems": "Añade una imagen a la galería para ver aquí su diseño."
+  },
+  "counterDetail": {
+    "name": "Detalle del contador",
+    "help": "Cómo se muestra cada contador de este grupo al abrirlo para editarlo. Lo que deja fuera queda oculto.",
+    "shipped": "Este es el diseño tal como viene. Cambiarlo lo convierte en el del grupo.",
+    "titleHelp": "Cada contador muestra su nombre.",
+    "hiddenHelp": "Cada contador puede mostrar esto. Si se quita, queda oculto, y Añadir lo vuelve a poner.",
+    "parts": {
+      "actions": "Menú",
+      "relations": "Relaciones",
+      "count": "Cuenta"
+    },
+    "partHelp": {
+      "actions": "Qué más se puede hacer con el contador: reiniciarlo.",
+      "relations": "Con qué está vinculado el contador.",
+      "count": "Su cuenta, a pasos o fijada."
+    },
+    "noItems": "Añade un contador al grupo para ver aquí su diseño."
   }
 }

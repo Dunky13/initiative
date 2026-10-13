@@ -23,6 +23,7 @@ import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { CounterFormDialog } from "@/components/initiativeTools/counters/CounterFormDialog";
 import { type CounterLayout, CounterRow } from "@/components/initiativeTools/counters/CounterRow";
+import { EditCounterDialog } from "@/components/initiativeTools/counters/EditCounterDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import { computeMidpoint } from "@/components/projects/taskOrdering";
 import {
@@ -354,13 +355,13 @@ export function CounterGroupDetailPage() {
       )}
 
       {canWrite && editing && (
-        <CounterFormDialog
+        <EditCounterDialog
           open={!!editing}
           onOpenChange={(open) => {
             if (!open) setEditing(null);
           }}
           groupId={groupId}
-          initiativeId={initiativeId}
+          initiativeId={group.initiative_id}
           counter={editing}
         />
       )}

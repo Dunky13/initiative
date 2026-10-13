@@ -3908,6 +3908,22 @@ export interface CounterCreate {
   position?: number | string;
 }
 
+/**
+ * What a counter's detail edits as a field. Its count, what is linked to
+ * it and what can be done with it are parts of their own.
+ */
+export type CounterDetailFieldId = (typeof CounterDetailFieldId)[keyof typeof CounterDetailFieldId];
+
+export const CounterDetailFieldId = {
+  name: "name",
+  color: "color",
+  min: "min",
+  max: "max",
+  step: "step",
+  start: "start",
+  view: "view",
+} as const;
+
 export interface CounterGroupCreate {
   properties?: PropertyValueInput[];
   /**
@@ -3983,6 +3999,7 @@ export interface CounterRead {
   view_mode: CounterViewMode;
   position: string;
   properties: PropertySummary[];
+  plugin_values: PluginValueSummary[];
   created_at: string;
   updated_at: string;
 }
@@ -4491,6 +4508,7 @@ export interface DetailFieldProps {
     | EventDetailFieldId
     | QueueItemDetailFieldId
     | GalleryImageDetailFieldId
+    | CounterDetailFieldId
     | string;
 }
 
@@ -4519,6 +4537,7 @@ export const OwnPartType = {
   picture: "picture",
   about: "about",
   versions: "versions",
+  count: "count",
 } as const;
 
 /**
@@ -4669,6 +4688,7 @@ export const DetailLayoutReadKind = {
   calendar_event: "calendar_event",
   queue_item: "queue_item",
   gallery_image: "gallery_image",
+  counter: "counter",
 } as const;
 
 /**
@@ -4688,6 +4708,7 @@ export const DetailLayoutWriteKind = {
   calendar_event: "calendar_event",
   queue_item: "queue_item",
   gallery_image: "gallery_image",
+  counter: "counter",
 } as const;
 
 export interface DetailLayoutWrite {

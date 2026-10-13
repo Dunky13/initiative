@@ -473,6 +473,10 @@ const galleryImage = (galleryId: number, imageId: number): Spec => ({
   communityExact: [`/api/v1/galleries/${galleryId}/images/${imageId}`],
 });
 
+const counter = (counterId: number): Spec => ({
+  communityExact: [`/api/v1/counters/${counterId}`],
+});
+
 const queueItem = (itemId: number): Spec => ({
   communityExact: [`/api/v1/queue-items/${itemId}`],
 });
@@ -556,11 +560,14 @@ const toolLists = (which: Tool): Spec => {
     communityPrefix: [`/api/v1/tools/${which}/counts`],
   });
   if (which === Tool.calendar) return compose(lists, allCalendarEvents());
-  // An initiative's list of layouts names its projects, queues and galleries,
+  // An initiative's list of layouts names its projects, queues, galleries and
+  // counter groups,
   // by name. The entries carry projects by their dates and posts by their
   // polls' closing.
   if (which === Tool.project) return compose(lists, initiativeLayouts(), allCalendarEntries());
-  if (which === Tool.queue || which === Tool.gallery) return compose(lists, initiativeLayouts());
+  if (which === Tool.queue || which === Tool.gallery || which === Tool.counter_group) {
+    return compose(lists, initiativeLayouts());
+  }
   if (which === Tool.post) return compose(lists, allCalendarEntries());
   return lists;
 };
@@ -669,6 +676,7 @@ export const q = {
   captchaSettings,
   calendarEvent,
   queueItem,
+  counter,
   galleryImage,
   communitySettings,
   notificationSettings,

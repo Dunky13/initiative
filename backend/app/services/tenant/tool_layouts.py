@@ -42,6 +42,7 @@ from app.schemas.tenant.tool_layout import (
     DetailFieldPart,
     DetailLayoutWrite,
     DetailStackPart,
+    CounterDetailFieldId,
     EventDetailFieldId,
     GalleryImageDetailFieldId,
     QueueItemDetailFieldId,
@@ -79,6 +80,7 @@ DETAIL_PARTS: dict[str, frozenset[str]] = {
     "queue_item": _LAYOUT_PARTS | {"plugin", "actions", "relations"},
     "gallery_image": _LAYOUT_PARTS
     | {"plugin", "actions", "relations", "picture", "about", "versions"},
+    "counter": _LAYOUT_PARTS | {"plugin", "actions", "relations", "count"},
 }
 
 #: The built-in fields each kind of detail edits.
@@ -87,6 +89,7 @@ DETAIL_FIELDS: dict[str, frozenset[str]] = {
     "calendar_event": frozenset(field.value for field in EventDetailFieldId),
     "queue_item": frozenset(field.value for field in QueueItemDetailFieldId),
     "gallery_image": frozenset(field.value for field in GalleryImageDetailFieldId),
+    "counter": frozenset(field.value for field in CounterDetailFieldId),
 }
 
 

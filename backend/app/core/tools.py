@@ -303,6 +303,7 @@ DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {
     Tool.calendar: ("calendar_event",),
     Tool.queue: ("queue_item",),
     Tool.gallery: ("gallery_image",),
+    Tool.counter_group: ("counter",),
 }
 #: The per-instance tools that lay out anything of their own, a list or an
 #: item: those an initiative's settings list.

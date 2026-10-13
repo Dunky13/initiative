@@ -22,6 +22,7 @@ from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import MAX_DEPTH, MAX_NODES, MAX_PLUGIN_PARTS
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.testing import (
+    create_counter_group,
     create_gallery,
     create_project,
     create_queue,
@@ -334,13 +335,14 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     ]
 
 
-async def test_a_queue_and_a_gallery_lay_out_their_items(
+async def test_tools_lay_out_their_items(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """Each its own item detail, listed among the initiative's layouts."""
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
     queue = await create_queue(session, a.initiative, a.user, name="Turns")
     gallery = await create_gallery(session, a.initiative, a.user, name="Wall")
+    group = await create_counter_group(session, a.initiative, a.user, name="Tally")
     detail = _detail(
         "queue_item",
         {"type": "section", "children": [_field("person"), _field("property:12")]},
@@ -370,11 +372,20 @@ async def test_a_queue_and_a_gallery_lay_out_their_items(
 
     assert saved.status_code == 200, saved.text
     assert [layout["kind"] for layout in saved.json()["layouts"]] == ["queue_item"]
+    counters = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "counter_group", "tool_id": group.id},
+        json=_detail("counter", {"type": "count"}, _field("step")),
+        headers=a.headers,
+    )
+    assert counters.status_code == 200, counters.text
+    assert [layout["kind"] for layout in counters.json()["layouts"]] == ["counter"]
     assert pictures.status_code == 200, pictures.text
     assert [layout["kind"] for layout in pictures.json()["layouts"]] == [
         "gallery_image"
     ]
     assert sorted((each["tool"], each["name"]) for each in listed.json()) == [
+        ("counter_group", "Tally"),
         ("gallery", "Wall"),
         ("queue", "Turns"),
     ]

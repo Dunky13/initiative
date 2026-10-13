@@ -198,5 +198,23 @@
       "versions": "Chaque version envoyée, et en envoyer une nouvelle."
     },
     "noItems": "Ajoutez une image à la galerie pour voir sa mise en page ici."
+  },
+  "counterDetail": {
+    "name": "Détail du compteur",
+    "help": "Comment chaque compteur de ce groupe s'affiche quand on l'ouvre pour le modifier. Ce qu'il laisse de côté est masqué.",
+    "shipped": "Voici la mise en page d'origine. La modifier en fait celle du groupe.",
+    "titleHelp": "Chaque compteur affiche son nom.",
+    "hiddenHelp": "Chaque compteur peut afficher ceci. Retiré, il est masqué, et Ajouter le remet.",
+    "parts": {
+      "actions": "Menu",
+      "relations": "Relations",
+      "count": "Valeur"
+    },
+    "partHelp": {
+      "actions": "Ce qu'on peut faire d'autre avec le compteur : le réinitialiser.",
+      "relations": "Ce à quoi le compteur est lié.",
+      "count": "Sa valeur, par pas ou fixée."
+    },
+    "noItems": "Ajoutez un compteur au groupe pour voir sa mise en page ici."
   }
 }

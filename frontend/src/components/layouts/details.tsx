@@ -19,11 +19,14 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
+import { useCounterGroup } from "@/hooks/useCounters";
 import { useGalleryImagesFeed } from "@/hooks/useGalleries";
 import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
+import { CounterLayoutView } from "@/lib/layouts/counterLayout";
+import { COUNTER_LAYOUT, counterFields } from "@/lib/layouts/counters";
 import type { DetailLayoutSpec, StoredRegions } from "@/lib/layouts/detailLayout";
 import { EventLayoutView } from "@/lib/layouts/eventLayout";
 import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
@@ -242,6 +245,43 @@ const GalleryImagePreview = ({
   ) : null;
 };
 
+/** The group's counter detail drawn with its first counter. */
+const CounterPreview = ({
+  groupId,
+  initiativeId,
+  tree,
+}: {
+  groupId: number;
+  initiativeId: number;
+  tree: LayoutNode;
+}) => {
+  const { t } = useTranslation("layouts");
+  const leaving = useRef(true);
+  const group = useCounterGroup(groupId);
+  const first = group.data?.counters[0];
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <CounterLayoutView
+        counter={first}
+        layout={layout}
+        editing
+        context={{
+          readOnly: false,
+          groupId,
+          initiativeId,
+          leaving,
+          actions: <ActionsPreview />,
+          preview: true,
+        }}
+      />
+    );
+  }
+  return group.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("counterDetail.noItems")}</p>
+  ) : null;
+};
+
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
@@ -304,6 +344,21 @@ export const galleryImageDetail = (galleryId: number, initiativeId: number): Edi
   ),
 });
 
+/** A counter group's counter detail. */
+export const counterDetail = (groupId: number, initiativeId: number): EditableDetail => ({
+  spec: COUNTER_LAYOUT,
+  words: {
+    name: "layouts:counterDetail.name",
+    help: "layouts:counterDetail.help",
+    shipped: "layouts:counterDetail.shipped",
+    titleHelp: "layouts:counterDetail.titleHelp",
+    hiddenHelp: "layouts:counterDetail.hiddenHelp",
+    parts: "layouts:counterDetail.",
+  },
+  fields: counterFields,
+  preview: (tree) => <CounterPreview groupId={groupId} initiativeId={initiativeId} tree={tree} />,
+});
+
 /** The item detail each tool lays out on its own, with no list of its own to
  *  lay out beside it: what its editor offers. */
 export const ITEM_DETAILS: Partial<
@@ -311,6 +366,7 @@ export const ITEM_DETAILS: Partial<
 > = {
   [Tool.queue]: queueItemDetail,
   [Tool.gallery]: galleryImageDetail,
+  [Tool.counter_group]: counterDetail,
 };
 
 /** A project's lists' presets: its tasks' filters, and a table's sort. */
