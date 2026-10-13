@@ -52,7 +52,7 @@ describe("app error pages", () => {
 
     expect(await screen.findByText("Something went wrong")).toBeInTheDocument();
     expect(screen.getByTestId("shell")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to My Tasks" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Go to Home" })).toHaveAttribute("href", "/");
     expect(screen.getByText(/Error: boom/)).toBeInTheDocument();
   });
 

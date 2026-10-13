@@ -1,0 +1,244 @@
+{
+  "title": "Home",
+  "customize": "Customize",
+  "addWidget": "Add widget",
+  "editing": {
+    "hint": "Drag a widget to move it, and pull its corner to resize it.",
+    "hintStacked": "Move widgets up and down, or remove what you don't need."
+  },
+  "tile": {
+    "moveUp": "Move {{title}} up",
+    "moveDown": "Move {{title}} down",
+    "settings": "{{title}} settings",
+    "remove": "Remove {{title}}"
+  },
+  "widgetError": "{{title}} couldn't be shown.",
+  "tooLarge": "Your home page is full. Remove a widget to make room.",
+  "empty": {
+    "title": "Your home page is empty",
+    "description": "Add the widgets you want to see first, or start from a layout.",
+    "fromLayout": "Start from a layout"
+  },
+  "picker": {
+    "title": "Add a widget",
+    "description": "It goes at the bottom of your page. Move it wherever you like.",
+    "onPage": "Already on your page"
+  },
+  "layouts": {
+    "newTitle": "New view",
+    "newDescription": "Start from one of these, or from nothing. It opens as a new tab beside your other views, and you can change anything about it.",
+    "fillTitle": "Start from a layout",
+    "fillDescription": "Fill this view with one of these. You can change anything about it afterwards."
+  },
+  "presets": {
+    "tasks": {
+      "name": "My tasks",
+      "description": "Everything assigned to you, with what needs doing now on top."
+    },
+    "myDay": {
+      "name": "My day",
+      "description": "Your own planner: what needs doing now, the days ahead, your streak, then the whole list."
+    },
+    "headsDown": {
+      "name": "Heads down",
+      "description": "A timer and the few things that need doing now. Nothing else to look at."
+    },
+    "assigned": {
+      "name": "Assigned work",
+      "description": "Your list first, the urgent part beside it, and what's happened to your things lately."
+    },
+    "community": {
+      "name": "Community",
+      "description": "Keep up with the communities you follow and what's happening in them."
+    },
+    "owner": {
+      "name": "Running the show",
+      "description": "What's moving in your community, what you had open and what changed in projects and dashboards, and your own list."
+    }
+  },
+  "settingsDialog": {
+    "title": "{{title}} settings"
+  },
+  "widgets": {
+    "greeting": {
+      "title": "Greeting",
+      "description": "Hello, today's date, and how much is due.",
+      "morning": "Good morning, {{name}}",
+      "afternoon": "Good afternoon, {{name}}",
+      "evening": "Good evening, {{name}}",
+      "night": "Burning the midnight oil, {{name}}?",
+      "clear": "Nothing due today",
+      "overdue_one": "{{count}} overdue",
+      "overdue_other": "{{count}} overdue",
+      "dueToday_one": "{{count}} due today",
+      "dueToday_other": "{{count}} due today",
+      "welcome": "Welcome, {{name}}",
+      "yonder": "Show Yonder",
+      "yonderHint": "He reads the day for you: puzzled by anything late, delighted by a clear one."
+    },
+    "gettingStarted": {
+      "title": "Getting started",
+      "description": "A few first things to do, ticked off as you do them.",
+      "hide": "Hide getting started",
+      "remove": "Remove this card",
+      "allDone": "That's everything. You're all set, and this card can go whenever you like.",
+      "progress": "{{done}} of {{total}} done",
+      "stepDone": "done",
+      "intro": {
+        "personal": "This is your home. Let's get your space feeling lived in.",
+        "shared": "Your community is ready. Here's how to get people into it.",
+        "join": "Welcome! First things first: let's find you some people.",
+        "invite": "You're in. Here are a few things worth doing first."
+      },
+      "community": {
+        "personal": "Set up your space",
+        "shared": "Start your community",
+        "join": "Join a community",
+        "invite": "Join the community you were invited to",
+        "hint": "Communities are where the work and the people are.",
+        "action": "Browse communities"
+      },
+      "task": {
+        "title": "Add a task of your own",
+        "hint": "Anything you need to remember. It lands in My tasks.",
+        "hintList": "Add one to {{list}}. It lands in My tasks.",
+        "action": "Open {{list}}",
+        "actionTools": "Find a project"
+      },
+      "invite": {
+        "title": "Invite your people",
+        "hint": "A community of one is a very quiet community.",
+        "action": "Invite people"
+      },
+      "profile": {
+        "title": "Add a profile picture",
+        "hint": "So people know it's you in comments and on tasks.",
+        "action": "Open your profile"
+      },
+      "app": {
+        "title": "Get the app",
+        "hint": "Your tasks and messages, in your pocket.",
+        "action": "Get the app"
+      },
+      "home": {
+        "title": "Make this page yours",
+        "hint": "Move things about, add a clock or a calendar, or make a second view.",
+        "action": "Customize"
+      }
+    },
+    "focus": {
+      "title": "Focus",
+      "description": "What needs doing now, with today's finished work kept in view."
+    },
+    "tasks": {
+      "title": "My tasks",
+      "description": "Your tasks from every community, as a table or a calendar.",
+      "empty": "Nothing is assigned to you yet. When someone gives you a task, or you add one of your own, it lands here.",
+      "chooseList": "Choose a list to add to",
+      "add": "Add",
+      "addPlaceholder": "Add a task to {{list}}…",
+      "added": "Added to {{list}}.",
+      "addTo": "Add new tasks to",
+      "addToHint": "Shows a line at the top for adding a task to this list, assigned to you.",
+      "noList": "Don't show a line for adding tasks"
+    },
+    "comingUp": {
+      "title": "Coming up",
+      "description": "Events and task dates in the days ahead, from every community.",
+      "days": "How far ahead",
+      "daysOption_one": "The next day",
+      "daysOption_other": "The next {{count}} days",
+      "empty_one": "Nothing coming up today.",
+      "empty_other": "Nothing coming up in the next {{count}} days.",
+      "loadError": "Couldn't load what's coming up.",
+      "openCalendar": "Open My Calendar"
+    },
+    "calendar": {
+      "title": "My calendar",
+      "description": "Your events and dated tasks from every community, by month or week. The same calendar as My Calendar."
+    },
+    "recent": {
+      "title": "Recent",
+      "description": "What you opened lately, or what changed lately, across every kind of tool and every community.",
+      "viewed": "Recently viewed",
+      "changed": "Recently changed",
+      "viewedIn": "Recently viewed {{tool}}",
+      "changedIn": "Recently changed {{tool}}",
+      "mode": "Show",
+      "tools": "Tools",
+      "allTools": "All tools",
+      "toolsHint": "Narrow both lists to these kinds of tool. Leave it empty for all of them.",
+      "emptyViewed": "Nothing opened yet. Projects, files and the rest show up here once you've looked at them.",
+      "emptyChanged": "Nothing has changed lately.",
+      "loadError": "Couldn't load what's recent.",
+      "openTools": "Open My Tools"
+    },
+    "activity": {
+      "title": "Activity",
+      "titleIn": "Activity in {{community}}",
+      "description": "What people changed lately in one of your communities.",
+      "community": "Community",
+      "view": "Show",
+      "noCommunity": "Join a community to see what's happening in it."
+    },
+    "communities": {
+      "title": "My communities",
+      "description": "Every community you're in, as its card.",
+      "empty": "You're not in a community yet.",
+      "find": "Find a community"
+    },
+    "progress": {
+      "title": "My progress",
+      "description": "Your streak, your week, and how much lands on time.",
+      "loadError": "Couldn't load your progress.",
+      "streak_one": "{{count}} day",
+      "streak_other": "{{count}} days",
+      "firstTask": "Finish your first task to start a streak."
+    },
+    "clock": {
+      "title": "Clock and timer",
+      "description": "The time here and elsewhere, or a countdown for the thing you said would take ten minutes.",
+      "clock": "Clock",
+      "timer": "Timer",
+      "mode": "Show",
+      "sameTime": "Same time",
+      "ahead": "{{offset}} ahead",
+      "behind": "{{offset}} behind",
+      "minutes_one": "{{count}} min",
+      "minutes_other": "{{count}} min",
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "reset": "Reset",
+      "dismiss": "Dismiss",
+      "timeUp": "Time's up.",
+      "timeUpShort": "Time's up",
+      "zones": "Other time zones",
+      "addZone": "Add a time zone",
+      "removeZone": "Remove {{zone}}",
+      "length": "Timer length, in minutes"
+    }
+  },
+  "views": {
+    "label": "Your home views",
+    "defaultName": "Home",
+    "new": "New view",
+    "limit": "You can keep up to {{max}} views.",
+    "menu": "Options for {{name}}",
+    "rename": "Rename",
+    "renameTitle": "Rename view",
+    "nameLabel": "Name",
+    "duplicate": "Duplicate",
+    "copyName": "{{name}} copy",
+    "moveLeft": "Move left",
+    "moveRight": "Move right",
+    "delete": "Delete view",
+    "deleteTitle": "Delete “{{name}}”?",
+    "deleteDescription": "Its widgets go with it. Nothing in your communities is touched.",
+    "deleteConfirm": "Delete",
+    "blank": {
+      "name": "Blank",
+      "description": "An empty page to fill however you like."
+    }
+  }
+}

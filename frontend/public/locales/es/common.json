@@ -319,7 +319,7 @@
     "description": "Esta página tuvo un error y no se pudo mostrar. Inténtalo de nuevo o ve a tus tareas.",
     "appDescription": "Initiative tuvo un error y no pudo continuar. Al recargar, se inicia de nuevo.",
     "details": "Detalles del error",
-    "toMyTasks": "Ir a {{myTasks}}",
+    "toHome": "Ir a {{home}}",
     "reload": "Recargar",
     "updatedTitle": "Initiative se ha actualizado",
     "updatedDescription": "Hay una versión más reciente. Recarga para abrir esta página en ella."

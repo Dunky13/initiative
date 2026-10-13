@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { liveInitiatives, useInitiativeAccess } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
+import { activityLastVisitKey } from "@/lib/activityLastVisit";
 import { renderableBanner } from "@/lib/banner";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { readableTextShadow } from "@/lib/contrastColor";
@@ -54,7 +55,7 @@ const isFeedView = (value: unknown): value is FeedView =>
  * nothing and nobody else needs it.
  */
 const useLastVisit = (userId: number | undefined, communityId: number): string | null => {
-  const key = userId === undefined ? null : `activity-last-visit:${userId}:${communityId}`;
+  const key = userId === undefined ? null : activityLastVisitKey(userId, communityId);
   // Read again only for another account or community: moving it to now must
   // not take the marks off the entries this visit is showing.
   const lastVisit = useMemo(() => (key ? getItem(key) : null), [key]);

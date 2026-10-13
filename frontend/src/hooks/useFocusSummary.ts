@@ -239,6 +239,49 @@ const byDueDate = (a: TaskListRead, b: TaskListRead) => {
 };
 
 /**
+ * The reader's focus preferences and their pins, without the focus card's own
+ * reads: for a list that marks pinned rows (the tasks table) and is shown
+ * whether or not the card is.
+ */
+export function useFocusPreferences() {
+  const [prefsRaw, setPrefs, { isLoaded }] = useViewPreference<FocusPreferences>(
+    FOCUS_PREFERENCES_KEY,
+    FOCUS_DEFAULTS
+  );
+
+  // A stored blob predates any later field, and is user-writable via the API.
+  const prefs = useMemo<FocusPreferences>(() => normalizePreferences(prefsRaw), [prefsRaw]);
+
+  const isPinned = useCallback(
+    (task: Pick<TaskListRead, "id" | "community_id">) =>
+      prefs.pins.some(
+        (pin) => pinKey(pin.community_id, pin.task_id) === pinKey(task.community_id, task.id)
+      ),
+    [prefs.pins]
+  );
+
+  const togglePin = useCallback(
+    (task: Pick<TaskListRead, "id" | "community_id">) => {
+      const key = pinKey(task.community_id, task.id);
+      setPrefs((prev) => {
+        const current = normalizePreferences(prev);
+        const without = current.pins.filter((pin) => pinKey(pin.community_id, pin.task_id) !== key);
+        return {
+          ...current,
+          pins:
+            without.length === current.pins.length
+              ? [...current.pins, { community_id: task.community_id ?? null, task_id: task.id }]
+              : without,
+        };
+      });
+    },
+    [setPrefs]
+  );
+
+  return { prefs, setPrefs, isLoaded, isPinned, togglePin };
+}
+
+/**
  * The "Focus summary" data: a small, capped set of work that needs doing now,
  * plus today's completions.
  *
@@ -250,13 +293,7 @@ const byDueDate = (a: TaskListRead, b: TaskListRead) => {
  * whenever the rules match a lot.
  */
 export function useFocusSummary() {
-  const [prefsRaw, setPrefs, { isLoaded }] = useViewPreference<FocusPreferences>(
-    FOCUS_PREFERENCES_KEY,
-    FOCUS_DEFAULTS
-  );
-
-  // A stored blob predates any later field, and is user-writable via the API.
-  const prefs = useMemo<FocusPreferences>(() => normalizePreferences(prefsRaw), [prefsRaw]);
+  const { prefs, setPrefs, isLoaded, isPinned, togglePin } = useFocusPreferences();
 
   const timezone = useMemo(browserTimezone, []);
 
@@ -310,32 +347,6 @@ export function useFocusSummary() {
     enabled: isLoaded && pinnedIds.length > 0,
     placeholderData: keepPreviousData,
   });
-
-  const isPinned = useCallback(
-    (task: Pick<TaskListRead, "id" | "community_id">) =>
-      prefs.pins.some(
-        (pin) => pinKey(pin.community_id, pin.task_id) === pinKey(task.community_id, task.id)
-      ),
-    [prefs.pins]
-  );
-
-  const togglePin = useCallback(
-    (task: Pick<TaskListRead, "id" | "community_id">) => {
-      const key = pinKey(task.community_id, task.id);
-      setPrefs((prev) => {
-        const current = normalizePreferences(prev);
-        const without = current.pins.filter((pin) => pinKey(pin.community_id, pin.task_id) !== key);
-        return {
-          ...current,
-          pins:
-            without.length === current.pins.length
-              ? [...current.pins, { community_id: task.community_id ?? null, task_id: task.id }]
-              : without,
-        };
-      });
-    },
-    [setPrefs]
-  );
 
   const setPreference = useCallback(
     <K extends keyof FocusPreferences>(key: K, value: FocusPreferences[K]) => {

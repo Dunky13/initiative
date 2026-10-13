@@ -67,7 +67,7 @@ beforeEach(() => {
 describe("the home sidebar", () => {
   it("offers My Tickets only to somebody who has filed one", async () => {
     setup("/");
-    expect(await screen.findByText("My Tasks")).toBeInTheDocument();
+    expect(await screen.findByText("Home")).toBeInTheDocument();
     expect(screen.queryByText("My Tickets")).toBeNull();
   });
 
@@ -81,7 +81,7 @@ describe("the home sidebar", () => {
   it("shows the navigation away from My Messages", async () => {
     setup("/");
 
-    expect(await screen.findByText("My Tasks")).toBeInTheDocument();
+    expect(await screen.findByText("Home")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /back to navigation/i })).toBeNull();
   });
 
@@ -99,14 +99,14 @@ describe("the home sidebar", () => {
     setup("/messages");
 
     expect(await screen.findByRole("button", { name: /back to navigation/i })).toBeInTheDocument();
-    expect(screen.queryByText("My Tasks")).toBeNull();
+    expect(screen.queryByText("Home")).toBeNull();
   });
 
   it("offers no My Messages where the deployment does not run it", async () => {
     mocks.dmEnabled.mockReturnValue(false);
     setup("/");
 
-    expect(await screen.findByText("My Tasks")).toBeInTheDocument();
+    expect(await screen.findByText("Home")).toBeInTheDocument();
     expect(screen.queryByText("My Messages")).toBeNull();
   });
 
@@ -117,7 +117,7 @@ describe("the home sidebar", () => {
     mocks.dmEnabled.mockReturnValue(false);
     setup("/messages");
 
-    expect(await screen.findByText("My Tasks")).toBeInTheDocument();
+    expect(await screen.findByText("Home")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /back to navigation/i })).toBeNull();
   });
 
@@ -127,7 +127,7 @@ describe("the home sidebar", () => {
     setup("/messages");
 
     await userEvent.click(await screen.findByRole("button", { name: /back to navigation/i }));
-    expect(await screen.findByText("My Tasks")).toBeInTheDocument();
+    expect(await screen.findByText("Home")).toBeInTheDocument();
 
     await userEvent.click(screen.getByText("My Messages"));
 

@@ -18,6 +18,7 @@ import type errors from "../../public/locales/en/errors.json";
 import type exports_ from "../../public/locales/en/exports.json";
 import type files from "../../public/locales/en/files.json";
 import type galleries from "../../public/locales/en/galleries.json";
+import type home from "../../public/locales/en/home.json";
 import type importsNs from "../../public/locales/en/imports.json";
 import type initiatives from "../../public/locales/en/initiatives.json";
 import type intake from "../../public/locales/en/intake.json";
@@ -64,6 +65,7 @@ declare module "i18next" {
       comments: typeof comments;
       messages: typeof messages;
       myTools: typeof myTools;
+      home: typeof home;
       contacts: typeof contacts;
       files: typeof files;
       editor: typeof editor;

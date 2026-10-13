@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, Pin, PinOff, Settings2 } from "lucide-react";
+import { ChevronDown, Crosshair, Pin, PinOff, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { TaskListRead, TaskStatusCategory } from "@/api/generated/initiativeAPI.schemas";
@@ -30,6 +30,10 @@ export type FocusSummaryProps = {
   /** Whether THIS task has a status change in flight, so one row saving leaves
    *  the rest of the section usable. */
   isUpdatingTask: (task: TaskListRead) => boolean;
+  /** Fill a home page tile on the grid: always open, its list scrolling inside
+   *  the tile. The tile is what the reader sizes there, so there is nothing to
+   *  fold; stacked on a narrow screen, it folds as usual. */
+  fill?: boolean;
 };
 
 const taskHref = (task: TaskListRead, activeCommunityId: number | null) => {
@@ -178,12 +182,13 @@ export const FocusSummary = ({
   activeCommunityId,
   changeTaskStatus,
   isUpdatingTask,
+  fill = false,
 }: FocusSummaryProps) => {
   const { t } = useTranslation(["tasks", "common"]);
   const { pinned, upcoming, completedToday, truncated, doneCount, totalCount, prefs } = focus;
 
   const progress = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
-  const open = prefs.open;
+  const open = fill || prefs.open;
 
   const renderRow = (task: TaskListRead, done: boolean) => (
     <FocusRow
@@ -202,18 +207,34 @@ export const FocusSummary = ({
     // The app shell supplies a tooltip context, but the section carries its own
     // so the date cells inside it work wherever it is mounted.
     <TooltipProvider delayDuration={300}>
-      <Card>
-        <Collapsible open={open} onOpenChange={(next) => focus.setPreference("open", next)}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3">
+      <Card className={cn(fill && "flex h-full min-h-0 flex-col overflow-hidden")}>
+        <Collapsible
+          open={open}
+          onOpenChange={(next) => focus.setPreference("open", next)}
+          className={cn(fill && "flex min-h-0 flex-1 flex-col")}
+        >
+          <CardHeader
+            className={cn(
+              "flex flex-row items-center justify-between space-y-0 py-3",
+              fill && "min-h-12 border-b px-4 py-2"
+            )}
+          >
             <div className="flex min-w-0 items-center gap-3">
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="-ml-2 h-8 gap-2 px-2">
-                  <ChevronDown
-                    className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")}
-                  />
-                  <span className="font-semibold text-base">{t("focus.title")}</span>
-                </Button>
-              </CollapsibleTrigger>
+              {fill ? (
+                <h2 className="flex items-center gap-2 font-semibold text-base">
+                  <Crosshair className="size-4 text-muted-foreground" aria-hidden="true" />
+                  {t("focus.title")}
+                </h2>
+              ) : (
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="-ml-2 h-8 gap-2 px-2">
+                    <ChevronDown
+                      className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")}
+                    />
+                    <span className="font-semibold text-base">{t("focus.title")}</span>
+                  </Button>
+                </CollapsibleTrigger>
+              )}
               {totalCount > 0 ? (
                 <Badge variant="secondary" className="shrink-0">
                   {t("focus.progress", { done: doneCount, total: totalCount })}
@@ -223,8 +244,8 @@ export const FocusSummary = ({
             <FocusSettings focus={focus} />
           </CardHeader>
 
-          <CollapsibleContent>
-            <CardContent className="pt-0 pb-4">
+          <CollapsibleContent className={cn(fill && "min-h-0 flex-1 overflow-auto")}>
+            <CardContent className={cn("pt-0 pb-4", fill && "px-4 pt-3")}>
               {totalCount > 0 ? <Progress value={progress} className="mb-3 h-1" /> : null}
 
               {focus.hasError ? (

@@ -9,7 +9,19 @@ import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
 import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
 import { VIEW_PREFERENCES_QUERY_KEY } from "@/hooks/useViewPreference";
 
-import { MyTasksPage } from "./MyTasksPage";
+import { TasksWidget as Widget } from "./TasksWidget";
+
+/** The widget as the home page places it, with no options of its own. */
+const TasksWidget = () => (
+  <Widget
+    widget={{ id: "tasks", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+    options={{}}
+    onOptionsChange={() => undefined}
+    stacked={false}
+    onConfigure={() => undefined}
+    onRemove={() => undefined}
+  />
+);
 
 /** Serve one page of assigned tasks; the list has to be non-empty to render. */
 function stubTasks() {
@@ -33,7 +45,7 @@ function renderMyTasks() {
   const queryClient = createTestQueryClient();
   // Skip the preferences fetch so the table mounts with its defaults.
   queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, { items: {} });
-  return renderPage(MyTasksPage, { queryClient });
+  return renderPage(TasksWidget, { queryClient });
 }
 
 /** Serve saved preferences, optionally after the tasks request has resolved. */
@@ -53,13 +65,13 @@ const groupSelect = () => screen.getByRole("combobox", { name: /group by/i });
 const tableRequests = (requests: URLSearchParams[]) =>
   requests.filter((params) => params.get("page_size") === "20");
 
-describe("MyTasksPage saved sort", () => {
+describe("TasksWidget saved sort", () => {
   it("waits for the saved sort before asking for rows or mounting the table", async () => {
     const requests = stubTasks();
     // Preferences land after the tasks request, which is the case that used to
     // freeze the headers on the default sort.
     stubPreferences({ sorting: [{ field: "priority", dir: "desc" }] }, { delayMs: 50 });
-    renderPage(MyTasksPage, { queryClient: createTestQueryClient() });
+    renderPage(TasksWidget, { queryClient: createTestQueryClient() });
 
     // Nothing is drawn on the defaults in the meantime, and nothing is asked
     // for in them either.
@@ -84,12 +96,12 @@ describe("MyTasksPage saved sort", () => {
   });
 });
 
-describe("MyTasksPage grouping", () => {
+describe("TasksWidget grouping", () => {
   it("remembers the grouping choice for the next visit", async () => {
     const user = userEvent.setup();
     stubTasks();
     const kept = keepViewPreferences();
-    const first = renderPage(MyTasksPage, { queryClient: createTestQueryClient() });
+    const first = renderPage(TasksWidget, { queryClient: createTestQueryClient() });
 
     // Opens grouped by date window, as it always has.
     await waitFor(() => expect(groupSelect()).toHaveTextContent(/date/i));
@@ -101,12 +113,12 @@ describe("MyTasksPage grouping", () => {
     // It is kept for the reader, on any device.
     first.unmount();
     await waitFor(() => expect(kept["view:me:tasks"]).toBeDefined());
-    renderPage(MyTasksPage, { queryClient: createTestQueryClient() });
+    renderPage(TasksWidget, { queryClient: createTestQueryClient() });
     await waitFor(() => expect(groupSelect()).toHaveTextContent(/none/i));
   });
 });
 
-describe("MyTasksPage status changes", () => {
+describe("TasksWidget status changes", () => {
   /**
    * One task per community so the per-row rules are observable: checking either
    * must not take the other away. The PATCH never answers, so each test reads
@@ -214,7 +226,7 @@ describe("MyTasksPage status changes", () => {
   });
 });
 
-describe("MyTasksPage priority", () => {
+describe("TasksWidget priority", () => {
   it("saves a priority change to the task's own community", async () => {
     const user = userEvent.setup();
     const task = buildTask({ id: 101, title: "Write the thing", community_id: 3, priority: "low" });
@@ -244,7 +256,7 @@ describe("MyTasksPage priority", () => {
   });
 });
 
-describe("MyTasksPage links", () => {
+describe("TasksWidget links", () => {
   it("takes each row into its own community", async () => {
     const task = buildTask({
       id: 101,

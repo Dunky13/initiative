@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckSquare,
   FilePlus,
+  House,
   LayoutGrid,
   LifeBuoy,
   ListTodo,
@@ -260,7 +261,7 @@ export function CommandCenter() {
   // Static pages
   const pages = useMemo(() => {
     const items = [
-      { label: t("pages.myTasks"), path: "/", icon: CheckSquare },
+      { label: t("pages.home"), path: "/", icon: House },
       { label: t("pages.myCalendar"), path: "/my-calendar", icon: CalendarDays },
       { label: t("pages.myTools"), path: "/my-tools", icon: LayoutGrid },
       // Only where the deployment offers messaging: the palette is a way to

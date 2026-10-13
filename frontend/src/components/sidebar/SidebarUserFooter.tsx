@@ -5,11 +5,11 @@ import {
   ChevronRight,
   CircleQuestionMark,
   CircleUserRound,
+  House,
   LogOut,
   MessageSquareHeart,
   Settings,
   ShieldCheck,
-  SquareCheckBig,
   UserCog,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -305,7 +305,7 @@ export const SidebarUserFooter = ({
                       ) : null}
                       <DropdownMenuItem asChild>
                         <Link to="/">
-                          <SquareCheckBig className="h-4 w-4" /> {t("myTasks")}
+                          <House className="h-4 w-4" /> {t("home")}
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>

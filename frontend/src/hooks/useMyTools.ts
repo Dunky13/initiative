@@ -105,3 +105,65 @@ export function useMyToolRows(tool: Tool, page: number, pageSize: number, view: 
  */
 export const toolsWithContent = (counts: MyToolCountsResponse | undefined): Tool[] =>
   counts ? TOOLS.filter((tool) => (counts.counts[tool] ?? 0) > 0) : [];
+
+/** A changed row, with the tool it belongs to. */
+export interface ChangedToolRow {
+  tool: Tool;
+  row: ToolRow;
+}
+
+/** Each list's page as the queries hold it: read once per change of answers,
+ *  not once per render. */
+const pagesOf = (results: { data?: unknown; isLoading: boolean; isError: boolean }[]) => ({
+  pages: results.map((result) => result.data),
+  isLoading: results.some((result) => result.isLoading),
+  isError: results.length > 0 && results.every((result) => result.isError),
+});
+
+/**
+ * What changed most recently across several kinds of tool, from every
+ * community, newest first: each kind's own `/me/{tool}` list at its freshest,
+ * merged. Only the kinds the reader has anything of are asked — the counts
+ * say which — so a reader in no queue pays for no queue list.
+ */
+export function useRecentlyChangedTools(tools: readonly Tool[], limit: number) {
+  const { t } = useTranslation("communityHome");
+  const counts = useMyToolCounts();
+  const asked = useMemo(
+    () => toolsWithContent(counts.data).filter((tool) => tools.includes(tool)),
+    [counts.data, tools]
+  );
+
+  const params: MyToolListParams = {
+    page: 1,
+    page_size: limit,
+    sort_by: "updated_at",
+    sort_dir: "desc",
+  };
+  const { pages, isLoading, isError } = useQueries({
+    queries: TOOLS.map((candidate) => ({
+      ...TOOL_HOOKS[candidate].myListQuery(params),
+      enabled: asked.includes(candidate),
+    })),
+    combine: pagesOf,
+  });
+
+  const rows = useMemo<ChangedToolRow[]>(
+    () =>
+      asked
+        .flatMap((tool) =>
+          buildToolRows(tool, oneToolResponse(tool, pages[TOOLS.indexOf(tool)] as never), t, 0).map(
+            (row) => ({ tool, row })
+          )
+        )
+        .sort((a, b) => Date.parse(b.row.updatedAt) - Date.parse(a.row.updatedAt))
+        .slice(0, limit),
+    [asked, pages, t, limit]
+  );
+
+  return {
+    rows,
+    isLoading: counts.isLoading || isLoading,
+    isError: counts.isError || isError,
+  };
+}
