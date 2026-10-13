@@ -49,8 +49,10 @@ export const EditQueueItemDialog = ({
 }: EditQueueItemDialogProps) => {
   const { t } = useTranslation(["queues", "common"]);
   const communityId = useActiveCommunityId();
+  // The queue's row is drawn until the item's own read, which also carries
+  // the plug-ins' values, answers.
   const read = useReadQueueItem(communityId, listed.id, undefined, {
-    query: { initialData: listed, enabled: open },
+    query: { placeholderData: listed, enabled: open },
   });
   const item = usePendingShown(queueItemSaves(queueId), listed.id, read.data) ?? listed;
   const layouts = useToolLayouts(open ? instanceTarget(Tool.queue, queueId) : null);
