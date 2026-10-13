@@ -139,6 +139,7 @@ export const CommentSection = ({
   canModerate = false,
 }: CommentSectionProps) => {
   const { t } = useTranslation(["comments", "moderation"]);
+  const communityId = useActiveCommunityId() ?? 0;
   // A link to one comment lands on this thread: where it is in an older
   // conversation than the first page holds, the older ones are read until it
   // is here, and the thread scrolls to it.
@@ -147,17 +148,21 @@ export const CommentSection = ({
   // How many comments the thread held when it last asked for older ones. A
   // read that brought nothing — it failed, say — stops the search, and the
   // reader's own Load older is left to try again.
-  const askedAt = useRef<number | null>(null);
+  // Kept per search — this thread, in this community, for this comment — so
+  // a new one starts afresh.
+  const searchKey = `${communityId}:${entityType}:${entityId}:${linkedId}`;
+  const askedAt = useRef<{ key: string; count: number } | null>(null);
   useEffect(() => {
     if (linkedId === null || linkedLoaded || !hasOlder || isLoadingOlder) return;
-    if (askedAt.current !== null && comments.length <= askedAt.current) return;
-    askedAt.current = comments.length;
+    const asked = askedAt.current?.key === searchKey ? askedAt.current.count : null;
+    if (asked !== null && comments.length <= asked) return;
+    askedAt.current = { key: searchKey, count: comments.length };
     onLoadOlder?.();
-  }, [linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder, comments.length]);
+  }, [searchKey, linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder, comments.length]);
   const { activeCommunityReadOnly } = useCommunities();
   // A moderator closes or reopens the thread from the thread itself, the
   // same on every kind of thing that takes comments.
-  const moderate = useModerate(useActiveCommunityId() ?? 0);
+  const moderate = useModerate(communityId);
   const toggleLock = () =>
     moderate.mutate(
       {

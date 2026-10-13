@@ -508,6 +508,43 @@ describe("CommentSection", () => {
       await waitFor(() => expect(onLoadOlder).toHaveBeenCalled());
     });
 
+    it("starts the search afresh for another comment on another thread", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      const one = [buildComment({ id: 7, task_id: 3, content: "Here" })];
+      const Switching = () => {
+        const [entityId, setEntityId] = useState(3);
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.hash = "#comment-98";
+                setEntityId(4);
+              }}
+            >
+              elsewhere
+            </button>
+            <CommentSection
+              entityType="task"
+              entityId={entityId}
+              comments={one}
+              initiativeId={7}
+              hasOlder
+              onLoadOlder={onLoadOlder}
+            />
+          </>
+        );
+      };
+      renderPage(Switching);
+      const user = userEvent.setup();
+      await screen.findByText("Here");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
+
+      await user.click(screen.getByRole("button", { name: "elsewhere" }));
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(2));
+    });
+
     it("stops reading older conversations when a read brings nothing", async () => {
       window.location.hash = "#comment-99";
       const onLoadOlder = vi.fn();
