@@ -34,6 +34,8 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -81,6 +83,7 @@ from app.services.tenant import archive as archive_service
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import comments as comments_service
 from app.services.tenant import content_references
+from app.services.tenant import plugin_metadata
 from app.services.tenant import post_polls as post_polls_service
 from app.services.tenant import post_publication
 from app.services.tenant import posts as posts_service
@@ -224,9 +227,24 @@ async def read_after_write(
     post = await posts_service.get_post(session, post_id, populate_existing=True)
     if not post:
         raise Tool.post.not_found()
+    return await _post_read(session, post, guild_context)
+
+
+async def _post_read(
+    session: AsyncSession, post: Post, guild_context: ActorContext
+) -> PostRead:
+    """One notice as its own read answers it: annotated as a read is, with the
+    plug-ins' values on it."""
     await annotate_post_rows(session, [post], user_id=guild_context.user_id)
+    values = await plugin_metadata.values_on(
+        session, "post", {post.id: post.initiative_id}
+    )
     return serialize_tool(
-        PostRead, post, user_id=guild_context.user_id, context=guild_context
+        PostRead,
+        post,
+        user_id=guild_context.user_id,
+        context=guild_context,
+        plugin_values=values.get(post.id, []),
     )
 
 
@@ -345,10 +363,7 @@ async def read_post(
     post = await resource_access.load_authorized(
         session, Tool.post, post_id, current_user, guild_context
     )
-    await annotate_post_rows(session, [post], user_id=guild_context.user_id)
-    return serialize_tool(
-        PostRead, post, user_id=guild_context.user_id, context=guild_context
-    )
+    return await _post_read(session, post, guild_context)
 
 
 @router.post("/", response_model=PostRead, status_code=status.HTTP_201_CREATED)

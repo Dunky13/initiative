@@ -279,8 +279,7 @@
       "heading": "Diseños",
       "description": "Cómo muestra cada herramienta de esta iniciativa lo que contiene: cada diseño, cuándo cambió por última vez y en qué lista se abre un proyecto. Se cambian en el editor de cada una.",
       "noProjects": "Esta iniciativa aún no tiene proyectos.",
-      "loadError": "No se pudieron cargar los diseños.",
-      "calendar": "Calendario"
+      "loadError": "No se pudieron cargar los diseños."
     }
   },
   "advancedTools": "Herramientas",

@@ -13,9 +13,10 @@ import type {
   PostReaders,
   PostReadMarks,
   PostReadReceipt,
+  PostUpdate,
   TimelineResponse,
 } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
   deletePostPoll,
   getGetPostTimelineQueryKey,
@@ -23,6 +24,7 @@ import {
   getListPostReadersQueryKey,
   getListPostsQueryKey,
   getPostTimeline,
+  getReadPostQueryKey,
   listPostPollVoters,
   listPostReaders,
   listPosts,
@@ -31,12 +33,14 @@ import {
   retractPostPollVote,
   setPostPin,
   setPostPoll,
+  updatePost,
   voteOnPostPoll,
 } from "@/api/generated/posts/posts";
 import { invalidate, patchCachedPost, q } from "@/api/query-keys";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import type { FieldSaveKind } from "@/hooks/useFieldSave";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
 
@@ -368,3 +372,14 @@ export const useRetractPostPollVote = (postId: number, options?: MutationOpts<Po
       },
     }
   );
+
+/** How a notice's properties are saved one at a time, into its own read. Its
+ *  body, poll and schedule are saved by their own buttons. */
+export const POST_SAVES: FieldSaveKind<PostRead, PostUpdate> = {
+  name: "post",
+  readKey: (communityId, id) => getReadPostQueryKey(communityId, id),
+  patch: (communityId, id, patch) => updatePost(communityId, id, patch),
+  properties: PropertyTarget.post,
+  lists: () => q.allPosts(),
+  itself: (id) => q.post(id),
+};

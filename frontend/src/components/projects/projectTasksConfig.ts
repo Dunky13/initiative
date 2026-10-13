@@ -7,6 +7,7 @@ import {
   Kanban,
   ListOrdered,
   type LucideIcon,
+  Megaphone,
   Table,
 } from "lucide-react";
 
@@ -53,6 +54,7 @@ export const detailLayoutLooks: Record<DetailLayoutRead["kind"], Look> = {
   queue_item: { icon: ListOrdered, labelKey: "layouts:queueItemDetail.name" },
   gallery_image: { icon: Image, labelKey: "layouts:galleryImageDetail.name" },
   counter: { icon: Hash, labelKey: "layouts:counterDetail.name" },
+  post: { icon: Megaphone, labelKey: "layouts:postDetail.name" },
 };
 
 /** Any layout's icon and name. */

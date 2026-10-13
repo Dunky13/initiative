@@ -1758,6 +1758,7 @@ export interface PostRead {
   reactions: ReactionGroup[];
   body: PostReadBody;
   poll: PollRead | null;
+  plugin_values: PluginValueSummary[];
 }
 
 export interface CalendarEntriesResponse {
@@ -4502,6 +4503,17 @@ export const GalleryImageDetailFieldId = {
   tags: "tags",
 } as const;
 
+/**
+ * What a notice's detail draws as a field. Its title, tags and properties
+ * are its tool's, in its header; what it says, asks and answers, and when it
+ * goes up, are parts of their own.
+ */
+export type PostDetailFieldId = (typeof PostDetailFieldId)[keyof typeof PostDetailFieldId];
+
+export const PostDetailFieldId = {
+  tags: "tags",
+} as const;
+
 export interface DetailFieldProps {
   field:
     | TaskDetailFieldId
@@ -4509,6 +4521,7 @@ export interface DetailFieldProps {
     | QueueItemDetailFieldId
     | GalleryImageDetailFieldId
     | CounterDetailFieldId
+    | PostDetailFieldId
     | string;
 }
 
@@ -4538,6 +4551,10 @@ export const OwnPartType = {
   about: "about",
   versions: "versions",
   count: "count",
+  body: "body",
+  schedule: "schedule",
+  reactions: "reactions",
+  poll: "poll",
 } as const;
 
 /**
@@ -4689,6 +4706,7 @@ export const DetailLayoutReadKind = {
   queue_item: "queue_item",
   gallery_image: "gallery_image",
   counter: "counter",
+  post: "post",
 } as const;
 
 /**
@@ -4709,6 +4727,7 @@ export const DetailLayoutWriteKind = {
   queue_item: "queue_item",
   gallery_image: "gallery_image",
   counter: "counter",
+  post: "post",
 } as const;
 
 export interface DetailLayoutWrite {

@@ -68,7 +68,8 @@ const INITIATIVE_ROUTES = "../routes/_serverRequired/_authenticated/c/$community
 // Every page and component, as source text. Read rather than rendered: what
 // is being asked is which tool a surface WIRES UP, and mounting nine detail
 // pages to find out would cost more than the drift it catches.
-const componentSources = import.meta.glob("../{pages,components}/**/*.tsx", {
+// Item details draw their parts from lib/layouts.
+const componentSources = import.meta.glob("../{pages,components,lib/layouts}/**/*.tsx", {
   query: "?raw",
   import: "default",
   eager: true,

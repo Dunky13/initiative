@@ -34,7 +34,7 @@ import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/useRecents";
-import { calendarTarget, detailLayoutOf, useToolLayouts } from "@/hooks/useToolLayouts";
+import { detailLayoutOf, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import type { StoredRegions } from "@/lib/layouts/detailLayout";
 import { EventLayoutView } from "@/lib/layouts/eventLayout";
@@ -122,7 +122,7 @@ export function EventDetailPage() {
   // The initiative's calendars share one event detail; an event on a
   // community-level calendar draws the shipped one.
   const layoutsQuery = useToolLayouts(
-    event?.initiative_id != null ? calendarTarget(event.initiative_id) : null
+    event?.initiative_id != null ? sharedTarget(Tool.calendar, event.initiative_id) : null
   );
   const pluginActions = usePluginMenuActions("calendar_event", parsedId, event?.initiative_id);
 

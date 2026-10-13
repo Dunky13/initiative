@@ -1,7 +1,7 @@
 /**
  * `/settings/layouts` — how each tool in this initiative draws what it holds,
- * in the sidebar's order: the calendar's event detail, each project's
- * layouts, each queue's. Each layout says when it was last changed, and a project which list
+ * in the sidebar's order: the calendar's and the notices' details, and each
+ * project's, queue's, gallery's and counter group's layouts. Each layout says when it was last changed, and a project which list
  * it opens on; each has a way into its layout editor.
  */
 
@@ -11,19 +11,26 @@ import { useTranslation } from "react-i18next";
 
 import { type InitiativeToolLayoutsRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { InitiativeSettingsPermissionRequired } from "@/components/initiatives/settings/InitiativeSettingsGuard";
+import { SHARED_LAYOUTS } from "@/components/layouts/details";
 import { LayoutList } from "@/components/layouts/LayoutList";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useInitiativeSettings } from "@/hooks/useInitiativeSettings";
 import {
-  calendarTarget,
   INSTANCE_LAYOUT_TOOLS,
+  sharedTarget,
   useInitiativeLayouts,
   useToolLayouts,
 } from "@/hooks/useToolLayouts";
 import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { useCommunityPath } from "@/lib/communityUrl";
-import { isToolEnabled, SIDEBAR_TOOLS, toolDetailRoute, toolListRoute } from "@/lib/tools";
+import {
+  isToolEnabled,
+  SIDEBAR_TOOLS,
+  toolDetailRoute,
+  toolListRoute,
+  toolNavLabelKey,
+} from "@/lib/tools";
 
 export const InitiativeSettingsLayoutsPage = () => {
   const { initiativeId, initiative, canManageMembers } = useInitiativeSettings();
@@ -31,23 +38,23 @@ export const InitiativeSettingsLayoutsPage = () => {
   return (
     <InitiativeLayouts
       initiativeId={initiativeId}
-      calendar={initiative !== null && isToolEnabled(Tool.calendar, initiative)}
+      enabled={(tool) => initiative !== null && isToolEnabled(tool, initiative)}
     />
   );
 };
 
 /** The tools with layouts, in the order the sidebar lists them. */
 const TOOLS_WITH_LAYOUTS = SIDEBAR_TOOLS.filter(
-  (tool) => tool === Tool.calendar || INSTANCE_LAYOUT_TOOLS.has(tool)
+  (tool) => tool in SHARED_LAYOUTS || INSTANCE_LAYOUT_TOOLS.has(tool)
 );
 
 const InitiativeLayouts = ({
   initiativeId,
-  calendar,
+  enabled,
 }: {
   initiativeId: number;
-  /** Whether the initiative has its calendar on. */
-  calendar: boolean;
+  /** Whether the initiative has a tool it shares on. */
+  enabled: (tool: Tool) => boolean;
 }) => {
   const { t } = useTranslation("initiatives");
   const { data, isError } = useInitiativeLayouts(initiativeId);
@@ -72,9 +79,9 @@ const InitiativeLayouts = ({
           <p className="text-destructive text-sm">{t("settings.layouts.loadError")}</p>
         ) : null}
         {TOOLS_WITH_LAYOUTS.map((tool) =>
-          tool === Tool.calendar ? (
-            calendar ? (
-              <CalendarLayouts key={tool} initiativeId={initiativeId} />
+          tool in SHARED_LAYOUTS ? (
+            enabled(tool) ? (
+              <SharedLayouts key={tool} tool={tool} initiativeId={initiativeId} />
             ) : null
           ) : (
             <div key={tool} className="space-y-3">
@@ -121,23 +128,25 @@ const InstanceLayouts = ({
   );
 };
 
-/** The calendar's event detail, which every calendar in the initiative shares,
- *  opening its editor where the reader may change it and has the room. */
-const CalendarLayouts = ({ initiativeId }: { initiativeId: number }) => {
-  const { t } = useTranslation(["initiatives", "projects", "layouts"]);
+/** The layouts a tool the whole initiative shares keeps (the calendar's event
+ *  detail, the notices' detail), opening its editor where the reader may
+ *  change them and has the room. */
+const SharedLayouts = ({ tool, initiativeId }: { tool: Tool; initiativeId: number }) => {
+  const { t } = useTranslation(["nav", "layouts"]);
   const gp = useCommunityPath();
   const wide = atLeast(useWidthClass(), "md");
-  const set = useToolLayouts(calendarTarget(initiativeId)).data;
+  const set = useToolLayouts(sharedTarget(tool, initiativeId)).data;
   if (!set) return null;
-  const calendars = gp(toolListRoute(Tool.calendar, initiativeId));
-  const editor = `${calendars}/layouts`;
-  // The calendar's own list draws nothing a layout can change yet.
+  const list = gp(toolListRoute(tool, initiativeId));
+  const editor = `${list}/layouts`;
+  // A shared tool's own list draws nothing a layout can change yet.
   const details = set.layouts.filter((layout) => !("is_default" in layout));
+  const name = t(toolNavLabelKey(tool));
   return (
-    <section aria-label={t("settings.layouts.calendar")} className="space-y-2">
+    <section aria-label={name} className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link to={calendars} className="font-medium hover:underline">
-          {t("settings.layouts.calendar")}
+        <Link to={list} className="font-medium hover:underline">
+          {name}
         </Link>
         {set.can_configure && wide ? (
           <Button asChild variant="outline" size="sm">
