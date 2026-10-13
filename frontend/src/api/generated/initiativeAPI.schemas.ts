@@ -4516,6 +4516,9 @@ export const OwnPartType = {
   case: "case",
   comments: "comments",
   rsvp: "rsvp",
+  picture: "picture",
+  about: "about",
+  versions: "versions",
 } as const;
 
 /**
