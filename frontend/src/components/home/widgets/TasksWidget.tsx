@@ -20,16 +20,10 @@ import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
 import { SkeletonRegion, TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import { globalTaskColumns } from "@/components/tasks/globalTaskColumns";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
+import { AsyncCombobox } from "@/components/ui/async-combobox";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useFocusPreferences } from "@/hooks/useFocusSummary";
@@ -363,55 +357,67 @@ const listOf = (options: Record<string, unknown>): HomeTaskList | null => {
     : null;
 };
 
-const NO_LIST = "none";
+/** How many lists the picker asks for at a time; typing narrows on the server. */
+const LIST_PAGE = 20;
 
 /** Which list the line for a new task adds to, out of the reader's projects. */
 export const TasksSettings = ({ options, onChange }: HomeWidgetSettingsProps) => {
   const { t } = useTranslation("home");
   const { communities } = useCommunities();
-  const { rows } = useMyToolRows(Tool.project, 1, 100, { sortBy: "name", sortDir: "asc" });
+  const [search, setSearch] = useState("");
+  const { rows, isLoading } = useMyToolRows(Tool.project, 1, LIST_PAGE, {
+    search: search || undefined,
+    sortBy: "name",
+    sortDir: "asc",
+  });
   const current = listOf(options);
+  const currentName = useTaskListName(current).data;
   const communityNames = new Map(communities.map((community) => [community.id, community.name]));
   const key = (communityId: number, projectId: number) => `${communityId}:${projectId}`;
   const lists = rows.filter((row) => row.initiativeId != null);
+  const { addTo: _dropped, ...withoutList } = options;
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="tasks-widget-list">{t("widgets.tasks.addTo")}</Label>
-      <Select
-        value={current ? key(current.communityId, current.projectId) : NO_LIST}
+      <Label>{t("widgets.tasks.addTo")}</Label>
+      <AsyncCombobox
+        aria-label={t("widgets.tasks.addTo")}
+        items={lists.map((row) => ({
+          value: key(row.communityId, row.id),
+          label:
+            communities.length > 1
+              ? `${row.name} · ${communityNames.get(row.communityId) ?? ""}`
+              : row.name,
+        }))}
+        value={current ? key(current.communityId, current.projectId) : null}
+        selectedLabel={currentName ?? null}
+        onSearchChange={setSearch}
+        loading={isLoading}
+        placeholder={t("widgets.tasks.chooseList")}
         onValueChange={(value) => {
-          const { addTo: _dropped, ...rest } = options;
           const row = lists.find((each) => key(each.communityId, each.id) === value);
-          onChange(
-            row
-              ? {
-                  ...rest,
-                  addTo: {
-                    communityId: row.communityId,
-                    initiativeId: row.initiativeId,
-                    projectId: row.id,
-                  },
-                }
-              : rest
-          );
+          if (!row || row.initiativeId == null) return;
+          onChange({
+            ...withoutList,
+            addTo: {
+              communityId: row.communityId,
+              initiativeId: row.initiativeId,
+              projectId: row.id,
+            },
+          });
         }}
-      >
-        <SelectTrigger id="tasks-widget-list">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={NO_LIST}>{t("widgets.tasks.noList")}</SelectItem>
-          {lists.map((row) => (
-            <SelectItem key={key(row.communityId, row.id)} value={key(row.communityId, row.id)}>
-              {communities.length > 1
-                ? `${row.name} · ${communityNames.get(row.communityId) ?? ""}`
-                : row.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      />
       <p className="text-muted-foreground text-xs">{t("widgets.tasks.addToHint")}</p>
+      {current ? (
+        <Button
+          type="button"
+          variant="link"
+          className="h-auto p-0"
+          onClick={() => onChange(withoutList)}
+        >
+          {t("widgets.tasks.noList")}
+        </Button>
+      ) : null}
     </div>
   );
 };

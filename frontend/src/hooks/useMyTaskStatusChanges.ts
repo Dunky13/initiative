@@ -6,8 +6,8 @@
  * also load the table's page of rows.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -36,6 +36,37 @@ const MY_TASKS_QUERY_PREFIX = getListMyTasksQueryKey();
 const taskKey = (task: Pick<TaskListRead, "id" | "community_id">) =>
   `${task.community_id ?? "none"}:${task.id}`;
 
+/**
+ * Which tasks have a status change in flight, shared by every list that can
+ * change one — the tasks table and the focus card are separate widgets, and
+ * the same task can sit in both. One change at a time per task, wherever it
+ * was started: a second could land in either order, and a failure rolling
+ * back would undo the other one's save.
+ *
+ * Held per query client, beside the cache those changes write to.
+ */
+interface InFlight {
+  keys: Set<string>;
+  version: number;
+  listeners: Set<() => void>;
+}
+
+const inFlightByClient = new WeakMap<QueryClient, InFlight>();
+
+const inFlightFor = (client: QueryClient): InFlight => {
+  let held = inFlightByClient.get(client);
+  if (!held) {
+    held = { keys: new Set(), version: 0, listeners: new Set() };
+    inFlightByClient.set(client, held);
+  }
+  return held;
+};
+
+const notify = (held: InFlight) => {
+  held.version += 1;
+  for (const listener of held.listeners) listener();
+};
+
 export function useMyTaskStatusChanges() {
   const { t } = useTranslation(["tasks", "common"]);
   const { activeCommunityId } = useCommunities();
@@ -58,10 +89,24 @@ export function useMyTaskStatusChanges() {
   // the mutation, because the shared `isPending` disabled every row on the page
   // — and the focus summary's rows with them — while a single checkbox was
   // saving.
-  const [updatingTasks, setUpdatingTasks] = useState<ReadonlySet<string>>(() => new Set());
+  // Re-rendered whenever any list starts or finishes a change; the answer is
+  // read off the shared set, so every list agrees on which rows are saving.
+  const inFlight = inFlightFor(localQueryClient);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      inFlight.listeners.add(listener);
+      return () => inFlight.listeners.delete(listener);
+    },
+    [inFlight]
+  );
+  const snapshot = useCallback(() => inFlight.version, [inFlight]);
+  const inFlightVersion = useSyncExternalStore(subscribe, snapshot, snapshot);
   const isUpdatingTask = useCallback(
-    (task: Pick<TaskListRead, "id" | "community_id">) => updatingTasks.has(taskKey(task)),
-    [updatingTasks]
+    (task: Pick<TaskListRead, "id" | "community_id">) => {
+      void inFlightVersion;
+      return inFlight.keys.has(taskKey(task));
+    },
+    [inFlight, inFlightVersion]
   );
 
   /**
@@ -160,9 +205,12 @@ export function useMyTaskStatusChanges() {
         toast.error(t("errors.communityContext"));
         return;
       }
-      const rollback = target ? applyStatusLocally(task, target) : null;
       const key = taskKey(task);
-      setUpdatingTasks((prev) => new Set(prev).add(key));
+      // Another list is already saving this task: that change stands.
+      if (inFlight.keys.has(key)) return;
+      inFlight.keys.add(key);
+      notify(inFlight);
+      const rollback = target ? applyStatusLocally(task, target) : null;
       try {
         await updateTaskStatusMutate({
           taskId: task.id,
@@ -176,14 +224,11 @@ export function useMyTaskStatusChanges() {
         console.error(error);
         toast.error(getErrorMessage(error, "tasks:errors.statusUpdate"));
       } finally {
-        setUpdatingTasks((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
+        inFlight.keys.delete(key);
+        notify(inFlight);
       }
     },
-    [activeCommunityId, applyStatusLocally, updateTaskStatusMutate, t]
+    [activeCommunityId, applyStatusLocally, inFlight, updateTaskStatusMutate, t]
   );
 
   const cachedStatuses = useCallback(

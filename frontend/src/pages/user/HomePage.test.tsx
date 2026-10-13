@@ -1,9 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { buildProject, buildQueueSummary } from "@/__tests__/factories";
+import {
+  buildProject,
+  buildProjectTaskStatus,
+  buildQueueSummary,
+  buildTask,
+} from "@/__tests__/factories";
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
 import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
@@ -490,5 +495,91 @@ describe("HomePage", () => {
     await waitFor(() =>
       expect(keptLayout(kept).widgets[0].options).toEqual({ mode: "changed", tools: ["project"] })
     );
+  });
+
+  it("says the recent list could not load when a list it asked for failed", async () => {
+    server.use(
+      http.get("/api/v1/me/tools/counts", () =>
+        HttpResponse.json({
+          counts: { project: 1, queue: 1, file: 0, counter_group: 0, calendar: 0, dashboard: 0 },
+        })
+      ),
+      http.get("/api/v1/me/projects", () => new HttpResponse(null, { status: 500 }))
+    );
+    keepLayout({
+      version: 1,
+      widgets: [
+        {
+          id: "recent",
+          type: "recent",
+          grid: { x: 0, y: 0, w: 4, h: 6 },
+          options: { mode: "changed", tools: ["project"] },
+        },
+      ],
+    });
+    renderHome();
+
+    expect(await screen.findByText("Couldn't load what's recent.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing has changed lately.")).not.toBeInTheDocument();
+  });
+
+  it("holds a task in every widget while one of them is saving it", async () => {
+    const user = userEvent.setup();
+    const todo = buildProjectTaskStatus({
+      id: 10,
+      project_id: 5,
+      category: "todo",
+      is_default: true,
+    });
+    const task = buildTask({
+      id: 101,
+      title: "Write the thing",
+      community_id: 3,
+      project_id: 5,
+      task_status_id: todo.id,
+      task_status: todo,
+    });
+    server.use(
+      // The same task in the table and on the focus card.
+      http.get("/api/v1/me/tasks", () =>
+        HttpResponse.json({
+          items: [task],
+          total_count: 1,
+          page: 1,
+          page_size: 20,
+          has_next: false,
+        })
+      ),
+      http.get("/api/v1/c/:communityId/projects/:projectId/task-statuses", () =>
+        HttpResponse.json([todo])
+      ),
+      http.patch("/api/v1/c/:communityId/tasks/:taskId", async () => {
+        await delay("infinite");
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    keepLayout({
+      version: 1,
+      widgets: [
+        { id: "focus", type: "focus", grid: { x: 0, y: 0, w: 12, h: 5 } },
+        { id: "tasks", type: "tasks", grid: { x: 0, y: 5, w: 12, h: 10 } },
+      ],
+    });
+    renderHome();
+
+    const table = await screen.findByRole("table");
+    await within(table).findByText("Write the thing");
+    const boxes = () => screen.getAllByRole("checkbox", { name: /mark task as done/i });
+    await waitFor(() => expect(boxes().length).toBeGreaterThanOrEqual(2));
+    await user.click(within(table).getByRole("checkbox", { name: /mark task as done/i }));
+
+    // Both copies wait for the one save, so neither can start a second.
+    await waitFor(() => {
+      for (const box of screen.getAllByRole("checkbox", {
+        name: /mark task as (done|in progress)/i,
+      })) {
+        expect(box).toBeDisabled();
+      }
+    });
   });
 });

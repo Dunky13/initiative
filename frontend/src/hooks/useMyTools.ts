@@ -112,12 +112,13 @@ export interface ChangedToolRow {
   row: ToolRow;
 }
 
-/** Each list's page as the queries hold it: read once per change of answers,
- *  not once per render. */
+/** Each list's page and state as the queries hold them, by tool: read once
+ *  per change of answers, not once per render. Whether anything is loading or
+ *  failed is asked of the lists that were wanted, since the rest are off. */
 const pagesOf = (results: { data?: unknown; isLoading: boolean; isError: boolean }[]) => ({
   pages: results.map((result) => result.data),
-  isLoading: results.some((result) => result.isLoading),
-  isError: results.length > 0 && results.every((result) => result.isError),
+  loading: results.map((result) => result.isLoading),
+  failed: results.map((result) => result.isError),
 });
 
 /**
@@ -140,7 +141,7 @@ export function useRecentlyChangedTools(tools: readonly Tool[], limit: number) {
     sort_by: "updated_at",
     sort_dir: "desc",
   };
-  const { pages, isLoading, isError } = useQueries({
+  const { pages, loading, failed } = useQueries({
     queries: TOOLS.map((candidate) => ({
       ...TOOL_HOOKS[candidate].myListQuery(params),
       enabled: asked.includes(candidate),
@@ -161,9 +162,12 @@ export function useRecentlyChangedTools(tools: readonly Tool[], limit: number) {
     [asked, pages, t, limit]
   );
 
+  // One list that could not load makes the merge a guess about what is
+  // newest, so it says so rather than showing the rest as if they were all.
+  const index = (tool: Tool) => TOOLS.indexOf(tool);
   return {
     rows,
-    isLoading: counts.isLoading || isLoading,
-    isError: counts.isError || isError,
+    isLoading: counts.isLoading || asked.some((tool) => loading[index(tool)]),
+    isError: counts.isError || asked.some((tool) => failed[index(tool)]),
   };
 }
