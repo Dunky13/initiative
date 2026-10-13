@@ -24,9 +24,15 @@ import {
 } from "@/api/generated/initiativeAPI.schemas";
 import { getListRelationshipsQueryKey } from "@/api/generated/relationships/relationships";
 import { invalidate, q } from "@/api/query-keys";
-import { createRelationship, listRelated, removeRelationship } from "@/api/relationships";
+import {
+  createRelationship,
+  listRelated,
+  removeRelationship,
+  setRelated,
+} from "@/api/relationships";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { idsByKind, type LinkedRef, sameIds } from "@/lib/relationships";
 import type { MutationOpts } from "@/types/mutation";
 
 /**
@@ -285,3 +291,46 @@ export const useRelationsNeighbourhood = (
     };
   }, [entity, firstRows, secondRefs, second, thirdRefs, third, first[0]?.isLoading, hops, keep]);
 };
+
+/** The links an item is set to have, of every kind. */
+interface ItemLinks {
+  /** The item, which the tool `useSetItemLinks` was given holds. */
+  item: { type: SearchEntityType; id: number };
+  links: LinkedRef[];
+  /** What it was last set to, so only the kinds that moved are written. */
+  previous: LinkedRef[];
+  /**
+   * Write every kind, even one whose set of ids has not moved: for a retry,
+   * where the kind that failed still reads as unchanged against what was
+   * asked the first time.
+   */
+  force?: boolean;
+}
+
+/**
+ * Set everything an item is linked to, whatever kinds those are: one slice of
+ * links per kind, which is the shape the endpoint is built for. A kind is
+ * written only when its set of ids differs, and a kind that has lost all its
+ * links is written as an empty set, so removing the last of a kind sticks.
+ */
+export const useSetItemLinks = (
+  tool: Tool,
+  toolId: number,
+  options?: MutationOpts<void, ItemLinks>
+) =>
+  useCommunityMutation<void, ItemLinks>(
+    {
+      mutationFn: async (communityId, { item, links, previous, force }) => {
+        const wanted = idsByKind(links);
+        const had = idsByKind(previous);
+        for (const kind of new Set([...wanted.keys(), ...had.keys()])) {
+          const next = wanted.get(kind) ?? [];
+          if (!force && sameIds(next, had.get(kind) ?? [])) continue;
+          await setRelated(communityId, item, kind, next);
+        }
+      },
+      invalidate: () => invalidate(q.tool(tool, toolId)),
+      errorKey: "relations:addError",
+    },
+    options
+  );

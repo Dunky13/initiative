@@ -252,3 +252,30 @@ export const COUNTER_DETAIL: DetailKind<CounterRead, CounterLayoutContext, Count
     actions: context.actions,
   }),
 };
+
+/** A counter not yet added, in `color`, as its detail draws it while it is. */
+export const blankCounter = (groupId: number, color: string): CounterRead => ({
+  id: 0,
+  counter_group_id: groupId,
+  community_id: 0,
+  name: "",
+  color,
+  count: "0",
+  min: null,
+  max: null,
+  step: "1",
+  initial_count: "0",
+  view_mode: CounterViewMode.number,
+  position: "0",
+  properties: [],
+  plugin_values: [],
+  created_at: "",
+  updated_at: "",
+});
+
+/** Whether a counter can be added as it stands: named, stepping up by more
+ *  than nothing, and bounded where it is drawn as a bar or a clock. */
+export const counterReady = (counter: CounterRead) =>
+  counter.name.trim() !== "" &&
+  Number(counter.step) > 0 &&
+  (counter.view_mode === CounterViewMode.number || (counter.min != null && counter.max != null));

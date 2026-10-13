@@ -62,6 +62,7 @@
   "required": "Required",
   "optional": "Optional",
   "actions": "Actions",
+  "adding": "Adding…",
   "rowActionsFor": "Actions for {{subject}}",
   "more": "More",
   "less": "Less",

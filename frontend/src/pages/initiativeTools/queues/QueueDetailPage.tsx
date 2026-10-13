@@ -1,14 +1,13 @@
 import { useParams } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type { QueueItemCreate, QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
 import { Tool, ViewSource } from "@/api/generated/initiativeAPI.schemas";
 import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { ActHeldButton } from "@/components/initiativeTools/queues/ActHeldButton";
-import { AddQueueItemDialog } from "@/components/initiativeTools/queues/AddQueueItemDialog";
 import { EditQueueItemDialog } from "@/components/initiativeTools/queues/EditQueueItemDialog";
 import { QueueControls } from "@/components/initiativeTools/queues/QueueControls";
 import { QueueItemRow } from "@/components/initiativeTools/queues/QueueItemRow";
@@ -17,6 +16,7 @@ import {
   type QueueView,
   QueueViewToggle,
 } from "@/components/initiativeTools/queues/QueueViewToggle";
+import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import {
   DetailPageSkeleton,
@@ -35,6 +35,7 @@ import { layoutViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import {
   useAdvanceTurn,
+  useCreateQueueItem,
   useHoldCurrent,
   usePreviousTurn,
   useQueue,
@@ -47,7 +48,9 @@ import {
 } from "@/hooks/useQueues";
 import { useRecordOpen } from "@/hooks/useRecents";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
+import { instanceTarget } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { blankQueueItem, QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
 import { toast } from "@/lib/mascotToast";
 import { getItem } from "@/lib/storage";
 import { toolListRoute, toolSettingsRoute } from "@/lib/tools";
@@ -130,6 +133,8 @@ export function QueueDetailPage() {
 
   // Item dialogs
   const [addItemOpen, setAddItemOpen] = useState(false);
+  const createItem = useCreateQueueItem(parsedId);
+  const leaving = useRef(false);
   const [editingItem, setEditingItem] = useState<QueueItemRead | null>(null);
   // An item opens in its dialog.
   useRecordOpen("queue_item", editingItem?.id, { source: ViewSource.direct });
@@ -276,12 +281,33 @@ export function QueueDetailPage() {
 
       <ToolCommentsPanel tool={Tool.queue} entity={queue} />
 
-      {/* Add Item Dialog */}
-      <AddQueueItemDialog
+      <AddItemDialog
         open={addItemOpen}
         onOpenChange={setAddItemOpen}
-        queueId={parsedId}
-        initiativeId={queue.initiative_id}
+        detail={QUEUE_ITEM_DETAIL}
+        blank={blankQueueItem(parsedId)}
+        context={{
+          readOnly: false,
+          queueId: parsedId,
+          initiativeId: queue.initiative_id,
+          leaving,
+          actions: null,
+        }}
+        layouts={instanceTarget(Tool.queue, parsedId)}
+        title={t("addItem")}
+        ready={(item) => item.label.trim() !== ""}
+        create={({ item, fields, properties }) =>
+          createItem.mutateAsync({
+            color: item.color,
+            is_visible: item.is_visible,
+            ...fields,
+            properties,
+          } as QueueItemCreate)
+        }
+        onAdded={() => {
+          toast.success(t("itemAdded"));
+          setAddItemOpen(false);
+        }}
       />
 
       {/* Edit Item Dialog */}

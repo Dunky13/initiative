@@ -11,7 +11,6 @@
   "removeCounter": "Remove Counter",
   "removeCounterConfirm": "Remove this counter from the group?",
   "counterNamePlaceholder": "Counter name",
-  "counterFormDescription": "Configure the counter's value, bounds, step, and how it's displayed.",
   "color": "Color",
   "count": "Count",
   "min": "Min",

@@ -229,3 +229,23 @@ export const QUEUE_ITEM_DETAIL: DetailKind<QueueItemRead, QueueItemLayoutContext
       actions: context.actions,
     }),
   };
+
+/** A queue item not yet added, as its detail draws it while it is. */
+export const blankQueueItem = (queueId: number): QueueItemRead => ({
+  id: 0,
+  queue_id: queueId,
+  label: "",
+  position: 0,
+  notes: null,
+  user_id: null,
+  user: null,
+  tags: [],
+  properties: [],
+  attachment_count: 0,
+  held_at_round: null,
+  created_by: null,
+  created_at: "",
+  plugin_values: [],
+  color: "#6366F1",
+  is_visible: true,
+});
