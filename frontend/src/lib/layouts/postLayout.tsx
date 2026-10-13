@@ -8,6 +8,7 @@ import {
   Suspense,
   useCallback,
   useContext,
+  useMemo,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -76,6 +77,23 @@ const usePostLayout = (): PostLayoutContext => {
   const context = useContext(DetailContext);
   if (!context) throw new Error("A notice's detail part is drawn outside its detail");
   return context;
+};
+
+/** The notice's unsaved body and poll, kept above the layout so a part the
+ *  layout moves keeps its draft. */
+interface PostDrafts {
+  body: SerializedEditorState | null;
+  setBody: (body: SerializedEditorState | null) => void;
+  poll: PollDraft | null;
+  setPoll: (poll: PollDraft | null) => void;
+}
+
+const Drafts = createContext<PostDrafts | null>(null);
+
+const useDrafts = (): PostDrafts => {
+  const drafts = useContext(Drafts);
+  if (!drafts) throw new Error("A notice's detail part is drawn outside its detail");
+  return drafts;
 };
 
 /** Leaving with unsaved words is asked about first, for a reload too. */
@@ -173,20 +191,19 @@ const Body = ({ post }: { post: PostRead }) => {
   const { t } = useTranslation(["posts", "common"]);
   const { canEdit, preview } = usePostLayout();
   const writable = canEdit && !preview;
-  const [draft, setDraft] = useState<SerializedEditorState | null>(null);
+  const { body: draft, setBody: setDraft } = useDrafts();
   const update = useUpdatePost(post.id, {
     onSuccess: () => {
       setDraft(null);
       toast.success(t("detailsUpdated"));
     },
   });
-  const guard = useUnsavedGuard(writable && draft !== null);
   return (
     <div className="min-w-0 space-y-3">
       <Suspense fallback={<Skeleton className="h-40 w-full" />}>
         <Editor
           key={post.id}
-          editorSerializedState={normalizeEditorState(post.body)}
+          editorSerializedState={draft ?? normalizeEditorState(post.body)}
           onSerializedChange={setDraft}
           readOnly={!writable}
           showToolbar={writable}
@@ -212,7 +229,6 @@ const Body = ({ post }: { post: PostRead }) => {
           </Button>
         </div>
       )}
-      {guard}
     </div>
   );
 };
@@ -229,7 +245,7 @@ const Reactions = ({ post }: { post: PostRead }) =>
 const Poll = ({ post }: { post: PostRead }) => {
   const { t } = useTranslation(["posts", "common"]);
   const { canEdit, preview } = usePostLayout();
-  const [pollDraft, setPollDraft] = useState<PollDraft | null>(null);
+  const { poll: pollDraft, setPoll: setPollDraft } = useDrafts();
   const savePoll = useSetPostPoll(post.id, {
     onSuccess: () => {
       setPollDraft(null);
@@ -244,7 +260,6 @@ const Poll = ({ post }: { post: PostRead }) => {
   });
   // `is_locked`, not a count: a poll whose results are withheld has none.
   const answered = post.poll?.is_locked ?? false;
-  const guard = useUnsavedGuard(canEdit && pollDraft !== null);
   return (
     <div className="space-y-2">
       {post.poll && pollDraft === null && <PostPoll post={post} />}
@@ -287,7 +302,6 @@ const Poll = ({ post }: { post: PostRead }) => {
           </>
         )
       ) : null}
-      {guard}
     </div>
   );
 };
@@ -376,20 +390,51 @@ export const PostLayoutView = ({
   editing?: boolean;
 }): ReactNode => {
   const communityId = useActiveCommunityId();
-  const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
+  // Another notice's detail starts afresh, with none of this one's drafts.
   return (
-    // Another notice's detail starts afresh, with none of this one's drafts.
-    <DetailContext.Provider key={`${communityId}:${post.id}`} value={context}>
-      <DetailLayoutView
-        spec={POST_LAYOUT}
-        item={post}
-        initiativeId={post.initiative_id}
-        layout={layout}
-        editing={editing}
-        fields={POST_DETAIL_FIELDS}
-        env={env}
-        parts={POST_PARTS}
-      />
+    <PostDetail
+      key={`${communityId}:${post.id}`}
+      post={post}
+      context={context}
+      layout={layout}
+      editing={editing}
+    />
+  );
+};
+
+const PostDetail = ({
+  post,
+  context,
+  layout,
+  editing,
+}: {
+  post: PostRead;
+  context: PostLayoutContext;
+  layout?: StoredRegions | null;
+  editing?: boolean;
+}) => {
+  const env = useProjectLayoutEnv(useCallback(NO_TASK, []));
+  const [body, setBody] = useState<SerializedEditorState | null>(null);
+  const [poll, setPoll] = useState<PollDraft | null>(null);
+  const drafts = useMemo(() => ({ body, setBody, poll, setPoll }), [body, poll]);
+  const guard = useUnsavedGuard(
+    context.canEdit && !context.preview && (body !== null || poll !== null)
+  );
+  return (
+    <DetailContext.Provider value={context}>
+      <Drafts.Provider value={drafts}>
+        <DetailLayoutView
+          spec={POST_LAYOUT}
+          item={post}
+          initiativeId={post.initiative_id}
+          layout={layout}
+          editing={editing}
+          fields={POST_DETAIL_FIELDS}
+          env={env}
+          parts={POST_PARTS}
+        />
+      </Drafts.Provider>
+      {guard}
     </DetailContext.Provider>
   );
 };

@@ -23,7 +23,7 @@ import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCounterGroup } from "@/hooks/useCounters";
 import { useGalleryImagesFeed } from "@/hooks/useGalleries";
-import { usePostsFeed } from "@/hooks/usePosts";
+import { usePost, usePostsFeed } from "@/hooks/usePosts";
 import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
@@ -295,7 +295,9 @@ const CounterPreview = ({
 const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
   const { t } = useTranslation("layouts");
   const feed = usePostsFeed({ initiative_id: initiativeId });
-  const first = feed.data?.pages[0]?.items[0];
+  const listed = feed.data?.pages[0]?.items[0];
+  // Its own read carries the plug-ins' values, which the board's list does not.
+  const first = usePost(listed?.id ?? null, { placeholderData: listed }).data ?? listed;
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
