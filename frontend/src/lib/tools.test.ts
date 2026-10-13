@@ -74,6 +74,12 @@ const componentSources = import.meta.glob("../{pages,components}/**/*.tsx", {
   eager: true,
 }) as Record<string, string>;
 
+const hookSources = import.meta.glob("../hooks/*.ts", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
 /** Which tools something renders a `ToolRelationsPanel` for. */
 const toolsWithRelationsPanel = (): Set<string> => {
   const found = new Set<string>();
@@ -386,16 +392,20 @@ describe("tool properties", () => {
   it("every tool and sub-tool has somewhere its properties are set", () => {
     const set = new Set<string>();
     for (const source of Object.values(componentSources)) {
-      for (const [, target] of source.matchAll(
-        /<PropertyPanel[^>]*?target=\{PropertyTarget\.(\w+)\}/gs
-      )) {
+      for (const [, target] of source.matchAll(/propertySaves\[PropertyTarget\.(\w+)\]/g)) {
+        set.add(target);
+      }
+    }
+    // An item's page saves them with the item's own save kind.
+    for (const source of Object.values(hookSources)) {
+      for (const [, target] of source.matchAll(/properties: PropertyTarget\.(\w+)/g)) {
         set.add(target);
       }
     }
     // A tool's are on its settings page, which every tool shares.
     if (
-      /<PropertyPanel[^>]*?target=\{PropertyTarget\[tool\]\}/s.test(
-        componentSources["../pages/toolSettings/ToolSettingsDetailsPage.tsx"]
+      componentSources["../pages/toolSettings/ToolSettingsDetailsPage.tsx"].includes(
+        "propertySaves[PropertyTarget[tool]]"
       )
     ) {
       for (const tool of TOOLS) set.add(tool);

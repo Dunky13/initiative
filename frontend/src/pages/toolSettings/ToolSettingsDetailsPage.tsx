@@ -11,7 +11,6 @@ import { useTranslation } from "react-i18next";
 
 import type { TagSummary } from "@/api/generated/initiativeAPI.schemas";
 import { PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
-import { PropertyPanel } from "@/components/properties";
 import { TagPicker } from "@/components/tags";
 import { useToolSettings } from "@/components/tools/settings/ToolSettingsContext";
 import { ToolTemplateCard } from "@/components/tools/settings/ToolTemplateCard";
@@ -21,9 +20,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { propertySaves } from "@/hooks/useProperties";
 import { useServerForm } from "@/hooks/useServerForm";
 import { useSetToolComments } from "@/hooks/useToolComments";
 import { useSetToolTags } from "@/hooks/useToolTags";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import { toast } from "@/lib/mascotToast";
 
 export const ToolSettingsDetailsPage = () => {
@@ -155,13 +156,14 @@ export const ToolSettingsDetailsPage = () => {
             <CardDescription>{t("toolSettings.propertiesDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <PropertyPanel
-              target={PropertyTarget[tool]}
-              entityId={entity.id}
-              saved={entity.properties}
+            <PropertiesField
+              kind={propertySaves[PropertyTarget[tool]]}
+              id={entity.id}
+              properties={entity.properties ?? []}
+              readOnly={!canManage}
               initiativeId={entity.initiative_id}
               canOpen={{ tool, id: entity.id }}
-              disabled={!canManage}
+              hideLabel
             />
           </CardContent>
         </Card>

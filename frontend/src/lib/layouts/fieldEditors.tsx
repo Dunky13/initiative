@@ -42,7 +42,7 @@ import {
   useItemFieldSave,
 } from "@/hooks/useFieldSave";
 import { usePastedImages } from "@/hooks/usePastedImages";
-import { useProperties } from "@/hooks/useProperties";
+import { useHeldProperties, useProperties } from "@/hooks/useProperties";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
@@ -302,7 +302,8 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
   hideLabel?: boolean;
 }) => {
   const { t } = useTranslation("properties");
-  const { kind, id, properties, readOnly, initiativeId } = props;
+  const { kind, id, readOnly, initiativeId } = props;
+  const properties = useHeldProperties(kind, id, props.properties);
   const listed = except ? properties.filter((each) => !except.has(each.property_id)) : properties;
   const label = t("title");
   const save = useItemFieldSave(kind, id, label);
@@ -351,7 +352,14 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
         <p className="text-muted-foreground text-sm">{t("noProperties")}</p>
       ) : (
         sorted.map((property) => (
-          <PropertyField key={property.property_id} {...props} property={property} />
+          // Keyed by the row too: a host that moves to another row starts
+          // its edits afresh.
+          <PropertyField
+            key={`${id}:${property.property_id}`}
+            {...props}
+            properties={properties}
+            property={property}
+          />
         ))
       )}
       <AddPropertyButton

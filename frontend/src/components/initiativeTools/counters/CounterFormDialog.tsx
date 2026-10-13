@@ -12,7 +12,6 @@ import {
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
-import { PropertyPanel } from "@/components/properties";
 import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import {
@@ -33,8 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAddCounter, useUpdateCounter } from "@/hooks/useCounters";
+import { propertySaves } from "@/hooks/useProperties";
 import { useServerForm } from "@/hooks/useServerForm";
 import { pickRandomCounterColor } from "@/lib/counter-color";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import type { DialogProps } from "@/types/dialog";
 
 type CounterFormDialogProps = DialogProps & {
@@ -254,12 +255,14 @@ export const CounterFormDialog = ({
           {counter && initiativeId != null && (
             <div className="space-y-2 border-t pt-4">
               <Label>{t("properties:title")}</Label>
-              <PropertyPanel
-                target={PropertyTarget.counter}
-                entityId={counter.id}
-                saved={counter.properties}
+              <PropertiesField
+                kind={propertySaves[PropertyTarget.counter]}
+                id={counter.id}
+                properties={counter.properties ?? []}
+                readOnly={false}
                 initiativeId={initiativeId}
                 canOpen={{ tool: Tool.counter_group, id: groupId }}
+                hideLabel
               />
             </div>
           )}

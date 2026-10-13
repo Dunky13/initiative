@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -13,8 +14,9 @@ import {
   PropertyType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
+import { propertySaves } from "@/hooks/useProperties";
 
-import { PropertyPanel } from "./PropertyPanel";
+import { PropertiesField } from "./fieldEditors";
 
 const status = buildPropertySummary({
   property_id: 1,
@@ -43,19 +45,20 @@ const writes = (answer: PropertySummary[] = []) => {
   return sent;
 };
 
-const panel = (saved: PropertySummary[], disabled = false) =>
+const panel = (saved: PropertySummary[], readOnly = false, queryClient?: QueryClient) =>
   renderWithProviders(
-    <PropertyPanel
-      target={PropertyTarget.file}
-      entityId={10}
+    <PropertiesField
+      kind={propertySaves[PropertyTarget.file]}
+      id={10}
+      properties={saved}
+      readOnly={readOnly}
       initiativeId={1}
-      saved={saved}
       canOpen={{ tool: Tool.file, id: 10 }}
-      disabled={disabled}
-    />
+    />,
+    { queryClient }
   );
 
-describe("PropertyPanel", () => {
+describe("a row's properties, saved one at a time", () => {
   it("saves the one value changed, leaving the others as they are", async () => {
     const sent = writes([{ ...status, value: "closed" }, owner]);
     panel([status, owner]);
@@ -72,6 +75,40 @@ describe("PropertyPanel", () => {
     );
     expect(await screen.findByDisplayValue("closed")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Ada")).toBeInTheDocument();
+  });
+
+  it("keeps an answer when opened again on the read it was answered over", async () => {
+    writes([{ ...status, value: "closed" }, owner]);
+    const saved = [status, owner];
+    const first = panel(saved);
+    const user = userEvent.setup();
+    const input = screen.getByDisplayValue("open");
+    await user.clear(input);
+    await user.type(input, "closed{Enter}");
+    await screen.findByDisplayValue("closed");
+
+    // A dialog closed and opened again on the copy it held.
+    first.unmount();
+    panel(saved, false, first.queryClient);
+
+    expect(await screen.findByDisplayValue("closed")).toBeInTheDocument();
+  });
+
+  it("sends a change still being typed when it is left", async () => {
+    const sent = writes();
+    const { unmount } = panel([status, owner]);
+    const user = userEvent.setup();
+    const input = screen.getByDisplayValue("open");
+    await user.clear(input);
+    await user.type(input, "closed");
+
+    unmount();
+
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { at: "file/10", merge: true, values: [{ property_id: 1, value: "closed" }] },
+      ])
+    );
   });
 
   it("takes a property off the row by itself", async () => {

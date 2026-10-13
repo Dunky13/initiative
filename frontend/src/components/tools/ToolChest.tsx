@@ -24,7 +24,6 @@ import {
   type Tool,
   type ToolCan,
 } from "@/api/generated/initiativeAPI.schemas";
-import { PropertyPanel } from "@/components/properties";
 import { TagBadge, TagPicker } from "@/components/tags";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -35,8 +34,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useArchiveEntity, useUnarchiveEntity } from "@/hooks/useArchive";
+import { propertySaves } from "@/hooks/useProperties";
 import { useSetToolTags } from "@/hooks/useToolTags";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import { toast } from "@/lib/mascotToast";
 import { cn } from "@/lib/utils";
 
@@ -163,13 +164,14 @@ export const ToolChest = ({ tool, entity, template, children }: ToolChestProps) 
       </div>
       {hasProperties && propertiesOpen ? (
         <div className="border-t py-3 pr-[var(--chest-gutter-right,1rem)] pl-[var(--chest-gutter,1rem)]">
-          <PropertyPanel
-            target={PropertyTarget[tool]}
-            entityId={entity.id}
-            saved={entity.properties}
+          <PropertiesField
+            kind={propertySaves[PropertyTarget[tool]]}
+            id={entity.id}
+            properties={entity.properties ?? []}
+            readOnly={!canEdit}
             initiativeId={entity.initiative_id as number}
             canOpen={{ tool, id: entity.id }}
-            disabled={!canEdit}
+            hideLabel
           />
         </div>
       ) : null}

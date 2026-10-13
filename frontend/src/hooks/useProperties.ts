@@ -9,8 +9,8 @@ import type {
   PropertyDefinitionUpdateResponse,
   PropertyOption,
   PropertySummary,
-  PropertyTarget,
 } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyTarget } from "@/api/generated/initiativeAPI.schemas";
 import {
   createPropertyDefinition,
   deletePropertyDefinition,
@@ -162,42 +162,59 @@ export const useAppendPropertyOption = () => {
 /** Anything that carries property values. */
 type PropertyHolder = { properties: PropertySummary[] };
 
-/**
- * How one row's properties are saved, one value at a time, where the page has
- * no read of the row to write answers into: {@link useHeldProperties} holds
- * them until the page reads the row afresh.
- */
-export const propertySaves = (target: PropertyTarget): FieldSaveKind<PropertyHolder, never> => ({
-  name: `properties-${target}`,
-  readKey: (communityId, id) => ["held-properties", communityId, target, id],
-  // Only its properties are saved this way.
-  patch: () => Promise.reject(new Error("a row's properties take no patch")),
-  properties: target,
-  lists: () => q.propertyHolder(target),
-  itself: () => ({}),
-});
+/** A row's properties as last answered, and the read they were answered over. */
+type Held = PropertyHolder & { over: PropertySummary[] };
+
+/** Where {@link useHeldProperties} keeps a row's answered properties. */
+const heldKey = (name: string, communityId: number, id: number) =>
+  ["held-properties", name, communityId, id] as const;
 
 /**
- * A row's properties as the page read them, with what its saves answered held
- * over them until the page reads them again, and saves not yet answered shown
- * over that.
+ * How each kind of row's properties are saved, one value at a time, where the
+ * page holds no read of the row to write answers into: they are held where
+ * {@link useHeldProperties} reads them.
  */
-export const useHeldProperties = (
-  kind: FieldSaveKind<PropertyHolder, never>,
+export const propertySaves = Object.fromEntries(
+  Object.values(PropertyTarget).map((target): [PropertyTarget, FieldSaveKind<Held, never>] => [
+    target,
+    {
+      name: `properties-${target}`,
+      readKey: (communityId, id) => heldKey(`properties-${target}`, communityId, id),
+      // Only its properties are saved this way.
+      patch: () => Promise.reject(new Error("a row's properties take no patch")),
+      properties: target,
+      lists: () => q.propertyHolder(target),
+      itself: () => ({}),
+    },
+  ])
+) as Record<PropertyTarget, FieldSaveKind<Held, never>>;
+
+/**
+ * A row's properties as the page read them, or as a save of them answered
+ * over that same read, and with saves not yet answered shown over either. An
+ * answer stands until the page reads the row again: a copy of the read it was
+ * answered over (a dialog opened again on what it held) does not undo it.
+ */
+export const useHeldProperties = <I, P>(
+  kind: FieldSaveKind<I, P>,
   id: number,
   saved: PropertySummary[]
 ): PropertySummary[] => {
   const communityId = useActiveCommunityId();
   const queryClient = useQueryClient();
-  const key = kind.readKey(communityId, id);
-  const held = useQuery({
+  const key = heldKey(kind.name, communityId, id);
+  const { data } = useQuery({
     queryKey: key,
-    queryFn: () => queryClient.getQueryData<PropertyHolder>(key) ?? { properties: saved },
-    initialData: { properties: saved },
+    queryFn: () => queryClient.getQueryData<Held>(key) ?? { properties: saved, over: saved },
     staleTime: Number.POSITIVE_INFINITY,
   });
+  const held = data?.over === saved ? data : { properties: saved, over: saved };
   useEffect(() => {
-    queryClient.setQueryData(kind.readKey(communityId, id), { properties: saved });
-  }, [queryClient, kind, communityId, id, saved]);
-  return usePendingShown(kind, id, held.data)?.properties ?? saved;
+    const key = heldKey(kind.name, communityId, id);
+    if (queryClient.getQueryData<Held>(key)?.over !== saved) {
+      queryClient.setQueryData<Held>(key, { properties: saved, over: saved });
+    }
+  }, [queryClient, kind.name, communityId, id, saved]);
+  const shown = usePendingShown(kind, id, held as unknown as I) as unknown as PropertyHolder;
+  return shown.properties;
 };
