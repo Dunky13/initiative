@@ -74,6 +74,24 @@ def _rename(table: str, column: str | None, name: str) -> None:
 
 
 def _member_key(name: str, ondelete: str | None) -> None:
+    bind = op.get_bind()
+    # The new key is checked against the rows already there, and that check
+    # runs as the owner under forced row security: with no guild context every
+    # initiative is hidden, so every member looks orphaned. The row security
+    # is lifted for the check. ``guild_template`` carries none, so only what
+    # was set is put back.
+    forced = [
+        table
+        for table in ("initiatives", "initiative_members")
+        if bind.execute(
+            sa.text(
+                "SELECT relforcerowsecurity FROM pg_class WHERE oid = to_regclass(:t)"
+            ),
+            {"t": table},
+        ).scalar()
+    ]
+    for table in forced:
+        op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
     op.drop_constraint(
         _name_of("initiative_members", "initiative_id"),
         "initiative_members",
@@ -87,6 +105,8 @@ def _member_key(name: str, ondelete: str | None) -> None:
         ["id"],
         ondelete=ondelete,
     )
+    for table in forced:
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
 
 
 def upgrade() -> None:
