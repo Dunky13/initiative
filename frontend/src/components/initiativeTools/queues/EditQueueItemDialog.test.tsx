@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { buildQueueItem } from "@/__tests__/factories";
+import { buildPropertySummary, buildQueueItem } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
@@ -62,5 +62,24 @@ describe("a queue item, opened", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
+    // An item with no properties shows a reader none, not an empty list.
+    expect(screen.queryByText("Properties")).not.toBeInTheDocument();
+  });
+
+  it("shows a reader the properties it holds", async () => {
+    const property = buildPropertySummary({ name: "Initiative roll", value: "17" });
+    open(buildQueueItem({ id: 9, label: "Troll", properties: [property] }), true);
+
+    expect(await screen.findByText("Properties")).toBeInTheDocument();
+    expect(screen.getByText("Initiative roll")).toBeInTheDocument();
+    expect(screen.getByText("17")).toBeInTheDocument();
+  });
+
+  it("offers an editor a property to add where it has none", async () => {
+    const item = buildQueueItem({ id: 10, label: "Imp" });
+    serve(item);
+    open(item);
+
+    expect(await screen.findByRole("button", { name: "Add property" })).toBeInTheDocument();
   });
 });
