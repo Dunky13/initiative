@@ -64,9 +64,9 @@ import {
   isAnonymizedUser,
 } from "@/lib/userDisplay";
 
-import { PlacedProperties, placedProperties, type StoredRegions } from "./detailLayout";
-import { indexPaths } from "./draft";
-import { FieldFrame, useFieldDraft } from "./editing";
+import { DetailLayoutView } from "./DetailLayoutView";
+import { PlacedProperties, type StoredRegions } from "./detailLayout";
+import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
 import {
   DescriptionField,
   PlacedPropertyField,
@@ -74,17 +74,15 @@ import {
   TagsField,
   TitleField,
 } from "./fieldEditors";
-import { type FieldKind, PROPERTY_FIELD_PREFIX, useProjectLayoutEnv } from "./fields";
 import {
-  FieldsInParts,
-  fieldsInParts,
-  PluginFieldOnDetail,
-  pluginFields,
-  shippedPluginParts,
-  usePluginsOnItems,
-} from "./plugins";
+  type FieldDef,
+  type FieldKind,
+  PROPERTY_FIELD_PREFIX,
+  useProjectLayoutEnv,
+} from "./fields";
+import { PluginFieldOnDetail } from "./plugins";
 import { TASK_LAYOUT, taskFields } from "./tasks";
-import { LAYOUT_PARTS, type LayoutContext, type Parts, renderNode } from "./tree";
+import { LAYOUT_PARTS, type Parts } from "./tree";
 
 /** What the task's detail shares with its parts, beside the task itself. */
 export interface TaskLayoutContext {
@@ -115,8 +113,6 @@ const useTaskLayout = (): TaskLayoutContext => {
 };
 
 type EditorProps = { task: TaskRead; label: string };
-
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** The task's title, which is the detail's heading. */
 const TitleEditor = ({ task, label }: EditorProps) => {
@@ -244,8 +240,6 @@ const PriorityEditor = ({ task, label }: EditorProps) => {
     </FieldFrame>
   );
 };
-
-const sameIds = (a: number[], b: number[]) => sameJson([...a].sort(), [...b].sort());
 
 const AssigneesEditor = ({ task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
@@ -611,6 +605,9 @@ const TASK_PARTS: Parts<TaskRead> = {
   comments: (_node, task) => <Comments task={task} />,
 };
 
+// The detail's labels are the fields' own.
+const TASK_DETAIL_FIELDS = (plugins: FieldDef[]) => taskFields([], plugins);
+
 /** A task's detail, drawn from its project's layout, or as shipped. */
 export const TaskLayoutView = ({
   task,
@@ -625,7 +622,6 @@ export const TaskLayoutView = ({
    *  the editor's detail tree shares. */
   editing?: boolean;
 }) => {
-  const { i18n } = useTranslation("tasks");
   const communityId = useActiveCommunityId();
   const gp = useCommunityPath();
   const taskHref = useCallback(
@@ -633,32 +629,19 @@ export const TaskLayoutView = ({
     [gp, context.initiativeId, task.project_id]
   );
   const env = useProjectLayoutEnv(taskHref);
-  const plugins = usePluginsOnItems(context.initiativeId);
-  const tree = useMemo(
-    () => TASK_LAYOUT.tree(layout, shippedPluginParts(plugins)),
-    [layout, plugins]
-  );
-  const placed = useMemo(() => placedProperties(tree), [tree]);
-  const inParts = useMemo(() => fieldsInParts(tree, plugins), [tree, plugins]);
-  // The detail's labels are the fields' own.
-  const view = useMemo<LayoutContext>(
-    () => ({
-      fields: taskFields([], pluginFields(plugins, i18n.language)),
-      plugins,
-      variant: "detail",
-      env,
-      editing: editing ? indexPaths(tree) : undefined,
-    }),
-    [plugins, i18n.language, env, editing, tree]
-  );
   return (
     // Another task's detail starts afresh, with none of this one's drafts.
     <DetailContext.Provider key={`${communityId}:${task.id}`} value={context}>
-      <PlacedProperties.Provider value={placed}>
-        <FieldsInParts.Provider value={inParts}>
-          {renderNode(tree, task, view, TASK_PARTS)}
-        </FieldsInParts.Provider>
-      </PlacedProperties.Provider>
+      <DetailLayoutView
+        spec={TASK_LAYOUT}
+        item={task}
+        initiativeId={context.initiativeId}
+        layout={layout}
+        editing={editing}
+        fields={TASK_DETAIL_FIELDS}
+        env={env}
+        parts={TASK_PARTS}
+      />
     </DetailContext.Provider>
   );
 };

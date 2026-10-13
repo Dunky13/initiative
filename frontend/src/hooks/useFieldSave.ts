@@ -105,14 +105,14 @@ const pendingFieldSaves = <I, P>(
     .map((mutation) => mutation.state.variables as FieldSaveCall<I, P>);
 
 /**
- * The item as `query` read it, with its field saves not yet answered shown
+ * The item as `data` holds it, with its field saves not yet answered shown
  * over it, in the order they were made, which is the order they land in.
  */
-export const useShownWithPending = <I, P>(
+export const usePendingShown = <I, P>(
   kind: FieldSaveKind<I, P>,
   id: number | null,
-  query: UseQueryResult<I>
-): UseQueryResult<I> => {
+  data: I | undefined
+): I | undefined => {
   const communityId = useActiveCommunityId();
   const pending = useMutationState({
     filters: {
@@ -122,11 +122,19 @@ export const useShownWithPending = <I, P>(
     },
     select: (mutation) => (mutation.state.variables as FieldSaveCall<I, P>).edit.shows,
   });
-  const data = useMemo(
-    () =>
-      query.data && pending.length ? Object.assign({ ...query.data }, ...pending) : query.data,
-    [query.data, pending]
+  return useMemo(
+    () => (data && pending.length ? Object.assign({ ...data }, ...pending) : data),
+    [data, pending]
   );
+};
+
+/** {@link usePendingShown} over the item as `query` read it. */
+export const useShownWithPending = <I, P>(
+  kind: FieldSaveKind<I, P>,
+  id: number | null,
+  query: UseQueryResult<I>
+): UseQueryResult<I> => {
+  const data = usePendingShown(kind, id, query.data);
   return data === query.data ? query : ({ ...query, data } as UseQueryResult<I>);
 };
 

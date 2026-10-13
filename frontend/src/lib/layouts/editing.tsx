@@ -63,6 +63,12 @@ export interface FieldDraft<V> {
   };
 }
 
+/** Whether two values read the same, as a field compares its draft. */
+export const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Whether two id lists name the same ids, in any order. */
+export const sameIds = (a: number[], b: number[]) => sameJson([...a].sort(), [...b].sort());
+
 /**
  * One field's value while it is being changed, saved by the kind of change:
  * a pick the moment it is made, typing on Enter or on leaving the field.
