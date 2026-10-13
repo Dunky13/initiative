@@ -10,12 +10,14 @@ import { MoreHorizontal } from "lucide-react";
 import { type ReactNode, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useReadCounter } from "@/api/generated/counters/counters";
 import { type PropertyDefinitionRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { PropertyFilter } from "@/components/properties/PropertyFilter";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskStatusPriorityFilters } from "@/components/tasks/TaskStatusPriorityFilters";
 import { Button } from "@/components/ui/button";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
@@ -261,7 +263,12 @@ const CounterPreview = ({
   const { t } = useTranslation("layouts");
   const leaving = useRef(true);
   const group = useCounterGroup(groupId);
-  const first = group.data?.counters[0];
+  const listed = group.data?.counters[0];
+  // Its own read carries the plug-ins' values, which the group's list does not.
+  const read = useReadCounter(useActiveCommunityId(), listed?.id ?? 0, undefined, {
+    query: { placeholderData: listed, enabled: listed !== undefined },
+  });
+  const first = read.data ?? listed;
   const layout = useMemo(() => regionsOf(tree), [tree]);
   if (first) {
     return (
@@ -275,7 +282,6 @@ const CounterPreview = ({
           initiativeId,
           leaving,
           actions: <ActionsPreview />,
-          preview: true,
         }}
       />
     );

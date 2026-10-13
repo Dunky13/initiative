@@ -306,6 +306,7 @@ export function CounterDetailPage() {
           groupId={groupId}
           initiativeId={group.initiative_id}
           counter={editing}
+          stepper={stepper}
         />
       )}
     </div>

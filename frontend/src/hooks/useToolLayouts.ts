@@ -44,6 +44,7 @@ import type { MutationOpts } from "@/types/mutation";
 export const INSTANCE_LAYOUT_TOOLS: ReadonlySet<Tool> = new Set([
   Tool.project,
   Tool.queue,
+  Tool.counter_group,
   Tool.gallery,
 ]);
 

@@ -7,6 +7,7 @@ import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
 import { type CounterRead, CounterViewMode } from "@/api/generated/initiativeAPI.schemas";
+import { useSteppedCount } from "@/hooks/useCounters";
 
 import { EditCounterDialog } from "./EditCounterDialog";
 
@@ -44,17 +45,20 @@ const serve = (read: CounterRead) => {
   return sent;
 };
 
+const Opened = ({ read, readOnly }: { read: CounterRead; readOnly: boolean }) => (
+  <EditCounterDialog
+    open
+    onOpenChange={() => {}}
+    groupId={1}
+    initiativeId={1}
+    counter={read}
+    stepper={useSteppedCount(1)}
+    readOnly={readOnly}
+  />
+);
+
 const open = (read: CounterRead, readOnly = false) =>
-  renderPage(() => (
-    <EditCounterDialog
-      open
-      onOpenChange={() => {}}
-      groupId={1}
-      initiativeId={1}
-      counter={read}
-      readOnly={readOnly}
-    />
-  ));
+  renderPage(() => <Opened read={read} readOnly={readOnly} />);
 
 describe("a counter, opened to edit", () => {
   it("is drawn as its group lays it out, each field saved on its own", async () => {
@@ -69,6 +73,26 @@ describe("a counter, opened to edit", () => {
 
     await waitFor(() => expect(sent).toEqual([{ step: "5" }]));
     expect(screen.getByDisplayValue("Hit points")).toBeInTheDocument();
+  });
+
+  it("says why a bound it refuses was refused", async () => {
+    const read = counter({ min: "0", max: "20", view_mode: CounterViewMode.progress_bar });
+    serve(read);
+    server.use(
+      communityHttp.patch("/counters/:counterId", () =>
+        HttpResponse.json({ detail: "COUNTER_VIEW_MODE_REQUIRES_BOUNDS" }, { status: 422 })
+      )
+    );
+    open(read);
+    const user = userEvent.setup();
+
+    const min = within(await screen.findByRole("group", { name: "Min" })).getByRole("spinbutton");
+    await user.clear(min);
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText("Progress bar and segmented clock require both min and max to be set")
+    ).toBeInTheDocument();
   });
 
   it("shows a reader what it holds, with nothing to change it with", async () => {

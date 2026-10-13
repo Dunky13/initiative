@@ -396,6 +396,8 @@ export const useSteppedCount = (groupId: number) => {
   };
 };
 
+export type SteppedCount = ReturnType<typeof useSteppedCount>;
+
 /** How a group's counters are saved field by field. */
 export const counterSaves = (groupId: number): FieldSaveKind<CounterRead, CounterUpdate> => ({
   name: "counter",

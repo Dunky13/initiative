@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { counterSaves, useResetCounter } from "@/hooks/useCounters";
+import { counterSaves, type SteppedCount, useResetCounter } from "@/hooks/useCounters";
 import { usePendingShown } from "@/hooks/useFieldSave";
 import { detailLayoutOf, instanceTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { CounterLayoutView } from "@/lib/layouts/counterLayout";
@@ -27,6 +27,8 @@ type EditCounterDialogProps = DialogProps & {
   /** The group's initiative; a community's own group has none. */
   initiativeId: number | null;
   counter: CounterRead;
+  /** The page's stepper, so a step taken here and one on the page are one. */
+  stepper: SteppedCount;
   readOnly?: boolean;
 };
 
@@ -37,6 +39,7 @@ export const EditCounterDialog = ({
   groupId,
   initiativeId,
   counter: listed,
+  stepper,
   readOnly = false,
 }: EditCounterDialogProps) => {
   const { t } = useTranslation(["counterGroups", "common"]);
@@ -65,7 +68,12 @@ export const EditCounterDialog = ({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {readOnly ? null : (
-            <DropdownMenuItem onSelect={() => reset.mutate(counter.id)}>
+            <DropdownMenuItem
+              onSelect={() => {
+                stepper.cancel(counter.id);
+                reset.mutate(counter.id);
+              }}
+            >
               <RotateCcw className="h-4 w-4" />
               {t("common:reset")}
             </DropdownMenuItem>
@@ -85,7 +93,7 @@ export const EditCounterDialog = ({
           <CounterLayoutView
             counter={counter}
             layout={detailLayoutOf(layouts.data, "counter") as StoredRegions | null}
-            context={{ readOnly, groupId, initiativeId, leaving, actions }}
+            context={{ readOnly, groupId, initiativeId, leaving, actions, stepper }}
           />
         </DialogContent>
       </Dialog>

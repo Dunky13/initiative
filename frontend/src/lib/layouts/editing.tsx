@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage, getHttpStatus } from "@/lib/errorMessage";
 import { cn } from "@/lib/utils";
 
 /** Where one field's save stands. */
@@ -19,6 +20,8 @@ export type FieldSaveState = "idle" | "saving" | "saved" | "error";
 export interface FieldSave {
   state: FieldSaveState;
   retry: () => void;
+  /** What the last save failed with. */
+  error?: unknown;
 }
 
 // The inputs a value is typed into, as against picked with. A combobox's
@@ -186,6 +189,9 @@ const FieldSaveStatus = ({ save }: { save: FieldSave }) => {
   );
 };
 
+/** The answers that refuse a value, rather than fail to save it. */
+const REFUSED: ReadonlySet<number> = new Set([400, 422]);
+
 /**
  * One field on a detail: its label, its own save state with Retry, a
  * note when it changed underneath an edit, and the editor.
@@ -244,6 +250,11 @@ export const FieldFrame = ({
         </div>
       )}
       {children}
+      {save.state === "error" && REFUSED.has(getHttpStatus(save.error) ?? 0) ? (
+        // A value the server refuses says why, so it can be put right rather
+        // than tried again.
+        <p className="text-destructive text-xs">{getErrorMessage(save.error)}</p>
+      ) : null}
       {changed ? (
         <p role="status" className="text-muted-foreground text-xs">
           {t("fieldSave.changed")}

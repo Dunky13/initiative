@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { counterSaves, useCounterGroup, useSetCount, useSteppedCount } from "@/hooks/useCounters";
+import { counterSaves, type SteppedCount, useCounterGroup, useSetCount } from "@/hooks/useCounters";
 import { type ItemFieldSave, useItemFieldSave } from "@/hooks/useFieldSave";
 import { isAtMax, isAtMin } from "@/lib/counter-math";
 
@@ -47,8 +47,9 @@ export interface CounterLayoutContext {
   leaving: RefObject<boolean>;
   /** The menu of what else can be done with it. */
   actions: ReactNode;
-  /** Drawn in the layout editor, where nothing is changed. */
-  preview?: boolean;
+  /** The page's stepper, which every step of the group's counters goes
+   *  through; none in the layout editor, where nothing is changed. */
+  stepper?: SteppedCount;
 }
 
 const DetailContext = createContext<CounterLayoutContext | null>(null);
@@ -287,19 +288,18 @@ const Relations = ({ counter }: { counter: CounterRead }) => {
  *  where a step shows at once. */
 const Count = ({ counter }: { counter: CounterRead }) => {
   const { t } = useTranslation("counterGroups");
-  const { groupId, readOnly, preview } = useCounterLayout();
+  const { groupId, readOnly, stepper } = useCounterLayout();
   const live =
     useCounterGroup(groupId).data?.counters.find((each) => each.id === counter.id) ?? counter;
   const setCount = useSetCount(groupId);
-  const stepper = useSteppedCount(groupId);
-  const locked = readOnly || Boolean(preview);
+  const locked = readOnly || !stepper;
   return (
     <div className="flex items-center justify-center gap-4 rounded-lg border bg-card p-4">
       <Button
         type="button"
         variant="outline"
         size="icon"
-        onClick={() => stepper.decrement(live)}
+        onClick={() => stepper?.decrement(live)}
         disabled={locked || isAtMin(live)}
         aria-label={t("decrement")}
       >
@@ -310,7 +310,7 @@ const Count = ({ counter }: { counter: CounterRead }) => {
         disabled={locked}
         textColor="currentColor"
         onCommit={(value) => {
-          stepper.cancel(live.id);
+          stepper?.cancel(live.id);
           setCount.mutate({ counterId: live.id, data: { count: value } });
         }}
         size="lg"
@@ -319,7 +319,7 @@ const Count = ({ counter }: { counter: CounterRead }) => {
         type="button"
         variant="outline"
         size="icon"
-        onClick={() => stepper.increment(live)}
+        onClick={() => stepper?.increment(live)}
         disabled={locked || isAtMax(live)}
         aria-label={t("increment")}
       >

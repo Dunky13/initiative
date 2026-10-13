@@ -363,6 +363,7 @@ export function CounterGroupDetailPage() {
           groupId={groupId}
           initiativeId={group.initiative_id}
           counter={editing}
+          stepper={stepper}
         />
       )}
 
