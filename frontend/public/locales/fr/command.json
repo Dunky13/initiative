@@ -24,7 +24,7 @@
     "sendFeedback": "Envoyer un avis"
   },
   "pages": {
-    "myTasks": "Mes tâches",
+    "home": "Accueil",
     "myCalendar": "Mon calendrier",
     "myTickets": "Mes tickets",
     "myTools": "Mes outils",

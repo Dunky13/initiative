@@ -319,7 +319,7 @@
     "description": "Auf dieser Seite ist ein Fehler aufgetreten, sie konnte nicht angezeigt werden. Versuche es erneut oder gehe zu deinen Aufgaben.",
     "appDescription": "In Initiative ist ein Fehler aufgetreten, die App kann nicht fortfahren. Neu laden startet sie erneut.",
     "details": "Fehlerdetails",
-    "toMyTasks": "Zu {{myTasks}}",
+    "toHome": "Zur {{home}}",
     "reload": "Neu laden",
     "updatedTitle": "Initiative wurde aktualisiert",
     "updatedDescription": "Eine neuere Version ist verfügbar. Lade neu, um diese Seite darin zu öffnen."

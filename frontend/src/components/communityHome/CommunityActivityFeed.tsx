@@ -22,7 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MentionText } from "@/components/user/MentionText";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { useActivityFeed } from "@/hooks/useActivity";
-import { useCommunityPath } from "@/lib/communityUrl";
+import { communityPath, useCommunityPath } from "@/lib/communityUrl";
 import { listFormat } from "@/lib/intl";
 import type { ActivityScope } from "@/lib/recentRoute";
 import { FROM_FEED, hitIcon, searchHitPath } from "@/lib/searchResults";
@@ -44,9 +44,19 @@ const useSentence = () => {
   };
 };
 
-const FeedCard = ({ entry, isNew }: { entry: ActivityEntry; isNew: boolean }) => {
+const FeedCard = ({
+  entry,
+  isNew,
+  communityId,
+}: {
+  entry: ActivityEntry;
+  isNew: boolean;
+  communityId?: number;
+}) => {
   const { t } = useTranslation(["communityHome", "search"]);
-  const gp = useCommunityPath();
+  const activeCommunityPath = useCommunityPath();
+  const gp = (to: string) =>
+    communityId != null ? communityPath(communityId, to) : activeCommunityPath(to);
   const sentence = useSentence();
   const Icon = hitIcon(entry);
   const path = searchHitPath(entry);
@@ -120,16 +130,27 @@ interface CommunityActivityFeedProps {
   lastVisit: string | null;
   /** The one tool or initiative to show, for a feed beside it. */
   scope?: ActivityScope | null;
+  /** The community to show, for a feed outside it (the home page); the page's
+   *  own community otherwise. */
+  communityId?: number;
 }
 
-export const CommunityActivityFeed = ({ view, lastVisit, scope }: CommunityActivityFeedProps) => {
+export const CommunityActivityFeed = ({
+  view,
+  lastVisit,
+  scope,
+  communityId,
+}: CommunityActivityFeedProps) => {
   const { t } = useTranslation("communityHome");
-  const feed = useActivityFeed({
-    view,
-    initiative_id: scope?.initiativeId,
-    tool: scope?.tool,
-    tool_id: scope?.toolId,
-  });
+  const feed = useActivityFeed(
+    {
+      view,
+      initiative_id: scope?.initiativeId,
+      tool: scope?.tool,
+      tool_id: scope?.toolId,
+    },
+    communityId
+  );
   // Each page is ranked afresh, so an item that moved up since the last one
   // can come back on the next; it stays where it was first shown.
   const entries = useMemo(() => {
@@ -174,6 +195,7 @@ export const CommunityActivityFeed = ({ view, lastVisit, scope }: CommunityActiv
             key={`${entry.entity_type}:${entry.entity_id}`}
             entry={entry}
             isNew={since != null && Date.parse(entry.latest) > since}
+            communityId={communityId}
           />
         ))}
       </ul>

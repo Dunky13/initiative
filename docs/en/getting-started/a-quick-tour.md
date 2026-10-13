@@ -18,9 +18,9 @@ Can't tell your communities apart from a row of tiny pictures? **Expand communit
 
 ## The logo above them
 
-The **Initiative logo** sits above the community icons, and it isn't one. It's your corner — and you have already been in it, because the page you land on when you sign in is **My Tasks**: everything assigned to you, from every community at once, in one list.
+The **Initiative logo** sits above the community icons, and it isn't one. It's your corner — and you have already been in it, because the page you land on when you sign in is **Home**: everything assigned to you, from every community at once, laid out however you like.
 
-Click the logo from anywhere and the sidebar swaps to your own short list — My Tasks, My Calendar, My Tools, My Messages, My Stats. Click a community icon to go back out.
+Click the logo from anywhere and the sidebar swaps to your own short list — Home, My Calendar, My Tools, My Messages, My Stats. Click a community icon to go back out.
 
 So: **the icons are where the group's work lives, the logo is where yours does.** Belong to four groups and you still only have one list of what you've agreed to. See [Your space](../guides/your-space.md).
 

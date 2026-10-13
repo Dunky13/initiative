@@ -12,8 +12,10 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
  * opens, and again when the reader comes back to it. Another view or place is
  * a feed of its own, so nothing of the last one is shown while it arrives.
  */
-export const useActivityFeed = (params?: ReadActivityParams) => {
-  const communityId = useActiveCommunityId();
+export const useActivityFeed = (params?: ReadActivityParams, community?: number) => {
+  const activeCommunityId = useActiveCommunityId();
+  // A page outside the community (the home page) names the one it shows.
+  const communityId = community ?? activeCommunityId;
   return useInfiniteQuery({
     queryKey: getReadActivityQueryKey(communityId, params),
     queryFn: ({ pageParam }) => readActivity(communityId, { ...params, page: pageParam as number }),

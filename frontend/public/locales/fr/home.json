@@ -1,0 +1,244 @@
+{
+  "title": "Accueil",
+  "customize": "Personnaliser",
+  "addWidget": "Ajouter un widget",
+  "editing": {
+    "hint": "Faites glisser un widget pour le déplacer, et tirez son coin pour le redimensionner.",
+    "hintStacked": "Montez ou descendez les widgets, ou retirez ceux dont vous n'avez pas besoin."
+  },
+  "tile": {
+    "moveUp": "Monter {{title}}",
+    "moveDown": "Descendre {{title}}",
+    "settings": "Paramètres de {{title}}",
+    "remove": "Retirer {{title}}"
+  },
+  "widgetError": "Impossible d'afficher {{title}}.",
+  "tooLarge": "Votre page d'accueil est pleine. Retirez un widget pour faire de la place.",
+  "empty": {
+    "title": "Votre page d'accueil est vide",
+    "description": "Ajoutez les widgets que vous voulez voir en premier, ou partez d'une disposition.",
+    "fromLayout": "Partir d'une disposition"
+  },
+  "picker": {
+    "title": "Ajouter un widget",
+    "description": "Il se place en bas de votre page. Déplacez-le où vous voulez.",
+    "onPage": "Déjà sur votre page"
+  },
+  "layouts": {
+    "newTitle": "Nouvelle vue",
+    "newDescription": "Partez de l'une de ces dispositions, ou de rien. Elle s'ouvre dans un nouvel onglet à côté de vos autres vues, et vous pourrez tout y changer.",
+    "fillTitle": "Partir d'une disposition",
+    "fillDescription": "Remplissez cette vue avec l'une de ces dispositions. Vous pourrez tout y changer ensuite."
+  },
+  "presets": {
+    "tasks": {
+      "name": "Mes tâches",
+      "description": "Tout ce qui vous est assigné, avec le plus urgent en haut."
+    },
+    "myDay": {
+      "name": "Ma journée",
+      "description": "Votre agenda à vous : ce qui presse, les jours à venir, votre série, puis toute la liste."
+    },
+    "headsDown": {
+      "name": "Tête baissée",
+      "description": "Un minuteur et les quelques choses qui pressent. Rien d'autre à regarder."
+    },
+    "assigned": {
+      "name": "Travail assigné",
+      "description": "Votre liste d'abord, l'urgent à côté, et ce qui est arrivé récemment à vos affaires."
+    },
+    "community": {
+      "name": "Communauté",
+      "description": "Suivez les communautés qui vous intéressent et ce qui s'y passe."
+    },
+    "owner": {
+      "name": "Aux commandes",
+      "description": "Ce qui bouge dans votre communauté, ce que vous aviez ouvert et ce qui a changé dans les projets et tableaux de bord, et votre propre liste."
+    }
+  },
+  "settingsDialog": {
+    "title": "Paramètres de {{title}}"
+  },
+  "widgets": {
+    "greeting": {
+      "title": "Salutation",
+      "description": "Un bonjour, la date du jour et ce qui arrive à échéance.",
+      "morning": "Bonjour, {{name}}",
+      "afternoon": "Bon après-midi, {{name}}",
+      "evening": "Bonsoir, {{name}}",
+      "night": "Encore debout, {{name}} ?",
+      "clear": "Rien à rendre aujourd'hui",
+      "overdue_one": "{{count}} en retard",
+      "overdue_other": "{{count}} en retard",
+      "dueToday_one": "{{count}} pour aujourd'hui",
+      "dueToday_other": "{{count}} pour aujourd'hui",
+      "welcome": "Bienvenue, {{name}}",
+      "yonder": "Afficher Yonder",
+      "yonderHint": "Il lit la journée pour vous : perplexe devant ce qui est en retard, ravi quand tout est libre."
+    },
+    "gettingStarted": {
+      "title": "Premiers pas",
+      "description": "Quelques premières choses à faire, cochées dès que vous les faites.",
+      "hide": "Masquer les premiers pas",
+      "remove": "Retirer cette carte",
+      "allDone": "C'est tout. Vous êtes prêt, et cette carte peut partir quand vous voulez.",
+      "progress": "{{done}} sur {{total}} faits",
+      "stepDone": "fait",
+      "intro": {
+        "personal": "Voici votre accueil. Installons-vous dans votre espace.",
+        "shared": "Votre communauté est prête. Voici comment y faire venir du monde.",
+        "join": "Bienvenue ! D'abord, trouvons-vous du monde.",
+        "invite": "Vous y êtes. Voici quelques choses à faire en premier."
+      },
+      "community": {
+        "personal": "Préparer votre espace",
+        "shared": "Lancer votre communauté",
+        "join": "Rejoindre une communauté",
+        "invite": "Rejoindre la communauté qui vous a invité",
+        "hint": "Les communautés, c'est là que sont le travail et les gens.",
+        "action": "Parcourir les communautés"
+      },
+      "task": {
+        "title": "Ajouter une tâche à vous",
+        "hint": "Tout ce dont vous devez vous souvenir. Elle arrive dans Mes tâches.",
+        "hintList": "Ajoutez-en une à {{list}}. Elle arrive dans Mes tâches.",
+        "action": "Ouvrir {{list}}",
+        "actionTools": "Trouver un projet"
+      },
+      "invite": {
+        "title": "Inviter vos proches",
+        "hint": "Une communauté d'une personne est une communauté très calme.",
+        "action": "Inviter du monde"
+      },
+      "profile": {
+        "title": "Ajouter une photo de profil",
+        "hint": "Pour qu'on vous reconnaisse dans les commentaires et les tâches.",
+        "action": "Ouvrir votre profil"
+      },
+      "app": {
+        "title": "Installer l'application",
+        "hint": "Vos tâches et vos messages, dans votre poche.",
+        "action": "Installer l'application"
+      },
+      "home": {
+        "title": "Faire de cette page la vôtre",
+        "hint": "Déplacez des éléments, ajoutez une horloge ou un calendrier, ou créez une deuxième vue.",
+        "action": "Personnaliser"
+      }
+    },
+    "focus": {
+      "title": "Focus",
+      "description": "Ce qu'il faut faire maintenant, avec le travail terminé aujourd'hui toujours en vue."
+    },
+    "tasks": {
+      "title": "Mes tâches",
+      "description": "Vos tâches de toutes les communautés, en tableau ou en calendrier.",
+      "empty": "Rien ne vous est encore assigné. Quand quelqu'un vous confie une tâche, ou que vous en ajoutez une, elle arrive ici.",
+      "chooseList": "Choisir une liste",
+      "add": "Ajouter",
+      "addPlaceholder": "Ajouter une tâche à {{list}}…",
+      "added": "Ajoutée à {{list}}.",
+      "addTo": "Ajouter les nouvelles tâches à",
+      "addToHint": "Affiche en haut une ligne pour ajouter à cette liste une tâche qui vous est assignée.",
+      "noList": "Ne pas afficher de ligne pour ajouter des tâches"
+    },
+    "comingUp": {
+      "title": "À venir",
+      "description": "Les événements et dates de tâches des prochains jours, de toutes les communautés.",
+      "days": "Jusqu'à quand",
+      "daysOption_one": "Le prochain jour",
+      "daysOption_other": "Les {{count}} prochains jours",
+      "empty_one": "Rien de prévu aujourd'hui.",
+      "empty_other": "Rien de prévu dans les {{count}} prochains jours.",
+      "loadError": "Impossible de charger ce qui arrive.",
+      "openCalendar": "Ouvrir Mon calendrier"
+    },
+    "calendar": {
+      "title": "Mon calendrier",
+      "description": "Vos événements et tâches datées de toutes les communautés, au mois ou à la semaine. Le même calendrier que Mon calendrier."
+    },
+    "recent": {
+      "title": "Récent",
+      "description": "Ce que vous avez ouvert ou ce qui a changé récemment, pour tous les types d'outils et toutes les communautés.",
+      "viewed": "Consultés récemment",
+      "changed": "Modifiés récemment",
+      "viewedIn": "Consultés récemment : {{tool}}",
+      "changedIn": "Modifiés récemment : {{tool}}",
+      "mode": "Afficher",
+      "tools": "Outils",
+      "allTools": "Tous les outils",
+      "toolsHint": "Limitez les deux listes à ces types d'outils. Laissez vide pour tous.",
+      "emptyViewed": "Rien d'ouvert pour l'instant. Projets, fichiers et le reste apparaissent ici dès que vous les avez consultés.",
+      "emptyChanged": "Rien n'a changé récemment.",
+      "loadError": "Impossible de charger ce qui est récent.",
+      "openTools": "Ouvrir Mes outils"
+    },
+    "activity": {
+      "title": "Activité",
+      "titleIn": "Activité dans {{community}}",
+      "description": "Ce que les gens ont modifié récemment dans une de vos communautés.",
+      "community": "Communauté",
+      "view": "Afficher",
+      "noCommunity": "Rejoignez une communauté pour voir ce qui s'y passe."
+    },
+    "communities": {
+      "title": "Mes communautés",
+      "description": "Toutes vos communautés, avec leur carte.",
+      "empty": "Vous n'êtes encore dans aucune communauté.",
+      "find": "Trouver une communauté"
+    },
+    "progress": {
+      "title": "Mes progrès",
+      "description": "Votre série, votre semaine et ce que vous terminez à temps.",
+      "loadError": "Impossible de charger vos progrès.",
+      "streak_one": "{{count}} jour",
+      "streak_other": "{{count}} jours",
+      "firstTask": "Terminez votre première tâche pour lancer une série."
+    },
+    "clock": {
+      "title": "Horloge et minuteur",
+      "description": "L'heure ici et ailleurs, ou un compte à rebours pour ce qui devait prendre dix minutes.",
+      "clock": "Horloge",
+      "timer": "Minuteur",
+      "mode": "Afficher",
+      "sameTime": "Même heure",
+      "ahead": "{{offset}} d'avance",
+      "behind": "{{offset}} de retard",
+      "minutes_one": "{{count}} min",
+      "minutes_other": "{{count}} min",
+      "start": "Démarrer",
+      "pause": "Pause",
+      "resume": "Reprendre",
+      "reset": "Réinitialiser",
+      "dismiss": "Fermer",
+      "timeUp": "C'est l'heure !",
+      "timeUpShort": "Terminé",
+      "zones": "Autres fuseaux horaires",
+      "addZone": "Ajouter un fuseau horaire",
+      "removeZone": "Retirer {{zone}}",
+      "length": "Durée du minuteur, en minutes"
+    }
+  },
+  "views": {
+    "label": "Vos vues d'accueil",
+    "defaultName": "Accueil",
+    "new": "Nouvelle vue",
+    "limit": "Vous pouvez garder jusqu'à {{max}} vues.",
+    "menu": "Options de {{name}}",
+    "rename": "Renommer",
+    "renameTitle": "Renommer la vue",
+    "nameLabel": "Nom",
+    "duplicate": "Dupliquer",
+    "copyName": "{{name}} copie",
+    "moveLeft": "Déplacer à gauche",
+    "moveRight": "Déplacer à droite",
+    "delete": "Supprimer la vue",
+    "deleteTitle": "Supprimer « {{name}} » ?",
+    "deleteDescription": "Ses widgets partent avec elle. Rien n'est touché dans vos communautés.",
+    "deleteConfirm": "Supprimer",
+    "blank": {
+      "name": "Vide",
+      "description": "Une page vide à remplir comme vous voulez."
+    }
+  }
+}

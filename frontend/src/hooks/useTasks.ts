@@ -46,7 +46,7 @@ import {
 } from "@/api/generated/tasks/tasks";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { useApiMutation, useCommunityMutation } from "@/hooks/useApiMutation";
 import { useAuth } from "@/hooks/useAuth";
 import {
   type FieldSaveKind,
@@ -108,6 +108,20 @@ export const useCreateTask = (options?: MutationOpts<TaskRead, Parameters<typeof
   useCommunityMutation<TaskRead, Parameters<typeof createTask>[1]>(
     {
       mutationFn: (communityId, data) => createTask(communityId, data),
+      invalidate: () => invalidate(q.allTasks()),
+      errorKey: "projects:tasks.createError",
+    },
+    options
+  );
+
+/** {@link useCreateTask} for a page outside the community (the home page),
+ *  which names the community the task goes into. */
+export const useCreateTaskInCommunity = (
+  options?: MutationOpts<TaskRead, { communityId: number; data: Parameters<typeof createTask>[1] }>
+) =>
+  useApiMutation<TaskRead, { communityId: number; data: Parameters<typeof createTask>[1] }>(
+    {
+      mutationFn: ({ communityId, data }) => createTask(communityId, data),
       invalidate: () => invalidate(q.allTasks()),
       errorKey: "projects:tasks.createError",
     },

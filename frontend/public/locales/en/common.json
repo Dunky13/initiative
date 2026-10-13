@@ -319,7 +319,7 @@
     "description": "This page ran into an error and could not be shown. Try again, or go to your tasks.",
     "appDescription": "Initiative ran into an error and could not continue. Reloading starts it again.",
     "details": "Error details",
-    "toMyTasks": "Go to {{myTasks}}",
+    "toHome": "Go to {{home}}",
     "reload": "Reload",
     "updatedTitle": "Initiative has been updated",
     "updatedDescription": "A newer version is available. Reload to open this page in it."
