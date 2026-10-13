@@ -174,5 +174,7 @@
       "relations": "Con qué está vinculado el elemento."
     },
     "noItems": "Añade un elemento a la cola para ver aquí su diseño."
-  }
+  },
+  "tab": "Diseños",
+  "settingsDescription": "Cómo dispone lo que contiene: cada diseño, cuándo cambió por última vez y el acceso al editor. Todos los que pueden abrirlo los ven; lo que cada persona filtra y ordena es suyo."
 }

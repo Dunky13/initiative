@@ -326,6 +326,21 @@ async def test_update_queue_item(client: AsyncClient, acting_user):
     )
     assert cleared.json()["notes"] is None
 
+    # Notes written over others than these are refused, as a description is.
+    stale = await client.patch(
+        a.g(f"/queue-items/{item_data['id']}"),
+        headers=a.headers,
+        json={"notes": "Mine", "notes_base": "Concentrating"},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "DESCRIPTION_CHANGED"
+    current = await client.patch(
+        a.g(f"/queue-items/{item_data['id']}"),
+        headers=a.headers,
+        json={"notes": "Mine", "notes_base": None},
+    )
+    assert current.json()["notes"] == "Mine"
+
 
 async def test_delete_queue_item(client: AsyncClient, acting_user):
     """Owner can delete an item."""

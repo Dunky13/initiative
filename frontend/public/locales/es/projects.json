@@ -40,9 +40,7 @@
   },
   "layouts": {
     "label": "Diseño",
-    "loadError": "No se pudieron cargar los diseños de este proyecto.",
-    "heading": "Diseños",
-    "description": "Cómo este proyecto muestra sus tareas: cada diseño, cuándo cambió por última vez y en qué lista se abre. Todo el proyecto los ve; lo que cada persona filtra y ordena es suyo."
+    "loadError": "No se pudieron cargar los diseños de este proyecto."
   },
   "createDialog": {
     "title": "Crear proyecto",

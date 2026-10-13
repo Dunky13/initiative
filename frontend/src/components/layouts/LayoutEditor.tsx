@@ -217,8 +217,8 @@ export const LayoutEditor = ({
    *  no project offers its lists' presets alone. */
   project?: LayoutProject;
   details: EditableDetail[];
-  /** The presets its lists offer. */
-  presets: EditablePresets;
+  /** The presets its lists offer; a target with no lists has none. */
+  presets?: EditablePresets;
   /** The target's layouts, read by someone who may change them. */
   set: ToolLayoutSetRead;
   /** The layout to open on: a list's kind, or the task's detail. */
@@ -621,7 +621,7 @@ export const LayoutEditor = ({
       {/* A screen too narrow to edit on keeps the draft, and says so. */}
       {!wide ? (
         <p className="p-6 text-muted-foreground text-sm">{t("layouts:compact")}</p>
-      ) : current && project ? (
+      ) : current && project && presets ? (
         <div className="grid min-h-0 flex-1 grid-cols-[16rem_minmax(0,1fr)_18rem]">
           <aside className="min-h-0 border-r">
             <ListLayoutOutline
@@ -661,7 +661,7 @@ export const LayoutEditor = ({
             />
           </aside>
         </div>
-      ) : current ? (
+      ) : current && presets ? (
         // A list with nothing of its own to draw here (the calendar's events
         // and tasks): its settings, which are its presets.
         <div className="min-h-0 flex-1 overflow-y-auto">

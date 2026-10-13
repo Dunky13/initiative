@@ -40,9 +40,7 @@
   },
   "layouts": {
     "label": "Disposition",
-    "loadError": "Impossible de charger les dispositions de ce projet.",
-    "heading": "Dispositions",
-    "description": "Comment ce projet présente ses tâches : chaque disposition, sa dernière modification, et la liste sur laquelle il s'ouvre. Tout le projet les voit ; ce que chacun filtre et trie lui appartient."
+    "loadError": "Impossible de charger les dispositions de ce projet."
   },
   "createDialog": {
     "title": "Créer un projet",

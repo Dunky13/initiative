@@ -246,6 +246,14 @@ export const queueItemDetail = (queueId: number, initiativeId: number): Editable
   preview: (tree) => <QueueItemPreview queueId={queueId} initiativeId={initiativeId} tree={tree} />,
 });
 
+/** The item detail each tool lays out on its own, with no list of its own to
+ *  lay out beside it: what its editor offers. */
+export const ITEM_DETAILS: Partial<
+  Record<Tool, (id: number, initiativeId: number) => EditableDetail>
+> = {
+  [Tool.queue]: queueItemDetail,
+};
+
 /** A project's lists' presets: its tasks' filters, and a table's sort. */
 export const taskPresets = (project: LayoutProject) =>
   editablePresets({

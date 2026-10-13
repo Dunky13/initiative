@@ -174,5 +174,7 @@
       "relations": "What the item is linked to."
     },
     "noItems": "Add an item to the queue to see its layout here."
-  }
+  },
+  "tab": "Layouts",
+  "settingsDescription": "How it lays out what it holds: each layout, when it was last changed, and the way into the editor. Everyone who can open it sees them; what each person filters and sorts by is their own."
 }

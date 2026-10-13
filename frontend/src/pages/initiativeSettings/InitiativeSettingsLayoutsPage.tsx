@@ -1,7 +1,7 @@
 /**
  * `/settings/layouts` — how each tool in this initiative draws what it holds,
- * in the sidebar's order: the calendar's event detail, then each project's
- * layouts. Each layout says when it was last changed, and a project which list
+ * in the sidebar's order: the calendar's event detail, each project's
+ * layouts, each queue's. Each layout says when it was last changed, and a project which list
  * it opens on; each has a way into its layout editor.
  */
 
@@ -15,7 +15,12 @@ import { LayoutList } from "@/components/layouts/LayoutList";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useInitiativeSettings } from "@/hooks/useInitiativeSettings";
-import { calendarTarget, useInitiativeLayouts, useToolLayouts } from "@/hooks/useToolLayouts";
+import {
+  calendarTarget,
+  INSTANCE_LAYOUT_TOOLS,
+  useInitiativeLayouts,
+  useToolLayouts,
+} from "@/hooks/useToolLayouts";
 import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { isToolEnabled, SIDEBAR_TOOLS, toolDetailRoute, toolListRoute } from "@/lib/tools";
@@ -33,7 +38,7 @@ export const InitiativeSettingsLayoutsPage = () => {
 
 /** The tools with layouts, in the order the sidebar lists them. */
 const TOOLS_WITH_LAYOUTS = SIDEBAR_TOOLS.filter(
-  (tool) => tool === Tool.calendar || tool === Tool.project
+  (tool) => tool === Tool.calendar || INSTANCE_LAYOUT_TOOLS.has(tool)
 );
 
 const InitiativeLayouts = ({
@@ -46,15 +51,16 @@ const InitiativeLayouts = ({
 }) => {
   const { t } = useTranslation("initiatives");
   const { data, isError } = useInitiativeLayouts(initiativeId);
-  const projects = isError ? (
-    <p className="text-destructive text-sm">{t("settings.layouts.loadError")}</p>
-  ) : data?.length === 0 ? (
-    <p className="text-muted-foreground text-sm">{t("settings.layouts.noProjects")}</p>
-  ) : (
-    data?.map((entry) => (
-      <ProjectLayouts key={entry.tool_id} initiativeId={initiativeId} entry={entry} />
-    ))
-  );
+  // Each tool's instances; an initiative with no project yet says so.
+  const instances = (tool: Tool) => {
+    const entries = data?.filter((entry) => entry.tool === tool);
+    if (tool === Tool.project && entries?.length === 0) {
+      return <p className="text-muted-foreground text-sm">{t("settings.layouts.noProjects")}</p>;
+    }
+    return entries?.map((entry) => (
+      <InstanceLayouts key={entry.tool_id} initiativeId={initiativeId} entry={entry} />
+    ));
+  };
   return (
     <Card>
       <CardHeader>
@@ -62,23 +68,28 @@ const InitiativeLayouts = ({
         <CardDescription>{t("settings.layouts.description")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {isError ? (
+          <p className="text-destructive text-sm">{t("settings.layouts.loadError")}</p>
+        ) : null}
         {TOOLS_WITH_LAYOUTS.map((tool) =>
-          tool === Tool.project ? (
+          tool === Tool.calendar ? (
+            calendar ? (
+              <CalendarLayouts key={tool} initiativeId={initiativeId} />
+            ) : null
+          ) : (
             <div key={tool} className="space-y-3">
-              {projects}
+              {instances(tool)}
             </div>
-          ) : calendar ? (
-            <CalendarLayouts key={tool} initiativeId={initiativeId} />
-          ) : null
+          )
         )}
       </CardContent>
     </Card>
   );
 };
 
-/** One project's layouts, opening its editor where the reader may change them
- *  and has the room the editor needs. */
-const ProjectLayouts = ({
+/** One instance's layouts (a project's, a queue's), opening its editor where
+ *  the reader may change them and has the room the editor needs. */
+const InstanceLayouts = ({
   initiativeId,
   entry,
 }: {
@@ -88,12 +99,12 @@ const ProjectLayouts = ({
   const { t } = useTranslation(["projects", "layouts"]);
   const gp = useCommunityPath();
   const wide = atLeast(useWidthClass(), "md");
-  const project = gp(toolDetailRoute(Tool.project, initiativeId, entry.tool_id));
-  const editor = `${project}/layouts`;
+  const instance = gp(toolDetailRoute(entry.tool, initiativeId, entry.tool_id));
+  const editor = `${instance}/layouts`;
   return (
     <section aria-label={entry.name} className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link to={project} className="font-medium hover:underline">
+        <Link to={instance} className="font-medium hover:underline">
           {entry.name}
         </Link>
         {entry.can_configure && wide ? (

@@ -36,6 +36,7 @@ import {
   ToolSettingsProvider,
 } from "@/components/tools/settings/ToolSettingsContext";
 import { ToolPageHeader } from "@/components/tools/ToolPageHeader";
+import { INSTANCE_LAYOUT_TOOLS, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import { extractSubPath, isCommunityScopedPath, useCommunityPath } from "@/lib/communityUrl";
 import { matchActiveTab } from "@/lib/tabs";
 import {
@@ -98,10 +99,16 @@ export const ToolSettingsLayout = ({
   extraTabs = [],
   children,
 }: ToolSettingsLayoutProps) => {
-  const { t } = useTranslation(["common", "nav", "access"]);
+  const { t } = useTranslation(["common", "nav", "access", "layouts"]);
   const router = useRouter();
   const gp = useCommunityPath();
   const location = useLocation();
+  // A tool that lays out its own items offers its layouts to whoever may
+  // change them; the server says who on the set.
+  const layouts = useInstanceLayouts(
+    tool,
+    INSTANCE_LAYOUT_TOOLS.has(tool) ? (entity?.id ?? null) : null
+  ).data;
 
   if (isLoading) {
     return (
@@ -131,6 +138,9 @@ export const ToolSettingsLayout = ({
             path: sectionPath("access"),
           },
         ]
+      : []),
+    ...(layouts?.can_configure
+      ? [{ value: "layouts", label: t("layouts:tab"), path: sectionPath("layouts") }]
       : []),
     ...extraTabs.map((tab) => ({
       value: tab.value,

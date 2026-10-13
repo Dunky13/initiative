@@ -4455,7 +4455,7 @@ export const EventDetailFieldId = {
 } as const;
 
 /**
- * What a queue item's detail edits as a field. What is pinned to it, and
+ * What a queue item's detail edits as a field. What is linked to it, and
  * what can be done with it, are parts of their own.
  */
 export type QueueItemDetailFieldId =
@@ -4464,6 +4464,7 @@ export type QueueItemDetailFieldId =
 export const QueueItemDetailFieldId = {
   label: "label",
   notes: "notes",
+  position: "position",
   color: "color",
   visible: "visible",
   person: "person",

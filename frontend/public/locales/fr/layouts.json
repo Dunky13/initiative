@@ -174,5 +174,7 @@
       "relations": "Ce à quoi l'élément est lié."
     },
     "noItems": "Ajoutez un élément à la file pour voir sa mise en page ici."
-  }
+  },
+  "tab": "Mises en page",
+  "settingsDescription": "Comment il dispose ce qu'il contient : chaque mise en page, sa dernière modification et l'accès à l'éditeur. Tous ceux qui peuvent l'ouvrir les voient ; ce que chacun filtre et trie lui appartient."
 }
