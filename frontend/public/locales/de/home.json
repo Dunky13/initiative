@@ -252,5 +252,13 @@
     "description": "Seiten mit Widgets für verschiedene Arten von Tagen. Füge eines hinzu, und es öffnet sich als neue Ansicht auf deiner Startseite; deine bisherigen Ansichten bleiben, wie sie sind.",
     "add": "Zu meiner Startseite hinzufügen",
     "added": "„{{name}}“ zu deiner Startseite hinzugefügt."
+  },
+  "banner": {
+    "open": "Banner",
+    "title": "Banner dieser Ansicht",
+    "description": "Jedes Banner, das du hast, kann oben in dieser Ansicht stehen, und jede Ansicht kann ein anderes tragen.",
+    "useProfile": "Mein Profilbanner verwenden",
+    "none": "Kein Banner",
+    "more": "Mehr Banner holen"
   }
 }

@@ -4,6 +4,7 @@ import { delay, HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildOwnedDecoration,
   buildProject,
   buildProjectTaskStatus,
   buildQueueSummary,
@@ -595,5 +596,41 @@ describe("HomePage", () => {
       "href",
       "/marketplace"
     );
+  });
+
+  it("wears the banner a view was given, while the reader still has it", async () => {
+    const user = userEvent.setup();
+    let library = [buildOwnedDecoration({ id: "core.aurora", kind: "banner" })];
+    server.use(http.get("/api/v1/me/decorations", () => HttpResponse.json({ items: library })));
+    const kept = keepLayout(comingUpAndCommunities);
+    const first = renderHome();
+
+    // No banner yet: the page's heading is the hidden one.
+    await screen.findByRole("heading", { name: "Coming up" });
+    expect(first.container.querySelector('img[src*="aurora"]')).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "Banner" }));
+    const picker = await screen.findByRole("dialog", { name: "This view's banner" });
+    await user.click(await within(picker).findByRole("radio", { name: "Aurora" }));
+
+    await waitFor(() => expect(keptLayout(kept)?.banner).toBe("core.aurora"));
+    await waitFor(() => expect(first.container.querySelector('img[src*="aurora"]')).not.toBeNull());
+    await user.click(within(picker).getByRole("button", { name: "Done" }));
+    // The view tabs ride at the top of the banner.
+    const banner = first.container.querySelector('img[src*="aurora"]') as Element;
+    expect(banner.parentElement?.contains(screen.getByRole("tablist"))).toBe(true);
+
+    // Done, with one view: no bar of tabs, only the button to customize.
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Customize" })).toBeInTheDocument();
+
+    // A pack given back takes its banner with it.
+    first.unmount();
+    library = [];
+    const second = renderHome();
+    await screen.findByRole("heading", { name: "Coming up" });
+    expect(second.container.querySelector('img[src*="aurora"]')).toBeNull();
   });
 });

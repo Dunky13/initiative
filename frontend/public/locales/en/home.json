@@ -252,5 +252,13 @@
     "description": "Pages of widgets made for different kinds of day. Add one and it opens as a new view on your home page; the views you have stay as they are.",
     "add": "Add to my home",
     "added": "Added “{{name}}” to your home."
+  },
+  "banner": {
+    "open": "Banner",
+    "title": "This view's banner",
+    "description": "Any banner you have can sit at the top of this view, and each view can wear a different one.",
+    "useProfile": "Use my profile banner",
+    "none": "No banner",
+    "more": "Get more banners"
   }
 }

@@ -220,9 +220,9 @@ export const useRemoveDecorationPack = (options?: MutationOpts<unknown, string>)
  * app plus whatever it has acquired. Drives the pickers on Settings > Profile;
  * a library changes only when a pack is installed, so it is held a good while.
  */
-export const useMyDecorations = () =>
+export const useMyDecorations = (options?: { enabled?: boolean }) =>
   useListMyDecorations({
-    query: { staleTime: 5 * 60_000 },
+    query: { staleTime: 5 * 60_000, enabled: options?.enabled ?? true },
   });
 
 /**

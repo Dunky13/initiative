@@ -13,6 +13,7 @@ import {
   readHomeLayout,
   readingOrder,
   removeWidget,
+  setViewBanner,
   setWidgetOptions,
 } from "./layout";
 import { HOME_WIDGET_SIZES } from "./widgetTypes";
@@ -176,5 +177,27 @@ describe("layoutFits", () => {
       layoutOf({ id: "clock", type: "clock", grid: { x: 0, y: 0, w: 4, h: 5 }, options: { text } });
     expect(layoutFits(withOption("short"))).toBe(true);
     expect(layoutFits(withOption("x".repeat(16 * 1024)))).toBe(false);
+  });
+});
+
+describe("a view's banner", () => {
+  const start: HomeLayout = {
+    version: HOME_LAYOUT_VERSION,
+    preset: "myDay",
+    widgets: [{ id: "clock", type: "clock", grid: { x: 0, y: 0, w: 4, h: 4 } }],
+  };
+
+  it("is kept with the layout it belongs to", () => {
+    expect(readHomeLayout({ ...start, banner: "core.aurora" })?.banner).toBe("core.aurora");
+    expect(readHomeLayout({ ...start, banner: 7 })?.banner).toBeUndefined();
+  });
+
+  it("is set and taken off without rearranging anything", () => {
+    const dressed = setViewBanner(start, "core.aurora");
+    expect(dressed).toMatchObject({ banner: "core.aurora", preset: "myDay" });
+    expect(setViewBanner(dressed, "core.aurora")).toBe(dressed);
+    expect(setViewBanner(dressed, null)).not.toHaveProperty("banner");
+    // Moving widgets keeps the banner on.
+    expect(applyGrid(dressed, [{ i: "clock", x: 2, y: 0, w: 4, h: 4 }]).banner).toBe("core.aurora");
   });
 });
