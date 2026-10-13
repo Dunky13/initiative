@@ -47,6 +47,8 @@ More are in [the marketplace](plugins-and-marketplace.md#home-layouts) — **Bro
 
 Each view gets a tab: work on one, the scout group on the other, the allotment rota on a third.
 
+Each view can wear a banner, too. While customizing, **Banner** offers every one you have — the ones that come with Initiative and any from [decoration packs](plugins-and-marketplace.md#decoration-packs) — so the drama club's view can have the stage and work can have nothing at all. Give a pack back and its banner comes off the view with it.
+
 The **⋯** next to the tabs renames, copies, moves or deletes the view you're on. Home opens on whichever view you had last, and the address names it, so a view is something you can bookmark. Deleting one takes its widgets with it and nothing else — your communities never notice.
 
 ### My tasks

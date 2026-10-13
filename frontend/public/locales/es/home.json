@@ -252,5 +252,14 @@
     "description": "Páginas de widgets pensadas para distintos tipos de día. Añade una y se abre como una vista nueva en tu inicio; tus vistas siguen como están.",
     "add": "Añadir a mi inicio",
     "added": "Se añadió «{{name}}» a tu inicio."
+  },
+  "banner": {
+    "open": "Banner",
+    "title": "Banner de esta vista",
+    "description": "Cualquier banner que tengas puede ir arriba de esta vista, y cada vista puede llevar uno distinto.",
+    "useProfile": "Usar el banner de mi perfil",
+    "none": "Sin banner",
+    "more": "Conseguir más banners",
+    "loadError": "No se pudieron cargar tus banners."
   }
 }

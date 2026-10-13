@@ -43,6 +43,11 @@ export interface HomeLayout {
   version: typeof HOME_LAYOUT_VERSION;
   /** The starting layout this one came from, for the picker to mark. */
   preset?: string;
+  /**
+   * The banner this view wears: a decoration id from the reader's library. It
+   * draws only while they still have it, so a pack given back takes it away.
+   */
+  banner?: string;
   widgets: HomeWidget[];
 }
 
@@ -99,6 +104,7 @@ export const readHomeLayout = (raw: unknown): HomeLayout | null => {
   return {
     version: HOME_LAYOUT_VERSION,
     ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}),
+    ...(typeof raw.banner === "string" && raw.banner ? { banner: raw.banner } : {}),
     widgets,
   };
 };
@@ -213,4 +219,11 @@ export const moveWidget = (layout: HomeLayout, id: string, step: -1 | 1): HomeLa
       widget.id === self.id ? movedSelf : widget.id === other.id ? movedOther : widget
     ),
   };
+};
+
+/** The banner a view wears, or none. Not an arrangement, so the layout stays the preset it was. */
+export const setViewBanner = (layout: HomeLayout, banner: string | null): HomeLayout => {
+  if ((layout.banner ?? null) === banner) return layout;
+  const { banner: _dropped, ...rest } = layout;
+  return banner ? { ...rest, banner } : rest;
 };

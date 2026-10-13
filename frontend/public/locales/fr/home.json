@@ -252,5 +252,14 @@
     "description": "Des pages de widgets pensées pour différentes journées. Ajoutez-en une et elle s'ouvre comme nouvelle vue sur votre accueil ; vos vues restent telles quelles.",
     "add": "Ajouter à mon accueil",
     "added": "« {{name}} » ajoutée à votre accueil."
+  },
+  "banner": {
+    "open": "Bannière",
+    "title": "Bannière de cette vue",
+    "description": "N'importe laquelle de vos bannières peut s'afficher en haut de cette vue, et chaque vue peut en porter une différente.",
+    "useProfile": "Utiliser la bannière de mon profil",
+    "none": "Aucune bannière",
+    "more": "Obtenir d'autres bannières",
+    "loadError": "Impossible de charger vos bannières."
   }
 }
