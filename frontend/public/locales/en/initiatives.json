@@ -279,8 +279,7 @@
       "heading": "Layouts",
       "description": "How each tool in this initiative draws what it holds: each layout, when it was last changed, and which list a project opens on. They are changed in each one's editor.",
       "noProjects": "This initiative has no projects yet.",
-      "loadError": "Couldn't load the layouts.",
-      "calendar": "Calendar"
+      "loadError": "Couldn't load the layouts."
     }
   },
   "advancedTools": "Tools",

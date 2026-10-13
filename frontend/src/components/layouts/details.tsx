@@ -10,26 +10,34 @@ import { MoreHorizontal } from "lucide-react";
 import { type ReactNode, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useReadCounter } from "@/api/generated/counters/counters";
 import { type PropertyDefinitionRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { PropertyFilter } from "@/components/properties/PropertyFilter";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskStatusPriorityFilters } from "@/components/tasks/TaskStatusPriorityFilters";
 import { Button } from "@/components/ui/button";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
+import { useCounterGroup } from "@/hooks/useCounters";
 import { useGalleryImagesFeed } from "@/hooks/useGalleries";
+import { usePost, usePostsFeed } from "@/hooks/usePosts";
 import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
+import { CounterLayoutView } from "@/lib/layouts/counterLayout";
+import { COUNTER_LAYOUT, counterFields } from "@/lib/layouts/counters";
 import type { DetailLayoutSpec, StoredRegions } from "@/lib/layouts/detailLayout";
 import { EventLayoutView } from "@/lib/layouts/eventLayout";
 import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
 import { GalleryImageLayoutView } from "@/lib/layouts/galleryImageLayout";
 import { GALLERY_IMAGE_LAYOUT, galleryImageFields } from "@/lib/layouts/galleryImages";
+import { PostLayoutView } from "@/lib/layouts/postLayout";
+import { POST_LAYOUT, postFields } from "@/lib/layouts/posts";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
 import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
 import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
@@ -242,6 +250,70 @@ const GalleryImagePreview = ({
   ) : null;
 };
 
+/** The group's counter detail drawn with its first counter. */
+const CounterPreview = ({
+  groupId,
+  initiativeId,
+  tree,
+}: {
+  groupId: number;
+  initiativeId: number;
+  tree: LayoutNode;
+}) => {
+  const { t } = useTranslation("layouts");
+  const leaving = useRef(true);
+  const group = useCounterGroup(groupId);
+  const listed = group.data?.counters[0];
+  // Its own read carries the plug-ins' values, which the group's list does not.
+  const read = useReadCounter(useActiveCommunityId(), listed?.id ?? 0, undefined, {
+    query: { placeholderData: listed, enabled: listed !== undefined },
+  });
+  const first = read.data ?? listed;
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <CounterLayoutView
+        counter={first}
+        layout={layout}
+        editing
+        context={{
+          readOnly: false,
+          groupId,
+          initiativeId,
+          leaving,
+          actions: <ActionsPreview />,
+        }}
+      />
+    );
+  }
+  return group.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("counterDetail.noItems")}</p>
+  ) : null;
+};
+
+/** The notice detail drawn with the initiative's first notice. */
+const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: LayoutNode }) => {
+  const { t } = useTranslation("layouts");
+  const feed = usePostsFeed({ initiative_id: initiativeId });
+  const listed = feed.data?.pages[0]?.items[0];
+  // Its own read carries the plug-ins' values, which the board's list does not.
+  const first = usePost(listed?.id ?? null, { placeholderData: listed }).data ?? listed;
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <PostLayoutView
+        post={first}
+        layout={layout}
+        editing
+        context={{ canEdit: true, canPin: false, preview: true }}
+      />
+    );
+  }
+  return feed.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("postDetail.noItems")}</p>
+  ) : null;
+};
+
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
@@ -304,6 +376,36 @@ export const galleryImageDetail = (galleryId: number, initiativeId: number): Edi
   ),
 });
 
+/** A counter group's counter detail. */
+export const counterDetail = (groupId: number, initiativeId: number): EditableDetail => ({
+  spec: COUNTER_LAYOUT,
+  words: {
+    name: "layouts:counterDetail.name",
+    help: "layouts:counterDetail.help",
+    shipped: "layouts:counterDetail.shipped",
+    titleHelp: "layouts:counterDetail.titleHelp",
+    hiddenHelp: "layouts:counterDetail.hiddenHelp",
+    parts: "layouts:counterDetail.",
+  },
+  fields: counterFields,
+  preview: (tree) => <CounterPreview groupId={groupId} initiativeId={initiativeId} tree={tree} />,
+});
+
+/** The initiative's notice detail, which every notice in it shares. */
+export const postDetail = (initiativeId: number): EditableDetail => ({
+  spec: POST_LAYOUT,
+  words: {
+    name: "layouts:postDetail.name",
+    help: "layouts:postDetail.help",
+    shipped: "layouts:postDetail.shipped",
+    titleHelp: "layouts:postDetail.titleHelp",
+    hiddenHelp: "layouts:postDetail.hiddenHelp",
+    parts: "layouts:postDetail.",
+  },
+  fields: postFields,
+  preview: (tree) => <PostPreview initiativeId={initiativeId} tree={tree} />,
+});
+
 /** The item detail each tool lays out on its own, with no list of its own to
  *  lay out beside it: what its editor offers. */
 export const ITEM_DETAILS: Partial<
@@ -311,6 +413,7 @@ export const ITEM_DETAILS: Partial<
 > = {
   [Tool.queue]: queueItemDetail,
   [Tool.gallery]: galleryImageDetail,
+  [Tool.counter_group]: counterDetail,
 };
 
 /** A project's lists' presets: its tasks' filters, and a table's sort. */
@@ -356,3 +459,15 @@ export const calendarPresets = (initiativeId: number) =>
     ),
     sortable: () => false,
   });
+
+/** What each tool the whole initiative shares lays out: its item's detail,
+ *  and the presets its list offers where it has one. */
+export const SHARED_LAYOUTS: Partial<
+  Record<
+    Tool,
+    { detail: (initiativeId: number) => EditableDetail; presets?: typeof calendarPresets }
+  >
+> = {
+  [Tool.calendar]: { detail: eventDetail, presets: calendarPresets },
+  [Tool.post]: { detail: postDetail },
+};

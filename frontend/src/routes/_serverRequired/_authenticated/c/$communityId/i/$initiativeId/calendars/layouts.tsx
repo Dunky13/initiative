@@ -1,11 +1,10 @@
-import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+
+import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { SharedLayoutEditorPage } from "@/pages/initiativeTools/SharedLayoutEditorPage";
 
 export const Route = createFileRoute(
   "/_serverRequired/_authenticated/c/$communityId/i/$initiativeId/calendars/layouts"
 )({
-  component: lazyRouteComponent(() =>
-    import("@/pages/initiativeTools/events/CalendarLayoutEditorPage").then((m) => ({
-      default: m.CalendarLayoutEditorPage,
-    }))
-  ),
+  component: () => <SharedLayoutEditorPage tool={Tool.calendar} />,
 });

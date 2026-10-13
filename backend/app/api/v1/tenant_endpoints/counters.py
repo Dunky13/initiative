@@ -5,6 +5,7 @@ from typing import Annotated, Optional
 
 import logging
 
+from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi import (
     APIRouter,
     Depends,
@@ -49,6 +50,7 @@ from app.schemas.tenant.tool import serialize_tool
 from app.services.tenant import properties as properties_service
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import counters as counters_service
+from app.services.tenant import plugin_metadata
 from app.api import resource_access, tool_copy
 from app.core.tools import Tool
 from app.services.content_sockets import sockets
@@ -125,7 +127,21 @@ async def _counter_committed(
         routed_guild_id(session), Tool.counter_group, counter.counter_group_id, event
     )
     hydrated = await resource_access.reload_child(session, Counter, counter.id)
-    return serialize_counter(hydrated, context=context)
+    return await _serialized_counter(session, hydrated, context)
+
+
+async def _serialized_counter(
+    session: AsyncSession, counter: Counter, context: ActorContext
+) -> CounterRead:
+    """One counter as its own read answers it: with the plug-ins' values on it."""
+    values = await plugin_metadata.values_on(
+        session,
+        "counter",
+        {counter.id: resource_access.parent_of(counter).initiative_id},
+    )
+    return serialize_counter(
+        counter, context=context, plugin_values=values.get(counter.id, ())
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +364,7 @@ async def read_counter(
     which is what a read-back after a delete depends on.
     """
     counter = await resource_access.load_child(session, Counter, counter_id)
-    return serialize_counter(counter, context=guild_context)
+    return await _serialized_counter(session, counter, guild_context)
 
 
 @counters_router.post(

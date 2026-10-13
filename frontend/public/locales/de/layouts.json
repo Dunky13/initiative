@@ -198,5 +198,49 @@
       "versions": "Jede hochgeladene Version, und eine neue hochladen."
     },
     "noItems": "Füge der Galerie ein Bild hinzu, um hier sein Layout zu sehen."
+  },
+  "counterDetail": {
+    "name": "Zähler-Detailansicht",
+    "help": "Wie jeder Zähler dieser Gruppe beim Öffnen zum Bearbeiten angezeigt wird. Was es weglässt, ist ausgeblendet.",
+    "shipped": "Das ist das Layout wie ausgeliefert. Eine Änderung macht es zum Layout der Gruppe.",
+    "titleHelp": "Jeder Zähler zeigt seinen Namen.",
+    "hiddenHelp": "Jeder Zähler kann dies zeigen. Entfernt ist es ausgeblendet, und Hinzufügen bringt es zurück.",
+    "parts": {
+      "actions": "Menü",
+      "relations": "Beziehungen",
+      "count": "Stand"
+    },
+    "partHelp": {
+      "actions": "Was sonst mit dem Zähler möglich ist: zurücksetzen.",
+      "relations": "Womit der Zähler verknüpft ist.",
+      "count": "Sein Stand, schrittweise oder gesetzt."
+    },
+    "noItems": "Füge der Gruppe einen Zähler hinzu, um hier sein Layout zu sehen."
+  },
+  "postDetail": {
+    "name": "Mitteilungs-Detailansicht",
+    "help": "Wie jede Mitteilung dieser Initiative auf ihrer eigenen Seite angezeigt wird. Was es weglässt, ist ausgeblendet.",
+    "shipped": "Das ist das Layout wie ausgeliefert. Eine Änderung macht es zum Layout der Initiative.",
+    "titleHelp": "Jede Mitteilung zeigt ihren Titel in der Kopfzeile.",
+    "hiddenHelp": "Jede Mitteilung kann dies zeigen. Entfernt ist es ausgeblendet, und Hinzufügen bringt es zurück.",
+    "parts": {
+      "byline": "Verfasser",
+      "schedule": "Zeitplan",
+      "body": "Text",
+      "reactions": "Reaktionen",
+      "poll": "Umfrage",
+      "relations": "Beziehungen",
+      "comments": "Kommentare"
+    },
+    "partHelp": {
+      "byline": "Wer sie geschrieben hat und ob sie angeheftet ist.",
+      "schedule": "Wann eine noch nicht veröffentlichte Mitteilung erscheint.",
+      "body": "Was die Mitteilung sagt.",
+      "reactions": "Wie Leser reagiert haben.",
+      "poll": "Die Frage, die sie stellt, falls sie eine stellt.",
+      "relations": "Womit die Mitteilung verknüpft ist.",
+      "comments": "Was darüber gesagt wird."
+    },
+    "noItems": "Schreibe eine Mitteilung in dieser Initiative, um hier ihr Layout zu sehen."
   }
 }

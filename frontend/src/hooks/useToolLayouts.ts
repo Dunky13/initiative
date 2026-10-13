@@ -44,6 +44,7 @@ import type { MutationOpts } from "@/types/mutation";
 export const INSTANCE_LAYOUT_TOOLS: ReadonlySet<Tool> = new Set([
   Tool.project,
   Tool.queue,
+  Tool.counter_group,
   Tool.gallery,
 ]);
 
@@ -53,9 +54,10 @@ export const instanceTarget = (tool: Tool, id: number): GetLayoutsParams => ({
   tool_id: id,
 });
 
-/** The initiative's calendar, whose layouts every calendar in it shares. */
-export const calendarTarget = (initiativeId: number): GetLayoutsParams => ({
-  tool: Tool.calendar,
+/** A tool the whole initiative shares (its calendar, its posts), whose
+ *  layouts are the initiative's. */
+export const sharedTarget = (tool: Tool, initiativeId: number): GetLayoutsParams => ({
+  tool,
   initiative_id: initiativeId,
 });
 

@@ -132,6 +132,8 @@ const ITEM_READS: Record<DetailLayoutReadKind, (id: number) => Spec[]> = {
   queue_item: (id) => [q.allQueues(), q.queueItem(id)],
   // A picture is read under its gallery, which an action names no more of.
   gallery_image: () => [q.allGalleries()],
+  counter: (id) => [q.allCounterGroups(), q.counter(id)],
+  post: (id) => [q.allPosts(), q.post(id)],
 };
 
 /** Run one of a plug-in's actions on an item. The plug-in does the work; the

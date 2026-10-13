@@ -1758,6 +1758,7 @@ export interface PostRead {
   reactions: ReactionGroup[];
   body: PostReadBody;
   poll: PollRead | null;
+  plugin_values: PluginValueSummary[];
 }
 
 export interface CalendarEntriesResponse {
@@ -3908,6 +3909,22 @@ export interface CounterCreate {
   position?: number | string;
 }
 
+/**
+ * What a counter's detail edits as a field. Its count, what is linked to
+ * it and what can be done with it are parts of their own.
+ */
+export type CounterDetailFieldId = (typeof CounterDetailFieldId)[keyof typeof CounterDetailFieldId];
+
+export const CounterDetailFieldId = {
+  name: "name",
+  color: "color",
+  min: "min",
+  max: "max",
+  step: "step",
+  start: "start",
+  view: "view",
+} as const;
+
 export interface CounterGroupCreate {
   properties?: PropertyValueInput[];
   /**
@@ -3983,6 +4000,7 @@ export interface CounterRead {
   view_mode: CounterViewMode;
   position: string;
   properties: PropertySummary[];
+  plugin_values: PluginValueSummary[];
   created_at: string;
   updated_at: string;
 }
@@ -4485,12 +4503,25 @@ export const GalleryImageDetailFieldId = {
   tags: "tags",
 } as const;
 
+/**
+ * What a notice's detail draws as a field. Its title, tags and properties
+ * are its tool's, in its header; what it says, asks and answers, and when it
+ * goes up, are parts of their own.
+ */
+export type PostDetailFieldId = (typeof PostDetailFieldId)[keyof typeof PostDetailFieldId];
+
+export const PostDetailFieldId = {
+  tags: "tags",
+} as const;
+
 export interface DetailFieldProps {
   field:
     | TaskDetailFieldId
     | EventDetailFieldId
     | QueueItemDetailFieldId
     | GalleryImageDetailFieldId
+    | CounterDetailFieldId
+    | PostDetailFieldId
     | string;
 }
 
@@ -4519,6 +4550,11 @@ export const OwnPartType = {
   picture: "picture",
   about: "about",
   versions: "versions",
+  count: "count",
+  body: "body",
+  schedule: "schedule",
+  reactions: "reactions",
+  poll: "poll",
 } as const;
 
 /**
@@ -4669,6 +4705,8 @@ export const DetailLayoutReadKind = {
   calendar_event: "calendar_event",
   queue_item: "queue_item",
   gallery_image: "gallery_image",
+  counter: "counter",
+  post: "post",
 } as const;
 
 /**
@@ -4688,6 +4726,8 @@ export const DetailLayoutWriteKind = {
   calendar_event: "calendar_event",
   queue_item: "queue_item",
   gallery_image: "gallery_image",
+  counter: "counter",
+  post: "post",
 } as const;
 
 export interface DetailLayoutWrite {

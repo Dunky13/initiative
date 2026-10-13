@@ -2,16 +2,7 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  type CounterCreate,
-  type CounterRead,
-  type CounterUpdate,
-  CounterViewMode,
-  PropertyTarget,
-  SearchEntityType,
-  Tool,
-} from "@/api/generated/initiativeAPI.schemas";
-import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
+import { type CounterCreate, CounterViewMode } from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import {
@@ -31,19 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAddCounter, useUpdateCounter } from "@/hooks/useCounters";
-import { propertySaves } from "@/hooks/useProperties";
+import { useAddCounter } from "@/hooks/useCounters";
 import { useServerForm } from "@/hooks/useServerForm";
 import { pickRandomCounterColor } from "@/lib/counter-color";
-import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import type { DialogProps } from "@/types/dialog";
 
 type CounterFormDialogProps = DialogProps & {
   groupId: number;
-  /** The group's initiative — links are only made inside one. */
-  initiativeId?: number | null;
-  /** Existing counter to edit; if omitted, this is an add dialog. */
-  counter?: CounterRead;
   /** Default position for newly added counters (e.g. lastPosition + 1). */
   defaultPosition?: string;
 };
@@ -52,32 +37,29 @@ export const CounterFormDialog = ({
   open,
   onOpenChange,
   groupId,
-  initiativeId,
-  counter,
   defaultPosition,
 }: CounterFormDialogProps) => {
-  const { t } = useTranslation(["counterGroups", "common", "properties"]);
-  const isEdit = !!counter;
+  const { t } = useTranslation(["counterGroups", "common"]);
 
   const [error, setError] = useState<string | null>(null);
 
   // One colour per sitting rather than one per render — a fresh random value
   // inside the form's fields would read as the server changing its mind.
-  const fallbackColor = useMemo(() => pickRandomCounterColor(), [open, counter?.id]);
+  const fallbackColor = useMemo(() => pickRandomCounterColor(), [open]);
 
   const form = useServerForm(
-    counter,
-    (loaded) => ({
-      name: loaded?.name ?? "",
-      color: loaded?.color ?? fallbackColor,
-      count: loaded?.count ?? "0",
-      minValue: loaded?.min ?? "",
-      maxValue: loaded?.max ?? "",
-      step: loaded?.step ?? "1",
-      initialCount: loaded?.initial_count ?? "0",
-      viewMode: loaded?.view_mode ?? CounterViewMode.number,
+    undefined,
+    () => ({
+      name: "",
+      color: fallbackColor,
+      count: "0",
+      minValue: "",
+      maxValue: "",
+      step: "1",
+      initialCount: "0",
+      viewMode: CounterViewMode.number as CounterViewMode,
     }),
-    [open, counter?.id]
+    [open]
   );
   const { name, color, count, minValue, maxValue, step, initialCount, viewMode } = form.values;
   const setName = (next: string) => form.set({ name: next });
@@ -96,11 +78,7 @@ export const CounterFormDialog = ({
   const addCounter = useAddCounter(groupId, {
     onSuccess: () => onOpenChange(false),
   });
-  const updateCounter = useUpdateCounter(groupId, {
-    onSuccess: () => onOpenChange(false),
-  });
-
-  const isSubmitting = addCounter.isPending || updateCounter.isPending;
+  const isSubmitting = addCounter.isPending;
   const hasBounds = minValue.trim() !== "" && maxValue.trim() !== "";
   const requiresBounds = viewMode !== CounterViewMode.number;
   const canSubmit =
@@ -115,38 +93,25 @@ export const CounterFormDialog = ({
     }
     setError(null);
 
-    if (isEdit && counter) {
-      const update: CounterUpdate = {
-        name: trimmedName,
-        color,
-        step,
-        initial_count: initialCount,
-        view_mode: viewMode,
-        min: minValue.trim() === "" ? null : minValue,
-        max: maxValue.trim() === "" ? null : maxValue,
-      };
-      updateCounter.mutate({ counterId: counter.id, data: update });
-    } else {
-      const payload: CounterCreate = {
-        name: trimmedName,
-        color,
-        count,
-        step,
-        initial_count: initialCount,
-        view_mode: viewMode,
-        position: defaultPosition ?? "0",
-      };
-      if (minValue.trim() !== "") payload.min = minValue;
-      if (maxValue.trim() !== "") payload.max = maxValue;
-      addCounter.mutate(payload);
-    }
+    const payload: CounterCreate = {
+      name: trimmedName,
+      color,
+      count,
+      step,
+      initial_count: initialCount,
+      view_mode: viewMode,
+      position: defaultPosition ?? "0",
+    };
+    if (minValue.trim() !== "") payload.min = minValue;
+    if (maxValue.trim() !== "") payload.max = maxValue;
+    addCounter.mutate(payload);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? t("editCounter") : t("addCounter")}</DialogTitle>
+          <DialogTitle>{t("addCounter")}</DialogTitle>
           <DialogDescription>{t("counterFormDescription")}</DialogDescription>
         </DialogHeader>
 
@@ -167,18 +132,16 @@ export const CounterFormDialog = ({
             <ColorPickerPopover id="counter-color" value={color} onChange={setColor} />
           </div>
 
-          {!isEdit && (
-            <div className="space-y-2">
-              <Label htmlFor="counter-count">{t("count")}</Label>
-              <Input
-                id="counter-count"
-                type="number"
-                inputMode="decimal"
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-              />
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="counter-count">{t("count")}</Label>
+            <Input
+              id="counter-count"
+              type="number"
+              inputMode="decimal"
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -248,39 +211,6 @@ export const CounterFormDialog = ({
           </div>
 
           {error && <p className="text-destructive text-sm">{error}</p>}
-
-          {/* Only for a counter that exists, and saved as they change, like
-              its links below. Definitions belong to an initiative, so a
-              community-level group's counters have none to offer. */}
-          {counter && initiativeId != null && (
-            <div className="space-y-2 border-t pt-4">
-              <Label>{t("properties:title")}</Label>
-              <PropertiesField
-                kind={propertySaves[PropertyTarget.counter]}
-                id={counter.id}
-                properties={counter.properties ?? []}
-                readOnly={false}
-                initiativeId={initiativeId}
-                canOpen={{ tool: Tool.counter_group, id: groupId }}
-                hideLabel
-              />
-            </div>
-          )}
-
-          {/* Only for a counter that exists: there is nothing to link to a row
-              that has not been added yet. A link is written the moment it is
-              made, the way it is everywhere else — the form's Save is about the
-              counter, not about what it is connected to. */}
-          {counter && (
-            <ToolRelationsPanel
-              tool={Tool.counter_group}
-              entity={{ id: groupId, initiative_id: initiativeId ?? null }}
-              target={{ type: SearchEntityType.counter, id: counter.id }}
-              canEdit
-              entityTitle={counter.name}
-              className="border-t pt-4"
-            />
-          )}
         </div>
 
         <DialogFooter>
@@ -288,10 +218,8 @@ export const CounterFormDialog = ({
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {isEdit ? t("saving") : t("adding")}
+                {t("adding")}
               </>
-            ) : isEdit ? (
-              t("common:save")
             ) : (
               t("addCounter")
             )}
