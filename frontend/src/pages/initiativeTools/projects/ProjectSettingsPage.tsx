@@ -11,7 +11,7 @@ import {
   useUpdateProject,
 } from "@/hooks/useProjects";
 import { useProjectTaskExportView } from "@/hooks/useProjectTaskView";
-import { useProjectLayouts } from "@/hooks/useToolLayouts";
+import { useInstanceLayouts } from "@/hooks/useToolLayouts";
 
 export const ProjectSettingsPage = () => {
   const { projectId } = useParams({ strict: false }) as { projectId?: string };
@@ -27,7 +27,8 @@ export const ProjectSettingsPage = () => {
   const project = projectQuery.data;
   // An export from here lists the tasks this person's view of the project does.
   const exportContent = useProjectTaskExportView(parsedId);
-  const canConfigureLayouts = useProjectLayouts(isValidId ? parsedId : null).data?.can_configure;
+  const canConfigureLayouts = useInstanceLayouts(Tool.project, isValidId ? parsedId : null).data
+    ?.can_configure;
 
   return (
     <ToolSettingsLayout

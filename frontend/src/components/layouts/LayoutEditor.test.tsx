@@ -25,7 +25,7 @@ import type {
   ListLayoutWrite,
   ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { calendarTarget, projectTarget, useToolLayouts } from "@/hooks/useToolLayouts";
+import { calendarTarget, instanceTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { MAX_PRESETS } from "@/lib/layouts/presets";
 import type { LayoutNode } from "@/lib/layouts/tree";
 
@@ -55,7 +55,7 @@ const saved = (kind: string) =>
  *  calendar's instead. */
 const editor = (kind: string, onClose = vi.fn(), set = buildToolLayoutSet(), calendar = false) => {
   server.use(communityHttp.get("/layouts/", () => HttpResponse.json(set)));
-  const target = calendar ? calendarTarget(1) : projectTarget(1);
+  const target = calendar ? calendarTarget(1) : instanceTarget(Tool.project, 1);
   const Page = () => {
     const read = useToolLayouts(target).data;
     return read ? (

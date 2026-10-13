@@ -11,6 +11,7 @@ import {
   type UseQueryResult,
   useMutation,
   useMutationState,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -126,6 +127,51 @@ export const usePendingShown = <I, P>(
     () => (data && pending.length ? Object.assign({ ...data }, ...pending) : data),
     [data, pending]
   );
+};
+
+/** Where {@link useHeldItem} keeps an item's answered saves: the read key of
+ *  a save kind for items with no read of their own. */
+export const heldKey = (name: string, communityId: number, id: number) =>
+  ["held", name, communityId, id] as const;
+
+/** The copy of the item a held answer was answered over. */
+const OVER = Symbol("over");
+
+type Held<I> = I & { [OVER]?: I };
+
+/**
+ * An item as the page passed it, or as a save of it answered over that same
+ * copy, with saves not yet answered shown over either: for an item with no
+ * read of its own (one the queue's or the gallery's read carries), whose save
+ * kind's read key is {@link heldKey}. An answer stands until the page passes
+ * a newer copy: the one it was answered over (a dialog opened again on what it
+ * held) does not undo it. For a kind with a read of its own, it is `item`.
+ */
+export const useHeldItem = <I extends object, P>(
+  kind: FieldSaveKind<I, P>,
+  id: number,
+  item: I
+): I => {
+  const communityId = useActiveCommunityId();
+  const queryClient = useQueryClient();
+  const key = heldKey(kind.name, communityId, id);
+  const fresh = (): Held<I> => ({ ...item, [OVER]: item });
+  const { data } = useQuery({
+    queryKey: key,
+    queryFn: () => queryClient.getQueryData<Held<I>>(key) ?? fresh(),
+    staleTime: Number.POSITIVE_INFINITY,
+    // Sharing rebuilds the item from its keys, which would drop the mark of
+    // the copy it was answered over.
+    structuralSharing: false,
+  });
+  const held = data?.[OVER] === item ? data : item;
+  useEffect(() => {
+    const key = heldKey(kind.name, communityId, id);
+    if (queryClient.getQueryData<Held<I>>(key)?.[OVER] !== item) {
+      queryClient.setQueryData<Held<I>>(key, { ...item, [OVER]: item });
+    }
+  }, [queryClient, kind.name, communityId, id, item]);
+  return usePendingShown(kind, id, held) ?? item;
 };
 
 /** {@link usePendingShown} over the item as `query` read it. */

@@ -39,10 +39,10 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
 import type { MutationOpts } from "@/types/mutation";
 
-/** A project's layouts, which are its own. */
-export const projectTarget = (projectId: number): GetLayoutsParams => ({
-  tool: Tool.project,
-  tool_id: projectId,
+/** The layouts one instance of a tool keeps as its own: a project's, a queue's. */
+export const instanceTarget = (tool: Tool, id: number): GetLayoutsParams => ({
+  tool,
+  tool_id: id,
 });
 
 /** The initiative's calendar, whose layouts every calendar in it shares. */
@@ -60,7 +60,7 @@ export const toolLayoutsQuery = (communityId: number, target: GetLayoutsParams) 
 export const useToolLayouts = (target: GetLayoutsParams | null) => {
   const communityId = useActiveCommunityId();
   return useQuery<ToolLayoutSetRead>({
-    ...toolLayoutsQuery(communityId, target ?? projectTarget(0)),
+    ...toolLayoutsQuery(communityId, target ?? instanceTarget(Tool.project, 0)),
     enabled: target !== null,
     // The client keeps previous data by default, which across a target switch
     // would show the last target's layouts — and its `can_configure`, which
@@ -70,10 +70,9 @@ export const useToolLayouts = (target: GetLayoutsParams | null) => {
   });
 };
 
-export const useProjectLayouts = (projectId: number | null) =>
-  useToolLayouts(
-    projectId !== null && Number.isFinite(projectId) ? projectTarget(projectId) : null
-  );
+/** One instance's own layouts, or nothing while `id` is not one. */
+export const useInstanceLayouts = (tool: Tool, id: number | null) =>
+  useToolLayouts(id !== null && Number.isFinite(id) ? instanceTarget(tool, id) : null);
 
 /** Every project's layouts in an initiative the reader can open, for its
  *  settings, with whether the reader may change each. */

@@ -33,7 +33,7 @@ export const AddQueueItemDialog = ({
 }: AddQueueItemDialogProps) => {
   const { t } = useTranslation(["queues", "common"]);
 
-  const form = useQueueItemForm({ open, initiativeId });
+  const form = useQueueItemForm({ open });
   const { label, position, color, notes, isVisible, selectedTags, userId, links } = form;
 
   const setLinksMutation = useSetQueueItemLinks(queueId);

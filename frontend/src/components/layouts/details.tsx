@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useCalendarEntries } from "@/hooks/useCalendarEntries";
 import { useCalendarEvent } from "@/hooks/useCalendarEvents";
+import { useQueue } from "@/hooks/useQueues";
 import { useTask, useTasks } from "@/hooks/useTasks";
 import { type CalendarFilters, EMPTY_CALENDAR_FILTERS } from "@/lib/filters/calendarFilters";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
@@ -27,6 +28,8 @@ import { EventLayoutView } from "@/lib/layouts/eventLayout";
 import { EVENT_LAYOUT, eventFields } from "@/lib/layouts/events";
 import type { FieldDef } from "@/lib/layouts/fields";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
+import { QueueItemLayoutView } from "@/lib/layouts/queueItemLayout";
+import { QUEUE_ITEM_LAYOUT, queueItemFields } from "@/lib/layouts/queueItems";
 import { TaskLayoutView } from "@/lib/layouts/taskLayout";
 import { TASK_LAYOUT, taskFields } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
@@ -161,6 +164,43 @@ const EventPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layo
   ) : null;
 };
 
+/** The queue's item detail drawn with its first item. */
+const QueueItemPreview = ({
+  queueId,
+  initiativeId,
+  tree,
+}: {
+  queueId: number;
+  initiativeId: number;
+  tree: LayoutNode;
+}) => {
+  const { t } = useTranslation("layouts");
+  const leaving = useRef(true);
+  const queue = useQueue(queueId);
+  const first = queue.data?.items[0];
+  const layout = useMemo(() => regionsOf(tree), [tree]);
+  if (first) {
+    return (
+      <QueueItemLayoutView
+        item={first}
+        layout={layout}
+        editing
+        context={{
+          readOnly: false,
+          queueId,
+          initiativeId,
+          leaving,
+          actions: <ActionsPreview />,
+          preview: true,
+        }}
+      />
+    );
+  }
+  return queue.isSuccess ? (
+    <p className="text-muted-foreground text-sm">{t("queueItemDetail.noItems")}</p>
+  ) : null;
+};
+
 /** A project's task detail. */
 export const taskDetail = (project: LayoutProject): EditableDetail => ({
   spec: TASK_LAYOUT,
@@ -189,6 +229,21 @@ export const eventDetail = (initiativeId: number): EditableDetail => ({
   },
   fields: eventFields,
   preview: (tree) => <EventPreview initiativeId={initiativeId} tree={tree} />,
+});
+
+/** A queue's item detail. */
+export const queueItemDetail = (queueId: number, initiativeId: number): EditableDetail => ({
+  spec: QUEUE_ITEM_LAYOUT,
+  words: {
+    name: "layouts:queueItemDetail.name",
+    help: "layouts:queueItemDetail.help",
+    shipped: "layouts:queueItemDetail.shipped",
+    titleHelp: "layouts:queueItemDetail.titleHelp",
+    hiddenHelp: "layouts:queueItemDetail.hiddenHelp",
+    parts: "layouts:queueItemDetail.",
+  },
+  fields: queueItemFields,
+  preview: (tree) => <QueueItemPreview queueId={queueId} initiativeId={initiativeId} tree={tree} />,
 });
 
 /** A project's lists' presets: its tasks' filters, and a table's sort. */

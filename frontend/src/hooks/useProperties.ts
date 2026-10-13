@@ -1,5 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -22,7 +21,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { buildUniqueOptionSlug, findOptionByLabel } from "@/components/properties/propertyHelpers";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
-import { type FieldSaveKind, usePendingShown } from "@/hooks/useFieldSave";
+import { type FieldSaveKind, heldKey } from "@/hooks/useFieldSave";
 import { toast } from "@/lib/mascotToast";
 import type { MutationOpts } from "@/types/mutation";
 
@@ -162,59 +161,24 @@ export const useAppendPropertyOption = () => {
 /** Anything that carries property values. */
 type PropertyHolder = { properties: PropertySummary[] };
 
-/** A row's properties as last answered, and the read they were answered over. */
-type Held = PropertyHolder & { over: PropertySummary[] };
-
-/** Where {@link useHeldProperties} keeps a row's answered properties. */
-const heldKey = (name: string, communityId: number, id: number) =>
-  ["held-properties", name, communityId, id] as const;
-
 /**
  * How each kind of row's properties are saved, one value at a time, where the
  * page holds no read of the row to write answers into: they are held where
- * {@link useHeldProperties} reads them.
+ * {@link useHeldItem} reads them.
  */
 export const propertySaves = Object.fromEntries(
-  Object.values(PropertyTarget).map((target): [PropertyTarget, FieldSaveKind<Held, never>] => [
-    target,
-    {
-      name: `properties-${target}`,
-      readKey: (communityId, id) => heldKey(`properties-${target}`, communityId, id),
-      // Only its properties are saved this way.
-      patch: () => Promise.reject(new Error("a row's properties take no patch")),
-      properties: target,
-      lists: () => q.propertyHolder(target),
-      itself: () => ({}),
-    },
-  ])
-) as Record<PropertyTarget, FieldSaveKind<Held, never>>;
-
-/**
- * A row's properties as the page read them, or as a save of them answered
- * over that same read, and with saves not yet answered shown over either. An
- * answer stands until the page reads the row again: a copy of the read it was
- * answered over (a dialog opened again on what it held) does not undo it.
- */
-export const useHeldProperties = <I, P>(
-  kind: FieldSaveKind<I, P>,
-  id: number,
-  saved: PropertySummary[]
-): PropertySummary[] => {
-  const communityId = useActiveCommunityId();
-  const queryClient = useQueryClient();
-  const key = heldKey(kind.name, communityId, id);
-  const { data } = useQuery({
-    queryKey: key,
-    queryFn: () => queryClient.getQueryData<Held>(key) ?? { properties: saved, over: saved },
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const held = data?.over === saved ? data : { properties: saved, over: saved };
-  useEffect(() => {
-    const key = heldKey(kind.name, communityId, id);
-    if (queryClient.getQueryData<Held>(key)?.over !== saved) {
-      queryClient.setQueryData<Held>(key, { properties: saved, over: saved });
-    }
-  }, [queryClient, kind.name, communityId, id, saved]);
-  const shown = usePendingShown(kind, id, held as unknown as I) as unknown as PropertyHolder;
-  return shown.properties;
-};
+  Object.values(PropertyTarget).map(
+    (target): [PropertyTarget, FieldSaveKind<PropertyHolder, never>] => [
+      target,
+      {
+        name: `properties-${target}`,
+        readKey: (communityId, id) => heldKey(`properties-${target}`, communityId, id),
+        // Only its properties are saved this way.
+        patch: () => Promise.reject(new Error("a row's properties take no patch")),
+        properties: target,
+        lists: () => q.propertyHolder(target),
+        itself: () => ({}),
+      },
+    ]
+  )
+) as Record<PropertyTarget, FieldSaveKind<PropertyHolder, never>>;

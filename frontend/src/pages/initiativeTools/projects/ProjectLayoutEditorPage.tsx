@@ -15,7 +15,7 @@ import { taskDetail, taskPresets } from "@/components/layouts/details";
 import { LayoutEditor } from "@/components/layouts/LayoutEditor";
 import { ToolSettingsPermissionRequired } from "@/components/tools/settings/ToolSettingsGuard";
 import { useProject, useProjectTaskStatuses } from "@/hooks/useProjects";
-import { projectTarget, useProjectLayouts } from "@/hooks/useToolLayouts";
+import { instanceTarget, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { toolSettingsRoute } from "@/lib/tools";
 
@@ -29,7 +29,7 @@ export const ProjectLayoutEditorPage = () => {
 
   const project = useProject(id).data;
   const statuses = useProjectTaskStatuses(id).data;
-  const set = useProjectLayouts(id).data;
+  const set = useInstanceLayouts(Tool.project, id).data;
   const editing = useMemo(
     () =>
       project && statuses
@@ -47,7 +47,7 @@ export const ProjectLayoutEditorPage = () => {
       // Another project's editor starts afresh: a draft, and the question
       // before leaving it, belong to the project they were made for.
       key={project.id}
-      target={projectTarget(project.id)}
+      target={instanceTarget(Tool.project, project.id)}
       initiativeId={project.initiative_id}
       project={editing}
       presets={presets}

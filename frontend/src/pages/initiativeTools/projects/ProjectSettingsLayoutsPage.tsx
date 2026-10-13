@@ -18,7 +18,7 @@ import { LayoutList } from "@/components/layouts/LayoutList";
 import { ToolSettingsPermissionRequired } from "@/components/tools/settings/ToolSettingsGuard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useProjectLayouts } from "@/hooks/useToolLayouts";
+import { useInstanceLayouts } from "@/hooks/useToolLayouts";
 import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { toolDetailRoute } from "@/lib/tools";
@@ -34,7 +34,7 @@ export const ProjectSettingsLayoutsPage = () => {
   const parsedId = projectId ? Number(projectId) : Number.NaN;
   const isValidId = Number.isFinite(parsedId);
 
-  const set = useProjectLayouts(isValidId ? parsedId : null).data;
+  const set = useInstanceLayouts(Tool.project, isValidId ? parsedId : null).data;
 
   if (!set) return null;
   if (!set.can_configure) return <ToolSettingsPermissionRequired />;

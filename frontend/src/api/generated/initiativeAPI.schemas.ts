@@ -4454,8 +4454,24 @@ export const EventDetailFieldId = {
   tags: "tags",
 } as const;
 
+/**
+ * What a queue item's detail edits as a field. What is pinned to it, and
+ * what can be done with it, are parts of their own.
+ */
+export type QueueItemDetailFieldId =
+  (typeof QueueItemDetailFieldId)[keyof typeof QueueItemDetailFieldId];
+
+export const QueueItemDetailFieldId = {
+  label: "label",
+  notes: "notes",
+  color: "color",
+  visible: "visible",
+  person: "person",
+  tags: "tags",
+} as const;
+
 export interface DetailFieldProps {
-  field: TaskDetailFieldId | EventDetailFieldId | string;
+  field: TaskDetailFieldId | EventDetailFieldId | QueueItemDetailFieldId | string;
 }
 
 export interface DetailFieldPart {
@@ -4628,6 +4644,7 @@ export type DetailLayoutReadKind = (typeof DetailLayoutReadKind)[keyof typeof De
 export const DetailLayoutReadKind = {
   task: "task",
   calendar_event: "calendar_event",
+  queue_item: "queue_item",
 } as const;
 
 /**
@@ -4645,6 +4662,7 @@ export type DetailLayoutWriteKind =
 export const DetailLayoutWriteKind = {
   task: "task",
   calendar_event: "calendar_event",
+  queue_item: "queue_item",
 } as const;
 
 export interface DetailLayoutWrite {
@@ -9112,6 +9130,7 @@ export interface QueueItemRead {
   held_at_round: number | null;
   created_by: number | null;
   created_at: string;
+  plugin_values: PluginValueSummary[];
 }
 
 export interface QueueItemUpdate {
@@ -9123,6 +9142,7 @@ export interface QueueItemUpdate {
   notes?: string | null;
   is_visible?: boolean | null;
   tag_ids?: number[] | null;
+  notes_base?: string | null;
 }
 
 /**

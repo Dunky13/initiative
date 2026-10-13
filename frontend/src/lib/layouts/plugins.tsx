@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   type CommunityPluginRead,
+  type DetailLayoutReadKind,
   type PluginValueSummary,
   PropertyType,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -80,8 +81,9 @@ export type PluginOnItems = {
   actions: ReadonlyMap<string, PluginActionDecl>;
 };
 
-/** The kinds of item whose pages draw plug-ins, as the manifest names them. */
-export type PluginItemKind = "task" | "calendar_event";
+/** The kinds of item whose pages draw plug-ins, as the manifest names them:
+ *  every kind with a detail layout. */
+export type PluginItemKind = DetailLayoutReadKind;
 
 /** What a block declares on one kind of item, of what the server offers the
  *  reader. */

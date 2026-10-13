@@ -469,6 +469,10 @@ const calendarEvent = (eventId: number): Spec => ({
   communityExact: [`/api/v1/calendar-events/${eventId}`],
 });
 
+const queueItem = (itemId: number): Spec => ({
+  communityExact: [`/api/v1/queue-items/${itemId}`],
+});
+
 // ── Posts (community) ────────────────────────────────────────────────────────────
 
 /**
@@ -658,6 +662,7 @@ export const q = {
   calendar,
   captchaSettings,
   calendarEvent,
+  queueItem,
   communitySettings,
   notificationSettings,
   platformAuthSettings,

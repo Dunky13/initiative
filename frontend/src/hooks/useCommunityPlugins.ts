@@ -15,6 +15,7 @@ import type {
   CommunityPluginListResponse,
   CommunityPluginRead,
   CommunityPluginUpdate,
+  DetailLayoutReadKind,
   PluginActionResult,
   PluginPlacementRead,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -28,7 +29,7 @@ import {
   uninstallCommunityPlugin,
   updateCommunityPlugin,
 } from "@/api/generated/plugins/plugins";
-import { invalidate, q } from "@/api/query-keys";
+import { invalidate, q, type Spec } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
 import { useCommunities } from "@/hooks/useCommunities";
@@ -124,18 +125,22 @@ export const useSetPluginScopes = (
   );
 };
 
-/** Run one of a plug-in's actions on a task. The plug-in does the work; the
- *  task is read again for the values it shows afterwards. */
+/** The reads that show an item of each kind plug-ins draw on. */
+const ITEM_READS: Record<DetailLayoutReadKind, (id: number) => Spec[]> = {
+  task: (id) => [q.allTasks(), q.task(id)],
+  calendar_event: (id) => [q.allCalendarEvents(), q.calendarEvent(id)],
+  queue_item: (id) => [q.allQueues(), q.queueItem(id)],
+};
+
+/** Run one of a plug-in's actions on an item. The plug-in does the work; the
+ *  item is read again for the values it shows afterwards. */
 export const useRunPluginAction = () =>
   useCommunityMutation<
     PluginActionResult,
-    { pluginId: number; actionId: string; kind: "task" | "calendar_event"; itemId: number }
+    { pluginId: number; actionId: string; kind: DetailLayoutReadKind; itemId: number }
   >({
     mutationFn: (communityId, { pluginId, actionId, kind, itemId }) =>
       runPluginAction(communityId, pluginId, actionId, { entity_type: kind, entity_id: itemId }),
-    invalidate: (_data, { kind, itemId }) =>
-      kind === "task"
-        ? invalidate(q.allTasks(), q.task(itemId))
-        : invalidate(q.allCalendarEvents(), q.calendarEvent(itemId)),
+    invalidate: (_data, { kind, itemId }) => invalidate(...ITEM_READS[kind](itemId)),
     errorKey: "plugins:error",
   });

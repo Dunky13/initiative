@@ -13,11 +13,12 @@
 import type { GroupingState, SortingState } from "@tanstack/react-table";
 import { useCallback, useMemo } from "react";
 
-import type {
-  ListLayoutRead,
-  ListLayoutReadKind,
-  SortField,
-  TaskStatusRead,
+import {
+  type ListLayoutRead,
+  type ListLayoutReadKind,
+  type SortField,
+  type TaskStatusRead,
+  Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -33,7 +34,7 @@ import {
 } from "@/hooks/useListView";
 import { useProjectTaskStatuses } from "@/hooks/useProjects";
 import { useKnownTagIds } from "@/hooks/useTags";
-import { listLayouts, useProjectLayouts } from "@/hooks/useToolLayouts";
+import { listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import {
   EMPTY_TASK_FILTERS,
   type StoredTaskFilters,
@@ -164,7 +165,7 @@ export function useProjectTaskView({
   // gates the editor. The list waits for them, which say how it is drawn; a
   // set that cannot be read is reported, with a way to ask again, rather than
   // guessed at.
-  const layoutsQuery = useProjectLayouts(projectId);
+  const layoutsQuery = useInstanceLayouts(Tool.project, projectId);
   const layoutsLoaded = layoutsQuery.data !== undefined;
   const layoutsFailed = layoutsQuery.isError && !layoutsLoaded;
   const { refetch: refetchLayouts } = layoutsQuery;

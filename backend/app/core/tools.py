@@ -301,6 +301,7 @@ LIST_LAYOUTS: dict[Tool, tuple[str, ...]] = {
 DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {
     Tool.project: ("task",),
     Tool.calendar: ("calendar_event",),
+    Tool.queue: ("queue_item",),
 }
 LAYOUT_DEFAULT = "default"
 LAYOUT_KINDS: tuple[str, ...] = tuple(
