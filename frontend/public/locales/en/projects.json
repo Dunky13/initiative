@@ -40,9 +40,7 @@
   },
   "layouts": {
     "label": "Layout",
-    "loadError": "Couldn't load this project's layouts.",
-    "heading": "Layouts",
-    "description": "How this project draws its tasks: each layout, when it was last changed, and which list it opens on. Everyone in the project sees them; what each person filters and sorts by is their own."
+    "loadError": "Couldn't load this project's layouts."
   },
   "createDialog": {
     "title": "Create project",

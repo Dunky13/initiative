@@ -4,12 +4,13 @@ import type {
   QueueItemUpdate,
   QueueRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { SearchEntityType, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyTarget, SearchEntityType, Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
   addQueueItem,
   advanceTurn,
   deleteQueueItem,
   duplicateQueueItem,
+  getReadQueueItemQueryKey,
   getReadQueueQueryKey,
   holdCurrentTurn,
   previousTurn,
@@ -24,6 +25,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { setRelated } from "@/api/relationships";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useCommunityMutation, useOptimisticMutation } from "@/hooks/useApiMutation";
+import type { FieldSaveKind } from "@/hooks/useFieldSave";
 import { idsByKind, type LinkedRef, sameIds } from "@/lib/relationships";
 import type { MutationOpts } from "@/types/mutation";
 
@@ -445,3 +447,13 @@ export const useSetQueueItemLinks = (
     },
     options
   );
+
+/** How a queue's items are saved field by field. */
+export const queueItemSaves = (queueId: number): FieldSaveKind<QueueItemRead, QueueItemUpdate> => ({
+  name: "queue-item",
+  readKey: (communityId, id) => getReadQueueItemQueryKey(communityId, id),
+  patch: (communityId, id, patch) => updateQueueItem(communityId, id, patch),
+  properties: PropertyTarget.queue_item,
+  lists: () => q.tool(Tool.queue, queueId),
+  itself: (id) => q.queueItem(id),
+});

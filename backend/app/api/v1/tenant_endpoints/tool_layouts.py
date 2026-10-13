@@ -25,10 +25,16 @@ from app.api.deps import (
     get_current_active_user,
 )
 from app.core.messages import InitiativeMessages, ToolLayoutMessages
-from app.core.tools import LAYOUTS_PER_INSTANCE, LAYOUTS_SHARED, Tool
+from app.core.tools import (
+    INSTANCE_LAYOUT_TOOLS,
+    LAYOUTS_PER_INSTANCE,
+    LAYOUTS_SHARED,
+    Tool,
+)
+from app.models.tenant._mixins import tool_models
+
 from app.models.platform.user import User
 from app.models.tenant.initiative import Initiative
-from app.models.tenant.project import Project
 from app.schemas.tenant.tool_layout import (
     InitiativeToolLayoutsRead,
     ToolLayoutDefaultWrite,
@@ -179,38 +185,41 @@ async def get_initiative_layouts(
     guild_context: GuildContextDep,
     initiative_id: int = Query(),
 ) -> List[InitiativeToolLayoutsRead]:
-    """The layouts of every project in the initiative the reader can open, by
-    name, for the initiative's settings. A layout is changed on its own
-    target."""
+    """The layouts of every instance in the initiative the reader can open,
+    of each tool whose instances lay out their own items (a project's, a
+    queue's), by tool and name, for the initiative's settings. A layout is
+    changed on its own target."""
     await _require_initiative(session, guild_context, initiative_id)
-    # Which projects the reader can open is the projects' own policy's answer.
-    projects = (
-        await session.exec(
-            select(Project)
-            .where(
-                Project.initiative_id == initiative_id,
-                col(Project.archived_at).is_(None),
-                col(Project.deleted_at).is_(None),
+    found: list[InitiativeToolLayoutsRead] = []
+    for tool in INSTANCE_LAYOUT_TOOLS:
+        model: Any = tool_models()[tool.plural]
+        # Which instances the reader can open is their own policy's answer.
+        rows = (
+            await session.exec(
+                select(model)
+                .where(
+                    model.initiative_id == initiative_id,
+                    col(model.archived_at).is_(None),
+                    col(model.deleted_at).is_(None),
+                )
+                .options(undefer(model.actions))
+                .order_by(col(model.name), col(model.id))
             )
-            .options(undefer(Project.actions))
-            .order_by(col(Project.name), col(Project.id))
+        ).all()
+        stored = await tool_layouts_service.rows_by_instance(
+            session, initiative_id, tool, [row.id for row in rows]
         )
-    ).all()
-    stored = await tool_layouts_service.rows_by_instance(
-        session, initiative_id, Tool.project, [project.id for project in projects]
-    )
-    return [
-        InitiativeToolLayoutsRead(
-            tool=Tool.project,
-            tool_id=project.id,
-            name=project.name,
-            layouts=tool_layouts_service.read_set(
-                Tool.project, stored.get(project.id, [])
-            ),
-            can_configure=_configures(project),
-        )
-        for project in projects
-    ]
+        found += [
+            InitiativeToolLayoutsRead(
+                tool=tool,
+                tool_id=row.id,
+                name=row.name,
+                layouts=tool_layouts_service.read_set(tool, stored.get(row.id, [])),
+                can_configure=_configures(row),
+            )
+            for row in rows
+        ]
+    return found
 
 
 @router.put("/", response_model=ToolLayoutSetRead)

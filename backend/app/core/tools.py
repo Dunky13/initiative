@@ -301,7 +301,15 @@ LIST_LAYOUTS: dict[Tool, tuple[str, ...]] = {
 DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {
     Tool.project: ("task",),
     Tool.calendar: ("calendar_event",),
+    Tool.queue: ("queue_item",),
 }
+#: The per-instance tools that lay out anything of their own, a list or an
+#: item: those an initiative's settings list.
+INSTANCE_LAYOUT_TOOLS: tuple[Tool, ...] = tuple(
+    tool
+    for tool in LAYOUTS_PER_INSTANCE
+    if tool in LIST_LAYOUTS or tool in DETAIL_LAYOUTS
+)
 LAYOUT_DEFAULT = "default"
 LAYOUT_KINDS: tuple[str, ...] = tuple(
     dict.fromkeys(

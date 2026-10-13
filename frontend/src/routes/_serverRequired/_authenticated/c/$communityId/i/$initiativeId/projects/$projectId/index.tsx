@@ -1,6 +1,10 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
-import type { ProjectRead, UserViewPreferencesMap } from "@/api/generated/initiativeAPI.schemas";
+import {
+  type ProjectRead,
+  Tool,
+  type UserViewPreferencesMap,
+} from "@/api/generated/initiativeAPI.schemas";
 import { getReadProjectQueryKey, readProject } from "@/api/generated/projects/projects";
 import {
   getListTaskStatusesQueryKey,
@@ -9,7 +13,7 @@ import {
 import { keptView } from "@/hooks/useListView";
 import { projectViewSpec, resolveProjectView } from "@/hooks/useProjectTaskView";
 import { tasksQuery } from "@/hooks/useTasks";
-import { listLayouts, projectTarget, toolLayoutsQuery } from "@/hooks/useToolLayouts";
+import { instanceTarget, listLayouts, toolLayoutsQuery } from "@/hooks/useToolLayouts";
 import { VIEW_PREFERENCES_QUERY_KEY } from "@/hooks/useViewPreference";
 import { parseListLayout, parsePreset } from "@/lib/filters/layoutSearch";
 import { buildTaskListParams } from "@/lib/filters/taskFilters";
@@ -43,7 +47,7 @@ export const Route = createFileRoute(
             staleTime: 30_000,
           }),
           queryClient.ensureQueryData({
-            ...toolLayoutsQuery(communityId, projectTarget(projectId)),
+            ...toolLayoutsQuery(communityId, instanceTarget(Tool.project, projectId)),
             staleTime: 60_000,
           }),
           queryClient.ensureQueryData({

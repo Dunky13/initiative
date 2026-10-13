@@ -43,6 +43,7 @@ from app.schemas.tenant.tool_layout import (
     DetailLayoutWrite,
     DetailStackPart,
     EventDetailFieldId,
+    QueueItemDetailFieldId,
     ListLayoutDefinition,
     ListLayoutRead,
     PluginPart,
@@ -74,12 +75,14 @@ DETAIL_PARTS: dict[str, frozenset[str]] = {
     },
     "calendar_event": _LAYOUT_PARTS
     | {"plugin", "dates", "rsvp", "actions", "relations"},
+    "queue_item": _LAYOUT_PARTS | {"plugin", "actions", "relations"},
 }
 
 #: The built-in fields each kind of detail edits.
 DETAIL_FIELDS: dict[str, frozenset[str]] = {
     "task": frozenset(field.value for field in TaskDetailFieldId),
     "calendar_event": frozenset(field.value for field in EventDetailFieldId),
+    "queue_item": frozenset(field.value for field in QueueItemDetailFieldId),
 }
 
 

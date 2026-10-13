@@ -21,7 +21,12 @@ from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import MAX_DEPTH, MAX_NODES, MAX_PLUGIN_PARTS
 from app.services.tenant import tool_layouts as tool_layouts_service
-from app.testing import create_project, create_resource_grant, route_session_to_guild
+from app.testing import (
+    create_project,
+    create_queue,
+    create_resource_grant,
+    route_session_to_guild,
+)
 
 
 def _project(a: Any) -> dict[str, Any]:
@@ -325,6 +330,39 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     # A member reads only what they were let into, and changes none of it.
     assert [(each["tool_id"], each["can_configure"]) for each in read] == [
         (manager.project.id, False)
+    ]
+
+
+async def test_a_queue_lays_out_its_items(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Its own item detail, listed among the initiative's layouts."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    queue = await create_queue(session, a.initiative, a.user, name="Turns")
+    detail = _detail(
+        "queue_item",
+        {"type": "section", "children": [_field("person"), _field("property:12")]},
+        _field("tags"),
+        {"type": "relations"},
+        _plugin_part(3),
+    )
+
+    saved = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "queue", "tool_id": queue.id},
+        json=detail,
+        headers=a.headers,
+    )
+    listed = await client.get(
+        a.g("/layouts/initiative"),
+        params={"initiative_id": a.initiative.id},
+        headers=a.headers,
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert [layout["kind"] for layout in saved.json()["layouts"]] == ["queue_item"]
+    assert [(each["tool"], each["name"]) for each in listed.json()] == [
+        ("queue", "Turns")
     ]
 
 

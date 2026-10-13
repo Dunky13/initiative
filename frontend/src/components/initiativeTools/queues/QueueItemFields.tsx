@@ -1,12 +1,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  PropertyTarget,
-  type QueueItemRead,
-  SearchEntityType,
-  Tool,
-} from "@/api/generated/initiativeAPI.schemas";
+import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { EntityLinkField } from "@/components/entities/EntityLinkField";
 import type { useQueueItemForm } from "@/components/initiativeTools/queues/useQueueItemForm";
 import { MemberSelect } from "@/components/members/MemberSearchSelect";
@@ -17,26 +12,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { propertySaves } from "@/hooks/useProperties";
-import { PropertiesField } from "@/lib/layouts/fieldEditors";
 
 interface QueueItemFieldsProps {
   form: ReturnType<typeof useQueueItemForm>;
   queueId: number;
   initiativeId: number;
-  /** The item being edited; omitted while one is being added. */
-  item?: QueueItemRead;
   readOnly?: boolean;
   /** Enter in the label field; omit while the form cannot be submitted. */
   onEnter?: () => void;
 }
 
-/** The fields of the add and edit queue-item dialogs. */
+/** The fields of an item being added to a queue. */
 export const QueueItemFields = ({
   form,
   queueId,
   initiativeId,
-  item,
   readOnly = false,
   onEnter,
 }: QueueItemFieldsProps) => {
@@ -59,7 +49,7 @@ export const QueueItemFields = ({
               onEnter();
             }
           }}
-          autoFocus={!item}
+          autoFocus
         />
       </div>
 
@@ -124,23 +114,6 @@ export const QueueItemFields = ({
         />
       </div>
 
-      {/* Saved as they change, like the links below — the dialog's Save is
-          about the item itself. An item being added has none yet. */}
-      {item && (
-        <div className="space-y-2">
-          <Label>{t("properties:title")}</Label>
-          <PropertiesField
-            kind={propertySaves[PropertyTarget.queue_item]}
-            id={item.id}
-            properties={item.properties ?? []}
-            readOnly={readOnly}
-            initiativeId={initiativeId}
-            canOpen={{ tool: Tool.queue, id: queueId }}
-            hideLabel
-          />
-        </div>
-      )}
-
       <div className="space-y-2">
         <Label>{t("linkedUser")}</Label>
         <div className="flex items-center gap-2">
@@ -148,7 +121,6 @@ export const QueueItemFields = ({
             scope={{ type: "canOpen", tool: Tool.queue, id: queueId }}
             value={form.userId}
             onChange={form.setUserId}
-            selectedUser={form.selectedUser}
             placeholder={t("selectUser")}
             emptyMessage={t("noUser")}
             disabled={readOnly}
@@ -171,7 +143,6 @@ export const QueueItemFields = ({
           tasks-only one. An item being added is no subject yet. */}
       <EntityLinkField
         label={t("relations:groups.attached.title")}
-        subject={item ? { type: SearchEntityType.queue_item, id: item.id } : undefined}
         initiativeId={initiativeId}
         value={form.links}
         onChange={form.setLinks}

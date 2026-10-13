@@ -39,26 +39,28 @@ import {
   type FieldSaveOptions,
   type ItemEdit,
   type ItemFieldSave,
+  useHeldItem,
   useItemFieldSave,
 } from "@/hooks/useFieldSave";
 import { usePastedImages } from "@/hooks/usePastedImages";
-import { useHeldProperties, useProperties } from "@/hooks/useProperties";
+import { useProperties } from "@/hooks/useProperties";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
 
 import { FieldFrame, sameJson, useFieldDraft } from "./editing";
 
-/** An item's title, which is its detail's heading. It cannot be emptied:
- *  leaving it blank puts the saved one back. A reader who cannot change it
- *  sees the heading alone. */
-export const TitleField = <I extends { title: string }, P extends { title?: string | null }>({
+/** An item's title, which is its detail's heading, saved as `field` (a queue
+ *  item's is its `label`). It cannot be emptied: leaving it blank puts the
+ *  saved one back. A reader who cannot change it sees the heading alone. */
+export const TitleField = <I, P>({
   id,
   label,
   value,
   save,
   readOnly,
   placeholder,
+  field = "title",
 }: {
   id: string;
   label: string;
@@ -66,9 +68,12 @@ export const TitleField = <I extends { title: string }, P extends { title?: stri
   save: ItemFieldSave<I, P>;
   readOnly: boolean;
   placeholder: string;
+  field?: string;
 }) => {
   const draft = useFieldDraft(value, async (title) =>
-    title.trim() ? save.save({ patch: { title } as P, shows: { title } as Partial<I> }) : false
+    title.trim()
+      ? save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> })
+      : false
   );
   if (readOnly) {
     return (
@@ -291,6 +296,18 @@ export const PlacedPropertyField = <I extends { properties: PropertySummary[] },
   return <PropertyField {...props} property={property} placed />;
 };
 
+/** One holder per read of a row's properties, so a copy passed again is the
+ *  same copy ({@link useHeldItem}). */
+const holders = new WeakMap<PropertySummary[], { properties: PropertySummary[] }>();
+const holderOf = (properties: PropertySummary[]) => {
+  let holder = holders.get(properties);
+  if (!holder) {
+    holder = { properties };
+    holders.set(properties, holder);
+  }
+  return holder;
+};
+
 export const PropertiesField = <I extends { properties: PropertySummary[] }, P>({
   except,
   hideLabel = false,
@@ -303,7 +320,11 @@ export const PropertiesField = <I extends { properties: PropertySummary[] }, P>(
 }) => {
   const { t } = useTranslation("properties");
   const { kind, id, readOnly, initiativeId } = props;
-  const properties = useHeldProperties(kind, id, props.properties);
+  const { properties } = useHeldItem(
+    kind as unknown as FieldSaveKind<{ properties: PropertySummary[] }, P>,
+    id,
+    holderOf(props.properties)
+  );
   const listed = except ? properties.filter((each) => !except.has(each.property_id)) : properties;
   const label = t("title");
   const save = useItemFieldSave(kind, id, label);
@@ -397,10 +418,8 @@ const renderDescription = (draft: string) => <TaskDescription content={draft} />
  * written over, and one written over a description that has since changed is
  * refused, so the reader sees the other version and chooses.
  */
-export const DescriptionField = <
-  I extends { description: string | null },
-  P extends { description?: string | null; description_base?: string | null },
->({
+export const DescriptionField = <I, P>({
+  field = "description",
   kind,
   id,
   options,
@@ -415,6 +434,10 @@ export const DescriptionField = <
   placeholder,
   suggest,
 }: {
+  /** What the item calls it (a queue item's `notes`). A save names the text
+   *  it was written over as `<field>_base`, which the server refuses once
+   *  that has changed. */
+  field?: string;
   kind: FieldSaveKind<I, P>;
   id: number;
   /** What the detail adds to its saves. */
@@ -447,12 +470,12 @@ export const DescriptionField = <
     onSaved: (edit) => {
       options.onSaved?.(edit);
       const now = latest.current;
-      const saved = edit.shows.description ?? null;
+      const saved = ((edit.shows as Record<string, unknown>)[field] as string | null) ?? null;
       if (now) setDraft(now.text === (saved ?? "") ? null : { ...now, base: saved });
     },
   });
   // Each account on each server keeps its own drafts on a shared device.
-  const key = `${kind.name}-description-draft:${user?.id}@${currentServerKey()}:${communityId}:${id}`;
+  const key = `${kind.name}-${field}-draft:${user?.id}@${currentServerKey()}:${communityId}:${id}`;
   const [draft, setDraftState] = useState(() => readDescriptionDraft(key));
   const [discarding, setDiscarding] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -483,8 +506,8 @@ export const DescriptionField = <
     if (!open) return;
     const description = open.text || null;
     void save.save({
-      patch: { description, description_base: base } as P,
-      shows: { description } as Partial<I>,
+      patch: { [field]: description, [`${field}_base`]: base } as P,
+      shows: { [field]: description } as Partial<I>,
     });
   };
   const cancel = () => (dirty ? setDiscarding(true) : setDraft(null));

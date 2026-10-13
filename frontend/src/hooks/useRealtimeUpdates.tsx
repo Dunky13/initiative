@@ -69,7 +69,7 @@ const recounts = (change: RealtimeChange) =>
  * Tools come from the registry, so a new tool's events are live the day it
  * ships. The rest are the things the bus can name that are not a tool of their
  * own. A type nothing here claims is ignored on purpose: its parents carry the
- * surfaces that matter, and a queue item is refreshed by refreshing its queue.
+ * surfaces that matter.
  */
 const RESOURCE_SPECS: Record<string, (id: number, recount: boolean) => Spec[]> = {
   ...Object.fromEntries(
@@ -86,6 +86,8 @@ const RESOURCE_SPECS: Record<string, (id: number, recount: boolean) => Spec[]> =
   // moved is a question about the parent, below.
   comments: () => [q.recentComments()],
   calendar_events: (id) => [q.calendarEvent(id), q.allCalendarEvents()],
+  // Its own read, which an opened item shows; its queue is named as its parent.
+  queue_items: (id) => [q.queueItem(id)],
   // The wiki it is in is named as its parent, which refreshes the tree.
   wiki_pages: (id) => [q.wikiPage(id)],
   // An initiative's roster, its roles, what those roles permit and its

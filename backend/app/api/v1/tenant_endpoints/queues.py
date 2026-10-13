@@ -9,6 +9,7 @@ from typing import Annotated, Optional, cast
 import logging
 
 from fastapi import (
+    HTTPException,
     APIRouter,
     Depends,
     WebSocket,
@@ -17,6 +18,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import routed_guild_id
+from app.core.messages import CommonMessages
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.services.tenant import properties as properties_service
@@ -56,6 +58,7 @@ from app.core.tools import Tool
 from app.db.session import require_actor_context
 from app.services.tenant import queues as queues_service
 from app.services.tenant import named_people
+from app.services.tenant import plugin_metadata
 from app.services.tenant import tags as tags_service
 from app.services.content_sockets import sockets
 from app.api.content_socket import serve_tool_stream
@@ -72,11 +75,15 @@ async def _serialized_queue(
         [item.id for item in active_items(queue)],
         relationship_type=RelationshipType.attached,
     )
+    items = active_items(queue)
     return serialize_queue(
         queue,
         context=require_actor_context(session),
         user_id=user_id,
         attachment_counts=counts,
+        plugin_values=await plugin_metadata.values_on(
+            session, "queue_item", {item.id: queue.initiative_id for item in items}
+        ),
     )
 
 
@@ -89,7 +96,14 @@ async def _serialized_queue_item(
         [item.id],
         relationship_type=RelationshipType.attached,
     )
-    return serialize_queue_item(item, attachment_count=counts.get(item.id, 0))
+    values = await plugin_metadata.values_on(
+        session, "queue_item", {item.id: cast(Queue, item.queue).initiative_id}
+    )
+    return serialize_queue_item(
+        item,
+        attachment_count=counts.get(item.id, 0),
+        plugin_values=values.get(item.id, ()),
+    )
 
 
 router = APIRouter(route_class=ActorRoute)
@@ -356,8 +370,17 @@ async def update_queue_item(
 ) -> QueueItemRead:
     """Update a queue item. Requires write access on the queue."""
     item = await resource_access.load_child(session, QueueItem, item_id, access="write")
+    if "notes_base" in item_in.model_fields_set:
+        # As an event's description: notes are written over whole, so notes
+        # written over a version that has since moved on are refused.
+        await session.refresh(item, ["notes"], with_for_update=True)
+        if (item.notes or "") != (item_in.notes_base or ""):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=CommonMessages.DESCRIPTION_CHANGED,
+            )
     update_data = item_in.model_dump(
-        exclude_unset=True, exclude={"tag_ids", "properties"}
+        exclude_unset=True, exclude={"tag_ids", "properties", "notes_base"}
     )
     if update_data.get("user_id") is not None:
         await named_people.require_readers(
