@@ -91,13 +91,17 @@ const TitleEditor = ({ image, label }: EditorProps) => {
     <TitleField
       id="gallery-image-title"
       label={label}
-      value={image.title ?? imageLabel(image)}
+      value={image.title ?? ""}
       save={useSave(image, label)}
       readOnly={useGalleryImageLayout().readOnly}
-      placeholder={image.original_filename ?? t("sheet.titlePlaceholder")}
+      placeholder={image.original_filename || t("sheet.titlePlaceholder")}
+      optional
     />
   );
 };
+
+/** The longest caption, as the server allows. */
+const CAPTION_LENGTH = 2000;
 
 /** What is said about it, written and saved as a task's description is. */
 const CaptionEditor = ({ image, label }: EditorProps) => {
@@ -118,6 +122,7 @@ const CaptionEditor = ({ image, label }: EditorProps) => {
       leaving={context.leaving}
       preview={context.preview}
       placeholder={t("sheet.captionPlaceholder")}
+      maxLength={CAPTION_LENGTH}
     />
   );
 };

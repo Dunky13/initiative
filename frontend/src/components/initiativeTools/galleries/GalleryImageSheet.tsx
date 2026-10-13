@@ -66,8 +66,10 @@ const PictureSheet = ({
 }: Omit<GalleryImageSheetProps, "image"> & { listed: GalleryImageRead }) => {
   const { t } = useTranslation(["galleries", "common"]);
   const communityId = useActiveCommunityId();
+  // The wall's picture is drawn until its own read, which also carries the
+  // plug-ins' values, answers.
   const read = useReadGalleryImage(communityId, galleryId, listed.id, {
-    query: { initialData: listed, enabled: open },
+    query: { placeholderData: listed, enabled: open },
   });
   const image = usePendingShown(galleryImageSaves(galleryId), listed.id, read.data) ?? listed;
   // A community's own gallery has no layouts of its own: it draws the shipped one.
