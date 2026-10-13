@@ -79,6 +79,13 @@
       "options": null
     },
     {
+      "name": "subject_link",
+      "type": "url",
+      "position": 3.5,
+      "color": "#64748B",
+      "options": null
+    },
+    {
       "name": "severity",
       "type": "text",
       "position": 4.0,
@@ -103,7 +110,7 @@
   "tasks": [
     {
       "title": "How this project is fed",
-      "description": "Cases arrive here when somebody reports content or conduct. A case carries the reporter's own words and references to what they reported.\n\n**What the fields mean.** `subject_user`, `subject_guild`, `resource_type` and `resource_id` are references, not content. Reaching what they point at is a break-glass grant, which is time-bound and records why it was taken.\n\n**Closing a case** means a decision was made and recorded. Say what was done, even when the answer is that nothing was.\n\nYou can restructure this project however you like. The binding only names the project.",
+      "description": "Cases arrive here when somebody reports content or conduct. A case carries the reporter's own words and references to what they reported.\n\n**What the fields mean.** `subject_user`, `subject_guild`, `resource_type` and `resource_id` are references, not content. `subject_link` opens what they point at, for whoever can read it there: reaching it is an access grant, which is time-bound and records why it was taken.\n\n**Closing a case** means a decision was made and recorded. Say what was done, even when the answer is that nothing was.\n\nYou can restructure this project however you like. The binding only names the project.",
       "priority": "medium",
       "start_date": null,
       "due_date": null,

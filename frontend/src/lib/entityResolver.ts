@@ -20,6 +20,7 @@ import {
   readCalendarEvent,
 } from "@/api/generated/calendar-events/calendar-events";
 import { getReadCalendarQueryKey, readCalendar } from "@/api/generated/calendars/calendars";
+import { getReadCommentQueryKey, readComment } from "@/api/generated/comments/comments";
 import { getReadCounterGroupQueryKey, readCounterGroup } from "@/api/generated/counters/counters";
 import { getReadDashboardQueryKey, readDashboard } from "@/api/generated/dashboards/dashboards";
 import { getReadFileQueryKey, readFile } from "@/api/generated/files/files";
@@ -27,7 +28,12 @@ import { getReadGalleryQueryKey, readGallery } from "@/api/generated/galleries/g
 import { SearchEntityType, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { getReadPostQueryKey, readPost } from "@/api/generated/posts/posts";
 import { getReadProjectQueryKey, readProject } from "@/api/generated/projects/projects";
-import { getReadQueueQueryKey, readQueue } from "@/api/generated/queues/queues";
+import {
+  getReadQueueItemQueryKey,
+  getReadQueueQueryKey,
+  readQueue,
+  readQueueItem,
+} from "@/api/generated/queues/queues";
 import { getReadTaskQueryKey, readTask } from "@/api/generated/tasks/tasks";
 import {
   getReadWikiPageQueryKey,
@@ -116,9 +122,9 @@ type Resolve = (read: Read, communityId: number, id: number) => Promise<string>;
 /**
  * The kinds that live inside a tool and can be read by their own id, keyed by
  * the child-kind registry ({@link PARENT_TOOL}). A picture has no read by id
- * alone, so a link never names one. A counter and a queue item do
- * (`/counters/{id}`, `/queue-items/{id}`), but nothing links to either yet,
- * so neither has a resolver.
+ * alone, so a link never names one. A counter does (`/counters/{id}`), but
+ * nothing links to one yet. A queue item opens its queue: a moderation case
+ * about one links to it.
  */
 const CHILD_RESOLVERS: Partial<Record<keyof typeof PARENT_TOOL, Resolve>> = {
   task: async (read, communityId, id) => {
@@ -135,6 +141,16 @@ const CHILD_RESOLVERS: Partial<Record<keyof typeof PARENT_TOOL, Resolve>> = {
       readCalendarEvent(communityId, id)
     );
     return eventRoute(event.initiative_id, event.calendar_id, id);
+  },
+  queue_item: async (read, communityId, id) => {
+    const item = await read(getReadQueueItemQueryKey(communityId, id), () =>
+      readQueueItem(communityId, id)
+    );
+    return toolDetailRoute(
+      Tool.queue,
+      await toolInitiative(read, communityId, Tool.queue, item.queue_id),
+      item.queue_id
+    );
   },
   wiki_page: async (read, communityId, id) => {
     const page = await read(getReadWikiPageQueryKey(communityId, id), () =>
@@ -162,6 +178,34 @@ const RESOLVERS = new Map<string, Resolve>([
     resolve as Resolve,
   ]),
 ]);
+
+/** Where a comment lives: the address of what it is on, landing on the comment
+ *  itself (`#comment-{id}`, which the thread scrolls to). Whatever it is on is
+ *  named by the one `{kind}_id` the comment carries. */
+const resolveComment: Resolve = async (read, communityId, id) => {
+  const comment = await read(getReadCommentQueryKey(communityId, id), () =>
+    readComment(communityId, id)
+  );
+  for (const [kind, resolve] of RESOLVERS) {
+    const parentId = (comment as unknown as Record<string, unknown>)[
+      `${kind.replaceAll("-", "_")}_id`
+    ];
+    if (typeof parentId === "number") {
+      return `${await resolve(read, communityId, parentId)}${commentAnchor(id)}`;
+    }
+  }
+  throw new Error(`comment ${id} names nothing it is on`);
+};
+RESOLVERS.set("comment", resolveComment);
+
+/** The fragment a link to one comment ends in. */
+export const commentAnchor = (commentId: number): string => `#comment-${commentId}`;
+
+/** The comment a location's fragment names, or `null`. */
+export const linkedCommentId = (hash: string): number | null => {
+  const match = /^#?comment-(\d+)$/.exec(hash);
+  return match ? Number(match[1]) : null;
+};
 
 export const isEntityRefType = (value: string): boolean => RESOLVERS.has(value);
 

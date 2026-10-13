@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildComment } from "@/__tests__/factories/comment.factory";
 import { buildUser } from "@/__tests__/factories/user.factory";
@@ -470,6 +470,117 @@ describe("CommentSection", () => {
     ));
     expect(await screen.findByRole("button", { name: "Unlock comments" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Lock comments" })).toBeNull();
+  });
+
+  describe("a link to one comment", () => {
+    afterEach(() => {
+      window.location.hash = "";
+    });
+
+    it("marks out the comment it names", async () => {
+      window.location.hash = "#comment-7";
+      const named = buildComment({ id: 7, task_id: 3, content: "This one" });
+      const other = buildComment({ id: 8, task_id: 3, content: "Not this one" });
+      const { container } = renderPage(() => (
+        <CommentSection entityType="task" entityId={3} comments={[named, other]} initiativeId={7} />
+      ));
+
+      await screen.findByText("This one");
+      expect(container.querySelector("#comment-7 [data-linked]")).not.toBeNull();
+      expect(container.querySelector("#comment-8 [data-linked]")).toBeNull();
+    });
+
+    it("reads older conversations until the comment it names is there", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      renderPage(() => (
+        <CommentSection
+          entityType="task"
+          entityId={3}
+          comments={[buildComment({ id: 7, task_id: 3, content: "Newer" })]}
+          initiativeId={7}
+          hasOlder
+          onLoadOlder={onLoadOlder}
+        />
+      ));
+
+      await screen.findByText("Newer");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalled());
+    });
+
+    it("starts the search afresh for another comment on another thread", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      const one = [buildComment({ id: 7, task_id: 3, content: "Here" })];
+      const Switching = () => {
+        const [entityId, setEntityId] = useState(3);
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.hash = "#comment-98";
+                setEntityId(4);
+              }}
+            >
+              elsewhere
+            </button>
+            <CommentSection
+              entityType="task"
+              entityId={entityId}
+              comments={one}
+              initiativeId={7}
+              hasOlder
+              onLoadOlder={onLoadOlder}
+            />
+          </>
+        );
+      };
+      renderPage(Switching);
+      const user = userEvent.setup();
+      await screen.findByText("Here");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
+
+      await user.click(screen.getByRole("button", { name: "elsewhere" }));
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(2));
+    });
+
+    it("stops reading older conversations when a read brings nothing", async () => {
+      window.location.hash = "#comment-99";
+      const onLoadOlder = vi.fn();
+      const comments = [buildComment({ id: 7, task_id: 3, content: "Newer" })];
+      const Thread = ({ loading }: { loading: boolean }) => (
+        <CommentSection
+          entityType="task"
+          entityId={3}
+          comments={comments}
+          initiativeId={7}
+          hasOlder
+          isLoadingOlder={loading}
+          onLoadOlder={onLoadOlder}
+        />
+      );
+      const Flipping = () => {
+        const [loading, setLoading] = useState(false);
+        return (
+          <>
+            <button type="button" onClick={() => setLoading(!loading)}>
+              flip
+            </button>
+            <Thread loading={loading} />
+          </>
+        );
+      };
+      renderPage(Flipping);
+      const user = userEvent.setup();
+      await screen.findByText("Newer");
+      await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
+
+      // The read runs and fails: nothing new arrives, so nothing more is asked.
+      await user.click(screen.getByRole("button", { name: "flip" }));
+      await user.click(screen.getByRole("button", { name: "flip" }));
+      expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("offers members no moderation", async () => {

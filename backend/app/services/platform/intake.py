@@ -38,6 +38,7 @@ from sqlmodel import select
 from sqlmodel.sql.expression import Select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import Tool
 from app.core.intake import (
     CASE_FIELD_TYPES,
     STREAM_FIELDS,
@@ -72,6 +73,16 @@ if TYPE_CHECKING:
 DEFAULT_RECURRENCE_WINDOW = timedelta(hours=1)
 
 
+#: The kinds the app's ``/go`` resolver opens by id: every tool, the kinds
+#: that live in one and have a page, and a comment, which opens on whatever it
+#: is on. A picture has no read by its id alone, so a case about one names it
+#: without a link. Mirrors ``RESOLVERS`` in the client's ``entityResolver.ts``.
+LINKED_KINDS: frozenset[str] = frozenset(
+    {tool.value for tool in Tool}
+    | {"task", "wiki_page", "calendar_event", "queue_item", "comment"}
+)
+
+
 @dataclass(frozen=True)
 class CaseRefs:
     """What a case points at, as weak refs.
@@ -91,6 +102,24 @@ class CaseRefs:
     severity: Optional[str] = None
     legal_basis: Optional[str] = None
 
+    def subject_link(self) -> Optional[str]:
+        """Where what the case is about opens, as an address in the app:
+        ``/c/{community}/go/{kind}/{id}``, which the app turns into the
+        thing's own page. ``None`` where the case names no one thing, or one
+        of a kind that has no page to open."""
+        from app.core.config import settings
+        from app.services.notifications import reference_path
+
+        if (
+            self.subject_guild is None
+            or self.resource_id is None
+            or self.resource_type not in LINKED_KINDS
+        ):
+            return None
+        base = settings.APP_URL.rstrip("/")
+        path = reference_path(self.resource_type, self.resource_id)
+        return f"{base}/c/{self.subject_guild}{path}"
+
     def as_fields(self) -> dict[CaseField, object]:
         """The non-empty refs, keyed by the field each is stored in."""
         named = {
@@ -102,6 +131,7 @@ class CaseRefs:
             CaseField.reported_at: self.reported_at,
             CaseField.severity: self.severity,
             CaseField.legal_basis: self.legal_basis,
+            CaseField.subject_link: self.subject_link(),
         }
         return {field: value for field, value in named.items() if value is not None}
 
