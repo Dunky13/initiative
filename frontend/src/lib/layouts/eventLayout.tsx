@@ -5,7 +5,9 @@ import {
   type ReactNode,
   type RefObject,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -185,7 +187,7 @@ const DescriptionEditor = ({ item: event, label }: EditorProps) => {
       htmlId="event-description"
       value={event.description}
       readOnly={context.readOnly}
-      initiativeId={context.initiativeId}
+      initiativeId={event.initiative_id}
       subject={referenceRef(SearchEntityType.calendar_event, event.id)}
       leaving={context.leaving}
       preview={context.preview}
@@ -318,15 +320,19 @@ const RepeatEditor = ({ item: event, label }: EditorProps) => {
   const adding = useContext(ItemDraftContext) !== null;
   const [picked, setPicked] = useState<RecurrenceRule | "custom" | null | undefined>(undefined);
   const changed = !adding && picked !== undefined && !sameJson(picked, saved);
-  const commit = async (rule = picked) => {
+  const commit = async (rule = picked, allDay = event.all_day) => {
     if (rule === undefined || rule === "custom") return;
-    const sent = await save.save({
-      patch: rulePayload(rule, { allDay: event.all_day }),
-      shows: {},
-    });
+    const sent = await save.save({ patch: rulePayload(rule, { allDay }), shows: {} });
     // A rule picked while this one was saving is still to be saved.
     if (sent && !adding) setPicked((current) => (current === rule ? undefined : current));
   };
+  // One being added sends its rule as it is picked, and again when it turns
+  // all-day or back, which writes the rule's dates another way.
+  const taken = useRef(commit);
+  taken.current = commit;
+  useEffect(() => {
+    if (adding && picked !== undefined) void taken.current(picked, event.all_day);
+  }, [adding, picked, event.all_day]);
   const openAlone = useOccurrenceAction(event.id, "open", { onSuccess: onMoved });
   const restoreDate = useOccurrenceAction(event.id, "restore", {
     onSuccess: () => toast.success(t("occurrence.restored")),
@@ -375,10 +381,7 @@ const RepeatEditor = ({ item: event, label }: EditorProps) => {
       <RecurrenceEditor
         kind="event"
         value={picked === undefined ? saved : picked}
-        onChange={(rule) => {
-          setPicked(rule);
-          if (adding) void commit(rule);
-        }}
+        onChange={setPicked}
         referenceDate={event.all_day ? allDayReference(event.start_at) : event.start_at}
         allDay={event.all_day}
         stored={event.recurrence ? { rule: event.recurrence, shift: event.recurrence_shift } : null}
@@ -475,7 +478,12 @@ const RepeatEditor = ({ item: event, label }: EditorProps) => {
 
 /** Who is coming, each with their answer; who is asked, saved as they are
  *  picked; and whether anyone who can see it may answer. */
-const AttendeesEditor = ({ item: event }: EditorProps) => {
+// An event being added starts its attendees over in another calendar.
+const AttendeesEditor = (props: EditorProps) => (
+  <Attendees key={props.item.calendar_id} {...props} />
+);
+
+const Attendees = ({ item: event }: EditorProps) => {
   const { t } = useTranslation(["calendars", "common"]);
   const { readOnly } = useEventLayout();
   const label = `${t("attendees")} (${event.attendees.length})`;
