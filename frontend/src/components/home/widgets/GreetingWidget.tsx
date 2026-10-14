@@ -99,7 +99,7 @@ export const GreetingWidget = ({ options }: HomeWidgetProps) => {
             </Badge>
           ) : null}
           {overdue.data ? (
-            <Badge variant="destructive" className="gap-1">
+            <Badge variant="secondary" className="gap-1">
               <AlarmClock className="size-3" aria-hidden="true" />
               {t("widgets.greeting.overdue", { count: overdue.data })}
             </Badge>
