@@ -27,7 +27,7 @@ The top of the project shows how far along it is and its dates, beside its statu
 
 Both live on each project's card.
 
-- **Add to favourites** (the star) puts it in your **Favourites** list in the sidebar. Just for you: starring something doesn't inflict it on anybody else.
+- **Add to favorites** (the star) puts it in your **Favorites** in the sidebar and on Home. Just for you: starring something doesn't inflict it on anybody else. Every other tool has the same star; see [Favourites](your-space.md#favourites).
 - **Pin project** marks it as pinned for everyone in the initiative. That one takes a project manager.
 
 Drag projects on the first page of the list to put them in your own order.

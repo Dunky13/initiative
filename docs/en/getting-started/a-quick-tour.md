@@ -32,7 +32,7 @@ It has two tabs. **Initiatives** is the one that matters. Each initiative expand
 
 Click an initiative's *name* for its own page: the name with the initiative's colour running down the side, your role there, the faces of whoever's online, and a tab for each of its tools.
 
-**Favorites** sits at the top of that tab, for the projects you've starred. **Tags** is the other tab, for things you've labelled. **Search** is near the top, though within a week you'll be doing that from the keyboard and this button will become purely decorative.
+**Favorites** sits at the top of that tab, for anything you've starred. **Tags** is the other tab, for things you've labelled. **Search** is near the top, though within a week you'll be doing that from the keyboard and this button will become purely decorative.
 
 In a busy community the sidebar gets long. Initiatives collapse, and there's a **Collapse all** for when it has got away from you completely and you'd like to begin again. Too narrow, or too wide? Drag its edge.
 
