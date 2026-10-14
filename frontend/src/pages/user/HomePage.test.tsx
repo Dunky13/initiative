@@ -251,8 +251,9 @@ describe("HomePage", () => {
 
     await user.click(await screen.findByRole("radio", { name: "Timer" }));
     await user.click(await screen.findByRole("button", { name: "5 min" }));
-    expect(screen.getByRole("timer")).toHaveTextContent("05:00");
+    expect(screen.getByRole("button", { name: /timer set to 05:00/i })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(screen.getByRole("timer")).toHaveTextContent(/0[45]:\d\d/);
 
     await waitFor(() =>
       expect(keptLayout(kept).widgets[0].options).toMatchObject({
@@ -268,6 +269,44 @@ describe("HomePage", () => {
       })
     );
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
+  });
+
+  it("takes a timer's length typed onto its face, and keeps it muted", async () => {
+    const user = userEvent.setup();
+    const kept = keepLayout({
+      version: 1,
+      widgets: [
+        {
+          id: "clock",
+          type: "clock",
+          grid: { x: 0, y: 0, w: 4, h: 4 },
+          options: { mode: "timer" },
+        },
+      ],
+    });
+    renderHome();
+
+    await user.click(await screen.findByRole("button", { name: /timer set to 25:00/i }));
+    const field = screen.getByRole("textbox", { name: /type a length/i });
+    await user.clear(field);
+    await user.type(field, "7:30{Enter}");
+    await waitFor(() =>
+      expect(keptLayout(kept).widgets[0].options).toMatchObject({ timer: { duration: 450 } })
+    );
+    expect(screen.getByRole("button", { name: /timer set to 07:30/i })).toBeInTheDocument();
+
+    // Something that is not a length leaves it as it was.
+    await user.click(screen.getByRole("button", { name: /timer set to 07:30/i }));
+    await user.clear(screen.getByRole("textbox", { name: /type a length/i }));
+    await user.type(screen.getByRole("textbox", { name: /type a length/i }), "soon{Enter}");
+    expect(screen.getByRole("button", { name: /timer set to 07:30/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Mute the timer" }));
+    await waitFor(() => expect(keptLayout(kept).widgets[0].options).toMatchObject({ muted: true }));
+    const unmute = screen.getByRole("button", { name: "Turn the timer's sound on" });
+    expect(unmute).toHaveAttribute("aria-pressed", "true");
+    await user.click(unmute);
+    await waitFor(() => expect(keptLayout(kept).widgets[0].options).not.toHaveProperty("muted"));
   });
 
   it("walks a new arrival through getting started, and goes when asked", async () => {

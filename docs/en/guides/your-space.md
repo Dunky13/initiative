@@ -29,7 +29,7 @@ It starts out arranged for whatever you told us when you signed up: your own lis
 | **Activity** | What people changed lately in one community. |
 | **My communities** | Every community you're in, as the card the directory shows, with a way in. |
 | **My progress** | Your streak, your week, and how much lands on time. |
-| **Clock and timer** | The time here and in up to three other places, or a countdown. A running timer keeps going after you close the tab, and on your phone. |
+| **Clock and timer** | The time here and in up to three other places, or a countdown. Click the time to type a length (`25`, `5:30`), and use the speaker to mute it. A running timer keeps going after you close the tab, and on your phone. |
 
 ### Views
 

@@ -222,7 +222,11 @@
       "zones": "Autres fuseaux horaires",
       "addZone": "Ajouter un fuseau horaire",
       "removeZone": "Retirer {{zone}}",
-      "length": "Durée du minuteur, en minutes"
+      "length": "Durée du minuteur, en minutes",
+      "mute": "Couper le son du minuteur",
+      "unmute": "Réactiver le son du minuteur",
+      "typeLength": "Saisissez une durée, comme 25 ou 5:30",
+      "typeLengthOf": "Minuteur réglé sur {{length}}. Cliquez pour saisir une autre durée."
     },
     "tools": {
       "label": "Outils",

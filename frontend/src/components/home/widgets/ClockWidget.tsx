@@ -9,10 +9,21 @@
  * still running after a reload, and on the reader's phone.
  */
 
-import { AlarmClock, Clock, Pause, Play, RotateCcw, Timer, X } from "lucide-react";
+import {
+  AlarmClock,
+  Clock,
+  Pause,
+  Play,
+  RotateCcw,
+  Timer,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import timerBeepUrl from "@/assets/beeps.wav";
 import { HomeWidgetCard } from "@/components/home/HomeWidgetCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +100,19 @@ const zoneOffset = (zone: string, at: Date): number => {
   return match[1] === "-" ? -minutes : minutes;
 };
 
+/**
+ * A typed length, in seconds: `25` is minutes, `5:30` minutes and seconds,
+ * `1:05:00` hours too. Null for anything else, or outside a second to a day.
+ */
+export const parseDuration = (text: string): number | null => {
+  const parts = text.trim().split(":");
+  if (parts.length > 3 || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const [a, b, c] = parts.map(Number);
+  const seconds =
+    parts.length === 1 ? a * 60 : parts.length === 2 ? a * 60 + b : a * 3600 + b * 60 + c;
+  return seconds >= 1 && seconds <= MAX_TIMER_MINUTES * 60 ? seconds : null;
+};
+
 /** A count of seconds as 25:00, or 1:02:03 past the hour. */
 const formatDuration = (seconds: number) => {
   const whole = Math.max(Math.ceil(seconds), 0);
@@ -99,53 +123,74 @@ const formatDuration = (seconds: number) => {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 };
 
-/** A short chime for a finished timer. Silent where the browser plays nothing. */
-const chime = () => {
+/** The finished timer's beep, made once and rewound for each play. */
+let beepAudio: HTMLAudioElement | null = null;
+
+/** Beep for a finished timer. Silent where the browser plays nothing. */
+const beep = () => {
   try {
-    const audio = new AudioContext();
-    for (const [index, frequency] of [880, 1320].entries()) {
-      const tone = audio.createOscillator();
-      const gain = audio.createGain();
-      const start = audio.currentTime + index * 0.18;
-      tone.frequency.value = frequency;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.6);
-      tone.connect(gain).connect(audio.destination);
-      tone.start(start);
-      tone.stop(start + 0.6);
-    }
-    setTimeout(() => void audio.close(), 1500);
+    beepAudio ??= new Audio(timerBeepUrl);
+    beepAudio.currentTime = 0;
+    void beepAudio.play().catch(() => {
+      // Nothing played (no interaction yet, or no audio); the toast says it instead.
+    });
   } catch {
     // No audio here; the toast says it instead.
   }
 };
 
+/** Whether the reader turned the timer's sound off. */
+const mutedOf = (options: Record<string, unknown>): boolean => options.muted === true;
+
 export const ClockWidget = ({ options, onOptionsChange }: HomeWidgetProps) => {
   const { t } = useTranslation("home");
   const mode = modeOf(options);
+  const muted = mutedOf(options);
 
   return (
     <HomeWidgetCard
       icon={mode === "timer" ? Timer : Clock}
       title={t(`widgets.clock.${mode}`)}
       actions={
-        <ToggleGroup
-          type="single"
-          size="sm"
-          value={mode}
-          onValueChange={(next) => {
-            if (next) onOptionsChange({ ...options, mode: next });
-          }}
-          aria-label={t("widgets.clock.mode")}
-        >
-          <ToggleGroupItem value="clock" aria-label={t("widgets.clock.clock")}>
-            <Clock className="size-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="timer" aria-label={t("widgets.clock.timer")}>
-            <Timer className="size-4" />
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <div className="flex items-center gap-1">
+          {mode === "timer" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-pressed={muted}
+              aria-label={muted ? t("widgets.clock.unmute") : t("widgets.clock.mute")}
+              title={muted ? t("widgets.clock.unmute") : t("widgets.clock.mute")}
+              onClick={() => {
+                const { muted: _was, ...rest } = options;
+                onOptionsChange(muted ? rest : { ...rest, muted: true });
+              }}
+            >
+              {muted ? (
+                <VolumeX className="size-4" aria-hidden="true" />
+              ) : (
+                <Volume2 className="size-4" aria-hidden="true" />
+              )}
+            </Button>
+          ) : null}
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={mode}
+            onValueChange={(next) => {
+              if (next) onOptionsChange({ ...options, mode: next });
+            }}
+            aria-label={t("widgets.clock.mode")}
+          >
+            <ToggleGroupItem value="clock" aria-label={t("widgets.clock.clock")}>
+              <Clock className="size-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="timer" aria-label={t("widgets.clock.timer")}>
+              <Timer className="size-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       }
     >
       {mode === "timer" ? (
@@ -224,6 +269,7 @@ function TimerFace({
 }: Pick<HomeWidgetProps, "options" | "onOptionsChange">) {
   const { t } = useTranslation("home");
   const timer = timerOf(options);
+  const muted = mutedOf(options);
   const now = useNow();
   const running = timer.endsAt !== undefined;
   const paused = !running && timer.left !== undefined;
@@ -240,11 +286,11 @@ function TimerFace({
   const wasRunning = useRef(running && !done);
   useEffect(() => {
     if (done && wasRunning.current) {
-      chime();
+      if (!muted) beep();
       toast.success(t("widgets.clock.timeUp"), { id: "home-timer-done" });
     }
     wasRunning.current = running && !done;
-  }, [done, running, t]);
+  }, [done, running, muted, t]);
 
   const save = (next: TimerState) =>
     onOptionsChange({
@@ -258,24 +304,65 @@ function TimerFace({
   const start = (seconds: number) =>
     save({ duration: timer.duration, endsAt: Date.now() + seconds * 1000 });
 
+  // What is being typed onto the face, while it is.
+  const idle = !running && !paused;
+  const [draft, setDraft] = useState<string | null>(null);
+  const saveDraft = () => {
+    const seconds = draft === null ? null : parseDuration(draft);
+    if (seconds !== null) save({ duration: seconds });
+    setDraft(null);
+  };
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3">
       <div className="relative flex w-full flex-col items-center gap-2">
-        <p
-          className={cn(
-            "font-semibold text-4xl tabular-nums tracking-tight",
-            done && "animate-pulse text-primary"
-          )}
-          role="timer"
-        >
-          {done ? t("widgets.clock.timeUpShort") : formatDuration(remaining)}
-        </p>
+        {draft !== null ? (
+          <Input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            aria-label={t("widgets.clock.typeLength")}
+            aria-invalid={parseDuration(draft) === null}
+            className="h-auto w-40 py-0 text-center font-semibold text-4xl tabular-nums tracking-tight md:text-4xl"
+            inputMode="numeric"
+            autoFocus
+            onFocus={(event) => event.target.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                saveDraft();
+              }
+              if (event.key === "Escape") setDraft(null);
+            }}
+            onBlur={saveDraft}
+          />
+        ) : idle ? (
+          // Set, not running: the length is typed straight onto the face.
+          <button
+            type="button"
+            title={t("widgets.clock.typeLength")}
+            aria-label={t("widgets.clock.typeLengthOf", { length: formatDuration(remaining) })}
+            onClick={() => setDraft(formatDuration(timer.duration))}
+            className="cursor-text rounded-md px-1 font-semibold text-4xl tabular-nums tracking-tight hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {formatDuration(remaining)}
+          </button>
+        ) : (
+          <p
+            className={cn(
+              "font-semibold text-4xl tabular-nums tracking-tight",
+              done && "animate-pulse text-primary"
+            )}
+            role="timer"
+          >
+            {done ? t("widgets.clock.timeUpShort") : formatDuration(remaining)}
+          </p>
+        )}
         <div className="h-1 w-full max-w-60 overflow-hidden rounded-full bg-muted">
           <div className="h-full rounded-full bg-primary" style={{ width: `${progress * 100}%` }} />
         </div>
       </div>
 
-      {!running && !paused ? (
+      {idle ? (
         <div className="flex flex-wrap justify-center gap-1">
           {TIMER_PRESETS.map((minutes) => (
             <Button

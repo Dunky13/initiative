@@ -222,7 +222,11 @@
       "zones": "Otras zonas horarias",
       "addZone": "Añadir una zona horaria",
       "removeZone": "Quitar {{zone}}",
-      "length": "Duración del temporizador, en minutos"
+      "length": "Duración del temporizador, en minutos",
+      "mute": "Silenciar el temporizador",
+      "unmute": "Activar el sonido del temporizador",
+      "typeLength": "Escribe una duración, como 25 o 5:30",
+      "typeLengthOf": "Temporizador en {{length}}. Haz clic para escribir otra duración."
     },
     "tools": {
       "label": "Herramientas",

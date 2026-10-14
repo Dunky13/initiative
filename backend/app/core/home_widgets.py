@@ -125,6 +125,11 @@ HOME_WIDGET_SPECS: dict[str, HomeWidgetSpec] = {
     "clock": HomeWidgetSpec(
         2,
         3,
-        options={"mode": _one_of("clock", "timer"), "zones": _zones, "timer": _timer},
+        options={
+            "mode": _one_of("clock", "timer"),
+            "zones": _zones,
+            "timer": _timer,
+            "muted": _boolean,
+        },
     ),
 }

@@ -222,7 +222,11 @@
       "zones": "Other time zones",
       "addZone": "Add a time zone",
       "removeZone": "Remove {{zone}}",
-      "length": "Timer length, in minutes"
+      "length": "Timer length, in minutes",
+      "mute": "Mute the timer",
+      "unmute": "Turn the timer's sound on",
+      "typeLength": "Type a length, like 25 or 5:30",
+      "typeLengthOf": "Timer set to {{length}}. Click to type a different length."
     },
     "tools": {
       "label": "Tools",
