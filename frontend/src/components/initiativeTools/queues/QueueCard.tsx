@@ -53,7 +53,9 @@ export const QueueCard = ({ queue, className }: QueueCardProps) => {
     >
       {queue.preview?.length ? <QueuePreview turns={queue.preview} /> : null}
       <Card className="border-0 shadow-none">
-        <CardHeader className="pb-2">
+        {/* With nothing above it, the header stops short of the star the list
+            puts on the card's corner. */}
+        <CardHeader className={cn("pb-2", !queue.preview?.length && "pr-14")}>
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="line-clamp-1 text-lg leading-tight">{queue.name}</CardTitle>
             <Badge variant={queue.is_active ? "default" : "secondary"} className="shrink-0">

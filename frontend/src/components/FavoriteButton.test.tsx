@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { server } from "@/__tests__/helpers/msw-server";
@@ -67,5 +67,41 @@ describe("FavoriteButton", () => {
         "false"
       )
     );
+  });
+
+  it("takes no second click until the first write lands", async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const landed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes: string[] = [];
+    server.use(
+      http.get("/api/v1/c/3/favorites", () => HttpResponse.json([])),
+      http.post("/api/v1/c/3/favorites/:tool/:id", async () => {
+        writes.push("star");
+        await landed;
+        await delay(0);
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.delete("/api/v1/c/3/favorites/:tool/:id", () => {
+        writes.push("unstar");
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    renderWithProviders(<FavoriteButton tool="queue" entityId={7} />, {
+      communities: { activeCommunityId: 3 },
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Add to favorites" }));
+    const star = screen.getByRole("button", { name: "Remove from favorites" });
+    expect(star).toBeDisabled();
+    await user.click(star);
+    expect(writes).toEqual(["star"]);
+
+    release();
+    await waitFor(() => expect(star).toBeEnabled());
+    await user.click(star);
+    await waitFor(() => expect(writes).toEqual(["star", "unstar"]));
   });
 });

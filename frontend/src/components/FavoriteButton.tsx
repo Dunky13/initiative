@@ -47,13 +47,15 @@ export const FavoriteButton = ({
     <button
       type="button"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
         iconSize === "sm" ? "size-7" : "size-9",
         className
       )}
       aria-pressed={starred}
       aria-label={starred ? t("favorite.remove") : t("favorite.add")}
       title={starred ? t("favorite.remove") : t("favorite.add")}
+      // One write at a time, so the last click is the one that holds.
+      disabled={toggle.isPending}
       onClick={handleClick}
     >
       <Star

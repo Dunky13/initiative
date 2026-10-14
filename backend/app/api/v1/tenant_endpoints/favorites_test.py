@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from httpx import AsyncClient
+from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
+from app.models.tenant.favorite import Favorite
+from app.models.tenant.initiative import InitiativeMember
 from app.testing import (
     create_guild_membership,
     create_initiative,
@@ -13,6 +16,7 @@ from app.testing import (
     create_project,
     create_queue,
     create_user,
+    route_session_to_guild,
 )
 
 
@@ -131,3 +135,44 @@ async def test_leaving_a_community_takes_its_stars(
     await create_guild_membership(session, user=a.user, guild=a.guild)
     await create_initiative_member(session, a.initiative, a.user)
     assert (await client.get(a.g("/favorites"), headers=a.headers)).json() == []
+
+
+async def test_a_star_comes_off_a_tool_the_reader_has_lost(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Out of the initiative, the star still comes off rather than waiting
+    for them to be let back in."""
+    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
+    b = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    project = await create_project(session, a.initiative, b.user)
+    starred = await client.post(
+        b.g(f"/favorites/project/{project.id}"), headers=b.headers
+    )
+    assert starred.status_code == 204, starred.text
+
+    await route_session_to_guild(session, a.guild.id)
+    await session.exec(
+        delete(InitiativeMember).where(  # type: ignore[arg-type]
+            col(InitiativeMember.user_id) == b.user.id
+        )
+    )
+    await session.commit()
+
+    # Out of reach now.
+    gone = await client.get(b.g(f"/projects/{project.id}"), headers=b.headers)
+    assert gone.status_code == 404, gone.text
+
+    removed = await client.delete(
+        b.g(f"/favorites/project/{project.id}"), headers=b.headers
+    )
+    assert removed.status_code == 204
+
+    session.expunge_all()
+    await route_session_to_guild(session, a.guild.id)
+    left = (await session.exec(select(Favorite.user_id))).all()
+    assert left == []

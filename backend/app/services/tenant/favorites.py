@@ -22,10 +22,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.tools import Tool
 from app.models.tenant.favorite import Favorite
 
-#: The most stars one community's list carries. Far more than anybody keeps;
-#: a bound so a list read is never open-ended.
-MAX_FAVORITES = 200
-
 
 async def add(
     session: AsyncSession, *, user_id: int, tool: Tool, entity_id: int
@@ -47,27 +43,34 @@ async def add(
 async def remove(
     session: AsyncSession, *, user_id: int, tool: Tool, entity_id: int
 ) -> None:
-    """Take the star off. Idempotent."""
-    await session.exec(
+    """Take the star off. Idempotent.
+
+    Whether or not its tool can still be opened: a star on something the
+    reader has since lost comes off too, rather than waiting for them to get
+    it back. Run as the platform, like the purges below, and limited to the
+    reader's own row."""
+    from app.db.cohorts import exec_as_system
+
+    await exec_as_system(
+        session,
         delete(Favorite).where(  # type: ignore[arg-type]
             col(Favorite.user_id) == user_id,
             col(Favorite.entity_type) == tool.value,
             col(Favorite.entity_id) == entity_id,
-        )
+        ),
     )
     await session.commit()
 
 
-async def list_favorites(
-    session: AsyncSession, *, user_id: int, limit: int = MAX_FAVORITES
-) -> Sequence[Favorite]:
-    """This community's stars, newest first."""
+async def list_favorites(session: AsyncSession, *, user_id: int) -> Sequence[Favorite]:
+    """This community's stars, newest first, all of them: the list is also
+    what says whether each star on a page is lit, so one left off would show
+    as a tool that is not starred."""
     return (
         await session.exec(
             select(Favorite)
             .where(Favorite.user_id == user_id)
             .order_by(col(Favorite.created_at).desc())
-            .limit(limit)
         )
     ).all()
 
