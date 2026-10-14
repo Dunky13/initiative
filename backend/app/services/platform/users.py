@@ -52,7 +52,7 @@ from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
 from app.models.tenant.project_order import ProjectOrder
-from app.models.tenant.project_favorite import ProjectFavorite
+from app.models.tenant.favorite import Favorite
 from app.models.tenant.reaction_digest import ReactionDigestItem
 from app.models.tenant.ai_member_key import GuildAIMemberKey
 
@@ -242,9 +242,7 @@ async def _erase_in_guild(
     await guild_session.exec(
         delete(ProjectOrder).where(ProjectOrder.user_id == user_id)
     )
-    await guild_session.exec(
-        delete(ProjectFavorite).where(ProjectFavorite.user_id == user_id)
-    )
+    await guild_session.exec(delete(Favorite).where(Favorite.user_id == user_id))
     # The ledger that stops an event reminder being sent twice: one row per
     # (event, person), of no use to anyone once the person is gone.
     await guild_session.exec(

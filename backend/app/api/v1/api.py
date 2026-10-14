@@ -51,6 +51,7 @@ from app.api.v1.tenant_endpoints import (
     property_values,
     queues,
     reactions,
+    favorites,
     recents,
     relationships,
     resource_grants,
@@ -392,6 +393,9 @@ guild_router.include_router(users.members_router, prefix="/members", tags=["user
 # Recents: the addressed DELETE is guild-scoped (the cross-guild GET list stays
 # top-level — fully separate endpoints, see recents.py).
 guild_router.include_router(recents.guild_router, prefix="/recents", tags=["recents"])
+guild_router.include_router(
+    favorites.guild_router, prefix="/favorites", tags=["favorites"]
+)
 # WebSockets (guild-scoped). Mounting under /c fixes the URL shape now; the
 # handlers are rewired to read the path guild in a follow-up step.
 guild_router.include_router(events.router, prefix="/events", tags=["events"])
@@ -413,6 +417,7 @@ me_router.include_router(tickets.me_router, tags=["tickets"])
 # MY_TOOL_LISTS, plus the tab counts. One tag, because they are one page rather
 # than nine domains reaching across guilds for their own reasons.
 me_router.include_router(me_tools.me_router, tags=["my-tools"])
+me_router.include_router(favorites.me_router, tags=["favorites"])
 me_router.include_router(calendar_entries.me_router, tags=["calendar-entries"])
 me_router.include_router(me_trash.me_router, tags=["trash"])
 me_router.include_router(me_ai.me_router, tags=["ai-settings"])

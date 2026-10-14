@@ -16,7 +16,7 @@ from sqlalchemy import update
 from app.core.tools import Tool
 from app.models.tenant._mixins import archive_models
 from app.models.tenant.project import Project
-from app.models.tenant.project_favorite import ProjectFavorite
+from app.models.tenant.favorite import Favorite
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.task import (
@@ -1472,9 +1472,13 @@ async def seed(c: Community) -> None:
         await create_project(c, d)
     for name, project in FAVORITES[c.key]:
         c.session.add(
-            ProjectFavorite(user_id=c.users[name].id, project_id=c.projects[project].id)
+            Favorite(
+                user_id=c.users[name].id,
+                entity_type="project",
+                entity_id=c.projects[project].id,
+            )
         )
-        c.ids["project_favorites"].append(c.projects[project].id)
+        c.ids["favorites"].append(c.projects[project].id)
     for name, project in RECENT_VIEWS[c.key]:
         c.session.add(
             RecentView(

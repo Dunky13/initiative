@@ -225,9 +225,10 @@ def _statement(tools: list[str]) -> Any:
                     WHERE v.user_id = :reader AND v.entity_type = i.kind
                       AND v.entity_id = i.id AND v.last_viewed_at > :since)
                AS opened,
-           se.dac_tool = '{Tool.project.value}' AND EXISTS (
-               SELECT 1 FROM project_favorites f
-                WHERE f.user_id = :reader AND f.project_id = se.dac_id)
+           EXISTS (
+               SELECT 1 FROM favorites f
+                WHERE f.user_id = :reader AND f.entity_type = se.dac_tool
+                  AND f.entity_id = se.dac_id)
                AS favourite,
            coalesce(l.level, 0) AS level,
            se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,

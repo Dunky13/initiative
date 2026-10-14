@@ -24,7 +24,7 @@ from app.models.platform.guild import CommunityRole
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.models.tenant.initiative import InitiativeRoleModel
-from app.models.tenant.project_favorite import ProjectFavorite
+from app.models.tenant.favorite import Favorite
 from app.models.tenant.project_order import ProjectOrder
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.task import TaskStatus, TaskStatusCategory
@@ -1185,9 +1185,11 @@ async def test_a_favorite_and_an_order_are_their_owners_rows(
     for outsider in (other, admin):
         asking = await role_session("app_user")
         await route_as(asking, user_id=outsider.user.id, guild_id=a.guild.id)
-        for model in (ProjectFavorite, ProjectOrder):
+        for model in (Favorite, ProjectOrder):
             assert (await asking.exec(select(model))).all() == [], model
-        asking.add(ProjectFavorite(user_id=a.user.id, project_id=project.id))
+        asking.add(
+            Favorite(user_id=a.user.id, entity_type="project", entity_id=project.id)
+        )
         with pytest.raises(DBAPIError, match="row-level security"):
             await asking.flush()
 

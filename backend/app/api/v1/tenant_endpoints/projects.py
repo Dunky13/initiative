@@ -3,9 +3,8 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import case, func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload, undefer
-from sqlmodel import delete, select
+from sqlmodel import col, select
 
 from app.services.tenant import attachments as attachments_service
 from app.api.actor_route import ActorRoute
@@ -27,7 +26,7 @@ from app.models.tenant.resource_grant import (
     ResourceGrant,
 )
 from app.models.tenant.project_order import ProjectOrder
-from app.models.tenant.project_favorite import ProjectFavorite
+from app.models.tenant.favorite import Favorite
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.task import (
     Task,
@@ -44,6 +43,7 @@ from app.services import permissions as permissions_service
 from app.services import reachability
 from app.services.tenant import named_people
 from app.services.tenant import properties as properties_service
+from app.services.tenant import favorites as favorites_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import archive as archive_service
 from app.services.tenant import tool_listing
@@ -287,9 +287,10 @@ async def _project_metadata_for_user(
     """The reader's own favorites and last visits for these projects, as
     ``(favorite_ids, view_map)``."""
     favorites = await session.exec(
-        select(ProjectFavorite.project_id).where(
-            ProjectFavorite.user_id == user_id,
-            ProjectFavorite.project_id.in_(project_ids),
+        select(Favorite.entity_id).where(
+            Favorite.user_id == user_id,
+            Favorite.entity_type == Tool.project.value,
+            col(Favorite.entity_id).in_(project_ids),
         )
     )
     views = await session.exec(
@@ -416,9 +417,13 @@ async def favorite_projects(
     slim projection the projects list returns for ``slim=true``."""
     favorites = await session.exec(
         select(Project)
-        .join(ProjectFavorite, ProjectFavorite.project_id == Project.id)
+        .join(
+            Favorite,
+            (Favorite.entity_id == Project.id)
+            & (Favorite.entity_type == Tool.project.value),
+        )
         .where(
-            ProjectFavorite.user_id == current_user.id,
+            Favorite.user_id == current_user.id,
             *visible_project_conditions(
                 current_user.id,
                 context=guild_context,
@@ -426,7 +431,7 @@ async def favorite_projects(
                 is_template=None,
             ),
         )
-        .order_by(ProjectFavorite.created_at.desc())
+        .order_by(col(Favorite.created_at).desc())
         .options(*project_load_options(slim=True))
     )
     reads = await serialize_project_page(
@@ -443,21 +448,15 @@ async def favorite_project(
     current_user: Annotated[User, Depends(get_current_active_user)],
     guild_context: GuildContextDep,
 ) -> Response:
-    """Favorite a project. Idempotent: the pair is the row's key, so a second
-    favorite is a no-op rather than a conflict."""
+    """Favorite a project — the project form of ``POST /favorites/project/{id}``.
+    Idempotent: a second favorite is a no-op rather than a conflict."""
     project = await resource_access.load_authorized(
         session, Tool.project, project_id, current_user, guild_context
     )
-    await session.exec(
-        pg_insert(ProjectFavorite)
-        .values(
-            user_id=current_user.id,
-            project_id=project.id,
-            created_at=datetime.now(timezone.utc),
+    if not guild_context.is_pam:
+        await favorites_service.add(
+            session, user_id=current_user.id, tool=Tool.project, entity_id=project.id
         )
-        .on_conflict_do_nothing(index_elements=["user_id", "project_id"])
-    )
-    await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -471,13 +470,9 @@ async def unfavorite_project(
     project = await resource_access.load_authorized(
         session, Tool.project, project_id, current_user, guild_context
     )
-    await session.exec(
-        delete(ProjectFavorite).where(
-            ProjectFavorite.user_id == current_user.id,
-            ProjectFavorite.project_id == project.id,
-        )
+    await favorites_service.remove(
+        session, user_id=current_user.id, tool=Tool.project, entity_id=project.id
     )
-    await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
