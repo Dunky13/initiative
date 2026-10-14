@@ -79,6 +79,7 @@ export function PostDetailPage() {
         <ToolPageHeader
           tool={Tool.post}
           initiativeId={post.initiative_id}
+          starId={post.id}
           settingsTo={canEdit ? toolSettingsRoute(Tool.post, initiativeId, post.id) : undefined}
           chest={
             <ToolChest tool={Tool.post} entity={post}>

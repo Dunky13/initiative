@@ -16,6 +16,7 @@ import { type CSSProperties, type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { useFullBleed } from "@/components/PageBanner";
 import { ToolBreadcrumb, type ToolBreadcrumbSegment } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,10 @@ export interface ToolPageHeaderProps {
   /** Saves a new name; given only to someone who may rename. Resolves once
    *  saved, so the field stays open on a failure. */
   onRename?: (name: string) => Promise<unknown>;
-  /** Beside the title: a favourite star, a status. */
+  /** The tool this page is, for the star beside its name. Left out where the
+   *  page is something inside a tool (a task) or about one (its settings). */
+  starId?: number;
+  /** Beside the title: a status. */
   titleExtras?: ReactNode;
   /** Under the title: the description, a byline. */
   children?: ReactNode;
@@ -62,6 +66,7 @@ export const ToolPageHeader = ({
   mark,
   title,
   onRename,
+  starId,
   titleExtras,
   children,
   chest,
@@ -111,6 +116,14 @@ export const ToolPageHeader = ({
             ) : (
               <h1 className={cn("min-w-0 break-words", TITLE_CLASS)}>{title}</h1>
             )}
+            {starId ? (
+              <FavoriteButton
+                tool={tool}
+                entityId={starId}
+                name={typeof title === "string" ? title : undefined}
+                initiativeId={initiativeId}
+              />
+            ) : null}
             {titleExtras}
           </div>
           {children}

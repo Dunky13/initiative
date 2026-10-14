@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { buildPropertyColumns, propertyColumnIds } from "@/components/properties/propertyColumns";
 import { SortHeader } from "@/components/SortIcon";
@@ -137,6 +138,14 @@ export const ToolIndexTable = ({
               {row.original.name}
             </Link>
             {unread.hasResource(communityId, tool, row.original.id) ? <UnreadDot /> : null}
+            <FavoriteButton
+              tool={tool}
+              entityId={row.original.id}
+              name={row.original.name}
+              initiativeId={row.original.initiative_id}
+              iconSize="sm"
+              className="-my-1.5"
+            />
           </div>
         ),
         enableSorting: true,

@@ -11,8 +11,6 @@ import { useUpdateProject } from "@/hooks/useProjects";
 import { formatDate } from "@/lib/formatDate";
 import { toolSettingsRoute } from "@/lib/tools";
 
-import { FavoriteProjectButton } from "./FavoriteProjectButton";
-
 type ProjectHeaderProps = {
   project: ProjectRead;
   projectIsArchived: boolean;
@@ -44,6 +42,7 @@ export const ProjectHeader = ({ project, projectIsArchived }: ProjectHeaderProps
     <ToolPageHeader
       tool={Tool.project}
       initiativeId={project.initiative_id}
+      starId={project.id}
       settingsTo={
         canEdit ? toolSettingsRoute(Tool.project, project.initiative_id, project.id) : undefined
       }
@@ -85,9 +84,6 @@ export const ProjectHeader = ({ project, projectIsArchived }: ProjectHeaderProps
             </span>
           </ToolChestSegment>
         </ToolChest>
-      }
-      titleExtras={
-        <FavoriteProjectButton projectId={project.id} isFavorited={project.is_favorited ?? false} />
       }
     >
       {project.is_template ? (

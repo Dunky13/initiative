@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type PostRead, ReactionTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { PinnedBanner } from "@/components/initiativeTools/posts/PinnedBanner";
 import { PostBody } from "@/components/initiativeTools/posts/PostBody";
 import { PostByline } from "@/components/initiativeTools/posts/PostByline";
@@ -132,6 +133,14 @@ const PostCardInner = ({ post, canPin = false, canModerate = false, className }:
             ) : null}
           </CardTitle>
           <div className="flex shrink-0 items-center gap-1">
+            <FavoriteButton
+              tool={Tool.post}
+              entityId={post.id}
+              name={post.name}
+              initiativeId={post.initiative_id}
+              communityId={post.community_id}
+              iconSize="sm"
+            />
             {canPin && <PostPinButton post={post} />}
             <ReportButton targetType="post" targetId={post.id} authorId={post.created_by} />
             <ModerationMenu

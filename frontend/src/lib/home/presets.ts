@@ -27,7 +27,7 @@ import type { HomeWidgetType } from "./widgetTypes";
  *   urgent part beside it, and what happened to their things.
  * - `community` — somebody here to follow a club or a space, not to work a list.
  * - `owner` — somebody keeping a community moving: its activity, what they
- *   had open and what changed in its projects and dashboards, and their own
+ *   starred and what changed in its projects and dashboards, and their own
  *   list under that.
  */
 export const HOME_PRESET_IDS = [
@@ -76,7 +76,7 @@ const PLACEMENTS: Record<HomePresetId, Placement[]> = {
   owner: [
     ["greeting", 0, 0, 12, 2],
     ["activity", 0, 2, 7, 10],
-    ["recent", 7, 2, 5, 5],
+    ["favorites", 7, 2, 5, 5],
     ["recent", 7, 7, 5, 5, { mode: "changed", tools: ["project", "dashboard"] }],
     ["tasks", 0, 12, 12, 10],
   ],

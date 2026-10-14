@@ -1,4 +1,4 @@
-import type { RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import type { FavoriteItemRead, RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { communityPath } from "@/lib/communityUrl";
 import { showsActivity, TOOLS, toolDetailRoute, toolRouteSegment } from "@/lib/tools";
 
@@ -21,7 +21,7 @@ export type RecentKey = {
  * wrong community prefix would resolve to a different (or inaccessible) entity.
  * Navigating the link enters that community via the /c/$communityId layout.
  */
-export function recentRoute(item: RecentItemRead): string {
+export function recentRoute(item: RecentItemRead | FavoriteItemRead): string {
   return communityPath(
     item.community_id,
     toolDetailRoute(item.entity_type as Tool, item.initiative_id, item.entity_id)

@@ -40,6 +40,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { BulkAccessSection } from "@/components/access/BulkAccessSection";
 import type { BulkAccessItem } from "@/components/access/BulkEditAccessDialog";
 import { SelectableGridItem } from "@/components/access/SelectableGridItem";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { FileCard } from "@/components/files/FileCard";
 import { useFileColumns } from "@/components/files/fileColumns";
@@ -194,6 +195,9 @@ export type ToolIndexEntry = {
     emptyTitle: string;
     emptyBody: string;
   };
+  /** The tool's card draws its star among controls of its own, so the list
+   *  puts none on its corner. */
+  cardHasStar?: true;
   /** The layout a reader starts on, before they pick one. Cards otherwise. */
   defaultLayout?: ToolIndexLayout;
   /** Cards are small tiles, several to a row, rather than three across. */
@@ -331,6 +335,8 @@ const TOOL_INDEX: Record<Tool, ToolIndexEntry | ToolIndexOwnPage> = {
     // The rows are projects, which is what these columns read.
     table: { useColumns: useProjectColumns as unknown as () => AppColumnDef<ToolIndexRow>[] },
     reorder: { useReorder: useReorderProjects },
+    // Beside its pin and its drag handle.
+    cardHasStar: true,
   },
 
   [Tool.file]: {
@@ -740,9 +746,23 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
       ? "grid grid-cols-fill-36/4 gap-4"
       : "grid grid-cols-fill-36/5 gap-4"
     : "grid grid-cols-fill-60/3 gap-4";
+  // The list's own marks on a card's top corner, outside the card's link: the
+  // star (unless the card draws its own), and the unread dot in the corner
+  // itself.
   const cardOf = (row: ToolIndexRow) => (
     <div className="relative">
       {row.card}
+      {entry.cardHasStar ? null : (
+        <FavoriteButton
+          tool={tool}
+          entityId={row.id}
+          name={row.name}
+          initiativeId={row.initiative_id}
+          iconSize="sm"
+          suppressNavigation
+          className="absolute top-4 right-6 z-10 bg-card/80 backdrop-blur-sm"
+        />
+      )}
       {unread.hasResource(communityId, tool, row.id) ? (
         <UnreadDot className="absolute top-3 right-3" />
       ) : null}
@@ -903,18 +923,29 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
                     onToggle={(options) => selection.toggle(row, options)}
                     label={row.name}
                   >
-                    <Link
-                      to={gp(toolDetailRoute(tool, row.initiative_id, row.id))}
-                      className="flex min-w-0 items-center gap-3 px-3 py-2.5 hover:bg-accent/50"
-                    >
-                      <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="min-w-0 truncate font-medium text-sm">{row.name}</span>
-                      {unread.hasResource(communityId, tool, row.id) ? <UnreadDot /> : null}
-                      <span className="flex-1" />
-                      {row.tags?.length ? (
-                        <TagBadgeList tags={row.tags} limit={3} nested className="shrink-0" />
-                      ) : null}
-                    </Link>
+                    <div className="flex items-center hover:bg-accent/50">
+                      <Link
+                        to={gp(toolDetailRoute(tool, row.initiative_id, row.id))}
+                        className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-3"
+                      >
+                        <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0 truncate font-medium text-sm">{row.name}</span>
+                        {unread.hasResource(communityId, tool, row.id) ? <UnreadDot /> : null}
+                        <span className="flex-1" />
+                        {row.tags?.length ? (
+                          <TagBadgeList tags={row.tags} limit={3} nested className="shrink-0" />
+                        ) : null}
+                      </Link>
+                      {/* Beside the row's link rather than in it. */}
+                      <FavoriteButton
+                        tool={tool}
+                        entityId={row.id}
+                        name={row.name}
+                        initiativeId={row.initiative_id}
+                        iconSize="sm"
+                        className="mx-1.5"
+                      />
+                    </div>
                   </SelectableGridItem>
                 </li>
               ))}

@@ -1,0 +1,61 @@
+/**
+ * A widget narrowed to some kinds of tool. Every kind unless the reader picks
+ * some; picking all of them is the same as picking none, and is kept as none,
+ * so a tool added later shows up on a widget that was never narrowed.
+ */
+
+import { useTranslation } from "react-i18next";
+
+import type { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { Label } from "@/components/ui/label";
+import { MultiSelect } from "@/components/ui/multi-select";
+import type { HomeWidgetOptions } from "@/lib/home/layout";
+import { TOOLS, toolNavLabelKey } from "@/lib/tools";
+
+/** The kinds picked, in registry order; none picked is every kind. */
+export const toolsOf = (options: HomeWidgetOptions): Tool[] => {
+  const picked = Array.isArray(options.tools) ? options.tools : [];
+  const kept = TOOLS.filter((tool) => picked.includes(tool));
+  return kept.length > 0 ? kept : TOOLS;
+};
+
+export const narrowed = (options: HomeWidgetOptions) => toolsOf(options).length < TOOLS.length;
+
+/** The one kind a widget is narrowed to, for a title that names it. */
+export const onlyTool = (options: HomeWidgetOptions): Tool | null => {
+  const tools = toolsOf(options);
+  return tools.length === 1 ? tools[0] : null;
+};
+
+export const ToolsSetting = ({
+  id,
+  options,
+  onChange,
+  hint,
+}: {
+  id: string;
+  options: HomeWidgetOptions;
+  onChange: (next: HomeWidgetOptions) => void;
+  hint: string;
+}) => {
+  const { t } = useTranslation("home");
+  const { t: tNav } = useTranslation("nav");
+  const picked = narrowed(options) ? toolsOf(options) : [];
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{t("widgets.tools.label")}</Label>
+      <MultiSelect
+        id={id}
+        selectedValues={picked}
+        options={TOOLS.map((tool) => ({ value: tool, label: tNav(toolNavLabelKey(tool)) }))}
+        onChange={(values) => {
+          const { tools: _dropped, ...rest } = options;
+          const kept = TOOLS.filter((tool) => values.includes(tool));
+          onChange(kept.length > 0 && kept.length < TOOLS.length ? { ...rest, tools: kept } : rest);
+        }}
+        placeholder={t("widgets.tools.all")}
+      />
+      <p className="text-muted-foreground text-xs">{hint}</p>
+    </div>
+  );
+};

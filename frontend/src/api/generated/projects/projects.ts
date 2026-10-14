@@ -390,8 +390,8 @@ export function useFavoriteProjects<
 }
 
 /**
- * Favorite a project. Idempotent: the pair is the row's key, so a second
- * favorite is a no-op rather than a conflict.
+ * Favorite a project — the project form of ``POST /favorites/project/{id}``.
+ * Idempotent: a second favorite is a no-op rather than a conflict.
  * @summary Favorite Project
  */
 export const favoriteProject = (

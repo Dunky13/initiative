@@ -351,6 +351,7 @@ export function GalleryDetailPage() {
         <ToolPageHeader
           tool={Tool.gallery}
           initiativeId={gallery.initiative_id}
+          starId={gallery.id}
           settingsTo={
             canEdit ? toolSettingsRoute(Tool.gallery, initiativeId, gallery.id) : undefined
           }

@@ -183,6 +183,7 @@ export function QueueDetailPage() {
       <ToolPageHeader
         tool={Tool.queue}
         initiativeId={queue.initiative_id}
+        starId={queue.id}
         settingsTo={canEdit ? toolSettingsRoute(Tool.queue, initiativeId, queue.id) : undefined}
         title={queue.name}
         onRename={canEdit ? (name) => updateQueue.mutateAsync({ name }) : undefined}

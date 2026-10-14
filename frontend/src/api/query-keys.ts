@@ -225,7 +225,12 @@ const projectTaskStatuses = (projectId: number): Spec => ({
 // Recents list is a cross-community personal endpoint (`/api/v1/recents/`, no /c/).
 const recents = (): Spec => ({ personalExact: ["/api/v1/recents/"] });
 
-const favoriteProjects = (): Spec => ({ communityExact: ["/api/v1/projects/favorites"] });
+// A community's stars, and every community's on the home page. The project
+// form (`/projects/favorites`) is the same rows, so it goes stale with them.
+const favorites = (): Spec => ({
+  communityExact: ["/api/v1/favorites", "/api/v1/projects/favorites"],
+  personalExact: ["/api/v1/me/favorites"],
+});
 
 // ── Files (community) ────────────────────────────────────────────────────────
 
@@ -696,7 +701,7 @@ export const q = {
   file,
   fileVersions,
   emailSettings,
-  favoriteProjects,
+  favorites,
   fcmConfig,
   communityAIConnections,
   communityContent,

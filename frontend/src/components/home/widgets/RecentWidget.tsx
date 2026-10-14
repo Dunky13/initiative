@@ -18,8 +18,6 @@ import { useTranslation } from "react-i18next";
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { HomeWidgetCard, HomeWidgetNotice } from "@/components/home/HomeWidgetCard";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { MultiSelect } from "@/components/ui/multi-select";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -29,8 +27,9 @@ import { useRecents } from "@/hooks/useRecents";
 import { communityPath } from "@/lib/communityUrl";
 import { renderRecentIcon } from "@/lib/recentIcon";
 import { recentRoute } from "@/lib/recentRoute";
-import { TOOL_ICONS, TOOLS, toolNavLabelKey, toolRouteSegment } from "@/lib/tools";
+import { TOOL_ICONS, toolNavLabelKey, toolRouteSegment } from "@/lib/tools";
 
+import { ToolsSetting, toolsOf } from "./toolFilter";
 import type { HomeWidgetProps, HomeWidgetSettingsProps } from "./types";
 
 type Mode = "viewed" | "changed";
@@ -39,15 +38,6 @@ const CHANGED_ROWS = 8;
 
 const modeOf = (options: Record<string, unknown>): Mode =>
   options.mode === "changed" ? "changed" : "viewed";
-
-/** The kinds picked, in registry order; none picked is every kind. */
-const toolsOf = (options: Record<string, unknown>): Tool[] => {
-  const picked = Array.isArray(options.tools) ? options.tools : [];
-  const kept = TOOLS.filter((tool) => picked.includes(tool));
-  return kept.length > 0 ? kept : TOOLS;
-};
-
-const narrowed = (options: Record<string, unknown>) => toolsOf(options).length < TOOLS.length;
 
 /** One line of either list: what it is, where, and when. */
 interface Row {
@@ -250,24 +240,12 @@ function RowList({
 
 export const RecentSettings = ({ options, onChange }: HomeWidgetSettingsProps) => {
   const { t } = useTranslation("home");
-  const { t: tNav } = useTranslation("nav");
-  const picked = narrowed(options) ? toolsOf(options) : [];
   return (
-    <div className="space-y-2">
-      <Label htmlFor="recent-widget-tools">{t("widgets.recent.tools")}</Label>
-      <MultiSelect
-        id="recent-widget-tools"
-        selectedValues={picked}
-        options={TOOLS.map((tool) => ({ value: tool, label: tNav(toolNavLabelKey(tool)) }))}
-        onChange={(values) => {
-          const { tools: _dropped, ...rest } = options;
-          const kept = TOOLS.filter((tool) => values.includes(tool));
-          // Every kind picked is the same as none: the default, kept as such.
-          onChange(kept.length > 0 && kept.length < TOOLS.length ? { ...rest, tools: kept } : rest);
-        }}
-        placeholder={t("widgets.recent.allTools")}
-      />
-      <p className="text-muted-foreground text-xs">{t("widgets.recent.toolsHint")}</p>
-    </div>
+    <ToolsSetting
+      id="recent-widget-tools"
+      options={options}
+      onChange={onChange}
+      hint={t("widgets.recent.toolsHint")}
+    />
   );
 };

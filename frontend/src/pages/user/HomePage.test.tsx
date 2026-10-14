@@ -13,6 +13,7 @@ import {
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
 import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
+import type { FavoriteItemRead } from "@/api/generated/initiativeAPI.schemas";
 import { type HomeLayout, readingOrder } from "@/lib/home/layout";
 import { HOME_VIEWS_KEY, type HomeViews, homeViewKey, MAIN_VIEW_ID } from "@/lib/home/views";
 
@@ -496,6 +497,66 @@ describe("HomePage", () => {
     await waitFor(() =>
       expect(keptLayout(kept).widgets[0].options).toEqual({ mode: "changed", tools: ["project"] })
     );
+  });
+
+  it("lists what the reader starred in every community, and takes a star off", async () => {
+    const user = userEvent.setup();
+    const starred = (
+      over: Pick<FavoriteItemRead, "entity_type" | "entity_id" | "name"> & Partial<FavoriteItemRead>
+    ): FavoriteItemRead => ({
+      community_id: 3,
+      initiative_id: 2,
+      favorited_at: "2026-10-10T00:00:00Z",
+      icon: null,
+      file_type: null,
+      mime_type: null,
+      original_filename: null,
+      ...over,
+    });
+    let favorites = [
+      starred({ entity_type: "queue", entity_id: 7, name: "Tea rota" }),
+      starred({ entity_type: "project", entity_id: 5, name: "Fete stalls", icon: "🎪" }),
+    ];
+    const removed: string[] = [];
+    server.use(
+      http.get("/api/v1/me/favorites", () => HttpResponse.json(favorites)),
+      http.delete("/api/v1/c/:communityId/favorites/:tool/:id", ({ params }) => {
+        removed.push(`${params.communityId}/${params.tool}/${params.id}`);
+        favorites = favorites.filter((item) => item.entity_type !== params.tool);
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    const kept = keepLayout({
+      version: 1,
+      widgets: [{ id: "favorites", type: "favorites", grid: { x: 0, y: 0, w: 4, h: 6 } }],
+    });
+    renderHome();
+
+    expect(await screen.findByRole("link", { name: /fete stalls/i })).toHaveAttribute(
+      "href",
+      "/c/3/i/2/projects/5"
+    );
+    expect(screen.getByRole("link", { name: /tea rota/i })).toHaveAttribute(
+      "href",
+      "/c/3/i/2/queues/7"
+    );
+
+    const [first] = screen.getAllByRole("button", { name: "Remove from favorites" });
+    await user.click(first);
+    await waitFor(() => expect(removed).toEqual(["3/queue/7"]));
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: /tea rota/i })).not.toBeInTheDocument()
+    );
+
+    await user.click(screen.getByRole("button", { name: "Customize" }));
+    await user.click(screen.getByRole("button", { name: "Favorites settings" }));
+    await user.click(await screen.findByRole("combobox", { name: "Tools" }));
+    await user.click(await screen.findByRole("option", { name: "Queues" }));
+    await waitFor(() => expect(keptLayout(kept).widgets[0].options).toEqual({ tools: ["queue"] }));
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("heading", { name: "Favorite Queues" })).toBeInTheDocument();
+    expect(await screen.findByText(/nothing starred yet/i)).toBeInTheDocument();
   });
 
   it("says the recent list could not load when a list it asked for failed", async () => {

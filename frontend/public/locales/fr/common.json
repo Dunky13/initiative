@@ -334,6 +334,10 @@
     "desktopReady": "Initiative a téléchargé sa mise à jour. Redémarrez pour terminer.",
     "restart": "Redémarrer"
   },
+  "favorite": {
+    "add": "Ajouter aux favoris",
+    "remove": "Retirer des favoris"
+  },
   "toolHeader": {
     "rename": "Renommer"
   },
