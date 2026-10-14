@@ -17,12 +17,12 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { MentionComposer } from "@/components/markdown/MentionComposer";
 import { AddPropertyButton } from "@/components/properties/AddPropertyButton";
-import { propertyStubFromDefinition } from "@/components/properties/PropertyFields";
 import { PropertyInput } from "@/components/properties/PropertyInput";
 import { PropertyValueCell } from "@/components/properties/PropertyValueCell";
 import {
   isEmptyPropertyValue,
   normalizePropertyValue,
+  propertyStubFromDefinition,
   userReferenceValue,
 } from "@/components/properties/propertyHelpers";
 import { iconForPropertyType } from "@/components/properties/propertyTypeIcons";

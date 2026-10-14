@@ -95,13 +95,7 @@
     "pin": "Pin project"
   },
   "taskComposer": {
-    "title": "Create task",
-    "description": "Add work to be done.",
-    "archivedMessage": "This project is archived. Unarchive it to add new tasks.",
-    "noWriteAccess": "You need write access to create tasks.",
-    "saving": "Saving…",
-    "createTask": "Create task",
-    "createError": "Unable to create task."
+    "createTask": "Create task"
   },
   "assignee": {
     "emptyMessage": "Invite initiative members to assign tasks.",

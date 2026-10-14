@@ -211,24 +211,14 @@
     "editTags": "Editar etiquetas"
   },
   "taskForm": {
-    "titleLabel": "Título",
     "titlePlaceholder": "Título de la tarea",
-    "descriptionLabel": "Descripción",
-    "descriptionPlaceholder": "Añade más detalles (opcional)",
-    "advancedDetails": "Detalles avanzados",
     "statusLabel": "Estado",
-    "selectStatus": "Seleccionar estado",
-    "priorityLabel": "Prioridad",
-    "assigneesLabel": "Asignados",
     "assigneesEmptyMessage": "No se encontraron miembros",
     "startDateLabel": "Fecha de inicio",
     "dueDateLabel": "Fecha de vencimiento",
-    "tagsLabel": "Etiquetas",
     "tagsPlaceholder": "Añadir etiquetas",
     "sections": {
-      "tracking": "Seguimiento",
-      "schedule": "Programación",
-      "people": "Personas y etiquetas"
+      "schedule": "Programación"
     }
   }
 }

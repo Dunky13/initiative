@@ -259,10 +259,6 @@ export const LayoutEditor = ({
         : null,
     [openDetail, stored, plugins]
   );
-  // The tree the part edits change.
-  const tree = current ? cardOf(current.definition) : (detail ?? EMPTY_TREE);
-  const columns = current ? columnsOf(current.definition) : [];
-  const selection = stillThere(selected, tree, columns) ? selected : LAYOUT_SELECTED;
   const [width, setWidth] = useState<PreviewWidth>("desktop");
   const dirty = !same(draft, base);
 
@@ -289,6 +285,10 @@ export const LayoutEditor = ({
     () => (openDetail?.fields ?? taskFields)(definitions, pluginFields(plugins, i18n.language)),
     [openDetail, definitions, plugins, i18n.language]
   );
+  // The tree the part edits change.
+  const tree = current ? cardOf(current.definition, fields) : (detail ?? EMPTY_TREE);
+  const columns = current ? columnsOf(current.definition, fields) : [];
+  const selection = stillThere(selected, tree, columns) ? selected : LAYOUT_SELECTED;
 
   const changeDraft = (next: Draft, then?: Selection) => {
     if (saving) return;
@@ -641,6 +641,7 @@ export const LayoutEditor = ({
               initiativeId={project.initiativeId}
               statuses={project.statuses}
               layout={current}
+              fields={fields}
               width={width}
               selection={selection}
               onSelect={setSelected}

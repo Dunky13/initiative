@@ -28,6 +28,7 @@ import {
 } from "@/api/generated/initiativeAPI.schemas";
 import { instanceTarget, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { MAX_PRESETS } from "@/lib/layouts/presets";
+import { TASK_COLUMNS } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 
 import { calendarPresets, eventDetail, taskDetail, taskPresets } from "./details";
@@ -225,7 +226,7 @@ describe("LayoutEditor", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("adds a plug-in's field to a table as a column", async () => {
+  it("shows a placed plug-in's field on a table as shipped, and takes it off", async () => {
     server.use(
       communityHttp.get("/plugins/", () =>
         HttpResponse.json({
@@ -248,15 +249,12 @@ describe("LayoutEditor", () => {
     );
     const { user } = editor("table");
 
-    await user.click(await within(await outline()).findByRole("button", { name: /^add$/i }));
-    const picker = await screen.findByRole("dialog", { name: "Add" });
-    // Found by the plug-in it comes from, as the list shows it.
-    await user.type(within(picker).getByRole("textbox", { name: /search/i }), "ci");
-    await user.click(within(picker).getByRole("button", { name: /^build/i }));
+    // It shows as it arrives, after the shipped columns; taken off, it stays off.
+    await user.click(await within(await outline()).findByRole("button", { name: /^hide build/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect((saved("table")?.columns as string[] | undefined)?.at(-1)).toBe("plugin:3:ci.state");
+    expect(saved("table")?.columns).toEqual(TASK_COLUMNS);
   });
 
   it("opens the project on the open list as a change of its own", async () => {

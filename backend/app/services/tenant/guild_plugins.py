@@ -804,7 +804,7 @@ async def set_placement_roles(
         placement = PluginPlacement(
             install_id=plugin.id, initiative_id=initiative_id, role_ids=sorted(wanted)
         )
-        await show_on_saved_details(session, plugin, [initiative_id])
+        await show_on_saved_layouts(session, plugin, [initiative_id])
     else:
         placement.role_ids = sorted(wanted)
         placement.updated_at = datetime.now(timezone.utc)
@@ -850,7 +850,7 @@ async def set_placed_initiatives(
                 role_ids=_default_role_ids(roles, initiative_id),
             )
         )
-    await show_on_saved_details(session, plugin, added)
+    await show_on_saved_layouts(session, plugin, added)
     await session.flush()
 
 
@@ -873,7 +873,7 @@ async def place_in_every_initiative(session: AsyncSession, plugin: GuildPlugin) 
                 role_ids=_default_role_ids(roles, initiative_id),
             )
         )
-    await show_on_saved_details(session, plugin, added)
+    await show_on_saved_layouts(session, plugin, added)
     await session.flush()
 
 
@@ -919,7 +919,7 @@ async def place_with_roles(
                 role_ids=sorted(roles.get(initiative_id, [])),
             )
         )
-    await show_on_saved_details(session, plugin, placed)
+    await show_on_saved_layouts(session, plugin, placed)
     await session.flush()
     return placed
 
@@ -947,7 +947,7 @@ def _arriving(
     ]
 
 
-async def show_on_saved_details(
+async def show_on_saved_layouts(
     session: AsyncSession,
     plugin: GuildPlugin,
     initiative_ids: Iterable[int],
@@ -955,11 +955,13 @@ async def show_on_saved_details(
     previous: Any = None,
 ) -> None:
     """Show the install's fields, then its parts, on the saved details of these
-    initiatives, for each kind of item whose page draws plug-ins, as it
-    declares them: what placing it does. After an upgrade, ``previous`` is the
-    definition it replaced, and only what that did not declare is added. Once
-    added, one a manager takes off stays off. A field one of its parts also
-    shows is drawn once, where the page is drawn."""
+    initiatives, for each kind of item whose page draws plug-ins, and its task
+    fields on their saved boards and tables, as it declares them: what placing
+    it does. After an upgrade, ``previous`` is the definition it replaced, and
+    only what that did not declare is added. Once added, one a manager takes
+    off stays off. A field one of its parts also shows is drawn once, where the
+    page is drawn."""
+    initiative_ids = list(initiative_ids)
     for kind in tool_layouts_service.PLUGIN_DETAILS:
         fields = _arriving(plugin.definition, previous, "fields", "key", kind)
         parts = _arriving(plugin.definition, previous, "parts", "id", kind)
@@ -981,6 +983,14 @@ async def show_on_saved_details(
                 ),
             ],
         )
+    await tool_layouts_service.add_to_saved_lists(
+        session,
+        initiative_ids,
+        [
+            f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"
+            for key in _arriving(plugin.definition, previous, "fields", "key", "task")
+        ],
+    )
 
 
 # --- opening a surface ------------------------------------------------------

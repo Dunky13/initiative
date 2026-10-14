@@ -93,7 +93,7 @@ export const ListLayoutSettings = ({
         <ColumnSettings field={selection.field} fields={fields} edits={edits} />
       ) : (
         <PartSettings
-          tree={cardOf(layout.definition)}
+          tree={cardOf(layout.definition, fields)}
           path={selection.path}
           fields={fields}
           edits={edits}

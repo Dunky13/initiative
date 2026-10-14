@@ -95,13 +95,7 @@
     "pin": "Épingler le projet"
   },
   "taskComposer": {
-    "title": "Créer une tâche",
-    "description": "Ajoutez du travail à faire.",
-    "archivedMessage": "Ce projet est archivé. Désarchivez-le pour ajouter de nouvelles tâches.",
-    "noWriteAccess": "Vous avez besoin d'un accès en écriture pour créer des tâches.",
-    "saving": "Enregistrement…",
-    "createTask": "Créer la tâche",
-    "createError": "Impossible de créer la tâche."
+    "createTask": "Créer la tâche"
   },
   "assignee": {
     "emptyMessage": "Invitez des membres de l'initiative pour assigner des tâches.",

@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  CardPartInput,
   PropertyDefinitionRead,
   TaskListRead,
   TaskStatusRead,
@@ -26,9 +27,10 @@ import { Badge } from "@/components/ui/badge";
 import { MentionText } from "@/components/user/MentionText";
 import { useProperties } from "@/hooks/useProperties";
 import { formatDateTime } from "@/lib/formatDate";
+import { cardOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
-import { TASK_CARD, taskFields } from "@/lib/layouts/tasks";
+import { taskFields } from "@/lib/layouts/tasks";
 import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/tree";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +57,8 @@ type ProjectTasksKanbanViewProps = {
    *  nor for plug-ins: a listing's preview has no initiative to ask. */
   propertyDefinitions?: PropertyDefinitionRead[];
   /** The view's card, where it has its own. */
-  card?: LayoutNode;
+  /** The project's own card; none draws the shipped one. */
+  card?: LayoutNode | null;
   /** While the view is edited: the path of each part of its card. */
   editing?: WeakMap<LayoutNode, string>;
 };
@@ -82,7 +85,7 @@ export const ProjectTasksKanbanView = ({
   onArchiveDoneTasks,
   isArchivingDoneTasks,
   propertyDefinitions: givenDefinitions,
-  card = TASK_CARD,
+  card: ownCard,
   editing,
 }: ProjectTasksKanbanViewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -105,6 +108,10 @@ export const ProjectTasksKanbanView = ({
   const fields = useMemo(
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
     [propertyDefinitions, plugins, i18n.language]
+  );
+  const card = useMemo(
+    () => cardOf({ card: ownCard as CardPartInput | null | undefined }, fields),
+    [ownCard, fields]
   );
   const view = useMemo<LayoutContext>(
     () => ({

@@ -413,10 +413,6 @@ describe("tool properties", () => {
     ) {
       for (const tool of TOOLS) set.add(tool);
     }
-    // A task's are part of its form, and saved with the task.
-    if (componentSources["../components/tasks/TaskForm.tsx"].includes("<PropertyFields")) {
-      set.add(PropertyTarget.task);
-    }
     const missing = Object.values(PropertyTarget).filter((target) => !set.has(target));
     expect(missing, `nowhere sets the properties of ${missing.join(", ")}`).toEqual([]);
   });

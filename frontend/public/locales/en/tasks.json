@@ -211,24 +211,14 @@
     "editTags": "Edit Tags"
   },
   "taskForm": {
-    "titleLabel": "Title",
     "titlePlaceholder": "Task title",
-    "descriptionLabel": "Description",
-    "descriptionPlaceholder": "Add more details (optional)",
-    "advancedDetails": "Advanced details",
     "statusLabel": "Status",
-    "selectStatus": "Select status",
-    "priorityLabel": "Priority",
-    "assigneesLabel": "Assignees",
     "assigneesEmptyMessage": "No members found",
     "startDateLabel": "Start date",
     "dueDateLabel": "Due date",
-    "tagsLabel": "Tags",
     "tagsPlaceholder": "Add tags",
     "sections": {
-      "tracking": "Tracking",
-      "schedule": "Schedule",
-      "people": "People & labels"
+      "schedule": "Schedule"
     }
   }
 }

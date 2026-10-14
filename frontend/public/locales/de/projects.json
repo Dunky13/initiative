@@ -95,13 +95,7 @@
     "pin": "Projekt anheften"
   },
   "taskComposer": {
-    "title": "Aufgabe erstellen",
-    "description": "Füge zu erledigende Arbeit hinzu.",
-    "archivedMessage": "Dieses Projekt ist archiviert. Hebe die Archivierung auf, um neue Aufgaben hinzuzufügen.",
-    "noWriteAccess": "Du benötigst Schreibzugriff, um Aufgaben zu erstellen.",
-    "saving": "Wird gespeichert…",
-    "createTask": "Aufgabe erstellen",
-    "createError": "Aufgabe konnte nicht erstellt werden."
+    "createTask": "Aufgabe erstellen"
   },
   "assignee": {
     "emptyMessage": "Lade Initiativmitglieder ein, um Aufgaben zuzuweisen.",

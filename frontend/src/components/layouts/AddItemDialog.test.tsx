@@ -31,7 +31,7 @@ const Adding = ({
         detail={QUEUE_ITEM_DETAIL}
         blank={blankQueueItem(1)}
         context={{ readOnly: false, queueId: 1, initiativeId: 1, leaving, actions: null }}
-        layouts={null}
+        layouts={() => null}
         title="Add Item"
         ready={(item) => item.label.trim() !== ""}
         create={create}

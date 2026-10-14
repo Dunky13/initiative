@@ -21,6 +21,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
 import {
   cardOf,
+  columnsOf,
   indexPaths,
   type ListLayout,
   type Place,
@@ -29,6 +30,7 @@ import {
   type Selection,
   sameSelection,
 } from "@/lib/layouts/draft";
+import type { FieldDef } from "@/lib/layouts/fields";
 import { cn } from "@/lib/utils";
 
 /** How wide the canvas draws the layout: the widths a person might read it at. */
@@ -479,6 +481,7 @@ export const LayoutCanvas = ({
   initiativeId,
   statuses,
   layout: open,
+  fields,
   width,
   selection,
   onSelect,
@@ -488,6 +491,7 @@ export const LayoutCanvas = ({
   initiativeId: number;
   statuses: TaskStatusRead[];
   layout: ListLayout;
+  fields: ReadonlyMap<string, FieldDef>;
   width: PreviewWidth;
   selection: Selection;
   onSelect: (selection: Selection) => void;
@@ -499,7 +503,7 @@ export const LayoutCanvas = ({
   const params = useMemo(() => buildTaskListParams(EMPTY_TASK_FILTERS, { projectId }), [projectId]);
   const tasks = useTasks(params).data?.items ?? NO_TASKS;
 
-  const card = cardOf(definition);
+  const card = cardOf(definition, fields);
   const paths = useMemo(() => indexPaths(card), [card]);
   const groupedTasks = useMemo(() => {
     const groups: Record<number, TaskListRead[]> = {};
@@ -553,7 +557,7 @@ export const LayoutCanvas = ({
           onStatusChange={noop}
           taskHref={taskHref}
           tableState={tableState}
-          viewColumns={definition.columns}
+          viewColumns={columnsOf(definition, fields)}
           editing
         />
       ) : null}

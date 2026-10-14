@@ -294,7 +294,7 @@ export function QueueDetailPage() {
           leaving,
           actions: null,
         }}
-        layouts={instanceTarget(Tool.queue, parsedId)}
+        layouts={() => instanceTarget(Tool.queue, parsedId)}
         title={t("addItem")}
         ready={(item) => item.label.trim() !== ""}
         create={({ item, fields, properties }) =>
