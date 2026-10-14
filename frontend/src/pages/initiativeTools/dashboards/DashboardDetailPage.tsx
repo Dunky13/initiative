@@ -72,6 +72,7 @@ export function DashboardDetailPage() {
         <ToolPageHeader
           tool={Tool.dashboard}
           initiativeId={dashboard.initiative_id}
+          starId={dashboard.id}
           settingsTo={
             canEdit ? toolSettingsRoute(Tool.dashboard, initiativeId, dashboard.id) : undefined
           }

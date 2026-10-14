@@ -1537,13 +1537,13 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     "relationships": relationships_path(),
     # Per-user state, scoped via the entity it points at
     "project_orders": via("projects", "project_id"),
-    "project_favorites": via("projects", "project_id"),
     "task_assignment_digest_items": via("projects", "project_id"),
     # Same polymorphic target columns as the reactions themselves, so the
     # queued line is gated exactly like the gesture it describes.
     "reaction_digest_items": reactions_path(),
     "event_reminder_dispatches": via_event_calendar("event_id"),
     "recent_views": content_kind_path(),
+    "favorites": content_kind_path(),
     "engagement_levels": content_kind_path(),
 }
 
@@ -1617,7 +1617,7 @@ _RESPONDING: frozenset[str] = frozenset()
 
 DAC_WRITE_COMMANDS: dict[str, frozenset[str]] = {
     "project_orders": frozenset(),
-    "project_favorites": frozenset(),
+    "favorites": frozenset(),
     "recent_views": frozenset(),
     "post_reads": frozenset(),
     "post_poll_votes": frozenset(),
@@ -2011,7 +2011,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     "search_entries": Silent("derived index, rebuilt from the content it mirrors"),
     "engagement_levels": Silent("derived ranking, rewritten by the hourly pass"),
     "project_orders": Silent("one member's own ordering state"),
-    "project_favorites": Silent("one member's own pinning state"),
+    "favorites": Silent("one member's own stars"),
     "task_assignment_digest_items": Silent("internal digest bookkeeping"),
     "reaction_digest_items": Silent("internal digest bookkeeping"),
     "event_reminder_dispatches": Silent("internal reminder bookkeeping"),

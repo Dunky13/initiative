@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Running the show",
-      "description": "What's moving in your community, what you had open and what changed in projects and dashboards, and your own list."
+      "description": "What's moving in your community, what you starred and what changed in projects and dashboards, and your own list."
     }
   },
   "settingsDialog": {
@@ -165,13 +165,19 @@
       "viewedIn": "Recently viewed {{tool}}",
       "changedIn": "Recently changed {{tool}}",
       "mode": "Show",
-      "tools": "Tools",
-      "allTools": "All tools",
       "toolsHint": "Narrow both lists to these kinds of tool. Leave it empty for all of them.",
       "emptyViewed": "Nothing opened yet. Projects, files and the rest show up here once you've looked at them.",
       "emptyChanged": "Nothing has changed lately.",
       "loadError": "Couldn't load what's recent.",
       "openTools": "Open My Tools"
+    },
+    "favorites": {
+      "title": "Favorites",
+      "titleIn": "Favorite {{tool}}",
+      "description": "Everything you starred, from every community, a click away.",
+      "toolsHint": "Show only these kinds of tool. Leave it empty for all of them.",
+      "empty": "Nothing starred yet. Star a project, a file or anything else from its page, and it waits for you here.",
+      "loadError": "Couldn't load your favorites."
     },
     "activity": {
       "title": "Activity",
@@ -217,6 +223,10 @@
       "addZone": "Add a time zone",
       "removeZone": "Remove {{zone}}",
       "length": "Timer length, in minutes"
+    },
+    "tools": {
+      "label": "Tools",
+      "all": "All tools"
     }
   },
   "views": {

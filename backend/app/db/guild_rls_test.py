@@ -427,6 +427,7 @@ _NO_SINGLE_PARENT = {
     "reactions": "one of eight tools, per row",
     "reaction_digest_items": "gated exactly like the reaction it describes",
     "recent_views": "one of eight tools, per row",
+    "favorites": "any tool, per row",
     "engagement_levels": "any tool or sub-tool, per row",
     "property_values": "any tool or sub-tool, per row: read through its own table, written through entity_access",
     "plugin_metadata": "any item, per row, read through its own table, or the install itself",

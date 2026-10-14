@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Aux commandes",
-      "description": "Ce qui bouge dans votre communauté, ce que vous aviez ouvert et ce qui a changé dans les projets et tableaux de bord, et votre propre liste."
+      "description": "Ce qui bouge dans votre communauté, ce que vous avez mis en favori et ce qui a changé dans les projets et tableaux de bord, et votre propre liste."
     }
   },
   "settingsDialog": {
@@ -165,13 +165,19 @@
       "viewedIn": "Consultés récemment : {{tool}}",
       "changedIn": "Modifiés récemment : {{tool}}",
       "mode": "Afficher",
-      "tools": "Outils",
-      "allTools": "Tous les outils",
       "toolsHint": "Limitez les deux listes à ces types d'outils. Laissez vide pour tous.",
       "emptyViewed": "Rien d'ouvert pour l'instant. Projets, fichiers et le reste apparaissent ici dès que vous les avez consultés.",
       "emptyChanged": "Rien n'a changé récemment.",
       "loadError": "Impossible de charger ce qui est récent.",
       "openTools": "Ouvrir Mes outils"
+    },
+    "favorites": {
+      "title": "Favoris",
+      "titleIn": "{{tool}} favoris",
+      "description": "Tout ce que vous avez mis en favori, dans chaque communauté, à portée de clic.",
+      "toolsHint": "N'afficher que ces types d'outils. Laissez vide pour tous les afficher.",
+      "empty": "Aucun favori pour l'instant. Mettez une étoile à un projet, un fichier ou autre chose depuis sa page, et il vous attendra ici.",
+      "loadError": "Impossible de charger vos favoris."
     },
     "activity": {
       "title": "Activité",
@@ -217,6 +223,10 @@
       "addZone": "Ajouter un fuseau horaire",
       "removeZone": "Retirer {{zone}}",
       "length": "Durée du minuteur, en minutes"
+    },
+    "tools": {
+      "label": "Outils",
+      "all": "Tous les outils"
     }
   },
   "views": {

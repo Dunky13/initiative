@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { type ProjectRead, Tool } from "@/api/generated/initiativeAPI.schemas";
-import { FavoriteProjectButton } from "@/components/projects/FavoriteProjectButton";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { PinProjectButton } from "@/components/projects/PinProjectButton";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { ToolIndexDragHandle } from "@/components/tools/ToolIndexSortable";
@@ -30,9 +30,11 @@ export const ProjectCard = ({ project }: { project: ProjectRead }) => {
           canPin={project.can.configure}
           suppressNavigation
         />
-        <FavoriteProjectButton
-          projectId={project.id}
-          isFavorited={project.is_favorited ?? false}
+        <FavoriteButton
+          tool={Tool.project}
+          entityId={project.id}
+          name={project.name}
+          initiativeId={project.initiative_id}
           suppressNavigation
         />
         <ToolIndexDragHandle label={t("preview.reorder")} />

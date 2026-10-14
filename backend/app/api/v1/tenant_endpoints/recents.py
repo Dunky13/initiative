@@ -15,8 +15,7 @@ per-schema ids are only unique within a guild.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Annotated, Any, Callable, Dict, List
+from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, status
 from sqlmodel import select
@@ -29,15 +28,13 @@ from app.api.deps import (
     get_current_active_user,
     GuildContextDep,
 )
-from app.core.tools import Tool
-from app.services.tenant.tags import TOOL_TAG_LINKS
-from app.models.tenant.file import File
 from app.models.platform.guild import GuildMembership
 from app.models.tenant.recent_view import RecentView, ViewSource
 from app.models.platform.user import User
 from app.schemas.tenant.recent_view import RecentItemRead, RecentKind, RecentViewWrite
 from app.services.tenant import recent_views as recent_views_service
 from app.services.cross_guild import gather_across_guilds
+from app.services.tenant.tool_items import load_tool_items
 from app.services.tenant.recent_views import RecentEntityType
 
 
@@ -46,53 +43,6 @@ router = APIRouter()
 # /c/{community_id}/recents. The cross-guild tabs-bar list stays on the top-level
 # router above — fully separate endpoints.
 guild_router = APIRouter()
-
-
-@dataclass(frozen=True)
-class RecentToolSpec:
-    """How one tool's recent-view rows become tab items.
-
-    Derived per tool, not hand-listed: the model comes from the tag registry
-    (every tool is taggable) and the label column from the model's own
-    ``_display_field``. Resolution is otherwise uniform — every recentable tool
-    is a DAC resource with ``grants`` + ``initiative``, so it eager-loads the
-    same way and authorizes through ``DAC_RESOURCES[tool]``.
-    """
-
-    model: type
-    name_attr: str
-    extra: Callable[[Any], Dict[str, Any]] | None = None
-
-
-def _file_extra(file: File) -> Dict[str, Any]:
-    version = file.current_version
-    return {
-        "file_type": (file.file_type.value if file.file_type is not None else None),
-        "mime_type": getattr(version, "file_content_type", None),
-        "original_filename": getattr(version, "original_filename", None),
-    }
-
-
-# The only per-tool code here: render-only fields a tool's tab carries beyond
-# the common id/name. Everything else about a tool — its model, its display
-# column — is derived below, so adding a tool needs no edit in this module.
-_RECENT_EXTRAS: dict[Tool, Callable[[Any], Dict[str, Any]]] = {
-    Tool.project: lambda project: {"icon": project.icon},
-    Tool.file: _file_extra,
-}
-
-RECENT_TOOL_SPECS: dict[Tool, RecentToolSpec] = {
-    tool: RecentToolSpec(
-        model=TOOL_TAG_LINKS[tool].entity,
-        name_attr=TOOL_TAG_LINKS[tool].entity.display_field(),
-        extra=_RECENT_EXTRAS.get(tool),
-    )
-    for tool in Tool
-}
-
-RECENT_SPECS_BY_ENTITY_TYPE: dict[str, tuple[Tool, RecentToolSpec]] = {
-    tool.value: (tool, spec) for tool, spec in RECENT_TOOL_SPECS.items()
-}
 
 
 async def _enrich_recent_rows(
@@ -107,27 +57,13 @@ async def _enrich_recent_rows(
     load, so its tab is dropped, the same verdict its detail page reaches.
     """
     context = require_guild_context(session)
-    ids_by_type = recent_views_service.group_ids_by_type(rows)
-
-    # One query per tool that actually appears in this batch, reading the row
-    # alone: a tab shows a name, so nothing about its sharing is loaded.
-    loaded: Dict[str, Dict[int, Any]] = {}
-    for tool, spec in RECENT_TOOL_SPECS.items():
-        ids = ids_by_type.get(tool.value)
-        if not ids:
-            continue
-        model = spec.model
-        result = await session.exec(select(model).where(model.id.in_(ids)))
-        loaded[tool.value] = {row.id: row for row in result.all()}
-
+    loaded = await load_tool_items(
+        session, ((row.entity_type, row.entity_id) for row in rows)
+    )
     items: List[RecentItemRead] = []
     for row in rows:
-        entry = RECENT_SPECS_BY_ENTITY_TYPE.get(row.entity_type)
-        if entry is None:
-            continue
-        tool, spec = entry
-        entity = loaded.get(row.entity_type, {}).get(row.entity_id)
-        if entity is None:
+        item = loaded.get((row.entity_type, row.entity_id))
+        if item is None:
             continue
         items.append(
             # ``model_construct`` skips the SanitizedBaseModel validator so
@@ -138,16 +74,15 @@ async def _enrich_recent_rows(
                 # The member, not its value: ``model_construct`` skips
                 # validation, so whatever is passed is what the field holds and
                 # what the serializer is later handed.
-                entity_type=RecentEntityType(tool.value),
-                entity_id=entity.id,
+                entity_type=RecentEntityType(item.tool.value),
+                entity_id=item.entity_id,
                 community_id=context.guild_id,
-                initiative_id=getattr(entity, "initiative_id", None),
-                name=getattr(entity, spec.name_attr),
+                initiative_id=item.initiative_id,
+                name=item.name,
                 last_viewed_at=row.last_viewed_at,
-                **(spec.extra(entity) if spec.extra else {}),
+                **item.extra,
             )
         )
-
     return items
 
 

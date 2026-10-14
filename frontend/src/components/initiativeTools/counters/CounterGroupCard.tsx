@@ -53,7 +53,9 @@ export const CounterGroupCard = ({ group, className }: CounterGroupCardProps) =>
     >
       {group.preview?.length ? <CounterGroupPreview counters={group.preview} /> : null}
       <Card className="border-0 shadow-none">
-        <CardHeader className="pb-2">
+        {/* With nothing above it, the header stops short of the star the list
+            puts on the card's corner. */}
+        <CardHeader className={cn("pb-2", !group.preview?.length && "pr-14")}>
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="line-clamp-1 text-lg leading-tight">{group.name}</CardTitle>
           </div>

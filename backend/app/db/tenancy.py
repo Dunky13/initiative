@@ -209,7 +209,7 @@ OWN_ROW_TABLES: dict[str, str] = {
 # ``INITIATIVE_PATHS`` — enforced in ``tenancy_test.py``.
 PRIVATE_ROW_TABLES: dict[str, str] = {
     "recent_views": "user_id",
-    "project_favorites": "user_id",
+    "favorites": "user_id",
     "project_orders": "user_id",
     "post_reads": "user_id",
     "post_poll_votes": "user_id",
@@ -333,7 +333,7 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         # A ballot: ``user_id`` is the voter, which is both the author of the
         # row and its whole content.
         "post_poll_votes",
-        "project_favorites",
+        "favorites",
         "project_orders",
         "recent_views",
         # A property value belongs to the initiative, not to whoever set it.

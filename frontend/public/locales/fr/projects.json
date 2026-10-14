@@ -89,10 +89,6 @@
     "closeOthers": "Fermer les autres",
     "closeAll": "Fermer tout"
   },
-  "favorite": {
-    "remove": "Retirer des favoris",
-    "add": "Ajouter aux favoris"
-  },
   "pin": {
     "pinned": "Projet épinglé",
     "unpin": "Désépingler le projet",

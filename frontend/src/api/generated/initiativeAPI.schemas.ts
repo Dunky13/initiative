@@ -5364,6 +5364,23 @@ export interface FavoriteContactsResponse {
 }
 
 /**
+ * One starred tool, as a list of them shows it: enough to draw its icon
+ * and link to it without a fetch per kind, and nothing of its content.
+ */
+export interface FavoriteItemRead {
+  entity_type: Tool;
+  entity_id: number;
+  community_id: number;
+  initiative_id: number | null;
+  name: string;
+  favorited_at: string;
+  icon: string | null;
+  file_type: string | null;
+  mime_type: string | null;
+  original_filename: string | null;
+}
+
+/**
  * What an entry has to be, to be in a view.
  */
 export type FeedView = (typeof FeedView)[keyof typeof FeedView];

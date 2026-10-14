@@ -25,6 +25,7 @@ It starts out arranged for whatever you told us when you signed up: your own lis
 | **Coming up** | Events and task dates over the next few days. You pick how many. |
 | **My calendar** | The whole of [My Calendar](#my-calendar), filters and all, by month or week. |
 | **Recent** | What you opened lately, or what changed lately, across every kind of tool and every community. Narrow it to a few kinds in its settings. |
+| **Favorites** | Everything you've [starred](#favourites), from every community. Narrow it to a few kinds in its settings. |
 | **Activity** | What people changed lately in one community. |
 | **My communities** | Every community you're in, as the card the directory shows, with a way in. |
 | **My progress** | Your streak, your week, and how much lands on time. |
@@ -41,7 +42,7 @@ Here for more than one reason? Keep more than one home page. While customizing, 
 | *Heads down* | Getting through it: a timer and the few things that need doing now. |
 | *Assigned work* | Work that's handed to you: your list, the urgent part, and what's happened to your things. |
 | *Community* | Following a club or a space: your communities, what's going on, and what's coming up. |
-| *Running the show* | Keeping a community moving: its activity, what you had open, what changed in projects and dashboards, your own list. |
+| *Running the show* | Keeping a community moving: its activity, what you starred, what changed in projects and dashboards, your own list. |
 
 More are in [the marketplace](plugins-and-marketplace.md#home-layouts) — **Browse the marketplace** at the foot of the same picker.
 
@@ -128,7 +129,11 @@ It exists because watching a streak build is quite nice, and that turns out to b
 
 ## Favourites
 
-Star a project to add it to **Favourites** for one-click access. Personal to you; starring something changes nothing for anybody else.
+Anything can have a star: a project, a file, the tea rota, the counter of how many raffle tickets are left. The star sits beside its name at the top of its page, and on its card or row in a list.
+
+Starred things go in **Favorites** at the top of the sidebar, for that community, and in the **Favorites** widget on Home, from all of them. A star is yours alone. Starring the committee's minutes doesn't pin them to anybody else's screen, which is probably for the best.
+
+Leave a community and your stars there go with you.
 
 ## Related
 

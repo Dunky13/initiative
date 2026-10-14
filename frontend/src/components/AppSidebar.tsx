@@ -48,17 +48,20 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAutoCloseSidebar } from "@/hooks/useAutoCloseSidebar";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPlugins } from "@/hooks/useCommunityPlugins";
+import { useCommunityFavorites } from "@/hooks/useFavorites";
 import { liveInitiatives } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
 import { compareVersions, useLatestVersion } from "@/hooks/useLatestVersion";
-import { useFavoriteProjects, useProjects } from "@/hooks/useProjects";
+import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { useToolCountsByInitiative } from "@/hooks/useToolCounts";
 import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { communityPath } from "@/lib/communityUrl";
 import { canAccessOperatorDashboard, canManagePlatformConfig } from "@/lib/permissions";
+import { renderRecentIcon } from "@/lib/recentIcon";
+import { getActiveRecentKey, recentRoute } from "@/lib/recentRoute";
 import { getItem, setItem } from "@/lib/storage";
-import { TOOLS, toolDetailRoute, toolViewParams } from "@/lib/tools";
+import { TOOLS, toolViewParams } from "@/lib/tools";
 
 export const AppSidebar = () => {
   const { user, logout, refreshUser } = useAuth();
@@ -151,10 +154,13 @@ export const AppSidebar = () => {
     }
   );
 
-  const favoritesQuery = useFavoriteProjects({
+  // The reader's stars here, every kind of tool, newest first.
+  const favoritesQuery = useCommunityFavorites(null, {
     enabled: communityTreeEnabled,
     staleTime: 60_000,
   });
+  // Which of them is open: the tool the address names.
+  const activeTool = useMemo(() => getActiveRecentKey(location.pathname), [location.pathname]);
 
   // Every tool's per-initiative counts in one fan-out, keyed by `Tool`, so
   // the badges follow the registry rather than a list kept in step by hand.
@@ -370,27 +376,24 @@ export const AppSidebar = () => {
                               </SidebarGroupLabel>
                               <SidebarGroupContent>
                                 <SidebarMenu>
-                                  {favoritesQuery.data.map((project) => (
-                                    <SidebarMenuItem key={project.id}>
+                                  {favoritesQuery.data.map((item) => (
+                                    <SidebarMenuItem key={`${item.entity_type}:${item.entity_id}`}>
                                       <SidebarMenuButton
                                         asChild
-                                        isActive={project.id === activeProjectId}
+                                        isActive={
+                                          activeTool?.entityType === item.entity_type &&
+                                          activeTool.entityId === item.entity_id
+                                        }
                                       >
                                         <Link
-                                          to={gp(
-                                            toolDetailRoute(
-                                              Tool.project,
-                                              project.initiative_id,
-                                              project.id
-                                            )
-                                          )}
+                                          to={recentRoute(item)}
                                           className="flex min-w-0 items-center gap-2"
                                         >
-                                          {project.icon ? (
-                                            <span className="shrink-0 text-lg">{project.icon}</span>
-                                          ) : null}
+                                          <span className="flex size-5 shrink-0 items-center justify-center">
+                                            {renderRecentIcon(item)}
+                                          </span>
                                           <span className="min-w-0 flex-1 truncate">
-                                            {project.name}
+                                            {item.name}
                                           </span>
                                         </Link>
                                       </SidebarMenuButton>

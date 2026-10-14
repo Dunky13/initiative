@@ -556,6 +556,7 @@ export const FileDetailPage = () => {
       <ToolPageHeader
         tool={Tool.file}
         initiativeId={file.initiative_id}
+        starId={file.id}
         settingsTo={canEditFile ? toolSettingsRoute(Tool.file, initiativeId, file.id) : undefined}
         chest={
           <ToolChest

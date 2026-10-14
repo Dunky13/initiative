@@ -683,6 +683,9 @@ export const CalendarsView = ({
         <ToolPageHeader
           tool={Tool.calendar}
           initiativeId={initiativeId}
+          // The calendar in view, when there is one: its mark, its star and
+          // its settings.
+          starId={onlyCalendar?.id}
           mark={
             onlyCalendar ? (
               <span

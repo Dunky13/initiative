@@ -195,13 +195,3 @@ async def list_recent_views(
         .limit(limit)
     )
     return (await session.exec(stmt)).all()
-
-
-def group_ids_by_type(
-    rows: Iterable[RecentView],
-) -> dict[str, list[int]]:
-    """Bucket recent-view rows by ``entity_type``, preserving order."""
-    out: dict[str, list[int]] = {}
-    for row in rows:
-        out.setdefault(row.entity_type, []).append(row.entity_id)
-    return out

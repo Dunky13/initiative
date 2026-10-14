@@ -67,7 +67,6 @@ _NOT_PLUGIN_SURFACE: frozenset[str] = frozenset(
         # One person's own state: their ordering, favourites, read markers and
         # ballots.
         "project_orders",
-        "project_favorites",
         "post_reads",
         "post_poll_votes",
         # Run by the reminder scheduler.
@@ -164,10 +163,16 @@ SEARCH_ENTRY_READ_SCOPE: dict[SearchEntityType, PluginScopeResource] = (
 
 #: Tables no plug-in reaches, whose policies refuse an installed plug-in outright
 #: beside the grant it does not hold: a reaction and the line queued about it
-#: are one person's gesture, a recent view one person's history, and an
-#: engagement level what many people's history adds up to.
+#: are one person's gesture, a recent view one person's history, a star one
+#: person's pick, and an engagement level what many people's history adds up to.
 PLUGIN_REFUSED_TABLES: frozenset[str] = frozenset(
-    {"reactions", "reaction_digest_items", "recent_views", "engagement_levels"}
+    {
+        "reactions",
+        "reaction_digest_items",
+        "recent_views",
+        "favorites",
+        "engagement_levels",
+    }
 )
 
 

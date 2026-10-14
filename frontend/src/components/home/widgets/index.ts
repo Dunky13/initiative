@@ -14,6 +14,7 @@ import {
   History,
   Rocket,
   SquareCheckBig,
+  Star,
   Trophy,
   Users,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { CalendarWidget } from "./CalendarWidget";
 import { ClockSettings, ClockWidget } from "./ClockWidget";
 import { ComingUpSettings, ComingUpWidget } from "./ComingUpWidget";
 import { CommunitiesWidget } from "./CommunitiesWidget";
+import { FavoritesSettings, FavoritesWidget } from "./FavoritesWidget";
 import { FocusWidget } from "./FocusWidget";
 import { GettingStartedWidget } from "./GettingStartedWidget";
 import { GreetingSettings, GreetingWidget } from "./GreetingWidget";
@@ -42,6 +44,7 @@ export const HOME_WIDGETS: Record<HomeWidgetType, HomeWidgetDefinition> = {
   calendar: { icon: CalendarDays, Component: CalendarWidget },
   activity: { icon: Activity, Component: ActivityWidget, Settings: ActivitySettings },
   recent: { icon: History, Component: RecentWidget, Settings: RecentSettings },
+  favorites: { icon: Star, Component: FavoritesWidget, Settings: FavoritesSettings },
   communities: { icon: Users, Component: CommunitiesWidget },
   progress: { icon: Trophy, Component: ProgressWidget },
   clock: { icon: Clock, Component: ClockWidget, Settings: ClockSettings },

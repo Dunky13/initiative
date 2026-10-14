@@ -334,6 +334,10 @@
     "desktopReady": "Initiative has downloaded its update. Restart to finish.",
     "restart": "Restart"
   },
+  "favorite": {
+    "add": "Add to favorites",
+    "remove": "Remove from favorites"
+  },
   "toolHeader": {
     "rename": "Rename"
   },

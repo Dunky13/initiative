@@ -372,7 +372,7 @@ async def remove_user_from_guild_initiatives(
     community go too.
     """
     from app.db.schema_provisioning import guild_schema_name
-    from app.services.tenant import recent_views
+    from app.services.tenant import favorites, recent_views
 
     schema = guild_schema_name(guild_id)
     await session.exec(select(func.public.member_departs(schema, user_id, None)))
@@ -412,6 +412,7 @@ async def remove_user_from_guild_initiatives(
         )
     )
     await recent_views.purge_for_user(session, user_id)
+    await favorites.purge_for_user(session, user_id)
 
 
 async def list_initiative_roles(

@@ -89,10 +89,6 @@
     "closeOthers": "Cerrar las demás",
     "closeAll": "Cerrar todas"
   },
-  "favorite": {
-    "remove": "Quitar de favoritos",
-    "add": "Agregar a favoritos"
-  },
   "pin": {
     "pinned": "Proyecto fijado",
     "unpin": "Desfijar proyecto",

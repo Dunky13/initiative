@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Al mando",
-      "description": "Lo que se mueve en tu comunidad, lo que tenías abierto y lo que cambió en proyectos y paneles, y tu propia lista."
+      "description": "Lo que se mueve en tu comunidad, lo que marcaste con una estrella y lo que cambió en proyectos y paneles, y tu propia lista."
     }
   },
   "settingsDialog": {
@@ -165,13 +165,19 @@
       "viewedIn": "Vistos recientemente: {{tool}}",
       "changedIn": "Cambiados recientemente: {{tool}}",
       "mode": "Mostrar",
-      "tools": "Herramientas",
-      "allTools": "Todas las herramientas",
       "toolsHint": "Limita las dos listas a estos tipos de herramienta. Déjalo vacío para todas.",
       "emptyViewed": "Aún no has abierto nada. Proyectos, archivos y lo demás aparecen aquí cuando los miras.",
       "emptyChanged": "No ha cambiado nada últimamente.",
       "loadError": "No se pudo cargar lo reciente.",
       "openTools": "Abrir Mis herramientas"
+    },
+    "favorites": {
+      "title": "Favoritos",
+      "titleIn": "{{tool}} favoritos",
+      "description": "Todo lo que marcaste con una estrella, de cada comunidad, a un clic.",
+      "toolsHint": "Muestra solo estos tipos de herramienta. Déjalo vacío para verlos todos.",
+      "empty": "Aún no has marcado nada. Marca con una estrella un proyecto, un archivo o lo que sea desde su página y te esperará aquí.",
+      "loadError": "No se pudieron cargar tus favoritos."
     },
     "activity": {
       "title": "Actividad",
@@ -217,6 +223,10 @@
       "addZone": "Añadir una zona horaria",
       "removeZone": "Quitar {{zone}}",
       "length": "Duración del temporizador, en minutos"
+    },
+    "tools": {
+      "label": "Herramientas",
+      "all": "Todas las herramientas"
     }
   },
   "views": {

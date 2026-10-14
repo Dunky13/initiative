@@ -204,6 +204,7 @@ export function CounterGroupDetailPage() {
       <ToolPageHeader
         tool={Tool.counter_group}
         initiativeId={group.initiative_id}
+        starId={group.id}
         settingsTo={
           canWrite ? toolSettingsRoute(Tool.counter_group, initiativeId, group.id) : undefined
         }
