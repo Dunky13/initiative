@@ -135,10 +135,15 @@ test("the first owner builds a community and finds it again", async ({ page }) =
   await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/(login|welcome)/);
 
-  // Back in, the way they would come back: the community lists its projects.
+  // Back in, the way they would come back: the community lists its
+  // initiatives, and the initiative its projects.
   await signIn(page, owner);
   await page.getByRole("button", { name: `Switch to ${community}` }).click();
-  await page.getByRole("main").getByRole("link", { name: "Cake stall", exact: true }).click();
+  await page.getByRole("main").getByRole("link", { name: "Spring Fete" }).click();
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: /^Cake stall/ })
+    .click();
   await expect(page.getByRole("main").getByText("Order the flour")).toBeVisible();
 });
 
@@ -151,10 +156,10 @@ test("an invited member sees only what they are let into", async ({ browser }) =
 
   await ownerPage.goto(`${made.communityPath}/settings/users`);
   await ownerPage.getByRole("button", { name: "Generate invite" }).click();
-  // The start flow already made one link; the list is newest first.
-  const links = ownerPage.getByText(/\/invite\//);
-  await expect(links).toHaveCount(2);
-  const invite = await links.first().textContent();
+  // A link is shown once, as it is made; the list keeps none to show again.
+  const link = ownerPage.getByText(/\/invite\//);
+  await expect(link).toHaveCount(1);
+  const invite = await link.textContent();
   expect(invite).toBeTruthy();
 
   const page = await freshPage(browser);
