@@ -54,6 +54,7 @@ from app.db.authorization import (
     plugin_narrowed,
     plugin_scope,
     in_body,
+    sql_values,
 )
 
 #: The legs a policy reads, off this statement's standing.
@@ -1117,17 +1118,25 @@ def plugin_metadata_path() -> InitiativePath:
     engine reaches both.
 
     Otherwise reading and writing ask the same: writing a value changes
-    nothing on the item. What an install also needs, the read scope of the
-    item's tool, is its ``plugin_scope_*`` policies (``app.db.guild_ddl``).
+    nothing on the item. A read is one ``EXISTS`` per kind
+    (:func:`_entity_readable`); a write asks the same of one read-only
+    :data:`ENTITY_ACCESS_FN` call, as a property value's write does. What an
+    install also needs, the read scope of the item's tool, is its
+    ``plugin_scope_*`` policies (``app.db.guild_ddl``).
     """
 
     def build(t: str, w: bool) -> str:
         own = f"({t}.install_id = {_P.install_id} AND {_P.this_guild} AND {_P.auth_ok})"
         reach = f"{own} OR {_P.admin}" if w else f"{own} OR {_P.admin} OR {t}.shown"
+        item = (
+            _entity_call(f"{t}.entity_type", f"{t}.entity_id", False, False)
+            if w
+            else _entity_readable(t, ITEM_KINDS)
+        )
         return (
             f"({_P.system} OR (CASE WHEN {t}.entity_type = '{INSTALL_METADATA_KIND}'"
             f" THEN ({own} AND {t}.entity_id = {t}.install_id)"
-            f" ELSE (({reach}) AND {_entity_readable(t, ITEM_KINDS)}) END))"
+            f" ELSE (({reach}) AND {item}) END))"
         )
 
     return InitiativePath(
@@ -1305,8 +1314,9 @@ def _named_tool_gate(t: str, write: bool) -> str:
 
     Every other table has one governing tool rendered into its policy. These
     rows name their own in ``dac_tool``, so the switch and the role key are a
-    CASE over that column — one arm per tool, and rows naming none (the guild's
-    vocabulary) fall through the ELSE.
+    lookup over that column, and rows naming none (the guild's vocabulary)
+    answer to no role. The CASE picks only the key; the role check is one call,
+    since a call per arm is what a parsed policy pays for, on every connection.
 
     A row outlives the content it describes by as long as the sweep takes, so
     it answers the same three questions the source does rather than trusting
@@ -1321,15 +1331,18 @@ def _named_tool_gate(t: str, write: bool) -> str:
         f" AND ({t}.initiative_id::text || ':' || {t}.dac_tool)"
         f" = ANY ({_P.field('enabled_tools')})))"
     )
-    role_arms = " ".join(
-        f"WHEN '{tool.value}' THEN initiative_role_permits("
-        f"{t}.initiative_id, {gucs.USER_ID}, '{tool.view_permission}', "
-        f"{str(tool in DEFAULT_ENABLED_TOOLS).lower()}, {STANDING})"
-        for tool in Tool
+    key_arms = " ".join(
+        f"WHEN '{tool.value}' THEN '{tool.view_permission}'" for tool in Tool
+    )
+    key = f"(CASE {t}.dac_tool {key_arms} END)"
+    defaults = sql_values(tool.value for tool in Tool if tool in DEFAULT_ENABLED_TOOLS)
+    role = (
+        f"({key} IS NULL OR initiative_role_permits({t}.initiative_id, "
+        f"{gucs.USER_ID}, {key}, {t}.dac_tool IN ({defaults}), {STANDING}))"
     )
     return (
         f"({switch}"
-        f" AND (CASE {t}.dac_tool {role_arms} ELSE true END)"
+        f" AND {role}"
         f" AND {_resource_call(f'{t}.dac_tool', f'{t}.dac_id', f'{t}.initiative_id', write)})"
     )
 
