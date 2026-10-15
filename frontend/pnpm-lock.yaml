@@ -300,8 +300,8 @@ importers:
         specifier: ^26.4.3
         version: 26.4.3(typescript@7.0.2)
       i18next-http-backend:
-        specifier: ^4.0.1
-        version: 4.0.1
+        specifier: ^4.0.3
+        version: 4.0.3
       lexical:
         specifier: ^0.50.0
         version: 0.50.0(typescript@7.0.2)
@@ -4666,8 +4666,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  i18next-http-backend@4.0.1:
-    resolution: {integrity: sha512-O+7MwPCJIKCu68vho8JtD1HF8QHyMPzoChIDFfYCrpaDqX6oq3RqASujnpKEdnNCEOb+kLMOHTNTcGKpj7B1BA==}
+  i18next-http-backend@4.0.3:
+    resolution: {integrity: sha512-B5GJysCsJwqiDQRpUcikWsut82Vmekix58WIyiCpYtxaZ/wY8kwJCicMRvVcMoIa1x84siiRl5vBt6iCBVO6zg==}
     engines: {node: '>=18'}
 
   i18next@26.4.3:
@@ -11096,7 +11096,7 @@ snapshots:
 
   husky@9.1.7: {}
 
-  i18next-http-backend@4.0.1: {}
+  i18next-http-backend@4.0.3: {}
 
   i18next@26.4.3(typescript@7.0.2):
     optionalDependencies:
