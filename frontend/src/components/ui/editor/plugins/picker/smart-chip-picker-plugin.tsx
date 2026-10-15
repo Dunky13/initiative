@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import { PanelTop } from "lucide-react";
 
-import { EmbedDialog } from "@/components/ui/editor/plugins/embed-dialog";
+import { LazyEmbedDialog } from "@/components/ui/editor/plugins/lazy-embed-dialog";
 import { ComponentPickerOption } from "@/components/ui/editor/plugins/picker/component-picker-option";
 import { SmartChipInsertDialog } from "@/components/ui/editor/plugins/smart-chip-insert-dialog";
 import { SMART_CHIP_MENU } from "@/components/ui/editor/plugins/smart-chip-menu";
@@ -44,6 +44,6 @@ export function EmbedPickerPlugin(t: TFunction<"editor">): ComponentPickerOption
     icon: <PanelTop className="size-4" />,
     keywords: ["embed", "description", "details", "card", "transclude", "callout"],
     onSelect: (_, editor, showModal) =>
-      showModal(title, (onClose) => <EmbedDialog activeEditor={editor} onClose={onClose} />),
+      showModal(title, (onClose) => <LazyEmbedDialog activeEditor={editor} onClose={onClose} />),
   });
 }

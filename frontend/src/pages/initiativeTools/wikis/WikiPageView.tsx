@@ -1,7 +1,7 @@
 import { useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import type { SerializedEditorState } from "lexical";
 import { SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -24,7 +24,6 @@ import { ReportButton } from "@/components/moderation/ReportButton";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Editor } from "@/components/ui/editor/editor";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -41,6 +40,22 @@ import { PropertiesField } from "@/lib/layouts/fieldEditors";
 import { toast } from "@/lib/mascotToast";
 import { toolDetailRoute, toolRouteSegment, wikiPageRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
+
+// The editor is the largest thing in the bundle; every other surface that
+// draws one loads it on demand, and a static import here would pull it back
+// into the shared chunk for all of them.
+const Editor = lazy(() =>
+  import("@/components/ui/editor/editor").then((m) => ({ default: m.Editor }))
+);
+
+const PageBodySkeleton = () => (
+  <div className="space-y-4">
+    <Skeleton className="h-10 w-2/3" />
+    <Skeleton className="h-4 w-full" />
+    <Skeleton className="h-4 w-11/12" />
+    <Skeleton className="h-4 w-4/5" />
+  </div>
+);
 
 /**
  * One page of a wiki: its title, its body, and what connects to it.
@@ -464,42 +479,44 @@ export const WikiPageView = () => {
                   is not this page's body, however briefly it is held. */}
               {page && page.id === pageId ? (
                 <>
-                  <Editor
-                    // Rebuilt rather than switched: the editor captures
-                    // whether it is collaborative at first mount and never
-                    // re-reads it, so flipping that on a live instance is
-                    // outside its contract. Changing the key hands it a fresh
-                    // one for the mode being entered.
-                    key={`${pageId}:${isEditing ? "edit" : `read:${bodyToken}`}`}
-                    editorSerializedState={body ?? undefined}
-                    onSerializedChange={onBodyChange}
-                    readOnly={!isEditing}
-                    showToolbar={isEditing}
-                    // Reading a wiki is reading a web page, so the sheet a
-                    // document draws itself comes off. Wiki-local: the class
-                    // overrides the variant here and changes nothing about how
-                    // a document renders.
-                    className={cn(
-                      isEditing
-                        ? "min-h-0 flex-1"
-                        : "rounded-none border-0 bg-transparent shadow-none"
-                    )}
-                    collaborative={collaboration.isReady}
-                    providerFactory={collaboration.providerFactory}
-                    // Always on, so the body the room is handed stays current
-                    // between sweeps for anyone reading it over REST.
-                    trackChanges
-                    hasSynced={collaboration.hasSynced}
-                    initiativeId={Number.isFinite(initiativeId) ? initiativeId : null}
-                    subject={`wiki_page:${pageId}`}
-                    supportsEntityMentions
-                    // Being read, the body has no sheet of its own and the
-                    // reading column is its gutter. Being written, it is back
-                    // inside a bordered editor, and words against that border
-                    // are words with no margin — so it takes the same gutter a
-                    // document's editor does.
-                    compact={!isEditing}
-                  />
+                  <Suspense fallback={<PageBodySkeleton />}>
+                    <Editor
+                      // Rebuilt rather than switched: the editor captures
+                      // whether it is collaborative at first mount and never
+                      // re-reads it, so flipping that on a live instance is
+                      // outside its contract. Changing the key hands it a fresh
+                      // one for the mode being entered.
+                      key={`${pageId}:${isEditing ? "edit" : `read:${bodyToken}`}`}
+                      editorSerializedState={body ?? undefined}
+                      onSerializedChange={onBodyChange}
+                      readOnly={!isEditing}
+                      showToolbar={isEditing}
+                      // Reading a wiki is reading a web page, so the sheet a
+                      // document draws itself comes off. Wiki-local: the class
+                      // overrides the variant here and changes nothing about how
+                      // a document renders.
+                      className={cn(
+                        isEditing
+                          ? "min-h-0 flex-1"
+                          : "rounded-none border-0 bg-transparent shadow-none"
+                      )}
+                      collaborative={collaboration.isReady}
+                      providerFactory={collaboration.providerFactory}
+                      // Always on, so the body the room is handed stays current
+                      // between sweeps for anyone reading it over REST.
+                      trackChanges
+                      hasSynced={collaboration.hasSynced}
+                      initiativeId={Number.isFinite(initiativeId) ? initiativeId : null}
+                      subject={`wiki_page:${pageId}`}
+                      supportsEntityMentions
+                      // Being read, the body has no sheet of its own and the
+                      // reading column is its gutter. Being written, it is back
+                      // inside a bordered editor, and words against that border
+                      // are words with no margin — so it takes the same gutter a
+                      // document's editor does.
+                      compact={!isEditing}
+                    />
+                  </Suspense>
                   {/* Where to go from here. Reading furniture: somebody who is
                       writing is not looking for the way out of the page. */}
                   {isEditing ? null : (
@@ -507,12 +524,7 @@ export const WikiPageView = () => {
                   )}
                 </>
               ) : (
-                <div className="space-y-4">
-                  <Skeleton className="h-10 w-2/3" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-11/12" />
-                  <Skeleton className="h-4 w-4/5" />
-                </div>
+                <PageBodySkeleton />
               )}
             </div>
           </div>

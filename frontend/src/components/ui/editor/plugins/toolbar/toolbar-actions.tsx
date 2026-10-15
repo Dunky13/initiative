@@ -70,10 +70,10 @@ import { INSERT_CALLOUT_COMMAND } from "@/components/ui/editor/extensions/callou
 import { INSERT_EXCALIDRAW_COMMAND } from "@/components/ui/editor/extensions/excalidraw-extension";
 import { INSERT_STATUS_COMMAND } from "@/components/ui/editor/extensions/status-extension";
 import { CalloutIcon } from "@/components/ui/editor/plugins/callout-icon";
-import { EmbedDialog } from "@/components/ui/editor/plugins/embed-dialog";
 import { EmbedConfigs } from "@/components/ui/editor/plugins/embeds/auto-embed-plugin";
 import { InsertImageDialog } from "@/components/ui/editor/plugins/images-plugin";
 import { InsertLayoutDialog } from "@/components/ui/editor/plugins/layout-plugin";
+import { LazyEmbedDialog } from "@/components/ui/editor/plugins/lazy-embed-dialog";
 import { MERMAID_LANGUAGE } from "@/components/ui/editor/plugins/mermaid-preview-plugin";
 import { SmartChipInsertDialog } from "@/components/ui/editor/plugins/smart-chip-insert-dialog";
 import { InsertTableDialog } from "@/components/ui/editor/plugins/table-plugin";
@@ -434,7 +434,7 @@ export const useBlockInsertActions = ({
       icon: <PanelTop className="size-4" />,
       run: () =>
         showModal(t("embeds.insert"), (onClose) => (
-          <EmbedDialog activeEditor={activeEditor} onClose={onClose} />
+          <LazyEmbedDialog activeEditor={activeEditor} onClose={onClose} />
         )),
     });
   }

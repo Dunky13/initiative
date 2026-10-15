@@ -56,7 +56,7 @@ interface Item {
   title: string;
 }
 
-interface EmbedDialogProps {
+export interface EmbedDialogProps {
   activeEditor: LexicalEditor;
   onClose: () => void;
   /** The embed being changed. Absent, a new one is inserted. */
