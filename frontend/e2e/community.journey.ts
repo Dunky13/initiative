@@ -72,7 +72,7 @@ async function signIn(page: Page, person: typeof owner) {
   await page.getByLabel("Email").fill(person.email);
   await page.getByLabel("Password").fill(person.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "My Tasks", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
 }
 
 async function newInitiative(page: Page, name: string, joining?: string) {
@@ -127,7 +127,7 @@ test("the first owner builds a community and finds it again", async ({ page }) =
 
   await page.getByRole("main").getByRole("button", { name: "Add task" }).click();
   const task = page.getByRole("dialog", { name: "Create task" });
-  await task.getByLabel("Title").fill("Order the flour");
+  await task.getByRole("textbox", { name: "Task", exact: true }).fill("Order the flour");
   await task.getByRole("button", { name: "Create task" }).click();
   await expect(page.getByRole("main").getByText("Order the flour")).toBeVisible();
 
