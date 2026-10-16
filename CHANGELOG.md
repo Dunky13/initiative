@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pasting a link replaces the `https://` it starts with.** Pasting an address into the link field of a document, wiki page or description no longer leaves it reading `https://https://…`. An address without a scheme keeps the `https://` in front.
 - **`#` waits for its search before saying nothing matches.** Typing after `#` briefly said nothing in the initiative matched the new words, from the answer to the words before them, then switched to "Searching…".
 - **Pictures show on a wiki page being read.** A picture nobody had captioned showed "An error was thrown." in its place until the page was opened for editing.
 - **An invite with no use limit takes any number of people.** One made with the uses left at 0 stopped working after the first person joined.
