@@ -78,7 +78,74 @@ class AuditEventType(str, Enum):
     USER_SUSPENDED = "user.suspended", AuditCategory.MODERATION
     USER_UNSUSPENDED = "user.unsuspended", AuditCategory.MODERATION
     USER_AGE_BLOCK_CLEARED = "user.age_block_cleared", AuditCategory.MODERATION
+    #: Staff ended every session an account had, everywhere.
+    USER_SESSIONS_REVOKED = "user.sessions_revoked", AuditCategory.MODERATION, 1
+    #: Staff cleared part of how an account appears to others: its names in
+    #: communities, its custom status or its decorations.
+    USER_PROFILE_FIELD_CLEARED = (
+        "user.profile_field_cleared",
+        AuditCategory.MODERATION,
+        1,
+    )
+    #: A file somebody attached to a ticket or a report was opened: by the
+    #: people working it, or by whoever attached it. Who looked at evidence,
+    #: and when, is a record kept as long as the privileged-access family's.
+    EVIDENCE_ACCESSED = (
+        "evidence.accessed",
+        AuditCategory.MODERATION,
+        1,
+        False,
+    )
     USER_SIGN_IN_LOCK_LIFTED = "user.sign_in_lock_lifted", AuditCategory.MODERATION
+    #: Content was held for the platform, and a hold was released: what was
+    #: kept from the community, by whom, and how it ended.
+    HOLD_PLACED = "hold.placed", AuditCategory.MODERATION, 1
+    HOLD_RELEASED = "hold.released", AuditCategory.MODERATION, 1
+    #: A community's moderators acted, one line per row of its moderation log:
+    #: what was done, to what, on whose report or hold, and under which grant.
+    #: Never the words a removal took down; the log row keeps those, sealed.
+    MODERATION_CONTENT_REMOVED = (
+        "moderation.content_removed",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_CONTENT_RESTORED = (
+        "moderation.content_restored",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_COMMENTS_LOCKED = (
+        "moderation.comments_locked",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_COMMENTS_UNLOCKED = (
+        "moderation.comments_unlocked",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_REACTIONS_CLEARED = (
+        "moderation.reactions_cleared",
+        AuditCategory.MODERATION,
+        1,
+    )
+    MODERATION_MEMBER_WARNED = (
+        "moderation.member_warned",
+        AuditCategory.MODERATION,
+        1,
+    )
+    #: A community report was closed, with its outcome and the log row an
+    #: outcome that acts wrote.
+    MODERATION_REPORT_SETTLED = (
+        "moderation.report_settled",
+        AuditCategory.MODERATION,
+        1,
+    )
+    #: Somebody filed a ticket with whoever runs the server: which stream, and
+    #: what about. Never what it said.
+    TICKET_FILED = "ticket.filed", AuditCategory.MODERATION, 1
+    #: Whoever filed a case answered on it.
+    TICKET_REPLIED = "ticket.replied", AuditCategory.MODERATION
 
     # The platform ladder. Granting a rung is an operator's job (``roles.assign``),
     # not a moderator's, so it is recorded apart from the account actions above:
@@ -168,6 +235,13 @@ class AuditEventType(str, Enum):
         AuditCategory.AUTHORIZATION,
         1,
     )
+    #: A grant named the operations case it serves, so the case the access
+    #: was for is answerable from the log as well as from the grant.
+    ACCESS_GRANT_CASE_LINKED = (
+        "access_grant.case_linked",
+        AuditCategory.AUTHORIZATION,
+        1,
+    )
     #: One request served through a grant rather than through membership —
     #: every one of them, read or write. The grant says what somebody was let
     #: into; this says what they then did with it, which is the difference
@@ -212,6 +286,11 @@ class AuditEventType(str, Enum):
     #: one is recorded, and redeeming one is a ``GUILD_MEMBER_ADDED``.
     GUILD_INVITE_CREATED = "guild.invite_created", AuditCategory.AUTHORIZATION
     GUILD_INVITE_REVOKED = "guild.invite_revoked", AuditCategory.AUTHORIZATION
+    #: A guest's end moved. Becoming a guest is a ``GUILD_MEMBER_ADDED`` with
+    #: ``guest_until`` in its detail, and leaving one a ``GUILD_MEMBER_REMOVED``.
+    GUILD_GUEST_EXTENDED = "guild.guest_extended", AuditCategory.AUTHORIZATION
+    #: A guest made a member: their time no longer ends, and they take a seat.
+    GUILD_GUEST_MADE_MEMBER = "guild.guest_made_member", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ADDED = "initiative.member_added", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_REMOVED = "initiative.member_removed", AuditCategory.AUTHORIZATION
     INITIATIVE_MEMBER_ROLE_CHANGED = (
@@ -242,6 +321,10 @@ class AuditEventType(str, Enum):
     #: It records the reach, as ``pam.request`` does; what the plug-in called then
     #: changed is its own.
     PLUGIN_HUB_CALL = "plugin_hub.call", AuditCategory.AUTHORIZATION, 2, False
+    #: A member ran one of an installed plug-in's actions on an item: which
+    #: install, which action, the item, and how it ended. Like a hub call it
+    #: records the reach; what the plug-in then changed is its own.
+    PLUGIN_ACTION = "plugin.action", AuditCategory.AUTHORIZATION, 2, False
 
     # Configuration. The record says which fields moved; a value is copied in
     # only where its type rules out a secret (see ``audit.changed_fields``).
@@ -284,6 +367,9 @@ class AuditEventType(str, Enum):
     AI_CONNECTION_CREATED = "ai_connection.created", AuditCategory.CONFIGURATION
     AI_CONNECTION_UPDATED = "ai_connection.updated", AuditCategory.CONFIGURATION
     AI_CONNECTION_DELETED = "ai_connection.deleted", AuditCategory.CONFIGURATION
+    #: The seat took back the key a member gave one of the community's AI
+    #: connections.
+    AI_MEMBER_KEY_REVOKED = "ai_member_key.revoked", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_CREATED = "plugin_service.created", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_UPDATED = "plugin_service.updated", AuditCategory.CONFIGURATION
     PLUGIN_SERVICE_DELETED = "plugin_service.deleted", AuditCategory.CONFIGURATION
@@ -369,6 +455,38 @@ class AuditEventType(str, Enum):
     API_KEY_DELETED = "api_key.deleted", AuditCategory.AUTHENTICATION
     #: Switched off by staff rather than deleted by its holder, who still sees it.
     API_KEY_REVOKED = "api_key.revoked", AuditCategory.AUTHENTICATION
+    #: A key reached past what it was made for: a read-only key writing, or a
+    #: key named for one thing reaching another. Refused, so nothing changed.
+    API_KEY_SCOPE_VIOLATION = (
+        "api_key.scope_violation",
+        AuditCategory.AUTHENTICATION,
+        2,
+        False,
+    )
+    #: A one-time token, assertion or nonce was presented again and refused.
+    #: ``detail.channel`` says which.
+    SECURITY_REPLAY_REJECTED = (
+        "security.replay_rejected",
+        AuditCategory.AUTHENTICATION,
+        1,
+        False,
+    )
+    #: A security rule saw enough of something within its window to open a
+    #: case (``app.core.security_rules``): one line per key and window, however
+    #: many events it took.
+    SECURITY_THRESHOLD_CROSSED = (
+        "security.threshold_crossed",
+        AuditCategory.PLATFORM,
+        1,
+        False,
+    )
+    #: Everything encrypted under the deployment's secret key was sealed again
+    #: under a new one.
+    PLATFORM_SECRET_KEY_ROTATED = (
+        "platform.secret_key_rotated",
+        AuditCategory.CONFIGURATION,
+        1,
+    )
     PLUGIN_INSTALLED = "plugin.installed", AuditCategory.LIFECYCLE
     PLUGIN_UNINSTALLED = "plugin.uninstalled", AuditCategory.LIFECYCLE
     WEBHOOK_CREATED = "webhook.created", AuditCategory.LIFECYCLE

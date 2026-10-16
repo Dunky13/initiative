@@ -4,7 +4,7 @@ and its publishers (``publishers``).
 A listing declares what a plug-in is, and gives its registration the plug-in facts:
 which listing it is, its image, its scope ceiling and its Compose service. The
 operator gives the deployment facts here: its addresses, its public keys, its
-vendor values, the switch and the reach (``mandatory``) it confers. Vendor
+vendor values, the switch and the reach (``mandatory``, ``operations_only``) it confers. Vendor
 values may also come from the vendor's own setup flow, run from here. A publisher is the prefix of
 a plug-in's ``public_id``, with a switch that stops every plug-in under it. The whole
 surface is gated on ``plugins.manage`` (owner tier).
@@ -72,12 +72,13 @@ def _to_read(
         publisher_name=view.publisher.display_name,
         publisher_enabled=view.publisher.enabled,
         base_url=row.base_url,
-        embed_origin=row.embed_origin,
+        page_origin=row.page_origin,
         allowed_origins=list(row.allowed_origins or []),
         jwks=row.jwks,
         jwks_uri=row.jwks_uri,
         scope_ceiling=list(row.scope_ceiling or []),
         mandatory=row.mandatory,
+        operations_only=row.operations_only,
         enabled=row.enabled,
         source=row.source,
         image_digest=row.image_digest,
@@ -147,11 +148,12 @@ async def create_plugin_service(
         session,
         public_id=payload.public_id,
         base_url=payload.base_url,
-        embed_origin=payload.embed_origin,
+        page_origin=payload.page_origin,
         allowed_origins=payload.allowed_origins,
         jwks=payload.jwks,
         jwks_uri=payload.jwks_uri,
         mandatory=payload.mandatory,
+        operations_only=payload.operations_only,
         enabled=payload.enabled,
         vendor_values=payload.vendor_values,
         actor_user_id=owner.id,
@@ -172,11 +174,12 @@ async def update_plugin_service(
         session,
         registration_id,
         base_url=payload.base_url,
-        embed_origin=payload.embed_origin,
+        page_origin=payload.page_origin,
         allowed_origins=payload.allowed_origins,
         jwks=payload.jwks,
         jwks_uri=payload.jwks_uri,
         mandatory=payload.mandatory,
+        operations_only=payload.operations_only,
         enabled=payload.enabled,
         vendor_values=payload.vendor_values,
         actor_user_id=owner.id,

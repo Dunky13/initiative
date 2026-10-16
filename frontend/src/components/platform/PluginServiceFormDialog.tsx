@@ -34,13 +34,14 @@ export interface PluginServiceFormValues {
   publicId: string;
   baseUrl: string;
   /** Where a browser loads the plug-in, or "" when that is the base URL too. */
-  embedOrigin: string;
+  pageOrigin: string;
   allowedOrigins: string[];
   /** Parsed JWKS, or null to leave the stored key set untouched. */
   jwks: Record<string, unknown> | null;
   /** Where the plug-in publishes its key set, or "" for none. */
   jwksUri: string;
   mandatory: boolean;
+  operationsOnly: boolean;
   /** Vendor values that were typed, by key. "" clears one; a key left out is kept. */
   vendorValues: Record<string, string>;
 }
@@ -48,22 +49,24 @@ export interface PluginServiceFormValues {
 interface FormState {
   publicId: string;
   baseUrl: string;
-  embedOrigin: string;
+  pageOrigin: string;
   allowedOrigins: string;
   jwks: string;
   jwksUri: string;
   mandatory: boolean;
+  operationsOnly: boolean;
   vendorValues: Record<string, string>;
 }
 
 const EMPTY_FORM: FormState = {
   publicId: "",
   baseUrl: "",
-  embedOrigin: "",
+  pageOrigin: "",
   allowedOrigins: "",
   jwks: "",
   jwksUri: "",
   mandatory: false,
+  operationsOnly: false,
   vendorValues: {},
 };
 
@@ -125,11 +128,12 @@ export const PluginServiceFormDialog = ({
       setForm({
         publicId: editing.public_id,
         baseUrl: editing.base_url ?? editing.compose_base_url ?? "",
-        embedOrigin: editing.embed_origin ?? "",
+        pageOrigin: editing.page_origin ?? "",
         allowedOrigins: editing.allowed_origins.join("\n"),
         jwks: editing.jwks ? JSON.stringify(editing.jwks, null, 2) : "",
         jwksUri: editing.jwks_uri ?? "",
         mandatory: editing.mandatory,
+        operationsOnly: editing.operations_only,
         vendorValues: {},
       });
     } else {
@@ -227,10 +231,11 @@ export const PluginServiceFormDialog = ({
       jwks,
       publicId: form.publicId.trim(),
       baseUrl: form.baseUrl.trim(),
-      embedOrigin: form.embedOrigin.trim(),
+      pageOrigin: form.pageOrigin.trim(),
       allowedOrigins: parseAllowedOrigins(form.allowedOrigins),
       jwksUri: form.jwksUri.trim(),
       mandatory: form.mandatory,
+      operationsOnly: form.operationsOnly,
       vendorValues: Object.fromEntries(
         Object.entries(form.vendorValues).map(([key, value]) => [key, value.trim()])
       ),
@@ -315,20 +320,20 @@ export const PluginServiceFormDialog = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="plugin-service-embed-origin">
-                  {t("pluginServices.embedOriginLabel")}
+                <Label htmlFor="plugin-service-page-origin">
+                  {t("pluginServices.pageOriginLabel")}
                 </Label>
                 <Input
-                  id="plugin-service-embed-origin"
-                  value={form.embedOrigin}
+                  id="plugin-service-page-origin"
+                  value={form.pageOrigin}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, embedOrigin: event.target.value }))
+                    setForm((prev) => ({ ...prev, pageOrigin: event.target.value }))
                   }
-                  placeholder={t("pluginServices.embedOriginPlaceholder")}
+                  placeholder={t("pluginServices.pageOriginPlaceholder")}
                   maxLength={1000}
                 />
                 <p className="text-muted-foreground text-xs">
-                  {t("pluginServices.embedOriginHelp")}
+                  {t("pluginServices.pageOriginHelp")}
                 </p>
               </div>
 
@@ -616,6 +621,27 @@ export const PluginServiceFormDialog = ({
               </div>
             </fieldset>
           )}
+
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label htmlFor="plugin-service-operations-only" className="font-medium">
+                  {t("pluginServices.operationsOnlyLabel")}
+                </Label>
+                <p className="text-muted-foreground text-xs">
+                  {t("pluginServices.operationsOnlyHelp")}{" "}
+                  {t("pluginServices.operationsMandatoryHelp")}
+                </p>
+              </div>
+              <Switch
+                id="plugin-service-operations-only"
+                checked={form.operationsOnly}
+                onCheckedChange={(checked) =>
+                  setForm((prev) => ({ ...prev, operationsOnly: Boolean(checked) }))
+                }
+              />
+            </div>
+          </div>
 
           <div className="space-y-2 rounded-md border border-amber-500/50 p-3">
             <div className="flex items-start justify-between gap-3">

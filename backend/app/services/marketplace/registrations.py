@@ -11,8 +11,8 @@ Every plug-in splits the same way, whatever published its listing
   Compose service onto the registration for the service it names, creating the row when there is
   none. Reference sectors are honoured only from the registry.
 * **The operator gives the deployment facts**: where the plug-in runs, the keys
-  its container signs with, its vendor values, the switch, the mandatory flag
-  and the origins. Through the ``plugins.manage`` endpoints, or in
+  its container signs with, its vendor values, the switch, the mandatory and
+  operations-only flags and the origins. Through the ``plugins.manage`` endpoints, or in
   ``PLUGIN_SERVICES_CONFIG``, a file a chart mounts, reconciled at boot. An
   entry's ``vendor_env`` names the environment variables holding its vendor
   values, which are sealed into the registration on each boot. An entry for a
@@ -100,12 +100,13 @@ AUDITED_FIELDS: tuple[str, ...] = (
     "kind",
     "publisher_id",
     "base_url",
-    "embed_origin",
+    "page_origin",
     "allowed_origins",
     "jwks",
     "jwks_uri",
     "scope_ceiling",
     "mandatory",
+    "operations_only",
     "enabled",
     "source",
     "image_digest",
@@ -135,7 +136,7 @@ __all__ = [
     "normalize_base_url",
     "normalize_jwks",
     "normalize_jwks_uri",
-    "normalize_embed_origin",
+    "normalize_page_origin",
     "normalize_origin",
     "normalize_origins",
     "normalize_public_id",
@@ -165,7 +166,7 @@ def _bad_request(code: str, detail: str) -> HTTPException:
 def row_browser_base(row: PluginServiceRegistration) -> Optional[str]:
     """Where a browser loads the plug-in's surfaces, or ``None`` for a plug-in that
     has no location yet."""
-    return row.embed_origin or row.base_url
+    return row.page_origin or row.base_url
 
 
 def _registry_managed() -> HTTPException:
@@ -237,7 +238,7 @@ def normalize_base_url(value: str) -> str:
     )
 
 
-def normalize_embed_origin(value: str) -> str:
+def normalize_page_origin(value: str) -> str:
     """Where a person's browser loads this plug-in's surfaces.
 
     Held to the same shape as ``base_url`` because it stands in for it: the
@@ -246,7 +247,7 @@ def normalize_embed_origin(value: str) -> str:
     path prefix can therefore say so here as well.
     """
     return _normalize_url_base(
-        value, code=PluginServiceMessages.INVALID_EMBED_ORIGIN, field="embed_origin"
+        value, code=PluginServiceMessages.INVALID_PAGE_ORIGIN, field="page_origin"
     )
 
 
@@ -482,11 +483,12 @@ async def create_registration(
     *,
     public_id: str,
     base_url: str,
-    embed_origin: Optional[str] = None,
+    page_origin: Optional[str] = None,
     allowed_origins: Optional[Iterable[str]] = None,
     jwks: Optional[dict] = None,
     jwks_uri: Optional[str] = None,
     mandatory: bool = False,
+    operations_only: bool = False,
     enabled: bool = True,
     vendor_values: Optional[dict[str, Optional[str]]] = None,
     actor_user_id: int | None = None,
@@ -500,8 +502,8 @@ async def create_registration(
     check_signing_configured()
     resolved_id = normalize_public_id(public_id)
     base_url = normalize_base_url(base_url)
-    embed = normalize_embed_origin(embed_origin) if embed_origin else None
-    origins = normalize_origins(allowed_origins, browser_base=embed or base_url)
+    page = normalize_page_origin(page_origin) if page_origin else None
+    origins = normalize_origins(allowed_origins, browser_base=page or base_url)
     key_set = normalize_jwks(jwks)
     key_uri = normalize_jwks_uri(jwks_uri, base_url=base_url)
 
@@ -516,11 +518,12 @@ async def create_registration(
         public_id=resolved_id,
         publisher_id=publisher.id,
         base_url=base_url,
-        embed_origin=embed,
+        page_origin=page,
         allowed_origins=origins,
         jwks=key_set,
         jwks_uri=key_uri,
         mandatory=mandatory,
+        operations_only=operations_only,
         enabled=enabled,
     )
     vendor_changed = await _apply_vendor(session, row, vendor_values)
@@ -568,24 +571,25 @@ async def update_registration(
     registration_id: int,
     *,
     base_url: Optional[str] = None,
-    embed_origin: Optional[str] = None,
+    page_origin: Optional[str] = None,
     allowed_origins: Optional[Iterable[str]] = None,
     jwks: Optional[dict] = None,
     jwks_uri: Optional[str] = None,
     mandatory: Optional[bool] = None,
+    operations_only: Optional[bool] = None,
     enabled: Optional[bool] = None,
     vendor_values: Optional[dict[str, Optional[str]]] = None,
     actor_user_id: int | None = None,
 ) -> PluginServiceRegistration:
     """Edit a registration's deployment facts.
 
-    An empty ``embed_origin`` clears it, putting both surfaces back on
+    An empty ``page_origin`` clears it, putting both surfaces back on
     ``base_url``; an empty ``jwks_uri`` clears it. A ``jwks_uri`` kept while
     ``base_url`` moves is checked against the new origin.
     """
     row = await get_registration(session, registration_id)
     before = audit_service.snapshot(row, AUDITED_FIELDS)
-    placement = (base_url, embed_origin, allowed_origins, jwks, jwks_uri)
+    placement = (base_url, page_origin, allowed_origins, jwks, jwks_uri)
     if row.kind == RegistrationKind.DECLARATIVE and any(
         value is not None for value in placement
     ):
@@ -596,13 +600,15 @@ async def update_registration(
     _write_placement(
         row,
         base_url=base_url,
-        embed_origin=embed_origin,
+        page_origin=page_origin,
         allowed_origins=allowed_origins,
         jwks=jwks,
         jwks_uri=jwks_uri,
     )
     if mandatory is not None:
         row.mandatory = mandatory
+    if operations_only is not None:
+        row.operations_only = operations_only
     if enabled is not None:
         row.enabled = enabled
     vendor_changed = await _apply_vendor(session, row, vendor_values)
@@ -628,7 +634,7 @@ async def update_registration(
         )
     await session.commit()
     await session.refresh(row)
-    # The kill switch, the mandatory flag, the keys and the origin list are all
+    # The kill switch, the flags, the keys and the origin list are all
     # read through a cached snapshot on the request path, so an operator's edit
     # drops it rather than waiting out its TTL.
     invalidate_registrations()
@@ -639,14 +645,14 @@ def _write_placement(
     row: PluginServiceRegistration,
     *,
     base_url: Optional[str],
-    embed_origin: Optional[str],
+    page_origin: Optional[str],
     allowed_origins: Optional[Iterable[str]],
     jwks: Optional[dict],
     jwks_uri: Optional[str],
 ) -> None:
     """Write where a plug-in runs, the origins that may frame it, and its keys.
 
-    ``None`` leaves a field as it is; an empty ``embed_origin``, ``jwks`` or
+    ``None`` leaves a field as it is; an empty ``page_origin``, ``jwks`` or
     ``jwks_uri`` clears it.
     """
     # Whether the origin list is still just the plug-in's own origin. An untouched
@@ -662,9 +668,9 @@ def _write_placement(
 
     if base_url is not None:
         row.base_url = normalize_base_url(base_url)
-    if embed_origin is not None:
-        cleaned = embed_origin.strip()
-        row.embed_origin = normalize_embed_origin(cleaned) if cleaned else None
+    if page_origin is not None:
+        cleaned = page_origin.strip()
+        row.page_origin = normalize_page_origin(cleaned) if cleaned else None
     new_base = row_browser_base(row)
     if allowed_origins is not None:
         if new_base is None:
@@ -816,7 +822,7 @@ async def connect_registration(
 
 #: What a listing's ``registration`` block may not name: where a container runs
 #: and the keys it signs with are the deployment's.
-_DEPLOYMENT_KEYS = ("base_url", "embed_origin", "jwks", "jwks_uri")
+_DEPLOYMENT_KEYS = ("base_url", "page_origin", "jwks", "jwks_uri")
 
 #: What a listing's Compose service may hold: YAML text, and the address the
 #: service answers at on the Compose network. A ``${`` opens one of the
@@ -1089,7 +1095,7 @@ async def apply_listing_registration(
     if registration.kind == RegistrationKind.DECLARATIVE:
         # Runs nowhere and signs nothing: a location and keys a container
         # version left behind go with it.
-        row.base_url = row.embed_origin = row.jwks = row.jwks_uri = None
+        row.base_url = row.page_origin = row.jwks = row.jwks_uri = None
         row.allowed_origins = []
     row.scope_ceiling = registration.scope_ceiling
     row.reference_sectors = registration.reference_sectors
@@ -1168,11 +1174,12 @@ class DeploymentFacts:
     """
 
     base_url: Optional[str] = None
-    embed_origin: Optional[str] = None
+    page_origin: Optional[str] = None
     jwks: Optional[dict] = None
     jwks_uri: Optional[str] = None
     allowed_origins: Optional[list[str]] = None
     mandatory: Optional[bool] = None
+    operations_only: Optional[bool] = None
     vendor_env: Any = None
 
     @property
@@ -1193,7 +1200,7 @@ def _deployment_facts(entry: dict[str, Any]) -> DeploymentFacts:
     declared_base = entry.get("base_url")
     base_url = normalize_base_url(str(declared_base)) if declared_base else None
     if base_url is None and any(
-        entry.get(key) for key in ("embed_origin", "jwks", "jwks_uri")
+        entry.get(key) for key in ("page_origin", "jwks", "jwks_uri")
     ):
         raise _bad_request(
             PluginServiceMessages.INVALID_BASE_URL,
@@ -1206,12 +1213,12 @@ def _deployment_facts(entry: dict[str, Any]) -> DeploymentFacts:
             f"allowed_origins must be a list of at most {_MAX_ORIGINS} origins",
         )
     origins = [normalize_origin(str(item)) for item in declared_origins]
-    declared_embed = entry.get("embed_origin")
+    declared_page = entry.get("page_origin")
     declared_uri = entry.get("jwks_uri")
     return DeploymentFacts(
         base_url=base_url,
-        embed_origin=(
-            normalize_embed_origin(str(declared_embed)) if declared_embed else None
+        page_origin=(
+            normalize_page_origin(str(declared_page)) if declared_page else None
         ),
         jwks=normalize_jwks(entry.get("jwks")),
         jwks_uri=(
@@ -1221,6 +1228,9 @@ def _deployment_facts(entry: dict[str, Any]) -> DeploymentFacts:
         ),
         allowed_origins=origins or None,
         mandatory=bool(entry["mandatory"]) if "mandatory" in entry else None,
+        operations_only=(
+            bool(entry["operations_only"]) if "operations_only" in entry else None
+        ),
         vendor_env=entry.get("vendor_env"),
     )
 
@@ -1260,11 +1270,12 @@ def apply_deployment_facts(
     def state() -> tuple:
         return (
             row.base_url,
-            row.embed_origin,
+            row.page_origin,
             list(row.allowed_origins or []),
             row.jwks,
             row.jwks_uri,
             row.mandatory,
+            row.operations_only,
         )
 
     was = state()
@@ -1274,13 +1285,15 @@ def apply_deployment_facts(
     _write_placement(
         row,
         base_url=facts.base_url,
-        embed_origin=(facts.embed_origin or "") if facts.places else None,
+        page_origin=(facts.page_origin or "") if facts.places else None,
         allowed_origins=facts.allowed_origins,
         jwks=(facts.jwks or {}) if facts.places else None,
         jwks_uri=(facts.jwks_uri or "") if facts.places else None,
     )
     if facts.mandatory is not None:
         row.mandatory = facts.mandatory
+    if facts.operations_only is not None:
+        row.operations_only = facts.operations_only
     vendor_moved = vendor_values_service.apply_vendor_env(
         row, facts.vendor_env, public_id=row.public_id
     )
@@ -1291,9 +1304,9 @@ async def reconcile_from_config(session: AsyncSession) -> ReconcileResult:
     """Apply the mounted config file's deployment facts to the registrations
     it names.
 
-    Each entry is ``{public_id}`` with any of ``base_url``, ``embed_origin``,
-    ``allowed_origins``, ``jwks``, ``jwks_uri``, ``mandatory`` and
-    ``vendor_env`` (vendor key → environment variable name, read and sealed on
+    Each entry is ``{public_id}`` with any of ``base_url``, ``page_origin``,
+    ``allowed_origins``, ``jwks``, ``jwks_uri``, ``mandatory``,
+    ``operations_only`` and ``vendor_env`` (vendor key → environment variable name, read and sealed on
     every pass). An entry naming what only the plug-in's listing states is
     refused. Database-only: this updates rows and stops. It creates none: an
     entry for a plug-in whose listing has not arrived waits, and the listing

@@ -4,9 +4,7 @@
  *
  * One `/me/*` list per tool, and one counts call. The lists are the community-wide
  * ones with the community boundary taken off — same rows, same filters, merged
- * server-side — so the rows they produce go through the same `lib/toolRows`
- * builder the community front page uses, and the query that lists each tool
- * comes from the same `TOOL_HOOKS` table its community-wide twin reads.
+ * server-side — so the rows they produce go through the `lib/toolRows` builder.
  */
 
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
@@ -57,8 +55,8 @@ export interface MyToolQuery {
 /**
  * One cross-community page of whatever tool My Tools is showing.
  *
- * Twin of `useCommunityToolRows`: all nine lists are asked so the fan-out never
- * changes shape, and every one but the selected tool is gated off.
+ * All nine lists are asked so the fan-out never changes shape, and every one
+ * but the selected tool is gated off.
  */
 export function useMyToolRows(tool: Tool, page: number, pageSize: number, view: MyToolQuery = {}) {
   const { t } = useTranslation("communityHome");
@@ -107,3 +105,69 @@ export function useMyToolRows(tool: Tool, page: number, pageSize: number, view: 
  */
 export const toolsWithContent = (counts: MyToolCountsResponse | undefined): Tool[] =>
   counts ? TOOLS.filter((tool) => (counts.counts[tool] ?? 0) > 0) : [];
+
+/** A changed row, with the tool it belongs to. */
+export interface ChangedToolRow {
+  tool: Tool;
+  row: ToolRow;
+}
+
+/** Each list's page and state as the queries hold them, by tool: read once
+ *  per change of answers, not once per render. Whether anything is loading or
+ *  failed is asked of the lists that were wanted, since the rest are off. */
+const pagesOf = (results: { data?: unknown; isLoading: boolean; isError: boolean }[]) => ({
+  pages: results.map((result) => result.data),
+  loading: results.map((result) => result.isLoading),
+  failed: results.map((result) => result.isError),
+});
+
+/**
+ * What changed most recently across several kinds of tool, from every
+ * community, newest first: each kind's own `/me/{tool}` list at its freshest,
+ * merged. Only the kinds the reader has anything of are asked — the counts
+ * say which — so a reader in no queue pays for no queue list.
+ */
+export function useRecentlyChangedTools(tools: readonly Tool[], limit: number) {
+  const { t } = useTranslation("communityHome");
+  const counts = useMyToolCounts();
+  const asked = useMemo(
+    () => toolsWithContent(counts.data).filter((tool) => tools.includes(tool)),
+    [counts.data, tools]
+  );
+
+  const params: MyToolListParams = {
+    page: 1,
+    page_size: limit,
+    sort_by: "updated_at",
+    sort_dir: "desc",
+  };
+  const { pages, loading, failed } = useQueries({
+    queries: TOOLS.map((candidate) => ({
+      ...TOOL_HOOKS[candidate].myListQuery(params),
+      enabled: asked.includes(candidate),
+    })),
+    combine: pagesOf,
+  });
+
+  const rows = useMemo<ChangedToolRow[]>(
+    () =>
+      asked
+        .flatMap((tool) =>
+          buildToolRows(tool, oneToolResponse(tool, pages[TOOLS.indexOf(tool)] as never), t, 0).map(
+            (row) => ({ tool, row })
+          )
+        )
+        .sort((a, b) => Date.parse(b.row.updatedAt) - Date.parse(a.row.updatedAt))
+        .slice(0, limit),
+    [asked, pages, t, limit]
+  );
+
+  // One list that could not load makes the merge a guess about what is
+  // newest, so it says so rather than showing the rest as if they were all.
+  const index = (tool: Tool) => TOOLS.indexOf(tool);
+  return {
+    rows,
+    isLoading: counts.isLoading || asked.some((tool) => loading[index(tool)]),
+    isError: counts.isError || asked.some((tool) => failed[index(tool)]),
+  };
+}

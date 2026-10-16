@@ -6,6 +6,7 @@ import {
   deleteCounter,
   duplicateCounter,
   getReadCounterGroupQueryKey,
+  getReadCounterQueryKey,
   resetAllCounters,
   resetCounter,
   setCounterCount,
@@ -20,11 +21,12 @@ import type {
   CounterSortRequest,
   CounterUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { invalidate, q } from "@/api/query-keys";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation, useOptimisticMutation } from "@/hooks/useApiMutation";
+import type { FieldSaveKind } from "@/hooks/useFieldSave";
 import {
   optimisticDecrement,
   optimisticIncrement,
@@ -33,6 +35,7 @@ import {
 } from "@/lib/counter-math";
 import { fireCounterStepFeedback } from "@/lib/counterStepFeedback";
 import { getErrorMessage } from "@/lib/errorMessage";
+import { collator } from "@/lib/intl";
 import { toast } from "@/lib/mascotToast";
 import type { MutationOpts } from "@/types/mutation";
 
@@ -189,9 +192,9 @@ const compareCounters =
     let cmp: number;
     if (field === "count") {
       cmp = Number(a.count) - Number(b.count);
-      if (cmp === 0) cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      if (cmp === 0) cmp = collator(undefined, { sensitivity: "base" }).compare(a.name, b.name);
     } else {
-      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      cmp = collator(undefined, { sensitivity: "base" }).compare(a.name, b.name);
     }
     if (cmp === 0) cmp = a.id - b.id;
     return direction === "desc" ? -cmp : cmp;
@@ -392,3 +395,15 @@ export const useSteppedCount = (groupId: number) => {
     cancelAll,
   };
 };
+
+export type SteppedCount = ReturnType<typeof useSteppedCount>;
+
+/** How a group's counters are saved field by field. */
+export const counterSaves = (groupId: number): FieldSaveKind<CounterRead, CounterUpdate> => ({
+  name: "counter",
+  readKey: (communityId, id) => getReadCounterQueryKey(communityId, id),
+  patch: (communityId, id, patch) => updateCounter(communityId, id, patch),
+  properties: PropertyTarget.counter,
+  lists: () => q.tool(Tool.counter_group, groupId),
+  itself: (id) => q.counter(id),
+});

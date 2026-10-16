@@ -15,7 +15,13 @@ from sqlmodel import select
 from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.event_outbox import EventOutbox
-from app.testing import create_resource_grant, create_tag, create_task, route_as
+from app.testing import (
+    create_comment,
+    create_resource_grant,
+    create_tag,
+    create_task,
+    route_as,
+)
 from app.db.request_context import SystemGuild, Unattributed
 
 
@@ -38,6 +44,43 @@ async def test_creating_a_task_is_captured(session, acting_user):
     assert row.action == "created"
     assert row.initiative_id == a.initiative.id
     assert row.changed == []
+    # Governed by the project it is in, as its search entry is.
+    assert (row.dac_tool, row.dac_id) == ("project", a.project.id)
+
+
+async def test_a_change_is_read_only_where_its_tool_can_be_opened(
+    session, acting_user, reading_as
+):
+    """A member of the initiative the project isn't shared with reads none of
+    its changes, a comment on its task included; its owner reads them all."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    unshared = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    task = await create_task(session, a.project)
+    comment = await create_comment(session, a.user, task=task)
+
+    stamped = {
+        (r.resource_type, r.resource_id): (r.dac_tool, r.dac_id)
+        for r in await _outbox(session, a.guild.id)
+    }
+    assert stamped[("comments", comment.id)] == ("project", a.project.id)
+
+    async def read_by(actor) -> set[tuple[str, int]]:
+        s = await reading_as(actor.user.id, a.guild.id)
+        rows = await s.exec(select(EventOutbox.resource_type, EventOutbox.resource_id))
+        await s.rollback()
+        return set(rows.all())
+
+    assert {("tasks", task.id), ("comments", comment.id)} <= await read_by(a)
+    assert not {
+        row for row in await read_by(unshared) if row[0] in ("tasks", "comments")
+    }
 
 
 async def test_updating_a_task_names_the_changed_columns(session, acting_user):

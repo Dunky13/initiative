@@ -9,7 +9,8 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useChipState } from "@/hooks/useSmartChips";
 import { communityPath } from "@/lib/communityUrl";
 import { entityRefTypeFor } from "@/lib/entityResolver";
-import { hitIcon } from "@/lib/searchResults";
+import { dateTimeFormat } from "@/lib/intl";
+import { entityIcon } from "@/lib/searchResults";
 import { chipAspect, chipDisplay, chipEntityType, chipRef } from "@/lib/smartChips";
 import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,8 @@ interface SmartChipProps {
  * twice. What the reading is ABOUT is one hover away: the card says what the
  * thing is called now, what kind of thing it is, and which fact this is.
  *
- * Reads from the page's one request rather than making its own, so a document
- * with thirty of these still makes a single call.
+ * Each chip asks for itself and the asks of one moment go out together, so a
+ * document with thirty of these still makes a single call.
  */
 export function SmartChip(props: SmartChipProps) {
   // The one chip that is acted on rather than read is drawn as what it is: a
@@ -56,7 +57,8 @@ function ReadingChip({ chipKind, entityId, fallback }: SmartChipProps) {
   const display = chipDisplay(
     fallback,
     state,
-    (iso) => new Date(iso).toLocaleDateString(i18n.language, { month: "short", day: "numeric" }),
+    (iso) =>
+      dateTimeFormat(i18n.language, { month: "short", day: "numeric" }).format(new Date(iso)),
     t("smartChips.none")
   );
 
@@ -69,13 +71,7 @@ function ReadingChip({ chipKind, entityId, fallback }: SmartChipProps) {
     void navigate({ to: communityPath(communityId, entityRefRoute(refType, entityId)) });
   };
 
-  const Icon = hitIcon({
-    entity_type: entityType,
-    entity_id: entityId,
-    initiative_id: null,
-    tool: null,
-    tool_id: null,
-  });
+  const Icon = entityIcon(entityType);
 
   return (
     <HoverCard openDelay={200} closeDelay={100}>

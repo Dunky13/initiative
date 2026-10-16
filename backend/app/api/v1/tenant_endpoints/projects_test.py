@@ -11,21 +11,25 @@ import json
 from dataclasses import replace
 from datetime import date, datetime, timezone
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import event
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.engine import Engine
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import Tool
 from app.models.platform.guild import CommunityRole
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.models.tenant.initiative import InitiativeRoleModel
+from app.models.tenant.favorite import Favorite
+from app.models.tenant.project_order import ProjectOrder
 from app.models.tenant.resource_grant import ResourceAccessLevel
-from app.models.tenant.task import TaskStatusCategory
+from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.services.tenant import tags as tags_service
 from app.testing.factories import (
-    create_comment,
     create_file,
     create_guild,
     create_relationship,
@@ -37,7 +41,7 @@ from app.testing.factories import (
     create_task,
     create_task_status,
 )
-from app.testing import checklist_items
+from app.testing import checklist_items, route_as, route_session_to_guild
 
 
 async def test_list_projects_as_admin_shows_all(
@@ -450,7 +454,7 @@ async def test_create_refuses_when_projects_are_switched_off(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "PROJECTS_NOT_ENABLED"
+    assert response.json() == Tool.project.disabled().body
 
 
 async def test_a_guild_admin_does_not_list_projects_of_a_switched_off_initiative(
@@ -540,7 +544,8 @@ async def test_create_from_template_shifts_task_dates(
     """Template task dates are re-anchored to the new project's start date.
 
     A task due three weeks after the template's start lands three weeks after
-    the new start, keeping its time of day.
+    the new start, keeping its time of day; one repeating on the 15th stays
+    on the 15th.
     """
     admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
     template = await create_project(
@@ -564,6 +569,13 @@ async def test_create_from_template_shifts_task_dates(
         template,
         title="Three weeks in",
         due_date=datetime(2026, 1, 26, 12, 0, tzinfo=timezone.utc),
+    )
+    await create_task(
+        session,
+        template,
+        title="Invoices",
+        due_date=datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=MONTHLY",
     )
 
     response = await client.post(
@@ -589,6 +601,9 @@ async def test_create_from_template_shifts_task_dates(
     )
     assert _as_utc(tasks["Three weeks in"]["due_date"]) == datetime(
         2026, 4, 27, 12, 0, tzinfo=timezone.utc
+    )
+    assert _as_utc(tasks["Invoices"]["due_date"]) == datetime(
+        2026, 4, 15, 12, 0, tzinfo=timezone.utc
     )
 
 
@@ -1141,6 +1156,44 @@ async def test_delete_project_without_permission_forbidden(
     )  # RLS hides the content resource from a non-initiative-member (404, not 403)
 
 
+async def test_a_favorite_and_an_order_are_their_owners_rows(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    """Neither another member who can edit the project nor the community's
+    admin reads or writes someone's favorite of it or their place for it in
+    the database."""
+    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
+    project = await create_project(session, a.initiative, a.user)
+    other = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    await create_resource_grant(
+        session, project, user=other.user, level=ResourceAccessLevel.write
+    )
+    admin = await acting_user(guild_role=CommunityRole.admin, guild=a.guild)
+    favorited = await client.post(
+        a.g(f"/projects/{project.id}/favorite"), headers=a.headers
+    )
+    assert favorited.status_code == 204, favorited.text
+    await route_session_to_guild(session, a.guild.id)
+    session.add(ProjectOrder(user_id=a.user.id, project_id=project.id, sort_order=1))
+    await session.commit()
+
+    for outsider in (other, admin):
+        asking = await role_session("app_user")
+        await route_as(asking, user_id=outsider.user.id, guild_id=a.guild.id)
+        for model in (Favorite, ProjectOrder):
+            assert (await asking.exec(select(model))).all() == [], model
+        asking.add(
+            Favorite(user_id=a.user.id, entity_type="project", entity_id=project.id)
+        )
+        with pytest.raises(DBAPIError, match="row-level security"):
+            await asking.flush()
+
+
 async def test_favoriting_a_project_lists_it_until_it_is_unfavorited(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
@@ -1466,51 +1519,14 @@ async def test_project_counts_by_initiative(
     assert response.json()["counts"]["project"] == {str(admin.initiative.id): 1}
 
 
-# ── Default view mode ─────────────────────────────────────────────────
-# Which view a project opens on is project configuration, not content: it takes
-# a project manager, the project owner, or a guild admin — the same bar as
-# pinning.
+# ── Pinning ───────────────────────────────────────────────────────────
 
 
-async def test_project_owner_sets_the_default_view(
+async def test_plain_write_edits_but_cannot_pin(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    a = await acting_user(
-        guild_role=CommunityRole.member, initiative=True, project=True
-    )
-
-    response = await client.patch(
-        a.g(f"/projects/{a.project.id}"),
-        json={"default_view_mode": "kanban"},
-        headers=a.headers,
-    )
-
-    assert response.status_code == 200
-    assert response.json()["default_view_mode"] == "kanban"
-
-
-async def test_guild_admin_sets_the_default_view(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    owner = await acting_user(
-        guild_role=CommunityRole.member, initiative=True, project=True
-    )
-    admin = await acting_user(guild_role=CommunityRole.admin, guild=owner.guild)
-
-    response = await client.patch(
-        admin.g(f"/projects/{owner.project.id}"),
-        json={"default_view_mode": "calendar"},
-        headers=admin.headers,
-    )
-
-    assert response.status_code == 200
-    assert response.json()["default_view_mode"] == "calendar"
-
-
-async def test_plain_write_edits_but_cannot_set_the_default_view(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """The escalation is per-field: renaming a project is still plain write."""
+    """Pinning is project configuration and the escalation is per-field:
+    renaming a project is still plain write."""
     owner = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
@@ -1525,9 +1541,7 @@ async def test_plain_write_edits_but_cannot_set_the_default_view(
     )
     url = editor.g(f"/projects/{owner.project.id}")
 
-    response = await client.patch(
-        url, json={"default_view_mode": "kanban"}, headers=editor.headers
-    )
+    response = await client.patch(url, json={"pinned": True}, headers=editor.headers)
     assert response.status_code == 403
     assert response.json()["detail"] == "PROJECT_CONFIGURE_REQUIRED"
 
@@ -1537,64 +1551,32 @@ async def test_plain_write_edits_but_cannot_set_the_default_view(
     assert response.status_code == 200
 
 
-async def test_default_view_rejects_an_unknown_mode(
+# ── Layouts travel with the project ───────────────────────────────────
+
+
+async def test_duplicating_a_project_copies_its_layouts(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
-
-    response = await client.patch(
-        a.g(f"/projects/{a.project.id}"),
-        json={"default_view_mode": "gantt"},
-        headers=a.headers,
-    )
-
-    assert response.status_code == 422
-
-
-# ── Presets travel with the project ───────────────────────────────────
-
-
-async def test_new_project_is_seeded_with_default_presets(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
-
-    created = await client.post(
-        a.g("/projects/"),
-        json={"name": "Fresh", "initiative_id": a.initiative.id},
-        headers=a.headers,
-    )
-    assert created.status_code == 201
-    project_id = created.json()["id"]
-
-    presets = await client.get(
-        a.g(f"/projects/{project_id}/filter-presets/"), headers=a.headers
-    )
-
-    assert [p["slug"] for p in presets.json()["items"]] == [
-        "all",
-        "incomplete",
-        "unassigned",
-        "mine",
-    ]
-
-
-async def test_duplicating_a_project_clones_its_presets(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    from app.services.tenant import filter_presets as filter_presets_service
-
-    a = await acting_user(
-        guild_role=CommunityRole.member, initiative=True, project=True
-    )
-    source_status = await create_task_status(session, project=a.project, name="Review")
-    seeded = await filter_presets_service.ensure_default_presets(session, a.project.id)
-    mine = next(p for p in seeded if p.slug == "mine")
-    mine.filters = {"status_ids": [source_status.id], "assignees": ["me"]}
-    session.add(mine)
-    await session.commit()
+    review = await create_task_status(session, a.project, name="Review")
+    url = a.g("/layouts/")
+    source = {"tool": "project", "tool_id": a.project.id}
+    in_review = {
+        "name": "In review",
+        "slug": "in-review",
+        "filters": {"status_ids": [review.id]},
+    }
+    columns = {
+        "kind": "table",
+        "definition": {"columns": ["title", "dueDate"], "presets": [in_review]},
+    }
+    for path, body in (("", columns), ("default", {"kind": "board"})):
+        saved = await client.put(
+            f"{url}{path}", params=source, json=body, headers=a.headers
+        )
+        assert saved.status_code == 200, saved.text
 
     duplicated = await client.post(
         a.g(f"/projects/{a.project.id}/duplicate"),
@@ -1602,35 +1584,26 @@ async def test_duplicating_a_project_clones_its_presets(
         headers=a.headers,
     )
     assert duplicated.status_code == 201
-    copy_id = duplicated.json()["id"]
+    copied = (
+        await client.get(
+            url,
+            params={"tool": "project", "tool_id": duplicated.json()["id"]},
+            headers=a.headers,
+        )
+    ).json()
 
-    presets = (
-        await client.get(a.g(f"/projects/{copy_id}/filter-presets/"), headers=a.headers)
-    ).json()["items"]
-    by_slug = {p["slug"]: p for p in presets}
-
-    assert set(by_slug) == {"all", "incomplete", "unassigned", "mine"}
-    assert by_slug["all"]["is_default"] is True
-    # The status id was translated to the copy's own status, not carried over.
-    cloned_status_ids = by_slug["mine"]["filters"]["status_ids"]
-    assert cloned_status_ids
-    assert source_status.id not in cloned_status_ids
-
-
-async def test_activity_feed_pages_newest_first(
-    client: AsyncClient, session: AsyncSession, acting_user
-) -> None:
-    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
-    task = await create_task(session, a.project, title="busy")
-    for n in range(3):
-        await create_comment(session, a.user, task=task, content=f"note {n}")
-
-    first = await client.get(
-        a.g(f"/projects/{a.project.id}/activity"),
-        params={"page_size": 2},
-        headers=a.headers,
-    )
-    assert first.status_code == 200, first.text
-    body = first.json()
-    assert [e["content"] for e in body["items"]] == ["note 2", "note 1"]
-    assert (body["total_count"], body["has_next"]) == (3, True)
+    layouts = {layout["kind"]: layout for layout in copied["layouts"]}
+    assert layouts["table"]["definition"]["columns"] == ["title", "dueDate"]
+    assert layouts["board"]["is_default"] is True
+    # A preset's statuses are the copy's own.
+    await route_session_to_guild(session, a.guild.id)
+    copied_review = (
+        await session.exec(
+            select(TaskStatus).where(
+                TaskStatus.project_id == duplicated.json()["id"],
+                TaskStatus.name == "Review",
+            )
+        )
+    ).one()
+    [preset] = layouts["table"]["definition"]["presets"]
+    assert preset["filters"]["status_ids"] == [copied_review.id]

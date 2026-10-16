@@ -156,6 +156,7 @@
     "greeting": "Hola <strong>{{name}}</strong>:",
     "levelRead": "de solo lectura",
     "levelReadWrite": "de lectura y escritura",
+    "levelModerate": "de moderación",
     "levelAdmin": "a los ajustes de la comunidad (administrador)",
     "levelSuperadmin": "a los ajustes de la comunidad (superadministrador)",
     "requested": {
@@ -259,6 +260,11 @@
       "subject": "Se va a desactivar la autenticación en dos pasos",
       "title": "Se va a desactivar la autenticación en dos pasos",
       "body": "La autenticación en dos pasos se desactivará el <strong>{{date}}</strong>. Hasta entonces tu cuenta sigue pidiendo un código al iniciar sesión, y puedes cancelarlo en Seguridad, dentro de tus ajustes."
+    },
+    "recoveryRegenerated": {
+      "subject": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "title": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "body": "Se creó un nuevo conjunto de códigos de recuperación para tu cuenta y los que tenías ya no funcionan. Guarda los nuevos en un lugar seguro."
     }
   },
   "passwordRemoved": {
@@ -369,7 +375,9 @@
       "direct_messages": "Mensajes directos",
       "connections": "Contactos",
       "jobs": "Exportaciones e importaciones",
-      "account": "Tu cuenta"
+      "account": "Tu cuenta",
+      "moderation": "Moderación",
+      "cases": "Casos"
     }
   },
   "signInCode": {
@@ -465,6 +473,38 @@
       "m10": "octubre",
       "m11": "noviembre",
       "m12": "diciembre"
+    }
+  },
+  "moderation": {
+    "removed": {
+      "subject": "Un moderador eliminó algo que escribiste",
+      "title": "Un moderador eliminó algo que escribiste",
+      "body": "Algo que escribiste incumplía las normas de esta comunidad y se retiró. El aviso en la aplicación explica el motivo."
+    },
+    "warned": {
+      "subject": "Un aviso de los moderadores de esta comunidad",
+      "title": "Un aviso de los moderadores de esta comunidad",
+      "body": "Los moderadores escribieron:<br><br>{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "subject": "Se abrió un caso nuevo",
+      "title": "Se abrió un caso nuevo",
+      "body": "Se acaba de abrir un caso donde atiendes casos y nadie lo ha tomado todavía. Ábrelo en Initiative para leerlo."
+    },
+    "replied": {
+      "subject": "Una respuesta en un caso que nadie ha tomado",
+      "title": "Una respuesta en un caso que nadie ha tomado",
+      "body": "Quien presentó un caso respondió en él y nadie lo ha tomado todavía. Ábrelo en Initiative para leerlo."
+    }
+  },
+  "identity": {
+    "fallbackText": "Si no has sido tú, cambia la contraseña de inmediato y avisa a quien gestiona este sitio.",
+    "linked": {
+      "subject": "Una nueva forma de iniciar sesión en tu cuenta",
+      "title": "Una nueva forma de iniciar sesión en tu cuenta",
+      "body": "Ahora se puede iniciar sesión en tu cuenta a través de <strong>{{provider}}</strong>, porque allí se comprobó una de tus direcciones."
     }
   }
 }

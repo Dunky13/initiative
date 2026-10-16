@@ -66,7 +66,7 @@ describe("PropertyFilter", () => {
     const addBtn = await screen.findByRole("button", { name: /Add property filter/i });
     expect(addBtn).toBeEnabled();
     await userEvent.click(addBtn);
-    expect(onChange).toHaveBeenCalledWith([{ property_id: 1, op: "ilike", value: null }]);
+    expect(onChange).toHaveBeenCalledWith([{ property_id: 1, op: "ilike", value: null }], []);
   });
 
   it("caps the number of filters at the configured max (default 5)", async () => {
@@ -112,13 +112,16 @@ describe("PropertyFilter", () => {
     await userEvent.click(propertyCombo);
     const hoursOption = await screen.findByRole("option", { name: "Hours" });
     await userEvent.click(hoursOption);
-    expect(onChange).toHaveBeenCalledWith([
-      {
-        property_id: 2,
-        op: "eq", // first op in opsForType(number) = "eq"
-        value: null, // defaultValueForDefinition(number, "eq") = null
-      },
-    ]);
+    expect(onChange).toHaveBeenCalledWith(
+      [
+        {
+          property_id: 2,
+          op: "eq", // first op in opsForType(number) = "eq"
+          value: null, // defaultValueForDefinition(number, "eq") = null
+        },
+      ],
+      []
+    );
   });
 
   it("emits {property_id, op, value} when the value changes", async () => {
@@ -130,7 +133,7 @@ describe("PropertyFilter", () => {
     // text PropertyInput.
     const valueInput = await screen.findByPlaceholderText(/Empty/i);
     await userEvent.type(valueInput, "x");
-    expect(onChange).toHaveBeenLastCalledWith([{ property_id: 1, op: "eq", value: "x" }]);
+    expect(onChange).toHaveBeenLastCalledWith([{ property_id: 1, op: "eq", value: "x" }], []);
   });
 
   it("removes a row when the remove button is clicked", async () => {
@@ -146,7 +149,7 @@ describe("PropertyFilter", () => {
     });
     expect(removeButtons).toHaveLength(2);
     await userEvent.click(removeButtons[0]);
-    expect(onChange).toHaveBeenCalledWith([{ property_id: 2, op: "eq", value: 1 }]);
+    expect(onChange).toHaveBeenCalledWith([{ property_id: 2, op: "eq", value: 1 }], []);
   });
 
   it("disables already-used property options in the property dropdown", async () => {
@@ -167,6 +170,28 @@ describe("PropertyFilter", () => {
     expect(ownerOption).not.toHaveAttribute("data-disabled");
   });
 
+  it("offers a plug-in's fields beside the properties, and emits them apart", async () => {
+    mockDefinitions([textDef]);
+    const onChange = vi.fn();
+    renderWithProviders(
+      <PropertyFilter
+        value={[{ property_id: 1, op: "ilike", value: "ada" }]}
+        plugins={{
+          fields: [{ id: "plugin:3:ci.issue", name: "Issue", type: PropertyType.number }],
+          value: [],
+        }}
+        onChange={onChange}
+      />
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /Add property filter/i }));
+
+    // The next field free is the plug-in's, compared as a number.
+    expect(onChange).toHaveBeenCalledWith(
+      [{ property_id: 1, op: "ilike", value: "ada" }],
+      [{ field: "plugin:3:ci.issue", op: "eq", value: null }]
+    );
+  });
+
   it("gives a multi_select filter a sensible default array value", async () => {
     const multiDef = buildPropertyDefinition({
       id: 10,
@@ -179,6 +204,6 @@ describe("PropertyFilter", () => {
     renderWithProviders(<PropertyFilter value={[]} onChange={onChange} />);
     const addBtn = await screen.findByRole("button", { name: /Add property filter/i });
     await userEvent.click(addBtn);
-    expect(onChange).toHaveBeenCalledWith([{ property_id: 10, op: "eq", value: [] }]);
+    expect(onChange).toHaveBeenCalledWith([{ property_id: 10, op: "eq", value: [] }], []);
   });
 });

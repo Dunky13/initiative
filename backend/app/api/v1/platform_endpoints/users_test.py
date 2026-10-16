@@ -8,6 +8,8 @@ Tests the user API endpoints at /api/v1/users including:
 - User deletion
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import text, update
 from sqlmodel import select
@@ -613,7 +615,11 @@ async def test_self_service_password_change_revokes_sessions_on_every_device(
     a = await acting_user()
     old_jwt = get_auth_token(a.user)
     phone = await session_service.create_session(
-        session, user_id=a.user.id, amr=["pwd"], satisfied_providers=[], device=True
+        session,
+        user_id=a.user.id,
+        amr=["pwd"],
+        satisfied_providers=[],
+        install_id=uuid.uuid4(),
     )
     phone_id = phone.session.id
     await session.commit()
@@ -2227,3 +2233,29 @@ async def test_member_search_narrows_to_one_initiative(client, acting_user):
     )
     assert refused.status_code == 403, refused.text
     assert refused.json()["detail"] == "INITIATIVE_NOT_A_MEMBER"
+
+
+async def test_the_shipped_home_layouts_are_on_the_shelf(client, session, acting_user):
+    """Home layouts reach a person the way packs do: through the catalog,
+    seeded from their manifests, each with the widgets it places."""
+    a = await acting_user()
+    for manifest in load_builtin_manifests():
+        if manifest.get("kind") == "home_layout":
+            await marketplace_catalog.upsert_listing(
+                session, manifest, source="builtin"
+            )
+    await session.commit()
+
+    response = await client.get("/api/v1/me/home-layouts", headers=a.headers)
+
+    assert response.status_code == 200
+    items = {item["public_id"]: item for item in response.json()["items"]}
+    assert {"core.home-week-ahead", "core.home-study-session"} <= set(items)
+    timer = next(
+        w for w in items["core.home-study-session"]["widgets"] if w["type"] == "clock"
+    )
+    assert timer["options"] == {"mode": "timer", "timer": {"duration": 1500}}
+    # Only home layouts: a pack is not a page.
+    assert not any(
+        public_id.startswith("core.") and "home" not in public_id for public_id in items
+    )

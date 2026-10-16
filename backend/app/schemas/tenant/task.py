@@ -3,7 +3,7 @@ from string import ascii_letters, digits
 from typing import Final, List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import AliasChoices, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from app.core.identity_boundary import GuildId, PersonId
 from app.schemas.base import (
@@ -17,7 +17,10 @@ from app.schemas.base import (
 from app.schemas.query import PageMeta
 from app.schemas.recurrence import OccurrenceScope, TaskRule
 
+from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.platform.user import PersonShape, UserPublic
+from app.schemas.tenant.evidence import EvidenceRead
+from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.initiative import InitiativeSummary
 from app.schemas.tenant.task_status import TaskStatusRead
 from app.schemas.tenant.tag import TagSummary
@@ -28,7 +31,7 @@ from app.schemas.tenant.property import (
 )
 
 from app.core.intake import Conversation, IntakeStream
-from app.models.tenant.task import TaskPriority
+from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.models.platform.user import UserStatus
 
 
@@ -139,9 +142,25 @@ class TaskCreate(TaskBase, PropertiesOnCreate):
 class TaskUpdate(PropertiesOnUpdate):
     title: Optional[TitleStr] = None
     description: Optional[RichMentionStr] = None
+    #: The description this ``description`` was written over. Given and no
+    #: longer the stored one, the update is refused with
+    #: ``DESCRIPTION_CHANGED``.
+    description_base: Optional[RichMentionStr] = None
     task_status_id: Optional[int] = None
+    #: Move the task to its project's column of this category (the nearest
+    #: one before it where the project has none), for a caller that knows
+    #: "done" but not which column that is. Ignored with ``task_status_id``,
+    #: and a task already in this category stays in its column.
+    status_category: Optional[TaskStatusCategory] = None
     priority: Optional[TaskPriority] = None
     assignee_ids: Optional[List[PersonId]] = None
+    #: People put on the task beside whoever is on it when the change is
+    #: written, rather than a list that replaces them all. Not with
+    #: ``assignee_ids``.
+    add_assignee_ids: Optional[List[PersonId]] = Field(default=None, max_length=100)
+    #: People taken off the task, leaving whoever else is on it. Not with
+    #: ``assignee_ids``.
+    remove_assignee_ids: Optional[List[PersonId]] = Field(default=None, max_length=100)
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     recurrence: Optional[TaskRule] = None
@@ -158,6 +177,17 @@ class TaskUpdate(PropertiesOnUpdate):
     scope: Optional[OccurrenceScope] = None
 
     _required = reject_null("title", "priority")
+
+    @model_validator(mode="after")
+    def _one_way_to_change_assignees(self) -> "TaskUpdate":
+        if self.assignee_ids is not None and (
+            self.add_assignee_ids is not None or self.remove_assignee_ids is not None
+        ):
+            raise ValueError(
+                "assignee_ids replaces the assignees; send it without "
+                "add_assignee_ids or remove_assignee_ids"
+            )
+        return self
 
 
 class TaskMoveRequest(SanitizedBaseModel):
@@ -216,6 +246,9 @@ class TaskRead(TaskBase):
     checklist_progress: Optional[ChecklistProgress] = None
     tags: List[TagSummary] = []
     properties: List[PropertySummary] = []
+    #: The values installed plug-ins show on the task, from the installs on
+    #: and placed in its initiative.
+    plugin_values: List[PluginValueSummary] = []
 
 
 class TaskListRead(TaskBase):
@@ -263,6 +296,9 @@ class TaskListRead(TaskBase):
     checklist_progress: Optional[ChecklistProgress] = None
     tags: List[TagSummary] = []
     properties: List[PropertySummary] = []
+    #: The values installed plug-ins show on the task, from the installs on
+    #: and placed in its initiative.
+    plugin_values: List[PluginValueSummary] = []
 
 
 class TaskListResponse(PageMeta):
@@ -297,6 +333,15 @@ class CaseMessageRead(SanitizedBaseModel):
     created_at: datetime
 
 
+class CaseEvidenceRead(EvidenceRead):
+    """A file attached to a case, and where in the conversation it came."""
+
+    #: The message it came with, where it came with one.
+    comment_id: Optional[int] = None
+    #: Sent by whoever filed the case.
+    from_requester: bool = False
+
+
 class TaskCaseRead(SanitizedBaseModel):
     """How an operations case was filed, for the people working it."""
 
@@ -306,7 +351,10 @@ class TaskCaseRead(SanitizedBaseModel):
     filer: Optional[UserPublic] = None
     #: What they called it when they filed it. The task's title is the team's.
     filer_subject: Optional[str] = None
-    #: What the stream allows with the filer: ``open``, ``staff_first`` (the
+    #: What it is about within its stream, as they chose: a support topic,
+    #: a security topic, ``appeal``.
+    topic: Optional[str] = None
+    #: What the case allows with the filer: ``open``, ``staff_first`` (the
     #: team speaks first), or ``none`` — also where nobody filed it.
     conversation: Conversation
     #: The binding's statuses that mean "waiting on the filer" and "being
@@ -316,3 +364,13 @@ class TaskCaseRead(SanitizedBaseModel):
     #: The conversation with the requester, oldest first. Kept apart from the
     #: task's comments: it is what they read, and only that.
     messages: List[CaseMessageRead] = Field(default_factory=list)
+    #: What was attached to the case, oldest first.
+    evidence: List[CaseEvidenceRead] = Field(default_factory=list)
+    #: The access grants asked for this case, newest first: who holds each,
+    #: on which community, at what level, and where it stands.
+    grants: List[AccessGrantRead] = Field(default_factory=list)
+    #: What the case is about, as it was opened with: the community, and the
+    #: kind and id of the thing in it, where it names them.
+    subject_community_id: Optional[int] = None
+    resource_type: Optional[str] = None
+    resource_id: Optional[int] = None

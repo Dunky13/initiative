@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, List, Optional, TYPE_CHECKING
+from typing import Annotated, Any, List, Optional, Sequence, TYPE_CHECKING
 
 from pydantic import AliasChoices, ConfigDict, Field
 
@@ -16,6 +16,7 @@ from app.schemas.tenant.property import (
     PropertySummary,
     annotated_properties,
 )
+from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.tag import TagSummary, annotated_tags
 from app.schemas.tenant.tool import ToolSummaryBase
 
@@ -90,6 +91,9 @@ class GalleryImageUpdate(PropertiesOnUpdate):
     title: Optional[TitleStr] = Field(default=None, max_length=255)
     caption: Optional[MentionStr] = Field(default=None, max_length=2000)
     tag_ids: Optional[List[int]] = None
+    #: The caption this was written over, as its writer saw it. Given, a
+    #: write over a caption that has since changed is refused.
+    caption_base: Optional[MentionStr] = None
 
 
 class GalleryImageBulkDelete(SanitizedBaseModel):
@@ -139,6 +143,10 @@ class GalleryImageRead(SanitizedBaseModel):
     version_count: int = 1
     tags: List[TagSummary] = Field(default_factory=list)
     properties: List[PropertySummary] = Field(default_factory=list)
+    #: The values installed plug-ins show on the picture, from the installs on
+    #: and placed in its gallery's initiative. Its own read carries them; a
+    #: wall of pictures does not.
+    plugin_values: List[PluginValueSummary] = Field(default_factory=list)
 
 
 class GalleryImageListResponse(PageMeta):
@@ -192,7 +200,10 @@ def gallery_cover(image: "GalleryImage | None") -> GalleryCover | None:
 
 
 def serialize_gallery_image(
-    image: "GalleryImage", *, context: ActorContext
+    image: "GalleryImage",
+    *,
+    context: ActorContext,
+    plugin_values: Sequence[PluginValueSummary] = (),
 ) -> GalleryImageRead:
     return GalleryImageRead(
         id=image.id,
@@ -212,4 +223,5 @@ def serialize_gallery_image(
         version_count=int(getattr(image, "version_count", 1)),
         tags=annotated_tags(image),
         properties=annotated_properties(image),
+        plugin_values=list(plugin_values),
     )

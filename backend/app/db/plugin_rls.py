@@ -65,14 +65,14 @@ def _scoped(resource: str) -> PluginTableAccess:
 _NOT_PLUGIN_SURFACE: frozenset[str] = frozenset(
     {
         # One person's own state: their ordering, favourites, read markers and
-        # ballots. (A project's filter presets are the project's own, seeded
-        # when it or its first task is created, so they follow ``projects``.)
+        # ballots.
         "project_orders",
-        "project_favorites",
         "post_reads",
         "post_poll_votes",
         # Run by the reminder scheduler.
         "event_reminder_dispatches",
+        # How an initiative lays its tools out, which its own managers set.
+        "tool_layouts",
         # Operations intake, which the community's own staff runs.
         "intake_bindings",
         "intake_cases",
@@ -108,6 +108,9 @@ _NAMED: dict[str, PluginTableAccess] = {
     # No scope of its own: a value takes the scope of the tool that governs the
     # row it is on, per row (``guild_ddl._property_values_scope``).
     "property_values": PluginTableAccess(PluginTableKind.scoped),
+    # An install's own values: on an item with the read scope of the tool that
+    # governs it, and on the install with none (``guild_ddl._plugin_metadata_scope``).
+    "plugin_metadata": PluginTableAccess(PluginTableKind.scoped),
     "initiative_members": _scoped("members"),
     "webhook_subscriptions": PluginTableAccess(PluginTableKind.subscriptions),
     **{
@@ -160,9 +163,16 @@ SEARCH_ENTRY_READ_SCOPE: dict[SearchEntityType, PluginScopeResource] = (
 
 #: Tables no plug-in reaches, whose policies refuse an installed plug-in outright
 #: beside the grant it does not hold: a reaction and the line queued about it
-#: are one person's gesture, and a recent view one person's history.
+#: are one person's gesture, a recent view one person's history, a star one
+#: person's pick, and an engagement level what many people's history adds up to.
 PLUGIN_REFUSED_TABLES: frozenset[str] = frozenset(
-    {"reactions", "reaction_digest_items", "recent_views"}
+    {
+        "reactions",
+        "reaction_digest_items",
+        "recent_views",
+        "favorites",
+        "engagement_levels",
+    }
 )
 
 

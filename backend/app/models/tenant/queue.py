@@ -16,11 +16,13 @@ from sqlmodel import Field, Relationship
 from app.core.tools import Tool
 from app.models.tenant._mixins import (
     ArchiveMixin,
-    attach_actions,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
+    HoldMixin,
     ListingProvenanceMixin,
     SoftDeleteMixin,
+    attach_actions,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -30,6 +32,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class Queue(
+    HoldMixin,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
     ArchiveMixin,
@@ -93,7 +97,7 @@ class Queue(
     )
 
 
-class QueueItem(CreatedByMixin, SoftDeleteMixin, table=True):
+class QueueItem(HoldMixin, CreatedByMixin, SoftDeleteMixin, table=True):
     """Standalone entry in a queue (character, creature, etc.)."""
 
     __tablename__ = "queue_items"

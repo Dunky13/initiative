@@ -19,10 +19,12 @@
   },
   "actions": {
     "addTask": "Aufgabe hinzufügen",
-    "addFile": "Datei hinzufügen"
+    "addFile": "Datei hinzufügen",
+    "reportSecurityProblem": "Sicherheitsproblem melden",
+    "sendFeedback": "Feedback senden"
   },
   "pages": {
-    "myTasks": "Meine Aufgaben",
+    "home": "Startseite",
     "myCalendar": "Mein Kalender",
     "myTickets": "Meine Tickets",
     "myTools": "Meine Werkzeuge",

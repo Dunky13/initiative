@@ -32,30 +32,15 @@
       "in_progress": "En curso",
       "done": "Hecho"
     },
-    "customFilters": "Filtros personalizados",
     "modified": "modificado",
-    "saveAsPreset": "Guardar preajuste",
-    "updatePreset": "Actualizar «{{name}}»",
-    "presetName": "Nombre del preajuste",
-    "presetNamePlaceholder": "p. ej. Trabajo bloqueado",
-    "presetSetDefault": "Convertir en el predeterminado del proyecto",
-    "presetSaved": "Preajuste guardado",
-    "presetUnavailable": "Ese preajuste ya no existe en este proyecto, así que se muestra el predeterminado.",
-    "presetSaveError": "No se pudo guardar el preajuste",
-    "presetDeleteError": "No se pudo eliminar el preajuste",
-    "preset": "Preajuste",
-    "resetToPreset": "Restablecer al preajuste",
     "assignedToMe": "Asignadas a mí",
     "unassigned": "Sin asignar",
     "archived": "Archivadas",
-    "statusCategory": "Categoría de estado",
-    "savePresetDescription": "Todos los miembros de este proyecto verán este preajuste.",
-    "seededPresets": {
-      "all": "Todas",
-      "incomplete": "Pendientes",
-      "unassigned": "Sin asignar",
-      "mine": "Mías"
-    }
+    "statusCategory": "Categoría de estado"
+  },
+  "layouts": {
+    "label": "Diseño",
+    "loadError": "No se pudieron cargar los diseños de este proyecto."
   },
   "createDialog": {
     "title": "Crear proyecto",
@@ -104,23 +89,13 @@
     "closeOthers": "Cerrar las demás",
     "closeAll": "Cerrar todas"
   },
-  "favorite": {
-    "remove": "Quitar de favoritos",
-    "add": "Agregar a favoritos"
-  },
   "pin": {
     "pinned": "Proyecto fijado",
     "unpin": "Desfijar proyecto",
     "pin": "Fijar proyecto"
   },
   "taskComposer": {
-    "title": "Crear tarea",
-    "description": "Agrega trabajo por hacer.",
-    "archivedMessage": "Este proyecto está archivado. Desarchívalo para agregar nuevas tareas.",
-    "noWriteAccess": "Necesitas acceso de escritura para crear tareas.",
-    "saving": "Guardando…",
-    "createTask": "Crear tarea",
-    "createError": "No se pudo crear la tarea."
+    "createTask": "Crear tarea"
   },
   "assignee": {
     "emptyMessage": "Invita a miembros de la iniciativa para asignar tareas.",
@@ -173,19 +148,7 @@
     "unknownError": "Error desconocido"
   },
   "settings": {
-    "tabTaskStatuses": "Estados de tarea",
-    "tabFilterPresets": "Vistas",
-    "filterPresetsHeading": "Preajustes de filtro",
-    "filterPresetsDescription": "Conjuntos de filtros guardados que cualquiera del proyecto puede elegir. El predeterminado es con el que se abre el proyecto.",
-    "defaultView": "Vista predeterminada",
-    "defaultViewHint": "Con qué vista de tareas se abre este proyecto para quien no haya elegido una.",
-    "presetDefaultColumn": "Predeterminado",
-    "presetNoFilters": "Sin filtros: todas las tareas",
-    "deletePreset": "Eliminar preajuste",
-    "deletePresetConfirm": "¿Eliminar «{{name}}»? Quien lo use volverá al predeterminado del proyecto.",
-    "noPresets": "Aún no hay preajustes.",
-    "presetMoveUp": "Subir el preajuste",
-    "presetMoveDown": "Bajar el preajuste"
+    "tabTaskStatuses": "Estados de tarea"
   },
   "files": {
     "newFile": "Nuevo archivo"
@@ -195,7 +158,7 @@
     "addTask": "Agregar tarea",
     "enterTooltip": "Presiona 'enter' para crear una nueva tarea",
     "viewTable": "Tabla",
-    "viewKanban": "Kanban",
+    "viewBoard": "Tablero",
     "viewCalendar": "Calendario",
     "archiveDoneTasks": "Archivar tareas terminadas",
     "archiveDialogTitle": "Archivar tareas",
@@ -225,7 +188,6 @@
     "taskColumn": "Tarea",
     "tagGroup": "Etiqueta",
     "untagged": "Sin etiqueta",
-    "commentsColumn": "Comentarios",
     "statusColumn": "Estado",
     "filterPlaceholder": "Filtrar tareas...",
     "reorderTask": "Reordenar tarea",
@@ -316,14 +278,19 @@
     "archivedOn": "Archivado el {{date}}",
     "reorder": "Reordenar proyecto"
   },
-  "activitySidebar": {
-    "title": "Actividad del proyecto",
-    "activity": "Actividad",
-    "expand": "Expandir barra de actividad",
-    "collapse": "Contraer barra de actividad",
-    "loading": "Cargando actividad…",
-    "noComments": "Aún no hay comentarios.",
-    "commentedOn": "comentó en",
-    "loadMore": "Cargar más"
+  "presets": {
+    "label": "Ajustes predefinidos",
+    "incomplete": "Pendientes",
+    "unassigned": "Sin asignar",
+    "mine": "Mías"
+  },
+  "quickActions": {
+    "assignToMe": "Asignarme",
+    "assignToMeFor": "Asignarme {{title}}",
+    "unassignMe": "Quitarme",
+    "assigned": "Asignada a ti",
+    "unassigned": "Ya no estás en esta tarea",
+    "assignError": "No se pudo cambiar quién está en esta tarea.",
+    "moveTo": "Mover a"
   }
 }

@@ -178,6 +178,27 @@ async def test_accepting_an_invite_answers_with_the_member_tier_guild(
         assert body[field] is None, f"{field} must not reach a plain member"
 
 
+async def test_an_invite_with_no_use_limit_takes_any_number_of_people(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    from app.services.platform import guilds as guilds_service
+
+    admin = await acting_user(guild_role=CommunityRole.admin)
+    _, code = await guilds_service.create_guild_invite(
+        session, guild_id=admin.guild.id, created_by=admin.user.id, max_uses=None
+    )
+    await session.commit()
+
+    for _ in range(2):
+        joiner = await acting_user("member")
+        resp = await client.post(
+            "/api/v1/communities/invite/accept",
+            headers=joiner.headers,
+            json={"code": code},
+        )
+        assert resp.status_code == 200, resp.text
+
+
 async def test_creating_a_guild_seats_its_creator_and_leaves_the_icon_unset(
     client: AsyncClient, acting_user
 ):
@@ -826,12 +847,14 @@ async def test_an_admin_lists_and_revokes_the_guilds_invites(
 
     admin = await acting_user(guild_role=CommunityRole.admin)
     invites = [
-        await guild_service.create_guild_invite(
-            session,
-            guild_id=admin.guild.id,
-            created_by=admin.user.id,
-            max_uses=max_uses,
-        )
+        (
+            await guild_service.create_guild_invite(
+                session,
+                guild_id=admin.guild.id,
+                created_by=admin.user.id,
+                max_uses=max_uses,
+            )
+        )[0]
         for max_uses in (1, 2)
     ]
     await session.commit()
@@ -856,16 +879,16 @@ async def test_get_invite_status_valid(
 
     guild = await create_guild(session, name="Test Guild")
     admin = await acting_user(guild_role=CommunityRole.admin, guild=guild)
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=admin.user.id, max_uses=5
     )
     await session.commit()
 
-    response = await client.get(f"/api/v1/communities/invite/{invite.code}")
+    response = await client.get(f"/api/v1/communities/invite/{invite_code}")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == invite.code
+    assert data["code"] == invite_code
     assert data["community_id"] == guild.id
     assert data["community_name"] == "Test Guild"
     assert data["is_valid"] is True
@@ -895,7 +918,7 @@ async def test_accept_invite_blocked_when_guild_full(
 
     # Minted while the seat is still free, redeemed after it is taken — minting
     # itself is capacity-gated, so the order here is the scenario.
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=creator.id, max_uses=5
     )
     await acting_user(guild_role=CommunityRole.member, guild=guild)
@@ -904,7 +927,7 @@ async def test_accept_invite_blocked_when_guild_full(
     response = await client.post(
         "/api/v1/communities/invite/accept",
         headers=invitee.headers,
-        json={"code": invite.code},
+        json={"code": invite_code},
     )
 
     assert response.status_code == 403
@@ -934,14 +957,14 @@ async def test_an_invite_that_cannot_be_redeemed_is_refused(
         code = "invalidcode123"
     else:
         admin = await acting_user(guild_role=CommunityRole.admin)
-        invite = await guild_service.create_guild_invite(
+        invite, invite_code = await guild_service.create_guild_invite(
             session,
             guild_id=admin.guild.id,
             created_by=admin.user.id,
             expires_at=datetime.now(timezone.utc) - timedelta(days=1),
         )
         await session.commit()
-        code = invite.code
+        code = invite_code
 
     response = await client.post(
         "/api/v1/communities/invite/accept",
@@ -1040,7 +1063,7 @@ async def guild_gate_world(session: AsyncSession, acting_user, monkeypatch):
     admin = await acting_user(guild_role=CommunityRole.admin)
     member = await acting_user(guild_role=CommunityRole.member, guild=admin.guild)
     stranger = await acting_user(guild_role=CommunityRole.admin)
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=admin.guild.id, created_by=admin.user.id
     )
     await session.commit()

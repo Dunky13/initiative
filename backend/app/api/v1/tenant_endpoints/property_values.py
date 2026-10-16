@@ -9,9 +9,11 @@ moment it exists.
 
 from typing import Annotated, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
+from app.core.errors import CodedError
+from app.core.tools import KINDS
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -55,7 +57,8 @@ async def set_properties(
     current_user: ActorUserDep,
     guild_context: PropertiesWrite,
 ) -> List[PropertySummary]:
-    """Replace the custom property values on one tool or sub-tool.
+    """Replace the custom property values on one tool or sub-tool, or with
+    ``merge`` write only the ones named and leave the rest.
 
     Requires write on the tool that governs it: a tool itself, or the tool a
     sub-tool sits in (a task's project, an event's calendar). Each value's
@@ -76,12 +79,7 @@ async def set_properties(
             await session.exec(select(spec.model).where(spec.model.id == entity_id))
         ).one_or_none()
         if row is None:
-            # Every sub-tool's code follows the one spelling: TASK_NOT_FOUND,
-            # CALENDAR_EVENT_NOT_FOUND, WIKI_PAGE_NOT_FOUND, …
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"{target.value.upper()}_NOT_FOUND",
-            )
+            raise KINDS[target.value].not_found()
         governing = await resource_access.load_authorized(
             session,
             spec.tool,
@@ -94,9 +92,13 @@ async def set_properties(
 
     try:
         await properties_service.set_values(
-            session, row, payload.values, initiative_id=initiative_id
+            session,
+            row,
+            payload.values,
+            initiative_id=initiative_id,
+            removed=payload.removed if payload.merge else None,
         )
-    except HTTPException:
+    except (HTTPException, CodedError):
         await session.rollback()
         raise
     await session.commit()

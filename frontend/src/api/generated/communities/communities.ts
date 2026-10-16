@@ -30,8 +30,10 @@ import type {
   CommunityCreate,
   CommunityDeletionRequest,
   CommunityEntitlementsRead,
+  CommunityGuestExtend,
   CommunityInviteAcceptRequest,
   CommunityInviteCreate,
+  CommunityInviteCreated,
   CommunityInviteRead,
   CommunityInviteStatus,
   CommunityMembershipUpdate,
@@ -857,7 +859,7 @@ export const createCommunityInvite = (
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<CommunityInviteRead>(
+  return apiMutator<CommunityInviteCreated>(
     {
       url: `/api/v1/communities/${communityId}/invites`,
       method: "POST",
@@ -2262,6 +2264,10 @@ export function useGetCommunityAuthSettings<
  * keeps an admin from locking the community behind a sign-in they have not
  * completed.
  *
+ * The guests' requirement takes the same shapes and is asked of guests
+ * instead of the members' one. Its writer is not a guest, so is not asked
+ * to meet it.
+ *
  * Nobody is signed out by a change. Existing API
  * keys are left alone when keys are refused, so accepting them again
  * restores them. Every notification answer only narrows what the deployment
@@ -2632,6 +2638,190 @@ export const useUpdateCommunityMembership = <
   TContext
 > => {
   return useMutation(getUpdateCommunityMembershipMutationOptions(options), queryClient);
+};
+/**
+ * Set when a guest's time ends, ``days`` from now. On the system engine,
+ * as a role change is: the guild role holds no UPDATE on memberships.
+ * @summary Extend Community Guest
+ */
+export const extendCommunityGuest = (
+  communityId: number,
+  userId: number,
+  communityGuestExtend: BodyType<CommunityGuestExtend>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    {
+      url: `/api/v1/communities/${communityId}/guests/${userId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: communityGuestExtend,
+      signal,
+    },
+    options
+  );
+};
+
+export const getExtendCommunityGuestMutationKey = () => ["extendCommunityGuest"] as const;
+
+export const getExtendCommunityGuestMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extendCommunityGuest>>,
+    TError,
+    ExtendCommunityGuestMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extendCommunityGuest>>,
+  TError,
+  ExtendCommunityGuestMutationVariables,
+  TContext
+> => {
+  const mutationKey = getExtendCommunityGuestMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extendCommunityGuest>>,
+    ExtendCommunityGuestMutationVariables
+  > = (props) => {
+    const { communityId, userId, data } = props ?? {};
+
+    return extendCommunityGuest(communityId, userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtendCommunityGuestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extendCommunityGuest>>
+>;
+export type ExtendCommunityGuestMutationBody = BodyType<CommunityGuestExtend>;
+export type ExtendCommunityGuestMutationError = ErrorType<HTTPValidationError>;
+export type ExtendCommunityGuestMutationVariables = {
+  communityId: number;
+  userId: number;
+  data: BodyType<CommunityGuestExtend>;
+};
+
+/**
+ * @summary Extend Community Guest
+ */
+export const useExtendCommunityGuest = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof extendCommunityGuest>>,
+      TError,
+      ExtendCommunityGuestMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof extendCommunityGuest>>,
+  TError,
+  ExtendCommunityGuestMutationVariables,
+  TContext
+> => {
+  return useMutation(getExtendCommunityGuestMutationOptions(options), queryClient);
+};
+/**
+ * Make a guest a member. They take a seat, so the member cap applies.
+ * @summary Make Community Guest A Member
+ */
+export const makeCommunityGuestAMember = (
+  communityId: number,
+  userId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/communities/${communityId}/guests/${userId}/member`, method: "POST", signal },
+    options
+  );
+};
+
+export const getMakeCommunityGuestAMemberMutationKey = () => ["makeCommunityGuestAMember"] as const;
+
+export const getMakeCommunityGuestAMemberMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof makeCommunityGuestAMember>>,
+    TError,
+    MakeCommunityGuestAMemberMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof makeCommunityGuestAMember>>,
+  TError,
+  MakeCommunityGuestAMemberMutationVariables,
+  TContext
+> => {
+  const mutationKey = getMakeCommunityGuestAMemberMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof makeCommunityGuestAMember>>,
+    MakeCommunityGuestAMemberMutationVariables
+  > = (props) => {
+    const { communityId, userId } = props ?? {};
+
+    return makeCommunityGuestAMember(communityId, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MakeCommunityGuestAMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof makeCommunityGuestAMember>>
+>;
+
+export type MakeCommunityGuestAMemberMutationError = ErrorType<HTTPValidationError>;
+export type MakeCommunityGuestAMemberMutationVariables = { communityId: number; userId: number };
+
+/**
+ * @summary Make Community Guest A Member
+ */
+export const useMakeCommunityGuestAMember = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof makeCommunityGuestAMember>>,
+      TError,
+      MakeCommunityGuestAMemberMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof makeCommunityGuestAMember>>,
+  TError,
+  MakeCommunityGuestAMemberMutationVariables,
+  TContext
+> => {
+  return useMutation(getMakeCommunityGuestAMemberMutationOptions(options), queryClient);
 };
 /**
  * Set what a member is called in this community, or clear it. Guild admin

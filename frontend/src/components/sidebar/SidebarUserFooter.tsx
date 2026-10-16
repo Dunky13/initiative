@@ -5,10 +5,11 @@ import {
   ChevronRight,
   CircleQuestionMark,
   CircleUserRound,
+  House,
   LogOut,
+  MessageSquareHeart,
   Settings,
   ShieldCheck,
-  SquareCheckBig,
   UserCog,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -19,6 +20,7 @@ import { ThoughtBubble } from "@/components/icons/ThoughtBubble";
 import { AppearanceMenuItems, ThemeIcon } from "@/components/ModeToggle";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { AskForHelpButton } from "@/components/support/AskForHelpButton";
+import { openFeedback, useFeedbackOffered } from "@/components/tickets/FeedbackSheet";
 import { UserHandle } from "@/components/UserHandle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,7 @@ import { PresenceMenuItems } from "@/components/user/PresenceMenuItems";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { isStatusEmpty, StatusBubble, StatusEditor } from "@/components/user/ProfileStatus";
 import { VersionDialog } from "@/components/VersionDialog";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { docsUrl } from "@/lib/links";
 import { presenceLabelKey } from "@/lib/presence";
 import { decorationSrc, resolveDecoration } from "@/lib/profileDecorations";
@@ -74,11 +76,12 @@ export const SidebarUserFooter = ({
   refreshUser,
 }: SidebarUserFooterProps) => {
   const { t } = useTranslation(["nav", "profiles", "common"]);
+  const feedbackOffered = useFeedbackOffered();
   // A fly-out needs a hover to open it and room beside the menu to land in.
   // A phone has neither — the sidebar is already a sheet against the edge — so
   // there the choices behind one are drilled into: the menu becomes that list,
   // and a back row climbs out again.
-  const isMobile = useIsMobile();
+  const isMobile = !atLeast(useWidthClass(), "md");
   const [drill, setDrill] = useState<"presence" | "theme" | null>(null);
   const displayName = getUserDisplayName(user);
   const handle = getUrlHandle(user);
@@ -302,7 +305,7 @@ export const SidebarUserFooter = ({
                       ) : null}
                       <DropdownMenuItem asChild>
                         <Link to="/">
-                          <SquareCheckBig className="h-4 w-4" /> {t("myTasks")}
+                          <House className="h-4 w-4" /> {t("home")}
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
@@ -310,6 +313,11 @@ export const SidebarUserFooter = ({
                           <UserCog className="h-4 w-4" /> {t("mySettings")}
                         </Link>
                       </DropdownMenuItem>
+                      {feedbackOffered ? (
+                        <DropdownMenuItem onSelect={openFeedback}>
+                          <MessageSquareHeart className="h-4 w-4" /> {t("sendFeedback")}
+                        </DropdownMenuItem>
+                      ) : null}
                       {isMobile ? (
                         <DropdownMenuItem
                           onSelect={(event) => {

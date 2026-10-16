@@ -47,7 +47,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBillingCatalog } from "@/hooks/useBillingCatalog";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useLandOnStarter, useOpenDirectory, useSeedStarter } from "@/hooks/useFinishPendingStart";
+import {
+  firstHomeContext,
+  useLandOnStarter,
+  useOpenDirectory,
+  useSeedFirstHome,
+  useSeedStarter,
+} from "@/hooks/useFinishPendingStart";
 import { useServer } from "@/hooks/useServer";
 import { useWizard } from "@/hooks/useWizard";
 import { EMPTY_PLACE, nearOfPlace } from "@/lib/directoryNear";
@@ -154,6 +160,7 @@ const StartSteps = ({
   const catalog = useBillingCatalog(plansShown ? billing?.url : null);
   const seed = useSeedStarter();
   const landOn = useLandOnStarter();
+  const seedHome = useSeedFirstHome();
   const openDirectory = useOpenDirectory();
 
   const [answers, setAnswers] = useState<StartAnswers>(() => {
@@ -354,12 +361,14 @@ const StartSteps = ({
     void (async () => {
       await clearStart();
       if (final.path === "join") {
+        seedHome("join");
         if (user.age_below_minimum_at) commit("underAge");
         else await leave(() => openDirectory(final.categories, nearOfPlace(final.near)));
         return;
       }
       if (final.path === "invite") {
         const communityId = invite.status?.community_id;
+        seedHome("invite", { communityId });
         await leave(() =>
           communityId
             ? navigate({ to: "/c/$communityId", params: { communityId: String(communityId) } })
@@ -374,6 +383,7 @@ const StartSteps = ({
         return;
       }
       const starter = await seed(community.id, final);
+      seedHome(final.path, firstHomeContext(community.id, starter));
       if (final.path === "personal") {
         await leave(() => landOn(community.id, starter));
         return;

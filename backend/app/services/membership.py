@@ -15,13 +15,23 @@ clause needs a session already routed into the right guild (``RLSSessionDep``
 or ``set_rls_context``), exactly like any other guild-scoped query.
 """
 
-from typing import Iterable
+from typing import Any, Iterable
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import GuildMembership, CommunityRole
 from app.db.authorization import standing_arg
+
+
+def live_membership_clause(membership: Any = GuildMembership) -> ColumnElement[bool]:
+    """``authorization.live_membership`` for a query over ``GuildMembership``
+    (or an alias of it): a member's row always, and a guest's while it admits
+    them."""
+    return or_(
+        membership.guest_until.is_(None),
+        func.guest_membership_live(membership.guest_until, membership.role),
+    )
 
 
 # ---------------------------------------------------------------------------

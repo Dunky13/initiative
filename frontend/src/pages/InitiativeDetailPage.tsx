@@ -97,8 +97,8 @@ export const InitiativeDetailPage = ({ tool }: InitiativeDetailPageProps = {}) =
 
   // The path names the tab, so it is shareable and survives a reload. A tool
   // this member can't view falls back to the first one they can, rather than
-  // dead-ending a bookmark the moment a permission changes — the same rule the
-  // community home applies to its `?tool=` param.
+  // dead-ending a bookmark the moment a permission changes — the same rule My
+  // Tools applies to its `?tool=` param.
   const activeTab =
     tool && availableTabs.includes(tool) ? tool : (availableTabs[0] ?? Tool.project);
 
@@ -204,7 +204,12 @@ export const InitiativeDetailPage = ({ tool }: InitiativeDetailPageProps = {}) =
                 <span aria-hidden>·</span>
               </>
             ) : null}
-            <InitiativeMembersPeek initiativeId={initiative.id} memberCount={memberCount} />
+            {/* A guest given items here reads its headcount and nobody in it. */}
+            {initiative.can.roster ? (
+              <InitiativeMembersPeek initiativeId={initiative.id} memberCount={memberCount} />
+            ) : (
+              <span>{t("detail.member", { count: memberCount })}</span>
+            )}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">

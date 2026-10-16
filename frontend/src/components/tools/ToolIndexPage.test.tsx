@@ -20,6 +20,7 @@ import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import i18n from "@/__tests__/helpers/i18n-test";
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
+import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
   type ToolIndexEntry,
@@ -341,6 +342,45 @@ describe("the queue index page", () => {
   });
 });
 
+describe("the gallery index page", () => {
+  it("draws the newest four pictures of a gallery nobody chose a cover for", async () => {
+    const preview = [1, 2, 3, 4].map((id) => ({
+      image_id: id,
+      file_url: `/uploads/picture-${id}.png`,
+      thumbnail_url: null,
+      width: null,
+      height: null,
+    }));
+    // The list carries the pictures only when it is asked for them.
+    server.use(
+      communityHttp.get(`/${toolRouteSegment(Tool.gallery)}/`, ({ request }) => {
+        const asked = new URL(request.url).searchParams.get("include_preview") === "true";
+        return HttpResponse.json({
+          items: [
+            {
+              ...row(Tool.gallery, { id: 1, name: "Store assets" }),
+              preview: asked ? preview : [],
+            },
+          ],
+          total_count: 1,
+          page: 1,
+          page_size: 100,
+          has_next: false,
+        });
+      })
+    );
+
+    const { container } = renderIndex(Tool.gallery);
+    await screen.findByText("Store assets");
+
+    await waitFor(() =>
+      expect(
+        Array.from(container.querySelectorAll("img"), (img) => img.getAttribute("src"))
+      ).toEqual(preview.map((picture) => expect.stringContaining(picture.file_url)))
+    );
+  });
+});
+
 describe("the tool index page's templates", () => {
   it.each(CASES.filter(({ tool }) => toolViews(tool).includes("templates")))(
     "$tool keeps its templates in a view of their own, with nothing to create there",
@@ -470,10 +510,14 @@ describe("the file index page", () => {
   const files = (key: string) => translate(key, { ns: "files" });
 
   /** Rendered in the layout a reader left the list in. */
-  const renderIn = (layout: "grid" | "list" | "tags", canCreate = true) => {
+  const renderIn = (
+    layout: "grid" | "list" | "tags",
+    canCreate = true,
+    kept: Record<string, unknown> = {}
+  ) => {
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, {
-      items: { [`${Tool.file}:view-mode`]: layout },
+      items: { [`${Tool.file}:view-mode`]: layout, ...kept },
     });
     return renderPage(
       () => (
@@ -514,6 +558,7 @@ describe("the file index page", () => {
 
   it("opens its table newest first, and remembers another order for the next visit", async () => {
     const requests = stubList(Tool.file, [row(Tool.file, { id: 1, name: "Brief" })]);
+    const kept = keepViewPreferences();
 
     const first = renderIn("list");
     await screen.findByText("Brief");
@@ -524,9 +569,11 @@ describe("the file index page", () => {
     await waitFor(() => expect(requests.at(-1)?.get("sort_by")).toBe("name"));
     expect(requests.at(-1)?.get("sort_dir")).toBe("asc");
 
+    // It is kept for the reader, on any device.
     first.unmount();
+    await waitFor(() => expect(Object.keys(kept)).toHaveLength(1));
     requests.length = 0;
-    renderIn("list");
+    renderIn("list", true, kept);
     await waitFor(() => expect(requests.length).toBeGreaterThan(0));
     expect(requests.at(-1)?.get("sort_by")).toBe("name");
     expect(requests.at(-1)?.get("sort_dir")).toBe("asc");
@@ -641,7 +688,8 @@ describe("the project index page", () => {
     renderIndex(Tool.project);
     await screen.findByText("Barovia Arc");
 
-    expect(requests.at(-1)?.get("sort_by")).toBe("name");
+    // The order this device kept carries over into the reader's view.
+    await waitFor(() => expect(requests.at(-1)?.get("sort_by")).toBe("name"));
     expect(handles()).toHaveLength(0);
   });
 });

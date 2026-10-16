@@ -40,10 +40,10 @@ import hmac
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, select
+from sqlmodel import col, delete, select
 
 from app.core import metrics
 from app.db import cohorts
@@ -78,6 +78,11 @@ from app.services.tenant.plugin_channels import (
 )
 from app.services.tenant.plugin_config import without_tokens
 from app.db.request_context import SystemGuild
+
+if TYPE_CHECKING:
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.services.tenant.expiry import Expiring
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +262,15 @@ def _remember(install_id: int, delivery_id: str) -> Any:
     ).returning(PluginHookDelivery.delivery_id)
 
 
+async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
+    """Forget the delivery ids whose 24 hours have run out."""
+    await session.exec(
+        delete(PluginHookDelivery).where(  # type: ignore[arg-type]
+            col(PluginHookDelivery.expires_at) < expiring.now
+        )
+    )
+
+
 async def _record(install: plugin_installs.IndexedInstall, delivery_id: str) -> None:
     async with cohorts.system_session(install.guild_id) as session:
         await set_rls_context(session, SystemGuild(install.guild_id))
@@ -405,7 +419,11 @@ async def receive(public_id: str, headers: Mapping[str, str], body: bytes) -> in
     current = _route_spec(webhooks["route"])
     if current is not None:
         specs.add(current)
-    installs = await _routed(registration.listing_uid, specs, headers, body)
+    installs = [
+        install
+        for install in await _routed(registration.listing_uid, specs, headers, body)
+        if registration.serves(install.guild_id)
+    ]
     if not installs:
         metrics.plugin_hook_deliveries.labels(outcome="unroutable").inc()
         return 202

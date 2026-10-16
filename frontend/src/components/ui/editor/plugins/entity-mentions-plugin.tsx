@@ -81,7 +81,8 @@ export function EntityMentionsPlugin({
     () => (queryString === null ? null : activeMention(`${ENTITY_TRIGGER}${queryString}`)),
     [queryString]
   );
-  const debouncedQuery = useDebouncedValue(active?.query ?? "", 200);
+  const typedQuery = active?.query ?? "";
+  const debouncedQuery = useDebouncedValue(typedQuery, 200);
 
   // The one lookup every picker in the app goes through, narrowed to this
   // initiative's live work. A bare `#` names nothing yet, so it opens on what
@@ -110,6 +111,8 @@ export function EntityMentionsPlugin({
   // Nothing held over from a query the reader has moved on from is offered to
   // the keyboard, so Enter cannot land on a thing they have stopped naming.
   const options = useMemo(() => (stale ? [] : shown), [stale, shown]);
+  // Until the debounce catches up, the answer on screen is for an earlier query.
+  const searching = isFetching || debouncedQuery !== typedQuery;
 
   const onSelectOption = useCallback(
     (option: EntityOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -191,11 +194,11 @@ export function EntityMentionsPlugin({
                       // at an unchanged caret with no idea why.
                       <div className="space-y-1 px-3 py-2">
                         <p className="text-muted-foreground text-sm">
-                          {isFetching
+                          {searching
                             ? t("references.searching")
-                            : t("references.noMatches", { query: active?.query ?? "" })}
+                            : t("references.noMatches", { query: typedQuery })}
                         </p>
-                        {!isFetching && (
+                        {!searching && (
                           <p className="text-muted-foreground/80 text-xs">
                             {t("references.scopeHint")}
                           </p>

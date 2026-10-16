@@ -288,10 +288,19 @@ async def test_removing_it_asks_for_the_password_and_the_factor(
 
 
 async def test_regenerating_retires_the_previous_codes(
-    client: AsyncClient, session: AsyncSession
+    client: AsyncClient, session: AsyncSession, monkeypatch
 ):
+    from app.core.email_i18n import email_t
+    from app.services.platform import email_outbox
+
     user, _secret, codes = await _enrol(client, session, "regen@example.com")
     headers = get_auth_headers(user)
+    letters: list[str] = []
+
+    async def _letter(user, pieces, **_) -> None:
+        letters.append(pieces.subject)
+
+    monkeypatch.setattr(email_outbox, "enqueue_account_letter", _letter)
 
     fresh = await client.post(
         "/api/v1/auth/recovery-codes/regenerate",
@@ -300,6 +309,10 @@ async def test_regenerating_retires_the_previous_codes(
     )
     assert fresh.status_code == 200
     assert set(fresh.json()["codes"]).isdisjoint(codes)
+    # Its holder is told, with the way to say it wasn't them.
+    assert letters == [
+        email_t("secondFactor.recoveryRegenerated.subject", "en", escape=False)
+    ]
 
     challenge = (await _sign_in(client, "regen@example.com")).json()["challenge"]
     stale = await client.post(

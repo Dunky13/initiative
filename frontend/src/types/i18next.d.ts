@@ -18,10 +18,12 @@ import type errors from "../../public/locales/en/errors.json";
 import type exports_ from "../../public/locales/en/exports.json";
 import type files from "../../public/locales/en/files.json";
 import type galleries from "../../public/locales/en/galleries.json";
+import type home from "../../public/locales/en/home.json";
 import type importsNs from "../../public/locales/en/imports.json";
 import type initiatives from "../../public/locales/en/initiatives.json";
 import type intake from "../../public/locales/en/intake.json";
 import type landing from "../../public/locales/en/landing.json";
+import type layouts from "../../public/locales/en/layouts.json";
 import type legal from "../../public/locales/en/legal.json";
 import type marketplace from "../../public/locales/en/marketplace.json";
 import type messages from "../../public/locales/en/messages.json";
@@ -63,6 +65,7 @@ declare module "i18next" {
       comments: typeof comments;
       messages: typeof messages;
       myTools: typeof myTools;
+      home: typeof home;
       contacts: typeof contacts;
       files: typeof files;
       editor: typeof editor;
@@ -76,6 +79,7 @@ declare module "i18next" {
       intake: typeof intake;
       moderation: typeof moderation;
       landing: typeof landing;
+      layouts: typeof layouts;
       legal: typeof legal;
       nav: typeof nav;
       profiles: typeof profiles;

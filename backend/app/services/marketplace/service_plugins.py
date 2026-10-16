@@ -5,7 +5,8 @@ A ``service`` plug-in is a container the operator runs, or declarative: one with
 expressions in the manifest. One plug-in is never both. Its definition is the
 widest thing this build accepts from a publisher, so it is also the strictest:
 a closed vocabulary, an explicit cap on every string, list and opaque body, and
-unknown keys dropped rather than stored (an endpoint's refused).
+unknown keys dropped rather than stored (an endpoint's and a part's nodes are
+refused).
 
 Three properties hold by construction, and they are why a definition is safe to
 keep and later hand to a guild:
@@ -47,6 +48,7 @@ from app.services.marketplace.manifest_values import (
     check_identifier,
     check_single_line,
     check_json_size,
+    check_metadata_key,
     check_path,
     check_public_id,
     check_uid,
@@ -71,12 +73,16 @@ __all__ = [
     "WIDGET_BINDABLE_DIRECTIONS",
     "CONNECTION_SCOPES",
     "DIRECTIONS",
-    "EMBED_CAPABILITIES",
+    "PAGE_CAPABILITIES",
     "FEATURES",
     "FEATURE_BLOCKS",
+    "FIELD_KINDS",
     "FIELD_TYPES",
+    "ITEM_KINDS",
     "PARAM_TYPES",
+    "PART_NODES",
     "SURFACE_SCOPES",
+    "TONES",
     "plugin_widget_type",
     "is_admin_only",
     "normalize_service_plugin_definition",
@@ -182,7 +188,7 @@ def is_admin_only(declared: Any) -> bool:
     return declared.get(RETIRED_AUDIENCE_TERM) == "guild_admin"
 
 
-#: Browser features an embedded surface may ask its frame for.
+#: Browser features a page may ask its frame for.
 #:
 #: A frame is granted nothing it did not name here, so a plug-in that says nothing
 #: gets a frame with every one of these denied. The vocabulary is closed for the
@@ -191,13 +197,13 @@ def is_admin_only(declared: Any) -> bool:
 #:
 #: These are Permissions-Policy feature names, and what a manifest asks for is
 #: what a guild admin is shown at install. ``payment`` is deliberately not
-#: namable — an embedded surface takes no money, and the platform processes
-#: payments on its own pages.
-EMBED_CAPABILITIES: frozenset[str] = contract.enum("embedCapability")
+#: namable — a page takes no money, and the platform processes
+#: payments on its own screens.
+PAGE_CAPABILITIES: frozenset[str] = contract.enum("pageCapability")
 
-#: No surface has a use for the whole vocabulary at once; a manifest reaching
-#: this many is describing something other than an embedded page.
-MAX_EMBED_CAPABILITIES = contract.cap("embedCapabilities")
+#: No page has a use for the whole vocabulary at once; a manifest reaching
+#: this many is describing something other than a page.
+MAX_PAGE_CAPABILITIES = contract.cap("pageCapabilities")
 
 #: Protocol versions this build speaks to a plug-in service. A manifest naming a
 #: newer one is refused by name — the version floor (`min_app_version`) is how a
@@ -278,6 +284,45 @@ ENDPOINT_TERMS: frozenset[str] = frozenset(contract.fields("endpoint"))
 #: The endpoint terms that make it declarative.
 DECLARATIVE_ENDPOINT_TERMS = ("request", "steps", "map", "errors")
 
+#: What a plug-in adds to items: the item kinds a field, part or action is
+#: offered on, what a field's value is and so how it is drawn, and the tones a
+#: badge or a part's text may take.
+ITEM_KINDS: frozenset[str] = contract.enum("itemKind")
+FIELD_KINDS: frozenset[str] = contract.enum("fieldKind")
+TONES: frozenset[str] = contract.enum("tone")
+
+
+def _node_props(name: str) -> dict[str, Any]:
+    return contract.objects()[name]["properties"]["props"]["properties"]
+
+
+#: The components a part is built from, by the ``type`` each node names, and
+#: the contract object that describes it.
+PART_NODES: dict[str, str] = {
+    contract.objects()[entry["ref"]]["properties"]["type"]["const"]: entry["ref"]
+    for entry in contract.objects()["partNode"]["oneOf"]
+}
+#: Every term a node may carry, and every prop. The contract closes both, so
+#: a misspelt term is refused rather than dropped.
+PART_NODE_TERMS: dict[str, frozenset[str]] = {
+    node_type: frozenset(contract.fields(name))
+    for node_type, name in PART_NODES.items()
+}
+PART_NODE_PROPS: dict[str, frozenset[str]] = {
+    node_type: frozenset(_node_props(name)) for node_type, name in PART_NODES.items()
+}
+#: The nodes that hold others.
+PART_CONTAINERS: frozenset[str] = frozenset(
+    node_type for node_type, terms in PART_NODE_TERMS.items() if "children" in terms
+)
+STACK_DIRECTIONS: frozenset[str] = frozenset(
+    _node_props(PART_NODES["stack"])["direction"]["enum"]
+)
+STACK_GAPS: frozenset[str] = frozenset(_node_props(PART_NODES["stack"])["gap"]["enum"])
+BUTTON_VARIANTS: frozenset[str] = frozenset(
+    _node_props(PART_NODES["button"])["variant"]["enum"]
+)
+
 # --- caps -------------------------------------------------------------------
 #
 # Counts first, then bodies. Together they bound what one published version can
@@ -312,7 +357,13 @@ MAX_PARAMS_PER_ENDPOINT = contract.cap("paramsPerEndpoint")
 #: purpose: describing an answer is cheaper than asking for one, and a plug-in
 #: that returns a dozen fields is ordinary where one taking a dozen is not.
 MAX_RETURNS_PER_ENDPOINT = contract.cap("returnsPerEndpoint")
-MAX_EMBEDS = contract.cap("embeds")
+MAX_PAGES = contract.cap("pages")
+MAX_FIELDS = contract.cap("fields")
+MAX_PARTS = contract.cap("parts")
+MAX_ACTIONS = contract.cap("actions")
+#: How large one part's tree may be: its nodes, and how deep they nest.
+MAX_PART_NODES = contract.cap("partNodes")
+MAX_PART_DEPTH = contract.cap("partDepth")
 #: How many countries a minimum age may name, and the oldest it may ask for.
 MAX_MINIMUM_AGE_REGIONS = contract.cap("minimumAgeRegions")
 MAX_MINIMUM_AGE_YEARS = contract.cap("minimumAgeYears")
@@ -347,7 +398,7 @@ MAX_IDENTITY_KEY_PARTS = contract.cap("identityKeyParts")
 MAX_HOSTS = contract.cap("hosts")
 MAX_HOST_LENGTH = contract.cap("hostLength")
 MAX_STEPS = contract.cap("steps")
-MAX_PAGES = contract.cap("pages")
+MAX_PAGES_READ = contract.cap("maxPages")
 MAX_PER_PAGE = contract.cap("perPage")
 MAX_REQUEST_QUERY = contract.cap("requestQuery")
 MAX_REQUEST_HEADERS = contract.cap("requestHeaders")
@@ -1319,7 +1370,10 @@ def _paging(
     cleaned: dict[str, Any] = {
         "kind": kind,
         "max_pages": _page_count(
-            paging.get("max_pages"), what=f"{what}.max_pages", low=1, high=MAX_PAGES
+            paging.get("max_pages"),
+            what=f"{what}.max_pages",
+            low=1,
+            high=MAX_PAGES_READ,
         ),
         "on_limit": on_limit,
     }
@@ -2311,7 +2365,7 @@ def _sample_data(raw: Any, *, sources: list[str], what: str) -> dict[str, Any]:
 def _scopes(raw: Any, *, what: str) -> list[str]:
     """Where a surface asked to render, canonically.
 
-    Absent means ``["community"]`` — the placement every embed had before there was
+    Absent means ``["community"]`` — the placement every page had before there was
     anywhere else to put one. Sorted and de-duplicated, so re-publishing the
     same manifest produces the same document.
     """
@@ -2337,47 +2391,281 @@ def _capabilities(raw: Any, *, what: str) -> list[str]:
     """
     if raw is None:
         return []
-    declared = require_list(raw, f"{what} capabilities", MAX_EMBED_CAPABILITIES)
+    declared = require_list(raw, f"{what} capabilities", MAX_PAGE_CAPABILITIES)
     capabilities: set[str] = set()
     for entry in declared:
         # Typed before it is looked up: set membership is defined only for a
         # hashable value, so a name is what this compares.
-        if not isinstance(entry, str) or entry not in EMBED_CAPABILITIES:
+        if not isinstance(entry, str) or entry not in PAGE_CAPABILITIES:
             fail(
-                f"{what}: {entry!r} is not a capability a surface may request "
-                f"(one of {', '.join(sorted(EMBED_CAPABILITIES))})"
+                f"{what}: {entry!r} is not a capability a page may request "
+                f"(one of {', '.join(sorted(PAGE_CAPABILITIES))})"
             )
         capabilities.add(entry)
     return sorted(capabilities)
 
 
-def _embed(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
-    embed = require_mapping(raw, "embed")
-    embed_id = check_identifier(embed.get("id"), what="embed id")
-    what = f"embed {embed_id!r}"
+def _page(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
+    page = require_mapping(raw, "page")
+    page_id = check_identifier(page.get("id"), what="page id")
+    what = f"page {page_id!r}"
 
-    _refuse_retired_audience(embed, what=what)
+    _refuse_retired_audience(page, what=what)
 
-    admin_only = _admin_only(embed, what=what)
+    admin_only = _admin_only(page, what=what)
 
     cleaned: dict[str, Any] = {
-        "id": embed_id,
-        "path": check_path(embed.get("path"), what=f"{what} path"),
-        "scopes": _scopes(embed.get("scopes"), what=what),
+        "id": page_id,
+        "path": check_path(page.get("path"), what=f"{what} path"),
+        "scopes": _scopes(page.get("scopes"), what=what),
         # Stored whichever way it was declared, so every pinned surface answers
         # the question the same way.
         "admin_only": admin_only,
-        "name": _label(embed.get("name"), what=what),
+        "name": _label(page.get("name"), what=what),
     }
-    capabilities = _capabilities(embed.get("capabilities"), what=what)
+    capabilities = _capabilities(page.get("capabilities"), what=what)
     if capabilities:
         cleaned["capabilities"] = capabilities
+    requires = _requires(page.get("requires"), connection_ids=connection_ids, what=what)
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+# --- what a plug-in adds to items -------------------------------------------
+
+
+def _item_kinds(raw: Any, *, what: str) -> list[str]:
+    """The item kinds something is offered on, canonically: at least one, each
+    named once, stored sorted."""
+    declared = require_list(raw, f"{what} on", len(ITEM_KINDS))
+    kinds: set[str] = set()
+    for entry in declared:
+        if not isinstance(entry, str) or entry not in ITEM_KINDS:
+            fail(
+                f"{what}: {entry!r} is not an item kind "
+                f"(one of {', '.join(sorted(ITEM_KINDS))})"
+            )
+        if entry in kinds:
+            fail(f"{what}: on names {entry!r} twice")
+        kinds.add(entry)
+    if not kinds:
+        fail(f"{what}: on names no item kind")
+    return sorted(kinds)
+
+
+def _choice(raw: Any, allowed: frozenset[str], *, what: str) -> str:
+    if not isinstance(raw, str) or raw not in allowed:
+        fail(f"{what} must be one of {', '.join(sorted(allowed))}")
+    return raw
+
+
+def _flag(raw: Any, *, what: str) -> bool:
+    if not isinstance(raw, bool):
+        fail(f"{what} must be true or false")
+    return raw
+
+
+def _item_field(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
+    field = require_mapping(raw, "field")
+    key = check_metadata_key(field.get("key"), what="field key")
+    what = f"field {key!r}"
+    kind = field.get("kind")
+    if not isinstance(kind, str) or kind not in FIELD_KINDS:
+        fail(f"{what}: kind must be one of {', '.join(sorted(FIELD_KINDS))}")
+    cleaned: dict[str, Any] = {
+        "key": key,
+        "name": _label(field.get("name"), what=what),
+        "kind": kind,
+        "on": _item_kinds(field.get("on"), what=what),
+    }
+    description = localized_text(field.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    if field.get("tone") is not None:
+        cleaned["tone"] = _choice(field["tone"], TONES, what=f"{what} tone")
     requires = _requires(
-        embed.get("requires"), connection_ids=connection_ids, what=what
+        field.get("requires"), connection_ids=connection_ids, what=what
     )
     if requires is not None:
         cleaned["requires"] = requires
     return cleaned
+
+
+def _action(
+    raw: Any,
+    *,
+    service_public_id: str,
+    endpoints: dict[str, dict[str, Any]],
+    connection_ids: set[str],
+) -> dict[str, Any]:
+    action = require_mapping(raw, "action")
+    action_id = check_identifier(action.get("id"), what="action id")
+    what = f"action {action_id!r}"
+    endpoint = _endpoint_id(
+        action.get("endpoint"),
+        service_public_id=service_public_id,
+        what=f"{what} endpoint",
+    )
+    # Initiative runs the endpoint for the reader, and only a write does
+    # something on their behalf. A run sends no params, so the endpoint can ask
+    # for none it needs.
+    declared = endpoints.get(endpoint)
+    if declared is None:
+        fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
+    if declared["direction"] != "write":
+        fail(f"{what}: names {endpoint!r}, which is a {declared['direction']} endpoint")
+    if any(param.get("required") is True for param in declared.get("params") or ()):
+        fail(f"{what}: names {endpoint!r}, which needs params an action cannot send")
+    cleaned: dict[str, Any] = {
+        "id": action_id,
+        "name": _label(action.get("name"), what=what),
+        "endpoint": endpoint,
+        "on": _item_kinds(action.get("on"), what=what),
+        # Stored whichever way it was declared, so every pinned action answers
+        # where it is offered the same way.
+        "menu": False
+        if action.get("menu") is None
+        else _flag(action["menu"], what=f"{what} menu"),
+    }
+    if action.get("confirm") is not None:
+        cleaned["confirm"] = _label(action["confirm"], what=f"{what} confirm")
+    requires = _requires(
+        action.get("requires"), connection_ids=connection_ids, what=what
+    )
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+def _part(
+    raw: Any,
+    *,
+    field_kinds: dict[str, list[str]],
+    action_kinds: dict[str, list[str]],
+    connection_ids: set[str],
+) -> dict[str, Any]:
+    part = require_mapping(raw, "part")
+    part_id = check_identifier(part.get("id"), what="part id")
+    what = f"part {part_id!r}"
+    on = _item_kinds(part.get("on"), what=what)
+    cleaned: dict[str, Any] = {
+        "id": part_id,
+        "name": _label(part.get("name"), what=what),
+        "on": on,
+        "tree": _part_tree(
+            part.get("tree"),
+            on=on,
+            field_kinds=field_kinds,
+            action_kinds=action_kinds,
+            what=what,
+        ),
+    }
+    description = localized_text(part.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    requires = _requires(part.get("requires"), connection_ids=connection_ids, what=what)
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+def _part_tree(
+    raw: Any,
+    *,
+    on: list[str],
+    field_kinds: dict[str, list[str]],
+    action_kinds: dict[str, list[str]],
+    what: str,
+) -> dict[str, Any]:
+    """A part's tree of Initiative's components, each node closed, at most
+    :data:`MAX_PART_NODES` of them and :data:`MAX_PART_DEPTH` deep.
+
+    A field or a button names something this manifest declares, offered on
+    every item kind the part is: one that is not would draw nothing there.
+    """
+    count = 0
+
+    def offered(name: str, kinds: list[str] | None, *, block: str, at: str) -> None:
+        if kinds is None:
+            fail(f"{at}: names {name!r}, which is not one of this manifest's {block}")
+        missing = [kind for kind in on if kind not in kinds]
+        if missing:
+            fail(
+                f"{at}: {name!r} is not offered on {', '.join(missing)}, "
+                "where this part is"
+            )
+
+    def node(raw: Any, depth: int, at: str) -> dict[str, Any]:
+        nonlocal count
+        count += 1
+        if count > MAX_PART_NODES:
+            fail(f"{what}: tree holds more than {MAX_PART_NODES} nodes")
+        if depth > MAX_PART_DEPTH:
+            fail(f"{at}: nested deeper than {MAX_PART_DEPTH}")
+        entry = require_mapping(raw, at)
+        node_type = entry.get("type")
+        if not isinstance(node_type, str) or node_type not in PART_NODES:
+            fail(f"{at}: type must be one of {', '.join(sorted(PART_NODES))}")
+        unknown = sorted(set(entry) - PART_NODE_TERMS[node_type])
+        if unknown:
+            fail(f"{at}: {', '.join(map(repr, unknown))} is not a term of the contract")
+        props = require_mapping(entry.get("props", {}), f"{at} props")
+        unknown = sorted(set(props) - PART_NODE_PROPS[node_type])
+        if unknown:
+            fail(
+                f"{at}: {', '.join(map(repr, unknown))} is not a prop of a {node_type}"
+            )
+
+        kept: dict[str, Any] = {}
+        if node_type == "section":
+            if props.get("title") is not None:
+                kept["title"] = _label(props["title"], what=f"{at} title")
+            if props.get("collapsed") is not None:
+                kept["collapsed"] = _flag(props["collapsed"], what=f"{at} collapsed")
+        elif node_type == "stack":
+            if props.get("direction") is not None:
+                kept["direction"] = _choice(
+                    props["direction"], STACK_DIRECTIONS, what=f"{at} direction"
+                )
+            if props.get("gap") is not None:
+                kept["gap"] = _choice(props["gap"], STACK_GAPS, what=f"{at} gap")
+            if props.get("wrap") is not None:
+                kept["wrap"] = _flag(props["wrap"], what=f"{at} wrap")
+        elif node_type in ("field", "value"):
+            key = check_metadata_key(props.get("field"), what=f"{at} field")
+            offered(key, field_kinds.get(key), block="fields", at=at)
+            kept["field"] = key
+        elif node_type == "text":
+            kept["text"] = _label(props.get("text"), what=f"{at} text")
+            if props.get("tone") is not None:
+                kept["tone"] = _choice(props["tone"], TONES, what=f"{at} tone")
+        elif node_type == "button":
+            action_id = check_identifier(props.get("action"), what=f"{at} action")
+            offered(action_id, action_kinds.get(action_id), block="actions", at=at)
+            kept["action"] = action_id
+            if props.get("variant") is not None:
+                kept["variant"] = _choice(
+                    props["variant"], BUTTON_VARIANTS, what=f"{at} variant"
+                )
+
+        cleaned: dict[str, Any] = {"type": node_type}
+        if kept:
+            cleaned["props"] = kept
+        if node_type in PART_CONTAINERS:
+            children = [
+                node(child, depth + 1, f"{at}.children.{index}")
+                for index, child in enumerate(
+                    require_list(
+                        entry.get("children"), f"{at} children", MAX_PART_NODES
+                    )
+                )
+            ]
+            if children:
+                cleaned["children"] = children
+        return cleaned
+
+    return node(raw, 1, f"{what} tree")
 
 
 # --- the definition ---------------------------------------------------------
@@ -2582,7 +2870,7 @@ def normalize_service_plugin_definition(
             fail("service plug-in: a declarative plug-in names the hosts it calls")
         if body.get("auth") is not None:
             auth = _auth(body["auth"])
-        for term in ("schedules", "embeds"):
+        for term in ("schedules", "pages", "fields", "parts", "actions"):
             if body.get(term) is not None:
                 fail(f"service plug-in: a declarative plug-in has no {term}")
     else:
@@ -2675,17 +2963,65 @@ def normalize_service_plugin_definition(
             fail(f"service plug-in: two widgets share the id {widget['id']!r}")
         widget_ids.add(widget["id"])
 
-    embeds = [
-        _embed(entry, connection_ids=connection_ids)
+    pages = [
+        _page(entry, connection_ids=connection_ids)
         for entry in require_list(
-            body.get("embeds"), "service plug-in: embeds", MAX_EMBEDS
+            body.get("pages"), "service plug-in: pages", MAX_PAGES
         )
     ]
-    embed_ids: set[str] = set()
-    for embed in embeds:
-        if embed["id"] in embed_ids:
-            fail(f"service plug-in: two embeds share the id {embed['id']!r}")
-        embed_ids.add(embed["id"])
+    page_ids: set[str] = set()
+    for page in pages:
+        if page["id"] in page_ids:
+            fail(f"service plug-in: two pages share the id {page['id']!r}")
+        page_ids.add(page["id"])
+
+    fields = [
+        _item_field(entry, connection_ids=connection_ids)
+        for entry in require_list(
+            body.get("fields"), "service plug-in: fields", MAX_FIELDS
+        )
+    ]
+    field_kinds: dict[str, list[str]] = {}
+    for field in fields:
+        if field["key"] in field_kinds:
+            fail(f"service plug-in: two fields share the key {field['key']!r}")
+        field_kinds[field["key"]] = field["on"]
+
+    by_id = {endpoint["id"]: endpoint for endpoint in endpoints}
+    actions = [
+        _action(
+            entry,
+            service_public_id=plugin_public_id,
+            endpoints=by_id,
+            connection_ids=connection_ids,
+        )
+        for entry in require_list(
+            body.get("actions"), "service plug-in: actions", MAX_ACTIONS
+        )
+    ]
+    action_kinds: dict[str, list[str]] = {}
+    for action in actions:
+        if action["id"] in action_kinds:
+            fail(f"service plug-in: two actions share the id {action['id']!r}")
+        action_kinds[action["id"]] = action["on"]
+
+    # After the fields and actions, because a part's nodes name them.
+    parts = [
+        _part(
+            entry,
+            field_kinds=field_kinds,
+            action_kinds=action_kinds,
+            connection_ids=connection_ids,
+        )
+        for entry in require_list(
+            body.get("parts"), "service plug-in: parts", MAX_PARTS
+        )
+    ]
+    part_ids: set[str] = set()
+    for part in parts:
+        if part["id"] in part_ids:
+            fail(f"service plug-in: two parts share the id {part['id']!r}")
+        part_ids.add(part["id"])
 
     cleaned: dict[str, Any] = {
         "plugin_kind": "service",
@@ -2711,8 +3047,14 @@ def normalize_service_plugin_definition(
         cleaned["endpoints"] = endpoints
     if widgets:
         cleaned["widgets"] = widgets
-    if embeds:
-        cleaned["embeds"] = embeds
+    if pages:
+        cleaned["pages"] = pages
+    if fields:
+        cleaned["fields"] = fields
+    if parts:
+        cleaned["parts"] = parts
+    if actions:
+        cleaned["actions"] = actions
 
     # After the widgets and endpoints it can name, because every tile is checked
     # against them — the whole point of bundling rather than publishing

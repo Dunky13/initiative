@@ -10,6 +10,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Each release publishes its API spec (API).** The GitHub release carries `openapi.json`, the OpenAPI spec of the image it ships, to generate a client from or check one against.
+- **Home.** The page you land on after signing in is now a page of widgets you arrange with **Customize**: a greeting, Focus, My tasks, your calendar, recent items and activity, your communities, progress, Favorites, and a clock and timer. Keep several views as tabs, each from a blank page or a ready-made one and with its own banner. A new account's first view suits why it signed up, with a **Getting started** card. My Tasks is now Home in the sidebar, and until you change anything it shows what My Tasks did.
+- **Home layouts in the marketplace.** A **Home layouts** shelf offers five ready-made views, and server owners can publish their own as `home_layout` listings.
+- **Star any tool.** Every kind of tool can be starred, and the sidebar's **Favorites** lists them all. Starred projects carry over.
+- **Take a task from the list.** A project's table has an **Assignees** column with **Assign to me**, and a board card's menu assigns you, unassigns you, or moves the task to another column. Add the column to an existing table from **Edit layouts**.
+- **The layout editor.** **Edit layouts** (a project's settings › Layouts) opens its Table, Board, Calendar and task detail full screen, drawn with its own tasks. Drag, hide or add fields, properties, sections, new fields and plug-in parts, from the outline or right on the preview, and check phone, tablet and desktop widths before saving. Calendars, notices, counter groups, galleries and queues lay out their items the same way, and an initiative's new **Layouts** tab lists every layout. Needs a tablet-sized screen or larger.
+- **Presets on lists.** A project's Table, Board and Calendar, and an initiative's calendar, offer filter presets (Incomplete, Unassigned and Mine to start), with a link to share. Whoever edits the layouts manages them.
+- **Coming up** on a community's home page lists the next seven days of events, tasks, project dates and poll closings you can open.
+- **Live task embeds.** An embed can show just the details that matter, kept current, or a filtered list, table or count of tasks. Pick **Embed** from the `/` menu.
+- **Subscribe to a calendar** from Google Calendar, Apple Calendar or Outlook with **Subscribe**. Each link shows only what you can see, and is listed under Settings › Security.
+- **Search ranks what more members use a little higher.** Communities can turn it off on their Security page, server owners under Settings › Community, and anyone for their own activity under My Settings › Privacy.
+- **Guests.** Once a server owner turns guests on under Settings › Community, a community's admins invite guests for a set number of days from its new Guests tab, choosing what they can see and edit. A guest takes no seat.
+- **Plug-ins on items.** Plug-ins can add fields, sections and actions to tasks, events, notices and queue items, and keep small values on items. Their task fields can be filtered on. A server owner can limit a plug-in to the operations community (`operations_only`).
+- **Moderation tools.** A shield menu on comments, posts, pictures, wiki pages, queue items, events and tasks lets moderators remove something with a reason, lock its comments, clear its reactions, warn its author, or hold it for the platform. Held content is hidden from the whole community, admins included, until the platform releases it. The moderation page has a **Log** tab, and wiki pages, queue items and events can be reported. A report of something illegal names the law, reaches the platform at once, and hides the content by default.
+- **Help from the app.** Ask for help about your account, billing or a community; report a security problem from User settings › Security; send feedback from the account menu; and appeal a suspension from the sign-in screen. Tickets and reports take attachments. `/.well-known/security.txt` names the server's security contact.
+- **For platform staff:** a **Communities** list in the Operator dashboard; a **Moderate** access level that reads everything, held content included, and changes nothing; suspending communities as a moderator; more account actions on an account's Manage panel; access grants tied to the case they serve; **Cases** notifications and **Take this case**; security cases the server opens itself; and more in the audit log.
+- **Members' AI keys.** The superadmin seat sees which members added their own key to the community's AI connections, and can remove one.
+- **More security emails.** New recovery codes and a newly linked sign-in provider each send an email with **This wasn't me**, which now opens a security case.
+
+### Changed
+
+- **Breaking changes**
+  - **Plug-ins need SDK 6.0.** Initiative serves plug-in API 6.0: `embeds` are now `pages`, and a project's `default_view_mode` is gone. Installing or updating a plug-in needs a release built with SDK 6.0; installed ones keep working.
+  - **Only moderators remove other people's comments.** Project managers can no longer delete them, and `DELETE /comments/{id}` is the author's alone.
+  - **Invite links are shown once**, when made. Copy it then; links handed out before still work.
+  - `GET /projects/{id}/activity` is removed. Use `GET /activity/`, which narrows to a project.
+  - `AccessGrantRead.user_email` and `approved_by_email` are replaced by `user` and `approved_by`, which name people by handle.
+  - `POST /api/v1/me/tickets` and `POST /api/v1/me/tickets/{task_id}/replies` take `multipart/form-data`: the ticket as JSON in `payload`, or the answer in `body`, beside any `files`.
+- **Fields save as you change them.** Tasks and events have no Save button, and an event's settings page is gone: edit it on its own page. Properties on every tool save the same way. Descriptions keep a draft and show you someone else's edit before overwriting it. People who can't edit see values, not disabled boxes.
+- **Adding a task, event, queue item or counter shows its layout**, and closing the dialog discards it.
+- **Layouts decide what boards and tables show, for everyone.** The board's **Fields** and the table's **Columns** menus are gone; set them in **Edit layouts**.
+- **Your view of every list follows you** to any device: filters, sort, grouping, columns and view. A project's saved filter sets became presets. My Tasks filters like a project, and projects filter by priority.
+- **A community's home page leads with activity.** Cards show what changed this week (All, Yours or Comments), in place of the tool circles and table. Tools and initiatives have an **Activity** sidebar too. Browse by kind in My Tools.
+- **A tag's page lists everything as tables**, searchable and sortable.
+- **Smart chips, links and embeds update live.**
+- **Deleting your comment keeps its replies.**
+- **Members' AI keys and plug-in sign-ins are theirs alone.** Other admins no longer reach them; the superadmin seat still sees who connected and can disconnect them.
+- **Every way you sign in is under Security**: your password sits beside your passkeys and two-factor authentication, and a way in your server doesn't offer is left off.
+- **Staff manage their own account from their own settings**, and every account action is on its Manage panel.
+- **The phone and desktop apps keep your encrypted messages when you sign out**, and keep each account's apart.
+- **Pictures in documents, wikis and posts open full size.** While editing, double-click one.
+- **The wiki editor keeps its toolbar in view.**
+- **Layouts fit foldables and tablets**, and the sidebar docks from a landscape tablet's width.
+- **Large boards, dates and the links graph are faster.**
+- **Backups keep each initiative's join policy.**
+- **Escalate is now Send to the platform**, and reports of something illegal or "Other" need a description.
+
+### Fixed
+
+- **A dialog no longer opens behind its own backdrop.** The blurred backdrop could cover the dialog, so it couldn't be used. This happened with **Prove it's you** when adding an email address.
+- **Two-factor authentication works for accounts without a password.** Setup goes straight to the code to scan, and turning it off asks for no password.
+- **Switching files no longer blanks the one you open**, which could save a blank page over it.
+- **Privacy:** your recent items, favorites and project order are yours alone, and leaving a community forgets your recent items there. Only you can answer a poll or event invitation, mark a notice read, edit or delete your comments, or change your reactions. Join requests are seen only by whoever asked and whoever answers.
+- Pasting a link no longer doubles its `https://`.
+- `#` no longer briefly says nothing matches.
+- Uncaptioned pictures show on a wiki page being read.
+- An invite with no use limit works past the first person.
+- Task embeds survive a deleted tag and list every project in the initiative.
+- A project's view no longer carries over to a same-numbered project in another community.
+- Smart chips, links and embeds work with browser extensions that strip tracking parameters.
+- A wiki whose home page was deleted for good opens without it.
+- Dragging a repeating event always asks which dates it moves.
+- Repeats keep their weekdays when a template or listing shifts dates.
+- A customized task page keeps a sensible order on a phone.
+- Search leaves out what is inside archived tools.
+- A gallery without a cover shows its newest pictures.
+- Signing in as someone else in the same browser no longer shows the last account's data.
+- The project task table updates checklist progress, assignees and blocker counts live.
+- The task tables' Columns menu names its columns.
+- A case keeps its attachments while a platform hold names it, and a hold names only a case about its community.
+- Whoever added a queue item isn't offered to report it.
+- **Encrypted messages:** a "New device signed in" prompt for a device that is gone can be cleared, setup recovers after a reload, a new device's history request sends one notification, and devices are named in words.
+- **Devices:** the phone and desktop apps show as one device each, and browsers whose sign-in expired leave the list.
 
 ## [0.75.3] - 2026-10-08
 

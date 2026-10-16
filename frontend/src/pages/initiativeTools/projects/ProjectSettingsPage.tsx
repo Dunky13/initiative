@@ -25,7 +25,7 @@ export const ProjectSettingsPage = () => {
 
   const project = projectQuery.data;
   // An export from here lists the tasks this person's view of the project does.
-  const exportContent = useProjectTaskExportView(parsedId, project?.default_view_mode);
+  const exportContent = useProjectTaskExportView(parsedId);
 
   return (
     <ToolSettingsLayout
@@ -41,10 +41,7 @@ export const ProjectSettingsPage = () => {
       exportOptions={{ content: exportContent }}
       // Two settings too large for a card. Each is served by its own route
       // beside the shared sections, so the value doubles as the URL segment.
-      extraTabs={[
-        { value: "filter-presets", label: t("settings.tabFilterPresets") },
-        { value: "task-statuses", label: t("settings.tabTaskStatuses") },
-      ]}
+      extraTabs={[{ value: "task-statuses", label: t("settings.tabTaskStatuses") }]}
     />
   );
 };

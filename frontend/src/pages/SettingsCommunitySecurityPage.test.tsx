@@ -32,6 +32,7 @@ let settings: CommunityAuthSettingsRead | undefined;
 const baseSettings = (): CommunityAuthSettingsRead => ({
   auth_options: ["restrictions", "providers"],
   auth_policy: openPolicy,
+  guest_auth_policy: openPolicy,
   enforce_compliance_session: false,
   require_second_factor: false,
   allow_push_notifications: true,
@@ -40,6 +41,10 @@ const baseSettings = (): CommunityAuthSettingsRead => ({
   push_allowed_by_platform: true,
   email_allowed_by_platform: true,
   redacted_by_platform: false,
+  allow_engagement_ranking: true,
+  engagement_ranking_allowed_by_platform: true,
+  guest_max_days: null,
+  guest_max_days_by_platform: 90,
 });
 /** Change what the server says, for a case that varies it. */
 const stored = (patch: Partial<CommunityAuthSettingsRead>) => {
@@ -70,6 +75,7 @@ let connectable: { id: number; slug: string; display_name: string }[] = [
 // Every control saves through the same PATCH, one field at a time.
 const save = vi.fn();
 let secondFactorAvailable = true;
+let guestsEnabled = false;
 const refreshCommunities = vi.fn(() => Promise.resolve<CommunityEntry[]>([]));
 
 // Partial: the render helper reaches for ``CommunityContext`` from this module.
@@ -101,7 +107,7 @@ vi.mock(import("@/hooks/useCommunities"), async (importOriginal) => ({
 vi.mock("@/hooks/useActiveCommunityId", () => ({ useActiveCommunityId: () => communityId }));
 
 vi.mock("@/hooks/useAppConfig", () => ({
-  useAppConfig: () => ({ secondFactorAvailable }),
+  useAppConfig: () => ({ secondFactorAvailable, guestsEnabled }),
 }));
 
 // ``useServer`` is left real: the render helper provides its context, and
@@ -165,6 +171,7 @@ describe("SettingsCommunitySecurityPage", () => {
     communityId = 4;
     settings = baseSettings();
     secondFactorAvailable = true;
+    guestsEnabled = false;
     connections = [
       connection(1, 11, "corp", "Corp SSO"),
       connection(2, 12, "contractors", "Contractors"),
@@ -377,6 +384,27 @@ describe("SettingsCommunitySecurityPage", () => {
     });
   });
 
+  describe("ranking search by engagement", () => {
+    const rankingSwitch = () => screen.getByLabelText(/rank search results by community/i);
+
+    it("saves on its own", async () => {
+      const user = mounted();
+
+      await user.click(rankingSwitch());
+
+      expect(save).toHaveBeenCalledWith({ allow_engagement_ranking: false }, expect.anything());
+    });
+
+    it("is held where the deployment has turned it off", () => {
+      stored({ engagement_ranking_allowed_by_platform: false });
+      render();
+
+      expect(rankingSwitch()).not.toBeChecked();
+      expect(rankingSwitch()).toBeDisabled();
+      expect(screen.getByText(/turned engagement ranking off/i)).toBeInTheDocument();
+    });
+  });
+
   describe("when the admin's own session does not meet the rule", () => {
     /** The save's refusal, as the server names what is missing. */
     const refuse = (unmet?: string, detail = "AUTH_RULE_SELF_UNSATISFIED") => {
@@ -535,6 +563,55 @@ describe("SettingsCommunitySecurityPage", () => {
       render();
 
       expect(control()).not.toBeInTheDocument();
+    });
+  });
+
+  describe("guests", () => {
+    beforeEach(() => {
+      guestsEnabled = true;
+    });
+
+    it("saves the guests' own sign-in requirement", async () => {
+      const user = mounted();
+
+      // The second of each control is the guests'.
+      await user.click(screen.getAllByLabelText(/require single sign-on/i)[1]);
+      await chooseOption(user, "Contractors");
+      await user.click(
+        screen.getByRole("button", { name: "Save the guests' sign-in requirement" })
+      );
+
+      expect(save.mock.calls[0][0]).toEqual({
+        guest_auth_policy: { policy: "required", provider_id: 12, require_methods: [] },
+      });
+    });
+
+    it("saves the longest stay, below the server's limit", async () => {
+      const user = mounted();
+      const days = screen.getByLabelText("Longest a guest may stay (days)");
+      expect(screen.getByText(/server's limit of 90 days/i)).toBeInTheDocument();
+
+      await user.type(days, "30");
+      await user.click(screen.getByRole("button", { name: "Save the longest guest stay" }));
+      expect(save.mock.calls[0][0]).toEqual({ guest_max_days: 30 });
+    });
+
+    it("clears a stay of its own back to the server's limit", async () => {
+      stored({ guest_max_days: 30 });
+      const user = mounted();
+
+      await user.clear(screen.getByLabelText("Longest a guest may stay (days)"));
+      await user.click(screen.getByRole("button", { name: "Save the longest guest stay" }));
+
+      expect(save.mock.calls[0][0]).toEqual({ guest_max_days: null });
+    });
+
+    it("says nothing about guests where the community takes none", () => {
+      guestsEnabled = false;
+      render();
+
+      expect(screen.queryByText("Guests' sign-in requirement")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Longest a guest may stay (days)")).not.toBeInTheDocument();
     });
   });
 

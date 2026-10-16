@@ -105,6 +105,98 @@ class ReportOutcome(str, Enum):
     member_warned = "member_warned"
     #: Not this community's to settle — opens a platform case.
     escalated = "escalated"
+    #: Handed to the platform hidden: a platform case, and the reported thing
+    #: held where it is until the platform releases it (``app.db.holds``).
+    held = "held"
+
+
+class LegalBasis(str, Enum):
+    """The law something is held, or reported, under. Closed, so cases can be
+    counted by it."""
+
+    child_safety = "child_safety"
+    terrorism = "terrorism"
+    intellectual_property = "intellectual_property"
+    fraud = "fraud"
+    privacy = "privacy"
+    other = "other"
+
+
+class RemovalReason(str, Enum):
+    """Why a moderator took something down. Every reason a report can give,
+    and two that only a community's own rules give."""
+
+    spam = "spam"
+    harassment = "harassment"
+    hate = "hate"
+    violence = "violence"
+    sexual_content = "sexual_content"
+    self_harm = "self_harm"
+    illegal = "illegal"
+    misinformation = "misinformation"
+    other = "other"
+    #: Fine in itself, in the wrong place.
+    off_topic = "off_topic"
+    #: Against a rule this community set for itself.
+    community_rule = "community_rule"
+
+
+class ModerationAct(str, Enum):
+    """What a moderator did, as the moderation log records it."""
+
+    #: Took something down: a comment to a tombstone, anything else to the
+    #: trash.
+    remove = "remove"
+    #: Put back what a removal took down.
+    restore = "restore"
+    #: Closed a thread to new comments. Its owner can't reopen it.
+    lock_comments = "lock_comments"
+    unlock_comments = "unlock_comments"
+    #: Took every reaction off something.
+    clear_reactions = "clear_reactions"
+    #: Told whoever wrote something that it crossed a line.
+    warn = "warn"
+
+
+#: The acts a moderator starts directly; a restore names the removal it undoes.
+DIRECT_ACTS: frozenset[ModerationAct] = frozenset(ModerationAct) - {
+    ModerationAct.restore
+}
+
+
+class HoldReason(str, Enum):
+    """Why content is held."""
+
+    #: Someone with the standing to ask — a court, a regulator, the police —
+    #: asked for it to be kept.
+    legal_request = "legal_request"
+    #: It is, or may be, unlawful. A hold for this names its legal basis.
+    illegal_content = "illegal_content"
+
+
+class HoldVia(str, Enum):
+    """Who placed a hold."""
+
+    #: A moderator of the community the content is in.
+    community = "community"
+    #: A platform moderator, under a ``moderate`` grant on the community.
+    platform = "platform"
+
+
+class HoldRelease(str, Enum):
+    """How a hold ended. Only the platform releases one."""
+
+    #: Back as it was.
+    restore = "restore"
+    #: Taken down: to the trash.
+    remove = "remove"
+    #: Destroyed. The one path that deletes held content.
+    purge = "purge"
+
+
+def removal_reason_for(reason: ReportReason) -> RemovalReason:
+    """The removal reason a report's own reason becomes."""
+    return RemovalReason(reason.value)
 
 
 def target_table(target: SearchEntityType) -> str:

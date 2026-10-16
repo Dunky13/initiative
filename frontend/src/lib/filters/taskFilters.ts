@@ -6,28 +6,27 @@
  * it, so the three cannot disagree about what the list is showing — they used
  * to, and the loader's prefetch key silently never matched the component's.
  *
- * The spec mirrors `TaskFilterSpec` on the server (what a saved preset holds),
- * so preset, stored preference, and query params are all the same object.
+ * A person's filters are their own: saved in their view of the list (a
+ * per-user preference) in the stored shape below, never on a layout.
  */
 
 import type { SortingState } from "@tanstack/react-table";
 
-import {
-  type TaskFilterSpec as ApiTaskFilterSpec,
-  type FilterCondition,
-  type FilterGroup,
-  type ListTasksParams,
-  ProjectReadDefaultViewMode,
-  type SortField,
-  type TaskStatusCategory,
+import type {
+  FilterCondition,
+  FilterGroup,
+  ListTasksParams,
+  SortField,
+  TaskStatusCategory,
 } from "@/api/generated/initiativeAPI.schemas";
+import { TaskPriority } from "@/api/generated/initiativeAPI.schemas";
 import type { DueFilterOption } from "@/components/projects/projectTasksConfig";
-import type { PropertyFilterCondition } from "@/components/properties/PropertyFilter";
+import type {
+  PluginFilterCondition,
+  PropertyFilterCondition,
+} from "@/components/properties/PropertyFilter";
 
-export type TaskViewMode = NonNullable<ProjectReadDefaultViewMode>;
-export const TASK_VIEW_MODES = Object.values(ProjectReadDefaultViewMode);
-
-/** The due-window tokens a preset can hold. `null` is "any due date". */
+/** The due-window tokens a view can hold. `null` is "any due date". */
 export type DueToken = Exclude<DueFilterOption, "all">;
 
 /** The tokens `assignees` may hold besides a numeric user id. `me` is resolved
@@ -38,9 +37,15 @@ export const ASSIGNEE_NONE = "none";
 export interface TaskFilterSpec {
   status_ids: number[];
   status_categories: TaskStatusCategory[];
+  priorities: TaskPriority[];
+  /** Only a list that holds several communities' tasks (My Tasks) narrows by
+   *  them. */
+  community_ids: number[];
   assignees: string[];
   tag_ids: number[];
   properties: PropertyFilterCondition[];
+  /** By a plug-in's field, where the reader is drawn it. */
+  plugins: PluginFilterCondition[];
   due: DueToken | null;
   include_archived: boolean;
 }
@@ -48,9 +53,12 @@ export interface TaskFilterSpec {
 export const EMPTY_TASK_FILTERS: TaskFilterSpec = {
   status_ids: [],
   status_categories: [],
+  priorities: [],
+  community_ids: [],
   assignees: [],
   tag_ids: [],
   properties: [],
+  plugins: [],
   due: null,
   include_archived: false,
 };
@@ -65,18 +73,31 @@ export const DUE_LABEL_KEYS = {
 
 const DUE_TOKENS: readonly string[] = Object.keys(DUE_LABEL_KEYS);
 const CATEGORIES: readonly string[] = ["backlog", "todo", "in_progress", "done"];
+const PRIORITIES: readonly string[] = Object.values(TaskPriority);
 
 const numbers = (raw: unknown): number[] =>
   Array.isArray(raw) ? raw.filter((v): v is number => typeof v === "number") : [];
 
-/** Coerce an API preset's `filters` (every key optional) into a full spec. */
-export function specFromApi(raw: ApiTaskFilterSpec | null | undefined): TaskFilterSpec {
+/** A spec as a person's view stores it: every key optional, so what an older
+ *  release stored still reads. */
+export type StoredTaskFilters = Partial<Record<keyof TaskFilterSpec, unknown>>;
+
+/** Coerce stored filters (every key optional) into a full spec. */
+export function specFromStored(raw: StoredTaskFilters | null | undefined): TaskFilterSpec {
   if (!raw) return EMPTY_TASK_FILTERS;
   return {
     status_ids: numbers(raw.status_ids),
     status_categories: Array.isArray(raw.status_categories)
-      ? raw.status_categories.filter((v): v is TaskStatusCategory => CATEGORIES.includes(v))
+      ? raw.status_categories.filter(
+          (v): v is TaskStatusCategory => typeof v === "string" && CATEGORIES.includes(v)
+        )
       : [],
+    priorities: Array.isArray(raw.priorities)
+      ? raw.priorities.filter(
+          (v): v is TaskPriority => typeof v === "string" && PRIORITIES.includes(v)
+        )
+      : [],
+    community_ids: numbers(raw.community_ids),
     assignees: Array.isArray(raw.assignees)
       ? raw.assignees.filter((v): v is string => typeof v === "string")
       : [],
@@ -86,21 +107,15 @@ export function specFromApi(raw: ApiTaskFilterSpec | null | undefined): TaskFilt
           (entry) => typeof entry?.property_id === "number"
         )
       : [],
+    plugins: Array.isArray(raw.plugins)
+      ? (raw.plugins as PluginFilterCondition[]).filter(
+          (entry) => typeof entry?.field === "string" && entry.field.startsWith("plugin:")
+        )
+      : [],
     due: typeof raw.due === "string" && DUE_TOKENS.includes(raw.due) ? (raw.due as DueToken) : null,
     include_archived: raw.include_archived === true,
   };
 }
-
-/** The wire shape a preset is saved as. Identical keys — the spec IS the payload. */
-export const specToApi = (spec: TaskFilterSpec): ApiTaskFilterSpec => ({
-  status_ids: spec.status_ids,
-  status_categories: spec.status_categories,
-  assignees: spec.assignees,
-  tag_ids: spec.tag_ids,
-  properties: spec.properties as ApiTaskFilterSpec["properties"],
-  due: spec.due,
-  include_archived: spec.include_archived,
-});
 
 const sameIds = (a: readonly (number | string)[], b: readonly (number | string)[]) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
@@ -109,11 +124,14 @@ export function taskFiltersEqual(a: TaskFilterSpec, b: TaskFilterSpec): boolean 
   return (
     sameIds(a.status_ids, b.status_ids) &&
     sameIds(a.status_categories, b.status_categories) &&
+    sameIds(a.priorities, b.priorities) &&
+    sameIds(a.community_ids, b.community_ids) &&
     sameIds(a.assignees, b.assignees) &&
     sameIds(a.tag_ids, b.tag_ids) &&
     a.due === b.due &&
     a.include_archived === b.include_archived &&
-    JSON.stringify(a.properties) === JSON.stringify(b.properties)
+    JSON.stringify(a.properties) === JSON.stringify(b.properties) &&
+    JSON.stringify(a.plugins) === JSON.stringify(b.plugins)
   );
 }
 
@@ -123,9 +141,12 @@ export function taskFilterCount(spec: TaskFilterSpec): number {
   return (
     spec.status_ids.length +
     spec.status_categories.length +
+    spec.priorities.length +
+    spec.community_ids.length +
     spec.assignees.length +
     spec.tag_ids.length +
     spec.properties.length +
+    spec.plugins.length +
     (spec.due ? 1 : 0) +
     (spec.include_archived ? 1 : 0)
   );
@@ -232,6 +253,14 @@ function statusConditions(spec: TaskFilterSpec): (FilterCondition | FilterGroup)
 export function taskSpecConditions(spec: TaskFilterSpec): (FilterCondition | FilterGroup)[] {
   return [
     ...statusConditions(spec),
+    ...(spec.priorities.length > 0
+      ? [{ field: "priority", op: "in_" as const, value: spec.priorities }]
+      : []),
+    // The cross-community list reads this as ``community_ids`` (plural, like
+    // ``initiative_ids``); the singular silently filters nothing.
+    ...(spec.community_ids.length > 0
+      ? [{ field: "community_ids", op: "in_" as const, value: spec.community_ids }]
+      : []),
     ...assigneeConditions(spec.assignees),
     ...(spec.tag_ids.length > 0
       ? [{ field: "tag_ids", op: "in_" as const, value: spec.tag_ids }]
@@ -241,32 +270,48 @@ export function taskSpecConditions(spec: TaskFilterSpec): (FilterCondition | Fil
       op: entry.op as FilterCondition["op"],
       value: { property_id: entry.property_id, value: entry.value },
     })),
+    ...spec.plugins.map((entry) => ({
+      field: "plugin_values" as const,
+      op: entry.op as FilterCondition["op"],
+      value: { field: entry.field, value: entry.value },
+    })),
     ...(spec.due ? dueConditions(spec.due) : []),
   ];
 }
 
 /** Compile a spec into the endpoint's `conditions`. */
+/** Where a task list reads from: one project, or every project in an
+ *  initiative. */
+export type TaskScope = { projectId: number } | { initiativeId: number };
+
+const scopeCondition = (scope: TaskScope): FilterCondition =>
+  "projectId" in scope
+    ? { field: "project_id", op: "eq", value: scope.projectId }
+    : { field: "initiative_ids", op: "in_", value: [scope.initiativeId] };
+
+/** Compile a spec into the endpoint's `conditions`, inside its scope. */
 export function buildTaskConditions(
   spec: TaskFilterSpec,
-  options: { projectId: number }
+  scope: TaskScope
 ): (FilterCondition | FilterGroup)[] {
-  return [{ field: "project_id", op: "eq", value: options.projectId }, ...taskSpecConditions(spec)];
+  return [scopeCondition(scope), ...taskSpecConditions(spec)];
 }
 
 /**
  * The full list params, including archived. `include_archived` is a query
  * param rather than a condition, so it can't live in `conditions`.
  *
- * `page_size: 0` walks every page — the board and the drag-reorder need the
- * whole list, not a window.
+ * Without a `page`, `page_size: 0` walks every page — the board and the
+ * drag-reorder need the whole list, not a window.
  */
 export function buildTaskListParams(
   spec: TaskFilterSpec,
-  options: { projectId: number }
+  scope: TaskScope,
+  page: { page: number; page_size: number } = { page: 1, page_size: 0 }
 ): ListTasksParams {
   return {
-    conditions: buildTaskConditions(spec, options),
-    page_size: 0,
+    conditions: buildTaskConditions(spec, scope),
+    ...(page.page_size === 0 ? { page_size: 0 } : page),
     ...(spec.include_archived && { include_archived: true }),
   };
 }
@@ -286,14 +331,19 @@ const COLUMN_BY_SORT_FIELD: Record<string, string> = Object.fromEntries(
   Object.entries(SORT_FIELD_BY_COLUMN).map(([columnId, field]) => [field, columnId])
 );
 
+/** The columns a table is sorted by, as the endpoint names them, and nothing
+ *  else: what a preset keeps. */
+export const tableSortFields = (sorting: SortingState): SortField[] =>
+  sorting.flatMap((column): SortField[] => {
+    const field = SORT_FIELD_BY_COLUMN[column.id];
+    return field ? [{ field, dir: column.desc ? "desc" : "asc" }] : [];
+  });
+
 /** A task table's sort as the endpoint's `sorting`. Columns the list cannot
  *  order by are left out, and ties keep the project's own order, as they do
  *  in the table. */
 export function taskSortFields(sorting: SortingState): SortField[] {
-  const fields = sorting.flatMap((column): SortField[] => {
-    const field = SORT_FIELD_BY_COLUMN[column.id];
-    return field ? [{ field, dir: column.desc ? "desc" : "asc" }] : [];
-  });
+  const fields = tableSortFields(sorting);
   // A date group on its own orders nothing within a group.
   if (fields.length === 1 && fields[0].field === "date_group") {
     fields.push({ field: "due_date", dir: fields[0].dir });

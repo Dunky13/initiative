@@ -18,7 +18,7 @@ perform another member's connection nor read its values.
 
 What a member may *do* inside a plug-in is not decided here. The content a plug-in
 creates carries its own grants, and the tool that owns it enforces them exactly
-as it does for initiative content. A plug-in's *embedded* surfaces are the
+as it does for initiative content. A plug-in's *pages* are the
 exception, because they have no local content to carry grants: the handoff mint
 is where who-may-open-this is settled, against where the seat placed the plug-in
 and which roles it allowed there.
@@ -304,7 +304,7 @@ def _require_installable_kind(definition: dict) -> None:
         )
 
 
-async def _require_removable(plugin: GuildPlugin) -> None:
+async def _require_removable(plugin: GuildPlugin, guild_id: int) -> None:
     """Refuse to remove or turn off a plug-in the deployment provides.
 
     Mandatory constrains guild admins, not the operator: a plug-in marked so on
@@ -315,7 +315,7 @@ async def _require_removable(plugin: GuildPlugin) -> None:
     nothing migrated.
     """
     state = await registration_lookup.install_state(
-        plugin.definition, listing_uid=plugin.listing_uid
+        plugin.definition, guild_id=guild_id, listing_uid=plugin.listing_uid
     )
     if state.mandatory:
         raise HTTPException(
@@ -344,7 +344,9 @@ async def _read(
         plugin,
         viewer=viewer,
         install_state=await registration_lookup.install_state(
-            plugin.definition, listing_uid=plugin.listing_uid
+            plugin.definition,
+            guild_id=context.guild_id,
+            listing_uid=plugin.listing_uid,
         ),
         avatar_url=await _plugin_avatar(session, plugin),
         context=context,
@@ -374,7 +376,9 @@ async def _detail(
         avatar_url=await _plugin_avatar(session, plugin),
         member_rows=await _member_rows(session, plugin_id=plugin.id, user_id=user_id),
         install_state=await registration_lookup.install_state(
-            plugin.definition, listing_uid=plugin.listing_uid
+            plugin.definition,
+            guild_id=context.guild_id,
+            listing_uid=plugin.listing_uid,
         ),
         update_offer=offer,
         installed=await guild_plugins_service.installed_plugin_ids(session),
@@ -449,7 +453,9 @@ async def list_community_plugins(
                 plugin,
                 viewer=viewer,
                 install_state=await registration_lookup.install_state(
-                    plugin.definition, listing_uid=plugin.listing_uid
+                    plugin.definition,
+                    guild_id=guild_context.guild_id,
+                    listing_uid=plugin.listing_uid,
                 ),
                 avatar_url=avatars.get(plugin.listing_uid),
                 context=guild_context,
@@ -703,9 +709,7 @@ async def upgrade_community_plugin(
     )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_schedules_service.reconcile(
-        guild_context.guild_id, plugin.id, plugin.definition
-    )
+    await plugin_updates_service.reconcile_repinned(guild_context.guild_id, plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
 
@@ -796,7 +800,7 @@ async def update_community_plugin(
         plugin.name = data["name"].strip()
     if "enabled" in data and data["enabled"] is not None:
         if not data["enabled"]:
-            await _require_removable(plugin)
+            await _require_removable(plugin, guild_context.guild_id)
         plugin.enabled = data["enabled"]
     if data.get("auto_update") is not None:
         plugin.auto_update = data["auto_update"]
@@ -845,7 +849,7 @@ async def uninstall_community_plugin(
     # plug-in either lands before this read and is trashed with everything else, or
     # finds no install and is refused.
     plugin = await _load(session, plugin_id, for_update=True)
-    await _require_removable(plugin)
+    await _require_removable(plugin, guild_context.guild_id)
 
     install_id, guild_id = plugin.id, routed_guild_id(session)
     await guild_plugins_service.uninstall_plugin(
@@ -1002,7 +1006,7 @@ async def put_community_plugin_scopes(
 
 
 # ---------------------------------------------------------------------------
-# Embedded surfaces
+# Pages
 # ---------------------------------------------------------------------------
 
 
@@ -1015,7 +1019,7 @@ async def create_community_plugin_handoff(
     guild_context: GuildContextDep,
     viewer: AgeViewerDep,
 ) -> CommunityPluginHandoff:
-    """Mint the short-lived credential for one of this plug-in's embedded surfaces.
+    """Mint the short-lived credential for one of this plug-in's pages.
 
     Whether the surface may be opened is decided here, under the caller's real
     session, so the plug-in never makes that call and never sees a request from
@@ -1026,7 +1030,7 @@ async def create_community_plugin_handoff(
     and expires in a minute.
     """
     plugin = await _load(session, plugin_id)
-    handoff = await handoff_service.mint_embed_handoff(
+    handoff = await handoff_service.mint_page_handoff(
         session,
         plugin,
         surface_id=surface_id,
@@ -1073,7 +1077,7 @@ async def create_initiative_plugin_handoff(
     """
     initiative = await _load_initiative(session, initiative_id, current_user.id)
     plugin = await _load(session, plugin_id)
-    handoff = await handoff_service.mint_embed_handoff(
+    handoff = await handoff_service.mint_page_handoff(
         session,
         plugin,
         surface_id=surface_id,
@@ -1085,7 +1089,7 @@ async def create_initiative_plugin_handoff(
     return _handoff_response(handoff)
 
 
-def _handoff_response(handoff: handoff_service.EmbedHandoff) -> CommunityPluginHandoff:
+def _handoff_response(handoff: handoff_service.PageHandoff) -> CommunityPluginHandoff:
     """The same answer either route gives.
 
     The initiative is not in it: it is a claim in the token, and the browser
@@ -1094,7 +1098,7 @@ def _handoff_response(handoff: handoff_service.EmbedHandoff) -> CommunityPluginH
     return CommunityPluginHandoff(
         handoff_token=handoff.token,
         expires_in_seconds=handoff.expires_in_seconds,
-        embed_url=handoff.embed_url,
+        page_url=handoff.page_url,
         allowed_origins=list(handoff.allowed_origins),
         audience=handoff.audience,
         surface_id=handoff.surface_id,
@@ -1154,7 +1158,9 @@ async def connect_community_plugin(
         require_seat(guild_context)
         require_grant_writes(guild_context)
 
-    registration = await handoff_service.require_live_registration(plugin)
+    registration = await handoff_service.require_live_registration(
+        plugin, guild_context.guild_id
+    )
 
     if guild_wide:
         stored_config = (plugin.config or {}).get(connection_id) or {}

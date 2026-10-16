@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tool, type WikiRead } from "@/api/generated/initiativeAPI.schemas";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +79,7 @@ export const WikiChrome = ({
 
   return (
     <header
-      className="flex shrink-0 items-center gap-3 border-b bg-card/40 px-4 py-2.5 lg:px-6"
+      className="flex shrink-0 items-center gap-3 border-b bg-card/40 px-4 py-2.5 md:px-6"
       // A hairline of the wiki's colour down the leading edge. Enough to
       // identify it; not enough to compete with what is written.
       style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}
@@ -140,6 +141,14 @@ export const WikiChrome = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {/* The wiki's star, on every page of it: what is starred is the wiki. */}
+        <FavoriteButton
+          tool={Tool.wiki}
+          entityId={wiki.id}
+          name={wiki.name}
+          initiativeId={wiki.initiative_id}
+          className="size-8"
+        />
         {trailing}
 
         {/* A page is written before it is published, so the one thing a writer

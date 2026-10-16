@@ -8,7 +8,7 @@ import type {
   TagSummary,
   TimelineBucket,
 } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { Tool, ViewSource } from "@/api/generated/initiativeAPI.schemas";
 import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { BulkEditImageTagsDialog } from "@/components/initiativeTools/galleries/BulkEditImageTagsDialog";
@@ -42,6 +42,7 @@ import { UserName } from "@/components/UserHandle";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
@@ -53,9 +54,11 @@ import {
 } from "@/hooks/useGalleries";
 import { type GridToggleOptions, useGridSelection } from "@/hooks/useGridSelection";
 import { useImageUploader } from "@/hooks/useImageUploader";
+import { useInitiative } from "@/hooks/useInitiatives";
+import { LIST, type ListViewSpec, NO_PART_VIEW, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordRecentView } from "@/hooks/useRecents";
-import { useViewPreference } from "@/hooks/useViewPreference";
+import { useRecordOpen } from "@/hooks/useRecents";
+import { useKnownTagIds, useTags } from "@/hooks/useTags";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatPeriod } from "@/lib/formatDate";
 import { imageLabel, imageSrc } from "@/lib/galleries";
@@ -64,8 +67,39 @@ import { browserTimezone } from "@/lib/timezones";
 import { toolListRoute, toolSettingsRoute } from "@/lib/tools";
 
 type ViewMode = "masonry" | "grid" | "timeline";
-const VIEW_KEY = "galleries:view-mode";
-const GROUP_KEY = "galleries:group-by-tag";
+
+/** What a person narrows a gallery's wall by: its tags. */
+type GalleryFilters = { tag_ids: number[] };
+
+const readGalleryFilters = (raw: unknown): GalleryFilters => ({
+  tag_ids: Array.isArray((raw as GalleryFilters | null)?.tag_ids)
+    ? (raw as GalleryFilters).tag_ids.filter((id) => typeof id === "number")
+    : [],
+});
+
+/** The wall oldest first, as a sort; newest first is its own order. */
+const OLDEST_FIRST = [{ id: "date", desc: false }];
+
+/**
+ * Where one person's view of a gallery is kept: how they look at the wall,
+ * whether it is grouped by tag, its tags and its order. A typed search is for
+ * this visit. What an older release kept (one look and grouping for every
+ * wall) is carried over.
+ */
+const galleryViewSpec = (communityId: number, galleryId: number): ListViewSpec<GalleryFilters> => ({
+  key: viewKey(communityId, "gallery", galleryId),
+  read: readGalleryFilters,
+  defaults: { filters: { tag_ids: [] }, ...NO_PART_VIEW },
+  carryOver: (items) => {
+    const look = items["galleries:view-mode"];
+    const grouped = items["galleries:group-by-tag"] === true;
+    if (typeof look !== "string" && !grouped) return null;
+    return {
+      layout: typeof look === "string" ? look : null,
+      parts: { [LIST]: grouped ? { grouping: ["tags"] } : {} },
+    };
+  },
+});
 
 const isViewMode = (value: unknown): value is ViewMode =>
   value === "masonry" || value === "grid" || value === "timeline";
@@ -87,10 +121,7 @@ const isViewMode = (value: unknown): value is ViewMode =>
  */
 export function GalleryDetailPage() {
   const { t } = useTranslation(["galleries", "common"]);
-  const { communityId, galleryId } = useParams({ strict: false }) as {
-    communityId: string;
-    galleryId: string;
-  };
+  const { galleryId } = useParams({ strict: false }) as { galleryId: string };
   const parsedId = Number(galleryId);
   const gp = useCommunityPath();
 
@@ -98,32 +129,55 @@ export function GalleryDetailPage() {
   const gallery = galleryQuery.data;
   const initiativeId = useCanonicalInitiativeId(gallery?.initiative_id);
 
-  const recordViewMutation = useRecordRecentView(Tool.gallery, Number(communityId));
   const viewedId = gallery?.id;
   useReadOnOpen(Tool.gallery, viewedId);
-  useEffect(() => {
-    if (!viewedId) return;
-    recordViewMutation.mutate(viewedId);
-  }, [viewedId, recordViewMutation.mutate]);
+  useRecordOpen(Tool.gallery, viewedId);
 
   const canEdit = Boolean(gallery?.can.edit);
+  const initiativeQuery = useInitiative(gallery?.initiative_id ?? null);
+  const canModerate = Boolean(initiativeQuery.data?.can.moderate);
 
-  // How the wall is looked at — remembered across galleries, because it is a
-  // preference about walls rather than about this one.
-  const [persistedView, setPersistedView] = useViewPreference<string>(VIEW_KEY, "masonry");
-  const viewMode: ViewMode = isViewMode(persistedView) ? persistedView : "masonry";
-  const [groupByTags, setGroupByTags] = useViewPreference<boolean>(GROUP_KEY, false);
+  // This person's view of the wall: how they look at it, its grouping, tags
+  // and order, kept for them on this gallery.
+  const communityId = useActiveCommunityId();
+  const viewSpec = useMemo(
+    () => galleryViewSpec(communityId, Number.isFinite(parsedId) ? parsedId : 0),
+    [communityId, parsedId]
+  );
+  const wallView = useListView(viewSpec);
+  const viewMode: ViewMode = isViewMode(wallView.layout) ? wallView.layout : "masonry";
+  const setPersistedView = wallView.rememberLayout;
+  const groupByTags = wallView.grouping.includes("tags");
+  const { setGrouping, setFilters: keepFilters, setSorting } = wallView;
+  const setGroupByTags = useCallback(
+    (next: boolean) => setGrouping(next ? ["tags"] : []),
+    [setGrouping]
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [tagFilters, setTagFilters] = useState<TagSummary[]>([]);
-  const [order, setOrder] = useState<ImageOrder>("newest");
-  const changeOrder = useCallback((next: ImageOrder) => {
-    setOrder(next);
-    // An anchor names one end of a month, and which end is right depends on
-    // the direction. Turning the list around releases the jump rather than
-    // reading the anchor backwards.
-    setAnchor(null);
-  }, []);
+  // The wall narrows by the kept ids at once; the picker shows their names
+  // once the community's tags arrive.
+  const tagIds = useKnownTagIds(wallView.filters.tag_ids);
+  const { data: communityTags = [] } = useTags();
+  const tagFilters = useMemo<TagSummary[]>(
+    () => communityTags.filter((tag) => tagIds.includes(tag.id)),
+    [communityTags, tagIds]
+  );
+  const setTagFilters = useCallback(
+    (next: TagSummary[]) => keepFilters({ tag_ids: next.map((tag) => tag.id) }),
+    [keepFilters]
+  );
+  const order: ImageOrder = wallView.sorting[0]?.desc === false ? "oldest" : "newest";
+  const changeOrder = useCallback(
+    (next: ImageOrder) => {
+      setSorting(next === "oldest" ? OLDEST_FIRST : []);
+      // An anchor names one end of a month, and which end is right depends on
+      // the direction. Turning the list around releases the jump rather than
+      // reading the anchor backwards.
+      setAnchor(null);
+    },
+    [setSorting]
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const search = useDebouncedValue(searchQuery, 300);
 
@@ -135,10 +189,10 @@ export function GalleryDetailPage() {
   const filters = useMemo(
     () => ({
       ...(search.trim() ? { search: search.trim() } : {}),
-      ...(tagFilters.length > 0 ? { tag_ids: tagFilters.map((tag) => tag.id) } : {}),
+      ...(tagIds.length > 0 ? { tag_ids: tagIds } : {}),
       ...(order === "oldest" ? { oldest_first: true } : {}),
     }),
-    [search, tagFilters, order]
+    [search, tagIds, order]
   );
 
   const feed = useGalleryImagesFeed(Number.isFinite(parsedId) ? parsedId : null, {
@@ -185,6 +239,8 @@ export function GalleryDetailPage() {
   // than by index, so a page arriving underneath does not swap the picture
   // somebody is looking at.
   const [openId, setOpenId] = useState<number | null>(null);
+  // An image opens in the lightbox.
+  useRecordOpen("gallery_image", openId ?? undefined, { source: ViewSource.direct });
   const [detailsId, setDetailsId] = useState<number | null>(null);
   const openIndex = openId === null ? -1 : images.findIndex((image) => image.id === openId);
   const lightboxItems = useMemo<LightboxItem[]>(
@@ -264,13 +320,13 @@ export function GalleryDetailPage() {
   );
 
   const activeFilterCount =
-    (search.trim() ? 1 : 0) + (tagFilters.length > 0 ? 1 : 0) + (order === "oldest" ? 1 : 0);
+    (search.trim() ? 1 : 0) + (tagIds.length > 0 ? 1 : 0) + (order === "oldest" ? 1 : 0);
   const clearFilters = useCallback(() => {
     setSearchQuery("");
-    setTagFilters([]);
-    setOrder("newest");
+    keepFilters(null);
+    setSorting([]);
     setAnchor(null);
-  }, []);
+  }, [keepFilters, setSorting]);
 
   if (!Number.isFinite(parsedId) || galleryQuery.isError) {
     return (
@@ -295,6 +351,7 @@ export function GalleryDetailPage() {
         <ToolPageHeader
           tool={Tool.gallery}
           initiativeId={gallery.initiative_id}
+          starId={gallery.id}
           settingsTo={
             canEdit ? toolSettingsRoute(Tool.gallery, initiativeId, gallery.id) : undefined
           }
@@ -407,10 +464,7 @@ export function GalleryDetailPage() {
       >
         {feed.isLoading ? (
           <SkeletonRegion label={t("loadingPictures")}>
-            <CardGridSkeleton
-              count={8}
-              className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-            />
+            <CardGridSkeleton count={8} className="grid grid-cols-fill-36/4 gap-3" />
           </SkeletonRegion>
         ) : feed.isError ? (
           <p className="text-destructive text-sm">{t("loadError")}</p>
@@ -530,6 +584,7 @@ export function GalleryDetailPage() {
         }}
         canEdit={canEdit}
         canDeleteVersions={Boolean(gallery?.can.delete)}
+        canModerate={canModerate}
         isCover={gallery?.cover_image_id === detailsId}
         onSetCover={(imageId) => setCover.mutate({ cover_image_id: imageId })}
         onRemoved={(imageId) => {

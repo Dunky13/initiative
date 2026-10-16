@@ -158,6 +158,8 @@ class FieldContext:
     user_id: Optional[int]
     #: Custom property definitions by id, for the fields that dispatch on one.
     property_definitions: Mapping[int, Any] = dataclass_field(default_factory=dict)
+    #: The plug-in fields the person may filter by, by field id.
+    plugin_fields: Mapping[str, Any] = dataclass_field(default_factory=dict)
     #: IANA timezone, for sorts that group by the reader's local day rather than
     #: the server's. Present here too so one context serves a request that both
     #: filters and orders.
@@ -251,10 +253,10 @@ class FieldSpec:
 
 #: Columns no dataset offers as a filter, by convention rather than per model.
 #:
-#: Soft-delete and purge bookkeeping, the surrogate key, the tenant key (a
-#: request is already scoped to one guild, so filtering by it narrows nothing),
-#: and the drag-ordering float. None of these means anything to somebody
-#: building a filter, and every table has them.
+#: Soft-delete, hold, moderation and purge bookkeeping, the surrogate key, the
+#: tenant key (a request is already scoped to one guild, so filtering by it
+#: narrows nothing), and the drag-ordering float. None of these means anything
+#: to somebody building a filter, and every table has them.
 HIDDEN_EVERYWHERE: frozenset[str] = frozenset(
     {
         "id",
@@ -263,6 +265,13 @@ HIDDEN_EVERYWHERE: frozenset[str] = frozenset(
         "deleted_at",
         "deleted_by",
         "purge_at",
+        "held_at",
+        "hold_id",
+        # Moderation bookkeeping: a thread a moderator locked, a tombstone.
+        "comments_locked_at",
+        "removed_at",
+        "removed_reason",
+        "removal_id",
     }
 )
 

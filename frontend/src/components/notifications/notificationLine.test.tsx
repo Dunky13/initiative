@@ -268,6 +268,14 @@ describe("notificationText — a ticket the reader filed", () => {
     );
   });
 
+  it("says closed feedback was read", () => {
+    const line = notificationText(
+      ticket({ stream: "feedback", subject: null, state: "closed", replied: true }),
+      t
+    );
+    expect(line).toContain("notifications.feedbackRead");
+  });
+
   it("names an untitled ticket as theirs", () => {
     const line = notificationText(ticket({ subject: null, state: "closed" }), t);
     expect(line).toContain("notifications.ticketUnnamed");
@@ -275,5 +283,49 @@ describe("notificationText — a ticket the reader filed", () => {
 
   it("goes to the reader's own view of it, outside any community", () => {
     expect(notificationLink(ticket({ state: "closed" }))).toBe("/my-tickets/7");
+  });
+});
+
+describe("notificationText — cases", () => {
+  it("names the stream and the case that opened", () => {
+    const line = notificationText(
+      notice("case_opened", { task_id: 4, stream: "security", task_title: "Leaked key" }),
+      t
+    );
+    expect(line).toContain("notifications.caseOpened");
+    expect(line).toContain("notifications.caseStreams.security");
+    expect(line).toContain("Leaked key");
+  });
+
+  it("counts the replies on a case nobody has taken", () => {
+    expect(
+      notificationText(notice("case_replied", { task_id: 4, commenter_name: "asker" }), t)
+    ).toContain("notifications.caseReplied");
+    expect(
+      notificationText(
+        notice("case_replied", {
+          task_id: 4,
+          commenters: [{ name: "asker" }],
+          commenter_count: 1,
+          comment_count: 3,
+        }),
+        t
+      )
+    ).toContain("notifications.caseRepliedMany");
+  });
+
+  it("opens the case", () => {
+    expect(notificationLink(notice("case_opened", { task_id: 4 }))).toBe("/go/task/4");
+  });
+});
+
+describe("notificationText — a profile cleared by staff", () => {
+  it("names what went, and still reads for a part it doesn't know", () => {
+    expect(notificationText(notice("profile_field_cleared", { field: "custom_status" }), t)).toBe(
+      'notifications.profileCleared.custom_status({"defaultValue":"notifications.profileCleared.other"})'
+    );
+    expect(notificationLink(notice("profile_field_cleared", { target_path: "/profile" }))).toBe(
+      "/profile"
+    );
   });
 });

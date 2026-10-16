@@ -6,18 +6,18 @@ from pydantic import (
     ConfigDict,
     Field,
     computed_field,
-    field_validator,
 )
 
-from app.core.email_masking import mask_email
 from app.models.platform.access_grant import (
     AccessGrantStatus,
     grant_is_live,
     AccessLevel,
     SettingsLevel,
 )
+from app.core.intake import IntakeStream
 from app.models.platform.guild import CommunityStatus
 from app.schemas.base import SanitizedBaseModel
+from app.schemas.platform.user import UserIdentity
 from app.schemas.query import PageMeta
 
 
@@ -50,6 +50,9 @@ class AccessGrantCreate(SanitizedBaseModel):
     # maximum regardless of what's requested.
     requested_duration_minutes: Optional[int] = Field(default=None, gt=0)
     reason: str = Field(min_length=1, max_length=2000)
+    #: The operations case this access is for. Required wherever the
+    #: operations community takes cases a grant may serve.
+    case_task_id: Optional[int] = Field(default=None, gt=0)
 
     @property
     def wanted(self) -> list[tuple[str, str]]:
@@ -96,6 +99,10 @@ class BreakGlassCreate(SecondFactorAnswer):
     # break-glass maximum regardless of what's requested.
     requested_duration_minutes: Optional[int] = Field(default=None, gt=0)
     reason: str = Field(min_length=1, max_length=2000)
+    #: The operations case this is for, where there is one. Optional: an
+    #: emergency may come before its case, and the steps are then written on
+    #: the case by hand.
+    case_task_id: Optional[int] = Field(default=None, gt=0)
 
 
 class AccessGrantApprove(SanitizedBaseModel):
@@ -106,10 +113,9 @@ class AccessGrantApprove(SanitizedBaseModel):
 
 
 class AccessGrantRead(SanitizedBaseModel):
-    # ``validate_assignment`` is deliberate, not a default: the enrichment
-    # fields below are assigned by ``access_grants`` *after* the row has been
-    # validated, and field validators run on assignment only when it is set.
-    # It is what applies the masking below to those two fields.
+    # ``validate_assignment``: the enrichment fields below are assigned by
+    # ``access_grants`` after the row has been validated, and are checked
+    # against their types as they are.
     model_config = ConfigDict(
         from_attributes=True,
         json_schema_serialization_defaults_required=True,
@@ -134,13 +140,15 @@ class AccessGrantRead(SanitizedBaseModel):
     decided_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
+    #: The operations case this grant serves, where it names one.
+    case_task_id: Optional[int] = None
 
     # Enrichment populated by the service for display (avoids the client
     # re-fetching users/guilds). Optional so ``model_validate`` over a bare
     # ORM row still works.
-    #: Masked (``u***1@e***m``). An approver reads this row to decide on a
-    #: request; the handle and user id beside it identify the requester.
-    user_email: Optional[str] = None
+    #: Who holds the grant, by handle: what an approver reads to decide on a
+    #: request. Never their address.
+    user: Optional[UserIdentity] = None
     community_name: Optional[str] = Field(
         default=None, validation_alias=AliasChoices("community_name", "guild_name")
     )
@@ -150,13 +158,8 @@ class AccessGrantRead(SanitizedBaseModel):
     community_status: Optional[CommunityStatus] = Field(
         default=None, validation_alias=AliasChoices("community_status", "guild_status")
     )
-    #: Masked, as ``user_email`` is.
-    approved_by_email: Optional[str] = None
-
-    @field_validator("user_email", "approved_by_email", mode="after")
-    @classmethod
-    def _mask_emails(cls, value: Optional[str]) -> Optional[str]:
-        return mask_email(value)
+    #: Who approved it, by handle.
+    approved_by: Optional[UserIdentity] = None
 
     @computed_field(return_type=bool)  # type: ignore[misc]
     @property
@@ -179,6 +182,29 @@ class BreakGlassRequirements(SanitizedBaseModel):
     totp_enrolled: bool
     #: And whether they hold a passkey, which answers it just as well.
     passkey_enrolled: bool
+
+
+class GrantCaseRead(SanitizedBaseModel):
+    """An open operations case the reader may name as the reason for a grant."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    task_id: int
+    title: str
+    stream: IntakeStream
+    #: The community the case is about, where it names one: a grant for the
+    #: case reaches that community and no other.
+    subject_community_id: Optional[int] = None
+    #: Assigned to the reader.
+    mine: bool = False
+
+
+class GrantCaseList(SanitizedBaseModel):
+    """The open cases the reader may name, theirs first. ``required`` says
+    whether a request must name one here."""
+
+    items: List[GrantCaseRead]
+    required: bool
 
 
 class AccessGrantLimits(SanitizedBaseModel):

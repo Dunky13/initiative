@@ -95,7 +95,9 @@ export const notificationLink = (notification: NotificationRead): string | null 
   switch (notification.type) {
     // These hold ids and nothing else, so they address the `/go` resolver,
     // which reads the entity and works out where it lives.
-    case "task_assignment": {
+    case "task_assignment":
+    case "case_opened":
+    case "case_replied": {
       const taskId = Number(data.task_id);
       if (Number.isFinite(taskId) && data.task_id != null) {
         return entityRefRoute("task", taskId);
@@ -452,6 +454,13 @@ export const notificationText = (
       });
     case "avatar_removed":
       return t("notifications.avatarRemoved");
+    // Names what went, never who took it.
+    case "profile_field_cleared": {
+      const field = typeof data.field === "string" ? data.field : "other";
+      return t(`notifications.profileCleared.${field}`, {
+        defaultValue: t("notifications.profileCleared.other"),
+      });
+    }
     case "account_suspended":
       return typeof data.reason === "string" && data.reason.trim()
         ? t("notifications.accountSuspendedWithReason", { reason: data.reason.trim() })
@@ -502,9 +511,41 @@ export const notificationText = (
           : "notifications.communityTrialEnded",
         { community: typeof data.community === "string" ? data.community : "" }
       );
+    // Never names the moderator, or who reported it.
+    case "moderation_removal": {
+      const reason = typeof data.reason === "string" ? data.reason : "";
+      return reason === "illegal"
+        ? t("notifications.moderationRemovedLegal")
+        : t("notifications.moderationRemoved", {
+            reason: t(`moderation:removalReasons.${reason}`, { defaultValue: reason }),
+          });
+    }
+    case "moderation_warning":
+      return t("notifications.moderationWarned", {
+        message: typeof data.message === "string" ? data.message : "",
+      });
+    // A case's title is read when the line is; the stream is what it names.
+    case "case_opened":
+      return t("notifications.caseOpened", {
+        stream: t(`notifications.caseStreams.${String(data.stream)}`, {
+          defaultValue: String(data.stream ?? ""),
+        }),
+        taskTitle: data.task_title ?? t("notifications.plain.task"),
+      });
+    case "case_replied": {
+      const { name, count } = commentSummary(data);
+      const taskTitle = data.task_title ?? t("notifications.plain.taskObject");
+      return count > 1
+        ? t("notifications.caseRepliedMany", { name, count, taskTitle })
+        : t("notifications.caseReplied", { name, taskTitle });
+    }
     case "ticket_updated": {
       const subject = typeof data.subject === "string" && data.subject ? data.subject : null;
       const state = typeof data.state === "string" ? data.state : "";
+      // Feedback closed is feedback read, whether or not the team wrote.
+      if (data.stream === "feedback" && state === "closed") {
+        return t("notifications.feedbackRead");
+      }
       // A reply is the news where there is one; the state says the rest.
       const key = data.replied
         ? "notifications.ticketReplied"

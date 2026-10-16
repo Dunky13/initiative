@@ -68,7 +68,14 @@ const INITIATIVE_ROUTES = "../routes/_serverRequired/_authenticated/c/$community
 // Every page and component, as source text. Read rather than rendered: what
 // is being asked is which tool a surface WIRES UP, and mounting nine detail
 // pages to find out would cost more than the drift it catches.
-const componentSources = import.meta.glob("../{pages,components}/**/*.tsx", {
+// Item details draw their parts from lib/layouts.
+const componentSources = import.meta.glob("../{pages,components,lib/layouts}/**/*.tsx", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+const hookSources = import.meta.glob("../hooks/*.ts", {
   query: "?raw",
   import: "default",
   eager: true,
@@ -81,6 +88,8 @@ const toolsWithRelationsPanel = (): Set<string> => {
     for (const [, tool] of source.matchAll(/<ToolRelationsPanel[^>]*?tool=\{Tool\.(\w+)\}/gs)) {
       found.add(tool);
     }
+    // An item's detail draws its links for the tool it is opened in.
+    for (const [, tool] of source.matchAll(/canOpen: \{ tool: Tool\.(\w+)/g)) found.add(tool);
   }
   return found;
 };
@@ -386,23 +395,23 @@ describe("tool properties", () => {
   it("every tool and sub-tool has somewhere its properties are set", () => {
     const set = new Set<string>();
     for (const source of Object.values(componentSources)) {
-      for (const [, target] of source.matchAll(
-        /<PropertyPanel[^>]*?target=\{PropertyTarget\.(\w+)\}/gs
-      )) {
+      for (const [, target] of source.matchAll(/propertySaves\[PropertyTarget\.(\w+)\]/g)) {
+        set.add(target);
+      }
+    }
+    // An item's page saves them with the item's own save kind.
+    for (const source of Object.values(hookSources)) {
+      for (const [, target] of source.matchAll(/properties: PropertyTarget\.(\w+)/g)) {
         set.add(target);
       }
     }
     // A tool's are on its settings page, which every tool shares.
     if (
-      /<PropertyPanel[^>]*?target=\{PropertyTarget\[tool\]\}/s.test(
-        componentSources["../pages/toolSettings/ToolSettingsDetailsPage.tsx"]
+      componentSources["../pages/toolSettings/ToolSettingsDetailsPage.tsx"].includes(
+        "propertySaves[PropertyTarget[tool]]"
       )
     ) {
       for (const tool of TOOLS) set.add(tool);
-    }
-    // A task's are part of its form, and saved with the task.
-    if (componentSources["../components/tasks/TaskForm.tsx"].includes("<PropertyFields")) {
-      set.add(PropertyTarget.task);
     }
     const missing = Object.values(PropertyTarget).filter((target) => !set.has(target));
     expect(missing, `nowhere sets the properties of ${missing.join(", ")}`).toEqual([]);

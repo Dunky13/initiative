@@ -1,0 +1,62 @@
+{
+  "uid": "M7SN3DFYNQ46Q1",
+  "public_id": "core.home-week-ahead",
+  "kind": "home_layout",
+  "name": "Week ahead",
+  "publisher": "Initiative",
+  "description": "The whole week on one page.",
+  "long_description": "Your calendar takes the middle of the page, with the next fortnight listed beside it and what needs doing now underneath. For somebody whose days are shaped by where they have to be rather than by a list.",
+  "avatar_url": "/marketplace/core-home-week-ahead.svg",
+  "images": [],
+  "version": "1.0.0",
+  "release_notes": "First release.",
+  "definition": {
+    "schema_version": 1,
+    "kind": "home_layout",
+    "widgets": [
+      {
+        "id": "greeting",
+        "type": "greeting",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 2
+        }
+      },
+      {
+        "id": "calendar",
+        "type": "calendar",
+        "grid": {
+          "x": 0,
+          "y": 2,
+          "w": 8,
+          "h": 12
+        }
+      },
+      {
+        "id": "comingUp",
+        "type": "comingUp",
+        "grid": {
+          "x": 8,
+          "y": 2,
+          "w": 4,
+          "h": 6
+        },
+        "options": {
+          "days": 14
+        }
+      },
+      {
+        "id": "focus",
+        "type": "focus",
+        "grid": {
+          "x": 8,
+          "y": 8,
+          "w": 4,
+          "h": 6
+        }
+      }
+    ]
+  }
+}

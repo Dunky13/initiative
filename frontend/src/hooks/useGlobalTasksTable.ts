@@ -5,25 +5,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
-  FilterCondition,
   ListMyTasksParams,
   SortField,
-  TaskListRead,
   TaskListResponse,
-  TaskPriority,
-  TaskStatusCategory,
-  TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { listTaskStatuses } from "@/api/generated/task-statuses/task-statuses";
 import { getListMyTasksQueryKey, listMyTasks } from "@/api/generated/tasks/tasks";
-import type { PropertyFilterCondition } from "@/components/properties/PropertyFilter";
+import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useUpdateTaskInCommunity } from "@/hooks/useTasks";
-import { useViewPreference } from "@/hooks/useViewPreference";
-import { getErrorMessage } from "@/lib/errorMessage";
-import { taskSortFields, taskTableSorting } from "@/lib/filters/taskFilters";
-import { toast } from "@/lib/mascotToast";
-import { statusForCategory } from "@/lib/taskStatusDefaults";
+import { deviceJSON, LIST, type ListViewSpec, useListView, viewKey } from "@/hooks/useListView";
+import { useMyTaskStatusChanges } from "@/hooks/useMyTaskStatusChanges";
+import {
+  EMPTY_TASK_FILTERS,
+  type StoredTaskFilters,
+  specFromStored,
+  type TaskFilterSpec,
+  taskFilterCount,
+  taskSortFields,
+  taskSpecConditions,
+  taskTableSorting,
+} from "@/lib/filters/taskFilters";
 import { browserTimezone } from "@/lib/timezones";
 
 const SORT_DEFAULTS: SortField[] = [
@@ -31,57 +31,70 @@ const SORT_DEFAULTS: SortField[] = [
   { field: "due_date", dir: "asc" },
 ];
 
-type StoredPrefs = {
-  statusFilters: TaskStatusCategory[];
-  priorityFilters: TaskPriority[];
-  communityFilters: number[];
-  propertyFilters: PropertyFilterCondition[];
-  sorting: SortField[];
+/** What someone who has narrowed nothing sees: their tasks that are not
+ *  done. */
+const FILTER_DEFAULTS: TaskFilterSpec = {
+  ...EMPTY_TASK_FILTERS,
+  status_categories: ["backlog", "todo", "in_progress"],
 };
+
+const readMyTasksFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
+
+/** What an older release kept: My Tasks' own filter names. */
+const fromOldNames = (old: Record<string, unknown>): StoredTaskFilters => ({
+  ...(old.statusFilters !== undefined ? { status_categories: old.statusFilters } : {}),
+  ...(old.priorityFilters !== undefined ? { priorities: old.priorityFilters } : {}),
+  ...(old.communityFilters !== undefined ? { community_ids: old.communityFilters } : {}),
+  ...(old.propertyFilters !== undefined ? { properties: old.propertyFilters } : {}),
+});
 
 /** Order-insensitive comparison of two selections. */
 const sameMembers = <T>(a: T[], b: T[]): boolean =>
   a.length === b.length && new Set(a).size === new Set([...a, ...b]).size;
 
-const FILTER_DEFAULTS: StoredPrefs = {
-  statusFilters: ["backlog", "todo", "in_progress"] as TaskStatusCategory[],
-  priorityFilters: [],
-  communityFilters: [],
-  propertyFilters: [],
-  sorting: SORT_DEFAULTS,
-};
-
-const sanitizeStoredPrefs = (raw: unknown): StoredPrefs => {
-  if (raw === null || typeof raw !== "object") return FILTER_DEFAULTS;
-  const v = raw as Partial<StoredPrefs>;
-  return {
-    statusFilters: Array.isArray(v.statusFilters) ? v.statusFilters : FILTER_DEFAULTS.statusFilters,
-    priorityFilters: Array.isArray(v.priorityFilters)
-      ? v.priorityFilters
-      : FILTER_DEFAULTS.priorityFilters,
-    communityFilters: Array.isArray(v.communityFilters)
-      ? v.communityFilters
-      : FILTER_DEFAULTS.communityFilters,
-    propertyFilters: Array.isArray(v.propertyFilters)
-      ? v.propertyFilters
-      : FILTER_DEFAULTS.propertyFilters,
-    sorting: Array.isArray(v.sorting) ? v.sorting : FILTER_DEFAULTS.sorting,
-  };
+/**
+ * Where one person's view of My Tasks is kept: table or calendar, the
+ * calendar's month or week, their filters, and the table's sort, grouping and
+ * columns (date window and community hidden, grouped by date window, until
+ * they change them). What an older release kept (filters and sort as one
+ * preference, grouping and columns on the device, the month or week every
+ * calendar shared) is carried over.
+ */
+export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
+  key: viewKey("me", "tasks"),
+  read: readMyTasksFilters,
+  defaults: {
+    filters: FILTER_DEFAULTS,
+    sorting: taskTableSorting(SORT_DEFAULTS),
+    grouping: ["date group"],
+    columns: { "date group": false, guild: false },
+  },
+  carryOver: (items) => {
+    const old = items["initiative-my-tasks-filters"] as
+      | (Record<string, unknown> & { sorting?: SortField[] })
+      | undefined;
+    const table = deviceJSON("initiative-my-tasks-table") as { grouping?: unknown } | null;
+    const columns = deviceJSON("initiative-my-tasks-columns");
+    const mode = items[CALENDAR_VIEW_MODE_KEY];
+    if (!old && !table && !columns && typeof mode !== "string") return null;
+    const sorting = old?.sorting;
+    // What was never kept reads as the default, as it did then.
+    const filters = old ? { ...FILTER_DEFAULTS, ...fromOldNames(old) } : {};
+    return {
+      mode: typeof mode === "string" ? mode : null,
+      parts: {
+        [LIST]: {
+          ...(old ? { filters } : {}),
+          ...(Array.isArray(sorting) ? { sorting: taskTableSorting(sorting) } : {}),
+          ...(Array.isArray(table?.grouping) ? { grouping: table.grouping } : {}),
+          ...(columns && typeof columns === "object" ? { columns } : {}),
+        },
+      },
+    };
+  },
 };
 
 const PAGE_SIZE = 20;
-
-/**
- * Prefix shared by every `/me/tasks` cache entry — the table's page, the focus
- * summary's rule and pin queries. A status change patches all of them at once,
- * so the row it touched updates wherever it is on screen without waiting for
- * three cross-community aggregates to come back.
- */
-const MY_TASKS_QUERY_PREFIX = getListMyTasksQueryKey();
-
-/** Task ids repeat across communities, so an in-flight row is addressed by both. */
-const taskKey = (task: Pick<TaskListRead, "id" | "community_id">) =>
-  `${task.community_id ?? "none"}:${task.id}`;
 
 export function useGlobalTasksTable() {
   const { t } = useTranslation(["tasks", "dates", "common"]);
@@ -92,38 +105,13 @@ export function useGlobalTasksTable() {
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
 
-  const storageKey = "initiative-my-tasks-filters";
-
-  const projectStatusCache = useRef<Map<number, { statuses: TaskStatusRead[]; complete: boolean }>>(
-    new Map()
-  );
-
-  // --- Server-persisted filter + sort preferences ---
-  const [storedPrefsRaw, setStoredPrefs, { isLoaded: preferencesLoaded }] =
-    useViewPreference<StoredPrefs>(storageKey, FILTER_DEFAULTS);
-  const storedPrefs = useMemo(() => sanitizeStoredPrefs(storedPrefsRaw), [storedPrefsRaw]);
-  const { statusFilters, priorityFilters, communityFilters, propertyFilters, sorting } =
-    storedPrefs;
-
-  const makeSetter = useCallback(
-    <K extends keyof StoredPrefs>(key: K) =>
-      (value: StoredPrefs[K] | ((prev: StoredPrefs[K]) => StoredPrefs[K])) => {
-        setStoredPrefs((prev) => {
-          const current = sanitizeStoredPrefs(prev);
-          const next =
-            typeof value === "function"
-              ? (value as (p: StoredPrefs[K]) => StoredPrefs[K])(current[key])
-              : value;
-          return { ...current, [key]: next };
-        });
-      },
-    [setStoredPrefs]
-  );
-  const setStatusFilters = useMemo(() => makeSetter("statusFilters"), [makeSetter]);
-  const setPriorityFilters = useMemo(() => makeSetter("priorityFilters"), [makeSetter]);
-  const setCommunityFilters = useMemo(() => makeSetter("communityFilters"), [makeSetter]);
-  const setPropertyFilters = useMemo(() => makeSetter("propertyFilters"), [makeSetter]);
-  const setSorting = useMemo(() => makeSetter("sorting"), [makeSetter]);
+  // --- This person's view of My Tasks: their filters and the table's sort ---
+  const view = useListView(MY_TASKS_VIEW);
+  const preferencesLoaded = view.loaded;
+  const filters = view.filters;
+  const sorting = useMemo(() => taskSortFields(view.sorting), [view.sorting]);
+  const { setFilters: keepFilters, setSorting: keepSorting } = view;
+  const setFilters = useCallback((next: TaskFilterSpec) => keepFilters(next), [keepFilters]);
 
   // Closed until asked for. The filter button carries a count of what's set, so
   // a narrowed list still says so with the panel shut.
@@ -132,18 +120,15 @@ export function useGlobalTasksTable() {
   // This page starts on a status selection rather than an empty one, so status
   // counts as "set" only once it differs from that baseline — otherwise the
   // button would badge a list nobody has touched.
-  const activeFilterCount =
-    (sameMembers(statusFilters, FILTER_DEFAULTS.statusFilters) ? 0 : 1) +
-    priorityFilters.length +
-    communityFilters.length +
-    propertyFilters.length;
+  const activeFilterCount = taskFilterCount({
+    ...filters,
+    status_categories: sameMembers(filters.status_categories, FILTER_DEFAULTS.status_categories)
+      ? []
+      : filters.status_categories,
+  });
 
-  const clearFilters = useCallback(() => {
-    setStatusFilters(FILTER_DEFAULTS.statusFilters);
-    setPriorityFilters([]);
-    setCommunityFilters([]);
-    setPropertyFilters([]);
-  }, [setStatusFilters, setPriorityFilters, setCommunityFilters, setPropertyFilters]);
+  /** Back to what someone who narrowed nothing sees. */
+  const clearFilters = useCallback(() => keepFilters(null), [keepFilters]);
 
   // --- Pagination state ---
   const [page, setPageState] = useState(() => searchParams.page ?? 1);
@@ -170,50 +155,29 @@ export function useGlobalTasksTable() {
   // The table captures its seed at mount, which is why the caller holds the
   // table back until `preferencesLoaded` — mounting first would freeze the
   // headers on the default sort while the rows came back in the saved one.
-  const initialSorting = useMemo(() => taskTableSorting(sorting), [sorting]);
+  const initialSorting = view.sorting;
 
   const handleSortingChange = useCallback(
     (tableSorting: SortingState) => {
-      setSorting(taskSortFields(tableSorting));
+      keepSorting(tableSorting);
       setPage(1);
     },
-    [setPage, setSorting]
+    [setPage, keepSorting]
   );
 
   // Reset to page 1 when filters change
-  const propertyFiltersKey = JSON.stringify(propertyFilters);
+  const filtersKey = JSON.stringify(filters);
   useEffect(() => {
+    void filtersKey;
     setPage(1);
-  }, [statusFilters, priorityFilters, communityFilters, propertyFiltersKey, setPage]);
+  }, [filtersKey, setPage]);
 
   // --- User timezone for server-side date_group calculation ---
   const userTimezone = useMemo(browserTimezone, []);
 
   // --- Tasks query ---
   const tasksParams = useMemo((): ListMyTasksParams => {
-    // Build synthesized property-value conditions. The tasks backend exposes
-    // ``property_values`` as a virtual field where ``value`` is the shape
-    // ``{property_id, value}`` (see backend/app/api/v1/endpoints/tasks.py).
-    const propertyConditions: FilterCondition[] = propertyFilters.map((entry) => ({
-      field: "property_values",
-      op: entry.op as FilterCondition["op"],
-      value: { property_id: entry.property_id, value: entry.value },
-    }));
-    const conditions: FilterCondition[] = [
-      ...(statusFilters.length > 0
-        ? [{ field: "status_category", op: "in_" as const, value: statusFilters }]
-        : []),
-      ...(priorityFilters.length > 0
-        ? [{ field: "priority", op: "in_" as const, value: priorityFilters }]
-        : []),
-      // The global tasks endpoint extracts this as ``community_ids`` (plural,
-      // matching ``initiative_ids``); sending the singular ``community_id``
-      // silently no-ops because the extraction looks for the plural key.
-      ...(communityFilters.length > 0
-        ? [{ field: "community_ids", op: "in_" as const, value: communityFilters }]
-        : []),
-      ...propertyConditions,
-    ];
+    const conditions = taskSpecConditions(filters);
     return {
       conditions: conditions.length > 0 ? conditions : undefined,
       page,
@@ -221,16 +185,7 @@ export function useGlobalTasksTable() {
       sorting: sorting.length > 0 ? sorting : undefined,
       tz: userTimezone,
     };
-  }, [
-    statusFilters,
-    priorityFilters,
-    communityFilters,
-    propertyFilters,
-    page,
-    pageSize,
-    sorting,
-    userTimezone,
-  ]);
+  }, [filters, page, pageSize, sorting, userTimezone]);
 
   const tasksQuery = useQuery<TaskListResponse>({
     queryKey: getListMyTasksQueryKey(tasksParams),
@@ -260,181 +215,11 @@ export function useGlobalTasksTable() {
     [tasksParams, localQueryClient]
   );
 
-  // --- Status mutation ---
-  const { mutateAsync: updateTaskStatusMutate } = useUpdateTaskInCommunity({
-    onSuccess: (updatedTask) => {
-      const cached = projectStatusCache.current.get(updatedTask.project_id);
-      if (cached && !cached.statuses.some((status) => status.id === updatedTask.task_status.id)) {
-        cached.statuses.push(updatedTask.task_status);
-      }
-    },
-  });
-
-  // Which rows have a status change in flight. Per task rather than one flag for
-  // the mutation, because the shared `isPending` disabled every row on the page
-  // — and the focus summary's rows with them — while a single checkbox was
-  // saving.
-  const [updatingTasks, setUpdatingTasks] = useState<ReadonlySet<string>>(() => new Set());
-  const isUpdatingTask = useCallback(
-    (task: Pick<TaskListRead, "id" | "community_id">) => updatingTasks.has(taskKey(task)),
-    [updatingTasks]
-  );
-
-  /**
-   * Rewrite one row's status in every `/me/tasks` page the cache holds.
-   *
-   * Only that row is touched — not a snapshot of the whole page — so two rows
-   * changed at once don't undo each other when one of them fails.
-   */
-  const writeStatusToCache = useCallback(
-    (task: Pick<TaskListRead, "id" | "community_id">, status: TaskStatusRead) => {
-      const key = taskKey(task);
-      localQueryClient.setQueriesData<TaskListResponse>(
-        { queryKey: MY_TASKS_QUERY_PREFIX },
-        (old) => {
-          if (!old?.items?.some((item) => taskKey(item) === key)) return old;
-          return {
-            ...old,
-            items: old.items.map((item) =>
-              taskKey(item) === key
-                ? { ...item, task_status_id: status.id, task_status: status }
-                : item
-            ),
-          };
-        }
-      );
-    },
-    [localQueryClient]
-  );
-
-  /**
-   * Show the new status now, and hand back the undo.
-   *
-   * The check lands the moment it is clicked instead of after the refetch the
-   * mutation's invalidation kicks off. A task that has just moved out of the
-   * filtered set stays put until that refetch drops it, which reads as
-   * completing work rather than as the row vanishing mid-click.
-   */
-  const applyStatusLocally = useCallback(
-    (task: TaskListRead, status: TaskStatusRead) => {
-      const previous = task.task_status;
-      writeStatusToCache(task, status);
-      return () => writeStatusToCache(task, previous);
-    },
-    [writeStatusToCache]
-  );
-
-  // --- Task items + status cache hydration ---
+  // --- Status changes, and what each row's project offers ---
+  const status = useMyTaskStatusChanges();
+  const { rememberStatuses } = status;
   const tasks = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data]);
-
-  useEffect(() => {
-    tasks.forEach((task) => {
-      const cached = projectStatusCache.current.get(task.project_id);
-      if (cached) {
-        if (!cached.statuses.some((status) => status.id === task.task_status.id)) {
-          cached.statuses.push(task.task_status);
-        }
-      } else {
-        projectStatusCache.current.set(task.project_id, {
-          statuses: [task.task_status],
-          complete: false,
-        });
-      }
-    });
-  }, [tasks]);
-
-  // --- Status helpers ---
-  const fetchProjectStatuses = useCallback(
-    async (projectId: number, communityId: number | null) => {
-      const cached = projectStatusCache.current.get(projectId);
-      if (cached?.complete) {
-        return cached.statuses;
-      }
-      if (!communityId) {
-        return cached?.statuses ?? [];
-      }
-      // Explicit community address: the project lives in the task's community, which
-      // need not be the user's current context on these cross-community pages.
-      const statuses = await listTaskStatuses(communityId, projectId);
-      const merged = cached
-        ? [
-            ...cached.statuses,
-            ...statuses.filter((status) => !cached.statuses.some((s) => s.id === status.id)),
-          ]
-        : statuses;
-      projectStatusCache.current.set(projectId, { statuses: merged, complete: true });
-      return merged;
-    },
-    []
-  );
-
-  const resolveStatusIdForCategory = useCallback(
-    async (projectId: number, category: TaskStatusCategory, communityId: number | null) => {
-      const statuses = await fetchProjectStatuses(projectId, communityId);
-      return statusForCategory(statuses, category)?.id ?? null;
-    },
-    [fetchProjectStatuses]
-  );
-
-  const changeTaskStatusById = useCallback(
-    async (task: TaskListRead, targetStatusId: number) => {
-      const targetCommunityId = task.community_id ?? activeCommunityId ?? null;
-      if (!targetCommunityId) {
-        toast.error(t("errors.communityContext"));
-        return;
-      }
-      // The status the row is moving to is already in hand whenever the caller
-      // resolved it through this project's statuses, which is every path that
-      // reaches here; without it the row simply waits for the refetch.
-      const target = projectStatusCache.current
-        .get(task.project_id)
-        ?.statuses.find((status) => status.id === targetStatusId);
-      const rollback = target ? applyStatusLocally(task, target) : null;
-      const key = taskKey(task);
-      setUpdatingTasks((prev) => new Set(prev).add(key));
-      try {
-        await updateTaskStatusMutate({
-          taskId: task.id,
-          data: { task_status_id: targetStatusId },
-          // Cross-community update from the personal My Tasks table: per-community task
-          // ids collide, so the update must name the task's own community (path).
-          communityId: targetCommunityId,
-        });
-      } catch (error) {
-        rollback?.();
-        console.error(error);
-        toast.error(getErrorMessage(error, "tasks:errors.statusUpdate"));
-      } finally {
-        setUpdatingTasks((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
-      }
-    },
-    [activeCommunityId, applyStatusLocally, updateTaskStatusMutate, t]
-  );
-
-  const changeTaskStatus = useCallback(
-    async (task: TaskListRead, targetCategory: TaskStatusCategory) => {
-      const targetCommunityId = task.community_id ?? activeCommunityId ?? null;
-      if (!targetCommunityId) {
-        toast.error(t("errors.communityContext"));
-        return;
-      }
-      const targetStatusId = await resolveStatusIdForCategory(
-        task.project_id,
-        targetCategory,
-        targetCommunityId
-      );
-      if (!targetStatusId) {
-        toast.error(t("errors.statusNoMatch"));
-        return;
-      }
-      await changeTaskStatusById(task, targetStatusId);
-    },
-    [activeCommunityId, changeTaskStatusById, resolveStatusIdForCategory, t]
-  );
+  useEffect(() => rememberStatuses(tasks), [tasks, rememberStatuses]);
 
   // --- Display tasks ---
   // Archived/template projects are excluded server-side, so the rows come
@@ -453,14 +238,8 @@ export function useGlobalTasksTable() {
 
   return {
     // Filter state
-    statusFilters,
-    setStatusFilters,
-    priorityFilters,
-    setPriorityFilters,
-    communityFilters,
-    setCommunityFilters,
-    propertyFilters,
-    setPropertyFilters,
+    filters,
+    setFilters,
     filtersOpen,
     setFiltersOpen,
     activeFilterCount,
@@ -488,12 +267,11 @@ export function useGlobalTasksTable() {
     prefetchPage,
 
     // Status mutations
-    changeTaskStatus,
-    changeTaskStatusById,
-    fetchProjectStatuses,
-    resolveStatusIdForCategory,
-    projectStatusCache,
-    isUpdatingTask,
+    changeTaskStatus: status.changeTaskStatus,
+    changeTaskStatusById: status.changeTaskStatusById,
+    fetchProjectStatuses: status.fetchProjectStatuses,
+    projectStatusCache: status.projectStatusCache,
+    isUpdatingTask: status.isUpdatingTask,
 
     // Display data
     displayTasks,

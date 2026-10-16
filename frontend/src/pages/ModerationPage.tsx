@@ -16,8 +16,16 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ModerationReportRead, ReportOutcome } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  ModerationActionRead,
+  ModerationReportRead,
+  RemovalReason,
+} from "@/api/generated/initiativeAPI.schemas";
 import { ReportOutcome as Outcome } from "@/api/generated/initiativeAPI.schemas";
+import { RemovalDialog } from "@/components/moderation/RemovalDialog";
+import { SendToPlatformDialog } from "@/components/moderation/SendToPlatformDialog";
+import { WarnDialog } from "@/components/moderation/WarnDialog";
+import { communityEvidenceUrl, EvidenceList } from "@/components/tickets/Evidence";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,9 +33,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { MentionText } from "@/components/user/MentionText";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { refreshAfterHolding } from "@/hooks/useHolds";
 import { useInitiativeRoster } from "@/hooks/useInitiatives";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
-import { useInitiativeSharing, useModerationReports, useSettleReport } from "@/hooks/useModeration";
+import {
+  useInitiativeSharing,
+  useModerationLog,
+  useModerationReports,
+  useRestoreRemoval,
+  useSettleReport,
+} from "@/hooks/useModeration";
 import { communityPath } from "@/lib/communityUrl";
 import { entityRefTypeFor, isSearchEntityType } from "@/lib/entityResolver";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -35,14 +49,6 @@ import { formatDateTime } from "@/lib/formatDate";
 import { toast } from "@/lib/mascotToast";
 import { searchHitPath } from "@/lib/searchResults";
 import { getUserDisplayName } from "@/lib/userDisplay";
-
-/** The outcomes, in the order a moderator usually reaches for them. */
-const OUTCOMES: ReportOutcome[] = [
-  Outcome.dismissed,
-  Outcome.content_removed,
-  Outcome.member_warned,
-  Outcome.escalated,
-];
 
 export const ModerationPage = () => {
   const { t } = useTranslation(["moderation", "common"]);
@@ -87,10 +93,12 @@ export const ModerationPage = () => {
           <TabsTrigger value="reports">{t("areas.reports")}</TabsTrigger>
           <TabsTrigger value="members">{t("areas.members")}</TabsTrigger>
           <TabsTrigger value="sharing">{t("areas.sharing")}</TabsTrigger>
+          <TabsTrigger value="log">{t("areas.log")}</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {area === "members" && <MembersArea initiativeId={initiative} />}
+      {area === "log" && <LogArea communityId={communityId ?? 0} initiativeId={initiative} />}
       {area === "sharing" && (
         <SharingArea communityId={communityId ?? 0} initiativeId={initiative} />
       )}
@@ -114,21 +122,15 @@ export const ModerationPage = () => {
                 {tab === "open" ? t("empty.open") : t("empty.settled")}
               </p>
             ) : (
-              // A reported comment is shown by its opening words, and the
-              // people those mention are asked about once for the page.
-              <MentionedPeopleScope>
-                <ReportMentionedPeople
-                  texts={reports.flatMap((report) => report.target_excerpt ?? [])}
+              // A reported comment is shown by its opening words.
+              reports.map((report) => (
+                <ReportCard
+                  key={report.id}
+                  report={report}
+                  communityId={communityId ?? 0}
+                  initiativeId={initiative}
                 />
-                {reports.map((report) => (
-                  <ReportCard
-                    key={report.id}
-                    report={report}
-                    communityId={communityId ?? 0}
-                    initiativeId={initiative}
-                  />
-                ))}
-              </MentionedPeopleScope>
+              ))
             )}
 
             {(data?.has_prev || data?.has_next) && (
@@ -160,7 +162,7 @@ export const ModerationPage = () => {
   );
 };
 
-type ConsoleArea = "reports" | "members" | "sharing";
+type ConsoleArea = "reports" | "members" | "sharing" | "log";
 
 /** How many members the roster area shows at once. */
 const MEMBERS_PAGE_SIZE = 50;
@@ -174,6 +176,9 @@ interface ReportCardProps {
 const ReportCard = ({ report, communityId, initiativeId }: ReportCardProps) => {
   const { t } = useTranslation("moderation");
   const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [warning, setWarning] = useState(false);
 
   const settle = useSettleReport(communityId, initiativeId, {
     onSuccess: () => toast.success(t("settledToast")),
@@ -213,12 +218,20 @@ const ReportCard = ({ report, communityId, initiativeId }: ReportCardProps) => {
             </CardTitle>
             <CardDescription>
               {t("reportedCount", { count: report.reporter_count })} ·{" "}
-              {t(`reasons.${report.reason}`)} · {formatDateTime(report.reported_at)}
+              {t(`reasons.${report.reason}`)}
+              {report.legal_basis ? ` (${t(`hold.bases.${report.legal_basis}`)})` : null} ·{" "}
+              {formatDateTime(report.reported_at)}
             </CardDescription>
           </div>
-          {settledAs === null ? null : (
-            <Badge variant="secondary">{t(`outcomes.${settledAs}`)}</Badge>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {/* An illegal report went to whoever runs the server as well. */}
+            {report.platform_notified_at ? (
+              <Badge variant="outline">{t("platformNotified")}</Badge>
+            ) : null}
+            {settledAs === null ? null : (
+              <Badge variant="secondary">{t(`outcomes.${settledAs}`)}</Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -252,6 +265,18 @@ const ReportCard = ({ report, communityId, initiativeId }: ReportCardProps) => {
           </div>
         )}
 
+        {(report.evidence ?? []).length > 0 && (
+          <div className="space-y-2">
+            {/* As unattributed as the words: the reporters' files, together. */}
+            <p className="font-medium text-sm">{t("attached")}</p>
+            <EvidenceList
+              items={report.evidence ?? []}
+              urlFor={(id) => communityEvidenceUrl(communityId, id)}
+              blurred
+            />
+          </div>
+        )}
+
         {open ? (
           <div className="space-y-3 border-t pt-4">
             {/* Review the thing where it lives — this page decides, it does not
@@ -263,24 +288,107 @@ const ReportCard = ({ report, communityId, initiativeId }: ReportCardProps) => {
               placeholder={t("notePlaceholder")}
               rows={2}
             />
+            {report.reason === "illegal" && (
+              <p className="font-medium text-sm">{t("suggestHold")}</p>
+            )}
             <div className="flex flex-wrap gap-2">
-              {OUTCOMES.map((outcome) => (
-                <Button
-                  key={outcome}
-                  variant={outcome === Outcome.escalated ? "destructive" : "outline"}
-                  size="sm"
-                  disabled={settle.isPending}
-                  onClick={() =>
-                    settle.mutate({
-                      reportId: report.id,
-                      body: { outcome, note: note.trim() || null },
-                    })
-                  }
-                >
-                  {t(`outcomes.${outcome}`)}
-                </Button>
-              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={settle.isPending}
+                onClick={() =>
+                  settle.mutate({
+                    reportId: report.id,
+                    body: { outcome: Outcome.dismissed, note: note.trim() || null },
+                  })
+                }
+              >
+                {t("actions.dismiss")}
+              </Button>
+              {/* Each acts on the reported thing: taking it down, or telling
+                  whoever wrote it. */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={settle.isPending}
+                onClick={() => setRemoving(true)}
+              >
+                {t("actions.remove")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={settle.isPending}
+                onClick={() => setWarning(true)}
+              >
+                {t("actions.warn")}
+              </Button>
+              {/* Not this community's to settle: whoever runs the server takes
+                  it, with the content left up or hidden while they look. */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={settle.isPending}
+                onClick={() => setSending(true)}
+              >
+                {t("sendToPlatform.action")}
+              </Button>
             </div>
+            <RemovalDialog
+              open={removing}
+              onOpenChange={setRemoving}
+              targetType={report.target_type}
+              initialReason={report.reason as RemovalReason}
+              initialNote={note}
+              pending={settle.isPending}
+              onConfirm={(removal) =>
+                settle.mutate(
+                  {
+                    reportId: report.id,
+                    body: {
+                      outcome: Outcome.content_removed,
+                      note: removal.note,
+                      // Only when it differs from what it was reported for.
+                      removal_reason: removal.reason === report.reason ? null : removal.reason,
+                    },
+                  },
+                  { onSuccess: () => setRemoving(false) }
+                )
+              }
+            />
+            <WarnDialog
+              open={warning}
+              onOpenChange={setWarning}
+              pending={settle.isPending}
+              onConfirm={(message) =>
+                settle.mutate(
+                  {
+                    reportId: report.id,
+                    body: { outcome: Outcome.member_warned, note: note.trim() || null, message },
+                  },
+                  { onSuccess: () => setWarning(false) }
+                )
+              }
+            />
+            <SendToPlatformDialog
+              open={sending}
+              onOpenChange={setSending}
+              report={report}
+              note={note}
+              sending={settle.isPending}
+              onSend={(body) =>
+                settle.mutate(
+                  { reportId: report.id, body },
+                  {
+                    onSuccess: () => {
+                      setSending(false);
+                      // What was hidden is gone from every view of it.
+                      if (body.outcome === Outcome.held) void refreshAfterHolding();
+                    },
+                  }
+                )
+              }
+            />
           </div>
         ) : (
           <div className="space-y-1 border-t pt-4 text-muted-foreground text-sm">
@@ -446,5 +554,131 @@ const SharingArea = ({
         )}
       </CardContent>
     </Card>
+  );
+};
+
+/**
+ * What this initiative's moderators have done, newest first.
+ *
+ * The log is the only place the words a removal took down are kept, so this
+ * is where a removal is read back and put back. Read through the log's own
+ * row policy: it admits the initiative's moderators and nobody else.
+ */
+const LogArea = ({ communityId, initiativeId }: { communityId: number; initiativeId: number }) => {
+  const { t } = useTranslation(["moderation", "common"]);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError } = useModerationLog(
+    { communityId, initiativeId, page },
+    { enabled: Boolean(communityId) && Number.isFinite(initiativeId) }
+  );
+  const restore = useRestoreRemoval(communityId, {
+    onSuccess: () => toast.success(t("log.restored")),
+  });
+  const items = data?.items ?? [];
+
+  if (isLoading) {
+    return <p className="text-muted-foreground text-sm">{t("common:loading")}</p>;
+  }
+  if (isError) {
+    return <p className="text-destructive text-sm">{t("loadFailed")}</p>;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>{t("log.title")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {items.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t("log.empty")}</p>
+        ) : (
+          items.map((entry) => (
+            <LogEntry
+              key={entry.id}
+              entry={entry}
+              restoring={restore.isPending}
+              onRestore={() => restore.mutate(entry.id)}
+            />
+          ))
+        )}
+        {data && (data.has_prev || data.has_next) && (
+          <div className="flex items-center justify-between gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!data.has_prev}
+              onClick={() => setPage(data.page - 1)}
+            >
+              {t("paging.newer")}
+            </Button>
+            <span className="text-muted-foreground text-sm">
+              {t("paging.page", { page: data.page })}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!data.has_next}
+              onClick={() => setPage(data.page + 1)}
+            >
+              {t("paging.older")}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+const LogEntry = ({
+  entry,
+  restoring,
+  onRestore,
+}: {
+  entry: ModerationActionRead;
+  restoring: boolean;
+  onRestore: () => void;
+}) => {
+  const { t } = useTranslation("moderation");
+  const target = t(`targets.${entry.target_type}`, { defaultValue: entry.target_type });
+  // Nobody signed it when the platform acted on a hold it ended.
+  const actor = entry.actor?.name ?? (entry.hold_id != null ? t("log.platform") : t("log.someone"));
+
+  return (
+    <div className="space-y-2 border-b pb-3 last:border-b-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm">
+          <span className="font-medium">{t(`log.acts.${entry.action}`)}</span> · {target}
+          {entry.subject ? ` · ${t("log.whose", { name: entry.subject.name })}` : null}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {t("log.by", { name: actor })} · {formatDateTime(entry.created_at)}
+        </p>
+      </div>
+      {(entry.reason || entry.report_id != null || entry.hold_id != null) && (
+        <p className="text-muted-foreground text-xs">
+          {[
+            entry.reason ? t(`removalReasons.${entry.reason}`) : null,
+            entry.report_id != null ? t("log.fromReport") : null,
+            entry.hold_id != null ? t("log.afterHold") : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+      {entry.note ? <p className="whitespace-pre-wrap text-sm">{entry.note}</p> : null}
+      {entry.snapshot ? (
+        <div className="space-y-1">
+          <p className="font-medium text-muted-foreground text-xs">{t("log.whatItSaid")}</p>
+          <blockquote className="whitespace-pre-wrap break-words border-l-2 py-1 pl-3 text-sm">
+            <MentionText text={entry.snapshot} />
+          </blockquote>
+        </div>
+      ) : null}
+      {entry.restorable && (
+        <Button variant="outline" size="sm" disabled={restoring} onClick={onRestore}>
+          {t("log.restore")}
+        </Button>
+      )}
+    </div>
   );
 };

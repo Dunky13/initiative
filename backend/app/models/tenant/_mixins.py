@@ -84,6 +84,29 @@ class ArchiveMixin(SQLModel):
     )
 
 
+class HoldMixin(SQLModel):
+    """Mixin that adds the hold columns to a guild-scoped model.
+
+    A hold keeps content where it is for the platform: while ``held_at`` is
+    set, the row reads as absent to everyone in the community, community
+    admins included, and nobody in the community can change or delete it.
+    ``hold_id`` names the ``content_holds`` row that placed it. Only the
+    platform releases it (``app.services.platform.holds``).
+
+    Everything a person can report carries it — every searchable kind and
+    the uploads such content shows — so ``HOLDABLE_TABLES``
+    (``app.db.holds``), its row policy and its guard are derived from this
+    mixin, and a new kind is holdable the day it declares it.
+    """
+
+    held_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
+    hold_id: Optional[int] = Field(default=None, nullable=True)
+
+
 class CreatedByMixin(SQLModel):
     """Mixin that adds ``created_by`` to a guild-schema table.
 
@@ -201,6 +224,24 @@ class CommentsToggleMixin(SQLModel):
     )
 
 
+class CommentLockMixin(SQLModel):
+    """Mixin that lets a moderator close a thread to new comments.
+
+    On everything a thread hangs off — every tool, and the content-level
+    extras with threads of their own. While ``comments_locked_at`` is set the
+    thread still reads, nobody adds to it or edits what is in it, and only
+    the community's moderators lift the lock: it is not the owner's comment switch
+    (``CommentsToggleMixin``), which hides the thread altogether and is
+    theirs to flip.
+    """
+
+    comments_locked_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
+
+
 def _mapped_subclasses(base: type[_M]) -> dict[str, type[_M]]:
     """Every mapped table model under ``base``, however indirectly, by table."""
     found: dict[str, type[_M]] = {}
@@ -233,6 +274,19 @@ def soft_delete_models() -> list[type[SoftDeleteMixin]]:
     everywhere the moment it declares the mixin.
     """
     found = _mapped_subclasses(SoftDeleteMixin)
+    return [found[name] for name in sorted(found)]
+
+
+def hold_models() -> list[type[HoldMixin]]:
+    """Every mapped model carrying :class:`HoldMixin`, by table name. The
+    single source for which tables can be held."""
+    found = _mapped_subclasses(HoldMixin)
+    return [found[name] for name in sorted(found)]
+
+
+def comment_lock_models() -> list[type[CommentLockMixin]]:
+    """Every mapped model carrying :class:`CommentLockMixin`, by table name."""
+    found = _mapped_subclasses(CommentLockMixin)
     return [found[name] for name in sorted(found)]
 
 

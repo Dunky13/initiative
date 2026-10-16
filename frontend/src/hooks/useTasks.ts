@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { archiveEntity } from "@/api/generated/archive/archive";
@@ -10,19 +10,23 @@ import type {
   GenerateChecklistResponse,
   GenerateDescriptionResponse,
   ListTasksParams,
+  SmartChipState,
   TaskListRead,
   TaskListResponse,
   TaskRead,
   TaskReorderRequest,
-  TaskStatusCategory,
   TaskStatusRead,
+  TaskUpdate,
   TaskUpdateScope,
 } from "@/api/generated/initiativeAPI.schemas";
-import { getReadSmartChipsQueryKey } from "@/api/generated/smart-chips/smart-chips";
 import {
-  getListTaskStatusesQueryKey,
-  listTaskStatuses,
-} from "@/api/generated/task-statuses/task-statuses";
+  PropertyTarget,
+  SearchEntityType,
+  SmartChipKind,
+  SmartChipTone,
+  TaskStatusCategory,
+} from "@/api/generated/initiativeAPI.schemas";
+import { getListTaskStatusesQueryKey } from "@/api/generated/task-statuses/task-statuses";
 import {
   archiveDoneTasks,
   createTask,
@@ -42,14 +46,22 @@ import {
 } from "@/api/generated/tasks/tasks";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { useApiMutation, useCommunityMutation } from "@/hooks/useApiMutation";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  type FieldSaveKind,
+  type FieldSaveOptions,
+  type ItemEdit,
+  useItemFieldSave,
+  useShownWithPending,
+} from "@/hooks/useFieldSave";
+import { chipKey } from "@/hooks/useSmartChips";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import { toast } from "@/lib/mascotToast";
 import { withZone } from "@/lib/recurrence";
+import { chipRef } from "@/lib/smartChips";
 import { fireTaskCompletionFeedback } from "@/lib/taskCompletionFeedback";
-import { statusForCategory } from "@/lib/taskStatusDefaults";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
 
@@ -57,16 +69,18 @@ import type { QueryOpts } from "@/types/query";
 
 // Returns the full ``TaskRead`` (the detail endpoint's shape) — a superset of
 // the list row that additionally carries the ``creator`` summary the edit page
-// renders. The list hooks stay on ``TaskListRead``.
+// renders. The list hooks stay on ``TaskListRead``. The cache holds what the
+// server answered; the field saves not yet answered show over it here.
 export const useTask = (taskId: number | null, options?: QueryOpts<TaskRead>) => {
   const communityId = useActiveCommunityId();
   const { enabled: userEnabled = true, ...rest } = options ?? {};
-  return useQuery<TaskRead>({
+  const query = useQuery<TaskRead>({
     queryKey: getReadTaskQueryKey(communityId, taskId!),
     queryFn: () => readTask(communityId, taskId!),
     enabled: taskId !== null && Number.isFinite(taskId) && userEnabled,
     ...rest,
   });
+  return useShownWithPending(TASK_SAVES, taskId, query);
 };
 
 /** The complete task list for `params`: the one key and fetch every reader of it shares. */
@@ -94,6 +108,20 @@ export const useCreateTask = (options?: MutationOpts<TaskRead, Parameters<typeof
   useCommunityMutation<TaskRead, Parameters<typeof createTask>[1]>(
     {
       mutationFn: (communityId, data) => createTask(communityId, data),
+      invalidate: () => invalidate(q.allTasks()),
+      errorKey: "projects:tasks.createError",
+    },
+    options
+  );
+
+/** {@link useCreateTask} for a page outside the community (the home page),
+ *  which names the community the task goes into. */
+export const useCreateTaskInCommunity = (
+  options?: MutationOpts<TaskRead, { communityId: number; data: Parameters<typeof createTask>[1] }>
+) =>
+  useApiMutation<TaskRead, { communityId: number; data: Parameters<typeof createTask>[1] }>(
+    {
+      mutationFn: ({ communityId, data }) => createTask(communityId, data),
       invalidate: () => invalidate(q.allTasks()),
       errorKey: "projects:tasks.createError",
     },
@@ -207,52 +235,135 @@ export const useUpdateTask = (
   });
 };
 
+/** A change to some of a task's fields: what is sent, and how the task reads
+ *  once it is saved. */
+export type TaskEdit = ItemEdit<TaskRead, TaskUpdate>;
+
+// The fields an edit of one task of a repeating series may keep from the rest
+// of it, so changing one asks which tasks it is for.
+const SERIES_FIELDS: (keyof TaskUpdate)[] = [
+  "title",
+  "description",
+  "priority",
+  "assignee_ids",
+  "start_date",
+  "due_date",
+  "tag_ids",
+];
+
+/** How a task is saved field by field. */
+export const TASK_SAVES: FieldSaveKind<TaskRead, TaskUpdate> = {
+  name: "task",
+  readKey: (communityId, id) => getReadTaskQueryKey(communityId, id),
+  patch: (communityId, id, patch) => updateTask(communityId, id, withZone(patch)),
+  properties: PropertyTarget.task,
+  lists: (edit) => ("patch" in edit ? q.allTasks() : q.propertyHolder(PropertyTarget.task)),
+  itself: (id) => q.task(id),
+};
+
+/** Asks which tasks of a series a change is for; null when it is closed. */
+type AskTaskScope = (
+  action: "edit",
+  question: { tool: "tasks"; count: number }
+) => Promise<TaskUpdateScope | null>;
+
+/**
+ * What a task's page adds to a field's save: a change to a repeating task's
+ * series fields asks which tasks it is for first, and its Undo is for the same
+ * ones. A status move offers Undo, and one into done gives the completion
+ * feedback as it shows.
+ */
+export const useTaskSaveOptions = (
+  task: TaskRead,
+  askScope: AskTaskScope
+): FieldSaveOptions<TaskRead, TaskUpdate> => {
+  const { t } = useTranslation("common");
+  const { user } = useAuth();
+  return {
+    prepare: async (edit) => {
+      if (!task.recurrence || !("patch" in edit)) return edit;
+      if (!SERIES_FIELDS.some((name) => name in edit.patch)) return edit;
+      const scope = await askScope("edit", { tool: "tasks", count: task.series_size });
+      return scope === null ? null : { ...edit, patch: { ...edit.patch, scope } };
+    },
+    undoWith: (undo, edit) =>
+      "patch" in undo && "patch" in edit
+        ? { ...undo, patch: { ...undo.patch, scope: edit.patch.scope } }
+        : undo,
+    undoMessage: (edit) => {
+      const moved = edit.shows.task_status;
+      return moved ? t("fieldSave.moved", { status: moved.name }) : undefined;
+    },
+    // The move shows as made now, so the completion feedback goes with it.
+    sending: (edit) => {
+      const moved = edit.shows.task_status;
+      if (moved?.category === "done" && task.task_status.category !== "done" && user) {
+        const isAssigned = task.assignees.some((assignee) => assignee.id === user.id);
+        fireTaskCompletionFeedback(user, { isAssigned });
+      }
+    },
+  };
+};
+
+/** The one way a task's page saves a field ({@link useItemFieldSave}), with
+ *  what its page adds ({@link useTaskSaveOptions}). */
+export const useTaskFieldSave = (
+  task: TaskRead,
+  label: string,
+  askScope: AskTaskScope,
+  /** Runs when an edit is saved, by Save or by Retry. */
+  onSaved?: (edit: TaskEdit) => void
+) =>
+  useItemFieldSave(TASK_SAVES, task.id, label, {
+    ...useTaskSaveOptions(task, askScope),
+    onSaved,
+  });
+
 /**
  * Tick or untick a task from somewhere that is not its project — a file's
  * checkbox. Done is the project's done column; unticked is in progress, the
  * same move the My Tasks box makes. Which column that is belongs to the
- * project, so its columns are read at the moment of ticking.
+ * project, so the server picks it from the category.
+ *
+ * The box shows the answer the moment it is clicked and goes back if the
+ * write is refused.
  */
 export const useSetTaskDone = () => {
-  const { t } = useTranslation("tasks");
   const communityId = useActiveCommunityId();
   const queryClient = useQueryClient();
-  const [resolving, setResolving] = useState(false);
-  const { mutateAsync, isPending } = useUpdateTask({
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: getReadSmartChipsQueryKey(communityId),
-      }),
-  });
+  const { mutateAsync, isPending } = useUpdateTask();
 
   const setDone = useCallback(
     async (taskId: number, done: boolean) => {
-      setResolving(true);
-      let targetId: number | null = null;
-      try {
-        const task = await queryClient.fetchQuery({
-          queryKey: getReadTaskQueryKey(communityId, taskId),
-          queryFn: () => readTask(communityId, taskId),
+      const key = chipKey(communityId, chipRef(SmartChipKind["task:checklist"], taskId));
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<SmartChipState | null>(key);
+      if (before) {
+        queryClient.setQueryData<SmartChipState>(key, {
+          ...before,
+          ...(done
+            ? { text: "done", tone: SmartChipTone.good }
+            : { text: "", tone: SmartChipTone.neutral }),
         });
-        const statuses = await listTaskStatuses(communityId, task.project_id);
-        targetId = statusForCategory(statuses, done ? "done" : "in_progress")?.id ?? null;
-      } catch (error) {
-        toast.error(getErrorMessage(error, "tasks:errors.statusUpdate"));
-        return;
+      }
+      try {
+        await mutateAsync({
+          taskId,
+          data: {
+            status_category: done ? TaskStatusCategory.done : TaskStatusCategory.in_progress,
+          },
+        });
+      } catch {
+        // A refused write is reported by the update itself.
+        queryClient.setQueryData(key, before);
       } finally {
-        setResolving(false);
+        void invalidate(q.references(SearchEntityType.task, taskId));
       }
-      if (targetId === null) {
-        toast.error(t("errors.statusNoMatch"));
-        return;
-      }
-      // A failed update is reported by the update itself.
-      await mutateAsync({ taskId, data: { task_status_id: targetId } }).catch(() => undefined);
     },
-    [communityId, mutateAsync, queryClient, t]
+    [communityId, mutateAsync, queryClient]
   );
 
-  return { setDone, pending: resolving || isPending };
+  return { setDone, pending: isPending };
 };
 
 /**

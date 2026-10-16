@@ -51,10 +51,6 @@ from app.db.session import (
     routed_guild_id,
     set_rls_context,
 )
-from app.models.platform.guild import (
-    GUILD_ADMIN_ROLES,
-    GuildMembership,
-)
 from app.models.platform.notice_outbox import NoticeOutboxItem
 from app.models.platform.notification import Notification, NotificationType
 from app.models.platform.user import User
@@ -78,7 +74,7 @@ from app.models.tenant.task import Task, TaskAssignee, TaskStatus, TaskStatusCat
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.services import email as email_service
 from app.services import permissions as permissions_service
-from app.services.tenant.named_people import roster_session
+from app.services.tenant.named_people import Governing, readers_of, roster_session
 from app.services.cross_guild import gather_across_guilds, member_guild_ids
 from app.services.guild_sweeps import Scan, Scope
 from app.services.platform import accounts as accounts_service
@@ -240,8 +236,9 @@ class Subject:
     resource_id: int
     #: Who the thing is shared with, against the roster as it stands.
     shared_with: frozenset[int]
-    #: Everybody who can open it now: ``shared_with`` and the community's
-    #: admins, who reach everything in it.
+    #: Everybody who can open it now (``named_people.readers_of``): those it
+    #: is shared with, and the community's admins and "Full access" roles,
+    #: who reach everything in it.
     readers: frozenset[int]
     target_path: str
 
@@ -264,9 +261,10 @@ async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
 
     The governing tool and the hops to it come from ``governing_path`` — a task
     reaches its project by ``project_id``, an event its calendar by
-    ``calendar_id`` — so no notifier names its tool. Who it is shared with is
-    the schema's ``resource_audience`` (``permissions.audience``), the rule the
-    post audience uses.
+    ``calendar_id`` — so no notifier names its tool. Who can open it is
+    ``named_people.readers_of``, the rule naming somebody on it uses, and who
+    it is shared with is ``permissions.audience``, the rule the post audience
+    uses.
     """
     kind, entity_id = ref
     table = entity_tables()[kind]
@@ -289,19 +287,16 @@ async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
     ).scalar_one_or_none()
     if row is None:
         return None
-    guild_id = routed_guild_id(session)
-    async with roster_session(session) as reader:
-        admins = set(
+    governing = Governing.of(tool, row)
+    async with roster_session(session, whole=True) as reader:
+        readers = set(
             (
                 await reader.exec(
-                    select(GuildMembership.user_id).where(
-                        GuildMembership.guild_id == guild_id,
-                        GuildMembership.role.in_(GUILD_ADMIN_ROLES),  # type: ignore[attr-defined]
-                    )
+                    readers_of(governing, cast(int, routed_guild_id(reader)))
                 )
             ).scalars()
         )
-        shared = (await permissions_service.audience(reader, tool, [row.id])).get(
+        shared = (await permissions_service.audience(reader, tool, [row])).get(
             row.id, set()
         )
     return Subject(
@@ -310,7 +305,7 @@ async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
         initiative_id=row.initiative_id,
         resource_id=row.id,
         shared_with=frozenset(shared),
-        readers=frozenset(shared | admins),
+        readers=frozenset(readers),
         target_path=(
             reference_path(kind, entity_id)
             if kind in _ADDRESSABLE
@@ -1786,9 +1781,10 @@ async def _left_out(
             select(
                 CalendarEventAnswer.calendar_event_id,
                 CalendarEventAnswer.user_id,
-                CalendarEventAnswer.original_start,
+                CalendarEventAnswer.occurrence_start,
             ).where(
                 CalendarEventAnswer.calendar_event_id.in_(ids),
+                CalendarEventAnswer.occurrence_start.is_not(None),  # type: ignore[union-attr]
                 CalendarEventAnswer.rsvp_status == RSVPStatus.declined,
             )
         )
@@ -2317,6 +2313,8 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
     routed into only those communities, with their own membership context, to
     dispatch reminders for the events they attend there.
     """
+    from app.services.tenant import calendar_occurrences
+
     horizon = now + timedelta(days=1)
     # Allow events that started within the grace window so a 0-minute
     # ("at the time of the event") reminder still fires on the next poll.
@@ -2351,7 +2349,9 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
                 )
                 .where(
                     CalendarEventAttendee.user_id.in_(list(lead)),
-                    CalendarEventAttendee.rsvp_status != RSVPStatus.declined,
+                    ~calendar_occurrences.answered(
+                        CalendarEventAttendee.user_id, RSVPStatus.declined
+                    ),
                     CalendarEvent.deleted_at.is_(None),
                     _starting(lower, horizon),
                 )
@@ -2395,7 +2395,9 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
                     )
                     .where(
                         CalendarEventAttendee.user_id == user_id,
-                        CalendarEventAttendee.rsvp_status != RSVPStatus.declined,
+                        ~calendar_occurrences.answered(
+                            CalendarEventAttendee.user_id, RSVPStatus.declined
+                        ),
                         CalendarEvent.deleted_at.is_(None),
                         _starting(lower, horizon),
                     )
@@ -2523,6 +2525,28 @@ async def queue_avatar_removed(session: AsyncSession, *, user: User) -> None:
                 None,
                 NotificationType.avatar_removed,
                 {"target_path": "/profile"},
+            )
+        ],
+    )
+
+
+async def queue_profile_field_cleared(
+    session: AsyncSession, *, user: User, field: str
+) -> None:
+    """Tell a user staff cleared part of their profile: their names in
+    communities, their status line or their decorations, by ``field``.
+
+    In-app only, and queued rather than sent, for the same reasons as
+    :func:`queue_avatar_removed`.
+    """
+    await notice_outbox.enqueue(
+        session,
+        [
+            notice_outbox.row(
+                cast(int, user.id),
+                None,
+                NotificationType.profile_field_cleared,
+                {"field": field, "target_path": "/profile"},
             )
         ],
     )

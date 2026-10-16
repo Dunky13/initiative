@@ -292,12 +292,13 @@ async def test_patch_sets_the_operator_only_fields(
     response = await client.patch(
         f"{BASE}{row.id}",
         headers=headers,
-        json={"mandatory": True, "enabled": False},
+        json={"mandatory": True, "operations_only": True, "enabled": False},
     )
 
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["mandatory"] is True
+    assert body["operations_only"] is True
     assert body["enabled"] is False
 
 
@@ -310,16 +311,16 @@ async def test_the_browser_address_round_trips_and_clears(
     set_it = await client.patch(
         f"{BASE}{row.id}",
         headers=headers,
-        json={"embed_origin": "https://plugin.example.com"},
+        json={"page_origin": "https://plugin.example.com"},
     )
     assert set_it.status_code == 200, set_it.text
-    assert set_it.json()["embed_origin"] == "https://plugin.example.com"
+    assert set_it.json()["page_origin"] == "https://plugin.example.com"
 
     cleared = await client.patch(
-        f"{BASE}{row.id}", headers=headers, json={"embed_origin": ""}
+        f"{BASE}{row.id}", headers=headers, json={"page_origin": ""}
     )
     assert cleared.status_code == 200, cleared.text
-    assert cleared.json()["embed_origin"] is None
+    assert cleared.json()["page_origin"] is None
 
 
 @pytest.mark.parametrize(
@@ -333,9 +334,9 @@ async def test_the_browser_address_round_trips_and_clears(
         # Its own code, so an operator is told which of the two addresses the
         # registry would not take.
         (
-            "a malformed embed origin",
-            {**NEW, "embed_origin": "ftp://plugin.example.com"},
-            PluginServiceMessages.INVALID_EMBED_ORIGIN,
+            "a malformed page origin",
+            {**NEW, "page_origin": "ftp://plugin.example.com"},
+            PluginServiceMessages.INVALID_PAGE_ORIGIN,
         ),
         (
             "an origin carrying a path",

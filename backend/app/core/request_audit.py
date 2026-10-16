@@ -18,8 +18,9 @@ life:
 * **A request served through a grant is written down.** The guild-access gate
   records the grant on the request's context; when the response is finished
   this writes one ``pam.request`` line saying which grant, which route, and
-  what it answered. The grant says somebody was let into a community; these
-  say what they did while they were there.
+  what it answered, and one ``access_grant_activity`` row per grant, which the
+  grant's case is told of. The grant says somebody was let into a community;
+  these say what they did while they were there.
 
 A socket has no response to be finished, so it gets no ``pam.request`` line.
 What it has instead is :func:`record_privileged_edit`, which the live editing
@@ -38,11 +39,15 @@ import time
 from typing import Any, Awaitable, Callable
 
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.requests import HTTPConnection
 
 from app.core import audit_context, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.services import audit as audit_service
+from app.core.security_rules import Signal
+from app.services.platform import security_signals
+from app.services.tenant import plugin_age
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +138,57 @@ def _reached_ids(scope: Scope) -> dict[str, int]:
     return reached
 
 
+#: The methods that change something.
+_WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+#: Path parameters that name where a request is, rather than what it reached.
+_PLACES = frozenset({"community_id", "guild_id", "initiative_id"})
+
+
+def _target(reached: dict[str, int]) -> tuple[str | None, int | None]:
+    """The thing a route named last, as a kind and an id: ``task_id`` 12 is a
+    task, 12. A route that names only where it is names nothing."""
+    for name, value in reversed(list(reached.items())):
+        if name not in _PLACES and name.endswith("_id"):
+            return name.removesuffix("_id"), value
+    return None, None
+
+
+async def _record_activity(
+    grant_ids: list[int],
+    *,
+    method: str,
+    route: str,
+    status: int,
+    reached: dict[str, int],
+) -> None:
+    """One ``access_grant_activity`` row per grant the request was served
+    through. A failure is logged and never fails the request."""
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.access_grant_activity import (
+        ROUTE_LENGTH,
+        AccessGrantActivity,
+    )
+
+    target_type, target_id = _target(reached)
+    try:
+        async with SystemSessionLocal() as session:
+            for grant_id in grant_ids:
+                session.add(
+                    AccessGrantActivity(
+                        grant_id=grant_id,
+                        method=method[:8],
+                        route=route[:ROUTE_LENGTH],
+                        status=status,
+                        is_write=method in _WRITES,
+                        target_type=target_type,
+                        target_id=target_id,
+                    )
+                )
+            await session.commit()
+    except Exception:  # noqa: BLE001 — a record of the request, never a reason to fail it
+        logger.exception("access grant activity: could not record a request")
+
+
 def _route_template(scope: Scope) -> str | None:
     """The route as it is written, rather than as it was typed; ``None``
     when no route answered."""
@@ -158,6 +214,7 @@ class RequestAuditMiddleware:
             request_id=_incoming_request_id(headers) or audit_context.new_request_id(),
             source_ip=(scope.get("client") or (None,))[0],
             user_agent=headers.get("user-agent"),
+            country=plugin_age.request_country(HTTPConnection(scope)),
         )
         _note_ignored_forwarded_header(headers, context.source_ip)
         if kind == "websocket":
@@ -198,7 +255,12 @@ class RequestAuditMiddleware:
             status = str(answered.get("status", 500))
             metrics.http_requests.labels(method, label, status).inc()
             metrics.http_request_duration.labels(method, label).observe(elapsed)
+            if answered.get("status") == 429:
+                # Every 429, whichever limit answered it, is counted by the
+                # security rules and never written down one by one.
+                security_signals.signal(Signal.rate_limited)
             if context.is_privileged:
+                reached = _reached_ids(scope)
                 audit_service.emit(
                     event_type=AuditEventType.PAM_REQUEST,
                     actor_user_id=context.actor_user_id,
@@ -207,8 +269,19 @@ class RequestAuditMiddleware:
                         "method": scope.get("method"),
                         "route": route or scope.get("path", ""),
                         "status": answered.get("status"),
-                        "reached": _reached_ids(scope),
+                        "reached": reached,
                     },
+                )
+                await _record_activity(
+                    [
+                        grant
+                        for grant in (context.grant_id, context.settings_grant_id)
+                        if grant is not None
+                    ],
+                    method=str(scope.get("method") or ""),
+                    route=route or metrics.UNMATCHED_ROUTE,
+                    status=int(answered.get("status", 500)),
+                    reached=reached,
                 )
             audit_context.end(token)
 

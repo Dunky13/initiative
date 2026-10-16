@@ -129,7 +129,7 @@ export const RouteErrorPage = ({ error, reset }: ErrorComponentProps) => {
         <>
           <Button onClick={retry}>{t("tryAgain")}</Button>
           <Button variant="outline" asChild>
-            <Link to="/">{t("errorPage.toMyTasks", { myTasks: t("nav:myTasks") })}</Link>
+            <Link to="/">{t("errorPage.toHome", { home: t("nav:home") })}</Link>
           </Button>
         </>
       }
@@ -156,7 +156,7 @@ export const NotFoundPage = () => {
             </Button>
           ) : null}
           <Button asChild>
-            <Link to="/">{t("errorPage.toMyTasks", { myTasks: t("nav:myTasks") })}</Link>
+            <Link to="/">{t("errorPage.toHome", { home: t("nav:home") })}</Link>
           </Button>
         </>
       }

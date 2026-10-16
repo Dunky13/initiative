@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import re
+import uuid
 from collections.abc import Sequence
 from enum import Enum
 from functools import lru_cache
@@ -50,6 +51,26 @@ def is_device(request: Request) -> bool:
     longer than a browser.
     """
     return request.headers.get("origin") in CAPACITOR_NATIVE_ORIGINS
+
+
+#: Where the app names the copy of itself a request comes from.
+INSTALL_HEADER = "X-Initiative-Install"
+
+
+def install_id(request: Request) -> uuid.UUID | None:
+    """The installed copy of the app a request names, read beside
+    :func:`is_device` and only where it holds.
+
+    The app makes the name once per server and keeps it through sign-out, so a
+    device signing in again continues its own session rather than counting as
+    another device. ``None`` for a browser, or an app too old to send one.
+    """
+    if not is_device(request):
+        return None
+    try:
+        return uuid.UUID(request.headers.get(INSTALL_HEADER, ""))
+    except ValueError:
+        return None
 
 
 # Third-party origins the built SPA legitimately embeds in iframes, used to build
@@ -630,10 +651,10 @@ class Settings(BaseSettings):
         ``'unsafe-inline'`` because the charting component and some UI libraries
         inject inline ``<style>``. Origins the app genuinely loads (Google
         Fonts, file embeds, and — when configured — the captcha provider and
-        app embeds) are listed explicitly rather than via a blanket
+        plug-in pages) are listed explicitly rather than via a blanket
         ``https:``.
 
-        ``plugin_frame_origins`` is how a marketplace plug-in's embedded surface gets
+        ``plugin_frame_origins`` is how a marketplace plug-in's page gets
         framed. It holds the origins of the plug-in services this deployment has
         registered — the operator's trusted-site list, passed in by
         ``app.api.embed_csp`` on the documents where ``frame-src`` applies, and
@@ -883,6 +904,8 @@ class Settings(BaseSettings):
         ),
     )
     DISABLE_GUILD_CREATION: bool = False
+    # Runs this deployment as the product demo.
+    DEMO_MODE: bool = False
     # Communities one account may create in a day; 0 means no limit. Accounts
     # holding ``communities.manage`` are not held to it.
     GUILD_CREATION_DAILY_LIMIT: int = Field(default=5, ge=0)
@@ -981,19 +1004,21 @@ class Settings(BaseSettings):
     # from the marketplace, and an entry naming a listing field is refused:
     #   [{"public_id": "acme.shopify",
     #     "base_url": "http://shopify:9100",
-    #     "embed_origin": "https://shopify.example.com",
+    #     "page_origin": "https://shopify.example.com",
     #     "jwks": {"keys": […]},
     #     "allowed_origins": ["https://shopify.example.com"],
     #     "vendor_env": {"client_secret": "SHOPIFY_CLIENT_SECRET"},
-    #     "mandatory": false}]
+    #     "mandatory": false,
+    #     "operations_only": false}]
     # ``base_url`` is where this server calls the plug-in, so it may be an address
-    # only the container network resolves; ``embed_origin`` is where a browser
+    # only the container network resolves; ``page_origin`` is where a browser
     # loads its pages, omitted when the plug-in answers both at one address. Give
     # the plug-in's public keys as ``jwks``, or as ``jwks_uri`` when the plug-in serves
     # them at ``base_url``'s origin (``/.well-known/jwks.json`` for a plug-in built
     # on the SDK). ``vendor_env`` maps a vendor value to the environment
     # variable holding it, so the file names no secret and can be a plain
-    # ConfigMap. An entry waits until its plug-in's listing
+    # ConfigMap. ``operations_only`` offers the plug-in to the operations
+    # community alone. An entry waits until its plug-in's listing
     # arrives. Unset (the default) ⇒ nothing is reconciled.
     # Reconciliation never re-enables a registration an operator disabled, and
     # never blocks boot.

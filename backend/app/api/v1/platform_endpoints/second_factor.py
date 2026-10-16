@@ -354,4 +354,7 @@ async def regenerate_recovery_codes(
         actor_user_id=current_user.id,
     )
     await system_session.commit()
+    # Somebody holding a new set holds the account: its holder is told, with
+    # the way to say it wasn't them.
+    await email_service.announce_recovery_codes_issued(system_session, current_user)
     return RecoveryCodes(codes=codes)

@@ -1,6 +1,15 @@
 from typing import Optional
 
-from sqlalchemy import ARRAY, Boolean, Column, ForeignKey, Integer, String, text
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum, JSONB
 from sqlmodel import Enum as SQLEnum, Field, SQLModel
 from pydantic import ConfigDict
@@ -63,6 +72,9 @@ MAX_GUILD_RETENTION_DAYS = 3650
 
 class AppSetting(SQLModel, table=True):
     __tablename__ = "app_settings"
+    __table_args__ = (
+        CheckConstraint("max_guest_days >= 1", name="ck_app_settings_max_guest_days"),
+    )
     __allow_unmapped__ = True
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -258,6 +270,27 @@ class AppSetting(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
 
+    # Whether communities may have guests: outside people in for a set time,
+    # who take no seat. Off by default, so a deployment has guests only once
+    # its owner turns them on. Off, no guest membership admits anybody.
+    guests_enabled: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    # The longest a guest membership may run, in days. A community's own
+    # longest sits under it.
+    max_guest_days: int = Field(
+        default=90,
+        sa_column=Column(Integer, nullable=False, server_default="90"),
+    )
+    # Whether this deployment runs as the demo (``DEMO_MODE``), written from
+    # the environment at every boot. Only here may a guest membership carry a
+    # rung above ``guest``.
+    demo_mode: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+
     # Whether the platform's sign-in placement rules apply to every community
     # they name, rather than only to the communities that accepted them on
     # their connection. For a deployment that is one organisation, where the
@@ -274,6 +307,14 @@ class AppSetting(SQLModel, table=True):
     # not belong. Switching it off keeps every channel and policy exactly as it
     # was, so switching it back on restores them rather than rebuilding them.
     direct_messages_enabled: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
+
+    # Whether search may order a community's content by how many members
+    # engaged with it lately. Each community is asked too, and off wins, so a
+    # community can turn off what this allows and never the reverse.
+    engagement_ranking_enabled: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )

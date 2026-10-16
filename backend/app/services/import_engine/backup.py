@@ -30,19 +30,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.db.session import routed_guild_id
+from app.db import gucs
+from app.db.session import raise_flag, routed_guild_id
 from app.core.references import format_ref, parse_ref
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.core.tools import BULK_EXPORT_TOOLS, Tool, tool_envelope_type
 from app.core.messages import ImportEngineMessages
 from app.models.platform.user import User
+from app.models.tenant.import_job import ImportJob, ImportJobStatus
+from app.models.tenant.initiative import Initiative
+from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.schemas.tenant.backup_export import (
     BACKUP_SCHEMA_VERSION,
     MIN_SUPPORTED_IMPORT_VERSION,
@@ -56,13 +61,19 @@ from app.schemas.tenant.import_job import (
     BackupPlanPerson,
     EntryResult,
 )
+from app.services import guild_work
 from app.services.import_engine import engine as import_engine
+from app.services.import_engine import limits as import_limits
 from app.services.import_engine.archive_assets import (
     ArchiveAsset,
     remove_written,
     restore_assets,
 )
-from app.services.import_engine.common import handle_key, unique_name
+from app.services.import_engine.common import (
+    handle_key,
+    load_guild_member_handles,
+    unique_name,
+)
 from app.services.tenant.attachments import claim_shown
 from app.services.import_engine.contract import (
     EnvelopeImportResult,
@@ -75,6 +86,7 @@ from app.services.import_engine.context import (
 )
 from app.services.import_engine.links import resolve_page_links
 from app.services.import_engine.references import SOURCE_REF, resolve_references
+from app.services.marketplace.publish_profile import shift_dates
 from app.services.import_engine.zip_bounds import (
     json_cap,
     open_zip,
@@ -316,6 +328,61 @@ def plan_backup(
     )
 
 
+async def stage_backup_job(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    user: User,
+    payload: Path,
+    status: ImportJobStatus,
+    anchor: datetime | None = None,
+    people_map: dict[str, int] | None = None,
+    join: list[int] | None = None,
+) -> ImportJob:
+    """Plan the backup zip at ``payload``, stage it in the community's storage
+    and add its job, created by ``user``, to ``session`` without committing.
+
+    ``session`` is routed into the community, and the plan suggests who each
+    name in the archive is from the roster it reads there. A ``staged`` job
+    waits for the seat to confirm the plan; a ``queued`` one goes straight to
+    the worker. ``anchor`` and ``join`` are as for :func:`apply_backup`, and
+    ``people_map`` places people as a confirm does. Raises
+    ``IMPORT_JOB_LIMIT_REACHED`` once ``user`` has too many jobs open."""
+    existing_names = set((await session.exec(select(Initiative.name))).all())
+    roster = await load_guild_member_handles(session, guild_id=guild_id)
+    plan = await asyncio.to_thread(
+        plan_backup,
+        payload,
+        existing_initiative_names=existing_names,
+        member_ids_by_handle=roster,
+    )
+    await import_engine.count_active_jobs_locked(session, user=user)
+    payload_ref = await asyncio.to_thread(
+        import_engine.stage_payload_file, guild_id, payload, suffix="zip"
+    )
+    params: dict[str, Any] = {}
+    if anchor is not None:
+        params["anchor"] = anchor.isoformat()
+    if people_map:
+        params["people_map"] = people_map
+    if join:
+        params["join"] = join
+    job = ImportJob(
+        created_by=user.id,
+        source="backup",
+        params=params,
+        payload_ref=payload_ref,
+        plan=plan.model_dump(mode="json"),
+        status=status,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(hours=import_limits.IMPORT_STAGED_TTL_HOURS),
+    )
+    session.add(job)
+    if status is ImportJobStatus.queued:
+        guild_work.wake(session, guild_work.DATA_JOBS, guild_id)
+    return job
+
+
 def _manifest_tool_flags(tools: dict[str, str] | None) -> dict[str, bool]:
     """A manifest's per-tool states as initiative master-switch fields.
 
@@ -349,6 +416,8 @@ async def apply_backup(
     exclude_properties: Any = None,
     heartbeat: Callable[[], Awaitable[None]] | None = None,
     fetched: bool = False,
+    anchor: datetime | None = None,
+    join: list[int] | None = None,
 ) -> BackupImportResult:
     """Restore a backup zip into new initiatives, as ``user``, on the
     worker's creator-routed session. Flushes and COMMITS per chunk (the
@@ -356,7 +425,12 @@ async def apply_backup(
 
     ``heartbeat`` is called after each asset and each entry, so the job can
     show it is still being applied. ``fetched`` is as for
-    :func:`zip_bounds.open_zip`."""
+    :func:`zip_bounds.open_zip`. ``anchor``, when given, moves every date the
+    envelopes carry by the whole days from it to now, so a bundle reads as if
+    it had been exported today (a repeat by its own rule, :func:`shift_dates`).
+    ``join`` names members of the community who join every initiative the
+    bundle creates, as members, where everything the bundle made is shared with
+    the initiative's members to edit."""
     from app.api.deps import establish_guild_access
     from app.services.import_engine.importers import IMPORTERS
     from app.models.platform.guild import CommunityRole
@@ -367,6 +441,11 @@ async def apply_backup(
         manifest = await asyncio.to_thread(read_manifest, archive, fetched=fetched)
         max_json_bytes = json_cap(fetched=fetched)
         result = BackupImportResult()
+        shift_days = (
+            round((datetime.now(timezone.utc) - anchor) / timedelta(days=1))
+            if anchor is not None
+            else 0
+        )
 
         # Re-verify the seat, held outright, at apply time — enqueue-time
         # authority can be gone by now, and standing up a new initiative in the
@@ -383,6 +462,13 @@ async def apply_backup(
                 raise ImportEngineError(
                     ImportEngineMessages.IMPORT_SUPERADMIN_REQUIRED, status_code=403
                 )
+        joining = [
+            user_id
+            for user_id in join or ()
+            if await guilds_service.get_membership(
+                session, guild_id=guild_id, user_id=user_id
+            )
+        ]
 
         # Assets first, one chunk: written under their ORIGINAL storage keys so
         # embedded editor-state image references resolve without rewriting.
@@ -402,7 +488,6 @@ async def apply_backup(
             entries_by_initiative.setdefault(entry.initiative_id, []).append(entry)
 
         since_refresh = 0
-        from app.models.tenant.initiative import Initiative
 
         # One context for the whole bundle. Its collector matters because an edge
         # routinely crosses two entries applied by two different importers, so
@@ -442,6 +527,8 @@ async def apply_backup(
                     color=mi.color,
                     tool_flags=_manifest_tool_flags(mi.tools),
                     manager_id=user.id,
+                    join_policy=mi.join_policy,
+                    member_ids=joining,
                 )
             result.initiatives.append(
                 {
@@ -487,6 +574,7 @@ async def apply_backup(
                     result=result,
                     context=context,
                     max_json_bytes=max_json_bytes,
+                    shift_days=shift_days,
                 )
                 result.entries.append(outcome)
                 bucket = result.per_tool.setdefault(
@@ -495,6 +583,8 @@ async def apply_backup(
                 bucket[outcome.status] += 1
                 if heartbeat is not None:
                     await heartbeat()
+            if joining and mi.target_initiative_id is None:
+                await _share_with_members(session, initiative.id)
             await session.commit()
 
         # Everything is in the database; now the names can become edges.
@@ -513,6 +603,28 @@ async def apply_backup(
         await session.commit()
 
         return result
+
+
+async def _share_with_members(session: AsyncSession, initiative_id: int) -> None:
+    """Share each tool the import made in ``initiative_id`` with all of the
+    initiative's members, to edit."""
+    owned = await session.exec(
+        select(ResourceGrant.resource_type, ResourceGrant.resource_id).where(
+            ResourceGrant.initiative_id == initiative_id,
+            ResourceGrant.level == ResourceAccessLevel.owner,
+        )
+    )
+    session.add_all(
+        ResourceGrant(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            initiative_id=initiative_id,
+            level=ResourceAccessLevel.write,
+            all_initiative_members=True,
+        )
+        for resource_type, resource_id in owned.all()
+    )
+    await session.flush()
 
 
 async def _place_files_under_pages(
@@ -621,9 +733,11 @@ async def _apply_entry(
     result: BackupImportResult,
     max_json_bytes: int,
     context: ImportContext | None = None,
+    shift_days: int = 0,
 ) -> EntryResult:
     """Apply one manifest entry in its own savepoint and report how it went.
-    Its envelope is read up to ``max_json_bytes``."""
+    Its envelope is read up to ``max_json_bytes``, and its dates moved by
+    ``shift_days``."""
     base = {
         "path": entry.path,
         "tool": entry.tool,
@@ -665,8 +779,12 @@ async def _apply_entry(
         raw = await asyncio.to_thread(
             read_json_member, archive, entry.path, max_bytes=max_json_bytes
         )
-        validated = importer.validate(_current_shape(raw))
+        envelope = _current_shape(raw)
+        if shift_days and isinstance(envelope, dict) and entry.tool in _TOOL_ORDER:
+            envelope = shift_dates(Tool(entry.tool), envelope, shift_days)
+        validated = importer.validate(envelope)
         async with session.begin_nested():
+            await raise_flag(session, gucs.IMPORTING)
             detail = await importer.apply(
                 session,
                 envelope=validated,
@@ -674,6 +792,7 @@ async def _apply_entry(
                 importer=user,
                 context=context,
             )
+            await raise_flag(session, gucs.IMPORTING, False)
     except ImportEngineError as exc:
         logger.warning(
             "backup entry failed path=%s tool=%s code=%s",
@@ -832,7 +951,6 @@ async def _apply_initiative_structure(session, initiative, user: User, payload) 
         InitiativeRolePermission,
         PermissionKey,
     )
-    from app.services.import_engine.common import load_guild_member_handles
 
     roles = {
         role.name: role

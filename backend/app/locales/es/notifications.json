@@ -107,6 +107,7 @@
   "accessGrant": {
     "levelRead": "de solo lectura",
     "levelReadWrite": "de lectura y escritura",
+    "levelModerate": "de moderación",
     "levelAdmin": "a los ajustes de la comunidad (administrador)",
     "levelSuperadmin": "a los ajustes de la comunidad (superadministrador)",
     "requested": {
@@ -215,6 +216,14 @@
     "account": {
       "title": "Un aviso sobre tu cuenta",
       "body": "Abre Initiative para leerlo."
+    },
+    "moderation": {
+      "title": "Un aviso de moderación",
+      "body": "Abre Initiative para leerlo."
+    },
+    "cases": {
+      "title": "Novedades de un caso",
+      "body": "Abre Initiative para leerlas."
     }
   },
   "quietHours": {
@@ -246,6 +255,26 @@
       "title": "Notificaciones reanudadas",
       "body_one": "{{count}} cosa ocurrió mientras no estabas.",
       "body_other": "{{count}} cosas ocurrieron mientras no estabas."
+    }
+  },
+  "moderation": {
+    "removed": {
+      "title": "Un moderador eliminó algo que escribiste",
+      "body": "Incumplía las normas de esta comunidad. Abre el aviso para ver el motivo."
+    },
+    "warned": {
+      "title": "Un aviso de los moderadores de esta comunidad",
+      "body": "{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "title": "Un caso nuevo",
+      "body": "Abre Initiative para leerlo."
+    },
+    "replied": {
+      "title": "Una respuesta en un caso que nadie ha tomado",
+      "body": "Abre Initiative para leerla."
     }
   }
 }

@@ -6,6 +6,7 @@ import {
   $isLineBreakNode,
   $isNodeSelection,
   $isRangeSelection,
+  $onUpdate,
   type BaseSelection,
   CLICK_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
@@ -22,7 +23,12 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { getSelectedNode } from "@/components/ui/editor/utils/get-selected-node";
 import { setFloatingElemPositionForLinkEditor } from "@/components/ui/editor/utils/set-floating-elem-position-for-link-editor";
-import { sanitizeUrl } from "@/components/ui/editor/utils/url";
+import {
+  DEFAULT_LINK_URL,
+  pasteOverDefaultLinkUrl,
+  sanitizeUrl,
+  withoutDefaultScheme,
+} from "@/components/ui/editor/utils/url";
 import { Input } from "@/components/ui/input";
 
 function FloatingLinkEditor({
@@ -43,7 +49,7 @@ function FloatingLinkEditor({
   const editorRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [linkUrl, setLinkUrl] = useState("");
-  const [editedLinkUrl, setEditedLinkUrl] = useState("https://");
+  const [editedLinkUrl, setEditedLinkUrl] = useState(DEFAULT_LINK_URL);
   const [lastSelection, setLastSelection] = useState<BaseSelection | null>(null);
 
   const $updateLinkEditor = useCallback(() => {
@@ -133,7 +139,7 @@ function FloatingLinkEditor({
       editor.registerCommand(
         SELECTION_CHANGE_COMMAND,
         () => {
-          $updateLinkEditor();
+          $onUpdate(() => editor.read("latest", $updateLinkEditor));
           return true;
         },
         COMMAND_PRIORITY_LOW
@@ -194,7 +200,7 @@ function FloatingLinkEditor({
           }
         });
       }
-      setEditedLinkUrl("https://");
+      setEditedLinkUrl(DEFAULT_LINK_URL);
       setIsLinkEditMode(false);
     }
   };
@@ -208,7 +214,17 @@ function FloatingLinkEditor({
           <Input
             ref={inputRef}
             value={editedLinkUrl}
-            onChange={(event) => setEditedLinkUrl(event.target.value)}
+            onChange={(event) => setEditedLinkUrl(withoutDefaultScheme(event.target.value))}
+            onPaste={(event) => {
+              // A URL pasted over the untouched default replaces it, wherever
+              // the caret happened to be.
+              const pasted = event.clipboardData.getData("text/plain");
+              if (editedLinkUrl !== DEFAULT_LINK_URL || pasted.trim() === "") {
+                return;
+              }
+              event.preventDefault();
+              setEditedLinkUrl(pasteOverDefaultLinkUrl(pasted));
+            }}
             onKeyDown={monitorInputInteraction}
             className="grow"
           />

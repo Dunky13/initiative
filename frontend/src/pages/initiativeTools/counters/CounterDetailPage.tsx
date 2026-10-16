@@ -13,7 +13,7 @@ import { type TouchEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type CounterRead, Tool } from "@/api/generated/initiativeAPI.schemas";
-import { CounterFormDialog } from "@/components/initiativeTools/counters/CounterFormDialog";
+import { EditCounterDialog } from "@/components/initiativeTools/counters/EditCounterDialog";
 import { CounterView } from "@/components/initiativeTools/counters/views/CounterView";
 import { CounterFocusSkeleton } from "@/components/skeletons/PageSkeletons";
 import { ToolAccessStatus } from "@/components/ToolAccessStatus";
@@ -31,6 +31,7 @@ import {
   useSetCount,
   useSteppedCount,
 } from "@/hooks/useCounters";
+import { useRecordOpen } from "@/hooks/useRecents";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getContrastingTextColor } from "@/lib/counter-color";
@@ -84,6 +85,7 @@ export function CounterDetailPage() {
     [counters, counterId]
   );
   const counter = currentIndex >= 0 ? counters[currentIndex] : null;
+  useRecordOpen("counter", counter?.id);
 
   const canWrite = Boolean(group?.can.edit);
 
@@ -296,14 +298,15 @@ export function CounterDetailPage() {
       </div>
 
       {canWrite && editing && (
-        <CounterFormDialog
+        <EditCounterDialog
           open={!!editing}
           onOpenChange={(open) => {
             if (!open) setEditing(null);
           }}
           groupId={groupId}
-          initiativeId={initiativeId}
+          initiativeId={group.initiative_id}
           counter={editing}
+          stepper={stepper}
         />
       )}
     </div>

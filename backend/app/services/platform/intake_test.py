@@ -428,3 +428,43 @@ async def test_a_case_whose_task_was_moved_away_is_not_this_projects_case(
     await set_rls_context(session, SystemGuild(bound["guild"].id))
     landed = (await session.exec(select(Task).where(Task.id == again.task_id))).one()
     assert landed.project_id == bound["project"].id
+
+
+@pytest.mark.parametrize(
+    ("kind", "linked"),
+    [("comment", True), ("task", True), ("queue_item", True), ("gallery_image", False)],
+)
+async def test_a_moderation_case_links_to_what_it_is_about(
+    session, bound, kind, linked
+):
+    """The link a case carries opens the thing in its community, through the
+    app's resolver; a kind with no page of its own gets none."""
+    from app.core.config import settings
+    from app.services.tenant.properties import summaries_by_id
+
+    await _bind(
+        session,
+        guild=bound["guild"],
+        project=bound["project"],
+        stream=IntakeStream.moderation.value,
+    )
+    outcome = await intake_service.open_case(
+        IntakeStream.moderation,
+        title="Reported",
+        refs=CaseRefs(subject_guild=7, resource_type=kind, resource_id=12),
+    )
+    assert outcome is not None
+
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    values = {
+        summary.name: summary.value
+        for summary in (await summaries_by_id(session, "task", [outcome.task_id]))[
+            outcome.task_id
+        ]
+    }
+    expected = (
+        f"{settings.APP_URL.rstrip('/')}/c/7/go/{kind.replace('_', '-')}/12"
+        if linked
+        else None
+    )
+    assert values.get(CaseField.subject_link.value) == expected

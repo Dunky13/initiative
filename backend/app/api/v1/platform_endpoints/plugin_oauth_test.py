@@ -38,6 +38,8 @@ from app.testing.plugin_clients import (
     install_plugin,
     mint_client_assertion,
 )
+from app.core.audit_events import AuditEventType
+from app.testing.audit import emitted
 
 TOKEN_URL = "/api/v1/plugin-platform/oauth/token"
 INSTALLATIONS_URL = "/api/v1/plugin-platform/installations"
@@ -61,6 +63,19 @@ async def _ask(client: AsyncClient, *, assertion: str | None = None, **form):
 
 def _error(response) -> str:
     return response.json()["error"]
+
+
+async def _limit_to_operations(session: AsyncSession) -> None:
+    """Limit the client's registration to the operations community, which no
+    test community is."""
+    await session.exec(
+        text(
+            "UPDATE public.plugin_service_registrations SET operations_only = true "
+            "WHERE public_id = :c"
+        ).bindparams(c=CLIENT)
+    )
+    await session.commit()
+    invalidate_registrations()
 
 
 async def _installation(installed: InstalledPlugin) -> str:
@@ -90,6 +105,20 @@ async def test_a_plugin_token_names_only_the_client(
     assert response.headers["cache-control"] == "no-store"
     token = unseal_access_token(body["access_token"])
     assert token == PluginAccessToken(client_id=CLIENT, exp=token.exp)
+
+
+async def test_an_assertion_presented_twice_is_refused_and_written_down(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session, capfd
+):
+    await install_plugin(session, acting_user, role_session, granted=["files:read"])
+    assertion = _assertion()
+    assert (await _ask(client, assertion=assertion)).status_code == 200
+
+    emitted(capfd)
+    again = await _ask(client, assertion=assertion)
+    assert again.status_code == 401
+    (line,) = emitted(capfd, AuditEventType.SECURITY_REPLAY_REJECTED)
+    assert line["detail"] == {"channel": "plugin_assertion", "install": CLIENT}
 
 
 async def test_a_p256_key_authenticates_too(
@@ -585,6 +614,20 @@ async def test_another_clients_installation_is_refused(
     assert _error(response) == "invalid_grant"
 
 
+async def test_an_operations_only_plugin_gets_no_token_elsewhere(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    installed = await install_plugin(
+        session, acting_user, role_session, granted=["files:read"]
+    )
+    await _limit_to_operations(session)
+
+    response = await _ask(client, installation=await _installation(installed))
+
+    assert response.status_code == 400
+    assert _error(response) == "invalid_grant"
+
+
 async def test_the_member_grant_takes_no_client_assertion(
     client: AsyncClient, session: AsyncSession, acting_user, role_session
 ):
@@ -748,7 +791,9 @@ async def test_a_plugin_token_lists_the_installs_a_page_at_a_time(
     assert "link" not in last.headers
 
 
-@pytest.mark.parametrize("paused_by", ["install_off", "guild_on_hold", "guild_deleted"])
+@pytest.mark.parametrize(
+    "paused_by", ["install_off", "guild_on_hold", "guild_deleted", "operations_only"]
+)
 async def test_a_paused_install_is_listed_as_inactive(
     client: AsyncClient,
     session: AsyncSession,
@@ -768,6 +813,8 @@ async def test_a_paused_install_is_listed_as_inactive(
             headers=installed.seat.headers,
         )
         assert switched.status_code == 200, switched.text
+    elif paused_by == "operations_only":
+        await _limit_to_operations(session)
     else:
         status = "on_hold" if paused_by == "guild_on_hold" else "deleted"
         await session.exec(

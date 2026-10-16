@@ -107,6 +107,7 @@
   "accessGrant": {
     "levelRead": "Lesezugriff",
     "levelReadWrite": "Lese- und Schreibzugriff",
+    "levelModerate": "Moderationszugriff",
     "levelAdmin": "auf Community-Einstellungen (Admin)",
     "levelSuperadmin": "auf Community-Einstellungen (Superadmin)",
     "requested": {
@@ -215,6 +216,14 @@
     "account": {
       "title": "Ein Hinweis zu deinem Konto",
       "body": "Öffne Initiative, um ihn zu lesen."
+    },
+    "moderation": {
+      "title": "Eine Moderationsmitteilung",
+      "body": "Öffne Initiative, um sie zu lesen."
+    },
+    "cases": {
+      "title": "Neuigkeiten zu einem Fall",
+      "body": "Öffne Initiative, um sie zu lesen."
     }
   },
   "quietHours": {
@@ -246,6 +255,26 @@
       "title": "Benachrichtigungen wieder aktiv",
       "body_one": "{{count}} Sache ist passiert, während du weg warst.",
       "body_other": "{{count}} Sachen sind passiert, während du weg warst."
+    }
+  },
+  "moderation": {
+    "removed": {
+      "title": "Ein Moderator hat etwas von dir entfernt",
+      "body": "Es hat gegen die Regeln dieser Community verstoßen. Öffne die Benachrichtigung, um den Grund zu sehen."
+    },
+    "warned": {
+      "title": "Eine Warnung der Moderatoren dieser Community",
+      "body": "{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "title": "Ein neuer Fall",
+      "body": "Öffne Initiative, um ihn zu lesen."
+    },
+    "replied": {
+      "title": "Eine Antwort auf einen Fall, den niemand übernommen hat",
+      "body": "Öffne Initiative, um sie zu lesen."
     }
   }
 }

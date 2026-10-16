@@ -389,7 +389,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
     )
 
     # Active invite addressed to the victim — the recoverable PII trace.
-    victim_invite = await guild_service.create_guild_invite(
+    victim_invite, victim_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -398,7 +398,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
         expires_at=None,
     )
     # Invite for someone else — must be untouched.
-    other_invite = await guild_service.create_guild_invite(
+    other_invite, other_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -407,7 +407,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
         expires_at=None,
     )
     # Unbound shareable link (no address) — must be untouched.
-    open_invite = await guild_service.create_guild_invite(
+    open_invite, open_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -471,7 +471,7 @@ async def test_hard_delete_user_scrubs_addressed_invites(
         session, user=victim, guild=guild, role=CommunityRole.member
     )
 
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,

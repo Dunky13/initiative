@@ -96,7 +96,7 @@ Not sure how the pieces fit together yet? [How Initiative is organized](../conce
 
 -   :material-account-circle-outline: __Your space__
 
-    My Tasks, your calendar, your stats — everything that's yours.
+    Your home page, your calendar, your stats — everything that's yours.
 
     [:octicons-arrow-right-24: Your space](your-space.md)
 

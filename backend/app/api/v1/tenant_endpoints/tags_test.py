@@ -282,11 +282,106 @@ async def test_every_tag_target_is_bulk_tagged_and_listed_on_its_tag(
         )
         assert response.status_code == 200, (target, response.text)
 
-    listed = await client.get(a.g(f"/tags/{tag.id}/entities"), headers=a.headers)
-    assert listed.status_code == 200, listed.text
-    assert {
-        (item["entity_type"], item["entity_id"]) for item in listed.json()["items"]
-    } == {(target, entity.id) for target, entity in targets.items()}
+    counts = await client.get(a.g(f"/tags/{tag.id}/counts"), headers=a.headers)
+    assert counts.status_code == 200, counts.text
+    assert counts.json()["counts"] == {target: 1 for target in targets}
+
+    for target, entity in targets.items():
+        listed = await client.get(
+            a.g(f"/tags/{tag.id}/entities"),
+            headers=a.headers,
+            params={"kind": target},
+        )
+        assert listed.status_code == 200, (target, listed.text)
+        body = listed.json()
+        assert body["total_count"] == 1, target
+        (item,) = body["items"]
+        assert (item["entity_type"], item["entity_id"]) == (target, entity.id)
+        assert item["tool_title"], target
+
+
+async def test_a_tags_entities_page_through_one_kind_by_name(
+    client: AsyncClient, acting_user, session
+):
+    """A tag's page lists one kind at a time, a page at a time, in name order,
+    and its count for the kind is the list's own total."""
+    from app.testing import assign_tag
+
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    tag = await create_tag(session, a.guild)
+    for title in ("Charlie", "alpha", "Bravo"):
+        task = await create_task(session, a.project, title=title)
+        await assign_tag(session, task, tag, commit=True)
+
+    first = await client.get(
+        a.g(f"/tags/{tag.id}/entities"),
+        headers=a.headers,
+        params={"kind": "task", "page_size": 2},
+    )
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert [item["title"] for item in body["items"]] == ["alpha", "Bravo"]
+    assert body["total_count"] == 3
+    assert body["has_next"] is True
+    assert {item["tool_title"] for item in body["items"]} == {a.project.name}
+
+    second = await client.get(
+        a.g(f"/tags/{tag.id}/entities"),
+        headers=a.headers,
+        params={"kind": "task", "page_size": 2, "page": 2},
+    )
+    assert [item["title"] for item in second.json()["items"]] == ["Charlie"]
+    assert second.json()["has_next"] is False
+
+
+async def test_a_tags_page_leaves_out_the_archive(
+    client: AsyncClient, acting_user, session
+):
+    """The page lists what each tool's own list shows by default: an archived
+    project is in its archive, and so is everything inside it."""
+    from datetime import datetime, timezone
+
+    from app.testing import assign_tag, create_project
+
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    tag = await create_tag(session, a.guild)
+    live_task = await create_task(session, a.project, title="live")
+    await assign_tag(session, live_task, tag, commit=True)
+    archived_task = await create_task(
+        session, a.project, title="put away", archived_at=datetime.now(timezone.utc)
+    )
+    await assign_tag(session, archived_task, tag, commit=True)
+    shelved = await create_project(
+        session, a.initiative, a.user, archived_at=datetime.now(timezone.utc)
+    )
+    await assign_tag(session, shelved, tag, commit=True)
+    inside = await create_task(session, shelved, title="inside")
+    await assign_tag(session, inside, tag, commit=True)
+
+    counts = await client.get(a.g(f"/tags/{tag.id}/counts"), headers=a.headers)
+    assert counts.status_code == 200, counts.text
+    assert counts.json()["counts"] == {"task": 1}
+    listed = await client.get(
+        a.g(f"/tags/{tag.id}/entities"), headers=a.headers, params={"kind": "task"}
+    )
+    assert [item["entity_id"] for item in listed.json()["items"]] == [live_task.id]
+
+
+async def test_a_tags_entities_need_a_taggable_kind(
+    client: AsyncClient, acting_user, session
+):
+    a = await acting_user(guild_role=CommunityRole.member)
+    tag = await create_tag(session, a.guild)
+    missing = await client.get(a.g(f"/tags/{tag.id}/entities"), headers=a.headers)
+    assert missing.status_code == 422
+    untaggable = await client.get(
+        a.g(f"/tags/{tag.id}/entities"), headers=a.headers, params={"kind": "comment"}
+    )
+    assert untaggable.status_code == 422
 
 
 async def test_bulk_edit_requires_an_operation(client: AsyncClient, acting_user):

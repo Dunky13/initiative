@@ -331,6 +331,14 @@ async def test_claiming_an_existing_account_by_verified_email_is_recorded(
     await session.commit()
     idp = FakeIdp()
     _wire_fake_idp(monkeypatch, idp)
+    from app.services.platform import email_outbox
+
+    letters: list[str] = []
+
+    async def _letter(user, pieces, **_) -> None:
+        letters.append(pieces.subject)
+
+    monkeypatch.setattr(email_outbox, "enqueue_account_letter", _letter)
     capfd.readouterr()
 
     response = await _run_oidc_flow(
@@ -349,6 +357,10 @@ async def test_claiming_an_existing_account_by_verified_email_is_recorded(
     rows = [r for r in events if r["event_type"] == "auth.identity_linked"]
     assert [r["actor_user_id"] for r in rows] == [existing_id]
     assert rows[0]["detail"]["matched_by"] == "verified_email"
+    # Its holder is told of the new way in, with the way to say it wasn't them.
+    from app.core.email_i18n import email_t
+
+    assert email_t("identity.linked.subject", "en", escape=False) in letters
     retired = [r for r in events if r["event_type"] == "auth.credentials_retired"]
     assert len(retired) == (0 if proved else 1)
     assert (existing_id in rechecked) is not proved

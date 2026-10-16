@@ -1,12 +1,13 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from app.core.identity_boundary import GuildId
 from app.core.tools import TAG_TARGETS
 from app.schemas.base import SanitizedBaseModel, TitleStr
+from app.schemas.query import PageMeta
 from app.schemas.tenant.search import SearchHit
 
 
@@ -129,14 +130,30 @@ class TagBulkEditResponse(SanitizedBaseModel):
     updated_count: int
 
 
-class TaggedEntitiesResponse(SanitizedBaseModel):
-    """Response for GET /tags/{id}/entities — everything carrying a tag, of
-    every taggable kind. Each item names itself and the tool it lives in, the
-    shape a search hit already has."""
+class TaggedEntity(SearchHit):
+    """One thing carrying a tag: a search hit's address, plus the name of the
+    tool it lives in and when it last changed, which a table of them shows."""
 
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
-    items: List[SearchHit] = Field(default_factory=list)
+    tool_title: str = ""
+    updated_at: Optional[datetime] = None
+
+
+class TaggedEntitiesResponse(PageMeta):
+    """Response for GET /tags/{id}/entities — one page of the things of one
+    taggable kind carrying a tag."""
+
+    items: List[TaggedEntity] = Field(default_factory=list)
+
+
+class TagEntityCountsResponse(SanitizedBaseModel):
+    """Response for GET /tags/{id}/counts — how many things of each taggable
+    kind carry the tag, keyed by kind. A kind with none is absent."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class TaggedTaskSummary(SanitizedBaseModel):

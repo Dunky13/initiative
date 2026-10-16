@@ -86,14 +86,23 @@
     "action": "Pedir ayuda",
     "title": "Pedir ayuda",
     "description": "Cuéntanos qué ocurre y alguien se encargará.",
-    "subjectLabel": "¿De qué se trata?",
+    "subjectLabel": "Título",
     "subjectPlaceholder": "Una línea, para poder encontrarlo después",
     "bodyLabel": "¿Qué ha pasado?",
     "bodyPlaceholder": "Qué estabas haciendo, qué esperabas y qué ocurrió en su lugar.",
     "browseFaq": "Consultar las preguntas frecuentes",
     "submit": "Enviar",
     "thanks": "Enviado. Alguien se encargará.",
-    "error": "No se ha podido enviar. Inténtalo de nuevo en un momento."
+    "error": "No se ha podido enviar. Inténtalo de nuevo en un momento.",
+    "topicLabel": "¿De qué se trata?",
+    "topicPlaceholder": "Elige una opción",
+    "topics": {
+      "account": "Mi cuenta",
+      "community": "Esta comunidad",
+      "billing": "Facturación",
+      "data_request": "Una copia de los datos de esta comunidad, o su eliminación",
+      "other": "Otra cosa"
+    }
   },
   "contact": {
     "title": "Ponte en contacto",
@@ -139,6 +148,135 @@
     "replyAndWait": "Enviar y esperar su respuesta",
     "fromTeam": "El equipo ({{name}})",
     "someone": "Alguien",
-    "conversationLabel": "Conversación con {{name}}"
+    "conversationLabel": "Conversación con {{name}}",
+    "access": {
+      "title": "Acceso",
+      "listLabel": "Acceso solicitado para este caso",
+      "none": "Aún no se ha solicitado acceso para este caso.",
+      "request": "Solicitar acceso",
+      "endsIn": "termina en {{minutes}} min"
+    },
+    "holds": {
+      "title": "Retenciones",
+      "none": "No hay nada retenido en este caso.",
+      "needGrant": "Para ver y liberar lo que está retenido en la comunidad {{community}}, solicita acceso de moderación a ella.",
+      "requestAccess": "Solicitar acceso",
+      "holdReported": "Retener el contenido denunciado",
+      "target": "{{type}} {{id}}",
+      "via": {
+        "community": "Retenido por la comunidad",
+        "platform": "Retenido por la plataforma"
+      },
+      "reasons": {
+        "legal_request": "Solicitud legal",
+        "illegal_content": "Puede ser ilegal"
+      },
+      "bases": {
+        "child_safety": "Protección de menores",
+        "terrorism": "Terrorismo",
+        "intellectual_property": "Propiedad intelectual",
+        "fraud": "Fraude",
+        "privacy": "Privacidad",
+        "other": "Otro"
+      },
+      "restore": "Restaurar",
+      "remove": "Quitar",
+      "purge": "Purgar",
+      "purgeTitle": "¿Purgar este contenido?",
+      "purgeDescription": "Esto lo destruye para siempre, con todo lo que se retiene con él. No se puede deshacer.",
+      "released": {
+        "restore": "Liberado: restaurado",
+        "remove": "Liberado: quitado",
+        "purge": "Liberado: purgado"
+      }
+    },
+    "topics": {
+      "account": "Su cuenta",
+      "community": "Su comunidad",
+      "billing": "Facturación",
+      "data_request": "Solicitud de datos",
+      "other": "Otro",
+      "vulnerability": "Vulnerabilidad",
+      "account_compromise": "Cuenta comprometida",
+      "idea": "Idea",
+      "problem": "Problema",
+      "praise": "Elogio",
+      "appeal": "Apelación de suspensión"
+    },
+    "take": "Tomar este caso",
+    "taken": "Estás en este caso",
+    "takeFailed": "No se pudo tomar este caso."
+  },
+  "evidence": {
+    "attach": "Adjuntar archivos",
+    "limits_one": "Hasta {{count}} archivo, de {{size}} como máximo.",
+    "limits_other": "Hasta {{count}} archivos, de {{size}} como máximo cada uno.",
+    "remove": "Quitar {{name}}",
+    "tooMany_one": "Puedes adjuntar {{count}} archivo.",
+    "tooMany_other": "Puedes adjuntar hasta {{count}} archivos.",
+    "tooLarge": "{{name}} ocupa más de {{size}}.",
+    "notAllowed": "Aquí no se admiten archivos como {{name}}.",
+    "heading": "Adjuntos",
+    "reveal": "Mostrar {{name}}",
+    "view": "Ver {{name}}",
+    "open": "Abrir {{name}}",
+    "dropped_one": "Se quitó {{names}}: aquí no se acepta.",
+    "dropped_other": "Se quitaron {{names}}: aquí no se aceptan."
+  },
+  "security": {
+    "action": "Informar de un problema de seguridad",
+    "cardTitle": "Informar de un problema de seguridad",
+    "cardDescription": "¿Encontraste un fallo en este servidor, o alguien entró en tu cuenta? Avisa a quienes lo gestionan.",
+    "title": "Informar de un problema de seguridad",
+    "description": "Lo leen quienes gestionan este servidor, y puedes seguirlo en Mis tickets.",
+    "topicLabel": "¿De qué se trata?",
+    "topicPlaceholder": "Elige uno",
+    "topics": {
+      "vulnerability": "Un fallo en este servidor",
+      "account_compromise": "Alguien entró en mi cuenta",
+      "other": "Otra cosa"
+    },
+    "bodyLabel": "¿Qué encontraste?",
+    "bodyPlaceholder": "Qué viste, dónde y cómo volver a verlo.",
+    "softwareNote": "Un problema del propio software Initiative, y no de este servidor, va al proyecto: consulta SECURITY.md.",
+    "submit": "Enviar informe",
+    "thanks": "Enviado. Puedes seguirlo en Mis tickets.",
+    "error": "No se pudo enviar. Inténtalo de nuevo en un momento."
+  },
+  "feedback": {
+    "action": "Enviar comentarios",
+    "title": "Enviar comentarios",
+    "description": "Cuéntales a quienes gestionan este servidor lo que piensas. Puedes seguirlo en Mis tickets.",
+    "typeLabel": "¿Qué tipo de comentario es?",
+    "typePlaceholder": "Elige una opción",
+    "topics": {
+      "idea": "Una idea",
+      "problem": "Un problema",
+      "praise": "Un elogio",
+      "other": "Otra cosa"
+    },
+    "bodyLabel": "¿Qué quieres decirles?",
+    "bodyPlaceholder": "Lo que te gustaría, lo que te estorbó o lo que te gustó.",
+    "needsAnswer": "Necesito una respuesta",
+    "needsAnswerHelp": "Lo envía como solicitud de ayuda, para que alguien te responda.",
+    "submit": "Enviar comentarios",
+    "thanks": "¡Gracias! Quienes gestionan este servidor lo leerán.",
+    "error": "No se pudo enviar. Inténtalo de nuevo en un momento.",
+    "context": {
+      "title": "Se envía con él",
+      "help": "Dónde estaba la aplicación, para que vean lo que viste. Nada de esto te nombra ni nombra nada de lo que abriste.",
+      "remove": "Quitar",
+      "fields": {
+        "app_version": "Versión",
+        "platform": "Plataforma",
+        "locale": "Idioma",
+        "theme": "Tema",
+        "route": "Página",
+        "viewport": "Ventana"
+      }
+    }
+  },
+  "moderationTopics": {
+    "appeal": "Apelación contra tu suspensión"
   }
 }

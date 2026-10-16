@@ -115,3 +115,14 @@ export const normalizePropertyValue = (property: PropertySummary): unknown =>
   property.type === PropertyType.user_reference
     ? (userReferenceValue(property)?.id ?? null)
     : (property.value ?? null);
+
+/** A property just picked, before it has a value, as an item lists it. */
+export const propertyStubFromDefinition = (
+  definition: PropertyDefinitionRead
+): PropertySummary => ({
+  property_id: definition.id,
+  name: definition.name,
+  type: definition.type,
+  options: definition.options ?? null,
+  value: null,
+});

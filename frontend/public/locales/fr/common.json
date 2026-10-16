@@ -61,6 +61,7 @@
   "required": "Obligatoire",
   "optional": "Facultatif",
   "actions": "Actions",
+  "adding": "Ajout…",
   "rowActionsFor": "Actions pour {{subject}}",
   "more": "Plus",
   "less": "Moins",
@@ -319,7 +320,7 @@
     "description": "Cette page a rencontré une erreur et n’a pas pu s’afficher. Réessayez ou accédez à vos tâches.",
     "appDescription": "Initiative a rencontré une erreur et ne peut pas continuer. Recharger la relance.",
     "details": "Détails de l’erreur",
-    "toMyTasks": "Aller à {{myTasks}}",
+    "toHome": "Retour à l'{{home}}",
     "reload": "Recharger",
     "updatedTitle": "Initiative a été mis à jour",
     "updatedDescription": "Une version plus récente est disponible. Rechargez pour ouvrir cette page dans celle-ci."
@@ -332,6 +333,10 @@
     "unsigned": "La mise à jour de ce serveur n'a pas été publiée par Initiative, l'application reste donc en version {{version}}.",
     "desktopReady": "Initiative a téléchargé sa mise à jour. Redémarrez pour terminer.",
     "restart": "Redémarrer"
+  },
+  "favorite": {
+    "add": "Ajouter aux favoris",
+    "remove": "Retirer des favoris"
   },
   "toolHeader": {
     "rename": "Renommer"
@@ -346,5 +351,107 @@
   "days": {
     "today": "Aujourd'hui",
     "yesterday": "Hier"
+  },
+  "fieldSave": {
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "failed": "Échec de l'enregistrement",
+    "changed": "Cela a changé pendant que vous le modifiiez",
+    "overwrite": "Écraser",
+    "keepEditing": "Continuer à modifier",
+    "discard": "Abandonner",
+    "undo": "Annuler",
+    "moved": "Déplacé vers {{status}}",
+    "cleared": "{{field}} : valeur effacée"
+  },
+  "descriptionField": {
+    "none": "Pas encore de description.",
+    "draftKept": "Votre brouillon non enregistré de cette description est conservé sur cet appareil jusqu'à ce que vous puissiez la modifier à nouveau.",
+    "unsavedTitle": "Abandonner les modifications non enregistrées ?",
+    "unsavedBody": "Vous avez une description non enregistrée. Si vous partez maintenant, elle sera perdue.",
+    "leave": "Quitter",
+    "stay": "Rester"
+  },
+  "kinds": {
+    "project": {
+      "name": "Projet",
+      "this": "ce projet",
+      "plural": "projets"
+    },
+    "file": {
+      "name": "Fichier",
+      "this": "ce fichier",
+      "plural": "fichiers"
+    },
+    "queue": {
+      "name": "File",
+      "this": "cette file",
+      "plural": "files"
+    },
+    "counter_group": {
+      "name": "Groupe de compteurs",
+      "this": "ce groupe de compteurs",
+      "plural": "groupes de compteurs"
+    },
+    "calendar": {
+      "name": "Calendrier",
+      "this": "ce calendrier",
+      "plural": "calendriers"
+    },
+    "dashboard": {
+      "name": "Tableau de bord",
+      "this": "ce tableau de bord",
+      "plural": "tableaux de bord"
+    },
+    "post": {
+      "name": "Publication",
+      "this": "cette publication",
+      "plural": "publications"
+    },
+    "gallery": {
+      "name": "Galerie",
+      "this": "cette galerie",
+      "plural": "galeries"
+    },
+    "wiki": {
+      "name": "Wiki",
+      "this": "ce wiki",
+      "plural": "wikis"
+    },
+    "task": {
+      "name": "Tâche",
+      "this": "cette tâche",
+      "plural": "tâches"
+    },
+    "queue_item": {
+      "name": "Élément de file",
+      "this": "cet élément de file",
+      "plural": "éléments de file"
+    },
+    "calendar_event": {
+      "name": "Événement",
+      "this": "cet événement",
+      "plural": "événements"
+    },
+    "counter": {
+      "name": "Compteur",
+      "this": "ce compteur",
+      "plural": "compteurs"
+    },
+    "gallery_image": {
+      "name": "Image",
+      "this": "cette image",
+      "plural": "images"
+    },
+    "wiki_page": {
+      "name": "Page",
+      "this": "cette page",
+      "plural": "pages"
+    },
+    "tag": {
+      "name": "Étiquette",
+      "this": "cette étiquette",
+      "plural": "étiquettes"
+    }
   }
 }

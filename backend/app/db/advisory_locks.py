@@ -53,12 +53,16 @@ class LockNamespace(IntEnum):
     FIRST_ACCOUNT = 0x696E6974626F6F74
     #: Refreshing the marketplace registry's TUF metadata.
     MARKETPLACE_REFRESH = -0x307876F6777BC55F
+    #: The demo deployment's pool pass, one process at a time.
+    DEMO_POOL = 0x44454D4F504F4F4C
 
     # -- keyed by a guild ---------------------------------------------------
     #: Provisioning a guild's schema; key 0 orders the shared trigger functions.
     GUILD_PROVISION = _tag(b"PROV")
     #: Admitting a member under the guild's ``max_users``.
     MEMBER_CAP = _tag(b"USER")
+    #: Admitting a guest under the guild's ``max_guests``.
+    GUEST_CAP = _tag(b"GUES")
     #: Changes that could empty a guild's seat or impose a requirement on it.
     GUILD_SEATS = 8471
     #: Admitting an upload under the guild's ``max_storage_bytes``.
@@ -75,10 +79,26 @@ class LockNamespace(IntEnum):
     INTAKE_CASE = _tag(b"INTK")
     #: One moderation report target, keyed by guild, initiative and target.
     MODERATION_REPORT = _tag(b"MODR")
+    #: One comment thread, keyed by guild, table and row: locking it and
+    #: writing in it take turns.
+    COMMENT_THREAD = _tag(b"CTHR")
+    #: Placing or releasing a hold in a guild, and destroying the guild.
+    CONTENT_HOLDS = _tag(b"HOLD")
     #: One poll, keyed by guild and poll.
     POST_POLL = _tag(b"POLL")
     #: One plug-in connection's token, keyed by guild, install and connection.
     PLUGIN_TOKEN = _tag(b"PTOK")
+    #: The values one install keeps on one item, keyed by guild, install and
+    #: item, written under the per-item caps.
+    PLUGIN_METADATA = _tag(b"PMET")
+    #: Changing one target's layouts, keyed by guild, tool and target.
+    TOOL_LAYOUTS = _tag(b"LAYO")
+    #: Which of one install's values are shown, keyed by guild and install:
+    #: shared by each write while it reads the pinned definition, exclusive
+    #: while the values are reconciled to a new one.
+    PLUGIN_FIELDS = _tag(b"PFLD")
+    #: Working out a guild's engagement levels, so one replica does each.
+    ENGAGEMENT_LEVELS = _tag(b"ENGL")
 
     # -- keyed by an account ------------------------------------------------
     #: Creating communities under the daily limit.
@@ -98,8 +118,12 @@ class LockNamespace(IntEnum):
     NOTIFICATION_LINE = _tag(b"NOTE")
     #: One person's reaction toggle on one target.
     REACTION_TOGGLE = _tag(b"REAC")
+    #: Replacing one account's key for one tool resource.
+    API_KEY_RESOURCE = _tag(b"KEYR")
     #: Provisioning an account for one address, keyed by the normalized address.
     ACCOUNT_ADDRESS = _tag(b"ADDR")
+    #: Sign-ins from one app install, keyed by the account and the install.
+    APP_INSTALL = _tag(b"INST")
 
 
 def _text_key(text: str) -> int:
@@ -126,15 +150,20 @@ async def advisory_lock(
     *,
     wait: bool = True,
     xact: bool = True,
+    shared: bool = False,
 ) -> bool:
     """Take the lock *namespace* names for *key* (a singleton when ``None``).
 
     Held to the end of the transaction by default; ``xact=False`` holds it for
     the connection until :func:`advisory_unlock` or the connection closes.
     ``wait=False`` returns at once, ``False`` when another holder has it.
+    ``shared=True`` takes it beside other shared holders, and waits only for
+    an exclusive one.
     """
-    name = "pg_{}advisory_{}lock".format(
-        "" if wait else "try_", "xact_" if xact else ""
+    name = "pg_{}advisory_{}lock{}".format(
+        "" if wait else "try_",
+        "xact_" if xact else "",
+        "_shared" if shared else "",
     )
     taken = await conn.scalar(_lock_call(name, namespace, key))
     return True if wait else bool(taken)

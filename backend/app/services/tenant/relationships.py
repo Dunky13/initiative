@@ -817,6 +817,158 @@ async def would_close_a_cycle(
     return any(node == source.node for node, _, _ in reachable)
 
 
+#: How far out a neighbourhood goes. About as much as a picture can say.
+MAX_NEIGHBOURHOOD_HOPS = 3
+
+#: How many things one hop may walk on from.
+#:
+#: A thing at the centre of a busy initiative can name a great many, and a
+#: picture of a thousand nodes says less than one of forty, so the limit costs
+#: nothing worth drawing. The nearest are kept: what was linked first is walked
+#: first.
+HOP_BUDGET = 40
+
+#: How many far ends one lookup asks about. A hop is bounded in what it walks on
+#: from, not in what those name — forty busy tags can name tens of thousands —
+#: and each id is a bound parameter, of which a statement takes a limited number.
+RESOLVE_CHUNK = 1000
+
+
+@dataclass(frozen=True)
+class Crossing:
+    """One edge a neighbourhood walk crossed, from the side it reached it on."""
+
+    row: EntityRelationship
+    anchor: Endpoint
+    other: Endpoint
+
+
+@dataclass
+class Neighbourhood:
+    """Everything within some hops of one thing, as a walk found it."""
+
+    #: Each thing reached, at the fewest hops it takes to get there.
+    depths: dict[Endpoint, int]
+    #: What each thing reached resolved to for this reader.
+    ends: dict[Endpoint, reference_targets.Resolved]
+    #: Every edge crossed on the way, once each.
+    edges: list[Crossing]
+
+
+async def _edges_for_many(
+    session: AsyncSession,
+    entities: Sequence[Endpoint],
+    *,
+    include_tags: bool,
+) -> list[EntityRelationship]:
+    """Every live edge touching any of these, oldest first, each once.
+
+    :func:`list_for_entity` for a whole hop at a time: the same two anchored
+    seeks, with ``IN`` in place of ``=``, so the cost of a hop is two queries
+    whatever its width.
+    """
+    nodes = [entity.node for entity in entities]
+    if not nodes:
+        return []
+
+    def arm(column, other_column):
+        stmt = select(EntityRelationship).where(
+            column.in_(nodes),
+            EntityRelationship.removed_at.is_(None),  # type: ignore[union-attr]
+        )
+        if not include_tags:
+            stmt = stmt.where(
+                EntityRelationship.relationship_type
+                != RelationshipType.tagged_with.value,
+                other_column != SearchEntityType.tag.value,
+            )
+        return stmt
+
+    found: dict[int, EntityRelationship] = {}
+    for column, other_column in (
+        (EntityRelationship.source_node, EntityRelationship.target_type),
+        (EntityRelationship.target_node, EntityRelationship.source_type),
+    ):
+        for row in (await session.exec(arm(column, other_column))).all():
+            found.setdefault(row.id, row)  # type: ignore[arg-type]
+    return sorted(found.values(), key=lambda r: (r.created_at, r.id or 0))
+
+
+async def neighbourhood(
+    session: AsyncSession,
+    start: Endpoint,
+    *,
+    hops: int,
+    include_tags: bool,
+    user_id: int | None,
+) -> Neighbourhood:
+    """Everything within ``hops`` of one thing, walked a hop at a time.
+
+    Each hop is one batch: the edges of everything it walks on from, then the
+    far ends of those, one query per kind. So three hops cost a handful of
+    queries in one request, where asking per neighbour cost a request each.
+
+    Gated as the per-entity read is: the edge policy asks of both ends, and a
+    far end that does not resolve for this reader — out of reach, or in the
+    trash — is left out, and so is never walked on from.
+
+    Labels are left out of the walk unless asked for. A tag is shared by
+    everything carrying it, so walking through one reaches the whole community
+    in a hop.
+    """
+    bounded = max(1, min(hops, MAX_NEIGHBOURHOOD_HOPS))
+    depths: dict[Endpoint, int] = {start: 0}
+    ends: dict[Endpoint, reference_targets.Resolved] = {}
+    edges: dict[int, Crossing] = {}
+
+    frontier = [start]
+    for depth in range(1, bounded + 1):
+        if not frontier:
+            break
+        anchors = {end.node: end for end in frontier}
+        crossings: list[Crossing] = []
+        for row in await _edges_for_many(session, frontier, include_tags=include_tags):
+            # An edge between two things on the same hop is crossed from both.
+            for anchor_node, kind, other_id in (
+                (row.source_node, row.target_type, row.target_id),
+                (row.target_node, row.source_type, row.source_id),
+            ):
+                anchor = anchors.get(anchor_node)
+                if anchor is not None:
+                    other = Endpoint(SearchEntityType(kind), other_id)
+                    crossings.append(Crossing(row=row, anchor=anchor, other=other))
+
+        wanted: dict[SearchEntityType, list[int]] = {}
+        for crossing in crossings:
+            if crossing.other not in depths:
+                wanted.setdefault(crossing.other.kind, []).append(crossing.other.id)
+        for kind, ids in wanted.items():
+            unique = list(dict.fromkeys(ids))
+            for offset in range(0, len(unique), RESOLVE_CHUNK):
+                resolved = await reference_targets.resolve_many(
+                    session,
+                    kind,
+                    unique[offset : offset + RESOLVE_CHUNK],
+                    user_id=user_id,
+                )
+                for entity_id, found in resolved.items():
+                    ends[Endpoint(kind, entity_id)] = found
+
+        frontier = []
+        for crossing in crossings:
+            if crossing.other not in depths and crossing.other not in ends:
+                continue
+            edges.setdefault(crossing.row.id, crossing)  # type: ignore[arg-type]
+            if crossing.other in depths:
+                continue
+            depths[crossing.other] = depth
+            if len(frontier) < HOP_BUDGET:
+                frontier.append(crossing.other)
+
+    del depths[start]
+    return Neighbourhood(depths=depths, ends=ends, edges=list(edges.values()))
+
+
 async def purge_for_entities(
     session: AsyncSession,
     kind: SearchEntityType,
@@ -846,6 +998,9 @@ __all__ = [
     "SPECS",
     "Direction",
     "Endpoint",
+    "HOP_BUDGET",
+    "MAX_NEIGHBOURHOOD_HOPS",
+    "Neighbourhood",
     "NotTransitive",
     "SelfLoop",
     "Related",
@@ -853,6 +1008,7 @@ __all__ = [
     "create_many",
     "find",
     "list_for_entity",
+    "neighbourhood",
     "purge_for_entities",
     "related_for",
     "related_for_many",

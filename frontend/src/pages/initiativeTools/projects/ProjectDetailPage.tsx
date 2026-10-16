@@ -16,17 +16,14 @@ import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useToolCreateAccess } from "@/hooks/useInitiativeAccess";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useProject, useProjectTaskStatuses } from "@/hooks/useProjects";
-import { useRecordRecentView } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/useRecents";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { taskRoute, toolListRoute } from "@/lib/tools";
 
 export const ProjectDetailPage = () => {
   const { t } = useTranslation("projects");
-  const { communityId, projectId } = useParams({ strict: false }) as {
-    communityId: string;
-    projectId: string;
-  };
+  const { projectId } = useParams({ strict: false }) as { projectId: string };
   const router = useRouter();
   const gp = useCommunityPath();
   const searchParams = useSearch({ strict: false }) as { create?: string };
@@ -50,7 +47,8 @@ export const ProjectDetailPage = () => {
     await invalidate(
       q.project(parsedProjectId),
       q.allTasks(),
-      q.projectTaskStatuses(parsedProjectId)
+      q.projectTaskStatuses(parsedProjectId),
+      q.layouts()
     );
   }, [parsedProjectId]);
 
@@ -62,15 +60,9 @@ export const ProjectDetailPage = () => {
     Number.isFinite(parsedProjectId) ? parsedProjectId : null
   );
 
-  const recordViewMutation = useRecordRecentView(Tool.project, Number(communityId));
   const viewedProjectId = projectQuery.data?.id;
   useReadOnOpen(Tool.project, viewedProjectId);
-  useEffect(() => {
-    if (!viewedProjectId) {
-      return;
-    }
-    recordViewMutation.mutate(viewedProjectId);
-  }, [viewedProjectId, recordViewMutation.mutate]);
+  useRecordOpen(Tool.project, viewedProjectId);
 
   const project = projectQuery.data;
   // Creating a file targets the project's initiative, so it follows that
@@ -140,7 +132,6 @@ export const ProjectDetailPage = () => {
           projectId={project.id}
           initiativeId={project.initiative_id}
           taskStatuses={taskStatusesQuery.data ?? []}
-          projectDefaultViewMode={project.default_view_mode}
           canEditTaskDetails={canEdit}
           projectIsArchived={projectIsArchived}
           taskHref={taskHref}

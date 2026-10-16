@@ -106,7 +106,7 @@ Learn it once and it's true of the next one. That's the entire point of doing it
 Open a project, a queue, a dashboard or any other tool and the top of the page is laid out the same way:
 
 - **A band in the initiative's colour**, so you always know which initiative you're standing in. It holds the breadcrumb back out, and **Settings** across from it if you're allowed to change things.
-- **The name and description.** Click the name to rename it. A file is the one exception: its title is the field at the top of the file.
+- **The name and description.** Click the name to rename it. A file is the one exception: its title is the field at the top of the file. The star beside the name adds it to your [Favorites](your-space.md#favourites).
 - **A strip underneath**, with **Status**, **Tags** and **Properties**, all changeable right there, beside whatever only that tool has — a project's progress and dates, a queue's turn controls.
 
 ![The top of a project: the initiative's band with the breadcrumb and Settings, the name, and the strip with status, progress, dates, tags and properties](../images/tools/connections.png)
@@ -142,6 +142,10 @@ There's one button for making a new one. On a phone it lives at the bottom of th
 ## Connections
 
 Every tool has a **Connections** section, and so do the things inside one — a task, an event, a picture, a wiki page. It lists what this links to and what links to it, and it's where you say how two things relate: this task *is blocked by* that one, this file *is attached to* that project. See [Mentions & links](mentions-and-links.md#connections).
+
+## Activity
+
+On a big enough screen, every tool page but a wiki's has **Activity** folded down the right-hand edge. Open it and it's the community's [activity feed](communities.md#the-community-front-page), kept to this one thing: who did what to it, and to everything inside it, this week. An initiative's own page has one too, for the whole initiative. It closes again when you've seen enough, which is usually about four cards in.
 
 ## Duplicating
 

@@ -1,56 +1,84 @@
 /**
- * The community front page: pick a tool from the rail, see everything of that kind
- * in the community underneath it.
- *
- * Both the rail and the table are tool-agnostic — the rail renders whatever the
- * tool registry declares (minus what this user can't see anywhere), and the
- * table renders whatever rows `useCommunityToolRows` produces. Adding a tool adds
- * a circle and a set of rows, and nothing here.
+ * The community front page: what people changed lately in a tray under its
+ * banner, one view per circle, then its initiatives and what is coming up.
  *
  * It is also the community's initiative list — the standalone initiatives page was
- * folded into it. The section under the table holds the ones you're in and the
+ * folded into it. The section under the tray holds the ones you're in and the
  * ones you could join, plus the create affordance for a community admin, and it
  * takes the page over entirely for a member who is not yet in any initiative,
  * for whom every other section is empty by construction.
  */
 
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Activity, MessageSquare, UserRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { FeedView } from "@/api/generated/initiativeAPI.schemas";
 import { CommunityLocationLine } from "@/components/communities/CommunityLocationLine";
+import { CommunityActivityFeed } from "@/components/communityHome/CommunityActivityFeed";
 import { CommunityBannerBadges } from "@/components/communityHome/CommunityBannerBadges";
+import { CommunityComingUp } from "@/components/communityHome/CommunityComingUp";
 import { CommunityHomeEmptyState } from "@/components/communityHome/CommunityHomeEmptyState";
 import { CommunityRecentComments } from "@/components/communityHome/CommunityRecentComments";
 import { InitiativeDirectory } from "@/components/communityHome/InitiativeDirectory";
 import { CreateInitiativeWizard } from "@/components/initiatives/CreateInitiativeWizard";
-import { ToolViewFilter } from "@/components/initiativeTools/shared/ToolViewFilter";
 import { PageBanner } from "@/components/PageBanner";
 import { PluginSettingsDialog } from "@/components/plugins/PluginSettingsDialog";
-import { SkeletonRegion, TableSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TOOL_TRAY_SURFACE, ToolRail } from "@/components/toolBrowser/ToolRail";
-import { ToolTable } from "@/components/toolBrowser/ToolTable";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { NodeRail, TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useCommunityToolRows } from "@/hooks/useCommunityToolRows";
 import { liveInitiatives, useInitiativeAccess } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
-import { useToolBrowserSearch } from "@/hooks/useToolBrowserSearch";
-import { useToolCounts } from "@/hooks/useToolCounts";
+import { activityLastVisitKey } from "@/lib/activityLastVisit";
 import { renderableBanner } from "@/lib/banner";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { readableTextShadow } from "@/lib/contrastColor";
-import { DEFAULT_ENABLED_TOOLS, isToolView, TOOLS, type ToolView, toolViews } from "@/lib/tools";
+import { getItem, setItem } from "@/lib/storage";
 import { cn } from "@/lib/utils";
+
+/** The rail's circles, in order; the first is the default. All and Yours are
+ *  views of the activity feed; Comments shows the comments themselves. */
+const FEED_NODES = [
+  { view: FeedView.all, icon: Activity },
+  { view: FeedView.yours, icon: UserRound },
+  { view: FeedView.comments, icon: MessageSquare },
+] as const;
+
+const isFeedView = (value: unknown): value is FeedView =>
+  FEED_NODES.some((node) => node.view === value);
+
+/**
+ * When the reader last opened this community's front page, read once as the
+ * page opens, then moved to now. Kept on the device, per account: it orders
+ * nothing and nobody else needs it.
+ */
+const useLastVisit = (userId: number | undefined, communityId: number): string | null => {
+  const key = userId === undefined ? null : activityLastVisitKey(userId, communityId);
+  // Read again only for another account or community: moving it to now must
+  // not take the marks off the entries this visit is showing.
+  const lastVisit = useMemo(() => (key ? getItem(key) : null), [key]);
+  useEffect(() => {
+    if (key) void setItem(key, new Date().toISOString());
+  }, [key]);
+  return lastVisit;
+};
 
 export function CommunityHomePage() {
   const { t } = useTranslation("communityHome");
   const { activeCommunity } = useCommunities();
   const gp = useCommunityPath();
-  const { search, setSearch, selectTool, query, table } = useToolBrowserSearch<{
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as {
     create?: string;
-    state?: string;
     plugin?: number;
-  }>();
+    node?: string;
+  };
+  const view = isFeedView(search.node) ? search.node : FeedView.all;
+  const communityId = useActiveCommunityId();
+  const { user } = useAuth();
+  const lastVisit = useLastVisit(user?.id, communityId);
 
   const initiativesQuery = useInitiatives();
   const directoryQuery = useInitiativeDirectory();
@@ -82,46 +110,20 @@ export function CommunityHomePage() {
     [initiativesQuery.data]
   );
 
-  // Nothing to browse: the tool rail and table would be six empty circles over
-  // an empty table, so the page becomes the story of how to get in instead.
-  // Only an answered query can say "none" — a failed or still-arriving one is
-  // absence of news, and telling someone they're in nothing on that basis
-  // would be a lie the page states confidently.
+  // Nothing to see: every section would be empty, so the page becomes the
+  // story of how to get in instead. Only an answered query can say "none" — a
+  // failed or still-arriving one is absence of news, and telling someone
+  // they're in nothing on that basis would be a lie the page states confidently.
   const hasNoInitiatives = initiativesQuery.isSuccess && visibleInitiatives.length === 0;
 
-  // A tool earns its circle by being viewable in at least one initiative the
-  // user can see. Before that list lands (or in a community with no initiatives
-  // yet) fall back to the always-on core tools rather than an empty rail.
-  const tools = useMemo(() => {
-    if (visibleInitiatives.length === 0) {
-      return TOOLS.filter((tool) => DEFAULT_ENABLED_TOOLS.has(tool));
-    }
-    return TOOLS.filter((tool) =>
-      visibleInitiatives.some((initiative) => initiative.can.view.includes(tool))
-    );
-  }, [visibleInitiatives]);
-
-  const selected = selectTool(tools);
-  // Which of the tool's views the table is showing. In the address like the
-  // rest of it, and left out while live — the default needs no spelling. A
-  // view the selected tool does not have falls back to the live one.
-  const view: ToolView =
-    isToolView(search.state) && toolViews(selected).includes(search.state)
-      ? search.state
-      : "active";
-  // How much sits in each of the tool's views across the community.
-  const countsQuery = useToolCounts(selected, {});
-
-  const { rows, totalCount, isLoading, isError } = useCommunityToolRows(
-    selected,
-    table.page,
-    table.pageSize,
-    {
-      search: query || undefined,
-      sortBy: table.sortBy,
-      sortDir: table.sortDir,
-      view,
-    }
+  const railNodes = useMemo(
+    () =>
+      FEED_NODES.map(({ view, icon }) => ({
+        segment: view,
+        icon,
+        label: t(`feed.nodes.${view}`),
+      })),
+    [t]
   );
 
   // Every community has a banner — the artwork it uploaded, or the colour it wears
@@ -173,66 +175,23 @@ export function CommunityHomePage() {
           />
         ) : (
           <>
-            {/* The rail and the table are one tray: the circles are its top
-                edge rising, and everything a tool has to say sits in the same
-                surface underneath them. Whatever the table is doing —
-                arriving, failing, empty — happens in there, so the edge the
-                circles melt into is always the thing they melt into. */}
+            {/* The rail and the feed are one tray: the circles are its top
+                edge rising, and what the open one shows sits in the same
+                surface underneath it. */}
             <div>
-              <ToolRail
-                tools={tools}
-                selected={selected}
+              <NodeRail
+                nodes={railNodes}
+                selected={view}
                 to={gp("/")}
-                label={t("toolRail")}
+                param="node"
+                label={t("nodeRail")}
                 align={banner.text_align}
               />
-              <div
-                className={cn("rounded-b-2xl px-3 pt-1 pb-3 sm:px-4 sm:pb-4", TOOL_TRAY_SURFACE)}
-              >
-                {/* Which of the tool's views the tray is showing. Above
-                    the table rather than in its toolbar, because it changes
-                    what the table IS rather than narrowing what it holds — and
-                    for a calendar, which has no list page of its own, this is
-                    the only place an archived one can be found. */}
-                <div className="flex justify-end pt-2 pb-3">
-                  <ToolViewFilter
-                    tool={selected}
-                    value={view}
-                    counts={countsQuery.data?.views}
-                    onChange={(next) =>
-                      setSearch({
-                        state: next === "active" ? undefined : next,
-                        // The other state's cursor means nothing in this one.
-                        page: undefined,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* A search that found nothing still renders the table: the
-                    box that found nothing is in its toolbar, and taking it
-                    away would leave no way to unsay the search. */}
-                {isLoading ? (
-                  <SkeletonRegion label={t("loading")}>
-                    <TableSkeleton rows={5} columns={5} pagination />
-                  </SkeletonRegion>
-                ) : isError ? (
-                  <p className="p-2 text-destructive text-sm">{t("loadError")}</p>
-                ) : totalCount === 0 && !query ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{t("empty.title")}</CardTitle>
-                      <CardDescription>{t("empty.description")}</CardDescription>
-                    </CardHeader>
-                  </Card>
+              <div className={cn("rounded-b-2xl p-3 sm:px-4 sm:pb-4", TRAY_SURFACE)}>
+                {view === FeedView.comments ? (
+                  <CommunityRecentComments />
                 ) : (
-                  <ToolTable
-                    tool={selected}
-                    rows={rows}
-                    initiatives={initiativesQuery.data ?? []}
-                    totalCount={totalCount}
-                    {...table}
-                  />
+                  <CommunityActivityFeed view={view} lastVisit={lastVisit} />
                 )}
               </div>
             </div>
@@ -241,8 +200,8 @@ export function CommunityHomePage() {
               the ones you're in, then the ones you could join. */}
             <InitiativeDirectory entries={directoryEntries} onCreate={onCreate} />
 
-            {/* Community-wide, so it stays put as the rail switches the table's tool. */}
-            <CommunityRecentComments />
+            {/* The week ahead, community-wide. */}
+            <CommunityComingUp />
           </>
         )}
 
@@ -254,7 +213,9 @@ export function CommunityHomePage() {
             isCommunityAdmin={isCommunityAdmin}
             open
             onOpenChange={(next) => {
-              if (!next) setSearch({ plugin: undefined });
+              if (!next) {
+                void navigate({ to: ".", search: { ...search, plugin: undefined }, replace: true });
+              }
             }}
           />
         ) : null}

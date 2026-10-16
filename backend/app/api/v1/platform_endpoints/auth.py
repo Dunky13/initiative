@@ -97,7 +97,7 @@ from app.models.platform.user import (
     UserRole,
     UserStatus,
 )
-from app.models.platform.guild import Guild, GuildInvite, CommunityRole
+from app.models.platform.guild import Guild, CommunityRole
 from app.schemas.platform.token import Token
 from app.schemas.platform.second_factor import SecondFactorChallengeAnswer
 from app.schemas.platform.auth import (
@@ -729,6 +729,7 @@ async def bootstrap_status(session: SessionDep) -> dict[str, bool]:
     return {
         "has_users": await any_account_exists(session),
         "public_registration_enabled": settings.registration_open,
+        "demo": settings.DEMO_MODE,
     }
 
 
@@ -1648,6 +1649,12 @@ async def _complete_provider_login(
     system_session.add(user)
     await system_session.commit()
     await system_session.refresh(user)
+    if matched:
+        # A new way into the account: its holder is told, with the way to say
+        # it wasn't them.
+        await email_service.announce_identity_linked(
+            system_session, user, provider=provider_row.display_name
+        )
     if proved_address is not None:
         # A sign-in at a provider is no place the account already uses, so a
         # proof that arrives with it can be undone by the addresses before it.
@@ -1941,17 +1948,15 @@ async def _join_awaited_invite(
     expired, filled up or was withdrawn in the meantime joins nothing, and the
     person can be sent another.
     """
-    invite = await session.get(GuildInvite, invite_id)
-    if invite is None:
-        return
     try:
         async with session.begin_nested():
             await guilds_service.redeem_invite_for_user(
-                session, code=invite.code, user=user
+                session, invite_id=invite_id, user=user
             )
     except (
         guilds_service.GuildInviteError,
         guilds_service.GuildCapacityError,
+        guilds_service.GuestsDisabledError,
         guilds_service.AgeConfirmationRequiredError,
     ) as exc:
         logger.info(

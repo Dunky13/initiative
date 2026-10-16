@@ -1,20 +1,13 @@
-import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CalendarEventRead, CalendarSummary } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  CalendarEventCreate,
+  CalendarEventRead,
+  CalendarSummary,
+} from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
-import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -23,31 +16,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useCreateCalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCalendar, useCalendarsList } from "@/hooks/useCalendars";
-import { type RecurrenceRule, rulePayload } from "@/lib/recurrence";
+import { ItemDraftContext } from "@/hooks/useFieldSave";
+import { sharedTarget } from "@/hooks/useToolLayouts";
+import { blankEvent, EVENT_DETAIL } from "@/lib/layouts/eventLayout";
 import { getItem, setItem } from "@/lib/storage";
 import type { DialogProps } from "@/types/dialog";
 
-import { EventDateTimeFields, type EventTiming, useEventTiming } from "./EventDateTimeFields";
-import { offsetEndTime } from "./eventDateTime";
+import { eventRange } from "./EventDateTimeFields";
+import { offsetEndTime, toDateKey } from "./eventDateTime";
 
 /** A calendar the user may author events in — `can.contribute` on the
  * calendar is the event-create gate (like task creation via project write). */
 export const isWritableCalendar = (calendar: CalendarSummary): boolean => calendar.can.contribute;
 
 const LAST_CALENDAR_KEY = "initiative-last-event-calendar";
-
-const INITIAL_TIMING: EventTiming = {
-  allDay: false,
-  startDate: "",
-  startTime: "09:00",
-  endDate: "",
-  endTime: "10:00",
-};
 
 type CreateEventDialogProps = DialogProps & {
   /** If provided, the calendar is locked and the picker is hidden. */
@@ -61,6 +47,63 @@ type CreateEventDialogProps = DialogProps & {
   onSuccess?: (event: CalendarEventRead) => void;
 };
 
+/** Which calendar an event being added goes in. Attendees and properties are
+ *  its initiative's, so another calendar starts over with neither, but for
+ *  whoever adds it. */
+const CalendarPick = ({
+  calendars,
+  event,
+}: {
+  calendars: CalendarSummary[];
+  event: CalendarEventRead;
+}) => {
+  const { t } = useTranslation("calendars");
+  const { user } = useAuth();
+  const draft = useContext(ItemDraftContext);
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="create-event-calendar">{t("calendar")}</Label>
+      <Select
+        value={event.calendar_id ? String(event.calendar_id) : ""}
+        onValueChange={(value) => {
+          const calendar = calendars.find((each) => String(each.id) === value);
+          if (!calendar || !draft) return;
+          draft.edit({
+            patch: { calendar_id: calendar.id, attendee_ids: user ? [user.id] : [] },
+            shows: {
+              calendar_id: calendar.id,
+              initiative_id: calendar.initiative_id,
+              attendees: event.attendees.filter((attendee) => attendee.user_id === user?.id),
+            },
+          });
+          draft.edit({
+            properties: { values: [], removed: event.properties.map((each) => each.property_id) },
+            shows: {},
+          });
+        }}
+      >
+        <SelectTrigger id="create-event-calendar">
+          <SelectValue placeholder={t("selectCalendar")} />
+        </SelectTrigger>
+        <SelectContent>
+          {calendars.map((calendar) => (
+            <SelectItem key={calendar.id} value={String(calendar.id)}>
+              <span className="inline-flex items-center gap-2">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: calendar.color }}
+                />
+                {calendar.name}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+};
+
+/** Adding an event, drawn as its calendar's initiative lays events out. */
 export const CreateEventDialog = ({
   open,
   onOpenChange,
@@ -71,20 +114,10 @@ export const CreateEventDialog = ({
   defaultStartTime,
   onSuccess,
 }: CreateEventDialogProps) => {
-  const { t } = useTranslation(["calendars", "common"]);
+  const { t } = useTranslation("calendars");
   const { user } = useAuth();
   const communityId = useActiveCommunityId();
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [timing, setTiming] = useState(INITIAL_TIMING);
-  const patchTiming = (patch: Partial<EventTiming>) => setTiming((prev) => ({ ...prev, ...patch }));
-  const [attendeeIds, setAttendeeIds] = useState<number[]>([]);
-  const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(null);
-  const [selectedCalendarId, setSelectedCalendarId] = useState(
-    defaultCalendarId ? String(defaultCalendarId) : ""
-  );
+  const leaving = useRef(false);
 
   // Calendars the current user may author events in (write on the calendar).
   // Locked to one calendar the picker is hidden, so there is no list to fill:
@@ -99,213 +132,88 @@ export const CreateEventDialog = ({
     () => (calendarsQuery.data?.items ?? []).filter(isWritableCalendar),
     [calendarsQuery.data]
   );
-  const lockedCalendarQuery = useCalendar(calendarId ?? null, { enabled: open });
+  const locked = useCalendar(calendarId ?? null, { enabled: open }).data;
+  const createEvent = useCreateCalendarEvent();
 
-  const effectiveCalendarId =
-    calendarId ?? (selectedCalendarId ? Number(selectedCalendarId) : null);
-  const effectiveCalendar = useMemo(
-    () =>
-      lockedCalendarQuery.data ??
-      (calendarsQuery.data?.items ?? []).find((calendar) => calendar.id === effectiveCalendarId) ??
-      null,
-    [lockedCalendarQuery.data, calendarsQuery.data, effectiveCalendarId]
-  );
-
-  // Default the picker: explicit default > last-used (per community) > the only
-  // writable calendar.
-  useEffect(() => {
-    if (!open || calendarId !== undefined || selectedCalendarId) return;
-    if (defaultCalendarId) {
-      setSelectedCalendarId(String(defaultCalendarId));
-      return;
-    }
-    const lastUsed = Number(getItem(`${LAST_CALENDAR_KEY}:${communityId}`) ?? "");
-    if (lastUsed && writableCalendars.some((calendar) => calendar.id === lastUsed)) {
-      setSelectedCalendarId(String(lastUsed));
-      return;
-    }
-    if (writableCalendars.length === 1) {
-      setSelectedCalendarId(String(writableCalendars[0].id));
-    }
-  }, [open, calendarId, selectedCalendarId, defaultCalendarId, communityId, writableCalendars]);
-
-  useEffect(() => {
-    if (open) {
-      // The creator attends their own event by default.
-      setAttendeeIds(user ? [user.id] : []);
-      setTiming((prev) => ({
-        ...prev,
-        ...(defaultStartDate ? { startDate: defaultStartDate, endDate: defaultStartDate } : {}),
-        ...(defaultStartTime
-          ? { startTime: defaultStartTime, endTime: offsetEndTime(defaultStartTime) }
-          : {}),
-      }));
-    } else {
-      setTitle("");
-      setDescription("");
-      setLocation("");
-      setTiming(INITIAL_TIMING);
-      setAttendeeIds([]);
-      setRecurrence(null);
-      setSelectedCalendarId(defaultCalendarId ? String(defaultCalendarId) : "");
-    }
-  }, [open, defaultCalendarId, defaultStartDate, defaultStartTime, user]);
-
-  // Null while the end lands before the start (possible after the user edits
-  // the end date/time independently), which holds the submit back.
-  const range = useEventTiming(timing);
-
-  const createEvent = useCreateCalendarEvent({
-    onSuccess: (event) => {
-      setItem(`${LAST_CALENDAR_KEY}:${communityId}`, String(event.calendar_id));
-      onOpenChange(false);
-      onSuccess?.(event);
-    },
+  // It starts in the calendar given, the one last added to, or the only one.
+  const lastUsed = Number(getItem(`${LAST_CALENDAR_KEY}:${communityId}`) ?? "");
+  const calendar =
+    locked ??
+    writableCalendars.find((each) => each.id === defaultCalendarId) ??
+    writableCalendars.find((each) => each.id === lastUsed) ??
+    (writableCalendars.length === 1 ? writableCalendars[0] : undefined);
+  const startDate = defaultStartDate ?? toDateKey(new Date());
+  const startTime = defaultStartTime ?? "09:00";
+  const range = eventRange({
+    allDay: false,
+    startDate,
+    startTime,
+    endDate: startDate,
+    endTime: offsetEndTime(startTime),
   });
 
-  const isCreating = createEvent.isPending;
-  const canSubmit = title.trim() && !!range && !!effectiveCalendarId && !isCreating;
-
-  const handleSubmit = () => {
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle || !range || !effectiveCalendarId) return;
-
-    createEvent.mutate({
-      title: trimmedTitle,
-      description: description.trim() || undefined,
-      location: location.trim() || undefined,
-      ...range,
-      all_day: timing.allDay,
-      calendar_id: effectiveCalendarId,
-      attendee_ids: attendeeIds.length > 0 ? attendeeIds : undefined,
-      ...(recurrence ? rulePayload(recurrence, { allDay: timing.allDay }) : {}),
-    });
-  };
-
-  const referenceDate = timing.startDate ? `${timing.startDate}T${timing.startTime}:00` : undefined;
-
+  // Drawn once the calendars it may go in are known, so it starts in one.
+  const known = calendarId !== undefined ? locked !== undefined : calendarsQuery.isSuccess;
+  if (!range || !known) return null;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t("createEvent")}</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="create-event-title">{t("eventTitle")}</Label>
-            <Input
-              id="create-event-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={t("titlePlaceholder")}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && canSubmit) {
-                  e.preventDefault();
-                  handleSubmit();
-                }
-              }}
-              autoFocus
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="create-event-description">{t("description")}</Label>
-            <Textarea
-              id="create-event-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t("descriptionPlaceholder")}
-              rows={2}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="create-event-location">{t("location")}</Label>
-            <Input
-              id="create-event-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder={t("locationPlaceholder")}
-            />
-          </div>
-
-          {calendarId === undefined && (
-            <div className="space-y-2">
-              <Label htmlFor="create-event-calendar">{t("calendar")}</Label>
-              <Select
-                value={selectedCalendarId}
-                onValueChange={(value) => {
-                  setSelectedCalendarId(value);
-                  // Attendees are initiative members; a new target starts over
-                  // with just the creator.
-                  setAttendeeIds(user ? [user.id] : []);
-                }}
-              >
-                <SelectTrigger id="create-event-calendar">
-                  <SelectValue placeholder={t("selectCalendar")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {writableCalendars.map((calendar) => (
-                    <SelectItem key={calendar.id} value={String(calendar.id)}>
-                      <span className="inline-flex items-center gap-2">
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: calendar.color }}
-                        />
-                        {calendar.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <EventDateTimeFields value={timing} onChange={patchTiming} />
-
-          {/* Attendees are the people who can open the calendar. Wait until one
-              is chosen. */}
-          {effectiveCalendar != null && (
-            <div className="space-y-2">
-              <Label>{t("attendees")}</Label>
-              <MemberMultiSelect
-                scope={{ type: "canOpen", tool: Tool.calendar, id: effectiveCalendar.id }}
-                selectedIds={attendeeIds}
-                selectedUsers={user ? [user] : undefined}
-                onChange={setAttendeeIds}
-                currentUserId={user?.id}
-                placeholder={t("addAttendee")}
-                emptyMessage={t("noAttendees")}
-              />
-            </div>
-          )}
-
-          {/* Recurrence */}
-          <RecurrenceEditor
-            kind="event"
-            value={recurrence}
-            onChange={setRecurrence}
-            referenceDate={referenceDate}
-            allDay={timing.allDay}
-          />
-
-          {/* No access section: sharing lives on the calendar, not the event. */}
-        </div>
-
-        <DialogFooter>
-          <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
-            {isCreating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t("creating")}
-              </>
-            ) : (
-              t("createEvent")
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <AddItemDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      detail={EVENT_DETAIL}
+      blank={blankEvent(
+        calendar,
+        range,
+        user
+          ? {
+              id: user.id,
+              username: user.username,
+              discriminator: user.discriminator,
+              avatar_url: user.avatar_url,
+              status: user.status,
+              display_name: null,
+            }
+          : null
+      )}
+      context={{
+        readOnly: false,
+        initiativeId: calendar?.initiative_id ?? null,
+        occurrence: undefined,
+        occurrenceStart: range.start_at,
+        shownStart: range.start_at,
+        shownEnd: range.end_at,
+        askScope: async () => null,
+        onMoved: () => {},
+        onShifted: () => {},
+        leaving,
+        actions: null,
+      }}
+      layouts={(event) =>
+        event.initiative_id === null ? null : sharedTarget(Tool.calendar, event.initiative_id)
+      }
+      before={
+        calendarId === undefined
+          ? (event) => <CalendarPick calendars={writableCalendars} event={event} />
+          : undefined
+      }
+      title={t("createEvent")}
+      ready={(event) => event.title.trim() !== "" && event.calendar_id !== 0}
+      create={({ item, fields, properties }) =>
+        createEvent.mutateAsync({
+          calendar_id: item.calendar_id,
+          start_at: item.start_at,
+          end_at: item.end_at,
+          all_day: item.all_day,
+          // Whoever adds it attends, unless they say otherwise.
+          attendee_ids: user ? [user.id] : [],
+          ...fields,
+          properties,
+        } as CalendarEventCreate)
+      }
+      onAdded={(event) => {
+        setItem(`${LAST_CALENDAR_KEY}:${communityId}`, String(event.calendar_id));
+        onOpenChange(false);
+        onSuccess?.(event);
+      }}
+    />
   );
 };

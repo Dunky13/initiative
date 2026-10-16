@@ -17,7 +17,6 @@
   "myAccount": "My Account",
   "home": "Home",
   "myProfile": "My Profile",
-  "myTasks": "My Tasks",
   "myTools": "My Tools",
   "myMessages": "My Messages",
   "myCalendar": "My Calendar",
@@ -98,5 +97,6 @@
   "createWiki": "New Wiki",
   "sidebar": {
     "resize": "Drag to resize the sidebar"
-  }
+  },
+  "sendFeedback": "Send feedback"
 }

@@ -45,9 +45,15 @@ from app.core.config import settings
 from app.core.encryption import SALT_PLUGIN_CONFIG, encrypt_field
 from app.core.messages import PluginDataMessages, GuildPluginMessages
 from app.models.platform.plugin_service_registration import PluginServiceRegistration
-from app.models.platform.guild import CommunityRole
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.models.tenant.initiative import InitiativeMember
+from app.models.tenant.plugin_metadata import PluginMetadata
+from app.models.tenant.plugin_placement import PluginPlacement
+from app.services.marketplace.plugin_refs import (
+    ensure_plugin_guild_ref,
+    ensure_plugin_ref,
+)
 from app.services.marketplace import plugin_data as plugin_data_service
 from app.services.marketplace.context_jwt_test import _PRIVATE_PEM
 from app.services.marketplace.registration_lookup import invalidate_registrations
@@ -57,10 +63,14 @@ from app.testing.fake_vendor import FakeVendor, declarative_plugin
 from app.models.platform.access_grant import AccessGrantPurpose, SettingsLevel
 from app.models.platform.user import UserRole
 from app.testing import (
+    create_plugin_user_connection,
     create_access_grant,
+    create_initiative,
+    create_project,
+    create_resource_grant,
+    create_task,
     create_user,
     get_auth_headers,
-    guild_of,
     create_plugin_service_registration,
     create_dashboard,
     create_guild_plugin,
@@ -637,20 +647,15 @@ class TestContextToken:
 # ---------------------------------------------------------------------------
 
 
-async def _connect(session: AsyncSession, *, plugin, user_id: int, ref: str) -> None:
+async def _connect(session: AsyncSession, *, plugin, user, ref: str) -> None:
     """Give one member a completed per-member connection."""
-    await route_session_to_guild(session, guild_of(plugin))
-    session.add(
-        GuildPluginUserConnection(
-            plugin_id=plugin.id,
-            connection_id="github",
-            user_id=user_id,
-            connection_ref=ref,
-            config_secrets={"access_token": encrypt_field("tok", SALT_PLUGIN_CONFIG)},
-            status="connected",
-        )
+    await create_plugin_user_connection(
+        session,
+        plugin,
+        user,
+        connection_ref=ref,
+        secrets={"access_token": encrypt_field("tok", SALT_PLUGIN_CONFIG)},
     )
-    await session.commit()
 
 
 class TestConnections:
@@ -694,7 +699,7 @@ class TestConnections:
         self, client, acting_user, session, upstream
     ):
         a, plugin, dashboard = await _workspace(session, acting_user, MY_PRS)
-        await _connect(session, plugin=plugin, user_id=a.user.id, ref="cr_alice")
+        await _connect(session, plugin=plugin, user=a.user, ref="cr_alice")
 
         response = await client.get(
             _url(a, plugin, MY_PRS, dashboard), headers=a.headers
@@ -799,8 +804,8 @@ class TestCache:
             initiative=a.initiative,
             initiative_role="member",
         )
-        await _connect(session, plugin=plugin, user_id=a.user.id, ref="cr_alice")
-        await _connect(session, plugin=plugin, user_id=b.user.id, ref="cr_bob")
+        await _connect(session, plugin=plugin, user=a.user, ref="cr_alice")
+        await _connect(session, plugin=plugin, user=b.user, ref="cr_bob")
 
         upstream.rows = [{"pr": "alice"}]
         alice = await client.get(_url(a, plugin, MY_PRS, dashboard), headers=a.headers)
@@ -819,7 +824,7 @@ class TestCache:
         self, client, acting_user, session, upstream
     ):
         a, plugin, dashboard = await _workspace(session, acting_user, MY_PRS)
-        await _connect(session, plugin=plugin, user_id=a.user.id, ref="cr_alice")
+        await _connect(session, plugin=plugin, user=a.user, ref="cr_alice")
 
         await client.get(_url(a, plugin, MY_PRS, dashboard), headers=a.headers)
         again = await client.get(_url(a, plugin, MY_PRS, dashboard), headers=a.headers)
@@ -1687,6 +1692,37 @@ class TestSummary:
 
         assert response.status_code == 403
 
+    async def test_an_operator_lists_and_reads_summaries_without_joining(
+        self, client, acting_user, session, upstream
+    ):
+        """The operator's sheet for the community shows what its Usage tab
+        does, with no membership or grant."""
+        a, plugin = await self._summarised(session, acting_user)
+        upstream.values = {"tiers": 3}
+        headers = get_auth_headers(await create_user(session, role=UserRole.operator))
+        base = f"/api/v1/settings/communities/{a.guild.id}/plugin-summaries"
+
+        listed = await client.get(base, headers=headers)
+        read = await client.get(f"{base}/{plugin.id}", headers=headers)
+
+        assert listed.status_code == 200, listed.text
+        assert [item["plugin_id"] for item in listed.json()["items"]] == [plugin.id]
+        assert read.status_code == 200, read.text
+        assert read.json()["values"] == {"tiers": 3}
+
+    async def test_support_reads_no_operator_summaries(
+        self, client, acting_user, session, upstream
+    ):
+        a, _ = await self._summarised(session, acting_user)
+        headers = get_auth_headers(await create_user(session, role=UserRole.support))
+
+        response = await client.get(
+            f"/api/v1/settings/communities/{a.guild.id}/plugin-summaries",
+            headers=headers,
+        )
+
+        assert response.status_code == 403
+
 
 async def test_a_viewer_too_young_for_the_plugin_reads_no_tile(
     client, acting_user, session, upstream
@@ -1705,3 +1741,261 @@ async def test_a_viewer_too_young_for_the_plugin_reads_no_tile(
     assert response.status_code == 403
     assert response.json()["detail"] == GuildPluginMessages.AGE_RESTRICTED
     assert upstream.count == 0
+
+
+# ---------------------------------------------------------------------------
+# Actions on items
+# ---------------------------------------------------------------------------
+
+LINK_ISSUE = f"plugin.{PUBLIC_ID}.link-issue"
+
+
+def _action_definition() -> dict:
+    """One field and one action on tasks, the action running a write."""
+    return {
+        "plugin_kind": "service",
+        "service": {"public_id": PUBLIC_ID, "protocol": 1, "scopes": ["projects:read"]},
+        "endpoints": [{"id": LINK_ISSUE, "direction": "write"}],
+        "fields": [
+            {"key": "issue", "name": {"en": "Issue"}, "kind": "number", "on": ["task"]}
+        ],
+        "actions": [
+            {
+                "id": "link",
+                "name": {"en": "Link"},
+                "endpoint": LINK_ISSUE,
+                "on": ["task"],
+                "menu": False,
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def plugin_write(monkeypatch):
+    """Stand in for the plug-in's write: record each request, run ``then``,
+    and answer as the plug-in kit does."""
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.calls: list[httpx.Request] = []
+            self.then = None
+
+    recorder = Recorder()
+
+    async def _fake_send(request, *, transport=None):
+        recorder.calls.append(request)
+        if recorder.then is not None:
+            await recorder.then()
+        return {"endpoint": LINK_ISSUE, "result": {}}
+
+    monkeypatch.setattr(plugin_data_service, "_send", _fake_send)
+    return recorder
+
+
+async def _action_board(session: AsyncSession, acting_user):
+    """An install placed in one initiative for its members, and tasks each side
+    reads differently: ``shared`` both read, ``hidden`` only the install,
+    ``mine`` only the member, ``elsewhere`` in an initiative the install is not
+    placed in."""
+    admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    member = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=admin.guild,
+        initiative=admin.initiative,
+        initiative_role="member",
+    )
+    await create_plugin_service_registration(
+        session,
+        public_id=PUBLIC_ID,
+        listing_uid=PLUGIN_UID,
+        base_url=BASE_URL,
+        allowed_origins=[BASE_URL],
+        scope_ceiling=["projects:read"],
+    )
+    plugin = await create_guild_plugin(
+        session,
+        admin.guild,
+        admin.user,
+        definition=_action_definition(),
+        listing_uid=PLUGIN_UID,
+        granted_scopes=["projects:read"],
+    )
+    await route_session_to_guild(session, admin.guild.id)
+    role_id = (
+        await session.exec(
+            select(InitiativeMember.role_id).where(
+                InitiativeMember.initiative_id == admin.initiative.id,
+                InitiativeMember.user_id == member.user.id,
+            )
+        )
+    ).one()
+    session.add(
+        PluginPlacement(
+            install_id=plugin.id, initiative_id=admin.initiative.id, role_ids=[role_id]
+        )
+    )
+    await session.commit()
+
+    async def task_in(initiative, owner, *, members=False, install=False):
+        made = await create_project(session, initiative, owner)
+        if members:
+            await create_resource_grant(session, made, all_initiative_members=True)
+        if install:
+            await create_resource_grant(session, made, plugin_install_id=plugin.id)
+        return (await create_task(session, made)).id
+
+    other = await create_initiative(session, admin.guild, admin.user, name="B")
+    tasks = {
+        "shared": await task_in(admin.initiative, admin.user, members=True),
+        "hidden": await task_in(admin.initiative, admin.user, install=True),
+        "mine": await task_in(admin.initiative, member.user),
+        "elsewhere": await task_in(other, admin.user, members=True),
+    }
+    return admin, member, plugin, tasks
+
+
+def _run(actor, plugin, action: str = "link") -> str:
+    return actor.g(f"/plugins/{plugin.id}/actions/{action}")
+
+
+class TestActions:
+    async def test_the_plugin_is_called_for_the_viewer_and_answers_fresh_values(
+        self, client, acting_user, session, plugin_write
+    ):
+        _admin, member, plugin, tasks = await _action_board(session, acting_user)
+
+        async def the_plugin_writes() -> None:
+            await route_session_to_guild(session, member.guild.id)
+            session.add_all(
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=tasks["shared"],
+                    key=key,
+                    value=7,
+                    shown=shown,
+                )
+                for key, shown in (("issue", True), ("etag", False))
+            )
+            await session.commit()
+
+        plugin_write.then = the_plugin_writes
+        response = await client.post(
+            _run(member, plugin),
+            headers=member.headers,
+            json={"entity_type": "task", "entity_id": tasks["shared"]},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"values": {"issue": 7}}
+        (call,) = plugin_write.calls
+        assert json.loads(call.content)["endpoint"] == LINK_ISSUE
+        claims = jwt.decode(
+            call.headers["Authorization"].removeprefix("Bearer "),
+            options={"verify_signature": False},
+            algorithms=["RS256"],
+        )
+        assert claims["endpoint_id"] == LINK_ISSUE
+        assert claims["subject"] == {"type": "task", "id": tasks["shared"]}
+        assert claims["viewer"] == await ensure_plugin_ref(
+            guild_id=member.guild.id,
+            plugin_install_id=plugin.id,
+            user_id=member.user.id,
+        )
+        assert "act" not in claims and "member" not in claims
+
+    async def test_an_unmet_connection_or_a_frozen_community_runs_nothing(
+        self, client, acting_user, session, plugin_write
+    ):
+        admin, member, plugin, tasks = await _action_board(session, acting_user)
+        token = {"key": "token", "type": "secret", "required": True}
+        plugin.definition = {
+            **plugin.definition,
+            "connections": [{"id": "admin", "scope": "static", "fields": [token]}],
+            "actions": [
+                {**plugin.definition["actions"][0], "requires": {"all_of": ["admin"]}}
+            ],
+        }
+        session.add(plugin)
+        await session.commit()
+        body = {"entity_type": "task", "entity_id": tasks["shared"]}
+
+        unmet = await client.post(
+            _run(member, plugin), headers=member.headers, json=body
+        )
+        guild = await session.get(Guild, admin.guild.id)
+        assert guild is not None
+        guild.status = CommunityStatus.read_only.value
+        session.add(guild)
+        await session.commit()
+        frozen = await client.post(
+            _run(member, plugin), headers=member.headers, json=body
+        )
+
+        assert unmet.status_code == 409, unmet.text
+        assert unmet.json()["detail"] == PluginDataMessages.NEEDS_CONFIGURATION
+        assert frozen.status_code == 403, frozen.text
+        assert frozen.json()["detail"] == PluginDataMessages.ACTION_NOT_OFFERED
+        assert plugin_write.calls == []
+
+    @pytest.mark.parametrize(
+        ("who", "task", "body", "status_code", "detail"),
+        [
+            ("member", "shared", {"action": "unlink"}, 404, "ACTION_NOT_FOUND"),
+            (
+                "member",
+                "shared",
+                {"entity_type": "queue_item"},
+                404,
+                "ACTION_NOT_FOUND",
+            ),
+            ("member", "hidden", {}, 404, None),
+            ("admin", "elsewhere", {}, 403, "ACTION_NOT_OFFERED"),
+            ("manager", "shared", {}, 403, "ACTION_NOT_OFFERED"),
+            ("member", "mine", {}, 403, "ACTION_NOT_OFFERED"),
+        ],
+        ids=[
+            "an undeclared action",
+            "an item kind the action is not on",
+            "an item the viewer cannot read",
+            "an initiative the install is not placed in",
+            "a role the placement does not allow",
+            "an item the install cannot read",
+        ],
+    )
+    async def test_the_connection_is_made_only_where_it_may_be(
+        self,
+        client,
+        acting_user,
+        session,
+        plugin_write,
+        who,
+        task,
+        body,
+        status_code,
+        detail,
+    ):
+        admin, member, plugin, tasks = await _action_board(session, acting_user)
+        actors = {"admin": admin, "member": member}
+        actors["manager"] = await acting_user(
+            guild_role=CommunityRole.member,
+            guild=admin.guild,
+            initiative=admin.initiative,
+            initiative_role="project_manager",
+        )
+        actor = actors[who]
+
+        response = await client.post(
+            _run(actor, plugin, body.get("action", "link")),
+            headers=actor.headers,
+            json={
+                "entity_type": body.get("entity_type", "task"),
+                "entity_id": tasks[task],
+            },
+        )
+
+        assert response.status_code == status_code, response.text
+        if detail is not None:
+            assert response.json()["detail"] == getattr(PluginDataMessages, detail)
+        assert plugin_write.calls == []

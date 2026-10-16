@@ -84,6 +84,9 @@ from app.services.marketplace import (
 )
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.db.request_context import SystemGuild
+from app.core.audit_events import AuditEventType
+from app.services import audit as audit_service
+from app.services.membership import live_membership_clause
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +351,14 @@ async def _verify_signed_assertion(
     ).first()
     await session.commit()
     if spent is None:
+        audit_service.emit(
+            event_type=AuditEventType.SECURITY_REPLAY_REJECTED,
+            actor_user_id=None,
+            detail={
+                "channel": "plugin_member_assertion" if member else "plugin_assertion",
+                "install": issuer,
+            },
+        )
         raise fail("the assertion was already used")
     return snapshot, dict(claims)
 
@@ -496,6 +507,7 @@ async def _installation_token(
         or client.listing_uid is None
         or row.listing_uid != client.listing_uid
         or not row.enabled
+        or not client.serves(guild_id)
     ):
         raise OAuthError("invalid_grant", "unknown installation")
 
@@ -608,6 +620,7 @@ async def _member_token(
             .where(
                 GuildMembership.guild_id == guild_id,
                 GuildMembership.user_id == user_id,
+                live_membership_clause(),
                 User.status == UserStatus.active,
             )
         )
@@ -625,6 +638,7 @@ async def _member_token(
         or client.listing_uid is None
         or row.listing_uid != client.listing_uid
         or not row.enabled
+        or not client.serves(guild_id)
     ):
         raise _invalid_grant("unknown installation")
     if belongs is None or row.granted_access is None:
@@ -746,8 +760,8 @@ async def issue_token(
 @dataclass(frozen=True)
 class InstallationListing:
     installation: str
-    #: The install is switched on and its community is in use, so a token can
-    #: be issued for it. An install that is off, or whose community is on hold,
+    #: The install is switched on, its community is in use and its plug-in is
+    #: for that community, so a token can be issued for it. An install that is off, or whose community is on hold,
     #: suspended or awaiting deletion, is still listed: it still exists.
     active: bool
 
@@ -775,7 +789,7 @@ async def list_installations(
     return [
         InstallationListing(
             installation=refs[(entry.guild_id, entry.install_id)],
-            active=entry.active,
+            active=entry.active and client.serves(entry.guild_id),
         )
         for entry in entries
     ], next_cursor

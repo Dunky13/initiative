@@ -6,7 +6,7 @@ import {
   buildTaskListParams,
   EMPTY_TASK_FILTERS,
   matchesDueWindow,
-  specFromApi,
+  specFromStored,
   type TaskFilterSpec,
   taskFilterCount,
   taskFiltersEqual,
@@ -29,7 +29,7 @@ describe("buildTaskConditions", () => {
     ]);
   });
 
-  it("filters by status category, never by status id, for a portable preset", () => {
+  it("filters by status category, never by status id, for a portable view", () => {
     const conditions = buildTaskConditions(spec({ status_categories: ["backlog", "todo"] }), {
       projectId: 1,
     });
@@ -192,14 +192,14 @@ describe("matchesDueWindow", () => {
   });
 });
 
-describe("specFromApi", () => {
+describe("specFromStored", () => {
   it("fills every field from a partial payload", () => {
-    expect(specFromApi({ assignees: ["me"] })).toEqual(spec({ assignees: ["me"] }));
+    expect(specFromStored({ assignees: ["me"] })).toEqual(spec({ assignees: ["me"] }));
   });
 
   it("drops values of the wrong type rather than throwing", () => {
     expect(
-      specFromApi({
+      specFromStored({
         status_ids: ["nope"] as never,
         due: "next-week" as never,
         status_categories: ["invented"] as never,
@@ -208,7 +208,7 @@ describe("specFromApi", () => {
   });
 
   it("treats a missing payload as no filters", () => {
-    expect(specFromApi(null)).toEqual(EMPTY_TASK_FILTERS);
+    expect(specFromStored(null)).toEqual(EMPTY_TASK_FILTERS);
   });
 });
 
@@ -220,7 +220,7 @@ describe("taskFiltersEqual / taskFilterCount", () => {
     );
   });
 
-  it("compares by value, so a tweaked preset is not equal to itself", () => {
+  it("compares by value, so a tweaked view is not equal to itself", () => {
     expect(taskFiltersEqual(spec({ tag_ids: [1] }), spec({ tag_ids: [1] }))).toBe(true);
     expect(taskFiltersEqual(spec({ tag_ids: [1] }), spec({ tag_ids: [1, 2] }))).toBe(false);
   });

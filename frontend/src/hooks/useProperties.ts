@@ -8,10 +8,8 @@ import type {
   PropertyDefinitionUpdateResponse,
   PropertyOption,
   PropertySummary,
-  PropertyTarget,
-  PropertyValueInput,
 } from "@/api/generated/initiativeAPI.schemas";
-import { setProperties } from "@/api/generated/properties/properties";
+import { PropertyTarget } from "@/api/generated/initiativeAPI.schemas";
 import {
   createPropertyDefinition,
   deletePropertyDefinition,
@@ -23,6 +21,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { buildUniqueOptionSlug, findOptionByLabel } from "@/components/properties/propertyHelpers";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { type FieldSaveKind, heldKey } from "@/hooks/useFieldSave";
 import { toast } from "@/lib/mascotToast";
 import type { MutationOpts } from "@/types/mutation";
 
@@ -159,26 +158,27 @@ export const useAppendPropertyOption = () => {
   };
 };
 
-export interface SetPropertiesVariables {
-  target: PropertyTarget;
-  id: number;
-  /** Replace-all: every property the row keeps, an empty list clears them. */
-  values: PropertyValueInput[];
-}
+/** Anything that carries property values. */
+type PropertyHolder = { properties: PropertySummary[] };
 
-/** Replace the property values on any tool or sub-tool row. */
-export const useSetProperties = (
-  options?: MutationOpts<PropertySummary[], SetPropertiesVariables>
-) =>
-  useCommunityMutation<PropertySummary[], SetPropertiesVariables>(
-    {
-      mutationFn: (communityId, { target, id, values }) =>
-        setProperties(communityId, target, id, { values }),
-      invalidate: (_data, vars) => invalidate(q.propertyHolder(vars.target)),
-      errorKey: "properties:manager.setValuesError",
-    },
-    // Each write replaces every value on its row, so they run one at a time
-    // in the order they were made: a later write can never be overtaken by
-    // an earlier one that knew about less.
-    { scope: { id: "property-values" }, ...options }
-  );
+/**
+ * How each kind of row's properties are saved, one value at a time, where the
+ * page holds no read of the row to write answers into: they are held where
+ * {@link useHeldItem} reads them.
+ */
+export const propertySaves = Object.fromEntries(
+  Object.values(PropertyTarget).map(
+    (target): [PropertyTarget, FieldSaveKind<PropertyHolder, never>] => [
+      target,
+      {
+        name: `properties-${target}`,
+        readKey: (communityId, id) => heldKey(`properties-${target}`, communityId, id),
+        // Only its properties are saved this way.
+        patch: () => Promise.reject(new Error("a row's properties take no patch")),
+        properties: target,
+        lists: () => q.propertyHolder(target),
+        itself: () => ({}),
+      },
+    ]
+  )
+) as Record<PropertyTarget, FieldSaveKind<PropertyHolder, never>>;

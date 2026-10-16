@@ -74,12 +74,12 @@ describe("CommunityRecentComments read more", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /read more/i }));
 
-    expect(container.querySelector(".line-clamp-2")).toBeNull();
+    expect(container.querySelector(".line-clamp-4")).toBeNull();
     const collapse = screen.getByRole("button", { name: /show less/i });
 
     await userEvent.click(collapse);
 
-    expect(container.querySelector(".line-clamp-2")).not.toBeNull();
+    expect(container.querySelector(".line-clamp-4")).not.toBeNull();
     expect(screen.getByRole("button", { name: /read more/i })).toBeInTheDocument();
   });
 

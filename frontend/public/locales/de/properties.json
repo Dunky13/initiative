@@ -5,6 +5,7 @@
   "saving": "Wird gespeichert…",
   "saved": "Gespeichert",
   "remove": "Eigenschaft entfernen",
+  "loadError": "Diese Eigenschaft konnte nicht geladen werden.",
   "types": {
     "text": "Text",
     "number": "Zahl",

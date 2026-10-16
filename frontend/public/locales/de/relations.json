@@ -11,6 +11,7 @@
     "hopsN_one": "{{count}} Schritt",
     "hopsN_other": "{{count}} Schritte",
     "walking": "Sucht weiter…",
+    "walkFailed": "Weiter draußen ließ sich nichts laden, daher werden nur direkte Verknüpfungen gezeigt.",
     "showTags": "Tags anzeigen"
   },
   "layout": {

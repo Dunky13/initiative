@@ -156,6 +156,7 @@
     "greeting": "Hallo <strong>{{name}}</strong>,",
     "levelRead": "Lesezugriff",
     "levelReadWrite": "Lese- und Schreibzugriff",
+    "levelModerate": "Moderationszugriff",
     "levelAdmin": "auf Community-Einstellungen (Admin)",
     "levelSuperadmin": "auf Community-Einstellungen (Superadmin)",
     "requested": {
@@ -259,6 +260,11 @@
       "subject": "Zwei-Faktor-Authentifizierung wird deaktiviert",
       "title": "Zwei-Faktor-Authentifizierung wird deaktiviert",
       "body": "Die Zwei-Faktor-Authentifizierung wird am <strong>{{date}}</strong> deaktiviert. Bis dahin fragt dein Konto bei der Anmeldung weiter einen Code ab, und du kannst es in deinen Einstellungen unter Sicherheit abbrechen."
+    },
+    "recoveryRegenerated": {
+      "subject": "Für dein Konto wurden neue Wiederherstellungscodes erstellt",
+      "title": "Für dein Konto wurden neue Wiederherstellungscodes erstellt",
+      "body": "Für dein Konto wurde ein neuer Satz Wiederherstellungscodes erstellt, und deine bisherigen funktionieren nicht mehr. Bewahre die neuen sicher auf."
     }
   },
   "passwordRemoved": {
@@ -369,7 +375,9 @@
       "direct_messages": "Direktnachrichten",
       "connections": "Kontakte",
       "jobs": "Exporte und Importe",
-      "account": "Dein Konto"
+      "account": "Dein Konto",
+      "moderation": "Moderation",
+      "cases": "Fälle"
     }
   },
   "signInCode": {
@@ -465,6 +473,38 @@
       "m10": "Oktober",
       "m11": "November",
       "m12": "Dezember"
+    }
+  },
+  "moderation": {
+    "removed": {
+      "subject": "Ein Moderator hat etwas von dir entfernt",
+      "title": "Ein Moderator hat etwas von dir entfernt",
+      "body": "Etwas, das du geschrieben hast, hat gegen die Regeln dieser Community verstoßen und wurde entfernt. Die Benachrichtigung in der App nennt den Grund."
+    },
+    "warned": {
+      "subject": "Eine Warnung der Moderatoren dieser Community",
+      "title": "Eine Warnung der Moderatoren dieser Community",
+      "body": "Die Moderatoren schreiben:<br><br>{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "subject": "Ein neuer Fall wurde eröffnet",
+      "title": "Ein neuer Fall wurde eröffnet",
+      "body": "Dort, wo du Fälle bearbeitest, wurde gerade ein Fall eröffnet, und noch niemand hat ihn übernommen. Öffne ihn in Initiative, um ihn zu lesen."
+    },
+    "replied": {
+      "subject": "Eine Antwort auf einen Fall, den niemand übernommen hat",
+      "title": "Eine Antwort auf einen Fall, den niemand übernommen hat",
+      "body": "Wer einen Fall eingereicht hat, hat darauf geantwortet, und noch niemand hat ihn übernommen. Öffne ihn in Initiative, um ihn zu lesen."
+    }
+  },
+  "identity": {
+    "fallbackText": "Falls du das nicht warst, ändere sofort dein Passwort und wende dich an die Betreiber dieser Seite.",
+    "linked": {
+      "subject": "Eine neue Möglichkeit, dich anzumelden",
+      "title": "Eine neue Möglichkeit, dich anzumelden",
+      "body": "Du kannst dich jetzt über <strong>{{provider}}</strong> bei deinem Konto anmelden, weil dort eine deiner Adressen bestätigt wurde."
     }
   }
 }

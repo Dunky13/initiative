@@ -14,6 +14,7 @@ import {
   buildInitiative,
   buildInitiativeJoinRequest,
   buildInitiativeRole,
+  buildToolLayoutSet,
   buildUserSummary,
   initiativeCan,
 } from "@/__tests__/factories";
@@ -28,6 +29,7 @@ vi.mock("@/lib/mascotToast", () => ({
 
 import { InitiativeSettingsDangerPage } from "./InitiativeSettingsDangerPage";
 import { InitiativeSettingsExportPage } from "./InitiativeSettingsExportPage";
+import { InitiativeSettingsLayoutsPage } from "./InitiativeSettingsLayoutsPage";
 import { InitiativeSettingsMembersPage } from "./InitiativeSettingsMembersPage";
 import { InitiativeSettingsPropertiesPage } from "./InitiativeSettingsPropertiesPage";
 import { InitiativeSettingsRolesPage } from "./InitiativeSettingsRolesPage";
@@ -277,10 +279,74 @@ describe("initiative settings sections", () => {
     ).toBeInTheDocument();
   });
 
+  it("lists the calendar's and each project's layouts at /settings/layouts", async () => {
+    stubInitiative({ calendars_enabled: true });
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(buildToolLayoutSet({ tool: "calendar" }))
+      ),
+      communityHttp.get("/layouts/initiative", () =>
+        HttpResponse.json([
+          {
+            tool: "project",
+            tool_id: 3,
+            name: "Launch",
+            ...buildToolLayoutSet({
+              layouts: [
+                { kind: "table", is_default: false, definition: {}, updated_at: null },
+                {
+                  kind: "board",
+                  is_default: true,
+                  definition: {},
+                  updated_at: "2026-10-01T12:00:00.000Z",
+                },
+              ],
+            }),
+          },
+          {
+            tool: "project",
+            tool_id: 4,
+            name: "Archive digs",
+            ...buildToolLayoutSet({ can_configure: false }),
+          },
+        ])
+      )
+    );
+
+    renderSection(InitiativeSettingsLayoutsPage, "layouts");
+
+    // In the sidebar's order: the calendar before the projects.
+    const calendar = await screen.findByRole("region", { name: "Calendar" });
+    expect(within(calendar).getByText("Event detail")).toBeInTheDocument();
+    expect(within(calendar).getByRole("link", { name: /edit layouts/i })).toHaveAttribute(
+      "href",
+      `/c/1/i/${INITIATIVE_ID}/calendars/layouts`
+    );
+    const launch = await screen.findByRole("region", { name: "Launch" });
+    expect(
+      calendar.compareDocumentPosition(launch) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    const board = within(launch).getByText("Board").closest("li");
+    expect(board).not.toBeNull();
+    expect(
+      within(board as HTMLElement).getByRole("img", { name: "Opens first" })
+    ).toBeInTheDocument();
+    expect(within(board as HTMLElement).getByRole("time")).toBeInTheDocument();
+    const table = within(launch).getByText("Table").closest("li");
+    expect(within(table as HTMLElement).getByLabelText("As shipped")).toBeInTheDocument();
+    expect(within(launch).getByRole("link", { name: /edit layouts/i })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/projects/3/layouts")
+    );
+    const digs = screen.getByRole("region", { name: "Archive digs" });
+    expect(within(digs).queryByRole("link", { name: /edit layouts/i })).not.toBeInTheDocument();
+  });
+
   it.each([
     ["members", InitiativeSettingsMembersPage],
     ["roles", InitiativeSettingsRolesPage],
     ["properties", InitiativeSettingsPropertiesPage],
+    ["layouts", InitiativeSettingsLayoutsPage],
     ["export", InitiativeSettingsExportPage],
     ["danger", InitiativeSettingsDangerPage],
   ])(

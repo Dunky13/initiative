@@ -98,7 +98,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
 
     Either way, everything inside the communities you already belong to still works, and so does the rest of Initiative. What the question stands in front of is joining a *listed* community.
 
-    Extremely common, entirely fixable, and nobody is cross with you. Ask whoever runs your server to **reset the age question** — anyone on the support tier or above can do it, and it's recorded in the audit log like every other action taken on somebody's account.
+    Extremely common, entirely fixable, and nobody is cross with you. Ask whoever runs your server to **reset the age question** — the box has an **Ask for help** button where the server takes help requests. Anyone on the support tier or above can do it, and it's recorded in the audit log like every other action taken on somebody's account.
 
     They can't see what you typed, incidentally, because it was never kept. Resetting simply lets you have another go.
 
@@ -117,7 +117,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
     If you're not a member of the initiative it lives in, Initiative hides it completely — so a direct link says "not found" rather than "access denied". Ask to be added to the initiative. See [Sharing & access](sharing/index.md).
 
 ??? question "My Tools doesn't show everything in my community"
-    It isn't meant to. My Tools and My Calendar — and the community front page — show what has reached *you*: shared with you, shared with a role you hold, or shared with everyone in an initiative you're in. It's a working list, not an inventory. Open a single initiative to see all of its work. See [Your space](guides/your-space.md#my-tools).
+    It isn't meant to. My Tools and My Calendar show what has reached *you*: shared with you, shared with a role you hold, or shared with everyone in an initiative you're in. It's a working list, not an inventory. Open a single initiative to see all of its work. See [Your space](guides/your-space.md#my-tools).
 
 ??? question "I'm a community admin. Why isn't every initiative in my sidebar?"
     Because navigation follows what you're *in*, not what you *may reach* — otherwise a community with a hundred initiatives buries the three you actually work in. Your authority hasn't changed: open any initiative and you see all of it. To keep one to hand, join it from the community front page (you walk straight in). See [Community admins join like everyone else](guides/initiatives.md#community-admins-join-like-everybody-else).
@@ -159,12 +159,14 @@ Short answers to what people actually ask, with a pointer to the longer version 
     On the community rail, open the community's menu and choose **Leave community**. Members and admins leave freely. If you're the community's only **superadmin**, you'll be made to hand the seat to somebody else first — you can't simply slip out and leave nobody holding the keys.
 
 ??? question "My account says it's suspended"
-    You can sign in, and you get one screen: that you're suspended, the reason the moderator gave if they gave one, and who to contact. Nothing else opens while it lasts — not your communities, not your own settings.
+    You can sign in, and you get one screen: that you're suspended, the reason the moderator gave if they gave one, and how to appeal. Nothing else opens while it lasts — not your communities, not your own settings.
 
-    Nothing is taken away. Memberships, work, everything you wrote stays exactly where it is, and lifting the suspension hands the account back whole. The address on that screen is the one to write to.
+    Where the server takes appeals, **Appeal** on that screen sends one to its moderators. You follow it on the same screen, and they can write back to you there; you can have one appeal open at a time, and appeal again once it's closed. Where the server takes none, the screen gives the address to write to instead.
+
+    Nothing is taken away. Memberships, work, everything you wrote stays exactly where it is, and lifting the suspension hands the account back whole.
 
 ??? question "One of my communities has a lock on it"
-    It's suspended. Nobody in it can open it while that lasts, its admins included, which is why you're looking at a lock rather than the usual front page. Opening it says who to contact.
+    It's suspended. Nobody in it can open it while that lasts, its admins included, which is why you're looking at a lock rather than the usual front page. Opening it says who to contact, with **Ask for help** where the server takes help requests.
 
     Nothing inside has been changed or deleted, and it all comes back as it was when the suspension is lifted. Members don't see the community at all in the meantime, so if people ask where it went, now you know.
 
@@ -222,7 +224,9 @@ Short answers to what people actually ask, with a pointer to the longer version 
 
 ## Still stuck?
 
-Look at the bottom of the sidebar. The question mark opens these pages, and where there's somebody to ask — a community that takes help requests, or a server with an address to write to — the lifebuoy beside it is **Ask for help**.
+Look at the bottom of the sidebar. The question mark opens these pages, and where there's somebody to ask — a server that takes help requests, or one with an address to write to — the lifebuoy beside it is **Ask for help**.
+
+To tell the people who run the server what you think — an idea, something that got in your way, or praise — choose **Send feedback** in your account menu or the command palette.
 
 If it looks like the software rather than your account, see [Reporting a problem](security/reporting-a-problem.md).
 

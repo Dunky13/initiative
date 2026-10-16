@@ -35,6 +35,7 @@ from fastapi import status
 from app.core.errors import CodedError
 from app.core.messages import DirectMessageTransportMessages as Messages
 from app.core.transitions import DM_SIGNED_DEVICES
+from app.core.user_agents import describe as describe_client
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.models.platform.dm_conversation import (
     DmConversation,
@@ -405,7 +406,9 @@ async def list_devices(session: AsyncSession, *, user_id: int) -> list[DmDeviceR
             identity_key=_encode_key(device.identity_key),
             fingerprint_key=_encode_key(device.fingerprint_key),
             signature=_encode_key(device.signature) if device.signature else None,
-            label=device.label,
+            # Stored as the user agent that registered it, which is no name a
+            # person would recognise their own laptop by.
+            label=describe_client(device.label),
             created_at=device.created_at,
             last_seen_at=device.last_seen_at,
             one_time_key_count=counts.get(device.id, 0),
@@ -442,6 +445,30 @@ async def withdraw_signed_in(
         delete(DmDevice).where(
             DmDevice.user_id == user_id, col(DmDevice.session_id).in_(list(session_ids))
         )
+    )
+
+
+#: How long after a browser's sign-in ends its key store is kept. A renewal
+#: that read the session just before it ran out still moves the store to the
+#: session it opens, and finishes well inside this.
+ENDED_BROWSER_GRACE = timedelta(hours=1)
+
+
+async def withdraw_ended_browsers(session: AsyncSession, *, now: datetime) -> None:
+    """Drop the key stores of browsers whose sign-in has ended.
+
+    A browser's keys go with its session, and one that lapsed has already wiped
+    them, without the credential to withdraw its row itself. A device's store
+    names a session that has an install and outlasts it on purpose. Does not
+    commit.
+    """
+    await session.exec(
+        text(
+            "DELETE FROM dm_devices d USING auth_sessions s "
+            "WHERE d.session_id = s.id AND s.install_id IS NULL "
+            "AND (s.revoked_at <= :ended OR s.expires_at <= :ended)"
+        ),
+        params={"ended": now - ENDED_BROWSER_GRACE},
     )
 
 

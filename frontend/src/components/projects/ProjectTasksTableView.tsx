@@ -9,17 +9,13 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Link } from "@tanstack/react-router";
-import { GripVertical, MessageSquare } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import type React from "react";
 import { createContext, memo, useCallback, useContext, useMemo } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
-import { UnreadDot } from "@/components/notifications/UnreadDot";
-import { TaskAssigneeList } from "@/components/projects/TaskAssigneeList";
-import { TaskBlockersHoverCard } from "@/components/projects/TaskBlockersHoverCard";
-import { TaskDescriptionHoverCard } from "@/components/projects/TaskDescriptionHoverCard";
+import { TaskAssigneesCell } from "@/components/projects/TaskQuickActions";
 import {
   collectTagsByName,
   fanOutTasksByTag,
@@ -28,27 +24,24 @@ import {
   tagRowId,
   uniqueTasksFromRows,
 } from "@/components/projects/taskTagGrouping";
-import { buildPropertyColumns, propertyColumnIds } from "@/components/properties/propertyColumns";
 import { SortHeader } from "@/components/SortIcon";
 import { TagBadge } from "@/components/tags/TagBadge";
 import { sharedTaskColumns } from "@/components/tasks/globalTaskColumns";
-import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { statusTriggerStyle, TaskStatusOption } from "@/components/tasks/TaskStatusOption";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable, type DataTableRowWrapperProps } from "@/components/ui/data-table";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
-import { usePersistedColumnVisibility } from "@/hooks/usePersistedColumnVisibility";
-import { projectTaskTableKey, type useProjectTaskTableState } from "@/hooks/useProjectTaskView";
+import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
-import { useUnreadTree } from "@/hooks/useUnreadTree";
-import { useCommunityPath } from "@/lib/communityUrl";
-import { summarizeStored } from "@/lib/recurrence";
+import { fieldColumnId } from "@/lib/layouts/columns";
+import { columnsOf } from "@/lib/layouts/draft";
+import { useProjectLayoutEnv } from "@/lib/layouts/fields";
+import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
+import { taskFields } from "@/lib/layouts/tasks";
 import type { AppColumnDef } from "@/lib/table";
-import { truncateText } from "@/lib/text";
 import { cn } from "@/lib/utils";
-import type { TranslateFn } from "@/types/i18n";
 
 type ProjectTasksListViewProps = {
   projectId: number;
@@ -72,8 +65,13 @@ type ProjectTasksListViewProps = {
   onTaskSelectionChange?: (selectedTasks: TaskListRead[]) => void;
   onExitSelection?: () => void;
   /** How the reader left the table: from {@link useProjectTaskTableState},
-   *  held by the section so its export follows the same sort. */
+   *  held by the section so its export follows the same sort. It seeds the
+   *  table once, at mount, so the section keys this component by it. */
   tableState: ReturnType<typeof useProjectTaskTableState>;
+  /** The fields the view shows as columns, in order, where it names them. */
+  viewColumns?: string[] | null;
+  /** The view is being edited. */
+  editing?: boolean;
 };
 
 type SortableRowContextValue = {
@@ -194,37 +192,41 @@ const ProjectTasksTableViewComponent = ({
   onTaskSelectionChange,
   onExitSelection,
   tableState: [tableState, { setGrouping, setSorting }],
+  viewColumns,
+  editing = false,
 }: ProjectTasksListViewProps) => {
-  const { t } = useTranslation(["projects", "comments", "tasks"]);
+  const { t, i18n } = useTranslation(["projects", "comments", "tasks"]);
   const statusDisabled = !canEditTaskDetails || taskActionsDisabled;
-  const gp = useCommunityPath();
+  const env = useProjectLayoutEnv(taskHref);
 
-  // Programmatic property columns (hidden by default, persist visibility).
   // Scoped to the project's initiative so the column list stays focused.
   const { data: propertyDefinitions = [] } = useProperties({ initiativeId });
-  const propertyColumns = useMemo(
-    () => buildPropertyColumns<TaskTagRow>(propertyDefinitions, (row) => row.properties),
-    [propertyDefinitions]
+  const plugins = usePluginsOnItems(initiativeId);
+  const fields = useMemo(
+    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
+    [propertyDefinitions, plugins, i18n.language]
   );
-  const propertyHiddenIds = useMemo(
-    () => propertyColumnIds(propertyDefinitions),
-    [propertyDefinitions]
+  // The columns the view shows, in its order: its own, or the shipped ones.
+  // What the view leaves out is hidden, as are the columns that only group.
+  const shown = useMemo(
+    () =>
+      columnsOf({ columns: viewColumns }, fields)
+        .filter((id) => fields.has(id))
+        .map(fieldColumnId),
+    [viewColumns, fields]
   );
-  const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
-    `initiative-project-${projectId}-task-columns`,
-    propertyHiddenIds
+  const columnVisibility = useMemo(
+    () => ({
+      ...Object.fromEntries(
+        [...fields.values()]
+          .filter((field) => field.hideable)
+          .map(({ id }) => [fieldColumnId(id), shown.includes(fieldColumnId(id))])
+      ),
+      "date group": false,
+      [TAG_GROUP_COLUMN_ID]: false,
+    }),
+    [fields, shown]
   );
-  // "date group" column must always start hidden in this view (non-property
-  // toggle). Merge it once with the persisted map. The tag group column drives
-  // "group by tag" only — the tags column already shows a task's tags — so it
-  // stays hidden whatever the persisted map holds.
-  const effectiveColumnVisibility = useMemo(() => {
-    const withDateGroup =
-      "date group" in columnVisibility
-        ? columnVisibility
-        : { ...columnVisibility, "date group": false };
-    return { ...withDateGroup, [TAG_GROUP_COLUMN_ID]: false };
-  }, [columnVisibility]);
 
   // Tag grouping keys rows by tag name; keep the tags around so a group header
   // can render its badge, and name the group tasks without tags fall into.
@@ -243,8 +245,8 @@ const ProjectTasksTableViewComponent = ({
 
   const columns = useMemo<AppColumnDef<TaskTagRow>[]>(() => {
     const shared = sharedTaskColumns<TaskTagRow>({
-      t: t as TranslateFn,
-      tagHref: (_task, tagId) => gp(`/tags/${tagId}`),
+      fields,
+      env,
       isPriorityDisabled: () => statusDisabled,
     });
     return [
@@ -314,38 +316,21 @@ const ProjectTasksTableViewComponent = ({
         enableHiding: false,
       },
       {
-        id: "title",
-        accessorKey: "title",
-        header: ({ column }) => <SortHeader column={column} label={t("table.taskColumn")} />,
-        cell: ({ row }) => <MemoizedTaskCell task={row.original} taskHref={taskHref} />,
-        enableSorting: true,
-        sortFn: "alphanumeric",
-        enableHiding: false,
+        ...shared.title,
         // The widest column, so it takes the largest share of whatever space
         // the others leave over.
         size: 360,
+      },
+      {
+        ...shared.assignees,
+        cell: ({ row }) => <TaskAssigneesCell task={row.original} canEdit={!statusDisabled} />,
       },
       shared.startDate,
       shared.dueDate,
       shared.priority,
       shared.tags,
-      ...propertyColumns,
-      {
-        id: "comments",
-        header: () => <span className="font-medium">{t("table.commentsColumn")}</span>,
-        cell: ({ row }) => {
-          const count = row.original.comment_count ?? 0;
-          return count > 0 ? (
-            <span className="inline-flex items-center gap-1 text-sm">
-              <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-              {count}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-sm">0</span>
-          );
-        },
-        size: 90,
-      },
+      ...shared.properties,
+      shared.comments,
       {
         id: "status",
         // Board order, read from the statuses this view holds so a column
@@ -398,17 +383,46 @@ const ProjectTasksTableViewComponent = ({
       },
     ];
   }, [
-    gp,
+    fields,
+    env,
     onStatusChange,
-    taskHref,
     statusDisabled,
     tagsByName,
     taskStatuses,
     statusLookup,
     t,
     untaggedLabel,
-    propertyColumns,
   ]);
+  // The view's columns take the places its columns held, in its order. While
+  // the view is edited, each field's header is marked with the field, so the
+  // editor finds the column that was clicked.
+  const orderedColumns = useMemo(() => {
+    const rank = new Map(shown.map((id, index) => [id, index]));
+    const listed = columns
+      .filter((column) => column.id !== undefined && rank.has(column.id))
+      .sort((a, b) => (rank.get(a.id as string) ?? 0) - (rank.get(b.id as string) ?? 0));
+    let next = 0;
+    const ordered = columns.map((column) =>
+      column.id !== undefined && rank.has(column.id) ? listed[next++] : column
+    );
+    if (!editing) return ordered;
+    const fieldOf = new Map(
+      [...fields.values()].map((field) => [fieldColumnId(field.id), field.id])
+    );
+    return ordered.map((column): AppColumnDef<TaskTagRow> => {
+      const fieldId = column.id === undefined ? undefined : fieldOf.get(column.id);
+      const { header } = column;
+      if (fieldId === undefined || typeof header !== "function") return column;
+      return {
+        ...column,
+        header: (context: Parameters<typeof header>[0]) => (
+          <span className="contents" data-layout-node={`column:${fieldId}`}>
+            {header(context)}
+          </span>
+        ),
+      } as AppColumnDef<TaskTagRow>;
+    });
+  }, [columns, shown, editing, fields]);
   const groupingOptions = useMemo(
     () => [
       { id: "date group", label: t("tasks:columns.dateWindow") },
@@ -419,7 +433,6 @@ const ProjectTasksTableViewComponent = ({
 
   const sortableItems = useMemo(() => tasks.map((task) => task.id.toString()), [tasks]);
 
-  const tableStorageKey = projectTaskTableKey(projectId);
   const { grouping, sorting } = tableState;
   // Grouping and sorting each disable drag-to-reorder: a manual order can only
   // be expressed by the table's own row order.
@@ -465,18 +478,13 @@ const ProjectTasksTableViewComponent = ({
         strategy={verticalListSortingStrategy}
       >
         <DataTable
-          // The table seeds its grouping and sorting once, at mount. Moving
-          // between projects swaps which saved answer applies, so it has to be
-          // a fresh table rather than the previous project's.
-          key={tableStorageKey}
-          columns={columns}
+          columns={orderedColumns}
           data={rows}
           enableVirtualization
           virtualContainerHeight="h-[calc(100vh-20rem)]"
           virtualRowHeight={52}
           groupingOptions={groupingOptions}
-          columnVisibility={effectiveColumnVisibility}
-          onColumnVisibilityChange={setColumnVisibility}
+          columnVisibility={columnVisibility}
           onSortingChange={setSorting}
           onGroupingChange={setGrouping}
           helpText={(table) => {
@@ -513,7 +521,6 @@ const ProjectTasksTableViewComponent = ({
           enableFilterInput
           filterInputColumnKey="title"
           filterInputPlaceholder={t("table.filterPlaceholder")}
-          enableColumnVisibilityDropdown
           enableResetSorting
           enableRowSelection
           onRowSelectionChange={handleSelectionChange}
@@ -539,7 +546,9 @@ export const ProjectTasksTableView = memo(
       prevProps.canEditTaskDetails === nextProps.canEditTaskDetails &&
       prevProps.taskActionsDisabled === nextProps.taskActionsDisabled &&
       prevProps.initiativeId === nextProps.initiativeId &&
-      prevProps.tableState[0] === nextProps.tableState[0]
+      prevProps.tableState[0] === nextProps.tableState[0] &&
+      prevProps.viewColumns === nextProps.viewColumns &&
+      prevProps.editing === nextProps.editing
       // Note: Intentionally ignoring callback prop changes as they're functionally the same
     );
   }
@@ -566,76 +575,3 @@ const DragHandleCell = () => {
     </button>
   );
 };
-
-type TaskCellProps = {
-  task: TaskListRead;
-  taskHref: (taskId: number) => string;
-};
-
-const TaskCell = ({ task, taskHref }: TaskCellProps) => {
-  const { t } = useTranslation(["projects", "dates", "comments"]);
-  const unreadDot = useUnreadTree().hasSubject(task.community_id, "task", task.id) ? (
-    <UnreadDot />
-  ) : null;
-  // Memoize expensive recurrence computation
-  const recurrenceText = useMemo(() => {
-    if (!task.recurrence) return null;
-    const summary = summarizeStored(
-      task.recurrence,
-      task.due_date || task.start_date,
-      { strategy: task.recurrence_strategy, shift: task.recurrence_shift },
-      t as TranslateFn
-    );
-    return summary ? truncateText(summary, 100) : null;
-  }, [
-    task.recurrence,
-    task.recurrence_shift,
-    task.start_date,
-    task.due_date,
-    task.recurrence_strategy,
-    t,
-  ]);
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex w-full min-w-60 flex-col items-start text-left">
-        <Link
-          to={taskHref(task.id)}
-          draggable={false}
-          className="flex items-center gap-2 rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          {task.title}
-          {unreadDot}
-        </Link>
-        <div className="space-y-1 text-muted-foreground text-xs">
-          {task.assignees.length > 0 ? (
-            <TaskAssigneeList assignees={task.assignees} className="text-xs" />
-          ) : null}
-          {recurrenceText ? <p>{recurrenceText}</p> : null}
-        </div>
-        <TaskChecklistProgress progress={task.checklist_progress} className="mt-2 max-w-[200px]" />
-      </div>
-      <TaskBlockersHoverCard task={task} />
-      <TaskDescriptionHoverCard task={task} />
-    </div>
-  );
-};
-
-// Memoize the entire TaskCell to prevent unnecessary re-renders
-const MemoizedTaskCell = memo(TaskCell, (prevProps, nextProps) => {
-  return (
-    prevProps.task.id === nextProps.task.id &&
-    prevProps.task.title === nextProps.task.title &&
-    prevProps.task.has_description === nextProps.task.has_description &&
-    prevProps.task.description_excerpt === nextProps.task.description_excerpt &&
-    prevProps.task.recurrence === nextProps.task.recurrence &&
-    prevProps.task.recurrence_shift === nextProps.task.recurrence_shift &&
-    prevProps.task.recurrence_strategy === nextProps.task.recurrence_strategy &&
-    prevProps.task.start_date === nextProps.task.start_date &&
-    prevProps.task.due_date === nextProps.task.due_date &&
-    prevProps.task.assignees.length === nextProps.task.assignees.length &&
-    prevProps.taskHref === nextProps.taskHref
-  );
-});
-
-MemoizedTaskCell.displayName = "MemoizedTaskCell";

@@ -4,12 +4,13 @@ import type {
   QueueItemUpdate,
   QueueRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { SearchEntityType, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
   addQueueItem,
   advanceTurn,
   deleteQueueItem,
   duplicateQueueItem,
+  getReadQueueItemQueryKey,
   getReadQueueQueryKey,
   holdCurrentTurn,
   previousTurn,
@@ -21,10 +22,9 @@ import {
   updateQueueItem,
 } from "@/api/generated/queues/queues";
 import { invalidate, q } from "@/api/query-keys";
-import { setRelated } from "@/api/relationships";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useCommunityMutation, useOptimisticMutation } from "@/hooks/useApiMutation";
-import { idsByKind, type LinkedRef, sameIds } from "@/lib/relationships";
+import type { FieldSaveKind } from "@/hooks/useFieldSave";
 import type { MutationOpts } from "@/types/mutation";
 
 // ── The standard seven ──────────────────────────────────────────────────────
@@ -391,57 +391,12 @@ export const useReleaseHeld = (
 
 // ── Item Association Mutations ──────────────────────────────────────────────
 
-/**
- * Set everything a queue item is linked to, whatever kinds those are.
- *
- * This was two hooks, one per kind, and the dialog that called them worked out
- * whether each list had changed by comparing it to the old one **position by
- * position** — so reordering the same files counted as a change and swapping
- * two of them did not.
- *
- * One slice of links is replaced per kind, which is the shape the endpoint is
- * built for. A kind is written only when its set of ids actually differs, and a
- * kind that has lost all its links is written as an empty set rather than
- * skipped — otherwise removing the last file of a kind would not stick.
- */
-interface QueueItemLinks {
-  itemId: number;
-  links: LinkedRef[];
-  previous: LinkedRef[];
-  /**
-   * Write every kind, even one whose set of ids has not moved.
-   *
-   * For a retry. Skipping the unchanged is an optimisation that assumes the
-   * unchanged already landed, and the one case where that is not true is the
-   * one being retried: the kind that failed still reads as "no change" against
-   * what was asked for the first time.
-   */
-  force?: boolean;
-}
-
-export const useSetQueueItemLinks = (
-  queueId: number,
-  options?: MutationOpts<void, QueueItemLinks>
-) =>
-  useCommunityMutation<void, QueueItemLinks>(
-    {
-      mutationFn: async (communityId, { itemId, links, previous, force }) => {
-        const wanted = idsByKind(links);
-        const had = idsByKind(previous);
-
-        for (const kind of new Set([...wanted.keys(), ...had.keys()])) {
-          const next = wanted.get(kind) ?? [];
-          if (!force && sameIds(next, had.get(kind) ?? [])) continue;
-          await setRelated(
-            communityId,
-            { type: SearchEntityType.queue_item, id: itemId },
-            kind,
-            next
-          );
-        }
-      },
-      invalidate: () => invalidate(q.tool(Tool.queue, queueId)),
-      errorKey: "queues:error",
-    },
-    options
-  );
+/** How a queue's items are saved field by field. */
+export const queueItemSaves = (queueId: number): FieldSaveKind<QueueItemRead, QueueItemUpdate> => ({
+  name: "queue-item",
+  readKey: (communityId, id) => getReadQueueItemQueryKey(communityId, id),
+  patch: (communityId, id, patch) => updateQueueItem(communityId, id, patch),
+  properties: PropertyTarget.queue_item,
+  lists: () => q.tool(Tool.queue, queueId),
+  itself: (id) => q.queueItem(id),
+});

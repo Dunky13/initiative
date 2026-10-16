@@ -285,6 +285,72 @@ BUILTIN_ANNOUNCEMENTS: tuple[BuiltinAnnouncement, ...] = (
             ),
         ),
     ),
+    BuiltinAnnouncement(
+        slug="0-76-comment-removal-moved-to-moderators",
+        title="Taking down comments is for moderators now",
+        category=AnnouncementCategory.breaking,
+        published_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        audience_accounts=AnnouncementAudienceAccounts.existing,
+        only_upgrading_from_below="0.76.0",
+        guild_admins_only=True,
+        sections=(
+            AnnouncementSection(
+                heading="What changed",
+                body=(
+                    "**Delete is for your own comments.** Project managers "
+                    "could delete anybody's comment in their initiative. They "
+                    "can't any more.\n\n"
+                    "**Moderators take comments down instead.** Community "
+                    "admins, and anyone whose initiative role has **Full "
+                    "access**, can remove a comment with a reason. It leaves a "
+                    "tombstone where it was, its replies stay, and it can be "
+                    "put back from the moderation page's **Log**."
+                ),
+            ),
+            AnnouncementSection(
+                heading="What to do",
+                body=(
+                    "If a manager should keep taking comments down, give their "
+                    "role **Full access** in the initiative's settings, or "
+                    "move them to the built-in **Moderator** role."
+                ),
+            ),
+        ),
+    ),
+    BuiltinAnnouncement(
+        slug="0-76-intake-status-roles",
+        title="Tell requesters when you're waiting on them",
+        category=AnnouncementCategory.feature,
+        published_at=datetime(2026, 10, 11, tzinfo=timezone.utc),
+        audience_accounts=AnnouncementAudienceAccounts.existing,
+        only_upgrading_from_below="0.76.0",
+        min_platform_role=UserRole.owner,
+        trigger_route="/settings/platform/intake",
+        sections=(
+            AnnouncementSection(
+                heading="What changed",
+                body=(
+                    "People who file a ticket follow it under **My Tickets**, "
+                    "and see whether it's received, being worked, waiting on "
+                    "them or closed.\n\n"
+                    "**Waiting on them needs a status.** A stream set up "
+                    "before 0.75 has none picked, so its requesters see "
+                    'Received, In progress and Closed, and never "Waiting '
+                    'on you".'
+                ),
+            ),
+            AnnouncementSection(
+                heading="What to do",
+                body=(
+                    "For each stream below, pick the status that means "
+                    "**Waiting on the requester**, and the one their answer "
+                    "moves a case to (**When they answer, move to**). A "
+                    "stream set up with **Set this up for me** has both "
+                    "picked already."
+                ),
+            ),
+        ),
+    ),
 )
 
 

@@ -17,7 +17,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Enum as SQLEnum, Field, Relationship, SQLModel
 
 from app.core import recurrence
-from app.models.tenant._mixins import ArchiveMixin, CreatedByMixin, SoftDeleteMixin
+from app.models.tenant._mixins import (
+    ArchiveMixin,
+    CreatedByMixin,
+    CommentLockMixin,
+    HoldMixin,
+    SoftDeleteMixin,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.models.tenant.project import Project
@@ -42,7 +48,9 @@ class TaskStatus(CreatedByMixin, table=True):
     __tablename__ = "task_statuses"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="projects.id", nullable=False)
+    project_id: int = Field(
+        foreign_key="projects.id", ondelete="CASCADE", nullable=False
+    )
     name: str = Field(
         sa_column=Column(String(length=100), nullable=False),
     )
@@ -90,13 +98,22 @@ class TaskAssignee(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", primary_key=True, index=True)
 
 
-class Task(CreatedByMixin, ArchiveMixin, SoftDeleteMixin, table=True):
+class Task(
+    HoldMixin,
+    CommentLockMixin,
+    CreatedByMixin,
+    ArchiveMixin,
+    SoftDeleteMixin,
+    table=True,
+):
     __tablename__ = "tasks"
     _display_field = "title"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="projects.id", nullable=False)
-    task_status_id: int = Field(foreign_key="task_statuses.id", nullable=False)
+    task_status_id: int = Field(
+        foreign_key="task_statuses.id", ondelete="RESTRICT", nullable=False
+    )
     title: str = Field(nullable=False)
     # TEXT in DDL (unbounded); sa_column keeps autogen quiet vs AutoString
     description: Optional[str] = Field(default=None, sa_column=Column(Text))

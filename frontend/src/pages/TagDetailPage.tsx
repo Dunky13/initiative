@@ -1,11 +1,12 @@
-import { Navigate, useParams, useRouter } from "@tanstack/react-router";
+import { Navigate, useNavigate, useParams, useRouter, useSearch } from "@tanstack/react-router";
 import { SearchX, Settings, TagIcon, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { StatusMessage } from "@/components/StatusMessage";
-import { SearchResultList } from "@/components/search/SearchResultRow";
-import { TagDetailSkeleton } from "@/components/skeletons/PageSkeletons";
+import { TableSkeleton, TagDetailSkeleton } from "@/components/skeletons/PageSkeletons";
+import { TagLoadError, TagToolTab, toolTabCount } from "@/components/tags/TagToolTab";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,9 +22,15 @@ import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsBar, TabsContent, TabsTrigger } from "@/components/ui/tabs";
-import { useDeleteTag, useTag, useTagEntities, useUpdateTag } from "@/hooks/useTags";
+import { useDeleteTag, useTag, useTagCounts, useUpdateTag } from "@/hooks/useTags";
 import { toast } from "@/lib/mascotToast";
-import { TOOL_ICONS, TOOLS, toolNavLabelKey } from "@/lib/tools";
+import {
+  TOOL_ICONS,
+  TOOLS,
+  toolForRouteSegment,
+  toolNavLabelKey,
+  toolRouteSegment,
+} from "@/lib/tools";
 
 export const TagDetailPage = () => {
   const { t } = useTranslation(["tags", "common", "nav"]);
@@ -33,9 +40,11 @@ export const TagDetailPage = () => {
   const tagId = hasValidTagId ? parsedTagId : null;
 
   const router = useRouter();
+  const navigate = useNavigate();
+  const { tool: toolSegment } = useSearch({ strict: false }) as { tool?: string };
 
   const { data: tag, isLoading: tagLoading, error: tagError } = useTag(tagId);
-  const { data: entities } = useTagEntities(tagId);
+  const { data: tagCounts, isError: countsFailed, refetch: refetchCounts } = useTagCounts(tagId);
   const deleteTagMutation = useDeleteTag();
   const updateTagMutation = useUpdateTag();
 
@@ -109,14 +118,15 @@ export const TagDetailPage = () => {
     }
   };
 
-  const items = entities?.items ?? [];
-  const totalCount = items.length;
-  // One tab per tool holding something with this tag. Every row names the tool
-  // it lives in, so a task sits under Projects and a page under Wikis.
-  const groups = TOOLS.map((tool) => ({
-    tool,
-    hits: items.filter((item) => item.tool === tool),
-  })).filter(({ hits }) => hits.length > 0);
+  const counts = tagCounts?.counts ?? {};
+  const totalCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  // One tab per tool holding something with this tag — its own rows or what
+  // is inside it, so a tagged task opens the Projects tab.
+  const groups = TOOLS.map((tool) => ({ tool, count: toolTabCount(tool, counts) })).filter(
+    ({ count }) => count > 0
+  );
+  const requested = toolSegment ? toolForRouteSegment(toolSegment) : null;
+  const selected = groups.find(({ tool }) => tool === requested)?.tool ?? groups[0]?.tool ?? null;
 
   return (
     <div className="space-y-6">
@@ -191,27 +201,41 @@ export const TagDetailPage = () => {
         )}
       </div>
 
-      {groups.length === 0 ? (
+      {!tagCounts && countsFailed ? (
+        <TagLoadError onRetry={() => void refetchCounts()} />
+      ) : !tagCounts ? (
+        <TableSkeleton rows={6} columns={5} />
+      ) : selected === null ? (
         <p className="text-muted-foreground text-sm">{t("detail.empty")}</p>
       ) : (
-        <Tabs defaultValue={groups[0].tool} className="space-y-4">
+        <Tabs
+          value={selected}
+          onValueChange={(value) =>
+            void navigate({
+              to: ".",
+              search: { tool: toolRouteSegment(value as Tool) },
+              replace: true,
+            })
+          }
+          className="space-y-4"
+        >
           <TabsBar>
-            {groups.map(({ tool, hits }) => {
+            {groups.map(({ tool, count }) => {
               const Icon = TOOL_ICONS[tool];
               return (
                 <TabsTrigger key={tool} value={tool} className="inline-flex items-center gap-2">
                   <Icon className="h-4 w-4" />
                   {t("detail.toolTab", {
                     tool: t(toolNavLabelKey(tool), { ns: "nav" }),
-                    count: hits.length,
+                    count,
                   })}
                 </TabsTrigger>
               );
             })}
           </TabsBar>
-          {groups.map(({ tool, hits }) => (
+          {groups.map(({ tool }) => (
             <TabsContent key={tool} value={tool}>
-              <SearchResultList hits={hits} />
+              <TagToolTab tool={tool} tagId={tag.id} counts={counts} />
             </TabsContent>
           ))}
         </Tabs>

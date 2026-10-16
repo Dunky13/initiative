@@ -9,15 +9,19 @@
 import { useQuery } from "@tanstack/react-query";
 
 import type {
+  AppealTicketCreate,
+  FeedbackTicketCreate,
   FiledTicketDetailRead,
   FiledTicketList,
   ModerationTicketCreate,
+  SecurityTicketCreate,
   SupportTicketCreate,
   TaskCaseRead,
+  TaskRead,
   TicketAccepted,
   TicketAvailability,
 } from "@/api/generated/initiativeAPI.schemas";
-import { getReadTaskCaseQueryKey, readTaskCase } from "@/api/generated/tasks/tasks";
+import { getReadTaskCaseQueryKey, readTaskCase, takeTaskCase } from "@/api/generated/tasks/tasks";
 import {
   fileTicket,
   getListFiledTicketsQueryKey,
@@ -30,7 +34,7 @@ import {
 } from "@/api/generated/tickets/tickets";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { useApiMutation } from "@/hooks/useApiMutation";
+import { useApiMutation, useCommunityMutation } from "@/hooks/useApiMutation";
 import { docsUrl } from "@/lib/links";
 import { queryClient } from "@/lib/queryClient";
 import type { MutationOpts } from "@/types/mutation";
@@ -39,8 +43,25 @@ import type { QueryOpts } from "@/types/query";
 /** Where somebody is sent when there is neither a form nor an address. */
 export const FAQ_URL = docsUrl("faq/");
 
-/** One filing, told apart by its stream. */
-export type TicketCreate = SupportTicketCreate | ModerationTicketCreate;
+/** One filing, told apart by its stream, and an appeal by its type. */
+export type TicketCreate =
+  | SupportTicketCreate
+  | ModerationTicketCreate
+  | SecurityTicketCreate
+  | FeedbackTicketCreate
+  | AppealTicketCreate;
+
+/** A filing and the files sent with it. */
+export interface TicketFiling {
+  ticket: TicketCreate;
+  files: File[];
+}
+
+/** An answer and the files sent with it. */
+export interface TicketAnswer {
+  body: string;
+  files: File[];
+}
 
 /**
  * What every kind of ticket offers the reader, standing in `communityId`.
@@ -62,10 +83,11 @@ export const useTicketAvailability = (
   });
 };
 
-export const useFileTicket = (options?: MutationOpts<TicketAccepted, TicketCreate>) =>
-  useApiMutation<TicketAccepted, TicketCreate>(
+export const useFileTicket = (options?: MutationOpts<TicketAccepted, TicketFiling>) =>
+  useApiMutation<TicketAccepted, TicketFiling>(
     {
-      mutationFn: (body) => fileTicket(body),
+      // The ticket travels as JSON beside the files: one multipart body.
+      mutationFn: ({ ticket, files }) => fileTicket({ payload: JSON.stringify(ticket), files }),
       // A filing with somebody to answer it joins the reader's own tickets.
       invalidate: () => invalidate(q.filedTickets()),
     },
@@ -91,11 +113,11 @@ export const useFiledTicket = (taskId: number, options?: QueryOpts<FiledTicketDe
 /** Answer on a ticket the reader filed. The answer comes back as the ticket. */
 export const useReplyToTicket = (
   taskId: number,
-  options?: MutationOpts<FiledTicketDetailRead, string>
+  options?: MutationOpts<FiledTicketDetailRead, TicketAnswer>
 ) =>
-  useApiMutation<FiledTicketDetailRead, string>(
+  useApiMutation<FiledTicketDetailRead, TicketAnswer>(
     {
-      mutationFn: (body) => replyToFiledTicket(taskId, { body }),
+      mutationFn: ({ body, files }) => replyToFiledTicket(taskId, { body, files }),
       invalidate: (ticket) => {
         queryClient.setQueryData(getReadFiledTicketQueryKey(taskId), ticket);
         return invalidate(q.filedTickets());
@@ -131,6 +153,19 @@ export const refreshTaskCase = (taskId: number, communityId?: number) =>
       );
     },
   });
+
+/** Take an operations case: the reader is assigned beside whoever has it,
+ *  and a case waiting to be picked up is put to work. */
+export const useTakeCase = (options?: MutationOpts<TaskRead, number>) =>
+  useCommunityMutation<TaskRead, number>(
+    {
+      mutationFn: (communityId, taskId) => takeTaskCase(communityId, taskId),
+      invalidate: (_task, taskId) =>
+        Promise.all([invalidate(q.allTasks(), q.task(taskId)), refreshTaskCase(taskId)]),
+      errorKey: "intake:case.takeFailed",
+    },
+    options
+  );
 
 /** Whether the reader has filed anything worth a page of its own. */
 export const useHasFiledTickets = () => {

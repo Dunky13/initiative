@@ -30,7 +30,8 @@ Runs two ways:
 What it re-keys is read from the models: every column whose ``info`` declares
 a ``FERNET_SALT`` (``app.core.encryption``). A shared table's column is re-keyed
 in ``public``; a guild-content table's in every ``guild_<id>`` schema, on system
-sessions routed into that guild.
+sessions routed into that guild. Every evidence object's key is re-wrapped
+there too (``evidence.wrapped_dek``); the objects themselves are never read.
 """
 
 from __future__ import annotations
@@ -349,6 +350,29 @@ async def _rotate_json_column(
         )
 
 
+async def _rewrap_evidence(
+    session, guild_id: int, old_key: str, new_key: str, dry_run: bool
+) -> ColumnResult:
+    """Wrap every evidence key in one community under the new key. The stored
+    objects are not touched: only the few bytes of each wrapped key move."""
+    from app.services.platform import evidence
+
+    result = ColumnResult(guild_schema_name(guild_id), "evidence", "wrapped_dek")
+    if not await (await session.connection()).scalar(
+        _RELATION_EXISTS,
+        {"schema": guild_schema_name(guild_id), "table": "evidence"},
+    ):
+        return result
+    result.rotated, result.skipped, result.failed = await evidence.rewrap_guild(
+        session,
+        guild_id,
+        old_secret_key=old_key,
+        new_secret_key=new_key,
+        dry_run=dry_run,
+    )
+    return result
+
+
 async def rotate_secret_key(*, dry_run: bool = False) -> RotationSummary:
     """Re-encrypt all SECRET_KEY-derived data from PREVIOUS_SECRET_KEY to SECRET_KEY.
 
@@ -414,6 +438,9 @@ async def rotate_secret_key(*, dry_run: bool = False) -> RotationSummary:
                             dry_run,
                         )
                     )
+                summary.columns.append(
+                    await _rewrap_evidence(writer, gid, old_key, new_key, dry_run)
+                )
                 await writer.commit()
         except Exception:
             logger.exception(
@@ -422,6 +449,22 @@ async def rotate_secret_key(*, dry_run: bool = False) -> RotationSummary:
 
     log = logger.warning if summary.failed else logger.info
     log("%s", summary.render())
+    if not dry_run and summary.rotated:
+        # Startup re-runs this while the previous key is still set, finding
+        # nothing the second time: only a run that sealed something again is
+        # one worth a line.
+        from app.core.audit_events import AuditEventType
+        from app.services import audit as audit_service
+
+        audit_service.emit(
+            event_type=AuditEventType.PLATFORM_SECRET_KEY_ROTATED,
+            actor_user_id=None,
+            detail={
+                "rotated": summary.rotated,
+                "skipped": summary.skipped,
+                "failed": summary.failed,
+            },
+        )
     return summary
 
 

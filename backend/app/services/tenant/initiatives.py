@@ -17,6 +17,7 @@ from app.core.audit_events import AuditEventType
 from app.core.errors import CodedError
 from app.core.messages import InitiativeMessages
 from app.db.session import routed_context
+from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.initiative import (
     BUILTIN_ROLES,
     Initiative,
@@ -367,19 +368,51 @@ async def remove_user_from_guild_initiatives(
     items. ``member_departs`` with no initiative does the same for content
     that belongs to the community itself. What they owned is left **unowned**
     rather than handed to anyone; guild admins can claim it whenever they
-    choose (``app.services.tenant.ownership``).
+    choose (``app.services.tenant.ownership``). Their recent views in the
+    community go too.
     """
     from app.db.schema_provisioning import guild_schema_name
+    from app.services.tenant import favorites, recent_views
 
-    await session.exec(
-        select(func.public.member_departs(guild_schema_name(guild_id), user_id, None))
+    schema = guild_schema_name(guild_id)
+    await session.exec(select(func.public.member_departs(schema, user_id, None)))
+    # An initiative they reached only through items shared with them has no
+    # membership row to delete, so its departure is run here.
+    shared_only = (
+        select(ResourceGrant.initiative_id)
+        .where(
+            ResourceGrant.user_id == user_id,
+            ResourceGrant.initiative_id.is_not(None),
+            ResourceGrant.initiative_id.not_in(
+                select(InitiativeMember.initiative_id).where(
+                    InitiativeMember.user_id == user_id
+                )
+            ),
+        )
+        .distinct()
     )
+    shared_only_ids = list((await session.exec(shared_only)).all())
+    for initiative_id in shared_only_ids:
+        await session.exec(
+            select(func.public.member_departs(schema, user_id, initiative_id))
+        )
+    if shared_only_ids:
+        # Outside a trigger the departure leaves archived content as it is,
+        # its grants included. A grant goes whatever state its item is in.
+        await session.exec(
+            delete(ResourceGrant).where(
+                ResourceGrant.user_id == user_id,
+                ResourceGrant.initiative_id.in_(shared_only_ids),
+            )
+        )
     await session.exec(
         delete(InitiativeMember).where(
             InitiativeMember.user_id == user_id,
             InitiativeMember.initiative_id.in_(select(Initiative.id)),
         )
     )
+    await recent_views.purge_for_user(session, user_id)
+    await favorites.purge_for_user(session, user_id)
 
 
 async def list_initiative_roles(
@@ -1140,12 +1173,15 @@ async def create_imported_initiative(
     color: str | None,
     tool_flags: dict[str, bool],
     manager_id: int,
+    join_policy: InitiativeJoinPolicy | None = None,
+    member_ids: Sequence[int] = (),
 ) -> Initiative:
     """Create an initiative for a backup import: the exact create-endpoint
     sequence (row → built-in roles → creator as PM), with the name suffixed
     on collision (always-create policy) instead of 409ing, and the tool
-    master switches taken from the backup manifest. Flush-only — the backup
-    orchestrator owns its per-chunk transaction."""
+    master switches and join policy taken from the backup manifest.
+    ``member_ids`` join it with the built-in member role. Flush-only — the
+    backup orchestrator owns its per-chunk transaction."""
     from app.core.tools import DEFAULT_ENABLED_TOOLS, Tool
     from app.services.import_engine.common import unique_name
 
@@ -1154,6 +1190,7 @@ async def create_imported_initiative(
         name=unique_name(existing, name),
         description=description,
         color=color,
+        join_policy=(join_policy or InitiativeJoinPolicy.private).value,
         **{
             # A manifest that says nothing about a tool falls back to that
             # tool's own default rather than to off: a backup written before
@@ -1179,6 +1216,15 @@ async def create_imported_initiative(
                 )
             ).id,
         )
+    )
+    session.add_all(
+        InitiativeMember(
+            initiative_id=initiative.id,
+            user_id=member_id,
+            role_id=roles["member"].id,
+        )
+        for member_id in member_ids
+        if member_id != manager_id
     )
     await session.flush()
     return initiative

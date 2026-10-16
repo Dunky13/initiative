@@ -1,6 +1,6 @@
-import type { RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import type { FavoriteItemRead, RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { communityPath } from "@/lib/communityUrl";
-import { TOOLS, toolDetailRoute, toolRouteSegment } from "@/lib/tools";
+import { showsActivity, TOOLS, toolDetailRoute, toolRouteSegment } from "@/lib/tools";
 
 export type RecentKey = {
   entityType: RecentItemRead["entity_type"];
@@ -21,7 +21,7 @@ export type RecentKey = {
  * wrong community prefix would resolve to a different (or inaccessible) entity.
  * Navigating the link enters that community via the /c/$communityId layout.
  */
-export function recentRoute(item: RecentItemRead): string {
+export function recentRoute(item: RecentItemRead | FavoriteItemRead): string {
   return communityPath(
     item.community_id,
     toolDetailRoute(item.entity_type as Tool, item.initiative_id, item.entity_id)
@@ -87,4 +87,26 @@ export function recentKeyMatches(activeKey: RecentKey | null, item: RecentItemRe
     activeKey.entityId === item.entity_id &&
     activeKey.communityId === item.community_id
   );
+}
+
+/** Where the activity drawer narrows to: one tool, or one initiative. */
+export type ActivityScope =
+  | { tool: Tool; toolId: number; initiativeId?: undefined }
+  | { initiativeId: number; tool?: undefined; toolId?: undefined };
+
+/**
+ * What the activity drawer shows on this page, or null for none: the tool a
+ * tool's page (or anything inside it, a project's task) belongs to, where that
+ * tool carries the drawer, or the initiative whose own page this is.
+ *   /c/{communityId}/i/{initiativeId}
+ */
+export function activityScope(pathname: string): ActivityScope | null {
+  const open = getActiveRecentKey(pathname);
+  if (open) {
+    const tool = open.entityType as Tool;
+    return showsActivity(tool) ? { tool, toolId: open.entityId } : null;
+  }
+  const parts = pathname.replace(/\/$/, "").split("/");
+  const initiativeId = parts[3] === "i" && parts.length === 5 ? parseId(parts[4]) : null;
+  return initiativeId == null ? null : { initiativeId };
 }

@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Einladung konnte nicht gelöscht werden.",
     "inviteLinkCopied": "Einladungslink in die Zwischenablage kopiert.",
     "copyInviteLink": "Einladungslink kopieren",
+    "newInviteLinkOnce": "Kopiere diesen Link jetzt. Er wird nicht noch einmal angezeigt.",
+    "inviteLinkTitle": "Einladungslink",
     "deleteInviteLink": "Einladung löschen",
     "usesFormat": "Verwendungen: {{uses}}/{{max}} · Läuft ab: {{expires}}",
     "neverExpires": "Nie",
@@ -368,6 +370,25 @@
       "task": "Eine Aufgabe",
       "taskObject": "deine Aufgabe",
       "user": "Ein Benutzer"
+    },
+    "moderationRemoved": "Ein Moderator hat etwas von dir entfernt: {{reason}}",
+    "moderationRemovedLegal": "Etwas, das du geschrieben hast, wurde aus rechtlichen Gründen entfernt",
+    "moderationWarned": "Eine Verwarnung der Moderatoren: {{message}}",
+    "feedbackRead": "Dein Feedback wurde gelesen",
+    "caseOpened": "Neuer Fall ({{stream}}): {{taskTitle}}",
+    "caseReplied": "{{name}} hat auf {{taskTitle}} geantwortet, und niemand hat den Fall übernommen",
+    "caseRepliedMany": "{{name}} hat {{count}} Antworten auf {{taskTitle}} geschrieben, und niemand hat den Fall übernommen",
+    "caseStreams": {
+      "security": "Sicherheit",
+      "moderation": "Moderation",
+      "support": "Support",
+      "feedback": "Feedback"
+    },
+    "profileCleared": {
+      "display_names": "Deine Namen in Communities wurden von einem Moderator entfernt.",
+      "custom_status": "Deine Statuszeile wurde von einem Moderator geleert.",
+      "decorations": "Deine Profildekorationen wurden von einem Moderator entfernt.",
+      "other": "Ein Teil deines Profils wurde von einem Moderator entfernt."
     }
   },
   "version": {
@@ -437,6 +458,9 @@
     "summaryUnavailable": "Gerade nicht verfügbar",
     "membersOfMax": "{{used}} von {{max}}",
     "membersOfUnlimited": "{{used}} · Unbegrenzt",
+    "guests": "Gäste",
+    "guestsUpTo": "Bis zu {{max}} gleichzeitig",
+    "guestsUnlimited": "Unbegrenzt",
     "currentPlan": "Aktueller Tarif:",
     "selfHosted": "Selbst gehostet",
     "upgrade": "Upgrade",
@@ -597,5 +621,38 @@
       "apply": "Nahe zuerst zeigen",
       "clear": "Nicht mehr nach Ort sortieren"
     }
+  },
+  "guests": {
+    "invitesTitle": "Gast einladen",
+    "invitesDescription": "Erstelle einen Link für jemanden, der nur bestimmte Initiativen oder Elemente sehen soll, für eine festgelegte Anzahl von Tagen.",
+    "guestDaysLabel": "Tage, die der Gast bleibt",
+    "initiativesLabel": "Initiativen, denen der Gast beitritt",
+    "initiativesPlaceholder": "Keine",
+    "itemsLabel": "Elemente, die der Gast erhält",
+    "itemsHelp": "Suche nach einem Projekt, einer Datei oder einem anderen Element und wähle dann, ob der Gast es ansehen oder bearbeiten darf.",
+    "itemLevel": "Zugriff auf {{title}}",
+    "removeItem": "{{title}} entfernen",
+    "generateInvite": "Gasteinladung generieren",
+    "noActiveInvites": "Keine Gasteinladungen.",
+    "staysDays_one": "Bleibt {{count}} Tag",
+    "staysDays_other": "Bleibt {{count}} Tage",
+    "joinsInitiatives": "Tritt {{names}} bei",
+    "givesItems_one": "{{count}} Element",
+    "givesItems_other": "{{count}} Elemente",
+    "listTitle": "Gäste",
+    "listDescription": "Personen, die für eine festgelegte Anzahl von Tagen hier sind. Ein Gast belegt keinen Platz und sieht nur, was ihm seine Einladung gegeben hat.",
+    "loading": "Gäste werden geladen…",
+    "unableToLoad": "Gäste konnten nicht geladen werden.",
+    "noGuests": "Derzeit keine Gäste.",
+    "endsColumn": "Zeit endet",
+    "extend": "Verlängern",
+    "extendTitle": "Zeit von {{name}} verlängern",
+    "extendDescription": "Die Zeit als Gast endet in so vielen Tagen, oder früher, wenn die Community oder der Server weniger erlaubt.",
+    "extendDaysLabel": "Tage ab heute",
+    "extended": "Gastzeit verlängert.",
+    "extendError": "Die Zeit konnte nicht verlängert werden.",
+    "makeMember": "Zum Mitglied machen",
+    "madeMember": "Die Person ist jetzt Mitglied.",
+    "makeMemberError": "Die Person konnte nicht zum Mitglied gemacht werden."
   }
 }

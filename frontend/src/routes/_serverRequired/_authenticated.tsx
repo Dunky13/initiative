@@ -14,22 +14,24 @@ import { type RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas
 import { AcceptTerms } from "@/components/AcceptTerms";
 import { AccountTimeOut } from "@/components/AccountTimeOut";
 import { AppSidebar } from "@/components/AppSidebar";
+import { ActivityDrawer } from "@/components/activity/ActivityDrawer";
 import { AnnouncementCenter } from "@/components/announcements/AnnouncementCenter";
 import { UpdateAnnouncementDialog } from "@/components/announcements/UpdateAnnouncementDialog";
 import { ChooseHandle } from "@/components/ChooseHandle";
 import { CommandCenter } from "@/components/CommandCenter";
 import { ConfirmBirthdate } from "@/components/ConfirmBirthdate";
 import { CommunityAccessBanner } from "@/components/communities/CommunityAccessBanner";
+import { DemoBannerOrTabs } from "@/components/demo/DemoBanner";
 import { DeviceVerificationDialog } from "@/components/messages/DeviceVerificationDialog";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { CreateActionProvider } from "@/components/navigation/CreateActionContext";
 import { PushPermissionPrompt } from "@/components/notifications/PushPermissionPrompt";
 import { OfflineBanner } from "@/components/offline/OfflineBanner";
-import { ProjectActivitySidebar } from "@/components/projects/ProjectActivitySidebar";
 import { RecentTabsBar } from "@/components/recents/RecentTabsBar";
 import { PageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { StartFlow } from "@/components/start/StartFlow";
 import { CreateTaskWizard } from "@/components/tasks/CreateTaskWizard";
+import { FeedbackHost } from "@/components/tickets/FeedbackSheet";
 import { CreateToolWizard } from "@/components/tools/CreateToolWizard";
 import { Button } from "@/components/ui/button";
 import { DocumentOutlineScope } from "@/components/ui/editor/DocumentOutline";
@@ -53,7 +55,7 @@ import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { isJustSignedIn } from "@/lib/authTransition";
 import { chooseNoCommunityLayout } from "@/lib/noCommunityLayout";
 import { canAccessPlatformAreas } from "@/lib/permissions";
-import { getActiveRecentKey } from "@/lib/recentRoute";
+import { activityScope, getActiveRecentKey } from "@/lib/recentRoute";
 import { returnPath } from "@/lib/returnPath";
 import { cn } from "@/lib/utils";
 
@@ -142,8 +144,9 @@ function AppLayout() {
 
   // The tabs bar is cross-community by design (names only): one user-context
   // query, valid in any community and in personal mode.
+  // A demo visitor's banner takes the tabs' row, so it has no use for them.
   const recentQuery = useRecents({
-    enabled: !loading && !!user,
+    enabled: !loading && !!user && !user.demo_expires_at,
     staleTime: 30_000,
   });
 
@@ -255,18 +258,13 @@ function AppLayout() {
   const recentItems = recentQuery.data?.slice(0, user?.recent_tabs_limit ?? 20);
 
   const activeRecentKey = getActiveRecentKey(location.pathname);
-  // ProjectActivitySidebar still wants the active project directly — and the
-  // initiative it sits in, since a task's URL names that too.
-  const activeProjectId =
-    activeRecentKey?.entityType === Tool.project ? activeRecentKey.entityId : null;
-  const activeProjectInitiativeId =
-    activeRecentKey?.entityType === Tool.project ? activeRecentKey.initiativeId : null;
 
   // const isDark = document.documentElement.classList.contains("dark");
 
   return (
     <CreateActionProvider>
       <CommandCenter />
+      <FeedbackHost />
       <CreateTaskWizard />
       <CreateToolWizard tool={Tool.file} />
       {/* A real height rather than a minimum: `min-h-screen` leaves every
@@ -313,26 +311,29 @@ function AppLayout() {
               <AppSidebar />
               <div className="flex min-h-0 min-w-0 flex-1 flex-col md:pl-0">
                 <div
-                  className="sticky top-0 z-50 flex flex-col bg-card/70 backdrop-blur supports-backdrop-filter:bg-card/60 lg:border-b"
+                  className="sticky top-0 z-50 flex flex-col bg-card/70 backdrop-blur supports-backdrop-filter:bg-card/60 md:border-b"
                   style={{ paddingTop: "var(--safe-area-inset-top)" }}
                 >
                   {/* Mobile hamburger lives in BottomNav and search now lives in
                     the sidebar, so this desktop-only row is just recents — and
-                    with nothing recent it takes up no room at all. */}
-                  {(recentQuery.isLoading || (recentItems?.length ?? 0) > 0) && (
-                    <div className="hidden h-12 lg:flex">
-                      <div className="min-w-0 flex-1">
-                        <RecentTabsBar
-                          items={recentItems}
-                          loading={recentQuery.isLoading}
-                          activeKey={activeRecentKey}
-                          onClose={handleClearRecent}
-                          onCloseOthers={handleCloseOtherRecents}
-                          onCloseAll={handleCloseAllRecents}
-                        />
+                    with nothing recent it takes up no room at all. A demo
+                    visitor's banner takes the row instead, on every width. */}
+                  <DemoBannerOrTabs>
+                    {(recentQuery.isLoading || (recentItems?.length ?? 0) > 0) && (
+                      <div className="hidden h-12 md:flex">
+                        <div className="min-w-0 flex-1">
+                          <RecentTabsBar
+                            items={recentItems}
+                            loading={recentQuery.isLoading}
+                            activeKey={activeRecentKey}
+                            onClose={handleClearRecent}
+                            onCloseOthers={handleCloseOtherRecents}
+                            onCloseAll={handleCloseAllRecents}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </DemoBannerOrTabs>
                   <OfflineBanner />
                   <CommunityAccessBanner />
                   <PushPermissionPrompt />
@@ -422,7 +423,9 @@ function AppLayout() {
                       keeps the bottom bar off the end of it. */}
                     <div
                       className={cn(
-                        "grid min-h-full grid-cols-[minmax(0,1fr)] grid-rows-[1fr]",
+                        // The page area: what a page's canvas-sm: and its
+                        // siblings measure, sidebar or not.
+                        "@container grid min-h-full grid-cols-[minmax(0,1fr)] grid-rows-[1fr]",
                         fullBleed ? "pb-16 md:pb-0" : "container mx-auto p-4 pb-24 md:p-8 md:pb-24"
                       )}
                     >
@@ -433,10 +436,7 @@ function AppLayout() {
                   </main>
                 </div>
               </div>
-              <ProjectActivitySidebar
-                projectId={activeProjectId}
-                initiativeId={activeProjectInitiativeId}
-              />
+              <ActivityDrawer scope={activityScope(location.pathname)} />
               <BottomNav />
             </SidebarProvider>
           </DocumentOutlineScope>

@@ -87,6 +87,7 @@
     "noAccess": "No tienes acceso a ninguna función en esta iniciativa. Contacta a un gerente de iniciativa para obtener ayuda.",
     "member_one": "{{count}} miembro",
     "member_other": "{{count}} miembros",
+    "guest": "Invitado",
     "online_one": "{{count}} en línea",
     "online_other": "{{count}} en línea",
     "initiativeSettings": "Configuración de la iniciativa",
@@ -272,7 +273,14 @@
       "turnedOffHeading": "Desactivadas en esta iniciativa",
       "turnedOffNote": "No conceden nada hasta que la herramienta se vuelva a activar en Detalles. Mientras tanto no se pierde nada de lo que contienen."
     },
-    "managerDescription": "Los gestores dirigen esta iniciativa — sus miembros, sus roles y sus ajustes — y pueden ver y crear en todas las herramientas. Qué elementos concretos pueden abrir lo sigue decidiendo cómo se comparte cada uno."
+    "managerDescription": "Los gestores dirigen esta iniciativa — sus miembros, sus roles y sus ajustes — y pueden ver y crear en todas las herramientas. Qué elementos concretos pueden abrir lo sigue decidiendo cómo se comparte cada uno.",
+    "layoutsTab": "Diseños",
+    "layouts": {
+      "heading": "Diseños",
+      "description": "Cómo muestra cada herramienta de esta iniciativa lo que contiene: cada diseño, cuándo cambió por última vez y en qué lista se abre un proyecto. Se cambian en el editor de cada una.",
+      "noProjects": "Esta iniciativa aún no tiene proyectos.",
+      "loadError": "No se pudieron cargar los diseños."
+    }
   },
   "advancedTools": "Herramientas",
   "advancedToolsDescription": "Elige de qué se compone esta iniciativa. Los proyectos y los archivos vienen activados; el resto lo añades tú.",

@@ -1,7 +1,7 @@
 """Drain ``event_outbox`` and ``plugin_event_outbox`` to each subscription's target.
 
 The change log and the events installed plug-ins emit share one delivery: the same
-ledger, backoff, dead-letter and retention, and one envelope per transaction,
+ledger, backoff and dead-letter, and one envelope per transaction,
 where a plug-in event is one entry in ``changes`` carrying its payload. A plug-in
 event reaches a subscription by the rules in :func:`_matches_plugin_event`.
 
@@ -68,20 +68,25 @@ import logging
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Table, and_, delete, func, or_, text
+from sqlalchemy import Table, and_, func, or_, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import webhook_events
-from app.core.plugin_scopes import UnknownPluginScope, plugin_scope_target, expand
+from app.core.plugin_scopes import (
+    LEVEL_SCOPES,
+    InstallLevel,
+    UnknownPluginScope,
+    plugin_scope_target,
+    expand,
+)
 from app.db.session import (
     set_rls_context,
 )
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
-from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.event_outbox import EventOutbox
 from app.models.tenant.guild_plugin import GuildPlugin
@@ -94,14 +99,13 @@ from app.services.tenant import room_sink, webhook_refs
 from app.services.tenant.webhook_dispatcher import deliver
 from app.db.request_context import SystemGuild, SystemMaintenance
 
+if TYPE_CHECKING:
+    from app.services.tenant.expiry import Expiring
+
 logger = logging.getLogger(__name__)
 
 #: How long the drain lets further changes gather before it visits.
 DRAIN_SETTLE_SECONDS = 1.0
-
-#: How long delivered change events are kept. A subscriber further behind than
-#: this has stopped consuming and resumes from the current head.
-OUTBOX_RETENTION_DAYS = 7
 
 #: Transactions a subscription may take in one pass. A throughput bound only —
 #: anything not taken remains exactly as visible next pass.
@@ -139,6 +143,9 @@ class InstallReach:
     placed: frozenset[int]
     readable: frozenset[str]
     plugins: frozenset[str] = frozenset()
+    #: Whether the seat's grant holds the community-admin standing, which the
+    #: demo's events need.
+    administers: bool = False
 
     @classmethod
     def from_row(
@@ -166,6 +173,8 @@ class InstallReach:
             placed=frozenset(placed or ()),
             readable=frozenset(readable),
             plugins=frozenset(plugins),
+            administers=LEVEL_SCOPES[InstallLevel.community_admin]
+            in (granted_scopes or ()),
         )
 
     def hears_plugin(self, emitter: str, initiative_id: int | None) -> bool:
@@ -257,6 +266,23 @@ def _matches_plugin_event(
     return True
 
 
+def _matches_demo_event(
+    event: PluginEventOutbox,
+    subscription: WebhookSubscription,
+    reach: InstallReach | None,
+) -> bool:
+    """Whether one of the demo's events belongs in this subscription's batch:
+    it is a subscription of the install the event is addressed to, which is
+    live and whose grant holds the community-admin standing."""
+    return (
+        event.event_type in subscription.event_types
+        and subscription.plugin_install_id == event.install_id
+        and reach is not None
+        and reach.live
+        and reach.administers
+    )
+
+
 def _envelope(
     subscription: WebhookSubscription,
     txn_id: int,
@@ -265,7 +291,7 @@ def _envelope(
     guild_ref: str,
     actor_ref: str | None,
     actor_plugin: str | None = None,
-    plugin_events: Sequence[tuple[PluginEventOutbox, str]] = (),
+    plugin_events: Sequence[tuple[PluginEventOutbox, str | None]] = (),
 ) -> dict[str, Any]:
     """One transaction's matching rows as a single envelope.
 
@@ -283,7 +309,8 @@ def _envelope(
     ``actor_ref``: a plug-in acting as its community names no person.
 
     ``plugin_events`` are the events plug-ins emitted in the transaction, each with
-    its emitter's ``public_id``. Each is one entry in ``changes`` carrying its
+    its emitter's ``public_id`` (``None`` for one of the demo's own events,
+    which no plug-in emits). Each is one entry in ``changes`` carrying its
     payload, and the initiative it landed in for this subscription: its own,
     or for one about no initiative, the initiative the subscription is
     narrowed to (``None`` for the community's).
@@ -518,17 +545,22 @@ async def _drain_subscription(
         batch = [row for row, _listing_uid in matched]
         # An emitter is named by its install's listing, so an install that is
         # gone emits to nobody.
-        plugin_events = [
-            (event, emitter)
-            for event, listing_uid, placed in await session.exec(
-                select(PluginEventOutbox, GuildPlugin.listing_uid, _emitter_placed())
-                .outerjoin(GuildPlugin, GuildPlugin.id == PluginEventOutbox.install_id)
-                .where(PluginEventOutbox.txn_id == txn_id)
-                .order_by(PluginEventOutbox.id.asc())
-            )
-            if (emitter := (plugin_ids or {}).get(listing_uid or "")) is not None
-            and _matches_plugin_event(event, emitter, placed or (), subscription, reach)
-        ]
+        plugin_events: list[tuple[PluginEventOutbox, str | None]] = []
+        for event, listing_uid, placed in await session.exec(
+            select(PluginEventOutbox, GuildPlugin.listing_uid, _emitter_placed())
+            .outerjoin(GuildPlugin, GuildPlugin.id == PluginEventOutbox.install_id)
+            .where(PluginEventOutbox.txn_id == txn_id)
+            .order_by(PluginEventOutbox.id.asc())
+        ):
+            if event.event_type in webhook_events.DEMO_EVENT_TYPES:
+                if _matches_demo_event(event, subscription, reach):
+                    plugin_events.append((event, None))
+                continue
+            emitter = (plugin_ids or {}).get(listing_uid or "")
+            if emitter is not None and _matches_plugin_event(
+                event, emitter, placed or (), subscription, reach
+            ):
+                plugin_events.append((event, emitter))
         if not batch and not plugin_events:
             # Nothing in this transaction was for this subscriber. Record it so
             # it is not reconsidered every pass; no request was made, so nothing
@@ -673,7 +705,9 @@ async def drain_guild(
     # the scope it names and, for one a plug-in registered, the plug-in's reach.
     registrations = (await load_registrations()).values()
     plugin_ids = {r.listing_uid: r.public_id for r in registrations if r.listing_uid}
-    live_listings = [r.listing_uid for r in registrations if r.listing_uid and r.live]
+    live_listings = [
+        r.listing_uid for r in registrations if r.listing_uid and r.live_in(guild_id)
+    ]
     await set_rls_context(session, SystemGuild(guild_id))
     # Ids, not instances: each pass ends by expunging the identity map (ids
     # repeat across guild schemas), and an instance held across that is detached.
@@ -717,33 +751,14 @@ async def drain_guild(
             await set_rls_context(session, SystemGuild(guild_id))
 
 
-async def expire_history(session: AsyncSession, guild_id: int) -> None:
-    """Drop the community's outbox history past the window: change events and
-    plug-in events, the ledger rows naming their transactions, and the vendor
-    webhook delivery ids past their expiry.
-
-    Age-based on purpose: a subscription weeks behind is broken, and holding
-    the log open for it would grow the table without bound on every instance
-    that never configures a target at all. Ledger rows go with the events they
-    describe, so the pair stays the same size.
-    """
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=OUTBOX_RETENTION_DAYS)
-    txn_ids: set[int] = set()
-    for log in (EventOutbox, PluginEventOutbox):
-        removed = await session.exec(
-            delete(log).where(log.occurred_at < cutoff).returning(log.txn_id)
-        )
-        txn_ids.update(txn_id for (txn_id,) in removed.all())
-    if txn_ids:
-        await session.exec(
-            text(
-                "DELETE FROM webhook_deliveries WHERE txn_id = ANY(:txn_ids)"
-            ).bindparams(txn_ids=sorted(txn_ids))
-        )
-        logger.info(
-            "outbox retention: guild=%s transactions=%s", guild_id, len(txn_ids)
-        )
+async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
+    """Drop the ledger rows naming transactions the change log let go: they go
+    with the events they describe, so the pair stays the same size."""
+    if not expiring.expired_txns:
+        return
     await session.exec(
-        delete(PluginHookDelivery).where(PluginHookDelivery.expires_at < now)
+        text("DELETE FROM webhook_deliveries WHERE txn_id = ANY(:txn_ids)").bindparams(
+            txn_ids=sorted(expiring.expired_txns)
+        )
     )
+    logger.info("outbox retention: transactions=%s", len(expiring.expired_txns))

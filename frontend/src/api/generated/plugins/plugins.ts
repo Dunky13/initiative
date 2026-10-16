@@ -37,6 +37,8 @@ import type {
   CommunityPluginUpgrade,
   HTTPValidationError,
   ListCommunityPluginMembersParams,
+  PluginActionResult,
+  PluginActionRun,
   PluginDataResponse,
   PluginParamOptionsResponse,
   PluginPlacementRead,
@@ -383,8 +385,7 @@ export function useReadPluginData<
 
 /**
  * The installs whose pinned definition names a community summary, with
- * what each declares it returns. Nothing is fetched here: each summary is read
- * on its own, so one slow plug-in holds up only its own card.
+ * what each declares it returns.
  * @summary List Plugin Summaries
  */
 export const listPluginSummaries = (
@@ -524,7 +525,8 @@ export function useListPluginSummaries<
  * ``community_summary``; an install that names none, or is switched off,
  * has nothing to draw and answers 404. A plug-in that does not answer comes
  * back as the proxy's own message code, so the page draws "unavailable"
- * rather than failing.
+ * rather than failing. The settings rung is the community's admin standing,
+ * which is what an admin-only summary asks for.
  * @summary Read Plugin Summary
  */
 export const readPluginSummary = (
@@ -852,6 +854,110 @@ export function useReadPluginParamOptions<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+/**
+ * Run one of a plug-in's actions on one item.
+ *
+ * The plug-in does the work, called as its installation with the caller and
+ * the item named; Initiative changes nothing itself. The answer is the values
+ * the plug-in shows on the item afterwards. Refused with
+ * ``PLUGIN_ACTION_NOT_FOUND`` when the install declares no such action on
+ * this kind of item, ``PLUGIN_ACTION_NOT_OFFERED`` when it is not offered on
+ * this item for the caller, the item's own refusal when the caller cannot
+ * read it, and 429 past the allowance.
+ * @summary Run Plugin Action
+ */
+export const runPluginAction = (
+  communityId: number,
+  pluginId: number,
+  actionId: string,
+  pluginActionRun: BodyType<PluginActionRun>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<PluginActionResult>(
+    {
+      url: `/api/v1/c/${communityId}/plugins/${pluginId}/actions/${actionId}`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: pluginActionRun,
+      signal,
+    },
+    options
+  );
+};
+
+export const getRunPluginActionMutationKey = () => ["runPluginAction"] as const;
+
+export const getRunPluginActionMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runPluginAction>>,
+    TError,
+    RunPluginActionMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runPluginAction>>,
+  TError,
+  RunPluginActionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getRunPluginActionMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runPluginAction>>,
+    RunPluginActionMutationVariables
+  > = (props) => {
+    const { communityId, pluginId, actionId, data } = props ?? {};
+
+    return runPluginAction(communityId, pluginId, actionId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunPluginActionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runPluginAction>>
+>;
+export type RunPluginActionMutationBody = BodyType<PluginActionRun>;
+export type RunPluginActionMutationError = ErrorType<HTTPValidationError>;
+export type RunPluginActionMutationVariables = {
+  communityId: number;
+  pluginId: number;
+  actionId: string;
+  data: BodyType<PluginActionRun>;
+};
+
+/**
+ * @summary Run Plugin Action
+ */
+export const useRunPluginAction = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof runPluginAction>>,
+      TError,
+      RunPluginActionMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof runPluginAction>>,
+  TError,
+  RunPluginActionMutationVariables,
+  TContext
+> => {
+  return useMutation(getRunPluginActionMutationOptions(options), queryClient);
+};
 /**
  * Every plug-in installed in this guild, enabled or not.
  *
@@ -1977,7 +2083,7 @@ export const usePutCommunityPluginScopes = <
   return useMutation(getPutCommunityPluginScopesMutationOptions(options), queryClient);
 };
 /**
- * Mint the short-lived credential for one of this plug-in's embedded surfaces.
+ * Mint the short-lived credential for one of this plug-in's pages.
  *
  * Whether the surface may be opened is decided here, under the caller's real
  * session, so the plug-in never makes that call and never sees a request from

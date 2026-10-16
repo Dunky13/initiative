@@ -62,6 +62,7 @@
   "required": "Required",
   "optional": "Optional",
   "actions": "Actions",
+  "adding": "Adding…",
   "rowActionsFor": "Actions for {{subject}}",
   "more": "More",
   "less": "Less",
@@ -319,7 +320,7 @@
     "description": "This page ran into an error and could not be shown. Try again, or go to your tasks.",
     "appDescription": "Initiative ran into an error and could not continue. Reloading starts it again.",
     "details": "Error details",
-    "toMyTasks": "Go to {{myTasks}}",
+    "toHome": "Go to {{home}}",
     "reload": "Reload",
     "updatedTitle": "Initiative has been updated",
     "updatedDescription": "A newer version is available. Reload to open this page in it."
@@ -332,6 +333,10 @@
     "unsigned": "This server's update isn't one Initiative published, so the app stays on version {{version}}.",
     "desktopReady": "Initiative has downloaded its update. Restart to finish.",
     "restart": "Restart"
+  },
+  "favorite": {
+    "add": "Add to favorites",
+    "remove": "Remove from favorites"
   },
   "toolHeader": {
     "rename": "Rename"
@@ -346,5 +351,107 @@
   "days": {
     "today": "Today",
     "yesterday": "Yesterday"
+  },
+  "fieldSave": {
+    "saving": "Saving…",
+    "saved": "Saved",
+    "failed": "Couldn't save",
+    "changed": "This changed while you were editing",
+    "overwrite": "Overwrite",
+    "keepEditing": "Keep editing",
+    "discard": "Discard",
+    "undo": "Undo",
+    "moved": "Moved to {{status}}",
+    "cleared": "{{field}} cleared"
+  },
+  "descriptionField": {
+    "none": "No description yet.",
+    "draftKept": "Your unsaved draft of this description is kept on this device until you can edit it again.",
+    "unsavedTitle": "Discard unsaved changes?",
+    "unsavedBody": "You have an unsaved description. If you leave now, it will be lost.",
+    "leave": "Leave",
+    "stay": "Stay"
+  },
+  "kinds": {
+    "project": {
+      "name": "Project",
+      "this": "this project",
+      "plural": "projects"
+    },
+    "file": {
+      "name": "File",
+      "this": "this file",
+      "plural": "files"
+    },
+    "queue": {
+      "name": "Queue",
+      "this": "this queue",
+      "plural": "queues"
+    },
+    "counter_group": {
+      "name": "Counter group",
+      "this": "this counter group",
+      "plural": "counter groups"
+    },
+    "calendar": {
+      "name": "Calendar",
+      "this": "this calendar",
+      "plural": "calendars"
+    },
+    "dashboard": {
+      "name": "Dashboard",
+      "this": "this dashboard",
+      "plural": "dashboards"
+    },
+    "post": {
+      "name": "Post",
+      "this": "this post",
+      "plural": "posts"
+    },
+    "gallery": {
+      "name": "Gallery",
+      "this": "this gallery",
+      "plural": "galleries"
+    },
+    "wiki": {
+      "name": "Wiki",
+      "this": "this wiki",
+      "plural": "wikis"
+    },
+    "task": {
+      "name": "Task",
+      "this": "this task",
+      "plural": "tasks"
+    },
+    "queue_item": {
+      "name": "Queue item",
+      "this": "this queue item",
+      "plural": "queue items"
+    },
+    "calendar_event": {
+      "name": "Event",
+      "this": "this event",
+      "plural": "events"
+    },
+    "counter": {
+      "name": "Counter",
+      "this": "this counter",
+      "plural": "counters"
+    },
+    "gallery_image": {
+      "name": "Picture",
+      "this": "this picture",
+      "plural": "pictures"
+    },
+    "wiki_page": {
+      "name": "Page",
+      "this": "this page",
+      "plural": "pages"
+    },
+    "tag": {
+      "name": "Tag",
+      "this": "this tag",
+      "plural": "tags"
+    }
   }
 }

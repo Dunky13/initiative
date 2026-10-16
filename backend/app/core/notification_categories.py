@@ -72,6 +72,8 @@ class NotificationCategory(str, Enum):
     connections = "connections"
     jobs = "jobs"
     account = "account"
+    moderation = "moderation"
+    cases = "cases"
 
 
 #: How the settings page groups the rows. Presentation only — nothing resolves
@@ -275,6 +277,7 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
             {
                 NotificationType.avatar_removed,
                 NotificationType.username_changed,
+                NotificationType.profile_field_cleared,
                 NotificationType.account_suspended,
                 NotificationType.account_unsuspended,
                 NotificationType.community_on_hold,
@@ -291,6 +294,36 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
         personal=True,
         guild_scoped=False,
         mutable_channels=_KEEP_IN_APP,
+    ),
+    # A community's moderators acted on something this account wrote. Like an
+    # account notice, being told is not a preference; unlike one, it belongs
+    # to a community.
+    NotificationCategory.moderation: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.moderation_removal,
+                NotificationType.moderation_warning,
+            }
+        ),
+        group=CategoryGroup.community,
+        personal=True,
+        guild_scoped=True,
+        mutable_channels=_KEEP_IN_APP,
+    ),
+    # Work arriving for the people who answer the operations community's
+    # cases: a new one, and a requester's answer on one nobody has taken. Told
+    # to everyone who can read the case, so each can turn it down.
+    NotificationCategory.cases: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.case_opened,
+                NotificationType.case_replied,
+            }
+        ),
+        group=CategoryGroup.activity,
+        personal=False,
+        guild_scoped=True,
+        mutable_channels=_ALL_MUTABLE,
     ),
 }
 

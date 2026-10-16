@@ -57,6 +57,7 @@ from app.services.marketplace.service_plugins import (
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_connections as connections_service
 from app.db.request_context import SystemGuild, Unattributed
 
 logger = logging.getLogger(__name__)
@@ -257,6 +258,12 @@ async def config_payload(session: AsyncSession, plugin: GuildPlugin) -> dict[str
         if isinstance(ref, str) and ref:
             connection_refs[connection_id] = ref
 
+    rows = [
+        row for row in await _member_rows(session, plugin) if row.blocked_at is None
+    ]
+    sealed = await connections_service.connection_secrets_of(
+        session, [row.id for row in rows if row.id is not None]
+    )
     member_values = [
         {
             "connection_id": row.connection_id,
@@ -265,12 +272,11 @@ async def config_payload(session: AsyncSession, plugin: GuildPlugin) -> dict[str
             "values": {
                 **plugin_config_service.without_tokens(row.config),
                 **plugin_config_service.decrypt_connection_secrets(
-                    plugin_config_service.without_tokens(row.config_secrets)
+                    plugin_config_service.without_tokens(sealed.get(row.id, {}))
                 ),
             },
         }
-        for row in await _member_rows(session, plugin)
-        if row.blocked_at is None
+        for row in rows
     ]
 
     state = plugin_config_service.config_state(plugin)
@@ -530,10 +536,29 @@ async def keep_event(
             PluginChannelMessages.INITIATIVE_NOT_PLACED, status_code=403
         )
 
+    await stage_event(
+        session,
+        install_id=plugin.id,
+        event_type=event_type,
+        payload=payload,
+        initiative_id=initiative_id,
+    )
+
+
+async def stage_event(
+    session: AsyncSession,
+    *,
+    install_id: int,
+    event_type: str,
+    payload: dict[str, Any],
+    initiative_id: Optional[int] = None,
+) -> None:
+    """Write one event to the routed community's plug-in outbox, in the
+    caller's transaction, and wake the outbox drain once it commits."""
     session.add(
         PluginEventOutbox(
             txn_id=func.txid_current(),
-            install_id=plugin.id,
+            install_id=install_id,
             event_type=event_type,
             initiative_id=initiative_id,
             payload=payload,

@@ -47,6 +47,10 @@ __all__ = [
     "GUILD_LEVEL_TABLES",
     "MANAGED_TABLES",
     "OWN_ROW_TABLES",
+    "MEMBER_CREDENTIAL_TABLES",
+    "MEMBER_SECRET_TABLES",
+    "PRIVATE_ROW_SHARED_READ",
+    "PRIVATE_ROW_TABLES",
     "CREATED_BY_EXEMPT_TABLES",
     "INITIATIVE_SCOPED_TABLES",
     "GUILD_SCOPED_TABLES",
@@ -126,9 +130,9 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         "initiative_role_permissions",
         # Join requests: the requester is by definition NOT yet a member, so an
         # initiative-membership row gate would hide their own request from them
-        # — the same reasoning that keeps initiative_members structural. Who may
-        # read which rows is an app-layer contract (requester sees their own,
-        # managers see their initiative's), pinned by tests.
+        # — the same reasoning that keeps initiative_members structural. Its
+        # own policies admit the requester and whoever answers the
+        # initiative's queue (app.db.guild_ddl._authored_block).
         "initiative_join_requests",
         # Own-row tables (also listed in OWN_ROW_TABLES below): guild-level
         # placement, but rows belong to ONE user and carry own_row_* policies.
@@ -138,19 +142,17 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         "import_jobs",  # same shape as export_jobs: a backup import spans
         # initiatives, and the row's options/plan/report text plus the staged
         # payload it gates must not be guild-wide-readable.
-        # Member-owned AI rows (also in OWN_ROW_TABLES): a member's own key /
-        # connection preference. One member must not read another's key ciphertext
-        # or pref, so these carry own_row_* policies (owner OR guild admin).
-        "guild_ai_member_keys",
+        # A member's own AI connection preference (also in OWN_ROW_TABLES).
         "guild_ai_member_prefs",
-        # A member's own connection to an installed plug-in's vendor. No FK to any
-        # initiative — a plug-in is guild-wide — so it can't use initiative_access.
-        # Rows belong to ONE member and hold that member's credential, so it
-        # carries own_row_* policies: the owner manages their own, and a guild
-        # admin manages every one in their guild (a personal connection is
-        # guild-governed access, not private property). The ciphertext is never
-        # returned by the API to anyone, admin included.
+        # A member's own credentials: that they gave an AI connection a key, and
+        # their connection to an installed plug-in's vendor (MEMBER_CREDENTIAL_TABLES).
+        # No FK to any initiative — a connection and a plug-in are community-wide.
+        "guild_ai_member_keys",
         "guild_plugin_user_connections",
+        # What those credentials hold, beside them (MEMBER_SECRET_TABLES): the
+        # member and the system engine alone.
+        "ai_member_key_secrets",
+        "plugin_connection_secrets",
         # A member's answer to an installed plug-in asking to act as them, one per
         # purpose. The same shape as the connections beside it: no FK to any
         # initiative is required (a purpose may be app-wide), one owner per
@@ -158,6 +160,11 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         # own_row_* policies. A member token's standing reads the member's own
         # row for its install.
         "plugin_member_consents",
+        # The platform's record of what it holds in the community: why, by
+        # whom, under which case. Read by the system engine and a ``moderate``
+        # grantee alone, never by the community — its policies are rendered
+        # from ``app.db.holds``, with no admin leg.
+        "content_holds",
     }
 )
 
@@ -189,10 +196,57 @@ MANAGED_TABLES: dict[str, str] = {
 OWN_ROW_TABLES: dict[str, str] = {
     "export_jobs": "created_by",
     "import_jobs": "created_by",
-    "guild_ai_member_keys": "user_id",
     "guild_ai_member_prefs": "user_id",
-    "guild_plugin_user_connections": "user_id",
     "plugin_member_consents": "user_id",
+}
+
+# --- Private-row overlay on initiative-scoped tables --------------------------
+# Initiative-scoped tables whose rows are one member's own state about content
+# they reach: table -> owner FK column. Only that member and the system engine
+# reach a row — no guild admin, settings rung or grant — through RESTRICTIVE
+# ``private_row_*`` policies rendered by ``app.db.guild_ddl.render_guild_rls_ddl``
+# on top of the table's initiative gate. Every entry here MUST also be in
+# ``INITIATIVE_PATHS`` — enforced in ``tenancy_test.py``.
+PRIVATE_ROW_TABLES: dict[str, str] = {
+    "recent_views": "user_id",
+    "favorites": "user_id",
+    "project_orders": "user_id",
+    "post_reads": "user_id",
+    "post_poll_votes": "user_id",
+    "reactions": "created_by",
+}
+
+# The private-row tables the rest of the initiative reads (a notice's read
+# count, a poll's tally and who chose what, who reacted): written by their owner alone, read
+# under the initiative gate. Every entry here MUST also be in
+# ``PRIVATE_ROW_TABLES`` — enforced in ``tenancy_test.py``.
+PRIVATE_ROW_SHARED_READ: frozenset[str] = frozenset(
+    {"post_reads", "post_poll_votes", "reactions"}
+)
+
+# --- A member's credentials ----------------------------------------------------
+# Guild-level tables saying that a member holds a credential: table ->
+# (owner column, the rows the seat reaches, or ``None`` for every row). The
+# member, the community's seat and the system engine read and write them —
+# not a plain admin or a settings rung — rendered as ``member_credential_*``
+# policies by ``app.db.guild_ddl.render_guild_rls_ddl``. A key held for a
+# platform AI connection is between the member and the platform, so the seat
+# reaches only the community's own. Every entry here MUST also be in
+# ``GUILD_LEVEL_TABLES`` — enforced in ``tenancy_test.py``.
+MEMBER_CREDENTIAL_TABLES: dict[str, tuple[str, str | None]] = {
+    "guild_ai_member_keys": ("user_id", "connection_scope = 'community'"),
+    "guild_plugin_user_connections": ("user_id", None),
+}
+
+# --- What a member's credentials hold -----------------------------------------
+# The secret values beside a MEMBER_CREDENTIAL_TABLES row: table -> (that
+# table, the column naming the row). Only the member the row names and the
+# system engine reach them, rendered as ``member_secret_*`` policies. Deleting
+# the credential row takes its secret with it (ON DELETE CASCADE). Every entry
+# here MUST also be in ``GUILD_LEVEL_TABLES`` — enforced in ``tenancy_test.py``.
+MEMBER_SECRET_TABLES: dict[str, tuple[str, str]] = {
+    "ai_member_key_secrets": ("guild_ai_member_keys", "key_id"),
+    "plugin_connection_secrets": ("guild_plugin_user_connections", "connection_row_id"),
 }
 
 # --- Seat overlay on guild-level tables ---------------------------------------
@@ -270,16 +324,22 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         # An install's secret values, one row per install. The install row
         # names who made it.
         "guild_plugin_secrets",
+        # A member's secret values, one row per credential row, which names
+        # whose it is.
+        "ai_member_key_secrets",
+        "plugin_connection_secrets",
         # A connection's shared key. The connection row names who made it.
         "guild_ai_connection_keys",
         # A ballot: ``user_id`` is the voter, which is both the author of the
         # row and its whole content.
         "post_poll_votes",
-        "project_favorites",
+        "favorites",
         "project_orders",
         "recent_views",
         # A property value belongs to the initiative, not to whoever set it.
         "property_values",
+        # A plug-in's own values: ``install_id`` names who keeps them.
+        "plugin_metadata",
         # Machinery. Written by a trigger, a poller or a scheduler rather than
         # by a person; each already records the actor it needs (the outbox
         # carries ``actor_user_id``) or has none to record.
@@ -289,6 +349,7 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         "plugin_schedule_runs",
         "event_reminder_dispatches",
         "search_entries",
+        "engagement_levels",
         "reaction_digest_items",
         "task_assignment_digest_items",
         "webhook_deliveries",
@@ -301,6 +362,9 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         # question.
         "moderation_reports",
         "moderation_report_reporters",
+        # A hold names who placed it in ``placed_by``, and may be placed by a
+        # moderator of another community entirely: the platform's.
+        "content_holds",
     }
 )
 

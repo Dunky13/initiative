@@ -1,4 +1,5 @@
-import { $createCodeNode, $isCodeNode, CODE_LANGUAGE_FRIENDLY_NAME_MAP } from "@lexical/code";
+import { $createCodeNode, $isCodeNode } from "@lexical/code";
+import { CODE_LANGUAGE_FRIENDLY_NAME_MAP } from "@lexical/code-prism";
 import { INSERT_HORIZONTAL_RULE_COMMAND } from "@lexical/extension";
 import { $isLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link";
 import {
@@ -51,6 +52,7 @@ import {
   IndentDecreaseIcon,
   IndentIncreaseIcon,
   ItalicIcon,
+  PanelTop,
   PenTool,
   RectangleEllipsis,
   ScissorsIcon,
@@ -72,6 +74,7 @@ import { CalloutIcon } from "@/components/ui/editor/plugins/callout-icon";
 import { EmbedConfigs } from "@/components/ui/editor/plugins/embeds/auto-embed-plugin";
 import { InsertImageDialog } from "@/components/ui/editor/plugins/images-plugin";
 import { InsertLayoutDialog } from "@/components/ui/editor/plugins/layout-plugin";
+import { LazyEmbedDialog } from "@/components/ui/editor/plugins/lazy-embed-dialog";
 import { MERMAID_LANGUAGE } from "@/components/ui/editor/plugins/mermaid-preview-plugin";
 import { SmartChipInsertDialog } from "@/components/ui/editor/plugins/smart-chip-insert-dialog";
 import { InsertTableDialog } from "@/components/ui/editor/plugins/table-plugin";
@@ -422,6 +425,17 @@ export const useBlockInsertActions = ({
             activeEditor={activeEditor}
             onClose={onClose}
           />
+        )),
+    });
+    // A thing shown in full, or the tasks a filter matches — what `![[ ]]`
+    // and the `/` menu's Embed make, for whoever reaches for the toolbar.
+    actions.push({
+      id: "reference-embed",
+      label: t("embeds.insert"),
+      icon: <PanelTop className="size-4" />,
+      run: () =>
+        showModal(t("embeds.insert"), (onClose) => (
+          <LazyEmbedDialog activeEditor={activeEditor} onClose={onClose} />
         )),
     });
   }

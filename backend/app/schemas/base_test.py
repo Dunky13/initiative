@@ -239,8 +239,6 @@ _SIGIL_EXEMPT: frozenset[str] = frozenset(
         "app.schemas.ai_settings.AIConnectionCreate.label",
         "app.schemas.ai_settings.AIConnectionUpdate.label",
         "app.schemas.platform.api_key.ApiKeyCreateRequest.name",
-        "app.schemas.tenant.filter_preset.FilterPresetCreate.name",
-        "app.schemas.tenant.filter_preset.FilterPresetUpdate.name",
         "app.schemas.tenant.guild_plugin.CommunityPluginInstall.name",
         "app.schemas.tenant.guild_plugin.CommunityPluginUpdate.name",
         "app.schemas.tenant.initiative.InitiativeRoleCreate.name",

@@ -19,8 +19,9 @@ from sqlalchemy import text
 from app.core.reactions import ReactionTarget
 from app.db.initiative_rls import (
     COMMENT_PARENTS,
-    RECENT_ENTITY_TABLES,
+    CONTENT_KIND_TABLES,
     entity_tables,
+    initiative_of,
     render_entity_access_fn,
 )
 from app.db.schema_provisioning import (
@@ -35,6 +36,8 @@ from app.db.tenancy import (
     INITIATIVE_SCOPED_TABLES,
     LEDGER_TABLES,
     OWN_ROW_TABLES,
+    PRIVATE_ROW_SHARED_READ,
+    PRIVATE_ROW_TABLES,
     SEAT_TABLES,
 )
 
@@ -142,14 +145,16 @@ async def test_every_initiative_scoped_table_has_policies(engine):
         async with engine.connect() as conn:
             pol_rows = await conn.execute(
                 text(
-                    "SELECT tablename, policyname FROM pg_policies "
+                    "SELECT tablename, policyname, permissive FROM pg_policies "
                     "WHERE schemaname = :s"
                 ),
                 {"s": schema},
             )
             policies: dict[str, set[str]] = {}
-            for tbl, pol in pol_rows:
+            kinds: dict[tuple[str, str], str] = {}
+            for tbl, pol, kind in pol_rows:
                 policies.setdefault(tbl, set()).add(pol)
+                kinds[(tbl, pol)] = kind
 
             rls_rows = await conn.execute(
                 text(
@@ -160,6 +165,18 @@ async def test_every_initiative_scoped_table_has_policies(engine):
                 {"s": schema},
             )
             rls = {row[0]: (row[1], row[2]) for row in rls_rows}
+
+        # A private-row table narrows its gate to its member: RESTRICTIVE, and
+        # with no SELECT policy of its own where the initiative reads it.
+        for tbl in sorted(PRIVATE_ROW_TABLES):
+            private = {
+                p for p in policies.get(tbl, set()) if p.startswith("private_row_")
+            }
+            commands = {"insert", "update", "delete"}
+            if tbl not in PRIVATE_ROW_SHARED_READ:
+                commands.add("select")
+            assert private == {f"private_row_{c}" for c in commands}, tbl
+            assert {kinds[(tbl, p)] for p in private} == {"RESTRICTIVE"}, tbl
 
         # Every initiative-scoped table: FORCE RLS + the four policies.
         for tbl in sorted(INITIATIVE_SCOPED_TABLES):
@@ -410,25 +427,32 @@ _NO_SINGLE_PARENT = {
     "reactions": "one of eight tools, per row",
     "reaction_digest_items": "gated exactly like the reaction it describes",
     "recent_views": "one of eight tools, per row",
+    "favorites": "any tool, per row",
+    "engagement_levels": "any tool or sub-tool, per row",
     "property_values": "any tool or sub-tool, per row: read through its own table, written through entity_access",
+    "plugin_metadata": "any item, per row, read through its own table, or the install itself",
     "search_entries": "names its tool in dac_tool",
+    "tool_layouts": "any viewable tool, per row, or its initiative for a shared tool",
     # One tool, two parents: a link must clear the gate on BOTH files, so
     # there is no single row to authorize against.
     # Two parents of any kind: an edge clears the gate on each end through
     # entity_access, which asks each end's own entry here.
     "relationships": "source and target must both clear it, whatever they are",
     # No sharing leg at all — see the registry for each.
-    "event_outbox": "the change log is no tool's own table",
+    "event_outbox": "names its tool in dac_tool",
     "plugin_event_outbox": "the events plug-ins emit are no tool's own table",
     "property_definitions": "initiative configuration, not a tool's content",
     "resource_grants": "sharing itself; resource_access reads this table",
     "webhook_subscriptions": "integration config, gated by the initiative",
+    "guest_invite_grants": "an invite's terms, the community's administration's",
     "uploads": "a stored file, gated by the initiative whose content shows it",
     # Gated on full access rather than sharing: the standing that opens these
     # is the one that already reaches every resource, so there is no per-resource
     # grant left to ask about.
     "moderation_reports": "full access in the initiative, not a shared resource",
     "moderation_report_reporters": "reached through the report it belongs to",
+    "moderation_actions": "full access in the initiative: the moderation log",
+    "evidence": "reached through the report or case it hangs off, whichever it names",
 }
 
 
@@ -617,11 +641,18 @@ def test_every_comment_parent_is_a_kind_the_entity_function_answers_for():
         assert tables[parent.kind] == parent.table, parent.column
 
 
+def test_initiative_of_reads_its_own_column_or_walks_to_it():
+    assert initiative_of("projects", "x") == "x.initiative_id"
+    assert initiative_of("tasks", "x") == (
+        "(SELECT h1.initiative_id FROM projects h1 WHERE h1.id = x.project_id)"
+    )
+
+
 def test_every_reaction_target_and_recentable_kind_is_an_arm():
     tables = entity_tables()
     for target in ReactionTarget:
         assert tables[target.value] == target.table
-    for kind, table in RECENT_ENTITY_TABLES.items():
+    for kind, table in CONTENT_KIND_TABLES.items():
         assert tables[kind] == table
 
 

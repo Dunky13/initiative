@@ -68,6 +68,7 @@ from seed import (  # noqa: E402
     properties,
     queues,
     tags,
+    tickets,
     wikis,
 )
 from seed.state import (  # noqa: E402
@@ -155,6 +156,10 @@ async def seed() -> None:
         )
         await session.commit()
 
+        print("  Filing tickets, reports and a hold...")
+        filed = await tickets.seed(session, users, seeded["primary"])
+        print(f"  {filed} cases waiting in {operations.OPERATIONS_GUILD_NAME}")
+
     save_state(ids)
 
     print("\nDone! Dev data seeded successfully.")
@@ -191,7 +196,7 @@ async def seed() -> None:
     )
     print(f"  {len(ids['comments'])} comments")
     print(
-        f"  {len(ids['project_favorites'])} favorites, "
+        f"  {len(ids['favorites'])} favorites, "
         f"{len(ids['content_references'])} content references"
     )
     print(

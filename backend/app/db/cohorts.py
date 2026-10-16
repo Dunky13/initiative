@@ -237,6 +237,34 @@ async def system_session(guild_id: int | None) -> AsyncIterator[AsyncSession]:
         yield session
 
 
+@asynccontextmanager
+async def as_system(session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """``session`` when it already works in its community as the platform, else
+    a session routed there as the platform, committed on the way out. For the
+    cleanup a person's request makes of rows that are other members' alone.
+
+    The work is a transaction of its own, so it must not touch a row the
+    caller's transaction has already written."""
+    from app.db.request_context import SystemGuild
+    from app.db.session import guild_context, set_rls_context
+
+    context = guild_context(session)
+    if context is None:
+        yield session
+        return
+    async with system_session(context.guild_id) as system:
+        await set_rls_context(system, SystemGuild(context.guild_id))
+        yield system
+        await system.commit()
+
+
+async def exec_as_system(session: AsyncSession, statement: Any) -> None:
+    """Run ``statement`` in ``session``'s community as the platform
+    (:func:`as_system`)."""
+    async with as_system(session) as system:
+        await system.exec(statement)
+
+
 def read_sessionmaker(guild_id: int) -> async_sessionmaker[AsyncSession]:
     """The sessionmaker for reads in ``guild_id``'s community that may trail
     the primary by a moment: on DATABASE_URL_QUERY when it is set, from the

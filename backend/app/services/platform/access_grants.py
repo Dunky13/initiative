@@ -45,13 +45,13 @@ from app.models.platform.notification import NotificationType
 from app.models.platform.user import User, UserRole, UserStatus
 from app.models.platform.user_passkey import UserPasskey
 from app.models.platform.user_totp import UserTotp
+from app.schemas.platform.user import UserIdentity
 from app.schemas.platform.access_grant import (
     AccessGrantCreate,
     AccessGrantRead,
     BreakGlassCreate,
 )
 from app.services import email as email_service
-from app.services.auth import addresses
 from app.services.platform import auth_posture
 from app.services.platform import guilds as guilds_service
 from app.services.platform import notice_outbox
@@ -226,6 +226,18 @@ async def _tell(
     await notice_outbox.enqueue(session, rows)
 
 
+def _may_hold(role: str, purpose: str, level: str) -> bool:
+    """Whether someone at ``role`` may hold a grant at ``level``. A
+    ``moderate`` content grant reads what the platform holds, so it is for
+    those who moderate, asked for and approved like any grant."""
+    if (
+        purpose == AccessGrantPurpose.content.value
+        and level == AccessLevel.moderate.value
+    ):
+        return Capability.CONTENT_MODERATE in capabilities_for(role)
+    return True
+
+
 async def request_grants(
     session: AsyncSession,
     *,
@@ -241,11 +253,12 @@ async def request_grants(
     await _lock_user_guild_grants(
         session, user_id=requester.id, guild_id=payload.community_id
     )
-    guild = await guilds_service.get_guild(session, guild_id=payload.community_id)
-    if guild is None:
+    try:
+        guild = await guilds_service.get_guild(session, guild_id=payload.community_id)
+    except ValueError:
         raise AccessGrantError(
             AccessGrantMessages.COMMUNITY_NOT_FOUND, status.HTTP_404_NOT_FOUND
-        )
+        ) from None
 
     # Members don't need a grant — they already have standing access.
     membership = await guilds_service.get_membership(
@@ -257,7 +270,11 @@ async def request_grants(
     duration = _capped_duration(payload.requested_duration_minutes, requester.role)
 
     # Validate the complete request before creating any row.
-    for purpose, _level in asks:
+    for purpose, level in asks:
+        if not _may_hold(requester.role, purpose, level):
+            raise AccessGrantError(
+                AccessGrantMessages.MODERATE_NOT_HELD, status.HTTP_403_FORBIDDEN
+            )
         existing = await session.exec(
             select(AccessGrant).where(
                 AccessGrant.user_id == requester.id,
@@ -287,6 +304,7 @@ async def request_grants(
             reason=payload.reason,
             requested_duration_minutes=duration,
             requested_by_id=requester.id,
+            case_task_id=payload.case_task_id,
         )
         session.add(grant)
         created.append(grant)
@@ -387,12 +405,18 @@ async def break_glass(
     ``allow_member`` goes with a non-content purpose, which membership does not
     already confer.
 
+    A ``moderate`` grant is never self-issued: someone else approves it.
     """
-    guild = await guilds_service.get_guild(session, guild_id=payload.community_id)
-    if guild is None:
+    if level == AccessLevel.moderate.value:
+        raise AccessGrantError(
+            AccessGrantMessages.MODERATE_NOT_HELD, status.HTTP_403_FORBIDDEN
+        )
+    try:
+        await guilds_service.get_guild(session, guild_id=payload.community_id)
+    except ValueError:
         raise AccessGrantError(
             AccessGrantMessages.COMMUNITY_NOT_FOUND, status.HTTP_404_NOT_FOUND
-        )
+        ) from None
 
     # A member already has standing access — nothing to break glass for.
     membership = await guilds_service.get_membership(
@@ -447,6 +471,7 @@ async def break_glass(
         approved_by_id=actor.id,
         decided_at=now,
         expires_at=now + timedelta(minutes=duration),
+        case_task_id=getattr(payload, "case_task_id", None),
     )
     session.add(grant)
     await session.flush()
@@ -537,6 +562,7 @@ async def approve(
         grantee is None
         or grantee.status != UserStatus.active
         or Capability.ACCESS_REQUEST not in capabilities_for(grantee.role)
+        or not _may_hold(grantee.role, grant.purpose, grant.access_level)
     ):
         raise AccessGrantError(
             AccessGrantMessages.GRANTEE_INELIGIBLE, status.HTTP_409_CONFLICT
@@ -766,28 +792,31 @@ async def process_grant_expiry() -> None:
     """Background sweep: mark the grants whose window has closed."""
     from app.db.session import SystemSessionLocal
 
+    from app.services.platform import grant_cases
+
     async with SystemSessionLocal() as session:
         expired = await expire_due(session)
         await session.commit()
     if expired:
         logger.info("access grants: marked %s expired", expired)
+    # Then each case hears what the grants serving it did.
+    async with SystemSessionLocal() as session:
+        told = await grant_cases.report_activity(session)
+    if told:
+        logger.info("access grants: told %s cases what their grants did", told)
 
 
 async def _enrichment(
     session: AsyncSession, *, user_ids: set[int], guild_ids: set[int]
-) -> tuple[dict[int | None, User], dict[int, str], dict[int | None, Guild]]:
+) -> tuple[dict[int | None, User], dict[int | None, Guild]]:
     """The people and communities a page of grants names, for display."""
     users_result = await session.exec(select(User).where(User.id.in_(user_ids)))
     users = {u.id: u for u in users_result.all()}
-    # An account's address lives in ``user_emails``; one query for the page.
-    addresses_by_user = await addresses.primary_addresses(
-        session, user_ids=sorted(user_ids)
-    )
     # A community the lookup does not find leaves its rows unnamed rather
     # than failing the page.
     guilds_result = await session.exec(select(Guild).where(Guild.id.in_(guild_ids)))
     guilds = {g.id: g for g in guilds_result.all()}
-    return users, addresses_by_user, guilds
+    return users, guilds
 
 
 async def to_read(
@@ -795,9 +824,9 @@ async def to_read(
 ) -> list[AccessGrantRead]:
     """Serialize grants, batch-loading display enrichment (user/guild names).
 
-    The enrichment is read on the system engine: the grantee's address lives
-    in ``user_emails``, and the community a grant names is one its holder is
-    not a member of. A route already on the system engine passes its session;
+    The enrichment is read on the system engine: the people a grant names are
+    named by handle whoever reads it, and the community it names is one its
+    holder is not a member of. A route already on the system engine passes its session;
     a route on the caller's platform tier passes none and a short system
     session is opened for the lookup.
     """
@@ -813,14 +842,14 @@ async def to_read(
             user_ids.add(g.approved_by_id)
 
     if system_session is not None:
-        users, addresses_by_user, guilds = await _enrichment(
+        users, guilds = await _enrichment(
             system_session, user_ids=user_ids, guild_ids=guild_ids
         )
     else:
         from app.db.session import SystemSessionLocal
 
         async with SystemSessionLocal() as own_session:
-            users, addresses_by_user, guilds = await _enrichment(
+            users, guilds = await _enrichment(
                 own_session, user_ids=user_ids, guild_ids=guild_ids
             )
 
@@ -829,7 +858,7 @@ async def to_read(
         read = AccessGrantRead.model_validate(g)
         grantee = users.get(g.user_id)
         if grantee is not None:
-            read.user_email = addresses_by_user.get(g.user_id)
+            read.user = UserIdentity.model_validate(grantee)
         guild = guilds.get(g.guild_id)
         if guild is not None:
             read.community_name = guild.name
@@ -837,7 +866,7 @@ async def to_read(
         if g.approved_by_id is not None:
             approver = users.get(g.approved_by_id)
             if approver is not None:
-                read.approved_by_email = addresses_by_user.get(g.approved_by_id)
+                read.approved_by = UserIdentity.model_validate(approver)
         out.append(read)
     return out
 

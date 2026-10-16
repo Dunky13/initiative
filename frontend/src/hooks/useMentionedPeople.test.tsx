@@ -6,7 +6,6 @@ import { buildUserSummary } from "@/__tests__/factories";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
 
 /** Answers every id it is asked about, named after the community asked, and
  *  keeps each request's ids. */
@@ -25,17 +24,12 @@ const answerEveryone = () => {
   return asked;
 };
 
-describe("everyone a page mentions", () => {
+describe("the people a page mentions", () => {
   it("names every one of them, however many one request can carry", async () => {
     const asked = answerEveryone();
     const text = Array.from({ length: 150 }, (_, index) => `@[](${index + 1})`).join(" ");
 
-    renderWithProviders(
-      <MentionedPeopleScope>
-        <ReportMentionedPeople texts={[text]} />
-        <MentionText text={text} disableLink />
-      </MentionedPeopleScope>
-    );
+    renderWithProviders(<MentionText text={text} disableLink />);
 
     expect(await screen.findByText("@Person 150 of 1")).toBeInTheDocument();
     expect(screen.getByText("@Person 1 of 1")).toBeInTheDocument();
@@ -48,12 +42,10 @@ describe("everyone a page mentions", () => {
     const asked = answerEveryone();
 
     renderWithProviders(
-      <MentionedPeopleScope>
-        <ReportMentionedPeople communityId={1} texts={["@[](7)"]} />
-        <ReportMentionedPeople communityId={2} texts={["@[](7)"]} />
+      <>
         <MentionText text="@[](7)" communityId={1} disableLink /> /{" "}
         <MentionText text="@[](7)" communityId={2} disableLink />
-      </MentionedPeopleScope>
+      </>
     );
 
     expect(await screen.findByText("@Person 7 of 1")).toBeInTheDocument();

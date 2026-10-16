@@ -10,7 +10,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
-import { isEntityRefType, normalizeLegacyTarget, resolveEntityPath } from "@/lib/entityResolver";
+import {
+  isEntityRefType,
+  linkedCommentId,
+  normalizeLegacyTarget,
+  resolveEntityPath,
+} from "@/lib/entityResolver";
 
 const COMMUNITY = 1;
 let queryClient: QueryClient;
@@ -75,6 +80,53 @@ describe("resolveEntityPath", () => {
 
   // Deleted, or invisible to this reader — the caller lands on the community home
   // rather than a URL that 404s.
+  it.each([
+    ["a task", { task_id: 9 }, "/i/2/projects/4/tasks/9#comment-21"],
+    ["a wiki page", { wiki_page_id: 11 }, "/i/1/wikis/4/pages/11#comment-21"],
+    ["a post", { post_id: 6 }, "/i/3/posts/6#comment-21"],
+  ])("lands a comment on %s, on the comment itself", async (_label, parent, expected) => {
+    server.use(
+      communityHttp.get("/comments/:id", () =>
+        HttpResponse.json({
+          id: 21,
+          task_id: null,
+          wiki_page_id: null,
+          post_id: null,
+          parent_comment_id: null,
+          ...parent,
+        })
+      ),
+      communityHttp.get("/tasks/:id", () =>
+        HttpResponse.json({ id: 9, project_id: 4, project: { id: 4, initiative_id: 2 } })
+      ),
+      communityHttp.get("/wiki-pages/:id", () => HttpResponse.json({ id: 11, wiki_id: 4 })),
+      communityHttp.get("/wikis/:id", () => HttpResponse.json({ id: 4, initiative_id: 1 })),
+      communityHttp.get("/posts/:id", () => HttpResponse.json({ id: 6, initiative_id: 3 }))
+    );
+    await expect(resolveEntityPath(queryClient, COMMUNITY, "comment", 21)).resolves.toBe(expected);
+  });
+
+  it("opens a queue item's queue", async () => {
+    server.use(
+      communityHttp.get("/queue-items/:id", () => HttpResponse.json({ id: 5, queue_id: 2 })),
+      communityHttp.get("/queues/:id", () => HttpResponse.json({ id: 2, initiative_id: 7 }))
+    );
+    await expect(resolveEntityPath(queryClient, COMMUNITY, "queue-item", 5)).resolves.toBe(
+      "/i/7/queues/2"
+    );
+  });
+
+  it("returns null for a comment the reader can't read", async () => {
+    server.use(communityHttp.get("/comments/:id", () => HttpResponse.json(null, { status: 404 })));
+    await expect(resolveEntityPath(queryClient, COMMUNITY, "comment", 21)).resolves.toBeNull();
+  });
+
+  it("reads the comment a fragment names", () => {
+    expect(linkedCommentId("#comment-21")).toBe(21);
+    expect(linkedCommentId("#comments")).toBeNull();
+    expect(linkedCommentId("")).toBeNull();
+  });
+
   it("returns null when the entity can't be read", async () => {
     server.use(communityHttp.get("/files/:id", () => new HttpResponse(null, { status: 404 })));
     await expect(resolveEntityPath(queryClient, COMMUNITY, "file", 99)).resolves.toBeNull();

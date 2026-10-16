@@ -9,7 +9,7 @@ import { ReportButton } from "@/components/moderation/ReportButton";
 import { PageBanner } from "@/components/PageBanner";
 import { StatusMessage } from "@/components/StatusMessage";
 import { ProfilePageSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TOOL_TRAY_SURFACE } from "@/components/toolBrowser/ToolRail";
+import { TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
 import { UserHandle } from "@/components/UserHandle";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { ProfileJoined } from "@/components/user/ProfileJoined";
@@ -141,14 +141,14 @@ export const UserProfilePage = () => {
               className={cn(
                 "px-3 pt-1 pb-3 sm:px-4 sm:pb-4",
                 hasTrophies ? "rounded-b-2xl" : "rounded-2xl",
-                TOOL_TRAY_SURFACE
+                TRAY_SURFACE
               )}
             >
               <section className="space-y-3">
                 <h2 className="px-1 font-medium text-muted-foreground text-sm">
                   {t("profiles:communities.title")}
                 </h2>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-fill-64/3 gap-4">
                   {shelved.map((community) => (
                     <CommunityCard key={community.id} community={community} />
                   ))}

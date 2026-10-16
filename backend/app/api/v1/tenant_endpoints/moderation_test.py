@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from httpx import AsyncClient, Response
 from sqlmodel import select
@@ -39,7 +41,7 @@ async def _report(client: AsyncClient, actor, **body) -> Response:
     """File a report the way every surface does: as a moderation ticket."""
     return await client.post(
         "/api/v1/me/tickets",
-        json={"stream": "moderation", **body},
+        data={"payload": json.dumps({"stream": "moderation", **body})},
         headers=actor.headers,
     )
 
@@ -135,6 +137,7 @@ async def scene(session, acting_user):
     return {
         "guild": owner.guild,
         "initiative": owner.initiative,
+        "admin": owner,
         "mod": mod,
         "member": member,
         "task": task,
@@ -312,12 +315,16 @@ async def test_a_second_reporter_joins_the_open_report(client, session, scene):
     for headers in (scene["member"].headers, get_auth_headers(another)):
         response = await client.post(
             "/api/v1/me/tickets",
-            json={
-                "stream": "moderation",
-                "target_type": "comment",
-                "target_id": scene["comment"].id,
-                "reason": "spam",
-                "community_id": scene["guild"].id,
+            data={
+                "payload": json.dumps(
+                    {
+                        "stream": "moderation",
+                        "target_type": "comment",
+                        "target_id": scene["comment"].id,
+                        "reason": "spam",
+                        "community_id": scene["guild"].id,
+                    }
+                )
             },
             headers=headers,
         )
@@ -350,12 +357,16 @@ async def test_a_community_a_reporter_is_not_in_places_nothing_there(
 
     response = await client.post(
         "/api/v1/me/tickets",
-        json={
-            "stream": "moderation",
-            "target_type": "comment",
-            "target_id": scene["comment"].id,
-            "reason": "spam",
-            "community_id": scene["guild"].id,
+        data={
+            "payload": json.dumps(
+                {
+                    "stream": "moderation",
+                    "target_type": "comment",
+                    "target_id": scene["comment"].id,
+                    "reason": "spam",
+                    "community_id": scene["guild"].id,
+                }
+            )
         },
         headers=get_auth_headers(outsider),
     )
@@ -480,7 +491,7 @@ async def test_escalating_with_nowhere_to_send_leaves_the_report_open(
 async def test_escalating_opens_a_platform_case(client, session, scene, operations):
     """The one crossing between the two shapes, carrying the reporters."""
     report_id = await _filed_report_id(
-        client, session, scene, reason="illegal", detail="They posted my address."
+        client, session, scene, reason="harassment", detail="They posted my address."
     )
 
     response = await client.post(
@@ -615,7 +626,7 @@ async def test_a_reported_community_is_the_cases_subject(
         scene["member"],
         target_type="guild",
         target_id=scene["guild"].id,
-        reason="illegal",
+        reason="hate",
     )
     assert response.status_code == 202, response.text
 
@@ -653,14 +664,14 @@ async def test_a_community_the_reporter_cannot_see_is_not_reportable(
         scene["member"],
         target_type="guild",
         target_id=hidden.id,
-        reason="illegal",
+        reason="hate",
     )
     missing_response = await _report(
         client,
         scene["member"],
         target_type="guild",
         target_id=999_999,
-        reason="illegal",
+        reason="hate",
     )
     assert hidden_response.status_code == missing_response.status_code == 404
     assert hidden_response.json() == missing_response.json()

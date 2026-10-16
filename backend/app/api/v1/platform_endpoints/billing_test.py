@@ -45,11 +45,14 @@ from app.testing import (
     billing_guild_ref,
     guild_administration,
     create_guild,
+    create_guest,
     create_guild_membership,
     create_upload,
     create_user,
     drain_notices,
 )
+from app.core.audit_events import AuditEventType
+from app.testing.audit import emitted
 
 
 _keypair = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -253,12 +256,13 @@ async def test_wrong_audience_or_issuer_rejected(
     assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
 
 
-async def test_jti_is_one_shot(client: AsyncClient, session: AsyncSession):
+async def test_jti_is_one_shot(client: AsyncClient, session: AsyncSession, capfd):
     """The same service JWT must not authorize two calls, even with distinct
-    event ids and fresh signatures."""
+    event ids and fresh signatures — and the second is written down."""
     guild = await create_guild(session)
     token = _mint_token(jti="billing-replay-001")
 
+    emitted(capfd)
     first = await _post(
         client, "community-tier", await _tier_payload(guild.id), token=token
     )
@@ -269,6 +273,8 @@ async def test_jti_is_one_shot(client: AsyncClient, session: AsyncSession):
     )
     assert second.status_code == 403
     assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
+    (line,) = emitted(capfd, AuditEventType.SECURITY_REPLAY_REJECTED)
+    assert line["detail"]["channel"] == "billing"
 
 
 async def test_oversized_jti_rejected(client: AsyncClient, session: AsyncSession):
@@ -332,6 +338,7 @@ async def test_apply_guild_tier_happy_path(client: AsyncClient, session: AsyncSe
             tier_name="gold",
             max_storage_bytes=50 * 1024**3,
             max_users=25,
+            max_guests=0,
         ),
     )
     assert response.status_code == 200, response.text
@@ -340,6 +347,7 @@ async def test_apply_guild_tier_happy_path(client: AsyncClient, session: AsyncSe
     assert data["tier_name"] == "gold"
     assert data["max_storage_bytes"] == 50 * 1024**3
     assert data["max_users"] == 25
+    assert data["max_guests"] == 0
     assert data["status"] == "active"
     assert data["member_count"] == 0  # the factory creates no membership rows
 
@@ -348,6 +356,7 @@ async def test_apply_guild_tier_happy_path(client: AsyncClient, session: AsyncSe
     assert administration.tier_name == "gold"
     assert administration.max_storage_bytes == 50 * 1024**3
     assert administration.max_users == 25
+    assert administration.max_guests == 0
 
     event = (
         await session.exec(
@@ -932,6 +941,7 @@ async def test_usage_sums_guild_bytes(client: AsyncClient, session: AsyncSession
         "community_ref": await billing_guild_ref(guild.id),
         "usage_bytes": 1234,
         "member_count": 0,
+        "guest_count": 0,
     }
 
 
@@ -945,6 +955,7 @@ async def test_usage_zero_for_empty_guild(client: AsyncClient, session: AsyncSes
         "community_ref": await billing_guild_ref(guild.id),
         "usage_bytes": 0,
         "member_count": 0,
+        "guest_count": 0,
     }
 
 
@@ -958,6 +969,7 @@ async def test_usage_counts_guild_members(client: AsyncClient, session: AsyncSes
     for n in range(2):
         member = await create_user(session, email=f"member{n}@example.com")
         await create_guild_membership(session, user=member, guild=guild)
+    await create_guest(session, guild)
     other = await create_guild(session, creator=owner)
     await create_guild_membership(
         session,
@@ -969,7 +981,9 @@ async def test_usage_counts_guild_members(client: AsyncClient, session: AsyncSes
         client, "usage", {"community_ref": await billing_guild_ref(guild.id)}
     )
     assert response.status_code == 200, response.text
+    # A guest takes no seat, and is counted on its own.
     assert response.json()["member_count"] == 3
+    assert response.json()["guest_count"] == 1
 
 
 async def test_usage_unknown_guild_404(client: AsyncClient, session: AsyncSession):

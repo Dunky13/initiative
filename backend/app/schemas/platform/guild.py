@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from enum import Enum
 from typing import Any, List, Literal, Optional
 
 from pydantic import (
@@ -14,6 +15,7 @@ from pydantic import (
 
 from app.core.guild_auth_options import CommunityAuthOption
 from app.core.login_methods import LoginMethod
+from app.core.tools import Tool
 from app.core.messages import GuildMessages
 from app.schemas.base import RawTextStr, RichTextStr, SanitizedBaseModel, TitleStr
 from app.schemas.query import PageMeta
@@ -170,6 +172,14 @@ class CommunityCan(SanitizedBaseModel):
     administer_content: bool = False
     #: Hold its top seat: sign-in, billing, AI, plug-ins, data and deletion.
     seat: bool = False
+    #: Reach the community beyond what was shared with them: its initiative
+    #: directory, its people, its plug-ins, its imports and exports. False for
+    #: a guest.
+    community_wide: bool = False
+    #: Reach it with a personal API key, a subscription link included: false
+    #: where its superadmin turned this member's API access off, and for a
+    #: grant, which is never reached with one.
+    use_api: bool = False
 
 
 class CommunityRead(CommunityBase):
@@ -210,11 +220,12 @@ class CommunityRead(CommunityBase):
     max_storage_bytes: Optional[int] = None
     max_users: Optional[int] = None
     member_count: int = 0
+    max_guests: Optional[int] = None
     # ADMIN-ONLY. Display/audit label of the paid tier (NULL = none /
     # self-hosted). Shown by the plan panel only when a billing portal is
     # configured; it is DISPLAY metadata and is never read in an enforcement
     # path (billing_foss_test scans for that). Enforcement reads
-    # max_storage_bytes / max_users / status.
+    # max_storage_bytes / max_users / max_guests / status.
     tier_name: Optional[str] = None
     # ADMIN-ONLY. Lifecycle status, so the app can show an admin a suspended
     # community as closed and a read-only one with its notice. ``None`` for
@@ -305,10 +316,45 @@ class CommunityBillingSummaryRead(SanitizedBaseModel):
     payment_failed: bool = False
 
 
+class CommunityInviteGrant(SanitizedBaseModel):
+    """What a guest invite gives: an initiative to join, or one item in it at
+    ``read`` or ``write``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    initiative_id: int
+    #: The item and its level, all three or none.
+    resource_type: Optional[Tool] = None
+    resource_id: Optional[int] = None
+    level: Optional[Literal["read", "write"]] = None
+
+    @model_validator(mode="after")
+    def _item_whole(self) -> "CommunityInviteGrant":
+        named = {
+            self.resource_type is None,
+            self.resource_id is None,
+            self.level is None,
+        }
+        if len(named) != 1:
+            raise ValueError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+        return self
+
+
 class CommunityInviteCreate(SanitizedBaseModel):
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = Field(default=1, ge=1)
     invitee_email: Optional[EmailStr] = None
+    #: Makes a guest invite: whoever redeems it is a guest for this many days,
+    #: or the community's or the deployment's longest stay if that is shorter.
+    guest_days: Optional[int] = Field(default=None, ge=1)
+    #: What a guest invite gives. Only a guest invite gives anything.
+    grants: List[CommunityInviteGrant] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def _grants_need_a_guest(self) -> "CommunityInviteCreate":
+        if self.grants and self.guest_days is None:
+            raise ValueError(GuildMessages.GUEST_GRANT_NOT_FOUND)
+        return self
 
 
 class CommunityInviteRead(SanitizedBaseModel):
@@ -317,7 +363,6 @@ class CommunityInviteRead(SanitizedBaseModel):
     )
 
     id: int
-    code: str
     community_id: int = Field(validation_alias=AliasChoices("community_id", "guild_id"))
     created_by: Optional[int]
     expires_at: Optional[datetime]
@@ -328,11 +373,21 @@ class CommunityInviteRead(SanitizedBaseModel):
     # address on redemption, from the ciphertext.
     invitee_email: Optional[str]
     created_at: datetime
+    #: Set on a guest invite: how many days its guest stays, and what it
+    #: gives them.
+    guest_days: Optional[int] = None
+    grants: List[CommunityInviteGrant] = Field(default_factory=list)
 
     @field_validator("invitee_email", mode="after")
     @classmethod
     def _mask_invitee_email(cls, value: Optional[str]) -> Optional[str]:
         return mask_email(value)
+
+
+class CommunityInviteCreated(CommunityInviteRead):
+    """A new invite, with its code: the one time the code is shown."""
+
+    code: str
 
 
 class CommunityInviteAcceptRequest(SanitizedBaseModel):
@@ -354,6 +409,14 @@ class CommunityInviteStatus(SanitizedBaseModel):
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = None
     uses: Optional[int] = None
+    #: Set on a guest invite: how many days its guest stays.
+    guest_days: Optional[int] = None
+
+
+class CommunityGuestExtend(SanitizedBaseModel):
+    #: The guest's time ends this many days from now, or at the community's
+    #: or the deployment's longest stay if that is shorter.
+    days: int = Field(ge=1)
 
 
 class CommunityUpdate(SanitizedBaseModel):
@@ -390,6 +453,29 @@ class CommunityUpdate(SanitizedBaseModel):
     # the database enforce that even if a field regressed into this schema.
 
 
+class CommunityAction(str, Enum):
+    """What the reader may do to one community on the staff list. Worked out
+    by the server per row, so a control the reader would be refused is never
+    drawn."""
+
+    #: The Manage sheet: caps, entitlements, sign-in, restoring a deletion.
+    manage = "manage"
+    #: The status control.
+    set_status = "set_status"
+    #: Suspend it, under a live ``moderate`` grant on it.
+    suspend = "suspend"
+    #: Lift its suspension, under the same.
+    lift = "lift"
+    #: The billing service's support console.
+    billing_support = "billing_support"
+    #: The billing service's operator console.
+    billing_operator = "billing_operator"
+    #: Ask for access to it.
+    request_access = "request_access"
+    #: Grant oneself access to it.
+    break_glass = "break_glass"
+
+
 class PlatformCommunityStorageRead(SanitizedBaseModel):
     """Operator view of a guild's storage cap (platform settings → Guilds tab).
 
@@ -414,6 +500,9 @@ class PlatformCommunityStorageRead(SanitizedBaseModel):
     max_storage_bytes: Optional[int] = None
     # Max number of members for this guild. None means "unlimited".
     max_users: Optional[int] = None
+    # Max number of guests at once. None means "unlimited"; 0 takes no new
+    # guests.
+    max_guests: Optional[int] = None
     # Lifecycle status (active / read_only / suspended / deleted). Surfaced
     # only to platform operators here — never to guild members (CommunityRead omits it).
     status: CommunityStatus = CommunityStatus.active
@@ -440,6 +529,17 @@ class PlatformCommunityStorageRead(SanitizedBaseModel):
     # Off by default: the deployment that receives them is the one that decides
     # it is staffing them.
     support_enabled: bool = False
+    # Where lifting its suspension returns it, while it is suspended. ``deleted``
+    # where it was suspended out of deletion.
+    lifts_to: Optional[CommunityStatus] = None
+    # What the reader may do to it, worked out for them.
+    allowed_actions: List[CommunityAction] = Field(default_factory=list)
+
+
+class CommunitySuspensionUpdate(SanitizedBaseModel):
+    """Suspend a community, or lift its suspension."""
+
+    suspended: bool
 
 
 class PlatformCommunityStorageListResponse(PageMeta):
@@ -488,6 +588,7 @@ class PlatformCommunityStorageUpdate(SanitizedBaseModel):
 
     max_storage_bytes: Optional[int] = Field(default=None, ge=0)
     max_users: Optional[int] = Field(default=None, ge=1)
+    max_guests: Optional[int] = Field(default=None, ge=0)
     status: Optional[CommunityStatus] = None
 
     @field_validator("status")
@@ -565,6 +666,8 @@ class CommunityAuthSettingsRead(SanitizedBaseModel):
 
     auth_options: List[CommunityAuthOption] = Field(default_factory=list)
     auth_policy: CommunityAuthPolicyRead
+    #: What it asks of its guests instead. Open unless it says otherwise.
+    guest_auth_policy: CommunityAuthPolicyRead
     #: Whether its members sign in again every twelve hours, whatever the
     #: deployment's own limit says.
     enforce_compliance_session: bool
@@ -581,6 +684,14 @@ class CommunityAuthSettingsRead(SanitizedBaseModel):
     push_allowed_by_platform: bool = True
     email_allowed_by_platform: bool = True
     redacted_by_platform: bool = False
+    #: Whether search orders its content by how many members engaged with it
+    #: lately, and whether the deployment allows that at all.
+    allow_engagement_ranking: bool = True
+    engagement_ranking_allowed_by_platform: bool = True
+    #: The longest a guest may stay, in days, and the deployment's ceiling,
+    #: which applies when it is ``None`` or longer.
+    guest_max_days: Optional[int] = None
+    guest_max_days_by_platform: int
 
 
 class CommunityAuthSettingsUpdate(SanitizedBaseModel):
@@ -594,11 +705,16 @@ class CommunityAuthSettingsUpdate(SanitizedBaseModel):
 
     #: The sign-in requirement, replaced as a whole.
     auth_policy: Optional[CommunityAuthPolicyUpdate] = None
+    #: The guests' sign-in requirement, replaced as a whole.
+    guest_auth_policy: Optional[CommunityAuthPolicyUpdate] = None
     enforce_compliance_session: Optional[bool] = None
     require_second_factor: Optional[bool] = None
     allow_push_notifications: Optional[bool] = None
     allow_email_notifications: Optional[bool] = None
     redact_notification_content: Optional[bool] = None
+    allow_engagement_ranking: Optional[bool] = None
+    #: ``null`` leaves only the deployment's ceiling.
+    guest_max_days: Optional[int] = Field(default=None, ge=1)
 
 
 class CommunityDeletionRequest(SanitizedBaseModel):

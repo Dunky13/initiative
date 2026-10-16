@@ -66,7 +66,7 @@ class PluginServiceRegistrationRead(SanitizedBaseModel):
     #: gives its address.
     base_url: Optional[str] = None
     #: Where a browser loads its surfaces. Null when that is ``base_url`` too.
-    embed_origin: Optional[str] = None
+    page_origin: Optional[str] = None
     allowed_origins: List[str] = []
     #: Public keys this plug-in signs with. Shown in full — the
     #: public half is meant to be read, and an operator provisioning it needs
@@ -79,6 +79,8 @@ class PluginServiceRegistrationRead(SanitizedBaseModel):
     scope_ceiling: List[str] = []
     #: Installed into every guild and not removable by guild admins.
     mandatory: bool = False
+    #: Offered to, installed in and live in the operations community alone.
+    operations_only: bool = False
     enabled: bool = True
     #: ``registry`` when its plug-in facts come from a listing the registry signed,
     #: ``operator`` otherwise.
@@ -130,7 +132,7 @@ class _DeploymentFacts(SanitizedBaseModel):
 class PluginServiceRegistrationCreate(_DeploymentFacts):
     """Set up a plug-in service's deployment facts before its listing arrives.
 
-    ``public_id`` names the plug-in. ``embed_origin`` is optional, and unset is the
+    ``public_id`` names the plug-in. ``page_origin`` is optional, and unset is the
     ordinary case: a plug-in reachable at one address needs only ``base_url``.
     Give one when the address a browser must use is not the address this
     deployment calls.
@@ -141,12 +143,13 @@ class PluginServiceRegistrationCreate(_DeploymentFacts):
 
     public_id: str = Field(max_length=120)
     base_url: str = Field(max_length=1000)
-    embed_origin: Optional[str] = Field(default=None, max_length=1000)
+    page_origin: Optional[str] = Field(default=None, max_length=1000)
     allowed_origins: Optional[List[str]] = None
     #: JWKS holding the public half of the plug-in's signing keys.
     jwks: Optional[Dict[str, Any]] = None
     jwks_uri: Optional[str] = Field(default=None, max_length=1000)
     mandatory: bool = False
+    operations_only: bool = False
     enabled: bool = True
     #: Values for the vendor fields the listing's manifest declares, by key.
     vendor_values: Optional[Dict[str, Optional[RawTextStr]]] = None
@@ -155,7 +158,7 @@ class PluginServiceRegistrationCreate(_DeploymentFacts):
 class PluginServiceRegistrationUpdate(_DeploymentFacts):
     """Partial edit.
 
-    An empty ``embed_origin`` clears it, putting both surfaces back on
+    An empty ``page_origin`` clears it, putting both surfaces back on
     ``base_url``. An empty ``jwks_uri`` clears it, and an empty ``jwks``
     object clears the pasted set. In ``vendor_values`` a key sent empty or
     null clears that value, and a key left out keeps it, so a secret is kept
@@ -163,12 +166,13 @@ class PluginServiceRegistrationUpdate(_DeploymentFacts):
     """
 
     base_url: Optional[str] = Field(default=None, max_length=1000)
-    embed_origin: Optional[str] = Field(default=None, max_length=1000)
+    page_origin: Optional[str] = Field(default=None, max_length=1000)
     allowed_origins: Optional[List[str]] = None
     #: Replace the key set. An empty object clears it.
     jwks: Optional[Dict[str, Any]] = None
     jwks_uri: Optional[str] = Field(default=None, max_length=1000)
     mandatory: Optional[bool] = None
+    operations_only: Optional[bool] = None
     enabled: Optional[bool] = None
     #: Set or clear vendor values, by key.
     vendor_values: Optional[Dict[str, Optional[RawTextStr]]] = None

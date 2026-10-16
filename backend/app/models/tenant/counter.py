@@ -9,11 +9,13 @@ from sqlmodel import Enum as SQLEnum, Field, Relationship
 from app.core.tools import Tool
 from app.models.tenant._mixins import (
     ArchiveMixin,
-    attach_actions,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
+    HoldMixin,
     ListingProvenanceMixin,
     SoftDeleteMixin,
+    attach_actions,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -28,6 +30,8 @@ class CounterViewMode(str, Enum):
 
 
 class CounterGroup(
+    HoldMixin,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
     ArchiveMixin,
@@ -89,7 +93,7 @@ COUNTER_LIMIT = (
 )
 
 
-class Counter(CreatedByMixin, SoftDeleteMixin, table=True):
+class Counter(HoldMixin, CreatedByMixin, SoftDeleteMixin, table=True):
     """A single named numeric counter inside a counter group."""
 
     __tablename__ = "counters"

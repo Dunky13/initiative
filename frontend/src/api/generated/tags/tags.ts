@@ -21,11 +21,13 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  GetTagEntitiesParams,
   GetTagParams,
   HTTPValidationError,
   TagBulkEditRequest,
   TagBulkEditResponse,
   TagCreate,
+  TagEntityCountsResponse,
   TagRead,
   TagUpdate,
   TaggedEntitiesResponse,
@@ -668,32 +670,169 @@ export const useDeleteTag = <TError = ErrorType<HTTPValidationError>, TContext =
   return useMutation(getDeleteTagMutationOptions(options), queryClient);
 };
 /**
- * Everything carrying this tag, of every taggable kind.
+ * How many things of each taggable kind carry this tag, in one statement.
  *
- * A tag reaches across every initiative in the community, so this listing
- * answers what has been shared with the reader — the same rule the community
- * front page's table and the ``/me/*`` views follow. A guild admin's authority
- * over any one initiative is unchanged; it is asked about by opening that
- * initiative, not by opening a tag.
- *
- * Each row names itself and the tool it lives in, the way a search hit does,
- * which is everything a client needs to address it.
- * @summary Get Tag Entities
+ * A tag reaches across every initiative in the community, so this counts
+ * what has been shared with the reader — the same rule the community-wide
+ * tool lists and the ``/me/*`` views follow. A guild admin's authority over
+ * any one initiative is unchanged; it is asked about by opening that
+ * initiative, not by opening a tag. Each figure is the ``total_count`` of
+ * the list the tag's page shows for that kind.
+ * @summary Get Tag Counts
  */
-export const getTagEntities = (
+export const getTagCounts = (
   communityId: number,
   tagId: number,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<TaggedEntitiesResponse>(
-    { url: `/api/v1/c/${communityId}/tags/${tagId}/entities`, method: "GET", signal },
+  return apiMutator<TagEntityCountsResponse>(
+    { url: `/api/v1/c/${communityId}/tags/${tagId}/counts`, method: "GET", signal },
     options
   );
 };
 
-export const getGetTagEntitiesQueryKey = (communityId: number, tagId: number) => {
-  return [`/api/v1/c/${communityId}/tags/${tagId}/entities`] as const;
+export const getGetTagCountsQueryKey = (communityId: number, tagId: number) => {
+  return [`/api/v1/c/${communityId}/tags/${tagId}/counts`] as const;
+};
+
+export const getGetTagCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTagCounts>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  tagId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTagCountsQueryKey(communityId, tagId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTagCounts>>> = ({ signal }) =>
+    getTagCounts(communityId, tagId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      communityId !== null && communityId !== undefined && tagId !== null && tagId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetTagCountsQueryResult = NonNullable<Awaited<ReturnType<typeof getTagCounts>>>;
+export type GetTagCountsQueryError = ErrorType<HTTPValidationError>;
+
+export function useGetTagCounts<
+  TData = Awaited<ReturnType<typeof getTagCounts>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  tagId: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTagCounts>>,
+          TError,
+          Awaited<ReturnType<typeof getTagCounts>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetTagCounts<
+  TData = Awaited<ReturnType<typeof getTagCounts>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  tagId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getTagCounts>>,
+          TError,
+          Awaited<ReturnType<typeof getTagCounts>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetTagCounts<
+  TData = Awaited<ReturnType<typeof getTagCounts>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  tagId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get Tag Counts
+ */
+
+export function useGetTagCounts<
+  TData = Awaited<ReturnType<typeof getTagCounts>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  tagId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagCounts>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetTagCountsQueryOptions(communityId, tagId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * One page of the things of one kind carrying this tag, by name.
+ *
+ * Shared with the reader on the same rule as ``GET /tags/{id}/counts``, whose
+ * figure for ``kind`` is this list's ``total_count``. Each row names itself
+ * and the tool it lives in, the way a search hit does, which is everything a
+ * client needs to address it.
+ * @summary Get Tag Entities
+ */
+export const getTagEntities = (
+  communityId: number,
+  tagId: number,
+  params: GetTagEntitiesParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<TaggedEntitiesResponse>(
+    { url: `/api/v1/c/${communityId}/tags/${tagId}/entities`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getGetTagEntitiesQueryKey = (
+  communityId: number,
+  tagId: number,
+  params?: GetTagEntitiesParams
+) => {
+  return [`/api/v1/c/${communityId}/tags/${tagId}/entities`, ...(params ? [params] : [])] as const;
 };
 
 export const getGetTagEntitiesQueryOptions = <
@@ -702,6 +841,7 @@ export const getGetTagEntitiesQueryOptions = <
 >(
   communityId: number,
   tagId: number,
+  params: GetTagEntitiesParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagEntities>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
@@ -709,10 +849,10 @@ export const getGetTagEntitiesQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetTagEntitiesQueryKey(communityId, tagId);
+  const queryKey = queryOptions?.queryKey ?? getGetTagEntitiesQueryKey(communityId, tagId, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getTagEntities>>> = ({ signal }) =>
-    getTagEntities(communityId, tagId, requestOptions, signal);
+    getTagEntities(communityId, tagId, params, requestOptions, signal);
 
   return {
     queryKey,
@@ -734,6 +874,7 @@ export function useGetTagEntities<
 >(
   communityId: number,
   tagId: number,
+  params: GetTagEntitiesParams,
   options: {
     query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagEntities>>, TError, TData>> &
       Pick<
@@ -754,6 +895,7 @@ export function useGetTagEntities<
 >(
   communityId: number,
   tagId: number,
+  params: GetTagEntitiesParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagEntities>>, TError, TData>> &
       Pick<
@@ -774,6 +916,7 @@ export function useGetTagEntities<
 >(
   communityId: number,
   tagId: number,
+  params: GetTagEntitiesParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagEntities>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
@@ -790,13 +933,14 @@ export function useGetTagEntities<
 >(
   communityId: number,
   tagId: number,
+  params: GetTagEntitiesParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getTagEntities>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetTagEntitiesQueryOptions(communityId, tagId, options);
+  const queryOptions = getGetTagEntitiesQueryOptions(communityId, tagId, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

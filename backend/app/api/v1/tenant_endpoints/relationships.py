@@ -47,6 +47,9 @@ from app.models.platform.user import User
 from app.models.tenant.relationship import EntityRelationship
 from app.schemas.tenant.relationship import (
     EndpointRef,
+    NeighbourhoodEdge,
+    NeighbourhoodNode,
+    NeighbourhoodRead,
     RelatedEnd,
     RelationshipCreate,
     RelationshipRead,
@@ -91,6 +94,30 @@ def _endpoint_kind(value: SearchEntityType) -> SearchEntityType:
     return value
 
 
+def _related_end(
+    kind: SearchEntityType, entity_id: int, found: reference_targets.Resolved
+) -> RelatedEnd:
+    """A far end as the wire carries it."""
+    return RelatedEnd(
+        type=kind,
+        id=entity_id,
+        title=found.title,
+        initiative_id=found.initiative_id,
+        updated_at=found.updated_at,
+        tool=found.tool,
+        tool_id=found.tool_id,
+        tool_title=found.tool_title,
+        image_urls=found.image_urls,
+        icon=found.icon,
+        color=found.color,
+        file_type=found.file_type,
+        mime_type=found.mime_type,
+        original_filename=found.original_filename,
+        smart_link_url=found.smart_link_url,
+        is_open=found.is_open,
+    )
+
+
 def _render(
     row: EntityRelationship,
     *,
@@ -113,24 +140,7 @@ def _render(
         id=row.id,
         relationship_type=RelationshipType(row.relationship_type),
         direction="outbound" if outbound else "inbound",
-        other=RelatedEnd(
-            type=SearchEntityType(other_type),
-            id=other_id,
-            title=found.title,
-            initiative_id=found.initiative_id,
-            updated_at=found.updated_at,
-            tool=found.tool,
-            tool_id=found.tool_id,
-            tool_title=found.tool_title,
-            image_urls=found.image_urls,
-            icon=found.icon,
-            color=found.color,
-            file_type=found.file_type,
-            mime_type=found.mime_type,
-            original_filename=found.original_filename,
-            smart_link_url=found.smart_link_url,
-            is_open=found.is_open,
-        ),
+        other=_related_end(SearchEntityType(other_type), other_id, found),
         provenance=row.provenance,
         confidence=row.confidence,
         created_by=row.created_by,
@@ -201,6 +211,64 @@ async def list_relationships(
         for rendered in (_render(row, anchor=anchor, titles=titles) for row in rows)
         if rendered is not None
     ]
+
+
+@router.get("/neighbourhood", response_model=NeighbourhoodRead)
+async def get_relations_neighbourhood(
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+    entity: str = Query(description="The thing at the centre, as `kind:id`"),
+    hops: int = Query(
+        default=1,
+        ge=1,
+        le=relationships_service.MAX_NEIGHBOURHOOD_HOPS,
+        description="How many links out to walk",
+    ),
+    include_tags: bool = Query(
+        default=False, description="Walk through labels as well"
+    ),
+) -> NeighbourhoodRead:
+    """Everything within some hops of one thing, in one request.
+
+    What a graph of a thing's links draws. Each hop walks on from at most
+    forty things, the earliest linked first, and every edge and far end is
+    gated exactly as the per-entity list is.
+    """
+    ref = _parse_ref(entity)
+    start = Endpoint(ref.type, ref.id)
+    await relationships_service.resolve(session, start, current_user.id)
+
+    walked = await relationships_service.neighbourhood(
+        session,
+        start,
+        hops=hops,
+        include_tags=include_tags,
+        user_id=current_user.id,
+    )
+    return NeighbourhoodRead(
+        nodes=[
+            NeighbourhoodNode(
+                end=_related_end(end.kind, end.id, walked.ends[end]), depth=depth
+            )
+            for end, depth in walked.depths.items()
+        ],
+        edges=[
+            NeighbourhoodEdge(
+                id=crossing.row.id,  # type: ignore[arg-type]
+                relationship_type=RelationshipType(crossing.row.relationship_type),
+                anchor=EndpointRef(type=crossing.anchor.kind, id=crossing.anchor.id),
+                other=EndpointRef(type=crossing.other.kind, id=crossing.other.id),
+                direction=(
+                    "outbound"
+                    if crossing.row.source_node == crossing.anchor.node
+                    else "inbound"
+                ),
+                provenance=crossing.row.provenance,
+            )
+            for crossing in walked.edges
+        ],
+    )
 
 
 @router.post("/", response_model=RelationshipRead, status_code=status.HTTP_201_CREATED)

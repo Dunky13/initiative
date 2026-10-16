@@ -20,6 +20,7 @@ from sqlalchemy import ColumnElement, delete
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
 
+from app.core.errors import CodedError
 from app.api import resource_access
 from app.core.tools import Tool
 from app.db import session as db_session
@@ -34,6 +35,7 @@ from app.models.tenant.initiative import InitiativeMember
 from app.models.tenant.project import Project
 from app.models.tenant.property import PropertyType, PropertyValue
 from app.models.tenant.queue import QueueItem
+from app.models.tenant.recent_view import RecentView
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.models.tenant.task import TaskAssignee
 from app.services.permissions import (
@@ -192,8 +194,8 @@ def standing(
     )
 
 
-def refused(resource, row, **kwargs) -> HTTPException:
-    with pytest.raises(HTTPException) as exc:
+def refused(resource, row, **kwargs) -> HTTPException | CodedError:
+    with pytest.raises((HTTPException, CodedError)) as exc:
         require_access(resource, row, **kwargs)
     assert exc.value.status_code == 403
     return exc.value
@@ -278,8 +280,8 @@ async def test_every_tool_resolves_sharing_through_one_engine(
     row, context = await w.as_reader(grantee)
     require_access(resource, row, context=context, access="read")
     assert (
-        refused(resource, row, context=context, access="write").detail
-        == resource.write_msg
+        refused(resource, row, context=context, access="write").body
+        == resource.name.write_required().body
     )
 
     # Holding a read grant of their own is where the level check answers.
@@ -287,12 +289,12 @@ async def test_every_tool_resolves_sharing_through_one_engine(
     row, context = await w.as_reader(w.co_member.user)
     require_access(resource, row, context=context, access="read")
     assert (
-        refused(resource, row, context=context, access="write").detail
-        == resource.write_msg
+        refused(resource, row, context=context, access="write").body
+        == resource.name.write_required().body
     )
     assert (
-        refused(resource, row, context=context, action=Action.delete).detail
-        == resource.owner_msg
+        refused(resource, row, context=context, action=Action.delete).body
+        == resource.name.owner_required().body
     )
 
     # A writer edits it; deleting it and changing who it is shared with are
@@ -502,8 +504,8 @@ async def test_a_frozen_guild_caps_everyone_at_read(session, role_session, actin
     }
     require_access(w.resource, row, context=context, access="read")
     assert (
-        refused(w.resource, row, context=context, access="write").detail
-        == w.resource.write_msg
+        refused(w.resource, row, context=context, access="write").body
+        == w.resource.name.write_required().body
     )
     refused(w.resource, row, context=context, action=Action.delete)
 
@@ -676,7 +678,7 @@ async def test_the_audience_is_exactly_who_the_database_admits(
 
     s = await role_session("app_user")
     await route_as(s, user_id=w.owner.user.id, guild_id=w.guild.id)
-    shared = (await audience(s, Tool.post, [w.row_id]))[w.row_id]
+    shared = (await audience(s, Tool.post, [w.row]))[w.row_id]
     assert shared == {named.user.id, by_role.user.id}
 
     for actor in (named, by_role, unnamed, departed):
@@ -694,10 +696,10 @@ async def test_everyone_is_the_roster_as_it_is_now_and_nobody_is_nobody(
     await route_as(s, user_id=w.owner.user.id, guild_id=w.guild.id)
 
     await w.grant(None)
-    assert await audience(s, Tool.project, [w.row_id]) == {}
+    assert await audience(s, Tool.project, [w.row]) == {}
 
     await w.grant("read", everyone=True)
-    assert (await audience(s, Tool.project, [w.row_id]))[w.row_id] == {
+    assert (await audience(s, Tool.project, [w.row]))[w.row_id] == {
         w.owner.user.id,
         w.co_member.user.id,
     }
@@ -821,7 +823,8 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
     session, role_session, acting_user
 ):
     """The community's own tools, such as a calendar in no initiative, are
-    left the same way when someone leaves the community."""
+    left the same way when someone leaves the community, and their recent
+    views there go with them."""
     w = await build_world(session, role_session, acting_user, Tool.project)
     member = w.co_member.user
     member_id = member.id
@@ -829,6 +832,12 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
         session, w.initiative, w.owner.user, member, initiative_id=None
     )
     await create_resource_grant(session, named["calendar"], user=member)
+    session.add(
+        RecentView(
+            user_id=member_id, entity_type="project", entity_id=named["project"].id
+        )
+    )
+    await session.commit()
 
     s = await w.role_session("app_user")
     await route_as(s, user_id=w.admin.user.id, guild_id=w.guild.id)
@@ -836,3 +845,6 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
     await s.commit()
 
     assert await _still_named(session, member_id, named) == []
+    assert (
+        await session.exec(select(RecentView).where(RecentView.user_id == member_id))
+    ).all() == []

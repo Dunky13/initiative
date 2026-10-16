@@ -37,6 +37,9 @@ class NotificationType(str, Enum):
     import_failed = "import_failed"
     avatar_removed = "avatar_removed"
     username_changed = "username_changed"
+    #: Staff cleared part of the recipient's profile: names in communities,
+    #: status line or decorations. Names which, never who.
+    profile_field_cleared = "profile_field_cleared"
     account_suspended = "account_suspended"
     account_unsuspended = "account_unsuspended"
     #: A community this account holds the seat of was put on hold. Written once,
@@ -68,6 +71,18 @@ class NotificationType(str, Enum):
     #: waiting on them, in progress or closed. Names the case and its state,
     #: never what was said.
     ticket_updated = "ticket_updated"
+    #: A community's moderators took down something the recipient wrote.
+    #: Names the kind and the reason, never what it said or who reported it.
+    moderation_removal = "moderation_removal"
+    #: A community's moderators warned the recipient about something they
+    #: wrote, in the moderator's own words. Never names or counts reporters.
+    moderation_warning = "moderation_warning"
+    #: A case opened in the operations community, told to everyone who can
+    #: read it. Names the stream; the title is read when the line is.
+    case_opened = "case_opened"
+    #: Whoever filed a case answered on it, and nobody has taken it, so the
+    #: people who can read it hear instead of nobody.
+    case_replied = "case_replied"
 
 
 class Notification(SQLModel, table=True):

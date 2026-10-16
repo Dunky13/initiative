@@ -1,8 +1,5 @@
-import {
-  $isCodeNode,
-  CodeNode,
-  getLanguageFriendlyName /* normalizeCodeLang */,
-} from "@lexical/code";
+import { $isCodeNode, CodeNode } from "@lexical/code";
+import { getLanguageFriendlyName } from "@lexical/code-prism";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $getNearestNodeFromDOMNode, isHTMLElement } from "lexical";
 import { type JSX, useEffect, useRef, useState } from "react";

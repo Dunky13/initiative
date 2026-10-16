@@ -8,6 +8,8 @@
  * environments, or test runners with stripped Intl data.
  */
 
+import { dateTimeFormat } from "@/lib/intl";
+
 const FALLBACK_TIMEZONES = [
   "UTC",
   "America/New_York",
@@ -38,6 +40,22 @@ const resolveTimezones = (): string[] => {
 
 /** Resolved once at module load — the list doesn't change at runtime. */
 export const TIMEZONE_OPTIONS = resolveTimezones();
+
+/**
+ * Whether this runtime can show the time in a zone: any zone in the list, or
+ * one the list leaves out but `Intl` still knows. A runtime that cannot
+ * enumerate its zones offers a short list to pick from, but a zone named
+ * somewhere else (a published home layout's clock) still draws there.
+ */
+export const isKnownTimezone = (zone: string): boolean => {
+  if (TIMEZONE_OPTIONS.includes(zone)) return true;
+  try {
+    dateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** The browser's IANA zone, or `UTC` where the runtime does not report one. */
 export const browserTimezone = (): string => {

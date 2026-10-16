@@ -29,6 +29,28 @@ class ActivityKind(str, Enum):
 
     #: The source of an open case was seen again.
     repeat = "repeat"
+    #: Content was held for the platform on this case.
+    hold_placed = "hold_placed"
+    #: A hold on this case was released.
+    hold_released = "hold_released"
+    #: A hold on this case is still in place.
+    hold_reminder = "hold_reminder"
+    #: The community settled its own report of what this case is about.
+    community_settled = "community_settled"
+    #: What this case is about should be held, and nothing has held it yet.
+    hold_requested = "hold_requested"
+    #: Somebody asked for access to a community for this case.
+    grant_requested = "grant_requested"
+    #: An access request for this case was approved, denied or revoked.
+    grant_decided = "grant_decided"
+    #: What a grant for this case did, so far or in all.
+    grant_digest = "grant_digest"
+    #: A moderation act taken under a grant for this case.
+    moderation_act = "moderation_act"
+    #: A community's status changed under a grant for this case.
+    guild_act = "guild_act"
+    #: Staff acted on an account for this case.
+    account_act = "account_act"
 
 
 def repeat_text(*, occurrences: int, detail: str | None) -> str:

@@ -61,6 +61,7 @@
   "required": "Obligatorio",
   "optional": "Opcional",
   "actions": "Acciones",
+  "adding": "Añadiendo…",
   "rowActionsFor": "Acciones para {{subject}}",
   "more": "Más",
   "less": "Menos",
@@ -319,7 +320,7 @@
     "description": "Esta página tuvo un error y no se pudo mostrar. Inténtalo de nuevo o ve a tus tareas.",
     "appDescription": "Initiative tuvo un error y no pudo continuar. Al recargar, se inicia de nuevo.",
     "details": "Detalles del error",
-    "toMyTasks": "Ir a {{myTasks}}",
+    "toHome": "Ir a {{home}}",
     "reload": "Recargar",
     "updatedTitle": "Initiative se ha actualizado",
     "updatedDescription": "Hay una versión más reciente. Recarga para abrir esta página en ella."
@@ -332,6 +333,10 @@
     "unsigned": "La actualización de este servidor no la publicó Initiative, así que la app se queda en la versión {{version}}.",
     "desktopReady": "Initiative ha descargado su actualización. Reinicia para terminar.",
     "restart": "Reiniciar"
+  },
+  "favorite": {
+    "add": "Agregar a favoritos",
+    "remove": "Quitar de favoritos"
   },
   "toolHeader": {
     "rename": "Cambiar nombre"
@@ -346,5 +351,107 @@
   "days": {
     "today": "Hoy",
     "yesterday": "Ayer"
+  },
+  "fieldSave": {
+    "saving": "Guardando…",
+    "saved": "Guardado",
+    "failed": "No se pudo guardar",
+    "changed": "Esto cambió mientras lo editabas",
+    "overwrite": "Sobrescribir",
+    "keepEditing": "Seguir editando",
+    "discard": "Descartar",
+    "undo": "Deshacer",
+    "moved": "Movido a {{status}}",
+    "cleared": "{{field}}: valor borrado"
+  },
+  "descriptionField": {
+    "none": "Aún no hay descripción.",
+    "draftKept": "Tu borrador sin guardar de esta descripción se conserva en este dispositivo hasta que puedas volver a editarla.",
+    "unsavedTitle": "¿Descartar los cambios sin guardar?",
+    "unsavedBody": "Tienes una descripción sin guardar. Si sales ahora, se perderá.",
+    "leave": "Salir",
+    "stay": "Quedarme"
+  },
+  "kinds": {
+    "project": {
+      "name": "Proyecto",
+      "this": "este proyecto",
+      "plural": "proyectos"
+    },
+    "file": {
+      "name": "Archivo",
+      "this": "este archivo",
+      "plural": "archivos"
+    },
+    "queue": {
+      "name": "Cola",
+      "this": "esta cola",
+      "plural": "colas"
+    },
+    "counter_group": {
+      "name": "Grupo de contadores",
+      "this": "este grupo de contadores",
+      "plural": "grupos de contadores"
+    },
+    "calendar": {
+      "name": "Calendario",
+      "this": "este calendario",
+      "plural": "calendarios"
+    },
+    "dashboard": {
+      "name": "Panel",
+      "this": "este panel",
+      "plural": "paneles"
+    },
+    "post": {
+      "name": "Publicación",
+      "this": "esta publicación",
+      "plural": "publicaciones"
+    },
+    "gallery": {
+      "name": "Galería",
+      "this": "esta galería",
+      "plural": "galerías"
+    },
+    "wiki": {
+      "name": "Wiki",
+      "this": "este wiki",
+      "plural": "wikis"
+    },
+    "task": {
+      "name": "Tarea",
+      "this": "esta tarea",
+      "plural": "tareas"
+    },
+    "queue_item": {
+      "name": "Elemento de cola",
+      "this": "este elemento de cola",
+      "plural": "elementos de cola"
+    },
+    "calendar_event": {
+      "name": "Evento",
+      "this": "este evento",
+      "plural": "eventos"
+    },
+    "counter": {
+      "name": "Contador",
+      "this": "este contador",
+      "plural": "contadores"
+    },
+    "gallery_image": {
+      "name": "Imagen",
+      "this": "esta imagen",
+      "plural": "imágenes"
+    },
+    "wiki_page": {
+      "name": "Página",
+      "this": "esta página",
+      "plural": "páginas"
+    },
+    "tag": {
+      "name": "Etiqueta",
+      "this": "esta etiqueta",
+      "plural": "etiquetas"
+    }
   }
 }

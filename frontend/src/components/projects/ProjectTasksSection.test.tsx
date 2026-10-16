@@ -1,13 +1,11 @@
 /**
- * What a task view shows, and what a link to it means.
+ * How a project's tasks are shown, and what a link to them means.
  *
- * The three sources are ranked, not merged: the URL, then this person's
- * remembered filters, then the project's default preset. These cover the
- * ranking end-to-end — including that picking a preset writes it to the URL,
- * so the view is linkable.
- *
- * The preset picker lives in the filter panel, since picking one sets every
- * field below it; opening the panel is the first step of most of these.
+ * A project draws its tasks in its layouts (a table, a board, a calendar); what
+ * one person narrows the list to and how they sort it are theirs, kept per
+ * layout in their view of the project. These cover choosing a layout (which
+ * writes it to the URL, so it is linkable), a person's own filters and sort,
+ * and a layout's columns.
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,18 +13,19 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  buildDefaultFilterPresets,
   buildDefaultTaskStatuses,
   buildTag,
+  buildTagSummary,
   buildTask,
   buildTaskListResponse,
+  buildToolLayoutSet,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
+import type { ToolLayoutSetRead } from "@/api/generated/initiativeAPI.schemas";
 import { ProjectTasksSection } from "@/components/projects/ProjectTasksSection";
 import { toast } from "@/lib/mascotToast";
-import { setItem } from "@/lib/storage";
 import { fireTaskCompletionFeedback } from "@/lib/taskCompletionFeedback";
 
 vi.mock("@/lib/csv", () => ({ downloadBlob: vi.fn() }));
@@ -77,18 +76,37 @@ const withTags = (ids: number[]) => {
   );
 };
 
-/** Seed this person's remembered filters for project 1. */
-const rememberFilters = (spec: Record<string, unknown>) => {
+/** The project's layouts, as shipped but for `overrides`. */
+const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
   server.use(
-    http.get("/api/v1/user-view-preferences", () =>
-      HttpResponse.json({
-        items: { "project:1:view-filters": { activePresetSlug: null, ...spec } },
-      })
+    communityHttp.get("/layouts/", () =>
+      HttpResponse.json<ToolLayoutSetRead>(buildToolLayoutSet(overrides))
     )
   );
 };
 
-/** The picker is inside the filter panel, which starts closed. */
+/** Seed this person's view of project 1. */
+const rememberView = (view: Record<string, unknown>) => {
+  server.use(
+    http.get("/api/v1/user-view-preferences", () =>
+      HttpResponse.json({ items: { "project:1:views": view } })
+    )
+  );
+};
+
+/** What this person's view of project 1 is written as, each time. */
+const captureViewWrites = () => {
+  const writes: unknown[] = [];
+  server.use(
+    http.put("/api/v1/user-view-preferences/:scopeKey", async ({ request }) => {
+      writes.push(((await request.json()) as { value: unknown }).value);
+      return HttpResponse.json({});
+    })
+  );
+  return writes;
+};
+
+/** The filters live in a panel, which starts closed. */
 const openFilters = async () => {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /filters/i }));
@@ -104,28 +122,240 @@ const toggleAssigneeToken = async (user: ReturnType<typeof userEvent.setup>, nam
   await user.keyboard("{Escape}");
 };
 
-/** Pick a preset the way someone would, rather than seeding the URL.
- *
- *  `renderPage` re-seeds its `routerSearch` whenever the page navigates to an
- *  empty search, so a test that starts from `?preset=…` can never observe the
- *  param being dropped. Going through the picker avoids that entirely. */
-const pickPreset = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  await user.click(await screen.findByRole("combobox", { name: /preset/i }));
+const layoutSwitcher = () => screen.findByRole("combobox", { name: /^layout$/i });
+
+/** Pick a layout the way someone would, rather than seeding the URL. */
+const pickLayout = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+  await user.click(await layoutSwitcher());
   await user.click(await screen.findByRole("option", { name }));
 };
+
+const urlLayout = (router: ReturnType<typeof section>["router"]) =>
+  (router.state.location.search as { layout?: string }).layout;
+
+const urlPreset = (router: ReturnType<typeof section>["router"]) =>
+  (router.state.location.search as { preset?: string }).preset;
 
 beforeEach(() => {
   captureTaskRequests();
 });
 
-describe("ProjectTasksSection presets", () => {
-  it("shows the project's default preset when the URL says nothing", async () => {
+describe("ProjectTasksSection layouts", () => {
+  it("offers the project's layouts, and opens on the one it opens on", async () => {
+    withLayouts({
+      layouts: [
+        { kind: "table", is_default: false, definition: {}, updated_at: null },
+        { kind: "board", is_default: true, definition: {}, updated_at: null },
+      ],
+    });
+    const user = userEvent.setup();
     section();
-    await openFilters();
 
-    expect(await screen.findByRole("combobox", { name: /preset/i })).toHaveTextContent("All");
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Board"));
+    await user.click(await layoutSwitcher());
+    // Then the presets the layout shown offers, as shipped.
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Table",
+      "Board",
+      "Calendar",
+      "Incomplete",
+      "Unassigned",
+      "Mine",
+    ]);
   });
 
+  it("shows a layout when one is chosen, names it in the URL, and keeps it", async () => {
+    const writes = captureViewWrites();
+    const { router } = section();
+    const user = userEvent.setup();
+    const navigate = vi.spyOn(router, "navigate");
+
+    await pickLayout(user, "Board");
+
+    await waitFor(() => expect(urlLayout(router)).toBe("board"));
+    await waitFor(() =>
+      expect(document.querySelector("[data-kanban-scroll-container]")).not.toBeNull()
+    );
+    // Naming the layout in the URL is bookkeeping about the list you are
+    // already looking at, so the router's scroll reset must not fire.
+    expect(navigate.mock.calls.at(-1)?.[0]).toMatchObject({ replace: true, resetScroll: false });
+    await waitFor(() =>
+      expect(writes).toContainEqual(expect.objectContaining({ layout: "board" }))
+    );
+  });
+
+  it("opens the layout a link names", async () => {
+    section({ routerSearch: { layout: "board" } });
+
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Board"));
+  });
+
+  it("shows the columns the project's table names, in its order", async () => {
+    withLayouts({
+      layouts: [
+        {
+          kind: "table",
+          is_default: true,
+          definition: { columns: ["priority", "title", "dueDate"] },
+          updated_at: "2026-10-01T12:00:00.000Z",
+        },
+      ],
+    });
+    section();
+
+    const headers = () =>
+      screen.queryAllByRole("columnheader").map((cell) => cell.textContent ?? "");
+    // The start date, which the table leaves out, is gone once it arrives.
+    await waitFor(() => expect(headers()).toContain("Due date"));
+    await waitFor(() => expect(headers()).not.toContain("Start date"));
+    const at = (name: string) => headers().indexOf(name);
+    expect(at("Priority")).toBeLessThan(at("Task"));
+    expect(at("Task")).toBeLessThan(at("Due date"));
+  });
+
+  it("says the layouts failed to load, and asks again, before listing any tasks", async () => {
+    let fail = true;
+    let taskRequests = 0;
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(buildToolLayoutSet())
+      ),
+      communityHttp.get("/tasks/", () => {
+        taskRequests += 1;
+        return HttpResponse.json(buildTaskListResponse([]));
+      })
+    );
+    section();
+    const user = userEvent.setup();
+
+    const retry = await screen.findByRole("button", { name: /try again/i });
+    expect(screen.getByText(/couldn't load this project's layouts/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /filters/i })).toBeNull();
+    expect(taskRequests).toBe(0);
+
+    fail = false;
+    await user.click(retry);
+
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Table"));
+    await waitFor(() => expect(taskRequests).toBe(1));
+  });
+});
+
+describe("ProjectTasksSection presets", () => {
+  it("applies a preset as this person's own, and names it in the URL", async () => {
+    const writes = captureViewWrites();
+    const { router } = section();
+    const user = userEvent.setup();
+
+    await pickLayout(user, "Unassigned");
+
+    await waitFor(() => expect(urlPreset(router)).toBe("unassigned"));
+    await waitFor(() =>
+      expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "is_null", value: true })
+    );
+    // The layout stays the one shown.
+    expect(await layoutSwitcher()).toHaveTextContent("Table");
+    await waitFor(() =>
+      expect(writes).toContainEqual(
+        expect.objectContaining({
+          parts: {
+            table: expect.objectContaining({
+              filters: expect.objectContaining({ assignees: ["none"] }),
+            }),
+          },
+        })
+      )
+    );
+  });
+
+  it("opens the preset a link names, and lets go of it once the person narrows it", async () => {
+    const { router } = section({ routerSearch: { layout: "table", preset: "mine" } });
+
+    await waitFor(() =>
+      expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "in_", value: ["me"] })
+    );
+    const user = await openFilters();
+    await toggleAssigneeToken(user, /^Unassigned$/);
+
+    await waitFor(() => expect(urlPreset(router)).toBeUndefined());
+    expect(urlLayout(router)).toBe("table");
+  });
+
+  it("saves a preset picked again after the person changed its filters", async () => {
+    const writes = captureViewWrites();
+    const { router } = section();
+    const user = userEvent.setup();
+    await pickLayout(user, "Unassigned");
+    await waitFor(() => expect(urlPreset(router)).toBe("unassigned"));
+
+    // Their own change lets go of the preset...
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+    await toggleAssigneeToken(user, /^Assigned to me$/);
+    await waitFor(() => expect(urlPreset(router)).toBeUndefined());
+    writes.length = 0;
+
+    // ...and picking it again makes it theirs again.
+    await pickLayout(user, "Unassigned");
+    await waitFor(() =>
+      expect(writes.at(-1)).toMatchObject({
+        parts: { table: { filters: { assignees: ["none"] } } },
+      })
+    );
+  });
+
+  it("offers the layout's own presets, with their sort", async () => {
+    withLayouts({
+      layouts: [
+        {
+          kind: "table",
+          is_default: true,
+          definition: {
+            presets: [
+              {
+                name: "Overdue first",
+                slug: "overdue",
+                filters: { due: "overdue" },
+                sort: [{ field: "due_date", dir: "desc" }],
+              },
+            ],
+          },
+          updated_at: "2026-10-01T12:00:00.000Z",
+        },
+      ],
+    });
+    const writes = captureViewWrites();
+    section();
+    const user = userEvent.setup();
+
+    await user.click(await layoutSwitcher());
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Table",
+      "Board",
+      "Calendar",
+      "Overdue first",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Overdue first" }));
+
+    await waitFor(() =>
+      expect(writes).toContainEqual(
+        expect.objectContaining({
+          parts: {
+            table: expect.objectContaining({ sorting: [{ id: "due date", desc: true }] }),
+          },
+        })
+      )
+    );
+  });
+
+  it("drops a preset the layout doesn't offer", async () => {
+    const { router } = section({ routerSearch: { layout: "board", preset: "nowhere" } });
+
+    await waitFor(() => expect(urlLayout(router)).toBe("board"));
+    await waitFor(() => expect(urlPreset(router)).toBeUndefined());
+  });
+});
+
+describe("ProjectTasksSection a person's filters", () => {
   it("offers statuses and status categories in one control", async () => {
     // One question — "which statuses?" — answered either by naming them or by
     // naming a category, so they share a control rather than sitting in two
@@ -146,51 +376,21 @@ describe("ProjectTasksSection presets", () => {
     expect(screen.getAllByRole("option", { name: "Backlog" })).toHaveLength(1);
   });
 
-  it("applies the preset the URL names", async () => {
-    section({ routerSearch: { preset: "incomplete" } });
-
-    await waitFor(() => expect(fieldsUsed()).toContain("status_category"));
-    const category = lastConditions.find((entry) => entry.field === "status_category");
-    expect(category?.value).toEqual(["backlog", "todo", "in_progress"]);
-    // Status *ids* are per-project, so a shared preset must never carry them.
-    expect(fieldsUsed()).not.toContain("task_status_id");
-  });
-
-  it("asks for unassigned tasks with is_null, which no id list can express", async () => {
-    section({ routerSearch: { preset: "unassigned" } });
-
-    await waitFor(() =>
-      expect(lastConditions).toContainEqual({
-        field: "assignee_ids",
-        op: "is_null",
-        value: true,
-      })
-    );
-  });
-
-  it("keeps 'me' a token, so the same link works for whoever opens it", async () => {
-    section({ routerSearch: { preset: "mine" } });
-
-    await waitFor(() =>
-      expect(lastConditions).toContainEqual({
-        field: "assignee_ids",
-        op: "in_",
-        value: ["me"],
-      })
-    );
-  });
-
   it("offers 'me' and 'unassigned' inside the assignee picker", async () => {
     // Neither is a person the roster could return — the server resolves both
-    // per request, which is what keeps a shared preset portable. They answer
-    // the same question as the people list, so they live in the same control.
+    // per request. They answer the same question as the people list, so they
+    // live in the same control. Unassigned asks with is_null, which no id list
+    // can express, and "me" stays a token.
     section();
     const user = await openFilters();
-    await pickPreset(user, "Mine");
 
-    await user.click(await screen.findByRole("combobox", { name: /filter by assignee/i }));
-
-    await user.click(await screen.findByRole("option", { name: /^Unassigned$/ }));
+    await toggleAssigneeToken(user, /^Assigned to me$/);
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: /filter by assignee/i })).toHaveTextContent(
+        "Assigned to me"
+      )
+    );
+    await toggleAssigneeToken(user, /^Unassigned$/);
 
     await waitFor(() =>
       expect(lastConditions).toContainEqual({
@@ -203,63 +403,50 @@ describe("ProjectTasksSection presets", () => {
     );
   });
 
-  it("names the chosen token on the assignee trigger", async () => {
-    // A trigger still reading "All assignees" while "me" is on would
-    // misdescribe the list.
+  it("keeps a person's filters with the layout they set them on", async () => {
     section();
     const user = await openFilters();
-    await pickPreset(user, "Mine");
+    await toggleAssigneeToken(user, /^Unassigned$/);
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent(/modified/i));
 
+    // Another layout starts from its own, which are none.
+    await pickLayout(user, "Board");
+    await waitFor(() => expect(fieldsUsed()).not.toContain("assignee_ids"));
+    expect(await layoutSwitcher()).not.toHaveTextContent(/modified/i);
+
+    // And coming back finds them as they were left.
+    await pickLayout(user, "Table");
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent(/modified/i));
+    expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "is_null", value: true });
+  });
+
+  it("clears a person's filters for the layout on screen", async () => {
+    rememberView({ layout: "table", filters: { table: { assignees: ["none"] } } });
+    const writes = captureViewWrites();
+    section();
+    const user = await openFilters();
+    await waitFor(() => expect(fieldsUsed()).toContain("assignee_ids"));
+
+    await user.click(screen.getByRole("button", { name: /clear all/i }));
+
+    await waitFor(() => expect(fieldsUsed()).not.toContain("assignee_ids"));
     await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: /filter by assignee/i })).toHaveTextContent(
-        "Assigned to me"
+      expect(writes).toContainEqual(
+        expect.objectContaining({
+          layout: "table",
+          parts: { table: expect.not.objectContaining({ filters: expect.anything() }) },
+        })
       )
     );
   });
 
-  it("lets go of 'me' from the same picker", async () => {
+  it("reads filters an older release kept, by the view they were set on", async () => {
+    rememberView({ view: "board", filters: { board: { assignees: ["me"] } } });
     section();
-    const user = await openFilters();
-    await pickPreset(user, "Mine");
 
-    await toggleAssigneeToken(user, /^Assigned to me$/);
-
-    await waitFor(() => expect(fieldsUsed()).not.toContain("assignee_ids"));
-  });
-
-  it("does not throw the reader back to the top of the list when picking one", async () => {
-    // Naming the preset in the URL is bookkeeping about the list you are
-    // already looking at, so the router's scroll reset must not fire.
-    const { router } = section();
-    const user = await openFilters();
-    const navigate = vi.spyOn(router, "navigate");
-
-    await pickPreset(user, "Mine");
-
-    await waitFor(() => expect(navigate).toHaveBeenCalled());
-    expect(navigate.mock.calls.at(-1)?.[0]).toMatchObject({
-      replace: true,
-      resetScroll: false,
-    });
-  });
-
-  it("names the chosen preset in the URL, so the view can be linked", async () => {
-    const { router } = section();
-    const user = await openFilters();
-
-    await user.click(await screen.findByRole("combobox", { name: /preset/i }));
-    await user.click(await screen.findByRole("option", { name: "Mine" }));
-
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent(/Board/));
     await waitFor(() =>
-      expect((router.state.location.search as { preset?: string }).preset).toBe("mine")
-    );
-  });
-
-  it("honours the view mode named in the URL", async () => {
-    section({ routerSearch: { view: "kanban" } });
-
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /kanban/i })).toHaveAttribute("data-state", "active")
+      expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "in_", value: ["me"] })
     );
   });
 
@@ -267,7 +454,7 @@ describe("ProjectTasksSection presets", () => {
     // The positive control for the next case: this proves the remembered
     // filter reaches the query at all.
     withTags([7]);
-    rememberFilters({ tag_ids: [7] });
+    rememberView({ layout: "table", filters: { table: { tag_ids: [7] } } });
     section();
 
     await waitFor(() =>
@@ -280,7 +467,7 @@ describe("ProjectTasksSection presets", () => {
     // it matches nothing, so the list goes empty and the control that would
     // explain why has no option left to render.
     withTags([7]);
-    rememberFilters({ tag_ids: [999] });
+    rememberView({ layout: "table", filters: { table: { tag_ids: [999] } } });
     section();
 
     // Both in one tick: the first request goes out before the tag list has
@@ -297,7 +484,7 @@ describe("ProjectTasksSection presets", () => {
     // Showing more than was asked for is recoverable; an unexplained empty
     // list is not.
     server.use(communityHttp.get("/tags/", () => new HttpResponse(null, { status: 500 })));
-    rememberFilters({ tag_ids: [7] });
+    rememberView({ layout: "table", filters: { table: { tag_ids: [7] } } });
     section();
 
     await waitFor(() => {
@@ -305,114 +492,11 @@ describe("ProjectTasksSection presets", () => {
       expect(fieldsUsed()).not.toContain("tag_ids");
     });
   });
-
-  it("says so and still lists tasks when the URL names a preset that is gone", async () => {
-    section({ routerSearch: { preset: "long-deleted" } });
-
-    expect(await screen.findByText(/no longer exists/i)).toBeInTheDocument();
-    // Still resolved to something, rather than 404ing the page.
-    await waitFor(() => expect(fieldsUsed()).toContain("project_id"));
-  });
-
-  it("hides the curation affordances from someone who may not curate", async () => {
-    server.use(
-      communityHttp.get("/projects/:projectId/filter-presets/", () =>
-        HttpResponse.json({ items: [], can_manage: false })
-      )
-    );
-    section();
-    await openFilters();
-
-    await waitFor(() => expect(screen.queryByRole("button", { name: /save preset/i })).toBeNull());
-    // The filters themselves are still theirs to set.
-    expect(screen.getByRole("button", { name: /clear all/i })).toBeInTheDocument();
-  });
-
-  it("offers saving a preset, beside Clear all, to someone who may curate", async () => {
-    section();
-    await openFilters();
-
-    expect(await screen.findByRole("button", { name: /save preset/i })).toBeInTheDocument();
-  });
-
-  it("offers updating the active preset only once its filters were tweaked", async () => {
-    section();
-    const user = await openFilters();
-
-    expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
-
-    await toggleAssigneeToken(user, /^Unassigned$/);
-
-    expect(await screen.findByRole("button", { name: /update/i })).toBeInTheDocument();
-  });
-
-  it("names the preset it would update", async () => {
-    section();
-    const user = await openFilters();
-    await pickPreset(user, "Incomplete");
-
-    await toggleAssigneeToken(user, /^Unassigned$/);
-
-    expect(await screen.findByRole("button", { name: /update/i })).toHaveTextContent(/Incomplete/);
-  });
-
-  it("marks the preset modified, and offers a way back, once filters are tweaked", async () => {
-    // Re-picking it in the select can't undo the edit — it is already the
-    // selected value — so getting back is its own control.
-    section();
-    const user = await openFilters();
-    await pickPreset(user, "Mine");
-
-    expect(screen.queryByRole("button", { name: /reset to preset/i })).toBeNull();
-
-    await toggleAssigneeToken(user, /^Unassigned$/);
-
-    const combobox = await screen.findByRole("combobox", { name: /preset/i });
-    await waitFor(() => expect(combobox).toHaveTextContent(/Mine.*modified/i));
-
-    await user.click(await screen.findByRole("button", { name: /reset to preset/i }));
-
-    await waitFor(() => expect(combobox).toHaveTextContent("Mine"));
-    expect(combobox).not.toHaveTextContent(/modified/i);
-  });
-
-  it("offers the way back even to someone who may not curate presets", async () => {
-    server.use(
-      communityHttp.get("/projects/:projectId/filter-presets/", () =>
-        HttpResponse.json({ items: buildDefaultFilterPresets(1), can_manage: false })
-      )
-    );
-    section();
-    const user = await openFilters();
-    await pickPreset(user, "Mine");
-
-    await toggleAssigneeToken(user, /^Unassigned$/);
-
-    expect(await screen.findByRole("button", { name: /reset to preset/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /save preset/i })).toBeNull();
-  });
-
-  it("stops naming the preset in the URL once the filters are tweaked", async () => {
-    // A link saying ?preset=mine has to show the preset, not one person's
-    // edit of it.
-    const { router } = section();
-    const user = await openFilters();
-    await pickPreset(user, "Mine");
-    await waitFor(() =>
-      expect((router.state.location.search as { preset?: string }).preset).toBe("mine")
-    );
-
-    await toggleAssigneeToken(user, /^Unassigned$/);
-
-    await waitFor(() =>
-      expect((router.state.location.search as { preset?: string }).preset).toBeUndefined()
-    );
-  });
 });
 
 describe("ProjectTasksSection export", () => {
   /** The `sorting` of the export request a PDF export sends. */
-  const exportSorting = async (view: string) => {
+  const exportSorting = async (layout: string) => {
     let sorting: string | null = "unsent";
     server.use(
       communityHttp.get("/exports/tasks", ({ request }) => {
@@ -422,7 +506,7 @@ describe("ProjectTasksSection export", () => {
         });
       })
     );
-    section({ routerSearch: { view } });
+    section({ routerSearch: { layout } });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /^export$/i }));
     await user.click(await screen.findByRole("menuitem", { name: /pdf document/i }));
@@ -431,10 +515,8 @@ describe("ProjectTasksSection export", () => {
   };
 
   beforeEach(() => {
-    setItem(
-      "initiative-project-1-task-table",
-      JSON.stringify({ grouping: [], sorting: [{ id: "due date", desc: true }] })
-    );
+    // The reader's own sort of the table, kept in their view of the project.
+    rememberView({ layout: "table", sorting: { table: [{ id: "due date", desc: true }] } });
   });
 
   it("lists the tasks in the order the reader sorted the table", async () => {
@@ -444,8 +526,8 @@ describe("ProjectTasksSection export", () => {
     ]);
   });
 
-  it("keeps the project's order from a view the table's sort does not reach", async () => {
-    expect(await exportSorting("kanban")).toBeNull();
+  it("keeps the project's order from a layout the table's sort does not reach", async () => {
+    expect(await exportSorting("board")).toBeNull();
   });
 });
 
@@ -564,7 +646,10 @@ describe("ProjectTasksSection ticking tasks off", () => {
     await waitFor(() => expect(replies).toHaveLength(1));
     expect(await doneBox("Chore 1")).toBeChecked();
 
-    answer(0, HttpResponse.json({ detail: "TASK_NOT_FOUND" }, { status: 404 }));
+    answer(
+      0,
+      HttpResponse.json({ detail: "NOT_FOUND", params: { kind: "task" } }, { status: 404 })
+    );
 
     await waitFor(async () => expect(await doneBox("Chore 1")).not.toBeChecked());
   });
@@ -585,5 +670,54 @@ describe("ProjectTasksSection ticking tasks off", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(await doneBox("Chore 1")).not.toBeChecked();
+  });
+});
+
+describe("ProjectTasksSection table", () => {
+  beforeEach(() => {
+    // The table is virtualized, and jsdom gives every element a zero height,
+    // which windows it down to no rows at all.
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+  });
+
+  it("draws a row from the task's fields, as the board's card does", async () => {
+    const task = buildTask({
+      id: 4,
+      title: "Chore 4",
+      comment_count: 2,
+      tags: [buildTagSummary({ id: 7, name: "Urgent" })],
+    });
+    server.use(
+      communityHttp.get("/tasks/", () => HttpResponse.json(buildTaskListResponse([task])))
+    );
+    section({ routerSearch: { view: "table" } });
+
+    const row = (await screen.findByRole("link", { name: "Chore 4" })).closest("tr");
+    if (!row) throw new Error("no row for Chore 4");
+    expect(within(row).getByRole("link", { name: "Chore 4" })).toHaveAttribute("href", "/tasks/4");
+    expect(within(row).getByRole("link", { name: "Urgent" })).toHaveAttribute(
+      "href",
+      "/c/1/tags/7"
+    );
+    expect(within(row).getByText("2")).toBeInTheDocument();
+  });
+
+  it("lets go of a selection when the layout changes", async () => {
+    server.use(
+      communityHttp.get("/tasks/", () =>
+        HttpResponse.json(buildTaskListResponse([buildTask({ title: "Chore 1" })]))
+      )
+    );
+    section();
+    const user = userEvent.setup();
+    await screen.findByRole("link", { name: "Chore 1" });
+    await user.click(await screen.findByRole("button", { name: /^select$/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /select row/i }));
+    expect(await screen.findByText(/1 task selected/i)).toBeInTheDocument();
+
+    await pickLayout(user, "Board");
+
+    await waitFor(() => expect(screen.queryByText(/1 task selected/i)).not.toBeInTheDocument());
   });
 });

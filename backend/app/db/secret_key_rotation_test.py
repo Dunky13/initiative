@@ -45,6 +45,8 @@ from app.services.platform.app_settings import (
     seed_app_settings,
 )
 from app.testing import create_plugin_service_registration, sealed_vendor_values
+from app.core.audit_events import AuditEventType
+from app.testing.audit import emitted
 
 # Distinct test-only keys (≥32 chars). Deliberately different from the ambient
 # test SECRET_KEY so unrelated rows fall into the (untouched) "failed" bucket.
@@ -139,9 +141,10 @@ async def _insert_user(conn, email: str, *, key: str) -> int:
     return user_id
 
 
-async def test_rotate_user_email_hash_and_fernet_columns(engine, monkeypatch):
+async def test_rotate_user_email_hash_and_fernet_columns(engine, monkeypatch, capfd):
     """A user seeded under OLD has its email pair re-keyed to NEW; the recomputed
-    email_hash matches a NEW-key lookup. Second run is idempotent."""
+    email_hash matches a NEW-key lookup. Second run is idempotent. A run that
+    sealed something is written down; one that found nothing is not."""
     email = "rot-user@example.com"
     old_hash = hash_email(email, secret_key=OLD)
     user_id = None
@@ -150,8 +153,11 @@ async def test_rotate_user_email_hash_and_fernet_columns(engine, monkeypatch):
             user_id = await _insert_user(conn, email, key=OLD)
 
         _use_keys(monkeypatch, old=OLD, new=NEW)
+        emitted(capfd)
         summary = await rotate_secret_key()
         assert summary.rotated >= 1  # email pair (counts once)
+        (line,) = emitted(capfd, AuditEventType.PLATFORM_SECRET_KEY_ROTATED)
+        assert line["detail"]["rotated"] == summary.rotated
 
         async with engine.connect() as conn:
             h, e = (
@@ -179,6 +185,7 @@ async def test_rotate_user_email_hash_and_fernet_columns(engine, monkeypatch):
         assert h2 == h  # unchanged
         # Nothing of *ours* rotated again (other rows under foreign keys are ignored).
         assert again.rotated == 0
+        assert emitted(capfd, AuditEventType.PLATFORM_SECRET_KEY_ROTATED) == []
     finally:
         if user_id is not None:
             async with engine.begin() as conn:
@@ -377,10 +384,11 @@ async def test_rotate_visits_per_guild_schema_settings(engine, monkeypatch):
             )
             await conn.execute(
                 text(
-                    f'INSERT INTO "{schema}".guild_ai_member_keys '  # noqa: S608
-                    "(user_id, connection_scope, connection_id, "
-                    " api_key_encrypted, created_at, updated_at) "
-                    "VALUES (1, 'community', 1, :a, now(), now())"
+                    f'WITH k AS (INSERT INTO "{schema}".guild_ai_member_keys '  # noqa: S608
+                    "(user_id, connection_scope, connection_id, created_at, updated_at) "
+                    "VALUES (1, 'community', 1, now(), now()) RETURNING id) "
+                    f'INSERT INTO "{schema}".ai_member_key_secrets '
+                    "(key_id, api_key_encrypted) SELECT id, :a FROM k"
                 ),
                 {
                     "a": encrypt_field("member-ai", SALT_AI_API_KEY, secret_key=OLD),
@@ -416,7 +424,7 @@ async def test_rotate_visits_per_guild_schema_settings(engine, monkeypatch):
                 ),
             )
             member_ct = await conn.scalar(
-                text(f'SELECT api_key_encrypted FROM "{schema}".guild_ai_member_keys'),
+                text(f'SELECT api_key_encrypted FROM "{schema}".ai_member_key_secrets'),
             )
             sealed = await conn.scalar(
                 text(f'SELECT secrets FROM "{schema}".guild_plugin_secrets'),  # noqa: S608

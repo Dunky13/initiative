@@ -18,8 +18,9 @@ stream shows none of these surfaces and every writer call is a no-op.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Mapping, Optional
 
 
 class IntakeStream(str, Enum):
@@ -61,6 +62,79 @@ class Conversation(str, Enum):
     open = "open"
 
 
+class SecurityTopic(str, Enum):
+    """What a security report is about, as its filer says."""
+
+    #: A weakness in this server.
+    vulnerability = "vulnerability"
+    #: Somebody else got into their account.
+    account_compromise = "account_compromise"
+    other = "other"
+
+
+class SupportTopic(str, Enum):
+    """What somebody asking for help is asking about."""
+
+    #: Their own account: signing in, their email, their age answer.
+    account = "account"
+    #: A community they are in.
+    community = "community"
+    #: Paying for something.
+    billing = "billing"
+    #: A copy of a community's data, or its erasure. Asked by whoever holds
+    #: the community's seat, since it is theirs to ask for.
+    data_request = "data_request"
+    other = "other"
+
+
+#: The help a person asks for from inside a community, about it. Offered only
+#: where the deployment takes help requests from that community; every other
+#: topic is about the person themselves, and is offered wherever support is
+#: taken at all.
+COMMUNITY_SUPPORT_TOPICS = frozenset(
+    {SupportTopic.community, SupportTopic.data_request}
+)
+
+
+class FeedbackTopic(str, Enum):
+    """What kind of feedback somebody is sending."""
+
+    idea = "idea"
+    problem = "problem"
+    praise = "praise"
+    other = "other"
+
+
+#: The one moderation case a person files about themselves: asking for their
+#: account's suspension to be lifted. Unlike a report it is a conversation.
+APPEAL = "appeal"
+
+
+#: Pictures a person may attach, by the type their bytes say they are.
+IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+#: Documents a person may attach beside pictures.
+DOCUMENT_TYPES = frozenset({"application/pdf", "text/plain"})
+
+_MB = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class EvidencePolicy:
+    """What a person may attach when filing into a stream, or answering on a
+    case in it."""
+
+    #: Files on one filing or one answer. 0 takes none.
+    max_files: int
+    #: The largest one file may be.
+    max_bytes: int
+    #: The types a file may be, read from its bytes rather than its name.
+    types: frozenset[str]
+
+
+#: Nothing attached.
+NO_EVIDENCE = EvidencePolicy(max_files=0, max_bytes=0, types=frozenset())
+
+
 @dataclass(frozen=True)
 class IntakeStreamMeta:
     """What a stream is fed by, how people file into it, and the blueprint
@@ -79,23 +153,61 @@ class IntakeStreamMeta:
     #: cap — where every filing is about something different, a cap would turn
     #: away the second thing somebody saw.
     max_open_per_filer: int | None
+    #: What a person may attach to a case.
+    evidence: EvidencePolicy
+    #: How long a case's evidence is kept once the case is closed.
+    retention_days: int
     #: Whether the stream's cases keep an initiative to themselves. Membership
     #: of an initiative is what lets staff read a case, so a stream whose
     #: cases name people at risk binds where no other stream's staff work.
     isolated: bool = False
+    #: Whether staff may name one of the stream's cases as the reason for an
+    #: access grant, which then reports what the grant did on the case.
+    grant_linkable: bool = False
+    #: Topics whose cases talk differently from the stream's own.
+    topic_conversation: Mapping[str, Conversation] = field(default_factory=dict)
+    #: Topics with a cap of their own on one account's open cases, counted
+    #: among that topic's cases alone.
+    topic_open_caps: Mapping[str, int] = field(default_factory=dict)
+    #: Topics that take different attachments from the stream's own.
+    topic_evidence: Mapping[str, "EvidencePolicy"] = field(default_factory=dict)
+
+    def evidence_for(self, topic: Optional[str]) -> "EvidencePolicy":
+        """What may be attached to a case on ``topic``, or an answer on one."""
+        if topic is None:
+            return self.evidence
+        return self.topic_evidence.get(topic, self.evidence)
+
+    def conversation_for(self, topic: Optional[str]) -> Conversation:
+        """How a case on ``topic`` talks."""
+        if topic is None:
+            return self.conversation
+        return self.topic_conversation.get(topic, self.conversation)
+
+    def open_cap_for(self, topic: Optional[str]) -> tuple[Optional[int], bool]:
+        """One account's cap on open cases like this, and whether it counts
+        that topic's cases alone rather than the stream's."""
+        if topic is not None and topic in self.topic_open_caps:
+            return self.topic_open_caps[topic], True
+        return self.max_open_per_filer, False
 
 
 #: Every stream, declared once. ``intake_test`` holds the enum and this map in
 #: step, so a stream cannot exist without saying what feeds it.
 STREAMS: dict[IntakeStream, IntakeStreamMeta] = {
     IntakeStream.security: IntakeStreamMeta(
-        sources=frozenset({Source.alerted, Source.manual}),
-        submitter=Submitter.system,
+        # The rules raise their own cases; a person reports a problem, or
+        # says a change to their account wasn't them.
+        sources=frozenset({Source.alerted, Source.submitted, Source.manual}),
+        submitter=Submitter.member,
         blueprint="security.json",
         conversation=Conversation.open,
         filing_rate="5/day",
         max_open_per_filer=10,
+        evidence=EvidencePolicy(5, 10 * _MB, IMAGE_TYPES | DOCUMENT_TYPES),
+        retention_days=365,
         isolated=True,
+        grant_linkable=True,
     ),
     IntakeStream.moderation: IntakeStreamMeta(
         sources=frozenset({Source.submitted, Source.manual}),
@@ -104,7 +216,17 @@ STREAMS: dict[IntakeStream, IntakeStreamMeta] = {
         conversation=Conversation.none,
         filing_rate="30/hour",
         max_open_per_filer=None,
+        evidence=EvidencePolicy(5, 10 * _MB, IMAGE_TYPES | DOCUMENT_TYPES),
+        retention_days=90,
         isolated=True,
+        grant_linkable=True,
+        # A report is not a conversation; an appeal is one, with the person
+        # whose account it is, and they keep one open at a time. It is
+        # written from the time-out screen, which opens nothing but itself,
+        # so it is words alone.
+        topic_conversation={APPEAL: Conversation.open},
+        topic_open_caps={APPEAL: 1},
+        topic_evidence={APPEAL: NO_EVIDENCE},
     ),
     IntakeStream.support: IntakeStreamMeta(
         # Alerted too: a community claiming sign-in claim values opens a
@@ -115,6 +237,9 @@ STREAMS: dict[IntakeStream, IntakeStreamMeta] = {
         conversation=Conversation.open,
         filing_rate="10/hour",
         max_open_per_filer=5,
+        evidence=EvidencePolicy(5, 10 * _MB, IMAGE_TYPES | DOCUMENT_TYPES),
+        retention_days=90,
+        grant_linkable=True,
     ),
     IntakeStream.feedback: IntakeStreamMeta(
         sources=frozenset({Source.submitted, Source.manual}),
@@ -123,6 +248,8 @@ STREAMS: dict[IntakeStream, IntakeStreamMeta] = {
         conversation=Conversation.staff_first,
         filing_rate="5/day",
         max_open_per_filer=None,
+        evidence=EvidencePolicy(3, 10 * _MB, IMAGE_TYPES),
+        retention_days=30,
     ),
 }
 
@@ -130,6 +257,11 @@ STREAMS: dict[IntakeStream, IntakeStreamMeta] = {
 def meta(stream: IntakeStream) -> IntakeStreamMeta:
     """What feeds ``stream``. Raises for a stream with no declaration."""
     return STREAMS[stream]
+
+
+def conversation_for(stream: IntakeStream, topic: Optional[str]) -> Conversation:
+    """How a case in ``stream`` on ``topic`` talks with whoever filed it."""
+    return STREAMS[stream].conversation_for(topic)
 
 
 class CaseField(str, Enum):
@@ -161,6 +293,12 @@ class CaseField(str, Enum):
     #: The key of the finding in the private security repository, written in by
     #: a person when a case turns out to need a code change. One-way, by hand.
     tracker_key = "tracker_key"
+    #: The law an ``illegal`` report or hold names (``LegalBasis``).
+    legal_basis = "legal_basis"
+    #: A link that opens what the case is about, in the community it is in,
+    #: built from ``subject_guild``, ``resource_type`` and ``resource_id``. It
+    #: opens only for somebody who can read it there: a grant still decides.
+    subject_link = "subject_link"
 
 
 #: Each field's property type, as a ``PropertyType`` value. Declared as plain
@@ -175,6 +313,8 @@ CASE_FIELD_TYPES: dict[CaseField, str] = {
     CaseField.reported_at: "datetime",
     CaseField.severity: "text",
     CaseField.tracker_key: "text",
+    CaseField.legal_basis: "text",
+    CaseField.subject_link: "url",
 }
 
 #: Which fields each stream's blueprint defines. ``tracker_key`` is security's
@@ -194,8 +334,10 @@ STREAM_FIELDS: dict[IntakeStream, tuple[CaseField, ...]] = {
         CaseField.subject_guild,
         CaseField.resource_type,
         CaseField.resource_id,
+        CaseField.subject_link,
         CaseField.severity,
         CaseField.reported_at,
+        CaseField.legal_basis,
     ),
     IntakeStream.support: (
         CaseField.subject_user,

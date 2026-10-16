@@ -1,4 +1,21 @@
-import type { TaskPriority } from "@/api/generated/initiativeAPI.schemas";
+import {
+  Calendar,
+  CalendarDays,
+  FileText,
+  Hash,
+  Image,
+  Kanban,
+  ListOrdered,
+  type LucideIcon,
+  Megaphone,
+  Table,
+} from "lucide-react";
+
+import type {
+  DetailLayoutRead,
+  ListLayoutReadKind,
+  TaskPriority,
+} from "@/api/generated/initiativeAPI.schemas";
 
 export type DueFilterOption = "all" | "today" | "7_days" | "30_days" | "overdue";
 
@@ -20,3 +37,28 @@ export const priorityDotClass: Record<TaskPriority, string> = {
   high: "bg-warning",
   urgent: "bg-destructive",
 };
+
+type Look = { icon: LucideIcon; labelKey: string };
+
+/** Each list layout's icon, and its name in `projects`. */
+export const listLayoutLooks: Record<ListLayoutReadKind, Look> = {
+  table: { icon: Table, labelKey: "tasks.viewTable" },
+  board: { icon: Kanban, labelKey: "tasks.viewBoard" },
+  calendar: { icon: Calendar, labelKey: "tasks.viewCalendar" },
+};
+
+/** Each detail layout's icon, and its name in `layouts`. */
+export const detailLayoutLooks: Record<DetailLayoutRead["kind"], Look> = {
+  task: { icon: FileText, labelKey: "layouts:taskLayout" },
+  calendar_event: { icon: CalendarDays, labelKey: "layouts:eventDetail.name" },
+  queue_item: { icon: ListOrdered, labelKey: "layouts:queueItemDetail.name" },
+  gallery_image: { icon: Image, labelKey: "layouts:galleryImageDetail.name" },
+  counter: { icon: Hash, labelKey: "layouts:counterDetail.name" },
+  post: { icon: Megaphone, labelKey: "layouts:postDetail.name" },
+};
+
+/** Any layout's icon and name. */
+export const layoutLook = (kind: ListLayoutReadKind | DetailLayoutRead["kind"]): Look =>
+  kind in listLayoutLooks
+    ? listLayoutLooks[kind as ListLayoutReadKind]
+    : detailLayoutLooks[kind as DetailLayoutRead["kind"]];

@@ -38,6 +38,7 @@ from app.services.marketplace.manifest_values import (
     clean_text,
     fail,
 )
+from app.services.marketplace.home_layouts import normalize_home_layout_definition
 from app.services.marketplace.profile_packs import (
     normalize_profile_pack_definition,
 )
@@ -87,20 +88,21 @@ TOOL_LISTING_KINDS: dict[str, Tool] = {tool.value: tool for tool in BULK_EXPORT_
 #: one is refused with a reason rather than stored as something no code can
 #: resolve.
 #:
-#: ``profile_pack`` installs to a *person* rather than a guild — the decorations
-#: it grants land in an account's own library. It is the one kind that does, and
-#: the catalog does not need to know: publishing, browsing and versioning are
-#: the same for it as for anything else, and only the install path differs.
+#: ``profile_pack`` and ``home_layout`` install to a *person* rather than a
+#: guild — a pack's decorations land in an account's own library, a layout
+#: becomes a view on their own home page. The catalog does not need to know:
+#: publishing, browsing and versioning are the same for them as for anything
+#: else, and only the install path differs.
 LISTING_KINDS: frozenset[str] = frozenset(
-    {"plugin", "auto", "profile_pack", *TOOL_LISTING_KINDS}
+    {"plugin", "auto", "profile_pack", "home_layout", *TOOL_LISTING_KINDS}
 )
 
 #: Who a listing installs to.
 #:
-#: Every kind but one installs to a **guild** — a tool's content lands in an
-#: initiative, a plug-in mounts in a community. A profile pack installs to a
-#: **user**: its decorations land in one account's own library and belong to
-#: that person across every community they are in.
+#: Most kinds install to a **guild** — a tool's content lands in an
+#: initiative, a plug-in mounts in a community. A profile pack and a home
+#: layout install to a **user**: they land in one account's own library or home
+#: page and belong to that person across every community they are in.
 #:
 #: The distinction is not cosmetic. It decides which marketplace offers a
 #: listing, who is allowed to install it, and what "installed" is even recorded
@@ -111,6 +113,7 @@ KIND_AUDIENCE: dict[str, str] = {
     "plugin": "guild",
     "auto": "guild",
     "profile_pack": "user",
+    "home_layout": "user",
     **{kind: "guild" for kind in TOOL_LISTING_KINDS},
 }
 
@@ -143,8 +146,7 @@ LOCAL_SOURCE = "local"
 #:
 #: ``tool_instance`` mounts one of the plug-in's own tools at guild scope — the plug-in
 #: creates an ordinary row in an ordinary table and the existing UI renders it.
-#: ``embed`` hosts an external surface in an iframe, driven by the signed handoff
-#: machinery. ``service`` declares features a container the operator runs will
+#: ``service`` declares features a container the operator runs will
 #: serve.
 PLUGIN_KINDS: frozenset[str] = frozenset({"tool_instance", "service"})
 
@@ -232,10 +234,8 @@ def _normalize_plugin_definition(
 ) -> dict[str, Any]:
     """A plug-in's body: which kind it is, and what that kind needs.
 
-    ``tool_instance`` and ``embed`` are deliberately narrow — a kind and one
-    thing, either which of this build's tools to mount or which configured embed
-    target to open. Neither carries code or a URL: an embed target names a slot
-    in the deployment's own configuration, which is where the address comes from.
+    ``tool_instance`` is deliberately narrow — a kind and one thing, which of
+    this build's tools to mount. It carries no code or URL.
 
     ``service`` is the wide one, and it keeps the same rule (see
     ``service_plugins``): paths, never addresses. Unknown keys are dropped rather
@@ -289,6 +289,8 @@ def normalize_listing_definition(
         return _normalize_plugin_definition(definition, public_id=public_id)
     if kind == "profile_pack":
         return normalize_profile_pack_definition(definition)
+    if kind == "home_layout":
+        return normalize_home_layout_definition(definition)
     return normalize_tool_listing(TOOL_LISTING_KINDS[kind], definition)
 
 

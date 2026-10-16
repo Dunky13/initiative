@@ -11,8 +11,8 @@ field, list filters, copying and moving — reads it.
 Responsibilities:
 * Validate raw input values against a definition's type and return the typed
   columns to store.
-* Replace-all writes, the annotation every serializer reads, and the copy and
-  drop a duplicate, an occurrence, a move or a purge asks for.
+* Replace-all and partial writes, the annotation every serializer reads, and
+  the copy and drop a duplicate, an occurrence, a move or a purge asks for.
 * List filter predicates over the value table.
 
 The caller owns session lifecycle (commit) — these functions only issue the
@@ -48,6 +48,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.identity_boundary import current_install_boundary
 from app.core.messages import PluginMessages, PropertyMessages, QueryMessages
 from app.core.tools import PROPERTY_TARGETS, Tool
+from app.db.base import MODELS_BY_TABLE
 from app.db.initiative_rls import entity_tables, governing_path
 from app.models.platform.identity_ref import IdentityEntity
 from app.models.platform.user_profile_view import MemberProfile
@@ -100,16 +101,6 @@ class PropertyLinkSpec:
         return row.id if self.via is None else getattr(row, self.via)
 
 
-def _models_by_table() -> dict[str, type[SQLModel]]:
-    import app.db.base  # noqa: F401 — registers every model on the metadata
-
-    return {
-        mapper.class_.__tablename__: mapper.class_
-        for mapper in SQLModel._sa_registry.mappers  # type: ignore[attr-defined]
-        if hasattr(mapper.class_, "__tablename__")
-    }
-
-
 async def _occurrences_follow(session: AsyncSession, row: Any) -> None:
     """A series' values carry to the occurrences that follow it."""
     from app.services.tenant import calendar_occurrences
@@ -139,8 +130,7 @@ def _link(target: str, models: dict[str, type[SQLModel]]) -> PropertyLinkSpec:
 
 
 def _links() -> dict[str, PropertyLinkSpec]:
-    models = _models_by_table()
-    return {target: _link(target, models) for target in PROPERTY_TARGETS}
+    return {target: _link(target, MODELS_BY_TABLE) for target in PROPERTY_TARGETS}
 
 
 #: One spec per ``PROPERTY_TARGETS`` entry, keyed by the wire name.
@@ -375,8 +365,12 @@ async def write_values(
     values: Sequence[PropertyValueInput],
     *,
     initiative_id: Optional[int],
+    removed: Optional[Sequence[int]] = None,
 ) -> None:
-    """Replace every property value on ``row`` with ``values``.
+    """Replace every property value on ``row`` with ``values``. Given
+    ``removed``, write only the properties ``values`` names and take off the
+    ones ``removed`` names, leaving every other value as it is, so two writes
+    of different properties both stand.
 
     Each value's definition must belong to ``initiative_id`` — the row's own
     initiative — and a person a value names must be able to open the tool row
@@ -384,8 +378,18 @@ async def write_values(
     commit.
     """
     spec = link_for(row)
-    # Always wipe existing rows for the entity — replace-all semantics.
-    await session.exec(delete(PropertyValue).where(_of(spec.target, [row.id])))
+    held = _of(spec.target, [row.id])
+    if removed is None:
+        await session.exec(delete(PropertyValue).where(held))
+    else:
+        named_ids = [*removed, *(entry.property_id for entry in values)]
+        if named_ids:
+            await session.exec(
+                delete(PropertyValue).where(
+                    held,
+                    PropertyValue.property_id.in_(named_ids),
+                )
+            )
     if not values:
         return
 
@@ -428,9 +432,11 @@ async def set_values(
     values: Sequence[PropertyValueInput],
     *,
     initiative_id: Optional[int],
+    removed: Optional[Sequence[int]] = None,
 ) -> None:
     """The whole write a person or a plug-in makes: resolve a plug-in's person
-    references, replace the values, mark the row changed, and let a target
+    references, write the values (all of them, or with ``removed`` only those
+    named, as :func:`write_values`), mark the row changed, and let a target
     whose own shape reacts (a repeating event) do so. Authorization is the
     caller's."""
     await write_values(
@@ -438,6 +444,7 @@ async def set_values(
         row,
         await property_values_by_row_id(session, values),
         initiative_id=initiative_id,
+        removed=removed,
     )
     if hasattr(row, "updated_at"):
         row.updated_at = datetime.now(timezone.utc)

@@ -32,30 +32,15 @@
       "in_progress": "En cours",
       "done": "Terminé"
     },
-    "customFilters": "Filtres personnalisés",
     "modified": "modifié",
-    "saveAsPreset": "Enregistrer le préréglage",
-    "updatePreset": "Mettre à jour « {{name}} »",
-    "presetName": "Nom du préréglage",
-    "presetNamePlaceholder": "p. ex. Travail bloqué",
-    "presetSetDefault": "En faire le préréglage par défaut du projet",
-    "presetSaved": "Préréglage enregistré",
-    "presetUnavailable": "Ce préréglage n'existe plus dans ce projet ; le préréglage par défaut est affiché à la place.",
-    "presetSaveError": "Impossible d'enregistrer le préréglage",
-    "presetDeleteError": "Impossible de supprimer le préréglage",
-    "preset": "Préréglage",
-    "resetToPreset": "Revenir au préréglage",
     "assignedToMe": "Qui me sont attribuées",
     "unassigned": "Non attribuées",
     "archived": "Archivées",
-    "statusCategory": "Catégorie de statut",
-    "savePresetDescription": "Tout le monde dans ce projet verra ce préréglage.",
-    "seededPresets": {
-      "all": "Toutes",
-      "incomplete": "Non terminées",
-      "unassigned": "Non attribuées",
-      "mine": "Les miennes"
-    }
+    "statusCategory": "Catégorie de statut"
+  },
+  "layouts": {
+    "label": "Disposition",
+    "loadError": "Impossible de charger les dispositions de ce projet."
   },
   "createDialog": {
     "title": "Créer un projet",
@@ -104,23 +89,13 @@
     "closeOthers": "Fermer les autres",
     "closeAll": "Fermer tout"
   },
-  "favorite": {
-    "remove": "Retirer des favoris",
-    "add": "Ajouter aux favoris"
-  },
   "pin": {
     "pinned": "Projet épinglé",
     "unpin": "Désépingler le projet",
     "pin": "Épingler le projet"
   },
   "taskComposer": {
-    "title": "Créer une tâche",
-    "description": "Ajoutez du travail à faire.",
-    "archivedMessage": "Ce projet est archivé. Désarchivez-le pour ajouter de nouvelles tâches.",
-    "noWriteAccess": "Vous avez besoin d'un accès en écriture pour créer des tâches.",
-    "saving": "Enregistrement…",
-    "createTask": "Créer la tâche",
-    "createError": "Impossible de créer la tâche."
+    "createTask": "Créer la tâche"
   },
   "assignee": {
     "emptyMessage": "Invitez des membres de l'initiative pour assigner des tâches.",
@@ -173,19 +148,7 @@
     "unknownError": "Erreur inconnue"
   },
   "settings": {
-    "tabTaskStatuses": "Statuts de tâche",
-    "tabFilterPresets": "Vues",
-    "filterPresetsHeading": "Préréglages de filtre",
-    "filterPresetsDescription": "Jeux de filtres enregistrés que tout le monde dans ce projet peut choisir. Le préréglage par défaut est celui avec lequel le projet s'ouvre.",
-    "defaultView": "Vue par défaut",
-    "defaultViewHint": "La vue des tâches avec laquelle ce projet s'ouvre pour qui n'en a pas choisi.",
-    "presetDefaultColumn": "Par défaut",
-    "presetNoFilters": "Aucun filtre — toutes les tâches",
-    "deletePreset": "Supprimer le préréglage",
-    "deletePresetConfirm": "Supprimer « {{name}} » ? Ceux qui l'utilisent reviendront au préréglage par défaut du projet.",
-    "noPresets": "Aucun préréglage pour l'instant.",
-    "presetMoveUp": "Monter le préréglage",
-    "presetMoveDown": "Descendre le préréglage"
+    "tabTaskStatuses": "Statuts de tâche"
   },
   "files": {
     "newFile": "Nouveau fichier"
@@ -195,7 +158,7 @@
     "addTask": "Ajouter une tâche",
     "enterTooltip": "Appuyez sur « Entrée » pour créer une nouvelle tâche",
     "viewTable": "Tableau",
-    "viewKanban": "Kanban",
+    "viewBoard": "Kanban",
     "viewCalendar": "Calendrier",
     "archiveDoneTasks": "Archiver les tâches terminées",
     "archiveDialogTitle": "Archiver les tâches",
@@ -225,7 +188,6 @@
     "taskColumn": "Tâche",
     "tagGroup": "Étiquette",
     "untagged": "Sans étiquette",
-    "commentsColumn": "Commentaires",
     "statusColumn": "Statut",
     "filterPlaceholder": "Filtrer les tâches…",
     "reorderTask": "Réorganiser la tâche",
@@ -316,14 +278,19 @@
     "archivedOn": "Archivé le {{date}}",
     "reorder": "Réordonner le projet"
   },
-  "activitySidebar": {
-    "title": "Activité du projet",
-    "activity": "Activité",
-    "expand": "Déplier le panneau d'activité",
-    "collapse": "Replier le panneau d'activité",
-    "loading": "Chargement de l'activité…",
-    "noComments": "Aucun commentaire pour l'instant.",
-    "commentedOn": "a commenté",
-    "loadMore": "Charger plus"
+  "presets": {
+    "label": "Préréglages",
+    "incomplete": "Non terminées",
+    "unassigned": "Non attribuées",
+    "mine": "Les miennes"
+  },
+  "quickActions": {
+    "assignToMe": "M'assigner",
+    "assignToMeFor": "M'assigner {{title}}",
+    "unassignMe": "Me retirer",
+    "assigned": "Assignée à vous",
+    "unassigned": "Vous n'êtes plus sur cette tâche",
+    "assignError": "Impossible de modifier les personnes assignées à cette tâche.",
+    "moveTo": "Déplacer vers"
   }
 }

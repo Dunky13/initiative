@@ -1,17 +1,18 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 
 import {
-  getGetTagEntitiesQueryKey,
+  getGetTagCountsQueryKey,
   getGetTagQueryKey,
   getTag,
-  getTagEntities,
+  getTagCounts,
 } from "@/api/generated/tags/tags";
-import { type PageSearch, validatePage } from "@/lib/routeSearch";
 
 export const Route = createFileRoute("/_serverRequired/_authenticated/c/$communityId/tags_/$tagId")(
   {
-    validateSearch: (search: Record<string, unknown>): PageSearch => ({
-      page: validatePage(search.page),
+    // The tab open, as the tool's route segment (`?tool=wikis`), so a tab is a
+    // link and the back button returns to it.
+    validateSearch: (search: Record<string, unknown>): { tool?: string } => ({
+      tool: typeof search.tool === "string" ? search.tool : undefined,
     }),
     loader: ({ context, params }) => {
       const communityId = Number(params.communityId);
@@ -28,8 +29,8 @@ export const Route = createFileRoute("/_serverRequired/_authenticated/c/$communi
           staleTime: 60_000,
         }),
         queryClient.ensureQueryData({
-          queryKey: getGetTagEntitiesQueryKey(communityId, tagId),
-          queryFn: () => getTagEntities(communityId, tagId),
+          queryKey: getGetTagCountsQueryKey(communityId, tagId),
+          queryFn: () => getTagCounts(communityId, tagId),
           staleTime: 30_000,
         }),
       ]).catch(() => {});

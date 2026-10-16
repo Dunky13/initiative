@@ -448,6 +448,11 @@ class TestNothingElse:
             # Moderator (content.moderate / users.manage).
             ("/api/v1/operator/users/{user_id}/avatar", "DELETE"),
             ("/api/v1/operator/users/{user_id}/username", "PATCH"),
+            # Names in communities, status line, decorations: each cleared,
+            # never set, like the picture.
+            ("/api/v1/operator/users/{user_id}/profile/{field}", "DELETE"),
+            # Ends every session; its holder signs in again.
+            ("/api/v1/operator/users/{user_id}/sessions", "DELETE"),
             ("/api/v1/operator/users/{user_id}/suspension", "POST"),
             # Turns password and code sign-in back on after wrong answers.
             ("/api/v1/operator/users/{user_id}/sign-in-lock", "DELETE"),
@@ -474,6 +479,8 @@ class TestNothingElse:
         [
             ("DELETE", "/avatar", None),
             ("PATCH", "/username", {"username": "renamed"}),
+            ("DELETE", "/profile/custom_status", None),
+            ("DELETE", "/sessions", None),
             ("DELETE", "/sign-in-lock", None),
             ("DELETE", "/api-keys", None),
             ("POST", "/reactivate", None),
@@ -758,3 +765,29 @@ class TestPlatformRole:
 
         assert response.status_code == 403
         assert _audit_entries(capfd, subject_id) == []
+
+
+async def test_clearing_part_of_a_profile_tells_its_holder_what_went(
+    client: AsyncClient, session: AsyncSession
+):
+    moderator = await create_user(session, role=UserRole.moderator)
+    subject = await create_user(session)
+    subject_id = subject.id
+
+    response = await client.delete(
+        f"/api/v1/operator/users/{subject_id}/profile/custom_status",
+        headers=get_auth_headers(moderator),
+    )
+    assert response.status_code == 200, response.text
+
+    await drain_notices()
+    (line,) = (
+        await session.exec(
+            select(Notification)
+            .where(Notification.user_id == subject_id)
+            .where(Notification.type == NotificationType.profile_field_cleared.value)
+        )
+    ).all()
+    # What went, never who took it.
+    assert line.data["field"] == "custom_status"
+    assert str(moderator.id) not in str(line.data)

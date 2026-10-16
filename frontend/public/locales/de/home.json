@@ -1,0 +1,279 @@
+{
+  "title": "Startseite",
+  "customize": "Anpassen",
+  "addWidget": "Widget hinzufügen",
+  "editing": {
+    "hint": "Ziehe ein Widget, um es zu verschieben, und zieh an seiner Ecke, um seine Größe zu ändern.",
+    "hintStacked": "Verschiebe Widgets nach oben und unten oder entferne, was du nicht brauchst."
+  },
+  "tile": {
+    "moveUp": "{{title}} nach oben",
+    "moveDown": "{{title}} nach unten",
+    "settings": "Einstellungen für {{title}}",
+    "remove": "{{title}} entfernen"
+  },
+  "widgetError": "{{title}} konnte nicht angezeigt werden.",
+  "tooLarge": "Deine Startseite ist voll. Entferne ein Widget, um Platz zu schaffen.",
+  "empty": {
+    "title": "Deine Startseite ist leer",
+    "description": "Füge die Widgets hinzu, die du zuerst sehen möchtest, oder beginne mit einem Layout.",
+    "fromLayout": "Mit einem Layout beginnen"
+  },
+  "picker": {
+    "title": "Widget hinzufügen",
+    "description": "Es landet unten auf deiner Seite. Verschiebe es, wohin du möchtest.",
+    "onPage": "Schon auf deiner Seite"
+  },
+  "layouts": {
+    "newTitle": "Neue Ansicht",
+    "newDescription": "Beginne mit einem dieser Layouts oder mit nichts. Es öffnet sich als neuer Tab neben deinen anderen Ansichten, und du kannst alles daran ändern.",
+    "fillTitle": "Mit einem Layout beginnen",
+    "fillDescription": "Fülle diese Ansicht mit einem dieser Layouts. Du kannst danach alles daran ändern."
+  },
+  "presets": {
+    "tasks": {
+      "name": "Meine Aufgaben",
+      "description": "Alles, was dir zugewiesen ist, mit dem Dringendsten ganz oben."
+    },
+    "myDay": {
+      "name": "Mein Tag",
+      "description": "Dein eigener Planer: was jetzt ansteht, die kommenden Tage, deine Serie und dann die ganze Liste."
+    },
+    "headsDown": {
+      "name": "Kopf runter",
+      "description": "Ein Timer und die paar Dinge, die jetzt anstehen. Sonst nichts, was ablenkt."
+    },
+    "assigned": {
+      "name": "Zugewiesene Arbeit",
+      "description": "Zuerst deine Liste, das Dringende daneben und was zuletzt mit deinen Sachen passiert ist."
+    },
+    "community": {
+      "name": "Community",
+      "description": "Bleib bei den Communitys, denen du folgst, und dem, was dort passiert, auf dem Laufenden."
+    },
+    "owner": {
+      "name": "Den Laden schmeißen",
+      "description": "Was sich in deiner Community tut, was du mit einem Stern markiert hast und was sich in Projekten und Dashboards geändert hat, und deine eigene Liste."
+    }
+  },
+  "settingsDialog": {
+    "title": "Einstellungen für {{title}}"
+  },
+  "widgets": {
+    "greeting": {
+      "title": "Begrüßung",
+      "description": "Hallo, das heutige Datum und was fällig ist.",
+      "morning": "Guten Morgen, {{name}}",
+      "afternoon": "Guten Tag, {{name}}",
+      "evening": "Guten Abend, {{name}}",
+      "night": "Noch wach, {{name}}?",
+      "clear": "Heute ist nichts fällig",
+      "overdue_one": "{{count}} überfällig",
+      "overdue_other": "{{count}} überfällig",
+      "dueToday_one": "{{count}} heute fällig",
+      "dueToday_other": "{{count}} heute fällig",
+      "welcome": "Willkommen, {{name}}",
+      "yonder": "Yonder anzeigen",
+      "yonderHint": "Er liest den Tag für dich: grübelt über Verspätetes, freut sich über einen freien Tag."
+    },
+    "gettingStarted": {
+      "title": "Erste Schritte",
+      "description": "Ein paar erste Dinge, die sich abhaken, sobald du sie erledigst.",
+      "hide": "Erste Schritte ausblenden",
+      "remove": "Karte entfernen",
+      "allDone": "Das war alles. Du bist startklar, und diese Karte kann gehen, wann du willst.",
+      "progress": "{{done}} von {{total}} erledigt",
+      "stepDone": "erledigt",
+      "intro": {
+        "personal": "Das ist deine Startseite. Machen wir es dir in deinem Bereich gemütlich.",
+        "shared": "Deine Community ist bereit. So holst du Leute dazu.",
+        "join": "Willkommen! Als Erstes finden wir ein paar Leute für dich.",
+        "invite": "Du bist dabei. Hier ein paar Dinge, die sich zuerst lohnen."
+      },
+      "community": {
+        "personal": "Deinen Bereich einrichten",
+        "shared": "Deine Community gründen",
+        "join": "Einer Community beitreten",
+        "invite": "Der Community beitreten, zu der du eingeladen wurdest",
+        "hint": "In Communitys sind die Arbeit und die Leute.",
+        "action": "Communitys entdecken"
+      },
+      "task": {
+        "title": "Eine eigene Aufgabe hinzufügen",
+        "hint": "Alles, woran du denken musst. Sie landet in Meine Aufgaben.",
+        "hintList": "Füge eine zu {{list}} hinzu. Sie landet in Meine Aufgaben.",
+        "action": "{{list}} öffnen",
+        "actionTools": "Ein Projekt finden"
+      },
+      "invite": {
+        "title": "Leute einladen",
+        "hint": "Eine Community mit einer Person ist eine sehr stille Community.",
+        "action": "Leute einladen"
+      },
+      "profile": {
+        "title": "Ein Profilbild hinzufügen",
+        "hint": "Damit man dich in Kommentaren und bei Aufgaben erkennt.",
+        "action": "Profil öffnen"
+      },
+      "app": {
+        "title": "Die App holen",
+        "hint": "Deine Aufgaben und Nachrichten in der Hosentasche.",
+        "action": "App holen"
+      },
+      "home": {
+        "title": "Diese Seite zu deiner machen",
+        "hint": "Verschiebe Dinge, füge eine Uhr oder einen Kalender hinzu oder lege eine zweite Ansicht an.",
+        "action": "Anpassen"
+      }
+    },
+    "focus": {
+      "title": "Fokus",
+      "description": "Was jetzt zu tun ist, mit der heute erledigten Arbeit im Blick."
+    },
+    "tasks": {
+      "title": "Meine Aufgaben",
+      "description": "Deine Aufgaben aus allen Communitys, als Tabelle oder Kalender.",
+      "empty": "Dir ist noch nichts zugewiesen. Wenn dir jemand eine Aufgabe gibt oder du selbst eine anlegst, landet sie hier.",
+      "chooseList": "Liste zum Hinzufügen wählen",
+      "add": "Hinzufügen",
+      "addPlaceholder": "Aufgabe zu {{list}} hinzufügen…",
+      "added": "Zu {{list}} hinzugefügt.",
+      "addTo": "Neue Aufgaben hinzufügen zu",
+      "addToHint": "Zeigt oben eine Zeile, um dieser Liste eine Aufgabe hinzuzufügen, die dir zugewiesen ist.",
+      "noList": "Keine Zeile zum Hinzufügen zeigen"
+    },
+    "comingUp": {
+      "title": "Demnächst",
+      "description": "Termine und Aufgabendaten der kommenden Tage aus allen Communitys.",
+      "days": "Wie weit voraus",
+      "daysOption_one": "Der nächste Tag",
+      "daysOption_other": "Die nächsten {{count}} Tage",
+      "empty_one": "Heute steht nichts an.",
+      "empty_other": "In den nächsten {{count}} Tagen steht nichts an.",
+      "loadError": "Was demnächst ansteht, konnte nicht geladen werden.",
+      "openCalendar": "Meinen Kalender öffnen"
+    },
+    "calendar": {
+      "title": "Mein Kalender",
+      "description": "Deine Termine und Aufgaben mit Datum aus allen Communitys, nach Monat oder Woche. Derselbe Kalender wie Mein Kalender."
+    },
+    "recent": {
+      "title": "Zuletzt",
+      "description": "Was du zuletzt geöffnet hast oder was sich zuletzt geändert hat, über alle Arten von Tools und alle Communitys.",
+      "viewed": "Zuletzt angesehen",
+      "changed": "Zuletzt geändert",
+      "viewedIn": "Zuletzt angesehen: {{tool}}",
+      "changedIn": "Zuletzt geändert: {{tool}}",
+      "mode": "Anzeigen",
+      "toolsHint": "Beide Listen auf diese Arten von Tools beschränken. Leer lassen für alle.",
+      "emptyViewed": "Noch nichts geöffnet. Projekte, Dateien und alles andere erscheinen hier, sobald du sie angesehen hast.",
+      "emptyChanged": "Zuletzt hat sich nichts geändert.",
+      "loadError": "Konnte nicht geladen werden.",
+      "openTools": "Meine Tools öffnen"
+    },
+    "favorites": {
+      "title": "Favoriten",
+      "titleIn": "Favoriten: {{tool}}",
+      "description": "Alles, was du mit einem Stern markiert hast, aus jeder Community, nur einen Klick entfernt.",
+      "toolsHint": "Nur diese Arten von Tools anzeigen. Leer lassen für alle.",
+      "empty": "Noch nichts markiert. Markiere ein Projekt, eine Datei oder etwas anderes auf seiner Seite mit einem Stern, dann wartet es hier auf dich.",
+      "loadError": "Deine Favoriten konnten nicht geladen werden."
+    },
+    "activity": {
+      "title": "Aktivität",
+      "titleIn": "Aktivität in {{community}}",
+      "description": "Was Leute zuletzt in einer deiner Communitys geändert haben.",
+      "community": "Community",
+      "view": "Anzeigen",
+      "noCommunity": "Tritt einer Community bei, um zu sehen, was dort passiert."
+    },
+    "communities": {
+      "title": "Meine Communitys",
+      "description": "Jede Community, in der du bist, als Karte.",
+      "empty": "Du bist noch in keiner Community.",
+      "find": "Eine Community finden"
+    },
+    "progress": {
+      "title": "Mein Fortschritt",
+      "description": "Deine Serie, deine Woche und wie viel pünktlich fertig wird.",
+      "loadError": "Dein Fortschritt konnte nicht geladen werden.",
+      "streak_one": "{{count}} Tag",
+      "streak_other": "{{count}} Tage",
+      "firstTask": "Erledige deine erste Aufgabe, um eine Serie zu beginnen."
+    },
+    "clock": {
+      "title": "Uhr und Timer",
+      "description": "Die Uhrzeit hier und anderswo, oder ein Countdown für das, was angeblich nur zehn Minuten dauert.",
+      "clock": "Uhr",
+      "timer": "Timer",
+      "mode": "Anzeigen",
+      "sameTime": "Gleiche Zeit",
+      "ahead": "{{offset}} voraus",
+      "behind": "{{offset}} zurück",
+      "minutes_one": "{{count}} Min.",
+      "minutes_other": "{{count}} Min.",
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Fortsetzen",
+      "reset": "Zurücksetzen",
+      "dismiss": "Schließen",
+      "timeUp": "Die Zeit ist um.",
+      "timeUpShort": "Zeit um",
+      "zones": "Weitere Zeitzonen",
+      "addZone": "Zeitzone hinzufügen",
+      "removeZone": "{{zone}} entfernen",
+      "length": "Timer-Länge in Minuten",
+      "mute": "Timer stummschalten",
+      "unmute": "Ton des Timers einschalten",
+      "typeLength": "Dauer eingeben, z. B. 25 oder 5:30",
+      "typeLengthOf": "Timer auf {{length}} gestellt. Klicken, um eine andere Dauer einzugeben."
+    },
+    "tools": {
+      "label": "Tools",
+      "all": "Alle Tools"
+    }
+  },
+  "views": {
+    "label": "Deine Startseiten-Ansichten",
+    "defaultName": "Startseite",
+    "new": "Neue Ansicht",
+    "limit": "Du kannst bis zu {{max}} Ansichten behalten.",
+    "menu": "Optionen für {{name}}",
+    "rename": "Umbenennen",
+    "renameTitle": "Ansicht umbenennen",
+    "nameLabel": "Name",
+    "duplicate": "Duplizieren",
+    "copyName": "{{name}} Kopie",
+    "moveLeft": "Nach links",
+    "moveRight": "Nach rechts",
+    "delete": "Ansicht löschen",
+    "deleteTitle": "„{{name}}“ löschen?",
+    "deleteDescription": "Ihre Widgets werden mit gelöscht. In deinen Communitys ändert sich nichts.",
+    "deleteConfirm": "Löschen",
+    "blank": {
+      "name": "Leer",
+      "description": "Eine leere Seite, die du füllen kannst, wie du willst."
+    }
+  },
+  "marketplace": {
+    "browse": "Marktplatz durchstöbern",
+    "by": "von {{publisher}}",
+    "loadError": "Die Layouts aus dem Marktplatz konnten nicht geladen werden.",
+    "empty": "Im Marktplatz gibt es noch keine Layouts."
+  },
+  "store": {
+    "title": "Startseiten-Layouts",
+    "description": "Seiten mit Widgets für verschiedene Arten von Tagen. Füge eines hinzu, und es öffnet sich als neue Ansicht auf deiner Startseite; deine bisherigen Ansichten bleiben, wie sie sind.",
+    "add": "Zu meiner Startseite hinzufügen",
+    "added": "„{{name}}“ zu deiner Startseite hinzugefügt."
+  },
+  "banner": {
+    "open": "Banner",
+    "title": "Banner dieser Ansicht",
+    "description": "Jedes Banner, das du hast, kann oben in dieser Ansicht stehen, und jede Ansicht kann ein anderes tragen.",
+    "useProfile": "Mein Profilbanner verwenden",
+    "none": "Kein Banner",
+    "more": "Mehr Banner holen",
+    "loadError": "Deine Banner konnten nicht geladen werden."
+  }
+}

@@ -193,6 +193,8 @@ export interface ToolListParams {
   initiative_id?: number | null;
   /** A templates view's switch, for the tools that have one (`toolViewParams`). */
   is_template?: boolean | null;
+  /** Rows carrying any of these tags. */
+  tag_ids?: number[] | null;
 }
 
 /**
@@ -276,6 +278,10 @@ const listHook = <TList, TParams>(endpoints: {
  * One row. `null` for an id the route has not resolved yet, which holds the
  * request rather than firing it at nothing; a caller's own `enabled` narrows
  * further and never widens.
+ *
+ * Never the previous row while another loads: a detail page that stays
+ * mounted across a switch would render, and save, the last row under the new
+ * one's id. It shows its loading state instead.
  */
 const detailHook = <TRead>(endpoints: {
   detailKey: (communityId: number, id: number) => CacheKey;
@@ -288,6 +294,7 @@ const detailHook = <TRead>(endpoints: {
       queryKey: endpoints.detailKey(communityId, id!),
       queryFn: () => endpoints.detail(communityId, id!),
       enabled: id !== null && Number.isFinite(id) && userEnabled,
+      placeholderData: undefined,
       ...rest,
     });
   };
@@ -643,6 +650,15 @@ export const TOOL_HOOKS = {
   [Tool.gallery]: makeToolHooks(galleryEndpoints, { seedsDetailOnUpdate: true }),
   [Tool.wiki]: makeToolHooks(wikiEndpoints),
 } satisfies Record<Tool, ToolQueries>;
+
+/**
+ * One tool's community-wide list query, typed as any tool's: for a caller that
+ * holds the tool as a value and only needs what every list answers with.
+ */
+export const toolListQuery = (tool: Tool, communityId: number, params?: ToolListParams) => {
+  const listQuery: ToolQueries["listQuery"] = TOOL_HOOKS[tool].listQuery;
+  return listQuery(communityId, params);
+};
 
 /**
  * Copy one of `tool` into an initiative, its own unless `data` names another.

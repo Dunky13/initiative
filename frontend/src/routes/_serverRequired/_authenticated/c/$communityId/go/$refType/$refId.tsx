@@ -8,9 +8,10 @@ import { resolveEntityPath } from "@/lib/entityResolver";
  *
  * A tool entity's address names its initiative, and a few callers hold only an
  * id — a `@mention` in comment text, a queue item's linked entity, a stored
- * notification target. They link here; the loader reads the entity, works out
- * where it lives, and redirects before anything renders, keeping the query
- * (an event's `occurrence`).
+ * notification target, a reported comment. They link here; the loader reads the
+ * entity, works out where it lives, and redirects before anything renders,
+ * keeping the query (an event's `occurrence`) and, for a comment, landing on
+ * the comment itself.
  */
 export const Route = createFileRoute(
   "/_serverRequired/_authenticated/c/$communityId/go/$refType/$refId"
@@ -25,9 +26,12 @@ export const Route = createFileRoute(
     );
     // Unresolvable — deleted, or not visible to this reader. The community home is
     // the honest landing spot; guessing at an address would 404 instead.
+    // A comment's address ends in the fragment its thread scrolls to.
+    const [target, fragment] = (path ?? "/").split("#");
     throw redirect({
-      to: communityPath(communityId, path ?? "/"),
+      to: communityPath(communityId, target),
       search: path ? location.search : {},
+      ...(fragment ? { hash: fragment } : {}),
       replace: true,
     });
   },
