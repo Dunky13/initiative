@@ -1141,20 +1141,20 @@ async def _send_digests(
 
         # Defaults bind the loop variables now rather than by reference (B023).
         async def _take(routed: AsyncSession, gid: int, *, _uid=user_id) -> list[dict]:
+            taken = (
+                sa_update(model)
+                .where(model.user_id == _uid, model.processed_at.is_(None))
+                .values(processed_at=now)
+            )
             # A community set to say less is filtered here, where the guild is
             # known — a digest spans guilds, so this cannot be decided once for
-            # the whole batch.
+            # the whole batch. Its items are taken all the same, so they stop
+            # counting as waiting rather than sitting until the GC drops them.
             if not wants_digest(all_prefs.get(_uid), spec.category, guild_id=gid):
+                await routed.exec(taken)
                 return []
             items = sorted(
-                (
-                    await routed.exec(
-                        sa_update(model)
-                        .where(model.user_id == _uid, model.processed_at.is_(None))
-                        .values(processed_at=now)
-                        .returning(model)
-                    )
-                ).scalars(),
+                (await routed.exec(taken.returning(model))).scalars(),
                 key=lambda item: item.created_at,
             )
             return [spec.row(item, gid) for item in items]
