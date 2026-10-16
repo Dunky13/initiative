@@ -192,8 +192,8 @@ export const RelationsSection = ({
     Boolean(initiative?.can.view.includes(Tool.file) && initiative.can.create.includes(Tool.file));
 
   const { data: rows = [], isLoading, isError } = useRelationshipsFor(entity);
-  // Only walked while the picture is the thing on screen: a second hop is a
-  // request per neighbour, and no other layout shows more than one.
+  // Only walked while the picture is the thing on screen: no other layout shows
+  // more than one hop, and one hop is the list above.
   const neighbourhood = useRelationsNeighbourhood(entity, hops, {
     enabled: layout === "graph" && !collapsed,
     includeTags: showTags,

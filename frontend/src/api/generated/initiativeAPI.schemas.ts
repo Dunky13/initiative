@@ -7287,6 +7287,84 @@ export interface NativeSignInRedeem {
   code_verifier: string;
 }
 
+/**
+ * The primitives. Small, stable, and each one carries a rule or a weight.
+ *
+ * A member earns its place by something depending on telling it apart from
+ * its neighbours — a read, a rule, an adjacency weight — not by a model being
+ * able to learn it. Finer words that obey an existing primitive's rule are
+ * :data:`SUBTYPES`, not members here: splitting a primitive later is
+ * impossible, because the fact that would distinguish the halves was never
+ * recorded, while merging two is one UPDATE.
+ */
+export type RelationshipType = (typeof RelationshipType)[keyof typeof RelationshipType];
+
+export const RelationshipType = {
+  attached: "attached",
+  depends_on: "depends_on",
+  part_of: "part_of",
+  tagged_with: "tagged_with",
+  references: "references",
+  related_to: "related_to",
+} as const;
+
+/**
+ * One link in a neighbourhood, from the side the walk reached it on.
+ *
+ * ``direction`` is relative to ``anchor``, as a :class:`RelationshipRead`'s is
+ * to the entity asked about.
+ */
+export interface NeighbourhoodEdge {
+  id: number;
+  relationship_type: RelationshipType;
+  anchor: EndpointRef;
+  other: EndpointRef;
+  direction: string;
+  provenance: string;
+}
+
+/**
+ * The far end of an edge, as the caller's side sees it.
+ *
+ * Enough to draw the thing and link to it, because a list of edges is a list of
+ * mixed kinds and a reader should not have to fetch each one to find out what it
+ * is called, what it looks like or where it lives.
+ */
+export interface RelatedEnd {
+  type: SearchEntityType;
+  id: number;
+  title: string | null;
+  initiative_id: number | null;
+  updated_at: string | null;
+  tool: Tool | null;
+  tool_id: number | null;
+  tool_title: string | null;
+  image_urls: string[];
+  icon: string | null;
+  color: string | null;
+  file_type: string | null;
+  mime_type: string | null;
+  original_filename: string | null;
+  smart_link_url: string | null;
+  is_open: boolean | null;
+}
+
+/**
+ * One thing in a neighbourhood, and how many hops out it was found.
+ */
+export interface NeighbourhoodNode {
+  end: RelatedEnd;
+  depth: number;
+}
+
+/**
+ * Everything within some hops of one thing, in one answer.
+ */
+export interface NeighbourhoodRead {
+  nodes: NeighbourhoodNode[];
+  edges: NeighbourhoodEdge[];
+}
+
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
 
 export const NotificationType = {
@@ -9607,53 +9685,6 @@ export interface RegistryStatusRead {
   last_error: string | null;
   listing_count: number;
 }
-
-/**
- * The far end of an edge, as the caller's side sees it.
- *
- * Enough to draw the thing and link to it, because a list of edges is a list of
- * mixed kinds and a reader should not have to fetch each one to find out what it
- * is called, what it looks like or where it lives.
- */
-export interface RelatedEnd {
-  type: SearchEntityType;
-  id: number;
-  title: string | null;
-  initiative_id: number | null;
-  updated_at: string | null;
-  tool: Tool | null;
-  tool_id: number | null;
-  tool_title: string | null;
-  image_urls: string[];
-  icon: string | null;
-  color: string | null;
-  file_type: string | null;
-  mime_type: string | null;
-  original_filename: string | null;
-  smart_link_url: string | null;
-  is_open: boolean | null;
-}
-
-/**
- * The primitives. Small, stable, and each one carries a rule or a weight.
- *
- * A member earns its place by something depending on telling it apart from
- * its neighbours — a read, a rule, an adjacency weight — not by a model being
- * able to learn it. Finer words that obey an existing primitive's rule are
- * :data:`SUBTYPES`, not members here: splitting a primitive later is
- * impossible, because the fact that would distinguish the halves was never
- * recorded, while merging two is one UPDATE.
- */
-export type RelationshipType = (typeof RelationshipType)[keyof typeof RelationshipType];
-
-export const RelationshipType = {
-  attached: "attached",
-  depends_on: "depends_on",
-  part_of: "part_of",
-  tagged_with: "tagged_with",
-  references: "references",
-  related_to: "related_to",
-} as const;
 
 /**
  * Make one edge. Provenance is not here — it is the code path's to state,
@@ -12929,6 +12960,23 @@ export type ReplaceRelationshipSliceParams = {
   entity: string;
   relationship_type: RelationshipType;
   other_type: SearchEntityType;
+};
+
+export type GetRelationsNeighbourhoodParams = {
+  /**
+   * The thing at the centre, as `kind:id`
+   */
+  entity: string;
+  /**
+   * How many links out to walk
+   * @minimum 1
+   * @maximum 3
+   */
+  hops?: number;
+  /**
+   * Walk through labels as well
+   */
+  include_tags?: boolean;
 };
 
 export type GetTagParams = {

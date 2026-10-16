@@ -308,27 +308,61 @@ describe("RelationsSection", () => {
     expect(screen.queryByText("Part of")).not.toBeInTheDocument();
   });
 
-  it("walks further out when asked, and only then", async () => {
-    // A second hop is a request per neighbour, so it is never paid for until
-    // somebody asks for it.
+  it("walks further out when asked, and then in one request", async () => {
+    // One hop is the list the section already holds. Further out is the whole
+    // walk in one answer, however many things the first hop found.
     const user = userEvent.setup();
-    const asked: string[] = [];
+    const listed: string[] = [];
+    const walked: URLSearchParams[] = [];
+    const near = row("attached", "outbound", "A brief");
     server.use(
       communityHttp.get("/relationships/", ({ request }) => {
-        const entity = new URL(request.url).searchParams.get("entity") ?? "";
-        asked.push(entity);
-        return HttpResponse.json(
-          entity === "task:1" ? [row("attached", "outbound", "A brief")] : []
-        );
+        listed.push(new URL(request.url).searchParams.get("entity") ?? "");
+        return HttpResponse.json([near]);
+      }),
+      communityHttp.get("/relationships/neighbourhood", ({ request }) => {
+        walked.push(new URL(request.url).searchParams);
+        const far = { ...near.other, id: 500, title: "Two out" };
+        return HttpResponse.json({
+          nodes: [
+            { end: near.other, depth: 1 },
+            { end: far, depth: 2 },
+          ],
+          edges: [
+            {
+              id: near.id,
+              relationship_type: "attached",
+              anchor: { type: "task", id: 1 },
+              other: { type: near.other.type, id: near.other.id },
+              direction: "outbound",
+              provenance: "manual",
+            },
+            {
+              id: 9000,
+              relationship_type: "related_to",
+              anchor: { type: near.other.type, id: near.other.id },
+              other: { type: far.type, id: far.id },
+              direction: "outbound",
+              provenance: "manual",
+            },
+          ],
+        });
       })
     );
     mount(true, "graph");
 
     await screen.findByRole("region", { name: /1 thing/ });
-    expect(asked.filter((entity) => entity !== "task:1")).toHaveLength(0);
+    expect(walked).toHaveLength(0);
+    expect(listed.every((entity) => entity === "task:1")).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "2 hops" }));
-    await waitFor(() => expect(asked.some((entity) => entity !== "task:1")).toBe(true));
+    expect(await screen.findByRole("region", { name: /2 things/ })).toBeInTheDocument();
+    expect(walked).toHaveLength(1);
+    expect(walked[0]?.get("entity")).toBe("task:1");
+    expect(walked[0]?.get("hops")).toBe("2");
+    expect(walked[0]?.get("include_tags")).toBe("false");
+    // Nothing was asked of the neighbour itself.
+    expect(listed.every((entity) => entity === "task:1")).toBe(true);
   });
 
   it("leaves labels out of the graph until asked, and out of the walk", async () => {
