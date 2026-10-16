@@ -33,6 +33,7 @@ import {
 import { ToolFilterPanel } from "@/components/initiativeTools/shared/ToolFilterPanel";
 import { ToolLayoutSelect } from "@/components/initiativeTools/shared/ToolLayoutSelect";
 import { ToolListToolbar } from "@/components/initiativeTools/shared/ToolListToolbar";
+import { ToolPresetSelect } from "@/components/initiativeTools/shared/ToolPresetSelect";
 import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
@@ -145,6 +146,7 @@ export const ProjectTasksSection = ({
     layout,
     kind,
     presets,
+    preset,
     filtered,
     appliedSpec,
     sorting,
@@ -845,7 +847,7 @@ export const ProjectTasksSection = ({
             activeCount: activeFilterCount,
           }}
           // The project's list layouts, this person's filters for each coming
-          // with it, and the presets the one shown offers.
+          // with it.
           viewControl={
             <ToolLayoutSelect
               layouts={layoutOptions}
@@ -854,9 +856,6 @@ export const ProjectTasksSection = ({
               onSelect={selectLayout}
               label={t("layouts.label")}
               modifiedLabel={t("filters.modified")}
-              presets={presetOptions}
-              presetsLabel={t("presets.label")}
-              onPreset={pickPreset}
             />
           }
           trailing={
@@ -902,6 +901,18 @@ export const ProjectTasksSection = ({
           onOpenChange={setFiltersOpen}
           onClear={clearFilters}
           activeCount={activeFilterCount}
+          // The presets the layout shown offers, which set the filters below.
+          leading={
+            presetOptions.length > 0 ? (
+              <ToolPresetSelect
+                presets={presetOptions}
+                activeSlug={preset?.slug ?? null}
+                onSelect={pickPreset}
+                label={t("presets.label")}
+                placeholder={t("presets.placeholder")}
+              />
+            ) : undefined
+          }
         >
           <TaskFilters
             scope={{

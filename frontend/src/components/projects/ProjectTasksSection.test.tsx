@@ -130,6 +130,17 @@ const pickLayout = async (user: ReturnType<typeof userEvent.setup>, name: string
   await user.click(await screen.findByRole("option", { name }));
 };
 
+const presetPicker = () => screen.findByRole("combobox", { name: /^presets$/i });
+
+/** Pick a preset from the filter panel, opening it if it is closed. */
+const pickPreset = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+  if (!screen.queryByRole("combobox", { name: /^presets$/i })) {
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+  }
+  await user.click(await presetPicker());
+  await user.click(await screen.findByRole("option", { name }));
+};
+
 const urlLayout = (router: ReturnType<typeof section>["router"]) =>
   (router.state.location.search as { layout?: string }).layout;
 
@@ -153,14 +164,11 @@ describe("ProjectTasksSection layouts", () => {
 
     await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Board"));
     await user.click(await layoutSwitcher());
-    // Then the presets the layout shown offers, as shipped.
+    // Only layouts: the presets lead the filter panel.
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "Table",
       "Board",
       "Calendar",
-      "Incomplete",
-      "Unassigned",
-      "Mine",
     ]);
   });
 
@@ -242,19 +250,32 @@ describe("ProjectTasksSection layouts", () => {
 });
 
 describe("ProjectTasksSection presets", () => {
+  it("offers the layout's shipped presets in the filter panel", async () => {
+    section();
+    const user = await openFilters();
+
+    await user.click(await presetPicker());
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Incomplete",
+      "Unassigned",
+      "Mine",
+    ]);
+  });
+
   it("applies a preset as this person's own, and names it in the URL", async () => {
     const writes = captureViewWrites();
     const { router } = section();
     const user = userEvent.setup();
 
-    await pickLayout(user, "Unassigned");
+    await pickPreset(user, "Unassigned");
 
     await waitFor(() => expect(urlPreset(router)).toBe("unassigned"));
     await waitFor(() =>
       expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "is_null", value: true })
     );
-    // The layout stays the one shown.
+    // The layout stays the one shown, and the picker says which preset is.
     expect(await layoutSwitcher()).toHaveTextContent("Table");
+    expect(await presetPicker()).toHaveTextContent("Unassigned");
     await waitFor(() =>
       expect(writes).toContainEqual(
         expect.objectContaining({
@@ -285,17 +306,16 @@ describe("ProjectTasksSection presets", () => {
     const writes = captureViewWrites();
     const { router } = section();
     const user = userEvent.setup();
-    await pickLayout(user, "Unassigned");
+    await pickPreset(user, "Unassigned");
     await waitFor(() => expect(urlPreset(router)).toBe("unassigned"));
 
     // Their own change lets go of the preset...
-    await user.click(await screen.findByRole("button", { name: /filters/i }));
     await toggleAssigneeToken(user, /^Assigned to me$/);
     await waitFor(() => expect(urlPreset(router)).toBeUndefined());
     writes.length = 0;
 
     // ...and picking it again makes it theirs again.
-    await pickLayout(user, "Unassigned");
+    await pickPreset(user, "Unassigned");
     await waitFor(() =>
       expect(writes.at(-1)).toMatchObject({
         parts: { table: { filters: { assignees: ["none"] } } },
@@ -327,11 +347,9 @@ describe("ProjectTasksSection presets", () => {
     section();
     const user = userEvent.setup();
 
-    await user.click(await layoutSwitcher());
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+    await user.click(await presetPicker());
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-      "Table",
-      "Board",
-      "Calendar",
       "Overdue first",
     ]);
     await user.click(screen.getByRole("option", { name: "Overdue first" }));

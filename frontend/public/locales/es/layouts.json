@@ -126,7 +126,7 @@
   },
   "presets": {
     "heading": "Ajustes predefinidos",
-    "help": "Filtros, y en una tabla un orden, que cualquiera puede elegir en el menú del diseño para empezar. Elegir uno los hace suyos.",
+    "help": "Filtros, y en una tabla un orden, que cualquiera puede elegir en los filtros de la lista para empezar. Elegir uno los hace suyos.",
     "none": "Este diseño no ofrece ajustes predefinidos.",
     "add": "Añadir ajuste predefinido",
     "edit": "Editar {{name}}",

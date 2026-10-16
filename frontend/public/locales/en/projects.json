@@ -280,6 +280,7 @@
   },
   "presets": {
     "label": "Presets",
+    "placeholder": "Choose a preset",
     "incomplete": "Incomplete",
     "unassigned": "Unassigned",
     "mine": "Mine"
