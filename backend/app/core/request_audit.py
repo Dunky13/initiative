@@ -39,7 +39,8 @@ import time
 from typing import Any, Awaitable, Callable
 
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.requests import HTTPConnection
+from starlette.requests import HTTPConnection, Request
+from starlette.responses import PlainTextResponse, Response
 
 from app.core import audit_context, metrics
 from app.core.audit_events import AuditEventType
@@ -90,11 +91,13 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     read.
 
     Uvicorn reads that header only from a peer named in
-    ``--forwarded-allow-ips`` (``127.0.0.1`` unless told otherwise, which is
-    what ``BEHIND_PROXY=true`` does), so a proxy anywhere else leaves every
-    visitor resolving to the proxy's address rather than their own. Nothing
-    else reports that, so this does. It is a hint about configuration: the
-    header decides nothing here, and this changes no behaviour.
+    ``--forwarded-allow-ips``: ``127.0.0.1`` without ``BEHIND_PROXY``, and with
+    it the local network ranges unless ``FORWARDED_ALLOW_IPS`` names others
+    (``start.sh``). A proxy anywhere else leaves every visitor resolving to the
+    proxy's address rather than their own. Nothing else reports that, so this
+    does: for a peer on the local network, and with ``BEHIND_PROXY`` set for
+    any peer. It is a hint about configuration: the header decides nothing
+    here, and this changes no behaviour.
     """
     global _forwarded_hint_at
     if resolved is None:
@@ -112,15 +115,17 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     # header names; one that was not leaves the peer itself, which is not.
     if resolved in {hop.strip() for hop in forwarded.split(",")}:
         return
-    if not _is_local_network_peer(resolved):
+    if not settings.BEHIND_PROXY and not _is_local_network_peer(resolved):
         return
     _forwarded_hint_at = now
     logger.warning(
         "Requests carry X-Forwarded-For but this peer is not configured as a "
-        "trusted proxy, so every client resolves to %s. Set BEHIND_PROXY=true "
-        "(and FORWARDED_ALLOW_IPS to the proxy's address) so rate limits and "
-        "recorded sign-in addresses are per-visitor.",
+        "trusted proxy, so every client resolves to %s. Set %s so rate limits "
+        "and recorded sign-in addresses are per-visitor.",
         resolved,
+        "FORWARDED_ALLOW_IPS to the proxy's address"
+        if settings.BEHIND_PROXY
+        else "BEHIND_PROXY=true",
     )
 
 
@@ -189,16 +194,27 @@ async def _record_activity(
         logger.exception("access grant activity: could not record a request")
 
 
-def _route_template(scope: Scope) -> str | None:
-    """The route as it is written, rather than as it was typed; ``None``
-    when no route answered."""
-    path = getattr(scope.get("route"), "path", None)
-    return path if isinstance(path, str) else None
+async def server_error(_request: Request, _exc: Exception) -> Response:
+    """The 500 for a request that raised, carrying the request's id.
+
+    Starlette's own error middleware answers with this, outside every other
+    middleware, and then raises on to the server, which writes the traceback.
+    """
+    context = audit_context.current()
+    headers = {REQUEST_ID_HEADER: context.request_id} if context is not None else None
+    return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)
 
 
 class RequestAuditMiddleware:
     """Open each request's context; close it with a line if it was
-    privileged."""
+    privileged.
+
+    The context is left open when the request ends. The server runs each
+    request in a task of its own, begun with an empty context, so it ends
+    with that task, and what the server writes after the app has returned —
+    its request line, the traceback of a request that raised — still names
+    the request.
+    """
 
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -210,11 +226,12 @@ class RequestAuditMiddleware:
             return
 
         headers = Headers(scope=scope)
-        context, token = audit_context.begin(
+        context, _token = audit_context.begin(
             request_id=_incoming_request_id(headers) or audit_context.new_request_id(),
             source_ip=(scope.get("client") or (None,))[0],
             user_agent=headers.get("user-agent"),
             country=plugin_age.request_country(HTTPConnection(scope)),
+            scope=scope,
         )
         _note_ignored_forwarded_header(headers, context.source_ip)
         if kind == "websocket":
@@ -226,7 +243,6 @@ class RequestAuditMiddleware:
                 await self.app(scope, receive, send)
             finally:
                 metrics.websocket_connections.dec()
-                audit_context.end(token)
             return
 
         answered: dict[str, int] = {}
@@ -248,7 +264,7 @@ class RequestAuditMiddleware:
         finally:
             elapsed = time.perf_counter() - began
             in_progress.dec()
-            route = _route_template(scope)
+            route = audit_context.route_of(scope)
             label = route or metrics.UNMATCHED_ROUTE
             # No response started means the request ended in an exception,
             # which the server answers with a 500.
@@ -283,7 +299,6 @@ class RequestAuditMiddleware:
                     status=int(answered.get("status", 500)),
                     reached=reached,
                 )
-            audit_context.end(token)
 
 
 def record_privileged_edit(

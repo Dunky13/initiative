@@ -1027,7 +1027,7 @@ async def test_a_phone_is_handed_a_code(
         if row["actor_user_id"] == user_id
     ]
     assert [event["detail"] for event in events] == [
-        {"method": "passkey", "native": True, "device_name": "Pixel 9"}
+        {"method": "passkey", "native": True}
     ]
 
 

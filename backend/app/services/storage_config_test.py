@@ -10,6 +10,7 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings as app_config
+from app.core.messages import SettingsMessages
 from app.services import storage_config
 from app.services.platform import app_settings as app_settings_service
 
@@ -116,4 +117,4 @@ async def test_test_connection_s3_requires_bucket(session: AsyncSession) -> None
     )
     ok, message = await storage_config.test_connection(cfg)
     assert ok is False
-    assert "S3_BUCKET" in message
+    assert message == SettingsMessages.STORAGE_BUCKET_REQUIRED

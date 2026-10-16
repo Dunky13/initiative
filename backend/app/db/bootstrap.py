@@ -680,7 +680,10 @@ async def _bootstrap_lock(url: str):
     base = make_url(url)
     for database in _MAINTENANCE_DATABASES:
         engine = create_async_engine(
-            base.set(database=database), poolclass=NullPool, echo=False
+            base.set(database=database),
+            poolclass=NullPool,
+            echo=False,
+            hide_parameters=True,
         )
         try:
             conn = await engine.connect()
@@ -968,7 +971,9 @@ async def ensure_database_bootstrap(
         return await _verify_only()
 
     roles = login_roles()
-    engine = create_async_engine(url, poolclass=NullPool, echo=False)
+    engine = create_async_engine(
+        url, poolclass=NullPool, echo=False, hide_parameters=True
+    )
     try:
         async with _bootstrap_lock(url), engine.begin() as conn:
             await advisory_lock(conn, LockNamespace.DATABASE_BOOTSTRAP)
@@ -1080,7 +1085,9 @@ async def ensure_set_config_narrowed(bootstrap_url: str | None = None) -> bool:
     url = bootstrap_url or settings.DATABASE_URL_BOOTSTRAP
     holders = set_config_holders()
     if url:
-        engine = create_async_engine(url, poolclass=NullPool, echo=False)
+        engine = create_async_engine(
+            url, poolclass=NullPool, echo=False, hide_parameters=True
+        )
         try:
             async with _bootstrap_lock(url), engine.begin() as conn:
                 if await conn.scalar(_IS_SUPERUSER) and await conn.scalar(

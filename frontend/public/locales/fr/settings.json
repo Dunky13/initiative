@@ -1364,6 +1364,7 @@
       "storageLabel": "Limite de stockage",
       "decidesForItself": "Ce qu'elle décide elle-même",
       "deleted": "Supprimée",
+      "pluginSummariesUnavailable": "L'utilisation des plug-ins n'a pas pu être chargée.",
       "narrowings": {
         "title": "Qui elle compte comme les siens",
         "help": "Cette communauté indique quelles arrivées via un fournisseur sont les siennes. Elle nomme elle-même les valeurs : votre accord est ce qui permet l’adhésion automatique — d’ici là, la connexion ne sert qu’aux personnes déjà présentes.",

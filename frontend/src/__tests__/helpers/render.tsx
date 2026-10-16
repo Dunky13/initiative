@@ -5,6 +5,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  defaultStringifySearch,
   RouterProvider,
 } from "@tanstack/react-router";
 import { type RenderOptions, render } from "@testing-library/react";
@@ -47,6 +48,8 @@ interface RenderPageResult extends RenderWithProvidersResult {
 }
 
 interface RenderPageOptions extends ProviderOptions {
+  /** Search params the page starts at. They are the first history entry's
+   *  query string, so a page that rewrites its search is seen doing so. */
   routerSearch?: Record<string, unknown>;
   /** The route the page is mounted at. Use `$param` segments for a page that
    *  reads `useParams`, and supply their values via {@link routeParams}. */
@@ -249,11 +252,6 @@ export function renderPage(
     getParentRoute: () => rootRoute,
     path: initialRoute,
     component: PageComponent as () => ReactElement,
-    // `routerSearch` seeds the first render only. Once the page navigates, its
-    // own params win — otherwise a page that reads and rewrites the URL (say,
-    // correcting an out-of-range `page`) could never be observed changing it.
-    validateSearch: (search: Record<string, unknown>) =>
-      Object.keys(search).length > 0 ? search : (routerSearch ?? {}),
   });
 
   const routeTree = rootRoute.addChildren([childRoute]);
@@ -268,7 +266,8 @@ export function renderPage(
     : initialRoute;
   // The fragment rides on the history entry only — the route pattern above must
   // not carry it, or nothing matches.
-  const initialEntry = routerHash ? `${withParams}#${routerHash}` : withParams;
+  const withSearch = `${withParams}${defaultStringifySearch(routerSearch ?? {})}`;
+  const initialEntry = routerHash ? `${withSearch}#${routerHash}` : withSearch;
 
   const history = createMemoryHistory({
     initialEntries: [initialEntry],

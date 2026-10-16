@@ -350,7 +350,7 @@ async def _map(
             registration.public_id,
             delivery_id,
             install.guild_id,
-            exc,
+            type(exc).__name__,
         )
         return 503
     for failure in delivered.failures:

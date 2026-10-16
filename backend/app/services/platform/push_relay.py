@@ -180,9 +180,9 @@ async def _register(client: httpx.AsyncClient) -> tuple[str, str] | None:
         return None
     if response.status_code != 201:
         logger.error(
-            "push relay: registration refused (status %s): %s",
+            "push relay: registration refused (status %s, %s byte answer)",
             response.status_code,
-            response.text[:200],
+            len(response.content),
         )
         return None
     try:
@@ -287,9 +287,9 @@ async def _fetch_android_config(client: httpx.AsyncClient) -> AndroidConfig | No
         return None
     if response.status_code != 200:
         logger.error(
-            "push relay: Android settings unavailable (status %s): %s",
+            "push relay: Android settings unavailable (status %s, %s byte answer)",
             response.status_code,
-            response.text[:200],
+            len(response.content),
         )
         return None
     try:

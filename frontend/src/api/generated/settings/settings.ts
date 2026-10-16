@@ -49,6 +49,8 @@ import type {
   PlatformCommunityStorageListResponse,
   PlatformCommunityStorageRead,
   PlatformCommunityStorageUpdate,
+  PluginDataResponse,
+  PluginSummaryListResponse,
   PushSettingsResponse,
   PushSettingsUpdate,
   SecondFactorAnswer,
@@ -2926,6 +2928,297 @@ export const useAgreeCommunityNarrowing = <
 > => {
   return useMutation(getAgreeCommunityNarrowingMutationOptions(options), queryClient);
 };
+/**
+ * The community's installs that say where it stands with them, as its
+ * Usage tab lists them.
+ *
+ * Operator/owner (``communities.manage``), for the community's sheet: the
+ * caps set there sit beside what the community uses of them.
+ * @summary List Community Plugin Summaries
+ */
+export const listCommunityPluginSummaries = (
+  communityId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<PluginSummaryListResponse>(
+    { url: `/api/v1/settings/communities/${communityId}/plugin-summaries`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListCommunityPluginSummariesQueryKey = (communityId: number) => {
+  return [`/api/v1/settings/communities/${communityId}/plugin-summaries`] as const;
+};
+
+export const getListCommunityPluginSummariesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCommunityPluginSummariesQueryKey(communityId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCommunityPluginSummaries>>> = ({
+    signal,
+  }) => listCommunityPluginSummaries(communityId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: communityId !== null && communityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListCommunityPluginSummariesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCommunityPluginSummaries>>
+>;
+export type ListCommunityPluginSummariesQueryError = ErrorType<HTTPValidationError>;
+
+export function useListCommunityPluginSummaries<
+  TData = Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+          TError,
+          Awaited<ReturnType<typeof listCommunityPluginSummaries>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCommunityPluginSummaries<
+  TData = Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+          TError,
+          Awaited<ReturnType<typeof listCommunityPluginSummaries>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListCommunityPluginSummaries<
+  TData = Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Community Plugin Summaries
+ */
+
+export function useListCommunityPluginSummaries<
+  TData = Awaited<ReturnType<typeof listCommunityPluginSummaries>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listCommunityPluginSummaries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListCommunityPluginSummariesQueryOptions(communityId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Where the community stands with one installed plug-in, as its Usage tab
+ * reads it. The operator is not one of the community's people, so a summary
+ * that needs a member's own connection answers that it needs one.
+ * @summary Read Community Plugin Summary
+ */
+export const readCommunityPluginSummary = (
+  communityId: number,
+  pluginId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<PluginDataResponse>(
+    {
+      url: `/api/v1/settings/communities/${communityId}/plugin-summaries/${pluginId}`,
+      method: "GET",
+      signal,
+    },
+    options
+  );
+};
+
+export const getReadCommunityPluginSummaryQueryKey = (communityId: number, pluginId: number) => {
+  return [`/api/v1/settings/communities/${communityId}/plugin-summaries/${pluginId}`] as const;
+};
+
+export const getReadCommunityPluginSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReadCommunityPluginSummaryQueryKey(communityId, pluginId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readCommunityPluginSummary>>> = ({
+    signal,
+  }) => readCommunityPluginSummary(communityId, pluginId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      communityId !== null &&
+      communityId !== undefined &&
+      pluginId !== null &&
+      pluginId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ReadCommunityPluginSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readCommunityPluginSummary>>
+>;
+export type ReadCommunityPluginSummaryQueryError = ErrorType<HTTPValidationError>;
+
+export function useReadCommunityPluginSummary<
+  TData = Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+          TError,
+          Awaited<ReturnType<typeof readCommunityPluginSummary>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useReadCommunityPluginSummary<
+  TData = Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+          TError,
+          Awaited<ReturnType<typeof readCommunityPluginSummary>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useReadCommunityPluginSummary<
+  TData = Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read Community Plugin Summary
+ */
+
+export function useReadCommunityPluginSummary<
+  TData = Awaited<ReturnType<typeof readCommunityPluginSummary>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCommunityPluginSummary>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadCommunityPluginSummaryQueryOptions(communityId, pluginId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 /**
  * Bring a deleted guild back before its retention window runs out.
  *

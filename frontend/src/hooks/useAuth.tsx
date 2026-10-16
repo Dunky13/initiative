@@ -40,7 +40,7 @@ import { clearAllWhiteboardSceneCaches } from "@/components/files/whiteboardScen
 import { forgetMessagesOnThisDevice, serveAccount } from "@/crypto/messaging";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { clearJustSignedIn, markJustSignedIn } from "@/lib/authTransition";
-import { getErrorMessage } from "@/lib/errorMessage";
+import { getErrorCode, getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import {
   clearRefreshToken,
@@ -333,7 +333,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     void restore().catch((err) => {
-      console.error("Failed to load token", err);
+      console.error("Failed to load token", getErrorCode(err));
     });
     return () => {
       cancelled = true;

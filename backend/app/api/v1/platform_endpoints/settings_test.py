@@ -54,14 +54,14 @@ async def operator(acting_user):
     return await acting_user("operator")
 
 
-async def test_a_failed_test_email_answers_with_a_code_and_logs_the_cause(
+async def test_a_failed_test_email_answers_with_a_code_and_logs_its_type(
     client: AsyncClient,
     owner,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The caller gets the generic machine-readable code and nothing about the
-    mail host; the operator gets the real cause in the server log."""
+    mail host; the server log names the failure by its type."""
     sensitive = "SMTPConnectError to smtp.internal.example.com:587 (535 auth failed)"
 
     async def _boom(*_args: object, **_kwargs: object) -> None:
@@ -82,8 +82,8 @@ async def test_a_failed_test_email_answers_with_a_code_and_logs_the_cause(
     assert resp.json()["detail"] == "SETTINGS_EMAIL_SEND_FAILED"
     assert sensitive not in resp.text
     assert "smtp.internal.example.com" not in resp.text
-    # ...preserved for the operator in the server logs only.
-    assert sensitive in caplog.text
+    assert "Test email delivery failed (RuntimeError)" in caplog.text
+    assert sensitive not in caplog.text
 
 
 # --- The Guilds tab: the operator's dials -----------------------------------

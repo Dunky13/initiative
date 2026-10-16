@@ -53,7 +53,7 @@ describe("frontend measurement", () => {
   });
 
   it("names the page by its route template, never its address", async () => {
-    const { labelWithRoute, recordPageView } = await load();
+    const { beforeSend, recordPageView } = await load();
     recordPageView("/c/$communityId/projects/$projectId");
 
     const item = {
@@ -62,12 +62,70 @@ describe("frontend measurement", () => {
       meta: { page: { url: "https://app.example.com/c/4/projects/9?tab=board" }, app: {} },
     } as unknown as TransportItem;
 
-    expect(labelWithRoute(item).meta).toEqual({
+    expect(beforeSend(item).meta).toEqual({
       page: {
         id: "/c/$communityId/projects/$projectId",
         url: "/c/$communityId/projects/$projectId",
       },
       app: {},
+    });
+  });
+
+  it("names Web Vitals elements by selectors without element ids", async () => {
+    const { beforeSend } = await load();
+    const context = {
+      id: "v5-1760000000000-1234",
+      rating: "good",
+      navigation_type: "navigate",
+      navigation_entry_id: "unknown",
+    };
+    const lcp = {
+      type: "measurement",
+      payload: {
+        type: "web-vitals",
+        values: { lcp: 1200, delta: 1200 },
+        timestamp: "2026-10-16T00:00:00.000Z",
+        context: { ...context, element: "#launch-plan-for-q3>span.font-bold" },
+      },
+      meta: {},
+    } as unknown as TransportItem;
+    const inp = {
+      ...lcp,
+      payload: {
+        ...lcp.payload,
+        context: { ...context, interaction_target: "div.editor>p", interaction_type: "keyboard" },
+      },
+    } as TransportItem;
+
+    expect(beforeSend(lcp).payload).toEqual({
+      ...lcp.payload,
+      context: { ...context, element: "#id>span.font-bold" },
+    });
+    expect(beforeSend(inp).payload).toEqual(inp.payload);
+  });
+
+  it("sends an error's type and stack frames, without its message or context", async () => {
+    const { beforeSend } = await load();
+    const stacktrace = {
+      frames: [{ filename: "/assets/index.js", function: "submit", lineno: 1, colno: 42 }],
+    };
+    const item = {
+      type: "exception",
+      payload: {
+        type: "AxiosError",
+        value: "Request failed with status code 400",
+        timestamp: "2026-10-16T00:00:00.000Z",
+        context: { cause: '{"detail":"INVALID_OR_EXPIRED_TOKEN"}' },
+        stacktrace,
+      },
+      meta: {},
+    } as unknown as TransportItem;
+
+    expect(beforeSend(item).payload).toEqual({
+      type: "AxiosError",
+      value: "",
+      timestamp: "2026-10-16T00:00:00.000Z",
+      stacktrace,
     });
   });
 

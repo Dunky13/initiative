@@ -241,7 +241,12 @@ async def _collaborate(
                 # reader.
                 if not can_write:
                     logger.warning(
-                        f"Collaboration: Read-only user {handle_of(user)} tried to send update"
+                        "Collaboration: read-only user %s tried to send an update "
+                        "to %s %s in guild %s",
+                        user.id,
+                        spec.resource_type,
+                        resource_id,
+                        guild_id,
                     )
                     return
                 if not payload:
@@ -265,7 +270,13 @@ async def _collaborate(
                         room_key, bytes([MSG_UPDATE]) + payload, exclude=websocket
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to apply Yjs update: {e}")
+                    logger.warning(
+                        "Failed to apply Yjs update to %s %s in guild %s (%s)",
+                        spec.resource_type,
+                        resource_id,
+                        guild_id,
+                        type(e).__name__,
+                    )
 
             elif msg_type == MSG_AWARENESS_BINARY:
                 # y-protocols awareness update - relay as-is to other clients
@@ -276,8 +287,12 @@ async def _collaborate(
         await hold_open(sub, on_bytes=on_bytes)
     except Exception as e:
         logger.error(
-            f"Collaboration error for {handle_of(user)} on "
-            f"{spec.resource_type} {resource_id}: {e}"
+            "Collaboration error for user %s on %s %s in guild %s (%s)",
+            user.id,
+            spec.resource_type,
+            resource_id,
+            guild_id,
+            type(e).__name__,
         )
     finally:
         # Idempotent if a re-check already closed it.

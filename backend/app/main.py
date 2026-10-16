@@ -47,7 +47,7 @@ from app.core.security import (
 )
 from app.core.config import API_V1_STR, PROJECT_NAME, settings
 from app.core.logging_config import configure_logging
-from app.core.request_audit import RequestAuditMiddleware
+from app.core.request_audit import RequestAuditMiddleware, server_error
 from app.core.routing import MOUNTED, route_endpoint
 from app.core.version import __version__
 from app.core.smart_chips import SmartChipKind
@@ -302,6 +302,8 @@ async def app_swagger_ui_html() -> Response:
 # Initialize rate limiter (uses shared limiter from app.core.rate_limit)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Starlette's error middleware answers a request that raised with this.
+app.add_exception_handler(Exception, server_error)
 # Register the middleware so the limiter's `default_limits` actually apply to
 # *every* route, not just the handful with an explicit `@limiter.limit(...)`
 # decorator. Without this the global default was inert. The middleware

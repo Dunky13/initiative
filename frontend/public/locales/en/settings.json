@@ -1285,6 +1285,7 @@
       "storageLabel": "Storage limit",
       "decidesForItself": "What it decides for itself",
       "deleted": "Deleted",
+      "pluginSummariesUnavailable": "Plug-in usage could not be loaded.",
       "narrowings": {
         "title": "Who it counts as its own",
         "help": "This community says which arrivals on a provider are its people. It names the values itself, so agreeing is what lets them join on arrival — until then the connection works only for the people already in it.",

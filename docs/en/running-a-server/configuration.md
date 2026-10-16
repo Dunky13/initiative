@@ -139,10 +139,10 @@ For any real deployment you'll put Initiative behind a reverse proxy that handle
 | Variable | What it does | Default |
 |---|---|---|
 | `BEHIND_PROXY` | Trust `X-Forwarded-*` headers from your proxy (so client IPs and HTTPS are detected correctly). | `false` |
-| `FORWARDED_ALLOW_IPS` | Which proxy IPs to trust when `BEHIND_PROXY=true`. | `*` |
+| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Set it when your proxy reaches the app from a public address. | Loopback, private and link-local ranges |
 
 !!! warning "Only enable proxy trust behind an actual proxy"
-    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them.
+    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them. It believes them from the machine itself, its container network and your LAN; a proxy that reaches the app from anywhere else goes in `FORWARDED_ALLOW_IPS`, and the log says so on the first request that shows one.
 
 ## The app association files
 
@@ -247,13 +247,18 @@ These have their own pages:
 
 Two streams come out of the container, and they are for different readers.
 
-**Standard error** is the application talking: what it checked at start-up, what it repaired, anything it thinks you should know. `LOG_LEVEL` says how much. It's `INFO` unless you set it; `WARNING` if you would rather only hear about trouble; `DEBUG` when you are chasing something and want all of it.
+**Standard error** is the application talking: what it checked at start-up, what it repaired, every request it answered, anything it thinks you should know. It is one JSON object per line, the web server's own lines included, so a log platform reads fields rather than squinting at text. `LOG_LEVEL` says how much. It's `INFO` unless you set it; `WARNING` if you would rather only hear about trouble; `DEBUG` when you are chasing something and want all of it. To turn up a single logger and leave the rest alone, start uvicorn with a `--log-config` file that sets that logger's level.
+
+**The request line names the route, not the address.** A request for task 3 in community 7 is logged as `GET /api/v1/c/{community_id}/tasks/{task_id} 200`, with the community in a field of its own, and the query string is left off. Whatever somebody typed into a search box or pasted into a link stays out of the log. A request that crashes gets one line with its traceback, under the same request id as everything else it wrote.
 
 **Standard output** is the audit stream: one JSON object per line, one line per recorded action — who did what, to which account or community, when — and nothing else on that stream. Every line carries `"stream": "audit"`, so a collector can route these and nothing else, and `"service": "initiative"`, so where the billing and automation services ship the same kind of line about the same community, a reader can tell whose it is. Whatever already ships your container's logs carries it, and a log platform reads it as records rather than text.
 
 That is where the record is kept, searched and alerted on. A filter on `event_type` is an alert; `guild_id` is on every line about a community. `LOG_LEVEL` has no say over any of it.
 
-**Every line says which request it came from.** A `context` block carries the id that request is known by, the network address it arrived from, and what the browser or app called itself. The same id goes back to the caller as an `X-Request-Id` header, and behind a reverse proxy an id the proxy has already assigned is kept rather than replaced — so one request has one name in your proxy's log, your application log and the audit stream alike. People appear as account ids; no line holds a password, a key, an email address or anybody's name.
+**Every line says which request it came from.** An application line carries `request_id`, the account (`user_id`), the community (`guild_id`) and the `route`. An audit line carries the same id in its `context` block, and a line about somebody signing in, or reaching a community through a grant, adds the network address and what the browser or app called itself. Background work is named the same way, with an id that starts `job-`, so one pass of a sweep reads as one story. The id goes back to the caller as an `X-Request-Id` header, and behind a reverse proxy an id the proxy has already assigned is kept rather than replaced — so one request has one name in your proxy's log, your application log and the audit stream alike. People appear as account ids, not names.
+
+??? techspec "Errors on a line"
+    An `exc` field holds the exception's type, its message and the whole traceback. Database, mail and validation errors are written as their codes (`sqlstate=23505 constraint=…`), never the values they were handed, and database statements are logged without their parameters. Outgoing requests to webhooks and plug-ins get one line each, naming the target's origin, the answer and how long it took: `INFO` when it failed, `DEBUG` when it worked.
 
 **Somebody visiting a community they don't belong to is recorded request by request.** Support access and emergency break-glass both work by a grant, and while one is live every single request made under it is a line of its own — the route, the method, the answer, and which grant allowed it. Knowing an operator held the keys for an hour is not the same as knowing what they opened, and this is the difference. Editing is over a live connection rather than a request, so that gets a line of its own the first time they change a document or a wiki page, naming which one.
 

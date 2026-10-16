@@ -8,6 +8,7 @@ resolution used to connect cannot differ.
 from __future__ import annotations
 
 import gzip
+import logging
 from unittest.mock import patch
 
 import httpx
@@ -131,9 +132,10 @@ async def test_dev_flag_pins_private_local_target(monkeypatch):
     assert request.headers["host"] == "localhost:8201"
 
 
-async def test_falls_back_to_next_validated_address():
+async def test_falls_back_to_next_validated_address(caplog):
     """If the first validated address is unreachable, the request retries
-    the other validated addresses instead of failing outright."""
+    the other validated addresses instead of failing outright. Each attempt
+    writes one line naming the target's origin, a failure at ``INFO``."""
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -146,12 +148,13 @@ async def test_falls_back_to_next_validated_address():
         (2, 0, 0, "", ("93.184.216.34", 0)),
         (2, 0, 0, "", ("93.184.216.35", 0)),
     ]
-    with patch(
-        "app.services.webhook_target_url.socket.getaddrinfo", return_value=infos
+    with (
+        patch("app.services.webhook_target_url.socket.getaddrinfo", return_value=infos),
+        caplog.at_level(logging.DEBUG, logger="app.services.safe_http"),
     ):
         response = await request_public_target(
             "POST",
-            "https://cdn.example.com/deliver",
+            "https://cdn.example.com/deliver?key=abc",
             content=b"{}",
             timeout=5.0,
             transport=httpx.MockTransport(handler),
@@ -159,6 +162,15 @@ async def test_falls_back_to_next_validated_address():
 
     assert response.status_code == 200
     assert seen == ["93.184.216.34", "93.184.216.35"]
+    lines = [
+        (r.levelno, r.getMessage().rsplit(" ", 2)[0])
+        for r in caplog.records
+        if r.name == "app.services.safe_http"
+    ]
+    assert lines == [
+        (logging.INFO, "POST https://cdn.example.com ConnectError"),
+        (logging.DEBUG, "POST https://cdn.example.com 200"),
+    ]
 
 
 async def test_connect_timeout_does_not_fall_back():
@@ -247,9 +259,14 @@ def _gzipped(body: bytes):
     return httpx.MockTransport(handler)
 
 
-async def test_a_bounded_read_is_counted_after_decoding():
-    """A small compressed body that inflates past the bound is refused."""
-    with _resolves_to("93.184.216.34"), pytest.raises(ResponseTooLargeError):
+async def test_a_bounded_read_is_counted_after_decoding(caplog):
+    """A small compressed body that inflates past the bound is refused, and
+    the request's line says so."""
+    with (
+        _resolves_to("93.184.216.34"),
+        caplog.at_level(logging.DEBUG, logger="app.services.safe_http"),
+        pytest.raises(ResponseTooLargeError),
+    ):
         await request_public_target(
             "GET",
             "https://site.example.com/big",
@@ -257,6 +274,9 @@ async def test_a_bounded_read_is_counted_after_decoding():
             transport=_gzipped(b"0" * 10_000),
             max_bytes=1_000,
         )
+    [line] = [r for r in caplog.records if r.name == "app.services.safe_http"]
+    assert line.levelno == logging.INFO
+    assert "ResponseTooLargeError" in line.getMessage()
 
 
 async def test_a_bounded_read_within_its_bound_reads_as_usual():
