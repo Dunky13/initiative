@@ -264,7 +264,7 @@ export function globalTaskColumns({
         const initiativeName = task.initiative_name;
         const initiativeColor = task.initiative_color;
         return (
-          <div className="min-w-30">
+          <div className="min-w-72">
             <div className="flex flex-wrap items-center gap-2">
               {communityName ? (
                 <>
