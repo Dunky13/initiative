@@ -716,6 +716,60 @@ async def test_assign_user_to_task(
     assert assignee.user.id in assignee_ids
 
 
+async def test_adding_and_removing_assignees_leaves_the_others(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Putting someone on a task, or taking them off, works against whoever
+    is on it when the change lands, not a list the caller read earlier."""
+    user = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    other = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=user.guild,
+        initiative=user.initiative,
+        initiative_role="member",
+    )
+    await create_resource_grant(session, user.project, user=other.user)
+    task = await _create_task(session, user.project)
+    url = user.g(f"/tasks/{task.id}")
+
+    async def assignees(payload: dict) -> set[int]:
+        response = await client.patch(url, headers=user.headers, json=payload)
+        assert response.status_code == 200, response.text
+        return {a["id"] for a in response.json()["assignees"]}
+
+    assert await assignees({"add_assignee_ids": [other.user.id]}) == {other.user.id}
+    # Added beside the one already on it, rather than in their place.
+    assert await assignees({"add_assignee_ids": [user.user.id]}) == {
+        user.user.id,
+        other.user.id,
+    }
+    # Adding someone already on it changes nothing.
+    assert await assignees({"add_assignee_ids": [user.user.id]}) == {
+        user.user.id,
+        other.user.id,
+    }
+    assert await assignees({"remove_assignee_ids": [user.user.id]}) == {other.user.id}
+
+
+async def test_assignee_ids_is_not_combined_with_adding_or_removing(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    user = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    task = await _create_task(session, user.project)
+
+    response = await client.patch(
+        user.g(f"/tasks/{task.id}"),
+        headers=user.headers,
+        json={"assignee_ids": [], "add_assignee_ids": [user.user.id]},
+    )
+
+    assert response.status_code == 422
+
+
 async def test_unassigning_withdraws_the_pending_digest_item(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

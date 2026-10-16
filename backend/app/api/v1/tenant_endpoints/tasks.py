@@ -518,6 +518,17 @@ async def update_task(
             session, task, "description", update_data.pop("description_base")
         )
     assignee_ids = update_data.pop("assignee_ids", None)
+    adding = update_data.pop("add_assignee_ids", None)
+    removing = update_data.pop("remove_assignee_ids", None)
+    if adding is not None or removing is not None:
+        # Against whoever is on the task now, not whoever the caller last saw.
+        current = [assignee.id for assignee in task.assignees]
+        taken_off = set(removing or [])
+        assignee_ids = [
+            person
+            for person in dict.fromkeys([*current, *(adding or [])])
+            if person not in taken_off
+        ]
     tag_ids = update_data.pop("tag_ids", None)
     update_data.pop("properties", None)
     checklist_sent = update_data.pop("checklist", None) is not None

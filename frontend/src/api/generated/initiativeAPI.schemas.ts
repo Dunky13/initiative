@@ -10393,6 +10393,8 @@ export interface TaskUpdate {
   status_category?: TaskStatusCategory | null;
   priority?: TaskPriority | null;
   assignee_ids?: number[] | null;
+  add_assignee_ids?: number[] | null;
+  remove_assignee_ids?: number[] | null;
   start_date?: string | null;
   due_date?: string | null;
   recurrence?: string | null;

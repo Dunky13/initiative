@@ -290,6 +290,7 @@
     "unassignMe": "Me retirer",
     "assigned": "Assignée à vous",
     "unassigned": "Vous n'êtes plus sur cette tâche",
-    "assignError": "Impossible de modifier les personnes assignées à cette tâche."
+    "assignError": "Impossible de modifier les personnes assignées à cette tâche.",
+    "moveTo": "Déplacer vers"
   }
 }

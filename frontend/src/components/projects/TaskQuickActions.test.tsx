@@ -25,8 +25,8 @@ const STATUSES = buildDefaultTaskStatuses(1);
 const ME = buildUser({ id: 7 });
 const ALEX = buildTaskAssignee({ id: 3, display_name: "Alex" });
 
-/** Who each task PATCH put on the task. */
-let patches: unknown[] = [];
+/** What each task PATCH asked for, less the zone every write carries. */
+let patches: Array<Record<string, unknown>> = [];
 
 const seed = (task: Partial<TaskListRead>) => {
   const seeded = buildTask({
@@ -40,8 +40,8 @@ const seed = (task: Partial<TaskListRead>) => {
   server.use(
     communityHttp.get("/tasks/", () => HttpResponse.json(buildTaskListResponse([seeded]))),
     communityHttp.patch("/tasks/:taskId", async ({ request }) => {
-      const body = (await request.json()) as Record<string, unknown>;
-      patches.push(body.assignee_ids);
+      const { tz: _tz, ...body } = (await request.json()) as Record<string, unknown>;
+      patches.push(body);
       return HttpResponse.json({ ...seeded, ...body });
     })
   );
@@ -112,7 +112,7 @@ describe("a table's assignees", () => {
       (await row("Draw the map")).getByRole("button", { name: "Assign Draw the map to me" })
     );
 
-    await waitFor(() => expect(patches).toEqual([[7]]));
+    await waitFor(() => expect(patches).toEqual([{ add_assignee_ids: [7] }]));
   });
 
   it("offer nothing to a reader who cannot change the task", async () => {
@@ -128,7 +128,7 @@ describe("a board card's menu", () => {
   const openMenu = async (user: ReturnType<typeof userEvent.setup>) =>
     user.click(await screen.findByRole("button", { name: "Actions for Draw the map" }));
 
-  it("puts the reader on the task beside whoever is on it", async () => {
+  it("puts the reader on the task, leaving whoever is on it to the server", async () => {
     seed({ assignees: [ALEX] });
     project({ layout: "board" });
     const user = userEvent.setup();
@@ -136,7 +136,7 @@ describe("a board card's menu", () => {
     await openMenu(user);
     await user.click(await screen.findByRole("menuitem", { name: "Assign to me" }));
 
-    await waitFor(() => expect(patches).toEqual([[3, 7]]));
+    await waitFor(() => expect(patches).toEqual([{ add_assignee_ids: [7] }]));
   });
 
   it("takes the reader off a task they are on", async () => {
@@ -147,7 +147,48 @@ describe("a board card's menu", () => {
     await openMenu(user);
     await user.click(await screen.findByRole("menuitem", { name: "Unassign me" }));
 
-    await waitFor(() => expect(patches).toEqual([[3]]));
+    await waitFor(() => expect(patches).toEqual([{ remove_assignee_ids: [7] }]));
+  });
+
+  it("moves the task to another column from the fly-out", async () => {
+    seed({ assignees: [] });
+    project({ layout: "board" });
+    const user = userEvent.setup();
+
+    await openMenu(user);
+    // The keyboard's way into a fly-out: a pointer would hover across to it.
+    (await screen.findByRole("menuitem", { name: "Move to" })).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(await screen.findByRole("menuitemradio", { name: "To Do" })).toBeChecked();
+    screen.getByRole("menuitemradio", { name: "In Progress" }).focus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(patches).toEqual([{ task_status_id: STATUSES[1].id }]));
+  });
+
+  it("drills into the columns on a phone, and climbs back out", async () => {
+    const wide = window.innerWidth;
+    window.innerWidth = 500;
+    try {
+      seed({ assignees: [] });
+      project({ layout: "board" });
+      const user = userEvent.setup();
+
+      await openMenu(user);
+      await user.click(await screen.findByRole("menuitem", { name: "Move to" }));
+      expect(await screen.findByRole("menuitemradio", { name: "To Do" })).toBeChecked();
+      expect(screen.queryByRole("menuitem", { name: "Assign to me" })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("menuitem", { name: "Back" }));
+      expect(await screen.findByRole("menuitem", { name: "Assign to me" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("menuitem", { name: "Move to" }));
+      await user.click(await screen.findByRole("menuitemradio", { name: "Done" }));
+
+      await waitFor(() => expect(patches).toEqual([{ task_status_id: STATUSES[2].id }]));
+    } finally {
+      window.innerWidth = wide;
+    }
   });
 
   it("is not there for a reader who cannot change the task", async () => {

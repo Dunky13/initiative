@@ -35,7 +35,7 @@ import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/t
 import { cn } from "@/lib/utils";
 
 import { TaskAssigneeList } from "./TaskAssigneeList";
-import { TaskCardActions } from "./TaskQuickActions";
+import { type BoardActions, BoardActionsContext, TaskCardActions } from "./TaskQuickActions";
 
 type ProjectTasksKanbanViewProps = {
   projectId: number;
@@ -47,6 +47,8 @@ type ProjectTasksKanbanViewProps = {
   /** The reader may change the tasks: each card offers what can be done with
    *  it beside its title. */
   canEditTasks?: boolean;
+  /** Moves a task to a column from its card's menu, as dropping it there would. */
+  onStatusChange?: (taskId: number, taskStatusId: number) => void;
   taskHref: (taskId: number) => string;
   sensors: DndContextProps["sensors"];
   activeTask: TaskListRead | null;
@@ -79,6 +81,7 @@ export const ProjectTasksKanbanView = ({
   collapsedStatusIds,
   canReorderTasks,
   canEditTasks = false,
+  onStatusChange,
   taskHref,
   sensors,
   activeTask,
@@ -112,6 +115,23 @@ export const ProjectTasksKanbanView = ({
     () => (canEditTasks ? { ...projectEnv, itemActions: TaskCardActions } : projectEnv),
     [projectEnv, canEditTasks]
   );
+  // The handler changes with every list of tasks; the cards' menus hold one
+  // that doesn't, so a refetch neither redraws every card nor closes a menu.
+  const moveRef = useRef(onStatusChange);
+  useEffect(() => {
+    moveRef.current = onStatusChange;
+  });
+  const canMove = onStatusChange !== undefined;
+  const boardActions = useMemo<BoardActions | null>(
+    () =>
+      canMove
+        ? {
+            statuses: taskStatuses,
+            moveTo: (taskId, statusId) => moveRef.current?.(taskId, statusId),
+          }
+        : null,
+    [canMove, taskStatuses]
+  );
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(
@@ -142,47 +162,49 @@ export const ProjectTasksKanbanView = ({
   );
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={kanbanCollisionDetection}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
-      onDragCancel={onDragCancel}
-    >
-      <div
-        ref={scrollContainerRef}
-        className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
-        data-kanban-scroll-container
+    <BoardActionsContext.Provider value={boardActions}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={kanbanCollisionDetection}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
       >
-        <div className="flex gap-4">
-          {taskStatuses.map((status) => {
-            const isCollapsed = collapsedStatusIds.has(status.id);
-            return (
-              <KanbanColumn
-                key={status.id}
-                status={status}
-                tasks={groupedTasks[status.id] ?? []}
-                canWrite={canReorderTasks}
-                view={view}
-                collapsed={isCollapsed}
-                onToggleCollapse={onToggleCollapse}
-                taskCount={groupedTasks[status.id]?.length ?? 0}
-                className={cn(
-                  "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
-                  isCollapsed ? "grow-0 basis-12" : columnBasis
-                )}
-                onArchiveDoneTasks={onArchiveDoneTasks}
-                isArchiving={isArchivingDoneTasks}
-              />
-            );
-          })}
+        <div
+          ref={scrollContainerRef}
+          className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
+          data-kanban-scroll-container
+        >
+          <div className="flex gap-4">
+            {taskStatuses.map((status) => {
+              const isCollapsed = collapsedStatusIds.has(status.id);
+              return (
+                <KanbanColumn
+                  key={status.id}
+                  status={status}
+                  tasks={groupedTasks[status.id] ?? []}
+                  canWrite={canReorderTasks}
+                  view={view}
+                  collapsed={isCollapsed}
+                  onToggleCollapse={onToggleCollapse}
+                  taskCount={groupedTasks[status.id]?.length ?? 0}
+                  className={cn(
+                    "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
+                    isCollapsed ? "grow-0 basis-12" : columnBasis
+                  )}
+                  onArchiveDoneTasks={onArchiveDoneTasks}
+                  isArchiving={isArchivingDoneTasks}
+                />
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <DragOverlay>
-        {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
-      </DragOverlay>
-    </DndContext>
+        <DragOverlay>
+          {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
+        </DragOverlay>
+      </DndContext>
+    </BoardActionsContext.Provider>
   );
 };
 

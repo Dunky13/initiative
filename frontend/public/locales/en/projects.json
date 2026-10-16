@@ -290,6 +290,7 @@
     "unassignMe": "Unassign me",
     "assigned": "Assigned to you",
     "unassigned": "You're off this task",
-    "assignError": "Couldn't change who's on this task."
+    "assignError": "Couldn't change who's on this task.",
+    "moveTo": "Move to"
   }
 }

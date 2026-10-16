@@ -923,6 +923,7 @@ export const ProjectTasksSection = ({
             collapsedStatusIds={collapsedStatuses}
             canReorderTasks={canReorderTasks}
             canEditTasks={canEditTaskDetails}
+            onStatusChange={changeTaskStatus}
             taskHref={taskHref}
             sensors={kanbanSensors}
             activeTask={activeTask}

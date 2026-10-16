@@ -290,6 +290,7 @@
     "unassignMe": "Mich entfernen",
     "assigned": "Dir zugewiesen",
     "unassigned": "Du bist nicht mehr bei dieser Aufgabe",
-    "assignError": "Die Zuständigen dieser Aufgabe konnten nicht geändert werden."
+    "assignError": "Die Zuständigen dieser Aufgabe konnten nicht geändert werden.",
+    "moveTo": "Verschieben nach"
   }
 }
