@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each release publishes its API spec (API).** The GitHub release carries `openapi.json`, the OpenAPI spec of the image it ships, to generate a client from or check one against.
 - **Home.** The page you land on after signing in is now a page of widgets you arrange with **Customize**: a greeting, Focus, My tasks, your calendar, recent items and activity, your communities, progress, Favorites, and a clock and timer. Keep several views as tabs, each from a blank page or a ready-made one and with its own banner. A new account's first view suits why it signed up, with a **Getting started** card. My Tasks is now Home in the sidebar, and until you change anything it shows what My Tasks did.
 - **Home layouts in the marketplace.** A **Home layouts** shelf offers five ready-made views, and server owners can publish their own as `home_layout` listings.
 - **Star any tool.** Every kind of tool can be starred, and the sidebar's **Favorites** lists them all. Starred projects carry over.
