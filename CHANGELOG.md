@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Smart chips, links and embeds update live.**
 - **Deleting your comment keeps its replies.**
 - **Members' AI keys and plug-in sign-ins are theirs alone.** Other admins no longer reach them; the superadmin seat still sees who connected and can disconnect them.
+- **Every way you sign in is under Security**: your password sits beside your passkeys and two-factor authentication, and a way in your server doesn't offer is left off.
 - **Staff manage their own account from their own settings**, and every account action is on its Manage panel.
 - **The phone and desktop apps keep your encrypted messages when you sign out**, and keep each account's apart.
 - **Pictures in documents, wikis and posts open full size.** While editing, double-click one.

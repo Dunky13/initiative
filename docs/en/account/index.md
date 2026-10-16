@@ -17,11 +17,11 @@ This section is about **your** settings.
 | Tab | What it's for |
 |---|---|
 | **Profile** | The face other people see: picture, status, decorations. |
-| **Account** | Your handle, email addresses and password. Deactivating or deleting the account is at the bottom. In the phone or desktop app, **Server connection** too, for disconnecting from this server. |
+| **Account** | Your handle and email addresses. Deactivating or deleting the account is at the bottom. In the phone or desktop app, **Server connection** too, for disconnecting from this server. |
 | **Preferences** | Theme, language, time zone, week start, task-completion effects, and settings kept on this device. |
 | **Notifications** | What you're told about, and where. See [Notifications](../guides/notifications.md). |
 | **Privacy** | Who can ask to message you, your connections, pending requests, and accounts you've ignored. See [Messages](../guides/messages.md#who-can-reach-you). |
-| **Security** | [Two-factor authentication](two-factor-authentication.md), [passkeys](passkeys.md), [where you're signed in](profile-and-preferences.md#where-youre-signed-in), and access keys. See [API keys & integrations](api-keys-and-integrations.md). |
+| **Security** | Every way you sign in: your password, [passkeys](passkeys.md) and [two-factor authentication](two-factor-authentication.md), showing only the ones your server offers. Also [where you're signed in](profile-and-preferences.md#where-youre-signed-in), and access keys. See [API keys & integrations](api-keys-and-integrations.md). |
 | **AI** | Your personal AI settings. Only appears if there's a connection for you to set up. See [AI features](ai-features.md). |
 | **Trash** | Things you recently deleted. |
 
