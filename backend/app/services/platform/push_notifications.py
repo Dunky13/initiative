@@ -134,8 +134,8 @@ async def _get_fcm_access_token(cfg: ResolvedPushConfig) -> Optional[str]:
                 if not credentials.valid:
                     await asyncio.to_thread(credentials.refresh, Request())
         return credentials.token
-    except Exception as exc:
-        logger.error(f"Failed to get FCM access token: {exc}", exc_info=True)
+    except Exception:
+        logger.exception("Failed to get FCM access token")
         return None
 
 
@@ -251,44 +251,46 @@ async def send_push_notification(
         response = await client.post(url, json=message, headers=headers)
 
         if response.status_code == 200:
-            logger.info(
-                f"Push notification sent successfully to token: {push_token[:20]}..."
-            )
+            logger.info("Push notification sent through %s", service)
             return (True, False)
         elif response.status_code in (404, 410):
             # Token invalid or unregistered - should be deleted
             logger.warning(
-                f"{service} token invalid (status {response.status_code}): "
-                f"{push_token[:20]}..."
+                "%s token invalid (status %s)", service, response.status_code
             )
             return (False, True)
         elif response.status_code == 401:
             # Credentials issue - don't delete token
             logger.error(
-                f"{service} authentication failed (status {response.status_code}): "
-                f"{response.text}"
+                "%s authentication failed (status %s, %s byte answer)",
+                service,
+                response.status_code,
+                len(response.content),
             )
             if relay_server_id is not None:
                 await push_relay.forget(relay_server_id)
             return (False, False)
         elif response.status_code == 403 and relay_server_id is not None:
             logger.error(
-                f"Push relay refused this server (status 403): {response.text}"
+                "Push relay refused this server (status 403, %s byte answer)",
+                len(response.content),
             )
             return (False, False)
         else:
             # Other error - don't delete token (might be temporary)
             logger.error(
-                f"{service} request failed (status {response.status_code}): "
-                f"{response.text}"
+                "%s request failed (status %s, %s byte answer)",
+                service,
+                response.status_code,
+                len(response.content),
             )
             return (False, False)
 
     except httpx.TimeoutException:
-        logger.warning(f"{service} request timed out for token: {push_token[:20]}...")
+        logger.warning("%s request timed out", service)
         return (False, False)
-    except Exception as exc:
-        logger.error(f"Failed to send push notification: {exc}", exc_info=True)
+    except Exception:
+        logger.exception("Failed to send push notification through %s", service)
         return (False, False)
 
 
@@ -336,7 +338,7 @@ async def _send_to_devices(
                 outcome.delivered_ids.append(token.id)
         elif should_delete:
             # Token is invalid (404/410 from FCM), mark for deletion
-            logger.info(f"Deleting invalid push token: {token.push_token[:20]}...")
+            logger.info("Deleting the invalid push token of device %s", token.id)
             outcome.dead_tokens.append(token.push_token)
         else:
             outcome.retry = True

@@ -76,6 +76,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import webhook_events
+from app.core.config import _origin_of
 from app.core.plugin_scopes import (
     LEVEL_SCOPES,
     InstallLevel,
@@ -607,10 +608,10 @@ async def _drain_subscription(
         )
         if dead_lettered:
             logger.warning(
-                "webhook delivery dead-lettered: subscription=%s txn=%s target=%s",
+                "webhook delivery dead-lettered: subscription=%s txn=%s origin=%s",
                 subscription.id,
                 txn_id,
-                subscription.target_url,
+                _origin_of(subscription.target_url),
             )
         elif not accepted:
             if retry_at is not None:

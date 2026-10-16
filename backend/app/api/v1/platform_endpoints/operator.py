@@ -933,7 +933,6 @@ async def set_user_username(
         target_user_id=user_id,
         target_type="user",
         target_id=user_id,
-        detail={"from": previous_handle, "to": handle_of(user)},
     )
     await session.commit()
     await session.refresh(user)
@@ -1024,7 +1023,7 @@ async def set_user_suspension(
         target_user_id=user_id,
         target_type="user",
         target_id=user_id,
-        detail={"reason": payload.reason} if payload.reason else {},
+        detail={"reason_given": bool((payload.reason or "").strip())},
     )
     await session.commit()
     await session.refresh(user)

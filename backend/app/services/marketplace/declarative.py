@@ -616,10 +616,7 @@ async def run_endpoint(
             ) from outcome
         if outcome.detail:
             logger.info(
-                "plug-in data: %s answered %s (%s)",
-                endpoint.get("id"),
-                outcome.code,
-                outcome.detail,
+                "plug-in data: %s answered %s", endpoint.get("id"), outcome.code
             )
         return {"unavailable": outcome.code}
 
@@ -690,7 +687,6 @@ async def after_connect(
     except _Outcome as outcome:
         raise flows.HookError(
             f"after_connect answered {outcome.code or TRANSIENT_CODE}"
-            + (f" ({outcome.detail})" if outcome.detail else "")
         ) from outcome
     except PluginDataError as exc:
         raise flows.HookError(f"after_connect answered {exc.code}") from exc
@@ -737,7 +733,10 @@ async def health_state(
             return row["state"]
         return "ok" if 200 <= answer.status <= 299 else "unavailable"
     except (_Outcome, PluginDataError) as exc:
-        logger.info("plug-in health: the check answered no state (%s)", exc)
+        logger.info(
+            "plug-in health: the check answered no state (%s)",
+            exc.code or TRANSIENT_CODE,
+        )
         return "unavailable"
 
 

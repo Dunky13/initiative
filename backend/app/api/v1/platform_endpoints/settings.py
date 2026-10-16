@@ -521,9 +521,9 @@ async def send_test_email(
             detail=SettingsMessages.SMTP_INCOMPLETE,
         ) from None
     except RuntimeError as exc:
-        # Log the real cause (may include SMTP host/port/server banner) for the
-        # operator, but return only a generic machine-readable code.
-        logger.warning("Test email delivery failed: %s", str(exc))
+        # The send records the failure's type and SMTP reply code; the response
+        # carries only a machine-readable code.
+        logger.warning("Test email delivery failed (%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=SettingsMessages.EMAIL_SEND_FAILED,

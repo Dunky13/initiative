@@ -604,8 +604,8 @@ async def _register_account(
             logger.warning(
                 "SMTP not configured; skipping verification email for user %s", user.id
             )
-        except RuntimeError as exc:  # pragma: no cover
-            logger.error("Failed to send verification email: %s", exc)
+        except RuntimeError:  # pragma: no cover
+            logger.error("Failed to send verification email for user %s", user.id)
     return RegisteredAccount(user=user, codes=codes)
 
 
@@ -1156,11 +1156,7 @@ async def redeem_native_sign_in(
         user_id=user.id,
         token_version=user.token_version,
         amr=handoff.amr,
-        audit_detail={
-            "method": handoff.method,
-            "native": True,
-            "device_name": handoff.device_name,
-        },
+        audit_detail={"method": handoff.method, "native": True},
         satisfied_providers=handoff.satisfied_providers,
         provider_auth=handoff.provider_auth,
         device_name=handoff.device_name,
@@ -1800,13 +1796,17 @@ async def _complete_provider_login(
         provider_id=provider_id,
         assurance=assurance,
     )
+    # What the provider said about this authentication, in the same shape the
+    # session row keeps, with its narrowing claims named rather than valued.
+    # Absent claims add no keys.
+    assured = assurance.as_record()
+    claims = assured.pop("claims", None)
     audit_detail = {
         "method": "oidc",
         "provider": provider_slug,
         "step_up": prior is not None,
-        # What the provider said about this authentication, in the same shape
-        # the session row keeps. Absent claims add no keys.
-        **assurance.as_record(),
+        **assured,
+        **({"claim_names": sorted(claims)} if claims else {}),
     }
     try:
         if prior is None:

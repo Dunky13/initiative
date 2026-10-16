@@ -20,6 +20,7 @@ storage config and the rules for refreshing it:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 
@@ -27,6 +28,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings as app_config
 from app.core.encryption import decrypt_field, SALT_S3_SECRET_KEY
+from app.core.messages import SettingsMessages
+
+logger = logging.getLogger(__name__)
 
 # How long a cached snapshot is trusted before a request-path access reloads it
 # from the DB (covers multi-worker deploys; same-process updates refresh eagerly).
@@ -127,14 +131,13 @@ async def resolve_saved_secret() -> str | None:
 async def test_connection(cfg: ResolvedStorageConfig) -> tuple[bool, str]:
     """Validate that ``cfg`` can reach its bucket (``head_bucket``).
 
-    Returns ``(ok, message)``. boto3 is synchronous, so the call runs in a
-    worker thread. Only reachable by ``config.manage`` holders, so the raw
-    error message is returned to aid debugging (same as the AI test path).
+    Returns ``(ok, message)``; a failure's message is a message code, and its
+    cause is logged. boto3 is synchronous, so the call runs in a worker thread.
     """
     if cfg.backend != "s3":
         return True, "Using local filesystem storage; no S3 connection to test."
     if not cfg.bucket:
-        return False, "S3_BUCKET is required."
+        return False, SettingsMessages.STORAGE_BUCKET_REQUIRED
 
     import anyio  # noqa: PLC0415
 
@@ -148,7 +151,8 @@ async def test_connection(cfg: ResolvedStorageConfig) -> tuple[bool, str]:
     try:
         await anyio.to_thread.run_sync(_head)
     except Exception as exc:  # noqa: BLE001 — report failure to the owner
-        return False, str(exc)
+        logger.warning("storage connection test failed: %s", exc)
+        return False, SettingsMessages.STORAGE_CONNECTION_FAILED
     return True, "Connection successful."
 
 
