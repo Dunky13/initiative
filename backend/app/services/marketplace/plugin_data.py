@@ -78,6 +78,12 @@ from app.core.security import (
 )
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
+from app.schemas.tenant.plugin_data import (
+    PluginDataResponse,
+    PluginSummaryListResponse,
+    PluginSummaryRead,
+    PluginSummaryReturn,
+)
 from app.services.fields.spec import FieldType
 from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
 from app.services.marketplace.context_jwt import mint_context_token
@@ -972,7 +978,7 @@ async def fetch_plugin_source(
     plugin: GuildPlugin,
     endpoint_id: str,
     raw_params: str | None,
-    user_id: int,
+    user_id: int | None,
     is_guild_admin: bool,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> PluginDataResult:
@@ -1079,6 +1085,73 @@ async def cached_call(
         return result, False
     finally:
         _pending.pop(key, None)
+
+
+# --- where the community stands -----------------------------------------------
+#
+# A manifest may name one of its reads as its ``community_summary``: where the
+# community stands with the plug-in (runs used this period, credits left). The
+# community's Usage tab draws it, and so does the operator's sheet for the
+# community. Both read it through these, on a session already routed to the
+# community.
+
+
+def community_summary_endpoint(plugin: GuildPlugin) -> dict[str, Any] | None:
+    """The read an enabled install names as its ``community_summary``, or None."""
+    endpoint_id = (plugin.definition or {}).get("community_summary")
+    if not plugin.enabled or not isinstance(endpoint_id, str):
+        return None
+    return find_read_endpoint(plugin.definition, endpoint_id)
+
+
+async def community_summaries(session: AsyncSession) -> PluginSummaryListResponse:
+    """The installs whose summary declares something it returns, with what it
+    returns. Nothing is fetched here: each summary is read on its own, so one
+    slow plug-in holds up only its own card."""
+    plugins = (await session.exec(select(GuildPlugin).order_by(GuildPlugin.id))).all()
+    items = []
+    for plugin in plugins:
+        returns = (community_summary_endpoint(plugin) or {}).get("returns") or []
+        if returns:
+            items.append(
+                PluginSummaryRead(
+                    plugin_id=plugin.id,
+                    name=plugin.name,
+                    returns=[PluginSummaryReturn(**value) for value in returns],
+                )
+            )
+    return PluginSummaryListResponse(items=items)
+
+
+async def read_community_summary(
+    session: AsyncSession, *, plugin_id: int, user_id: int | None
+) -> PluginDataResponse:
+    """One install's summary, read with the community's admin standing.
+
+    ``user_id`` is the reader when they are one of the community's people, so a
+    per-member connection can answer for them; an operator reads with none. An
+    install that names no summary, or is switched off, answers 404.
+    """
+    plugin = (
+        await session.exec(select(GuildPlugin).where(GuildPlugin.id == plugin_id))
+    ).first()
+    endpoint = community_summary_endpoint(plugin) if plugin else None
+    if plugin is None or endpoint is None:
+        raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
+    result = await fetch_plugin_source(
+        session,
+        plugin=plugin,
+        endpoint_id=endpoint["id"],
+        raw_params=None,
+        user_id=user_id,
+        is_guild_admin=True,
+    )
+    return PluginDataResponse(
+        rows=result.rows,
+        values=result.values,
+        fetched_at=result.fetched_at,
+        cached=result.cached,
+    )
 
 
 # --- filling a menu ---------------------------------------------------------

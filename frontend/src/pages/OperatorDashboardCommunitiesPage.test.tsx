@@ -146,9 +146,20 @@ let narrowings: {
 }[] = [];
 const agreeNarrowing = vi.fn();
 
+// Where each community stands with the plug-ins that say, as its Usage tab
+// shows it, by community.
+let pluginSummaries: Record<number, unknown[]> = {};
+
 vi.mock("@/api/generated/settings/settings", () => ({
   createPlatformCommunityBillingServiceHandoff: (communityId: number, answer: unknown) =>
     answer ? mintHandoff(communityId, answer) : mintHandoff(communityId),
+  useListCommunityPluginSummaries: (communityId: number) => ({
+    data: { items: pluginSummaries[communityId] ?? [] },
+  }),
+  useReadCommunityPluginSummary: () => ({
+    data: { values: { used: 250, allowed: 500 }, rows: [] },
+    isError: false,
+  }),
 }));
 
 // Every page drawing the list, so a test can draw them again with what the
@@ -238,6 +249,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
     mintHandoff.mockReset();
     billingConfig = { url: "https://billing.example.com", operator_handoff: true };
     supportBound = true;
+    pluginSummaries = {};
     narrowings = [];
   });
 
@@ -547,6 +559,29 @@ describe("OperatorDashboardCommunitiesPage", () => {
       await user.click(screen.getByRole("button", { name: /withdraw/i }));
 
       expect(agreeNarrowing).toHaveBeenCalledWith({ connectionId: 3, agreed: false });
+    });
+  });
+
+  describe("plug-in summaries", () => {
+    it("shows the automation runs the community's Usage tab shows", async () => {
+      const capped = served.find((community) => community.name === "Capped Community");
+      pluginSummaries = {
+        [capped?.id ?? 0]: [
+          {
+            plugin_id: 4,
+            name: "Automations",
+            returns: [
+              { key: "used", type: "int", label: { en: "Runs this month" }, of: "allowed" },
+              { key: "allowed", type: "int", label: { en: "Monthly allowance" } },
+            ],
+          },
+        ],
+      };
+      await openSheet("Capped Community");
+
+      expect(screen.getByText("Automations")).toBeInTheDocument();
+      expect(screen.getByText("Runs this month")).toBeInTheDocument();
+      expect(screen.getByText("250 of 500")).toBeInTheDocument();
     });
   });
 

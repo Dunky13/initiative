@@ -22,8 +22,14 @@ import { useTranslation } from "react-i18next";
 import type {
   CommunityAuthOption,
   PlatformCommunityStorageRead,
+  PluginSummaryRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { CommunityAction, CommunityStatus } from "@/api/generated/initiativeAPI.schemas";
+import {
+  useListCommunityPluginSummaries,
+  useReadCommunityPluginSummary,
+} from "@/api/generated/settings/settings";
+import { PluginSummaryFigures } from "@/components/communities/PluginSummaryCards";
 import { BillingConsoleButton, opensBillingHere } from "@/components/platform/BillingConsoleButton";
 import { CommunityRestoreWizard } from "@/components/platform/CommunityRestoreWizard";
 import { Section, SettingRow } from "@/components/platform/SettingRow";
@@ -305,6 +311,8 @@ export const CommunityOperatorSettingsSheet = ({
             />
           </Section>
 
+          {deleted ? null : <PluginSummarySections communityId={community.id} />}
+
           {/* Two separate grants. Either one can be given on its own. */}
           <Section title={t("communities.sheet.decidesForItself")}>
             <SettingRow
@@ -455,6 +463,40 @@ const NarrowingsSection = ({
           </li>
         ))}
       </ul>
+    </Section>
+  );
+};
+
+/**
+ * Where the community stands with each installed plug-in that says — the
+ * automation runs it has used, say — as its own Usage tab shows it, beside the
+ * caps above. One read per plug-in, so one that does not answer holds up no
+ * other.
+ */
+const PluginSummarySections = ({ communityId }: { communityId: number }) => {
+  const { data } = useListCommunityPluginSummaries(communityId);
+  return (
+    <>
+      {(data?.items ?? []).map((summary) => (
+        <PluginSummarySection key={summary.plugin_id} communityId={communityId} summary={summary} />
+      ))}
+    </>
+  );
+};
+
+const PluginSummarySection = ({
+  communityId,
+  summary,
+}: {
+  communityId: number;
+  summary: PluginSummaryRead;
+}) => {
+  const { data, isError } = useReadCommunityPluginSummary(communityId, summary.plugin_id);
+  return (
+    <Section title={summary.name}>
+      <div className="space-y-6 py-3">
+        <PluginSummaryFigures summary={summary} data={data} isError={isError} />
+      </div>
     </Section>
   );
 };
