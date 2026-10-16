@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sanitizeUrl, validateUrl } from "./url";
+import { pasteOverDefaultLinkUrl, sanitizeUrl, validateUrl, withoutDefaultScheme } from "./url";
 
 /**
  * These cases pin the strict-allowlist contract: only allowlisted schemes pass,
@@ -85,5 +85,48 @@ describe("sanitizeUrl link-insertion placeholder", () => {
     // The floating link editor initialises/resets editedLinkUrl to "https://";
     // sanitizing it to about:blank would corrupt link insertion (PR review P1).
     expect(sanitizeUrl("https://")).toBe("https://");
+  });
+});
+
+describe("withoutDefaultScheme", () => {
+  it("drops the default when a full URL follows it", () => {
+    expect(withoutDefaultScheme("https://https://example.com/a")).toBe("https://example.com/a");
+    expect(withoutDefaultScheme("https://http://example.com")).toBe("http://example.com");
+    expect(withoutDefaultScheme("https://HTTPS://example.com")).toBe("HTTPS://example.com");
+    expect(withoutDefaultScheme("https://mailto:user@example.com")).toBe("mailto:user@example.com");
+    expect(withoutDefaultScheme("https:// https://example.com")).toBe("https://example.com");
+  });
+
+  it("drops the default in front of a place in the app", () => {
+    expect(withoutDefaultScheme("https:///c/1/projects")).toBe("/c/1/projects");
+    expect(withoutDefaultScheme("https://#heading")).toBe("#heading");
+  });
+
+  it("keeps the default in front of a bare host", () => {
+    expect(withoutDefaultScheme("https://")).toBe("https://");
+    expect(withoutDefaultScheme("https://example.com")).toBe("https://example.com");
+    expect(withoutDefaultScheme("https://localhost:3000")).toBe("https://localhost:3000");
+  });
+
+  it("leaves a URL that does not start with the default alone", () => {
+    expect(withoutDefaultScheme("example.com")).toBe("example.com");
+    expect(withoutDefaultScheme("http://https://example.com")).toBe("http://https://example.com");
+  });
+
+  it("leaves a URL carried later in the address alone", () => {
+    expect(withoutDefaultScheme("https://example.com/?next=https://other.test")).toBe(
+      "https://example.com/?next=https://other.test"
+    );
+  });
+});
+
+describe("pasteOverDefaultLinkUrl", () => {
+  it("takes a pasted URL whole", () => {
+    expect(pasteOverDefaultLinkUrl("https://example.com/a")).toBe("https://example.com/a");
+    expect(pasteOverDefaultLinkUrl("  http://example.com\n")).toBe("http://example.com");
+  });
+
+  it("keeps https:// in front of a pasted bare host", () => {
+    expect(pasteOverDefaultLinkUrl("example.com/a")).toBe("https://example.com/a");
   });
 });
