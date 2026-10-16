@@ -280,6 +280,7 @@
   },
   "presets": {
     "label": "Vorlagen",
+    "placeholder": "Vorlage wählen",
     "incomplete": "Unerledigt",
     "unassigned": "Nicht zugewiesen",
     "mine": "Meine"

@@ -280,6 +280,7 @@
   },
   "presets": {
     "label": "Préréglages",
+    "placeholder": "Choisir un préréglage",
     "incomplete": "Non terminées",
     "unassigned": "Non attribuées",
     "mine": "Les miennes"

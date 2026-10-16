@@ -126,7 +126,7 @@
   },
   "presets": {
     "heading": "Vorlagen",
-    "help": "Filter und bei einer Tabelle eine Sortierung, die alle im Layout-Menü als Ausgangspunkt wählen können. Wer eine wählt, übernimmt sie als eigene.",
+    "help": "Filter und bei einer Tabelle eine Sortierung, die alle in den Filtern der Liste als Ausgangspunkt wählen können. Wer eine wählt, übernimmt sie als eigene.",
     "none": "Dieses Layout bietet keine Vorlagen.",
     "add": "Vorlage hinzufügen",
     "edit": "{{name}} bearbeiten",

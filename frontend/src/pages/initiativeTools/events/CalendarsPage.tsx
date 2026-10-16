@@ -48,10 +48,9 @@ import {
 } from "@/components/initiativeTools/events/CreateEventDialog";
 import { ICalImportDialog } from "@/components/initiativeTools/events/ICalImportDialog";
 import { ToolFilterPanel } from "@/components/initiativeTools/shared/ToolFilterPanel";
-import { ToolLayoutSelect } from "@/components/initiativeTools/shared/ToolLayoutSelect";
 import { ToolListToolbar } from "@/components/initiativeTools/shared/ToolListToolbar";
+import { ToolPresetSelect } from "@/components/initiativeTools/shared/ToolPresetSelect";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
-import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
 import {
   PropertyFilter,
   type PropertyFilterCondition,
@@ -270,7 +269,7 @@ export const CalendarsView = ({
     () => presetsOf(listLayouts(layoutsQuery.data)[0]?.definition, CALENDAR_PRESETS),
     [layoutsQuery.data]
   );
-  const { pick: namePreset } = usePresetLink<CalendarFilters>({
+  const { preset, pick: namePreset } = usePresetLink<CalendarFilters>({
     slug: searchParams.preset,
     presets,
     ready: layoutsQuery.data !== undefined && view.loaded,
@@ -719,31 +718,6 @@ export const CalendarsView = ({
             ? undefined
             : { open: filtersOpen, onOpenChange: setFiltersOpen, activeCount: activeFilterCount }
         }
-        // The presets the calendar's layout offers, once it offers any.
-        viewControl={
-          presets.length > 0 ? (
-            <ToolLayoutSelect
-              layouts={[
-                {
-                  slug: "calendar",
-                  name: t(`projects:${listLayoutLooks.calendar.labelKey}` as never),
-                  icon: listLayoutLooks.calendar.icon,
-                },
-              ]}
-              activeSlug="calendar"
-              modified={statusFilters.length + priorityFilters.length + propertyFilters.length > 0}
-              onSelect={() => undefined}
-              label={t("projects:layouts.label")}
-              modifiedLabel={t("projects:filters.modified")}
-              presets={presets.map((each) => ({
-                slug: each.slug,
-                name: presetName(each, t as never),
-              }))}
-              presetsLabel={t("projects:presets.label")}
-              onPreset={namePreset}
-            />
-          ) : undefined
-        }
         view={{
           value: viewMode,
           onChange: setViewMode,
@@ -813,6 +787,21 @@ export const CalendarsView = ({
           onOpenChange={setFiltersOpen}
           onClear={clearFilters}
           activeCount={activeFilterCount}
+          // The presets the calendar's layout offers, once it offers any.
+          leading={
+            presets.length > 0 ? (
+              <ToolPresetSelect
+                presets={presets.map((each) => ({
+                  slug: each.slug,
+                  name: presetName(each, t as never),
+                }))}
+                activeSlug={preset?.slug ?? null}
+                onSelect={namePreset}
+                label={t("projects:presets.label")}
+                placeholder={t("projects:presets.placeholder")}
+              />
+            ) : undefined
+          }
         >
           <div className="flex flex-wrap items-end gap-4">
             {/* Tasks on the grid: all of them, and each project's. */}

@@ -126,7 +126,7 @@
   },
   "presets": {
     "heading": "Préréglages",
-    "help": "Des filtres, et pour un tableau un tri, que chacun peut choisir dans le menu de la disposition pour commencer. En choisir un en fait les siens.",
+    "help": "Des filtres, et pour un tableau un tri, que chacun peut choisir dans les filtres de la liste pour commencer. En choisir un en fait les siens.",
     "none": "Cette disposition ne propose aucun préréglage.",
     "add": "Ajouter un préréglage",
     "edit": "Modifier {{name}}",

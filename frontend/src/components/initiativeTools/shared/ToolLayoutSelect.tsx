@@ -3,16 +3,12 @@ import type { LucideIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 
 export type LayoutOption = { slug: string; name: string; icon: LucideIcon };
-export type PresetOption = { slug: string; name: string };
 
 type ToolLayoutSelectProps = {
   layouts: readonly LayoutOption[];
@@ -23,19 +19,11 @@ type ToolLayoutSelectProps = {
   onSelect: (slug: string) => void;
   label: string;
   modifiedLabel: string;
-  /** What the layout shown offers to start from, under `presetsLabel`. */
-  presets?: readonly PresetOption[];
-  presetsLabel?: string;
-  onPreset?: (slug: string) => void;
 };
 
-/** A preset's value in the menu: apart from every layout's. */
-const PRESET = "preset:";
-
 /**
- * Which of a list's layouts it is showing, and the presets that layout offers.
- * Picking a layout shows it; picking a preset applies its filters, and the
- * layout stays.
+ * Which of a list's layouts it is showing. The presets a layout offers lead
+ * its filter panel instead (`ToolPresetSelect`).
  *
  * Tool-agnostic: it knows about slugs, names and icons, not about tasks.
  */
@@ -46,23 +34,15 @@ export const ToolLayoutSelect = ({
   onSelect,
   label,
   modifiedLabel,
-  presets = [],
-  presetsLabel,
-  onPreset,
 }: ToolLayoutSelectProps) => {
   const active = layouts.find((layout) => layout.slug === activeSlug) ?? null;
   const ActiveIcon = active?.icon;
 
   return (
-    <Select
-      value={activeSlug ?? ""}
-      onValueChange={(value) =>
-        value.startsWith(PRESET) ? onPreset?.(value.slice(PRESET.length)) : onSelect(value)
-      }
-    >
+    <Select value={activeSlug ?? ""} onValueChange={onSelect}>
       <SelectTrigger aria-label={label} className="h-9 w-auto max-w-64 gap-2">
         {/* The trigger carries the "modified" marker, not the list: each
-            entry there is a layout or a preset as it is kept. */}
+            entry there is a layout as it is kept. */}
         <SelectValue>
           {active ? (
             <span className="flex min-w-0 items-center gap-2">
@@ -84,19 +64,6 @@ export const ToolLayoutSelect = ({
             </span>
           </SelectItem>
         ))}
-        {presets.length > 0 && onPreset ? (
-          <>
-            <SelectSeparator />
-            <SelectGroup>
-              <SelectLabel>{presetsLabel}</SelectLabel>
-              {presets.map(({ slug, name }) => (
-                <SelectItem key={slug} value={`${PRESET}${slug}`}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </>
-        ) : null}
       </SelectContent>
     </Select>
   );

@@ -311,7 +311,8 @@ describe("CalendarsView presets", () => {
     const { router } = renderCalendars();
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("combobox", { name: /^layout$/i }));
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+    await user.click(await screen.findByRole("combobox", { name: /^presets$/i }));
     await user.click(await screen.findByRole("option", { name: "Urgent" }));
 
     await waitFor(() =>
@@ -324,7 +325,7 @@ describe("CalendarsView presets", () => {
     expect((router.state.location.search as { preset?: string }).preset).toBe("urgent");
   });
 
-  it("offers no menu while the calendar has no presets", async () => {
+  it("offers no preset picker while the calendar has no presets", async () => {
     server.use(
       communityHttp.get("/layouts/", () =>
         HttpResponse.json(buildToolLayoutSet({ tool: "calendar" }))
@@ -332,9 +333,11 @@ describe("CalendarsView presets", () => {
     );
     const requests = stubEntries({ tasks: [] });
     renderCalendars();
+    const user = userEvent.setup();
 
     await waitFor(() => expect(requests.length).toBeGreaterThan(0));
-    expect(screen.queryByRole("combobox", { name: /^layout$/i })).toBeNull();
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+    expect(screen.queryByRole("combobox", { name: /^presets$/i })).toBeNull();
   });
 });
 

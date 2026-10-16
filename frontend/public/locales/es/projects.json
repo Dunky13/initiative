@@ -280,6 +280,7 @@
   },
   "presets": {
     "label": "Ajustes predefinidos",
+    "placeholder": "Elige un ajuste predefinido",
     "incomplete": "Pendientes",
     "unassigned": "Sin asignar",
     "mine": "Mías"

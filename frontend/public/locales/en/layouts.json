@@ -126,7 +126,7 @@
   },
   "presets": {
     "heading": "Presets",
-    "help": "Filters, and on a table a sort, that anyone can pick from the layout menu to start from. Picking one makes them that person's own.",
+    "help": "Filters, and on a table a sort, that anyone can pick from the list's filters to start from. Picking one makes them that person's own.",
     "none": "This layout offers no presets.",
     "add": "Add preset",
     "edit": "Edit {{name}}",
