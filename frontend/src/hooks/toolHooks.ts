@@ -193,6 +193,8 @@ export interface ToolListParams {
   initiative_id?: number | null;
   /** A templates view's switch, for the tools that have one (`toolViewParams`). */
   is_template?: boolean | null;
+  /** Rows carrying any of these tags. */
+  tag_ids?: number[] | null;
 }
 
 /**
@@ -648,6 +650,15 @@ export const TOOL_HOOKS = {
   [Tool.gallery]: makeToolHooks(galleryEndpoints, { seedsDetailOnUpdate: true }),
   [Tool.wiki]: makeToolHooks(wikiEndpoints),
 } satisfies Record<Tool, ToolQueries>;
+
+/**
+ * One tool's community-wide list query, typed as any tool's: for a caller that
+ * holds the tool as a value and only needs what every list answers with.
+ */
+export const toolListQuery = (tool: Tool, communityId: number, params?: ToolListParams) => {
+  const listQuery: ToolQueries["listQuery"] = TOOL_HOOKS[tool].listQuery;
+  return listQuery(communityId, params);
+};
 
 /**
  * Copy one of `tool` into an initiative, its own unless `data` names another.
