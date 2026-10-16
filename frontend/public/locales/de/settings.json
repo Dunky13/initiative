@@ -1364,6 +1364,7 @@
       "storageLabel": "Speicherlimit",
       "decidesForItself": "Was sie selbst entscheidet",
       "deleted": "Gelöscht",
+      "pluginSummariesUnavailable": "Die Plug-in-Nutzung konnte nicht geladen werden.",
       "narrowings": {
         "title": "Wen sie als ihre Leute zählt",
         "help": "Diese Community gibt an, welche Anmeldungen über einen Anbieter zu ihr gehören. Sie benennt die Werte selbst; erst Ihre Zustimmung erlaubt den automatischen Beitritt — bis dahin funktioniert die Verbindung nur für vorhandene Mitglieder.",

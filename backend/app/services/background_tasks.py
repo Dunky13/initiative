@@ -7,6 +7,8 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from app.core import audit_context
+
 if TYPE_CHECKING:
     from app.services.guild_sweeps import Scope, Visit
 
@@ -52,10 +54,11 @@ class Loop:
                 await self._wait()
             while True:
                 self._woken.clear()
-                try:
-                    await work()
-                except Exception:  # pragma: no cover
-                    logger.exception("%s worker encountered an error", self.name)
+                with audit_context.job(self.name):
+                    try:
+                        await work()
+                    except Exception:  # pragma: no cover
+                        logger.exception("%s worker encountered an error", self.name)
                 await self._wait()
         except asyncio.CancelledError:  # pragma: no cover
             logger.info("%s worker cancelled", self.name)

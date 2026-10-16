@@ -385,8 +385,7 @@ export function useReadPluginData<
 
 /**
  * The installs whose pinned definition names a community summary, with
- * what each declares it returns. Nothing is fetched here: each summary is read
- * on its own, so one slow plug-in holds up only its own card.
+ * what each declares it returns.
  * @summary List Plugin Summaries
  */
 export const listPluginSummaries = (
@@ -526,7 +525,8 @@ export function useListPluginSummaries<
  * ``community_summary``; an install that names none, or is switched off,
  * has nothing to draw and answers 404. A plug-in that does not answer comes
  * back as the proxy's own message code, so the page draws "unavailable"
- * rather than failing.
+ * rather than failing. The settings rung is the community's admin standing,
+ * which is what an admin-only summary asks for.
  * @summary Read Plugin Summary
  */
 export const readPluginSummary = (

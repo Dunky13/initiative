@@ -1,6 +1,9 @@
 """Every request is named, and says so on the way out."""
 
-from httpx import AsyncClient
+import logging
+
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
 from app.core import audit_context, metrics
@@ -10,8 +13,9 @@ from app.core.request_audit import (
     REQUEST_ID_HEADER,
     RequestAuditMiddleware,
     record_privileged_edit,
+    server_error,
 )
-from app.testing import emitted
+from app.testing import emitted, in_request_tasks
 
 
 VERSION = "/api/v1/version"
@@ -93,6 +97,44 @@ async def test_a_line_written_by_nobody_carries_no_request(session, capfd):
     assert line["context"] is None
 
 
+async def test_a_request_that_fails_is_answered_and_written_under_its_name(caplog):
+    """The server writes the traceback after the app has raised, in the task
+    it ran the request in, where the request's context is still open; and
+    Starlette's error middleware answers with the request's id."""
+    app = FastAPI()
+    app.add_middleware(RequestAuditMiddleware)
+    app.add_exception_handler(Exception, server_error)
+
+    @app.get("/api/v1/c/{community_id}/tasks/{task_id}")
+    async def boom(community_id: int, task_id: int) -> None:
+        raise RuntimeError("task failed")
+
+    async def run_asgi(scope, receive, send):
+        """What uvicorn does with each request."""
+        try:
+            await app(scope, receive, send)
+        except Exception:
+            logging.getLogger("uvicorn.error").exception(
+                "Exception in ASGI application"
+            )
+
+    with caplog.at_level(logging.ERROR):
+        async with AsyncClient(
+            transport=ASGITransport(app=in_request_tasks(run_asgi)),
+            base_url="http://test",
+        ) as client:
+            answered = await client.get("/api/v1/c/7/tasks/3")
+
+    assert answered.status_code == 500
+    [record] = [r for r in caplog.records if r.name == "uvicorn.error"]
+    assert record.log_context == {
+        "request_id": answered.headers[REQUEST_ID_HEADER],
+        "guild_id": 7,
+        "route": "/api/v1/c/{community_id}/tasks/{task_id}",
+    }
+    assert audit_context.current() is None
+
+
 # --- sockets ------------------------------------------------------------
 
 
@@ -108,7 +150,7 @@ async def _drive_socket(scope: dict, inside) -> None:
     async def send(_message):
         return None
 
-    await RequestAuditMiddleware(app)(scope, receive, send)
+    await in_request_tasks(RequestAuditMiddleware(app))(scope, receive, send)
 
 
 def _ws_scope() -> dict:

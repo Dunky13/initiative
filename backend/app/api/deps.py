@@ -194,6 +194,7 @@ def _admit(
             detail=UserMessages.API_KEY_RESOURCE_ONLY,
         )
     request.state.credential = authenticated.kind.value
+    audit_context.note_actor(authenticated.user.id)
     # Which session this request is: what lets an endpoint act on the
     # account's other ones and leave the caller where they are.
     if authenticated.session_id is not None:

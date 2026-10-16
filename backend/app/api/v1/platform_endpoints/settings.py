@@ -1,10 +1,13 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import (
     CommunityIdPath,
@@ -25,7 +28,10 @@ from app.core.audit_events import AuditEventType
 from app.core.config import DEFAULT_OIDC_SCOPES
 from app.core.config import settings as app_config
 from app.core.intake import IntakeStream
+from app.db import cohorts
 from app.db.query import build_paginated_response, paginated_query
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.models.platform.app_setting import AppSetting
 from app.models.platform.app_setting_secret import AppSettingSecret
 from app.models.platform.guild import (
@@ -82,6 +88,7 @@ from app.models.platform.user import User
 from app.schemas.platform.access_grant import BreakGlassCreate, SecondFactorAnswer
 from app.schemas.platform.billing import BillingPortalHandoffResponse
 from app.schemas.platform.push import FCMConfigResponse
+from app.schemas.tenant.plugin_data import PluginDataResponse, PluginSummaryListResponse
 from app.core.messages import (
     AuthMessages,
     BillingMessages,
@@ -97,6 +104,7 @@ from app.core.security import (
 from app.services.platform.identity_refs import billing_ref, billing_refs
 from app.services.platform import access_grants as access_grants_service
 from app.services.auth import narrowing_review
+from app.services.marketplace import plugin_data as plugin_data_service
 from app.services.auth import platform_provider as platform_provider_service
 from app.services.auth import provider_registry
 from app.core.login_methods import (
@@ -1379,6 +1387,60 @@ async def agree_community_narrowing(
         agreed=payload.agreed,
         actor_user_id=operator.id,
     )
+
+
+@asynccontextmanager
+async def _routed_to_community(
+    session: AsyncSession, guild_id: int
+) -> AsyncIterator[AsyncSession]:
+    """A system session routed to a community that is still there."""
+    guild = await session.get(Guild, guild_id)
+    if guild is None or guild.status == CommunityStatus.deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=GuildMessages.COMMUNITY_NOT_FOUND,
+        )
+    async with cohorts.system_session(guild_id) as routed:
+        await set_rls_context(routed, SystemGuild(guild_id))
+        yield routed
+
+
+@router.get(
+    "/communities/{community_id}/plugin-summaries",
+    response_model=PluginSummaryListResponse,
+)
+async def list_community_plugin_summaries(
+    guild_id: CommunityIdPath,
+    session: SystemSessionDep,
+    operator: GuildsManageDep,
+) -> PluginSummaryListResponse:
+    """The community's installs that say where it stands with them, as its
+    Usage tab lists them.
+
+    Operator/owner (``communities.manage``), for the community's sheet: the
+    caps set there sit beside what the community uses of them.
+    """
+    async with _routed_to_community(session, guild_id) as routed:
+        return await plugin_data_service.community_summaries(routed)
+
+
+@router.get(
+    "/communities/{community_id}/plugin-summaries/{plugin_id}",
+    response_model=PluginDataResponse,
+)
+async def read_community_plugin_summary(
+    guild_id: CommunityIdPath,
+    plugin_id: int,
+    session: SystemSessionDep,
+    operator: GuildsManageDep,
+) -> PluginDataResponse:
+    """Where the community stands with one installed plug-in, as its Usage tab
+    reads it. The operator is not one of the community's people, so a summary
+    that needs a member's own connection answers that it needs one."""
+    async with _routed_to_community(session, guild_id) as routed:
+        return await plugin_data_service.read_community_summary(
+            routed, plugin_id=plugin_id, user_id=None
+        )
 
 
 @router.post(

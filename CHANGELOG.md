@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each release publishes its API spec (API).** The GitHub release carries `openapi.json`, the OpenAPI spec of the image it ships, to generate a client from or check one against.
 - **Home.** The page you land on after signing in is now a page of widgets you arrange with **Customize**: a greeting, Focus, My tasks, your calendar, recent items and activity, your communities, progress, Favorites, and a clock and timer. Keep several views as tabs, each from a blank page or a ready-made one and with its own banner. A new account's first view suits why it signed up, with a **Getting started** card. My Tasks is now Home in the sidebar, and until you change anything it shows what My Tasks did.
 - **Home layouts in the marketplace.** A **Home layouts** shelf offers five ready-made views, and server owners can publish their own as `home_layout` listings.
 - **Star any tool.** Every kind of tool can be starred, and the sidebar's **Favorites** lists them all. Starred projects carry over.
@@ -37,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AccessGrantRead.user_email` and `approved_by_email` are replaced by `user` and `approved_by`, which name people by handle.
   - `POST /api/v1/me/tickets` and `POST /api/v1/me/tickets/{task_id}/replies` take `multipart/form-data`: the ticket as JSON in `payload`, or the answer in `body`, beside any `files`.
   - **Audit lines name people by id only.** `user.username_changed` carries no handles, a suspension's detail is `reason_given` rather than the reason, a native sign-in carries no device name, and an SSO sign-in lists `claim_names` rather than the claims' values.
+  - **Server logs are JSON.** Standard error is one JSON object per line, the web server's request lines included, and each line names its request, account, community and route. The request line names the route a request matched rather than its address, leaves out the query string, and is written to standard error, so standard output carries the audit stream alone.
 - **Fields save as you change them.** Tasks and events have no Save button, and an event's settings page is gone: edit it on its own page. Properties on every tool save the same way. Descriptions keep a draft and show you someone else's edit before overwriting it. People who can't edit see values, not disabled boxes.
 - **Adding a task, event, queue item or counter shows its layout**, and closing the dialog discards it.
 - **Layouts decide what boards and tables show, for everyone.** The board's **Fields** and the table's **Columns** menus are gone; set them in **Edit layouts**.
