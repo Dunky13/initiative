@@ -8,7 +8,10 @@ export PATH="/app/.venv/bin:$PATH"
 ARGS="app.main:app --host 0.0.0.0 --port 8173"
 
 if [ "${BEHIND_PROXY:-false}" = "true" ]; then
-    FORWARDED_IPS="${FORWARDED_ALLOW_IPS:-*}"
+    # The loopback, private and link-local ranges: a proxy on this host, its
+    # container network or the LAN. A proxy anywhere else is named in
+    # FORWARDED_ALLOW_IPS.
+    FORWARDED_IPS="${FORWARDED_ALLOW_IPS:-127.0.0.0/8,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,fc00::/7,fe80::/10}"
     ARGS="$ARGS --proxy-headers --forwarded-allow-ips=$FORWARDED_IPS"
 fi
 
