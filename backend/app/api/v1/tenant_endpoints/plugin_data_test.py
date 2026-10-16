@@ -1692,6 +1692,37 @@ class TestSummary:
 
         assert response.status_code == 403
 
+    async def test_an_operator_lists_and_reads_summaries_without_joining(
+        self, client, acting_user, session, upstream
+    ):
+        """The operator's sheet for the community shows what its Usage tab
+        does, with no membership or grant."""
+        a, plugin = await self._summarised(session, acting_user)
+        upstream.values = {"tiers": 3}
+        headers = get_auth_headers(await create_user(session, role=UserRole.operator))
+        base = f"/api/v1/settings/communities/{a.guild.id}/plugin-summaries"
+
+        listed = await client.get(base, headers=headers)
+        read = await client.get(f"{base}/{plugin.id}", headers=headers)
+
+        assert listed.status_code == 200, listed.text
+        assert [item["plugin_id"] for item in listed.json()["items"]] == [plugin.id]
+        assert read.status_code == 200, read.text
+        assert read.json()["values"] == {"tiers": 3}
+
+    async def test_support_reads_no_operator_summaries(
+        self, client, acting_user, session, upstream
+    ):
+        a, _ = await self._summarised(session, acting_user)
+        headers = get_auth_headers(await create_user(session, role=UserRole.support))
+
+        response = await client.get(
+            f"/api/v1/settings/communities/{a.guild.id}/plugin-summaries",
+            headers=headers,
+        )
+
+        assert response.status_code == 403
+
 
 async def test_a_viewer_too_young_for_the_plugin_reads_no_tile(
     client, acting_user, session, upstream
