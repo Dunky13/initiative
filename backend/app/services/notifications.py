@@ -20,6 +20,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlencode
 
@@ -1115,6 +1116,21 @@ def digest_scan(spec: DigestSpec, *, now: datetime) -> Scan:
     return Scan(Scope.LIVE, _waiting, _finish)
 
 
+async def _waiting_stamps(
+    model: Any, user_id: int, routed: AsyncSession, _guild_id: int
+) -> list[datetime]:
+    """When the person's oldest and newest unsent items in the routed
+    community came."""
+    row = (
+        await routed.exec(
+            select(func.min(model.created_at), func.max(model.created_at)).where(
+                model.user_id == user_id, model.processed_at.is_(None)
+            )
+        )
+    ).one()
+    return [stamp for stamp in row if stamp is not None]
+
+
 async def _send_digests(
     session: AsyncSession,
     spec: DigestSpec,
@@ -1133,16 +1149,32 @@ async def _send_digests(
     # predicate would be a second copy of it that could drift. The channel
     # preferences are read again at delivery time.
     all_prefs = await notification_prefs.load_prefs_for(session, list(pending))
+    settled = partial(
+        _digest_is_due,
+        now=now,
+        quiet_period=spec.quiet_period,
+        max_window=spec.max_window,
+    )
     for user_id, held in pending.items():
         if not wants_digest(all_prefs.get(user_id), spec.category):
             continue
         stamps = [stamp for pair in held.values() for stamp in pair]
-        if not _digest_is_due(
-            stamps,
-            now=now,
-            quiet_period=spec.quiet_period,
-            max_window=spec.max_window,
-        ):
+        guild_ids: list[int] = []
+        ready = settled(stamps)
+        if ready:
+            # Every community they still belong to, not only those this pass
+            # visited: items elsewhere join the same digest, and one still
+            # arriving there holds it back.
+            guild_ids = await member_guild_ids(session, user_id)
+            stamps += await gather_across_guilds(
+                session,
+                user_id,
+                [guild_id for guild_id in guild_ids if guild_id not in held],
+                partial(_waiting_stamps, model, user_id),
+                on_behalf=True,
+            )
+            ready = settled(stamps)
+        if not ready:
             due = min(max(stamps) + spec.quiet_period, min(stamps) + spec.max_window)
             for guild_id in held:
                 later[guild_id] = min(later.get(guild_id, due), due)
@@ -1168,14 +1200,12 @@ async def _send_digests(
             )
             return [spec.row(item, gid) for item in items]
 
-        # Every community they still belong to, not only those this pass
-        # visited: items elsewhere join the same digest. Digests act on
-        # membership (no live session exists here) — the system sentinel
-        # clears the guild auth-policy gate.
+        # Digests act on membership (no live session exists here) — the
+        # system sentinel clears the guild auth-policy gate.
         batch = await gather_across_guilds(
             session,
             user_id,
-            await member_guild_ids(session, user_id),
+            guild_ids,
             _take,
             on_behalf=True,
             writes=True,
@@ -1850,10 +1880,13 @@ def _overdue_assignments(*columns: Any, overdue: bool = True) -> Any:
     return statement
 
 
-def next_overdue() -> Any:
+def next_overdue(after: datetime | None = None) -> Any:
     """When an assigned, unfinished task in the routed community first is (or
-    was) overdue."""
-    return _overdue_assignments(func.min(Task.due_date), overdue=False)
+    was) overdue; with ``after``, the first deadline from then on."""
+    statement = _overdue_assignments(func.min(Task.due_date), overdue=False)
+    if after is not None:
+        statement = statement.where(Task.due_date >= after)
+    return statement
 
 
 async def _overdue_tasks_for_user(
@@ -1924,20 +1957,29 @@ def overdue_scan(*, now: datetime) -> Scan:
     """
     # Who has an overdue task anywhere, and in which communities.
     overdue: dict[int, list[int]] = {}
+    # Each community's next deadline still to pass.
+    ahead: dict[int, datetime] = {}
 
     async def _overdue_here(routed: AsyncSession, guild_id: int) -> None:
         for user_id in (
             await routed.exec(_overdue_assignments(TaskAssignee.user_id).distinct())
         ).scalars():
             overdue.setdefault(user_id, []).append(guild_id)
+        deadline = (await routed.exec(next_overdue(after=now))).scalar()
+        if deadline is not None:
+            ahead[guild_id] = deadline
 
     async def _finish() -> dict[int, datetime]:
-        if not overdue:
+        later: dict[int, datetime] = {}
+        if overdue:
+            async with cohorts.system_session(None) as session:
+                await set_rls_context(session, Unattributed())
+                later = await _send_overdue(session, overdue, now=now)
+        else:
             logger.debug("overdue-digest: nothing overdue")
-            return {}
-        async with cohorts.system_session(None) as session:
-            await set_rls_context(session, Unattributed())
-            return await _send_overdue(session, overdue, now=now)
+        for guild_id, deadline in ahead.items():
+            later[guild_id] = min(later.get(guild_id, deadline), deadline)
+        return later
 
     return Scan(Scope.LIVE, _overdue_here, _finish)
 
@@ -2021,10 +2063,10 @@ async def _send_overdue(
             _next(user_id, following)
             continue
         # User-scoped: visit each of the user's guild schemas with their own
-        # membership context (no all-guild access) and collect their overdue tasks.
-        guild_ids = await member_guild_ids(
-            session, user_id, restrict_to=overdue[user_id]
-        )
+        # membership context (no all-guild access) and collect their overdue
+        # tasks. Every community they belong to, not only those this pass
+        # visited: today's digest is claimed once, so it has to hold them all.
+        guild_ids = await member_guild_ids(session, user_id)
         tasks = await gather_across_guilds(
             session,
             user_id,
@@ -2480,7 +2522,7 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
                     )
                 )
             )
-        ).first():
+        ).scalar_one():
             upcoming.append(now + timedelta(days=1))
         return min(upcoming, default=None)
 

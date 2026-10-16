@@ -726,8 +726,8 @@ def _visit_and_rearm(
     finishing: dict[int, list[int]] | None,
 ) -> Visit:
     """``visit``, then the sweep's next timer, then the claimed rows marked
-    for deletion. With ``finishing``, the next timer waits for the scan's
-    finish, which answers it."""
+    for deletion. With ``finishing`` (a scan's), the rows wait for the scan's
+    finish, and so does the next timer unless the visit answers it."""
 
     async def run(session: AsyncSession, guild_id: int) -> None:
         # Taken: a write from here on arms afresh rather than counting on the
@@ -738,14 +738,16 @@ def _visit_and_rearm(
         await session.commit()
         if finishing is not None:
             finishing[guild_id] = ids
-            return
+            if not sweep.answers:
+                return
         due = (
             answered
             if sweep.answers
             else await _next_due(session, sweep, datetime.now(timezone.utc))
         )
         await _arm_next(session, guild_id, sweep, due)  # type: ignore[arg-type]
-        done.update(ids)
+        if finishing is None:
+            done.update(ids)
 
     return run
 
@@ -858,8 +860,6 @@ async def _run(claimed: list[Any], now: datetime) -> None:
             finishing = None
             if isinstance(made, Scan):
                 scan, finishing = scans.setdefault(kind, (made, {}))
-                if sweep.answers:
-                    finishing = None
                 visit = scan.visit
             else:
                 visit = made
@@ -872,10 +872,15 @@ async def _run(claimed: list[Any], now: datetime) -> None:
     for kind, (scan, finishing) in scans.items():
         sweep = registry[kind]
         if sweep.answers:
+            # What the visits found is sent here: a finish that fails leaves
+            # the timers to their lease.
             try:
                 await scan.finish()
             except Exception:
                 logger.exception("timers: finishing %s failed", kind)
+                continue
+            for ids in finishing.values():
+                done.update(ids)
         else:
             await _finish(sweep, scan, finishing, done)
     await _delete(done)
