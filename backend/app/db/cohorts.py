@@ -145,6 +145,7 @@ def _build_makers(
         engine = create_async_engine(
             cohort_url(url, cohort) if divided else url,
             echo=False,
+            hide_parameters=True,
             pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
             **pool,
         )

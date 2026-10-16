@@ -48,6 +48,7 @@ from app.db.system_grants import (
     revoke_statements,
 )
 from app.core.clock import utcnow
+from app.core.messages import SettingsMessages
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,7 @@ async def _finalize(
             session,
             status="failed",
             summary=summary,
-            error="another backfill is already running",
+            error=SettingsMessages.STORAGE_BACKFILL_RUNNING,
             finished=True,
         )
     else:
@@ -278,9 +279,9 @@ async def _run() -> None:
             try:
                 summary = await backfill_uploads_to_s3(on_progress=_on_progress)
                 await _finalize(session, summary=summary)
-            except Exception as exc:  # noqa: BLE001 — surface the failure in status
+            except Exception:  # noqa: BLE001 — surface the failure in status
                 logger.exception("storage backfill failed")
-                await _finalize(session, error=str(exc))
+                await _finalize(session, error=SettingsMessages.STORAGE_BACKFILL_FAILED)
     except asyncio.CancelledError:
         # Stopped at shutdown, however early. The copy skips what the bucket
         # already holds, so the next run carries on from here and may start now.

@@ -382,7 +382,7 @@ def build_calendar_events(
     components = [c for c in cal.walk() if c.name == "VEVENT"]
     # Each series before the occurrences that point at it.
     components.sort(key=lambda c: c.get("recurrence-id") is not None)
-    for component in components:
+    for position, component in enumerate(components, start=1):
         title = str(component.get("summary") or "") or None
         try:
             data = _extract_vevent(component, zone)
@@ -411,8 +411,14 @@ def build_calendar_events(
             elif event.recurrence and uid:
                 series[uid] = event
             events.append(event)
-        except Exception:
-            logger.exception("iCal import could not read event %r", title)
+        except Exception as exc:
+            logger.error(
+                "iCal import into calendar %s could not read event %s of %s (%s)",
+                calendar_id,
+                position,
+                len(components),
+                type(exc).__name__,
+            )
             errors.append(
                 ICalImportError(problem=ICalImportProblem.unreadable, title=title)
             )

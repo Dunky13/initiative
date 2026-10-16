@@ -1,4 +1,4 @@
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { useEmailLinkToken } from "@/hooks/useEmailLinkToken";
 import { getErrorMessage } from "@/lib/errorMessage";
 
 type Step = "reading" | "ready" | "done" | "undone" | "invalid";
@@ -57,7 +58,7 @@ const subjectKey = (notice: string) => {
  */
 export const AccountNotMePage = () => {
   const { t } = useTranslation("auth");
-  const { token } = useSearch({ strict: false }) as { token?: string };
+  const token = useEmailLinkToken();
   const { user, refreshUser } = useAuth();
   const [step, setStep] = useState<Step>(token ? "reading" : "invalid");
   const [answer, setAnswer] = useState<AccountChangeRead | null>(null);

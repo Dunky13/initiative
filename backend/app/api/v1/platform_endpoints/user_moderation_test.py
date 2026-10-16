@@ -97,7 +97,7 @@ class TestRenaming:
     ):
         moderator = await create_user(session, role=UserRole.moderator)
         subject = await create_user(session, username="before", discriminator=7)
-        subject_id = subject.id
+        subject_id, moderator_id = subject.id, moderator.id
         capfd.readouterr()
 
         await client.patch(
@@ -111,10 +111,8 @@ class TestRenaming:
             session, subject_id
         )
         assert entry["event_type"] == "user.username_changed"
-        # The handle they lost is what they will look for; the one they have is
-        # already on screen.
-        assert entry["detail"]["from"] == "before#0007"
-        assert entry["detail"]["to"] == "after#0007"
+        assert entry["actor_user_id"] == moderator_id
+        assert entry["detail"] == {}
 
     @pytest.mark.parametrize("role", [UserRole.member, UserRole.support])
     async def test_below_moderator_is_refused(
@@ -268,8 +266,11 @@ class TestSuspension:
         await self._suspend(client, moderator, member, reason="Terms of use")
         await self._suspend(client, moderator, member, suspended=False)
 
-        kinds = [e["event_type"] for e in _audit_entries(capfd, member_id)]
-        assert set(kinds) == {"user.suspended", "user.unsuspended"}
+        entries = _audit_entries(capfd, member_id)
+        assert {e["event_type"]: e["detail"] for e in entries} == {
+            "user.suspended": {"reason_given": True},
+            "user.unsuspended": {"reason_given": False},
+        }
 
     async def test_a_moderator_cannot_suspend_themselves(
         self, client, session, moderator_and_member

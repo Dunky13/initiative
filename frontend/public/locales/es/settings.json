@@ -1364,6 +1364,7 @@
       "storageLabel": "Límite de almacenamiento",
       "decidesForItself": "Lo que decide por su cuenta",
       "deleted": "Eliminada",
+      "pluginSummariesUnavailable": "No se pudo cargar el uso de los plug-ins.",
       "narrowings": {
         "title": "A quién considera de los suyos",
         "help": "Esta comunidad indica qué llegadas a través de un proveedor son suyas. Ella misma nombra los valores, así que su acuerdo es lo que permite el ingreso automático; hasta entonces la conexión solo sirve para quienes ya están dentro.",

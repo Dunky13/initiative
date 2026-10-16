@@ -12,6 +12,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import text
 
+from app.core.messages import SettingsMessages
 from app.db.backfill_uploads_to_s3 import BackfillSummary
 from app.services import storage_backfill
 
@@ -110,10 +111,12 @@ async def test_finalize_maps_outcomes(system_session) -> None:
     )
     row = await storage_backfill.get_status(system_session)
     assert row["status"] == "failed"
-    assert row["error"] and "already running" in row["error"]
+    assert row["error"] == SettingsMessages.STORAGE_BACKFILL_RUNNING
 
     await storage_backfill.try_claim(system_session)
-    await storage_backfill._finalize(system_session, error="boom")
+    await storage_backfill._finalize(
+        system_session, error=SettingsMessages.STORAGE_BACKFILL_FAILED
+    )
     row = await storage_backfill.get_status(system_session)
     assert row["status"] == "failed"
-    assert row["error"] == "boom"
+    assert row["error"] == SettingsMessages.STORAGE_BACKFILL_FAILED

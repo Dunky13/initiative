@@ -27,6 +27,7 @@ from typing import Any
 
 import httpx
 
+from app.core.config import _origin_of
 from app.services.safe_http import ResponseTooLargeError, request_public_target
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
@@ -85,6 +86,9 @@ async def deliver(
         "User-Agent": "initiative-webhooks/1",
     }
 
+    # Lines below name the delivery by its event id and the target's origin.
+    origin = _origin_of(target_url)
+
     try:
         answer = await asyncio.wait_for(
             request_public_target(
@@ -103,17 +107,19 @@ async def deliver(
         status_code = exc.status_code
     except (WebhookTargetUrlError, WebhookTargetUrlPrivateError) as exc:
         logger.warning(
-            "webhook delivery skipped — target failed validation: target=%s err=%s",
-            target_url,
-            exc,
+            "webhook delivery skipped — target failed validation: "
+            "origin=%s event=%s err=%s",
+            origin,
+            envelope.get("event_id"),
+            type(exc).__name__,
         )
         return False
     except Exception as exc:  # noqa: BLE001 — best-effort delivery
         logger.warning(
-            "webhook delivery failed: target=%s event=%s err=%s",
-            target_url,
+            "webhook delivery failed: origin=%s event=%s err=%s",
+            origin,
             envelope.get("event_id"),
-            exc,
+            type(exc).__name__,
         )
         return False
 
@@ -123,8 +129,8 @@ async def deliver(
     # seen it.
     if status_code is None or not 200 <= status_code < 300:
         logger.warning(
-            "webhook delivery not accepted: target=%s event=%s status=%s",
-            target_url,
+            "webhook delivery not accepted: origin=%s event=%s status=%s",
+            origin,
             envelope.get("event_id"),
             status_code,
         )

@@ -25,6 +25,7 @@ import {
   useTestStorageConnection,
   useUpdateStorageSettings,
 } from "@/hooks/useSettings";
+import { messageForCode } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import { Capability, hasCapability } from "@/lib/permissions";
 
@@ -102,7 +103,7 @@ export const SettingsStoragePage = () => {
       if (result.success) {
         toast.success(result.message || t("storage.testSuccess"));
       } else {
-        toast.error(result.message || t("storage.testError"));
+        toast.error(messageForCode(result.message, "settings:storage.testError"));
       }
     },
     onError: () => toast.error(t("storage.testError")),
@@ -301,7 +302,12 @@ export const SettingsStoragePage = () => {
                 })}
               </p>
               {backfillStatus.data.error && (
-                <p className="text-destructive">{backfillStatus.data.error}</p>
+                <p className="text-destructive">
+                  {messageForCode(
+                    backfillStatus.data.error,
+                    "errors:SETTINGS_STORAGE_BACKFILL_FAILED"
+                  )}
+                </p>
               )}
             </div>
           )}

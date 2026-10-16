@@ -1,6 +1,9 @@
 """Tests for transactional email rendering (HTML escaping)."""
 
+import logging
+import smtplib
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -234,3 +237,46 @@ def test_a_letter_writes_a_day_the_way_its_language_does(locale, expected):
     from datetime import date
 
     assert email_service.email_date(date(2026, 10, 8), locale) == expected
+
+
+@pytest.mark.parametrize(
+    "refusal, line",
+    [
+        (
+            smtplib.SMTPDataError(554, b"rejected for someone@example.com"),
+            "Failed to send email (SMTPDataError, code 554)",
+        ),
+        (
+            smtplib.SMTPRecipientsRefused({"someone@example.com": (550, b"no")}),
+            "Failed to send email (SMTPRecipientsRefused)",
+        ),
+    ],
+)
+async def test_a_refused_send_logs_its_type_and_code_and_raises_without_it(
+    monkeypatch, caplog, refusal, line
+):
+    config = SimpleNamespace(from_address="initiative@example.com", password=None)
+
+    async def no_password():
+        return None
+
+    def refuse(_config, _message):
+        raise refusal
+
+    monkeypatch.setattr(email_service, "_build_smtp_config", lambda _s: config)
+    monkeypatch.setattr(email_service, "_smtp_password", no_password)
+    monkeypatch.setattr(email_service, "_deliver", refuse)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError) as raised:
+        await email_service.send_email(
+            None,
+            recipients=["someone@example.com"],
+            subject="Hello",
+            html_body="<p>Hello</p>",
+            settings_obj=SimpleNamespace(),
+        )
+
+    assert line in caplog.text
+    assert "someone@example.com" not in caplog.text
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__

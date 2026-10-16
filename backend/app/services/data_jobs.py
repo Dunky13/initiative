@@ -40,6 +40,7 @@ from sqlalchemy import func
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core import audit_context
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import set_rls_context
@@ -241,27 +242,27 @@ class Dispatcher(Generic[JobT]):
         """One claimed job, start to finish, on a session of its own. Once it
         ends, the community's next queued job may start."""
         model: Any = self.model
-        try:
-            async with cohorts.system_session(guild_id) as session:
-                await set_rls_context(session, SystemGuild(guild_id))
-                job = (
-                    await session.exec(select(model).where(model.id == job_id))
-                ).one_or_none()
-                if job is None:
-                    return
-                # End the read here rather than holding it open for as long as
-                # the job runs.
-                await session.commit()
-                outcome = await self.run(session, job, guild_id=guild_id, kind=kind)
-                if outcome is not None:
-                    await notify(session, [outcome])
-        except Exception:
-            logger.exception(
-                "%s job task failed id=%s guild=%s", self.name, job_id, guild_id
-            )
-        finally:
-            # Out of the slot before the wake, so this process can claim again.
-            self.running.pop((guild_id, job_id), None)
+        with audit_context.job(self.name, guild_id=guild_id):
+            try:
+                async with cohorts.system_session(guild_id) as session:
+                    await set_rls_context(session, SystemGuild(guild_id))
+                    job = (
+                        await session.exec(select(model).where(model.id == job_id))
+                    ).one_or_none()
+                    if job is None:
+                        return
+                    # End the read here rather than holding it open for as long
+                    # as the job runs.
+                    await session.commit()
+                    outcome = await self.run(session, job, guild_id=guild_id, kind=kind)
+                    if outcome is not None:
+                        await notify(session, [outcome])
+            except Exception:
+                logger.exception("%s job task failed id=%s", self.name, job_id)
+            finally:
+                # Out of the slot before the wake, so this process can claim
+                # again.
+                self.running.pop((guild_id, job_id), None)
         await guild_work.send(guild_work.DATA_JOBS, guild_id)
 
 

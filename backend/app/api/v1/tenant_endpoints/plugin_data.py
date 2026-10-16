@@ -73,8 +73,6 @@ from app.schemas.tenant.plugin_data import (
     PluginParamOption,
     PluginParamOptionsResponse,
     PluginSummaryListResponse,
-    PluginSummaryRead,
-    PluginSummaryReturn,
     PluginWidgetCatalogEntry,
     PluginWidgetCatalogResponse,
     PluginWidgetRead,
@@ -358,37 +356,14 @@ def _transformed(
     )
 
 
-def _summary_endpoint(plugin: GuildPlugin) -> dict[str, Any] | None:
-    """The read an enabled install names as its ``community_summary``, or None."""
-    endpoint_id = (plugin.definition or {}).get("community_summary")
-    if not plugin.enabled or not isinstance(endpoint_id, str):
-        return None
-    return plugin_data_service.find_read_endpoint(plugin.definition, endpoint_id)
-
-
 @router.get("/summaries", response_model=PluginSummaryListResponse)
 async def list_plugin_summaries(
     session: SettingsRLSSessionDep,
     _guild_context: SettingsAdminContextDep,
 ) -> PluginSummaryListResponse:
     """The installs whose pinned definition names a community summary, with
-    what each declares it returns. Nothing is fetched here: each summary is read
-    on its own, so one slow plug-in holds up only its own card."""
-    plugins = (await session.exec(select(GuildPlugin).order_by(GuildPlugin.id))).all()
-    items: list[PluginSummaryRead] = []
-    for plugin in plugins:
-        endpoint = _summary_endpoint(plugin)
-        returns = (endpoint or {}).get("returns") or []
-        if not returns:
-            continue
-        items.append(
-            PluginSummaryRead(
-                plugin_id=plugin.id,
-                name=plugin.name,
-                returns=[PluginSummaryReturn(**value) for value in returns],
-            )
-        )
-    return PluginSummaryListResponse(items=items)
+    what each declares it returns."""
+    return await plugin_data_service.community_summaries(session)
 
 
 @router.get("/{plugin_id}/summary", response_model=PluginDataResponse)
@@ -404,34 +379,11 @@ async def read_plugin_summary(
     ``community_summary``; an install that names none, or is switched off,
     has nothing to draw and answers 404. A plug-in that does not answer comes
     back as the proxy's own message code, so the page draws "unavailable"
-    rather than failing.
+    rather than failing. The settings rung is the community's admin standing,
+    which is what an admin-only summary asks for.
     """
-    plugin = (
-        await session.exec(select(GuildPlugin).where(GuildPlugin.id == plugin_id))
-    ).first()
-    endpoint = _summary_endpoint(plugin) if plugin else None
-    if plugin is None or endpoint is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=PluginDataMessages.ENDPOINT_NOT_FOUND,
-        )
-
-    result = await plugin_data_service.fetch_plugin_source(
-        session,
-        plugin=plugin,
-        endpoint_id=endpoint["id"],
-        raw_params=None,
-        user_id=current_user.id,
-        # The settings rung is the community's admin standing, which is
-        # what an admin-only summary asks for.
-        is_guild_admin=True,
-    )
-
-    return PluginDataResponse(
-        rows=result.rows,
-        values=result.values,
-        fetched_at=result.fetched_at,
-        cached=result.cached,
+    return await plugin_data_service.read_community_summary(
+        session, plugin_id=plugin_id, user_id=current_user.id
     )
 
 

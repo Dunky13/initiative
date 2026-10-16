@@ -291,9 +291,16 @@ async def send_email(
         await asyncio.to_thread(_deliver, config, message)
     except EmailNotConfiguredError:
         raise
-    except Exception as exc:  # pragma: no cover
-        logger.exception("Failed to send email: %s", exc)
-        raise RuntimeError("Failed to send email") from exc
+    except Exception as exc:
+        # Records the failure's type and SMTP reply code; the error raised to
+        # callers carries no chained cause.
+        if isinstance(exc, smtplib.SMTPResponseException):
+            logger.error(
+                "Failed to send email (%s, code %s)", type(exc).__name__, exc.smtp_code
+            )
+        else:
+            logger.error("Failed to send email (%s)", type(exc).__name__)
+        raise RuntimeError("Failed to send email") from None
 
 
 async def send_test_email(session: AsyncSession, recipient: str) -> None:
