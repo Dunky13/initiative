@@ -12914,6 +12914,10 @@ export type ReadPluginParamOptionsParams = {
   params?: string | null;
 };
 
+export type UninstallCommunityPluginParams = {
+  erase?: boolean;
+};
+
 export type ReadUninstallNoticeParams = {
   /**
    * @maxLength 35

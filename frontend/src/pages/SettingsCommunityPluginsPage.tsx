@@ -39,9 +39,11 @@ import { PluginUpdatesPanel } from "@/components/plugins/PluginUpdatesPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
@@ -68,6 +70,8 @@ export function SettingsCommunityPluginsPage() {
   // community, are the seat's. Connecting your own account is not, and
   // happens from the plug-in itself rather than here.
   const holdsTheSeat = Boolean(activeCommunity?.can.seat);
+  // Erasing a plug-in's data with it is for the community's own admins.
+  const administers = Boolean(activeCommunity?.can.administer_content);
 
   const plugins = pluginsQuery.data?.items ?? [];
 
@@ -82,7 +86,12 @@ export function SettingsCommunityPluginsPage() {
           <Skeleton className="h-20 w-full" />
         ) : plugins.length ? (
           plugins.map((plugin) => (
-            <PluginRow key={plugin.id} plugin={plugin} canManage={Boolean(holdsTheSeat)} />
+            <PluginRow
+              key={plugin.id}
+              plugin={plugin}
+              canManage={Boolean(holdsTheSeat)}
+              canErase={holdsTheSeat && administers}
+            />
           ))
         ) : (
           <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
@@ -123,10 +132,19 @@ export interface PluginListItem {
   available?: boolean;
 }
 
-function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: boolean }) {
+function PluginRow({
+  plugin,
+  canManage,
+  canErase,
+}: {
+  plugin: PluginListItem;
+  canManage: boolean;
+  canErase: boolean;
+}) {
   const { t, i18n } = useTranslation(["plugins", "common"]);
   const [name, setName] = useState(plugin.name);
   const [confirming, setConfirming] = useState(false);
+  const [erase, setErase] = useState(false);
   const [open, setOpen] = useState(false);
   const update = useUpdateCommunityPlugin(plugin.id);
   const uninstall = useUninstallCommunityPlugin();
@@ -138,13 +156,21 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
     });
 
   const remove = () =>
-    uninstall.mutate(plugin.id, {
-      onSuccess: () => {
-        toast.success(t("plugins:manage.removed", { name: plugin.name }));
-        setConfirming(false);
-      },
-      onError: (error) => toast.error(getErrorMessage(error, "plugins:error")),
-    });
+    uninstall.mutate(
+      { pluginId: plugin.id, erase: canErase && erase },
+      {
+        onSuccess: () => {
+          toast.success(t("plugins:manage.removed", { name: plugin.name }));
+          setConfirming(false);
+        },
+        onError: (error) => toast.error(getErrorMessage(error, "plugins:error")),
+      }
+    );
+
+  const confirm = (open: boolean) => {
+    setConfirming(open);
+    if (!open) setErase(false);
+  };
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border">
@@ -208,7 +234,7 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
                 {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {plugin.enabled ? t("plugins:manage.disable") : t("plugins:manage.enable")}
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>
+              <Button size="sm" variant="destructive" onClick={() => confirm(true)}>
                 {t("plugins:manage.remove")}
               </Button>
             </>
@@ -232,7 +258,7 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
 
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={confirm}
         title={t("plugins:manage.removeTitle", { name: plugin.name })}
         description={
           <>
@@ -242,11 +268,29 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
             )}
           </>
         }
-        confirmLabel={t("plugins:manage.remove")}
+        confirmLabel={erase ? t("plugins:manage.removeAndErase") : t("plugins:manage.remove")}
         onConfirm={remove}
         isLoading={uninstall.isPending}
         destructive
-      />
+      >
+        {/* Removing keeps what the plug-in calls the community and its members,
+            so installing it again picks up where it left off. Erasing is the
+            community admins' separate choice. */}
+        {canErase && (
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id={`erase-${plugin.id}`}
+              checked={erase}
+              onCheckedChange={(checked) => setErase(checked === true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor={`erase-${plugin.id}`}>{t("plugins:manage.erase")}</Label>
+              <p className="text-muted-foreground text-xs">{t("plugins:manage.eraseHelp")}</p>
+            </div>
+          </div>
+        )}
+      </ConfirmDialog>
     </Collapsible>
   );
 }

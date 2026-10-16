@@ -431,6 +431,7 @@
   "SESSION_NOT_FOUND": "Cette session est introuvable. Elle est peut-être déjà fermée.",
   "COMMUNITY_PLUGIN_MANDATORY": "Ce plug-in fait partie de la plateforme : il ne peut être ni retiré ni désactivé ici.",
   "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED": "Ce plug-in doit être activé pour votre communauté avant de pouvoir être installé.",
+  "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY": "Seuls les administrateurs de la communauté peuvent effacer les données d'un plug-in.",
   "COMMUNITY_PLUGIN_SERVICE_NOT_REGISTERED": "Ce plug-in n'est pas configuré sur ce serveur : il n'y a encore rien à ouvrir.",
   "COMMUNITY_PLUGIN_SURFACE_NOT_FOUND": "Ce plug-in n'a pas d'écran portant ce nom.",
   "COMMUNITY_PLUGIN_SURFACE_ADMIN_ONLY": "Seule l'administration de la communauté peut ouvrir cette partie du plug-in.",
