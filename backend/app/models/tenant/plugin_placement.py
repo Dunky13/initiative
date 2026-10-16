@@ -9,10 +9,9 @@ are not placed; they belong to the community as a whole.
 reused, so a stale id matches nothing, and the array keeps one table's catalog
 entries out of every guild schema.
 
-Rows are written by the community's seat, or by the system engine. A mandatory
-install (``guild_plugins.follows_new_initiatives``) is placed in each initiative
-created after it by a trigger on ``initiative_roles``, which is why the row
-names no person: a placement is a fact about the install.
+Rows are written by the community's seat, or by the system engine, which
+places a mandatory install in every initiative there is when it installs it.
+The row names no person: a placement is a fact about the install.
 """
 
 from datetime import datetime, timezone

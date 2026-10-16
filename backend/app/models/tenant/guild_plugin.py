@@ -129,19 +129,6 @@ class GuildPlugin(CreatedByMixin, table=True):
         sa_column=Column(JSONB, nullable=False, server_default="{}"),
     )
 
-    # Whether this install is placed in each initiative created after it.
-    #
-    # Where a plug-in appears is ``plugin_placements``, one row per initiative. An
-    # ordinary install is placed only where the seat puts it. A mandatory one is
-    # placed in every initiative when it is installed, and this flag has a
-    # trigger on ``initiative_roles`` add a row, with the new initiative's
-    # moderator role, when an initiative is created. A placement the seat
-    # removes stays removed: nothing sweeps the existing initiatives.
-    follows_new_initiatives: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
-    )
-
     # The scopes the community's seat consented to for this install, from
     # ``app.core.plugin_scopes``. A subset of the scopes the manifest requested
     # and of the registration's ``scope_ceiling`` when it is written, at

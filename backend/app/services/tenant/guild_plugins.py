@@ -860,9 +860,8 @@ async def set_placed_initiatives(
 async def place_in_every_initiative(session: AsyncSession, plugin: GuildPlugin) -> None:
     """Place the install in every initiative that exists now.
 
-    What installing a mandatory plug-in does. Initiatives created afterwards are
-    placed by the ``initiative_roles`` trigger, which reads
-    ``follows_new_initiatives``.
+    What installing a mandatory plug-in does. Where it appears afterwards, new
+    initiatives included, is the seat's to decide.
     """
     every = set((await session.exec(select(Initiative.id))).all())
     current = await placed_initiative_ids(session, plugin.id)
