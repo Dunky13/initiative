@@ -24,7 +24,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WizardDialog } from "@/components/ui/wizard-dialog";
-import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAnnounceHeld } from "@/hooks/useHeldChange";
 import { useWizard } from "@/hooks/useWizard";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -49,9 +48,10 @@ type Errand = "enrol" | "regenerate";
  * none to re-check, and the server is what says so; a recent sign-in answers
  * for it instead, so its setup starts at the code to scan.
  *
- * The code is asked for after a password or an emailed code, never after a
- * passkey or single sign-on. Setup is offered only to an account that signs in
- * one of the two ways that ask for it.
+ * Setup is offered to every account wherever the deployment offers the app:
+ * the code answers a community's or the deployment's ask for a second factor
+ * as well as a sign-in, so an account whose sign-in never asks for it can
+ * still need one.
  *
  * An account with no password keeps a set of recovery codes whether or not it
  * is enrolled here: with nothing to reset, they are how it sets a password
@@ -60,7 +60,6 @@ type Errand = "enrol" | "regenerate";
 export const TwoFactorSection = () => {
   const { t } = useTranslation(["settings", "errors"]);
   const announceHeld = useAnnounceHeld();
-  const { emailOtpLoginEnabled } = useAppConfig();
   const status = useReadSecondFactor();
   const refreshStatus = () =>
     queryClient.invalidateQueries({ queryKey: getReadSecondFactorQueryKey() });
@@ -194,10 +193,6 @@ export const TwoFactorSection = () => {
   // offering a setup the server would refuse.
   const offered = status.data?.offered ?? true;
   const remaining = status.data?.recovery_codes_remaining ?? 0;
-  // Whether this account signs in a way that asks for the code: a password it
-  // is asked for (the same fact as ``password_required``), or a code emailed
-  // to it.
-  const askedAtSignIn = passwordRequired || emailOtpLoginEnabled;
   // An account with no password at all. Its recovery codes are how it sets
   // one again, so they are worth showing whether or not it is enrolled here.
   const passwordless = status.data?.passwordless ?? false;
@@ -294,13 +289,9 @@ export const TwoFactorSection = () => {
       ) : (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">
-            {!offered
-              ? t("twoFactor.notOffered")
-              : askedAtSignIn
-                ? t("twoFactor.notSetUp")
-                : t("twoFactor.notAsked")}
+            {offered ? t("twoFactor.notSetUp") : t("twoFactor.notOffered")}
           </p>
-          {offered && askedAtSignIn ? (
+          {offered ? (
             <Button onClick={startEnrol} disabled={begin.isPending}>
               {t("twoFactor.setUp")}
             </Button>

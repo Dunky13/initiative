@@ -1961,7 +1961,7 @@
   },
   "twoFactor": {
     "title": "Double authentification",
-    "description": "Demander un code d'une application d'authentification à la connexion par mot de passe ou par code envoyé par e-mail.",
+    "description": "Demander un code d'une application d'authentification après un mot de passe ou un code envoyé par e-mail, et chaque fois qu'une communauté ou ce serveur demande un second facteur.",
     "loading": "Vérification…",
     "on": "Activée",
     "notSetUp": "La connexion ne demande pas de code d'une application.",
@@ -2000,7 +2000,6 @@
     "codePlaceholder": "123456",
     "statusError": "Impossible de vérifier si la double authentification est activée. Rechargez la page.",
     "copyUnavailable": "Copie impossible — notez les codes à la main.",
-    "notAsked": "Votre compte se connecte avec une clé d'accès ou l'authentification unique, et aucune des deux ne demande de code d'une application.",
     "notOffered": "Cette installation ne propose pas l'application d'authentification.",
     "passwordlessCodes": "Votre compte se connecte sans mot de passe. Ces codes vous permettent d'en redéfinir un si vous perdez votre clé d'accès."
   },

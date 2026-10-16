@@ -3,8 +3,8 @@
  *
  * The section's own job is small but easy to get subtly wrong: the password
  * step serves two errands and they must not be confused, "turn off" takes
- * either kind of code and has to send each as the kind it is, and setup is
- * offered by how the account signs in rather than by whether it has a password.
+ * either kind of code and has to send each as the kind it is, and an account
+ * with no password is set up and turned off without being asked for one.
  */
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -18,11 +18,6 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   disable: vi.fn(),
   regenerate: vi.fn(),
-  emailOtp: vi.fn(),
-}));
-
-vi.mock("@/hooks/useAppConfig", () => ({
-  useAppConfig: () => ({ emailOtpLoginEnabled: mocks.emailOtp() }),
 }));
 
 vi.mock("@/api/generated/auth/auth", () => ({
@@ -105,7 +100,6 @@ describe("TwoFactorSection", () => {
   beforeEach(() => {
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.status.mockReturnValue(notEnrolled);
-    mocks.emailOtp.mockReturnValue(false);
   });
 
   it("offers to set it up when the account has none", () => {
@@ -219,10 +213,8 @@ describe("TwoFactorSection", () => {
   });
 
   it("starts at the code to scan where the account holds no password", async () => {
-    // Signing in with an emailed code asks for the app's code too, so the
-    // account is offered it; a recent sign-in answers for the missing password.
+    // A recent sign-in answers for the missing password.
     const user = userEvent.setup();
-    mocks.emailOtp.mockReturnValue(true);
     mocks.status.mockReturnValue(passwordless);
     renderWithProviders(<TwoFactorSection />);
 
@@ -231,16 +223,6 @@ describe("TwoFactorSection", () => {
     expect(mocks.begin).toHaveBeenCalledWith({ data: { current_password: null } });
     expect(await screen.findByText("SEEDSEEDSEED")).toBeInTheDocument();
     expect(screen.queryByLabelText(/current password/i)).not.toBeInTheDocument();
-  });
-
-  it("does not offer setup where the account's sign-in never asks for the code", () => {
-    // No password and no emailed codes: a passkey or single sign-on is how it
-    // gets in, and neither asks.
-    mocks.status.mockReturnValue(passwordless);
-    renderWithProviders(<TwoFactorSection />);
-
-    expect(screen.queryByRole("button", { name: /set up/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/passkey or single sign-on/i)).toBeInTheDocument();
   });
 
   it("turns off without a password where the account holds none", async () => {
@@ -271,6 +253,9 @@ describe("TwoFactorSection", () => {
     renderWithProviders(<TwoFactorSection />);
 
     expect(screen.getByText(/7 recovery codes left/i)).toBeInTheDocument();
+    // Its sign-in may never ask for the code, but a community or the server
+    // asking for a second factor will.
+    expect(screen.getByRole("button", { name: /set up/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /new recovery codes/i }));
 

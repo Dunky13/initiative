@@ -1961,7 +1961,7 @@
   },
   "twoFactor": {
     "title": "Zwei-Faktor-Authentifizierung",
-    "description": "Bei der Anmeldung mit Passwort oder per E-Mail-Code zusätzlich einen Code aus einer Authenticator-App abfragen.",
+    "description": "Nach einem Passwort oder E-Mail-Code einen Code aus einer Authenticator-App abfragen, und immer dann, wenn eine Community oder dieser Server einen zweiten Faktor verlangt.",
     "loading": "Wird geprüft …",
     "on": "Aktiv",
     "notSetUp": "Bei der Anmeldung wird kein Code aus einer App abgefragt.",
@@ -2000,7 +2000,6 @@
     "codePlaceholder": "123456",
     "statusError": "Es ließ sich nicht prüfen, ob die Zwei-Faktor-Authentifizierung aktiv ist. Lade die Seite neu.",
     "copyUnavailable": "Kopieren nicht möglich – schreibe die Codes stattdessen auf.",
-    "notAsked": "Dein Konto meldet sich mit einem Passkey oder Single Sign-On an, und beides fragt keinen Code aus einer App ab.",
     "notOffered": "Diese Installation bietet die Authenticator-App nicht an.",
     "passwordlessCodes": "Dein Konto meldet sich ohne Passwort an. Mit diesen Codes legst du wieder eines fest, falls du deinen Passkey verlierst."
   },

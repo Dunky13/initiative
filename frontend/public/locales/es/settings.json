@@ -1961,7 +1961,7 @@
   },
   "twoFactor": {
     "title": "Verificación en dos pasos",
-    "description": "Pedir un código de una aplicación de autenticación al iniciar sesión con contraseña o con un código por correo.",
+    "description": "Pedir un código de una aplicación de autenticación después de la contraseña o del código por correo, y siempre que una comunidad o este servidor pidan un segundo factor.",
     "loading": "Comprobando…",
     "on": "Activada",
     "notSetUp": "Al iniciar sesión no se pide un código de una aplicación.",
@@ -2000,7 +2000,6 @@
     "codePlaceholder": "123456",
     "statusError": "No se ha podido comprobar si la verificación en dos pasos está activada. Recarga la página.",
     "copyUnavailable": "No se ha podido copiar: anota los códigos a mano.",
-    "notAsked": "Tu cuenta inicia sesión con una clave de acceso o con inicio de sesión único, y ninguno pide un código de una aplicación.",
     "notOffered": "Esta instalación no ofrece la aplicación de autenticación.",
     "passwordlessCodes": "Tu cuenta inicia sesión sin contraseña. Con estos códigos vuelves a establecer una si pierdes tu clave de acceso."
   },

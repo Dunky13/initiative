@@ -6,7 +6,7 @@ icon: lucide/shield-check
 
 A password, or a code in your inbox, is one thing. Two-factor authentication adds one thing you have: a six-digit code from an app on your phone, changing every thirty seconds, asked for after your password or your emailed code.
 
-Signing in with a passkey or single sign-on never asks for it, so an account that only signs in those ways isn't offered it.
+Signing in with a passkey or single sign-on doesn't ask for it. A community or your server can still ask for a second factor, though, and the code from your app answers that wherever you signed in from.
 
 It takes about two minutes to set up and it is the single biggest improvement you can make to the security of your account.
 

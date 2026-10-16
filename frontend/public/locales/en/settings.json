@@ -1961,7 +1961,7 @@
   },
   "twoFactor": {
     "title": "Two-factor authentication",
-    "description": "Ask for a code from an authenticator app when you sign in with a password or an emailed code.",
+    "description": "Ask for a code from an authenticator app after a password or emailed code, and whenever a community or this server asks for a second factor.",
     "loading": "Checking…",
     "on": "On",
     "notSetUp": "Signing in doesn't ask for a code from an app.",
@@ -2000,7 +2000,6 @@
     "codePlaceholder": "123456",
     "statusError": "Couldn't check whether two-factor is on. Reload the page to try again.",
     "copyUnavailable": "Couldn't copy — write the codes down instead.",
-    "notAsked": "Your account signs in with a passkey or single sign-on, and neither asks for a code from an app.",
     "notOffered": "This deployment does not offer the authenticator app.",
     "passwordlessCodes": "Your account signs in without a password. These codes are how you set one again if you lose your passkey."
   },
