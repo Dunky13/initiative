@@ -1172,17 +1172,25 @@ def _plugin_block(table: str) -> str:
     return "\n".join(lines)
 
 
+def _open_lines(table: str) -> list[str]:
+    """RLS on, with a permissive allow-all: isolation is the schema boundary,
+    and the table's RESTRICTIVE policies are what narrow it."""
+    return [
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;",
+        f"DROP POLICY IF EXISTS guild_level_open ON {table};",
+        f"CREATE POLICY guild_level_open ON {table} AS PERMISSIVE FOR ALL",
+        "  USING (true) WITH CHECK (true);",
+    ]
+
+
 def _guild_level_guard_block(table: str) -> str:
     """RLS for a guild-level soft-delete table (initiatives, tags): a permissive
     allow-all (isolation is the schema boundary, not RLS) plus the RESTRICTIVE
     admin-only-purge guard. NOT an access gate — see _GUILD_LEVEL_SECTION."""
     return "\n".join(
         [
-            f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
-            f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;",
-            f"DROP POLICY IF EXISTS guild_level_open ON {table};",
-            f"CREATE POLICY guild_level_open ON {table} AS PERMISSIVE FOR ALL",
-            "  USING (true) WITH CHECK (true);",
+            *_open_lines(table),
             f"DROP POLICY IF EXISTS soft_delete_admin_purge ON {table};",
             f"CREATE POLICY soft_delete_admin_purge ON {table} AS RESTRICTIVE FOR DELETE",
             f"  USING ({_PURGE_GUARD_PREDICATE});",
@@ -1486,6 +1494,9 @@ def render_guild_rls_ddl() -> str:
     out += "\n" + AI_KEY_PRESENT_FN + "\n" + AI_KEY_PRESENT_TRIGGER
     ledgers = [_ledger_block(t, p, fk) for t, (p, fk) in sorted(LEDGER_TABLES.items())]
     out += "\n\n" + _LEDGER_SECTION + "\n\n" + "\n\n".join(ledgers)
+    # The sweep timers' marks: open to whatever write arms a timer, so the
+    # plug-in policies below are what keep an install to its triggers.
+    out += "\n\n" + "\n".join(_open_lines("timer_marks"))
     # After every block above, so each table's RLS is on before its plug-in
     # policies join the ones already there.
     plugin_blocks = [_plugin_block(t) for t in sorted(PLUGIN_POLICY_TABLES)]
