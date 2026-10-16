@@ -11,10 +11,8 @@ A cohort's communities are visited one after another on one session, and the
 cohorts side by side, a few at a time, so a pass holds at most one connection
 per cohort.
 
-Work that is woken rather than timed goes through a :class:`Drain`: a
-community said to have work waiting is added to it, and its loop visits just
-those communities. Work armed by a timer (``app.services.sweep_timers``) is
-handed in as each community's own visits, and visits just those.
+Work armed by a timer (``app.services.sweep_timers``) is handed in as each
+community's own visits, and visits just those.
 """
 
 from __future__ import annotations
@@ -33,7 +31,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import audit_context, metrics
 from app.db import cohorts
 from app.db.session import set_rls_context
-from app.services.background_tasks import Loop
 from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.db.request_context import SystemGuild, Unattributed
 
@@ -162,27 +159,3 @@ async def _visit(
         except Exception:
             logger.exception("%s: visit failed", name)
             await session.rollback()
-
-
-class Drain:
-    """Communities said to have work waiting, and the loop that visits them.
-
-    :meth:`wake` adds a community and returns at once. :meth:`run` waits for
-    one, lets ``settle`` seconds of further wakes gather, and visits them all
-    in one pass restricted to them.
-    """
-
-    def __init__(self, name: str, *, settle: float) -> None:
-        self.pending: set[int] = set()
-        self._loop = Loop(name, settle=settle)
-
-    def wake(self, guild_id: int) -> None:
-        self.pending.add(guild_id)
-        self._loop.wake()
-
-    async def run(self, visits: Sequence[tuple[Scope, Visit]]) -> None:
-        async def visit_pending() -> None:
-            only, self.pending = self.pending, set()
-            await each_guild(visits, name=self._loop.name, only=only)
-
-        await self._loop.run(visit_pending)

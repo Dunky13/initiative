@@ -189,8 +189,14 @@ async def lifespan(app: FastAPI):
     # fire-and-forget by design: it maintains its own connection in the
     # background and a deployment that cannot reach it still delivers every
     # frame to the sockets this process holds.
-    from app.services import guild_work
-    from app.services.platform import notice_outbox, notify_bus, user_stream
+    from app.db import timers
+    from app.services import sweep_timers
+    from app.services.platform import (
+        email_outbox,
+        notice_outbox,
+        notify_bus,
+        user_stream,
+    )
     from app.services.tenant import outbox_poller, room_sink
 
     notify_bus.register(
@@ -201,10 +207,11 @@ async def lifespan(app: FastAPI):
     notify_bus.register(
         room_sink.CHANNEL, room_sink.deliver, on_connect=room_sink.on_bus_connected
     )
-    # The same hint wakes the webhook outbox's drain.
+    # The same hint wakes the webhook drain in a subscribed community.
     notify_bus.register(room_sink.CHANNEL, outbox_poller.hint)
-    notify_bus.register(guild_work.CHANNEL, guild_work.deliver)
+    notify_bus.register(timers.WAKE_CHANNEL, sweep_timers.hint)
     notify_bus.register(notice_outbox.CHANNEL, notice_outbox.hint)
+    notify_bus.register(email_outbox.CHANNEL, email_outbox.hint)
     await notify_bus.start()
 
     # Write collaborative bodies that have changed on an interval, so what a

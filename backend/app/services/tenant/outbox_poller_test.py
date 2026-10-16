@@ -19,7 +19,7 @@ from sqlmodel import select, update
 from app.models.tenant.event_outbox import EventOutbox
 from app.models.tenant.webhook_delivery import WebhookDelivery
 from app.models.tenant.webhook_subscription import WebhookSubscription
-from app.services import outbox_ledger
+from app.services import outbox_ledger, sweep_timers
 from app.services.guild_sweeps import Scope, each_guild
 from app.services.tenant import change_log, expiry, outbox_poller
 from app.db.request_context import SystemGuild
@@ -618,18 +618,14 @@ def test_the_reach_reads_what_the_grant_lets_it_read():
 
 async def test_a_hint_wakes_the_drain_only_where_something_subscribes(monkeypatch):
     """A change in a community with no active subscription is dropped before
-    the drain, which never visits it; a subscription appearing there is what
-    lets the next change through."""
-    monkeypatch.setattr(outbox_poller, "_subscribed", set())
-    monkeypatch.setattr(outbox_poller.drain, "pending", set())
+    the drain, which never visits it."""
+    monkeypatch.setattr(outbox_poller, "_subscribed", {7})
+    monkeypatch.setattr(sweep_timers, "_woken", {})
 
-    await outbox_poller.hint("guild_7:100")
-    assert outbox_poller.drain.pending == set()
-
-    outbox_poller.subscriptions_changed(7)
-    outbox_poller.drain.pending.clear()
+    await outbox_poller.hint("guild_8:100")
     await outbox_poller.hint("guild_7:101")
-    assert outbox_poller.drain.pending == {7}
+
+    assert sweep_timers._woken == {"webhooks": {7}}
 
 
 _GH_EVENT = "plugin.tests.gh.issue_opened"

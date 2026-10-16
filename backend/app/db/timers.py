@@ -15,6 +15,10 @@ capture is (``app.db.event_capture``): every trigger calls the one shared
 ``public.arm_timer_on_write()``, which works out the due time and hands it to
 ``public.arm_timer()``.
 
+A timer due at once wakes the worker on every process: ``arm_timer`` sends
+:data:`WAKE_CHANNEL` in the arming transaction, so the wake goes out only if
+the write commits. A lost wake costs one tick.
+
 A timer is a wake, not the work. The visit reads what is due from the
 community's own tables and arms the next one, so a timer may come early (the
 visit finds nothing) but a source must never arm one later than its work.
@@ -39,6 +43,9 @@ from app.db import gucs
 #: How a row source's due time reads the written row: as ``$1`` in the
 #: trigger's EXECUTE, the way the capture triggers read theirs.
 ROW = "($1)"
+
+#: Where a timer armed to run at once wakes the worker.
+WAKE_CHANNEL = "community_timers"
 
 #: The shared trigger function every timer trigger calls.
 ARM_ON_WRITE_FUNCTION = "public.arm_timer_on_write"
@@ -137,6 +144,9 @@ BEGIN
         IF v_moved THEN
             INSERT INTO public.community_timers (community_id, kind, due_at)
                 VALUES (v_community, p_kind, p_due);
+            IF p_due <= now() THEN
+                PERFORM pg_notify('{WAKE_CHANNEL}', '');
+            END IF;
         END IF;
     END IF;
     PERFORM set_config(v_memo_name, extract(epoch FROM p_due)::text, true);

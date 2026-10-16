@@ -93,8 +93,7 @@ from app.models.tenant.event_outbox import EventOutbox
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.webhook_delivery import WebhookDelivery
 from app.models.tenant.webhook_subscription import WebhookSubscription
-from app.services import outbox_ledger
-from app.services.guild_sweeps import Drain
+from app.services import outbox_ledger, sweep_timers
 from app.services.marketplace.registration_lookup import load_registrations
 from app.services.tenant import room_sink, webhook_refs
 from app.services.tenant.webhook_dispatcher import deliver
@@ -105,15 +104,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: How long the drain lets further changes gather before it visits.
-DRAIN_SETTLE_SECONDS = 1.0
-
 #: Transactions a subscription may take in one pass. A throughput bound only —
 #: anything not taken remains exactly as visible next pass.
 BATCH_LIMIT = 50
 
-#: A retry due sooner than this is woken for; a later one waits for the minute
-#: pass, which comes round at least this often.
+#: A retry due sooner than this is woken for; a later one waits for the
+#: ``webhooks`` timer, which comes round at least this often.
 RETRY_WAKE_WITHIN_SECONDS = 60
 
 #: Namespace for deterministic envelope ids. Fixed forever: changing it would
@@ -668,7 +664,9 @@ async def _drain_subscription(
                 # first backoff steps keep their timing.
                 delay = (retry_at - now).total_seconds()
                 if delay < RETRY_WAKE_WITHIN_SECONDS:
-                    asyncio.get_running_loop().call_later(delay, drain.wake, guild_id)
+                    asyncio.get_running_loop().call_later(
+                        delay, sweep_timers.wake, "webhooks", guild_id
+                    )
             # Deliver in order: hold the rest of this subscription's backlog
             # until the refused batch gets through. Later passes hold it too
             # (_pending_transactions). Once dead-lettered there is nothing left
@@ -719,12 +717,9 @@ def _roster(live_listings: Iterable[str]):
 
 
 #: Communities with an active subscription, as this process last read them.
-#: The drain's visits keep it current, the ``webhooks`` timer's included, and a
-#: subscription changing wakes the drain.
+#: Each ``webhooks`` visit keeps it current; a subscription created or enabled
+#: arms one at once.
 _subscribed: set[int] = set()
-
-#: Communities whose log moved and which have somebody to deliver it to.
-drain = Drain("outbox", settle=DRAIN_SETTLE_SECONDS)
 
 
 async def hint(payload: str) -> None:
@@ -734,15 +729,7 @@ async def hint(payload: str) -> None:
     schema, _, _txn = payload.partition(":")
     guild_id = room_sink.schema_guild_id(schema)
     if guild_id in _subscribed:
-        drain.wake(guild_id)
-
-
-def subscriptions_changed(guild_id: int) -> None:
-    """A subscription in the community was created, enabled or deleted. Its
-    visit reads the roster again, and settles whether it stays in
-    :data:`_subscribed`."""
-    _subscribed.add(guild_id)
-    drain.wake(guild_id)
+        sweep_timers.wake("webhooks", guild_id)
 
 
 async def drain_guild(

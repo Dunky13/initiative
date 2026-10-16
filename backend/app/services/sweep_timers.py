@@ -21,6 +21,12 @@ source must never arm one later than its work. A community whose status no
 longer admits a sweep keeps that sweep's timer on its lease, so the work
 resumes within a lease of the community coming back.
 
+A timer armed to run at once wakes the worker on every process
+(``app.db.timers.WAKE_CHANNEL``); otherwise it looks every :data:`TICK_SECONDS`.
+Work a process learns of outside a write (a webhook hint, a retry, a freed
+job slot) goes through :func:`wake`, which arms the community and runs the
+worker.
+
 Once a day each community's ``reconcile`` timer arms any sweep that has work
 but no timer: a write no source covered, or a session that could not arm (a
 filer, a migration). Each one it arms is counted
@@ -61,6 +67,9 @@ BATCH = 500
 
 #: How often the worker looks for due timers.
 TICK_SECONDS = 60
+
+#: How long a woken worker lets further wakes gather before it looks.
+WAKE_SETTLE_SECONDS = 1.0
 
 #: How often each community is reconciled.
 RECONCILE_EVERY = timedelta(days=1)
@@ -194,9 +203,10 @@ def sweeps() -> tuple[Sweep, ...]:
             scope=Scope.ACTIVE,
             every=minute,
             visit=outbox_poller.drain_guild,
-            # New events wake the drain at once; the outbox sources are its
-            # backstop should that wake be lost. A community with no
-            # subscription answers that visit with one read.
+            # A subscribed community's new events wake it at once
+            # (outbox_poller.hint); the outbox sources are the backstop should
+            # that wake be lost. A community with no subscription answers that
+            # visit with one read.
             next_due=outbox_poller.next_due,
             sources=(
                 on_insert("event_outbox", after=minute),
@@ -236,8 +246,7 @@ def sweeps() -> tuple[Sweep, ...]:
             scope=Scope.ACTIVE,
             every=minute,
             visit=claim_jobs,
-            # Queued jobs are claimed at once by the data-jobs drain; this is
-            # its backstop, and the next queued job's once one ends.
+            # Armed at once by a job queued or ended, so it is claimed now.
             next_due=lambda _now: least(
                 when_exists(
                     exists().where(ExportJob.status == ExportJobStatus.queued.value)
@@ -256,12 +265,7 @@ def sweeps() -> tuple[Sweep, ...]:
                 ),
             ),
             sources=tuple(
-                on_row(
-                    table,
-                    "now()",
-                    after=minute,
-                    events="INSERT OR UPDATE OF status",
-                )
+                on_row(table, "now()", events="INSERT OR UPDATE OF status")
                 for table in ("export_jobs", "import_jobs")
             ),
         ),
@@ -888,8 +892,28 @@ async def _run(claimed: list[Any], now: datetime) -> None:
     await _delete(done)
 
 
+#: Communities :func:`wake` named since the worker last looked, by sweep.
+_woken: dict[str, set[int]] = {}
+
+
+def wake(kind: str, guild_id: int) -> None:
+    """Run ``kind`` in the community soon, from this process. Returns at once."""
+    _woken.setdefault(kind, set()).add(guild_id)
+    loop.wake()
+
+
+async def hint(_payload: str) -> None:
+    """A timer was armed to run at once. Registered on
+    :data:`~app.db.timers.WAKE_CHANNEL`."""
+    loop.wake()
+
+
 async def process_due_timers() -> None:
     """Run every timer that has come due, a batch at a time."""
+    woken = dict(_woken)
+    _woken.clear()
+    for kind, community_ids in woken.items():
+        await arm_in(kind, community_ids)
     while True:
         now = datetime.now(timezone.utc)
         claimed = await _claim(now)
@@ -972,6 +996,6 @@ async def watch_catalog() -> None:
 
 
 #: The worker's loop.
-loop = Loop("timers", interval=TICK_SECONDS)
+loop = Loop("timers", interval=TICK_SECONDS, settle=WAKE_SETTLE_SECONDS)
 #: The catalog watch's loop.
 catalog_loop = Loop("catalog-watch", interval=CATALOG_WATCH_SECONDS)

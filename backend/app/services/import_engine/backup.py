@@ -61,7 +61,6 @@ from app.schemas.tenant.import_job import (
     BackupPlanPerson,
     EntryResult,
 )
-from app.services import guild_work
 from app.services.import_engine import engine as import_engine
 from app.services.import_engine import limits as import_limits
 from app.services.import_engine.archive_assets import (
@@ -378,8 +377,6 @@ async def stage_backup_job(
         + timedelta(hours=import_limits.IMPORT_STAGED_TTL_HOURS),
     )
     session.add(job)
-    if status is ImportJobStatus.queued:
-        guild_work.wake(session, guild_work.DATA_JOBS, guild_id)
     return job
 
 

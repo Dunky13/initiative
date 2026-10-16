@@ -4,12 +4,8 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from app.core import audit_context
-
-if TYPE_CHECKING:
-    from app.services.guild_sweeps import Scope, Visit
 
 logger = logging.getLogger(__name__)
 
@@ -75,30 +71,13 @@ async def hourly_pass() -> None:
     await security_signals.sweep()
 
 
-def _claims() -> list[tuple[Scope, Visit]]:
-    """Each job type's claim of a community's next queued job."""
-    from app.services.export import worker as export_worker
-    from app.services.guild_sweeps import Scope
-    from app.services.import_engine import worker as import_worker
-
-    return [
-        (Scope.ACTIVE, export_worker.jobs.claim),
-        (Scope.ACTIVE, import_worker.jobs.claim),
-    ]
-
-
 def start_background_tasks() -> list[asyncio.Task]:
-    from app.services import data_jobs, sweep_timers
-    from app.services.guild_sweeps import Scope
+    from app.services import sweep_timers
     from app.services.notifications import (
         process_hold_summaries,
         HOLD_SUMMARY_POLL_SECONDS,
     )
-    from app.services.platform import notice_outbox
-    from app.services.platform.email_outbox import (
-        EMAIL_OUTBOX_POLL_SECONDS,
-        process_email_outbox,
-    )
+    from app.services.platform import email_outbox, notice_outbox
     from app.services.platform import security_signals
     from app.services.platform.presence import (
         ACTIVITY_FLUSH_SECONDS,
@@ -124,7 +103,6 @@ def start_background_tasks() -> list[asyncio.Task]:
         IDENTITY_REF_SWEEP_POLL_SECONDS,
         process_identity_ref_sweep,
     )
-    from app.services.tenant import outbox_poller
     from app.services.tenant.room_sink import ROOM_SWEEP_SECONDS, process_room_sweep
     from app.services.platform.user_tokens import (
         process_expired_token_purge,
@@ -168,11 +146,6 @@ def start_background_tasks() -> list[asyncio.Task]:
         asyncio.create_task(
             Loop("hourly", interval=HOURLY_PASS_SECONDS).run(hourly_pass)
         ),
-        # Communities a wake names, visited as soon as it arrives.
-        asyncio.create_task(
-            outbox_poller.drain.run([(Scope.ACTIVE, outbox_poller.drain_guild)])
-        ),
-        asyncio.create_task(data_jobs.drain.run(_claims())),
         asyncio.create_task(
             Loop("hold-summary", interval=HOLD_SUMMARY_POLL_SECONDS).run(
                 process_hold_summaries
@@ -183,11 +156,7 @@ def start_background_tasks() -> list[asyncio.Task]:
             notice_outbox.loop.run(notice_outbox.process_notice_outbox)
         ),
         # The one way notification email leaves the building.
-        asyncio.create_task(
-            Loop("email-outbox", interval=EMAIL_OUTBOX_POLL_SECONDS).run(
-                process_email_outbox
-            )
-        ),
+        asyncio.create_task(email_outbox.loop.run(email_outbox.process_email_outbox)),
         # What the presence roll has seen, written where another process can
         # read it. The roll is this worker's own memory; delivery decides
         # elsewhere.

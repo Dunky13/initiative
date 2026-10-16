@@ -27,7 +27,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional, Sequence
 
-from sqlalchemy import Table, insert, text
+from sqlalchemy import Table, func, insert, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -49,15 +49,18 @@ from app.models.platform.user_token import UserTokenPurpose
 from app.services import email as email_service
 from app.services import outbox_ledger
 from app.services.auth import account_changes, addresses
+from app.services.background_tasks import Loop
 from app.services.platform import notification_policy, notification_prefs, user_tokens
 from app.db.request_context import Unattributed
 
 logger = logging.getLogger(__name__)
 
-#: How often the worker looks for due mail. Email is not a realtime channel, so
-#: the instant cadence losing a few seconds is invisible — and it is what buys
-#: the retry that the synchronous send never had.
+#: How often the worker looks for due mail. Mail due at once wakes it
+#: (:data:`CHANNEL`); this is for mail that comes due later, and a lost wake.
 EMAIL_OUTBOX_POLL_SECONDS = 15
+
+#: Where writing mail that is due at once wakes the worker.
+CHANNEL = "email_outbox"
 
 _TABLE: Table = EmailOutboxItem.__table__
 
@@ -144,7 +147,14 @@ async def enqueue(
         )
         .inline()
     )
+    await _wake_if_due(session, due)
     return True
+
+
+async def _wake_if_due(session: AsyncSession, due: datetime) -> None:
+    """Wake the worker once ``session`` commits, when the mail is due now."""
+    if due <= datetime.now(timezone.utc):
+        await session.exec(select(func.pg_notify(CHANNEL, "")))
 
 
 async def enqueue_account_letter(
@@ -211,6 +221,7 @@ async def enqueue_account_letter(
         )
         .inline()
     )
+    await _wake_if_due(session, now)
 
 
 async def recompute_pending(
@@ -242,6 +253,7 @@ async def recompute_pending(
     ).all()
     now = datetime.now(timezone.utc)
     moved = 0
+    soonest: datetime | None = None
     for row in rows:
         record = row[0] if isinstance(row, tuple) else row
         try:
@@ -259,8 +271,10 @@ async def recompute_pending(
             record.deliver_after = due
             session.add(record)
             moved += 1
-    if moved:
+            soonest = due if soonest is None else min(soonest, due)
+    if soonest is not None:
         await session.flush()
+        await _wake_if_due(session, soonest)
     return moved
 
 
@@ -576,6 +590,11 @@ async def _run_pass(session: AsyncSession, *, now: datetime) -> None:
         await session.commit()
 
 
+async def hint(_payload: str) -> None:
+    """Mail due at once was written. Registered on :data:`CHANNEL`."""
+    loop.wake()
+
+
 async def process_email_outbox() -> None:
     from app.db.session import SystemSessionLocal, set_rls_context
 
@@ -598,3 +617,8 @@ async def sweep_settled(
         ).bindparams(cutoff=cutoff)
     )
     return result.rowcount or 0
+
+
+#: The worker's loop: woken as mail due at once is written, and run every
+#: :data:`EMAIL_OUTBOX_POLL_SECONDS` for the rest.
+loop = Loop("email-outbox", interval=EMAIL_OUTBOX_POLL_SECONDS)
