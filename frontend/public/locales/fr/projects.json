@@ -283,5 +283,13 @@
     "incomplete": "Non terminées",
     "unassigned": "Non attribuées",
     "mine": "Les miennes"
+  },
+  "quickActions": {
+    "assignToMe": "M'assigner",
+    "assignToMeFor": "M'assigner {{title}}",
+    "unassignMe": "Me retirer",
+    "assigned": "Assignée à vous",
+    "unassigned": "Vous n'êtes plus sur cette tâche",
+    "assignError": "Impossible de modifier les personnes assignées à cette tâche."
   }
 }

@@ -283,5 +283,13 @@
     "incomplete": "Unerledigt",
     "unassigned": "Nicht zugewiesen",
     "mine": "Meine"
+  },
+  "quickActions": {
+    "assignToMe": "Mir zuweisen",
+    "assignToMeFor": "{{title}} mir zuweisen",
+    "unassignMe": "Mich entfernen",
+    "assigned": "Dir zugewiesen",
+    "unassigned": "Du bist nicht mehr bei dieser Aufgabe",
+    "assignError": "Die Zuständigen dieser Aufgabe konnten nicht geändert werden."
   }
 }

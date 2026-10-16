@@ -69,16 +69,20 @@ export const PRIORITY_ORDER: TaskPriority[] = (Object.values(TaskPriority) as Ta
 );
 
 /**
- * One value to sort tags by: the first name alphabetically, ignoring case, as
- * the task list sorts them. Nothing for no tags, which a column sorts last.
+ * One value to sort a list of names by: the first alphabetically, ignoring
+ * case. Nothing for no names, which a column sorts last.
  */
-export const firstTagName = (tags: readonly { name: string }[]): string | undefined =>
-  tags
-    .map((tag) => tag.name.toLowerCase())
+export const firstName = (names: readonly string[]): string | undefined =>
+  names
+    .map((name) => name.toLowerCase())
     .reduce<string | undefined>(
       (first, name) => (first === undefined || name.localeCompare(first) < 0 ? name : first),
       undefined
     );
+
+/** One value to sort tags by, as the task list sorts them. */
+export const firstTagName = (tags: readonly { name: string }[]): string | undefined =>
+  firstName(tags.map((tag) => tag.name));
 
 /**
  * Sorts text in the reader's language order.

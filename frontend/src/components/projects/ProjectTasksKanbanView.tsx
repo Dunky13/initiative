@@ -35,6 +35,7 @@ import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/t
 import { cn } from "@/lib/utils";
 
 import { TaskAssigneeList } from "./TaskAssigneeList";
+import { TaskCardActions } from "./TaskQuickActions";
 
 type ProjectTasksKanbanViewProps = {
   projectId: number;
@@ -43,6 +44,9 @@ type ProjectTasksKanbanViewProps = {
   groupedTasks: Record<number, TaskListRead[]>;
   collapsedStatusIds: Set<number>;
   canReorderTasks: boolean;
+  /** The reader may change the tasks: each card offers what can be done with
+   *  it beside its title. */
+  canEditTasks?: boolean;
   taskHref: (taskId: number) => string;
   sensors: DndContextProps["sensors"];
   activeTask: TaskListRead | null;
@@ -74,6 +78,7 @@ export const ProjectTasksKanbanView = ({
   groupedTasks,
   collapsedStatusIds,
   canReorderTasks,
+  canEditTasks = false,
   taskHref,
   sensors,
   activeTask,
@@ -102,7 +107,11 @@ export const ProjectTasksKanbanView = ({
   // the memoized cards skip re-rendering on an unrelated parent pass. What the
   // renderers share is held apart, so a change of fields redraws the cards but
   // not the values on them.
-  const env = useProjectLayoutEnv(taskHref);
+  const projectEnv = useProjectLayoutEnv(taskHref);
+  const env = useMemo(
+    () => (canEditTasks ? { ...projectEnv, itemActions: TaskCardActions } : projectEnv),
+    [projectEnv, canEditTasks]
+  );
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(

@@ -15,6 +15,7 @@ import { createContext, memo, useCallback, useContext, useMemo } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
+import { TaskAssigneesCell } from "@/components/projects/TaskQuickActions";
 import {
   collectTagsByName,
   fanOutTasksByTag,
@@ -319,6 +320,10 @@ const ProjectTasksTableViewComponent = ({
         // The widest column, so it takes the largest share of whatever space
         // the others leave over.
         size: 360,
+      },
+      {
+        ...shared.assignees,
+        cell: ({ row }) => <TaskAssigneesCell task={row.original} canEdit={!statusDisabled} />,
       },
       shared.startDate,
       shared.dueDate,

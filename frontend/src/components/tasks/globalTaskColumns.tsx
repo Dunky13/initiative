@@ -19,10 +19,17 @@ import { InitiativeColorDot } from "@/lib/initiativeColors";
 import { type FieldColumnOptions, fieldColumn } from "@/lib/layouts/columns";
 import type { FieldDef, LayoutEnv } from "@/lib/layouts/fields";
 import { summarizeStored } from "@/lib/recurrence";
-import { dateSortingFn, firstTagName, prioritySortingFn, textSortingFn } from "@/lib/sorting";
+import {
+  dateSortingFn,
+  firstName,
+  firstTagName,
+  prioritySortingFn,
+  textSortingFn,
+} from "@/lib/sorting";
 import type { AppColumnDef } from "@/lib/table";
 import { getTaskDateStatus, getTaskDateStatusLabel } from "@/lib/taskDateStatus";
 import { entityRefRoute, initiativeRoute, toolDetailRoute } from "@/lib/tools";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
 
 interface GlobalTaskColumnsOptions {
@@ -87,6 +94,12 @@ export function sharedTaskColumns<T extends TaskListRead>({
   return {
     dateGroup,
     title: column("title", { sortFn: "alphanumeric" }),
+    assignees: column("assignees", {
+      sortBy: (task) => firstName(task.assignees.map((assignee) => getUserDisplayName(assignee))),
+      sortFn: textSortingFn,
+      sortUndefined: "last",
+      size: 180,
+    }),
     startDate: column("startDate", { sortFn: dateSortingFn }),
     dueDate: column("dueDate", { sortFn: dateSortingFn }),
     // Picking a priority here is the table's own, until fields edit.

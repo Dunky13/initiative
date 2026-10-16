@@ -6472,6 +6472,7 @@ export type TaskColumnFieldId = (typeof TaskColumnFieldId)[keyof typeof TaskColu
 
 export const TaskColumnFieldId = {
   title: "title",
+  assignees: "assignees",
   startDate: "startDate",
   dueDate: "dueDate",
   priority: "priority",

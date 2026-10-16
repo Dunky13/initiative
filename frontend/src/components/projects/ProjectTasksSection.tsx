@@ -922,6 +922,7 @@ export const ProjectTasksSection = ({
             groupedTasks={groupedTasks}
             collapsedStatusIds={collapsedStatuses}
             canReorderTasks={canReorderTasks}
+            canEditTasks={canEditTaskDetails}
             taskHref={taskHref}
             sensors={kanbanSensors}
             activeTask={activeTask}

@@ -272,7 +272,15 @@ CardFieldId = Union[TaskFieldId, NamedFieldId]
 
 
 # The built-in fields each place draws, named for the generated client.
-_COLUMNS = {"title", "startDate", "dueDate", "priority", "tags", "comments"}
+_COLUMNS = {
+    "title",
+    "assignees",
+    "startDate",
+    "dueDate",
+    "priority",
+    "tags",
+    "comments",
+}
 _PAGE = {
     "title",
     "description",
@@ -283,8 +291,8 @@ _PAGE = {
     "tags",
 }
 
-#: What a table draws as a column: the rest of a task (its people, its
-#: checklist) sits in the title's cell.
+#: What a table draws as a column: the rest of a task (its checklist, how it
+#: repeats) sits in the title's cell.
 TaskColumnFieldId = Enum(
     "TaskColumnFieldId",
     {f.name: f.value for f in TaskFieldId if f.value in _COLUMNS},
