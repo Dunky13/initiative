@@ -242,6 +242,8 @@ class TestBackfill:
     async def test_running_it_twice_installs_once(
         self, session: AsyncSession, mandatory_registration
     ):
+        """And the second run visits nothing: the install index says every
+        community is settled."""
         creator = await create_user(session, email="twice@example.com")
         guild = await create_guild(session, creator=creator, name="Twice guild")
         await create_guild_membership(
@@ -251,7 +253,7 @@ class TestBackfill:
         await backfill_mandatory_plugins()
         second = await backfill_mandatory_plugins()
 
-        assert second.installed == 0
+        assert second.guilds == 0
         assert len(await _installed_plugins(session, guild.id)) == 1
 
     async def test_with_nothing_mandatory_it_touches_no_guild(

@@ -90,6 +90,7 @@ async def record(guild_id: int, plugin: GuildPlugin) -> None:
     values = {
         "listing_uid": plugin.listing_uid,
         "enabled": bool(plugin.enabled),
+        "follows_new_initiatives": bool(plugin.follows_new_initiatives),
         "hook_route": hook_route(plugin),
     }
     statement = (

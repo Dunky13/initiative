@@ -2,8 +2,9 @@
 
 An install is a row in its community's own schema (``guild_plugins``). This is
 the index of them across communities: the listing an install came from, the
-community and install, whether the install is switched on, and the value a
-vendor webhook is routed to it by. It holds no content.
+community and install, whether the install is switched on and follows new
+initiatives, and the value a vendor webhook is routed to it by. It holds no
+content.
 
 It answers two questions without visiting a guild schema: which installs an
 plug-in has (``GET /plugin-platform/installations``), and which installs a vendor
@@ -45,6 +46,12 @@ class PluginInstall(SQLModel, table=True):
     #: The listing the install came from, which names its registration.
     listing_uid: str = Field(sa_column=Column(String(length=14), nullable=False))
     enabled: bool = Field(sa_column=Column(Boolean, nullable=False))
+    #: Whether it is placed in each initiative created from now on, which only
+    #: a mandatory plug-in's install is.
+    follows_new_initiatives: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
     hook_route: Optional[str] = Field(
         default=None,
         sa_column=Column(String(length=HOOK_ROUTE_MAX_LENGTH), nullable=True),

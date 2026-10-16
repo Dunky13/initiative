@@ -1178,21 +1178,43 @@ async def reindex_guild_search(
 async def backfill_guild_search() -> int:
     """Reindex every guild whose search generation is stale.
 
-    Runs after schema provisioning, visiting each guild on a system session
-    from its cohort. A guild's content is walked in bounded transactions, so a
-    large install fills in progressively instead of holding one transaction
-    open across the whole sweep. A guild that fails is logged and the others
-    carry on.
+    Runs after schema provisioning. One read of the catalog finds the stale
+    guilds (the marker is a comment on each one's ``search_entries``), and
+    only those are visited, each on a system session from its cohort. A
+    guild's content is walked in bounded transactions, so a large install
+    fills in progressively instead of holding one transaction open across the
+    whole sweep. A guild that fails is logged and the others carry on.
     """
+    from app.db.search_index import search_generation
     from app.services.guild_sweeps import Scope, each_guild
 
+    async with db_session.provisioning_engine.connect() as conn:
+        stale = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT substr(n.nspname, 7)::int FROM pg_class c"
+                        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+                        " WHERE c.relname = 'search_entries'"
+                        " AND n.nspname ~ '^guild_[0-9]+$'"
+                        " AND obj_description(c.oid, 'pg_class')"
+                        " IS DISTINCT FROM :generation"
+                    ),
+                    {"generation": search_generation()},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not stale:
+        return 0
     total = 0
 
     async def reindex(session: AsyncSession, guild_id: int) -> None:
         nonlocal total
         total += await reindex_guild_search(session, guild_id)
 
-    await each_guild([(Scope.PROVISIONED, reindex)], name="search-reindex")
+    await each_guild([(Scope.PROVISIONED, reindex)], name="search-reindex", only=stale)
     if total:
         logger.info("search reindex wrote %d entries", total)
     return total

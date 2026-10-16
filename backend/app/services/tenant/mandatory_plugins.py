@@ -9,7 +9,9 @@ Six properties, and each one is a deliberate choice:
 
 * **A guild gets it at creation, and an existing guild gets it at boot.** The
   same sweep pattern that reprovisions stale schemas, so the flag reaches guilds
-  that predate it without anyone running anything.
+  that predate it without anyone running anything. The install index
+  (``plugin_installs``) says which guilds lack an install or hold one not yet
+  settled, and only those are visited.
 * **Installing never fails guild creation.** The install is a local row; the
   plug-in's container may be down, its listing may not have arrived yet, and none of
   that is a reason a guild cannot be created. What is missing is logged, and the
@@ -46,9 +48,13 @@ from dataclasses import dataclass
 from collections.abc import Collection
 from typing import Optional
 
+from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db import cohorts
+from app.db.request_context import Unattributed
+from app.db.session import set_rls_context
 from app.models.platform.guild import GUILD_ADMIN_ROLES, GuildMembership
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.guild_sweeps import Scope, each_guild
@@ -199,6 +205,8 @@ async def install_mandatory_plugins(
                 if granted:
                     existing.granted_scopes = granted
                     session.add(existing)
+            # Settled: the next boot need not visit for it.
+            await plugin_installs.record(guild_id, existing)
             continue
 
         try:
@@ -253,17 +261,55 @@ async def install_mandatory_plugins(
     return installed
 
 
+async def _unsettled(
+    registrations: list[registration_lookup.RegistrationSnapshot],
+) -> set[int]:
+    """The communities the backfill has work in, read from the install index:
+    each missing a mandatory install, or holding one not yet settled (an
+    install that predates the flag does not follow new initiatives)."""
+    found = {
+        registration.operations_guild_id
+        for registration in registrations
+        if registration.operations_only and registration.operations_guild_id is not None
+    }
+    everywhere = sorted(
+        {
+            registration.listing_uid
+            for registration in registrations
+            if registration.listing_uid and not registration.operations_only
+        }
+    )
+    if not everywhere:
+        return found
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        found.update(
+            (
+                await session.exec(
+                    text(
+                        "SELECT g.id FROM guilds g WHERE ("
+                        " SELECT count(DISTINCT i.listing_uid) FROM plugin_installs i"
+                        " WHERE i.guild_id = g.id AND i.follows_new_initiatives"
+                        " AND i.listing_uid = ANY(:uids)) < :wanted"
+                    ).bindparams(uids=everywhere, wanted=len(everywhere))  # type: ignore[call-overload]
+                )
+            ).scalars()
+        )
+    return found
+
+
 async def backfill_mandatory_plugins() -> BackfillResult:
     """Place mandatory plug-ins into guilds that predate the flag.
 
-    Runs at boot, visiting every guild whose schema exists on a system session
-    from its cohort. A guild that fails is rolled back and logged; the others
+    Runs at boot, visiting each guild :func:`_unsettled` names on a system
+    session from its cohort. A guild that fails is rolled back and logged; the others
     still get their plug-in, and the next boot tries again.
 
     Returns immediately when nothing is marked mandatory, which is every
     deployment that has not asked for this.
     """
-    if not await registration_lookup.mandatory_registrations():
+    registrations = await registration_lookup.mandatory_registrations()
+    if not registrations:
         return BackfillResult()
 
     visited = succeeded = installed = 0
@@ -276,7 +322,11 @@ async def backfill_mandatory_plugins() -> BackfillResult:
         succeeded += 1
         installed += len(added)
 
-    await each_guild([(Scope.PROVISIONED, backfill)], name="mandatory-plugins")
+    await each_guild(
+        [(Scope.PROVISIONED, backfill)],
+        name="mandatory-plugins",
+        only=await _unsettled(registrations),
+    )
     return BackfillResult(
         guilds=visited, installed=installed, failed=visited - succeeded
     )
