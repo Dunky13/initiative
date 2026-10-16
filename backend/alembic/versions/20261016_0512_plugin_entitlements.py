@@ -16,8 +16,8 @@ Both new tables are app_admin-only: RLS enabled and forced with no policies,
 and the schema's default grants revoked from the two base roles. They are new
 and empty, so nothing is backfilled.
 
-Revision ID: 20261016_0511
-Revises: 20261016_0510
+Revision ID: 20261016_0512
+Revises: 20261016_0511
 Create Date: 2026-10-16
 """
 
@@ -29,8 +29,8 @@ from sqlalchemy.dialects import postgresql
 
 from app.core.config import settings
 
-revision = "20261016_0511"
-down_revision = "20261016_0510"
+revision = "20261016_0512"
+down_revision = "20261016_0511"
 branch_labels = None
 depends_on = None
 
