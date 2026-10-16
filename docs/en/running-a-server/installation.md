@@ -89,6 +89,8 @@ Set `DATABASE_URL_APP` and `DATABASE_URL_ADMIN` and Initiative reads `DATABASE_U
 docker compose exec -T initiative python -m app.db.bootstrap --print-sql
 ```
 
+Each password in it is the SCRAM hash Postgres keeps, never the password itself, which is also how Initiative sets them on start.
+
 To go back to one URL, point `DATABASE_URL` at the owner, delete the other three, and restart.
 
 ## Running as a specific user (PUID / PGID)
