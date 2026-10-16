@@ -884,3 +884,234 @@ async def test_a_far_end_says_what_it_lives_in(
     )
     (edge,) = from_task.json()
     assert edge["other"]["tool_title"] is None
+
+
+# ---------------------------------------------------------------------------
+# A neighbourhood
+#
+# What the graph draws: everything within a few hops of one thing, in one
+# request rather than one per neighbour.
+# ---------------------------------------------------------------------------
+
+
+async def _seed(session, guild_id: int, *pairs) -> None:
+    """Record ``(source, type, target)`` edges as they are, past the picker."""
+    from app.core.relationships import RelationshipType
+    from app.core.search import SearchEntityType
+    from app.services.tenant import relationships as relationships_service
+    from app.services.tenant.relationships import Endpoint
+
+    await route_session_to_guild(session, guild_id)
+    for (source_kind, source_id), rtype, (target_kind, target_id) in pairs:
+        await relationships_service.create(
+            session,
+            source=Endpoint(SearchEntityType(source_kind), source_id),
+            relationship_type=RelationshipType(rtype),
+            target=Endpoint(SearchEntityType(target_kind), target_id),
+        )
+    await session.commit()
+
+
+async def _neighbourhood(client: AsyncClient, a, entity: str, **params):
+    response = await client.get(
+        a.g("/relationships/neighbourhood"),
+        headers=a.headers,
+        params={"entity": entity, **params},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    return {
+        (node["end"]["type"], node["end"]["id"]): node["depth"]
+        for node in body["nodes"]
+    }, body["edges"]
+
+
+async def test_a_neighbourhood_walks_as_far_as_it_is_asked(
+    client: AsyncClient, acting_user, session
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    near = await create_file(session, a.initiative, a.user)
+    middle = await create_file(session, a.initiative, a.user)
+    far = await create_file(session, a.initiative, a.user)
+    await _seed(
+        session,
+        a.guild.id,
+        (("project", a.project.id), "attached", ("file", near.id)),
+        (("file", near.id), "related_to", ("file", middle.id)),
+        (("file", middle.id), "related_to", ("file", far.id)),
+    )
+    centre = f"project:{a.project.id}"
+
+    one, _ = await _neighbourhood(client, a, centre)
+    assert one == {("file", near.id): 1}
+
+    two, _ = await _neighbourhood(client, a, centre, hops=2)
+    assert two == {("file", near.id): 1, ("file", middle.id): 2}
+
+    three, edges = await _neighbourhood(client, a, centre, hops=3)
+    assert three == {
+        ("file", near.id): 1,
+        ("file", middle.id): 2,
+        ("file", far.id): 3,
+    }
+    # Each edge once, from the side the walk reached it on, so the centre is
+    # never named as a far end.
+    assert len(edges) == 3
+    assert {(e["anchor"]["type"], e["anchor"]["id"]) for e in edges} == {
+        ("project", a.project.id),
+        ("file", near.id),
+        ("file", middle.id),
+    }
+    assert all(e["other"] != {"type": "project", "id": a.project.id} for e in edges)
+
+
+async def test_a_neighbourhood_keeps_the_shortest_way_round(
+    client: AsyncClient, acting_user, session
+):
+    """Two hops out one way and one hop out another is one hop out."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    first = await create_file(session, a.initiative, a.user)
+    second = await create_file(session, a.initiative, a.user)
+    await _seed(
+        session,
+        a.guild.id,
+        (("project", a.project.id), "attached", ("file", first.id)),
+        (("project", a.project.id), "attached", ("file", second.id)),
+        (("file", first.id), "related_to", ("file", second.id)),
+    )
+
+    nodes, edges = await _neighbourhood(client, a, f"project:{a.project.id}", hops=3)
+    assert nodes == {("file", first.id): 1, ("file", second.id): 1}
+    # The link between the two is still drawn, though it reached nothing new.
+    assert len(edges) == 3
+
+
+async def test_a_neighbourhood_walks_through_labels_only_when_asked(
+    client: AsyncClient, acting_user, session
+):
+    """A tag is carried by everything that carries it, so walking through one
+    reaches most of the community in a hop."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    tag = await create_tag(session, a.guild)
+    elsewhere = await create_project(session, a.initiative, a.user)
+    await _seed(
+        session,
+        a.guild.id,
+        (("project", a.project.id), "tagged_with", ("tag", tag.id)),
+        (("project", elsewhere.id), "tagged_with", ("tag", tag.id)),
+    )
+    centre = f"project:{a.project.id}"
+
+    without, edges = await _neighbourhood(client, a, centre, hops=2)
+    assert without == {}
+    assert edges == []
+
+    with_tags, _ = await _neighbourhood(client, a, centre, hops=2, include_tags="true")
+    assert with_tags == {("tag", tag.id): 1, ("project", elsewhere.id): 2}
+
+
+async def test_a_neighbourhood_does_not_walk_past_what_the_reader_cannot_open(
+    client: AsyncClient, acting_user, session
+):
+    owner = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    shared = await create_file(session, owner.initiative, owner.user)
+    hidden_initiative = await create_initiative(session, owner.guild, owner.user)
+    hidden = await create_file(session, hidden_initiative, owner.user)
+    beyond = await create_file(session, owner.initiative, owner.user)
+    await _seed(
+        session,
+        owner.guild.id,
+        (("project", owner.project.id), "attached", ("file", shared.id)),
+        (("file", shared.id), "related_to", ("file", hidden.id)),
+        (("file", hidden.id), "related_to", ("file", beyond.id)),
+    )
+    # Everything but the one in the other initiative is open to its members, so
+    # what stops the walk is that one thing alone.
+    for resource in (owner.project, shared, beyond):
+        await create_resource_grant(session, resource, all_initiative_members=True)
+
+    reader = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=owner.guild,
+        initiative=owner.initiative,
+        initiative_role="member",
+    )
+    nodes, edges = await _neighbourhood(
+        client, reader, f"project:{owner.project.id}", hops=3
+    )
+    assert nodes == {("file", shared.id): 1}
+    assert len(edges) == 1
+
+
+async def test_a_neighbourhood_walks_on_from_the_earliest_links_first(
+    client: AsyncClient, acting_user, session, monkeypatch
+):
+    from app.services.tenant import relationships as relationships_service
+
+    monkeypatch.setattr(relationships_service, "HOP_BUDGET", 1)
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    earlier, later, past_earlier, past_later = [
+        await create_file(session, a.initiative, a.user) for _ in range(4)
+    ]
+    await _seed(
+        session,
+        a.guild.id,
+        (("project", a.project.id), "attached", ("file", earlier.id)),
+        (("project", a.project.id), "attached", ("file", later.id)),
+        (("file", earlier.id), "related_to", ("file", past_earlier.id)),
+        (("file", later.id), "related_to", ("file", past_later.id)),
+    )
+
+    nodes, _ = await _neighbourhood(client, a, f"project:{a.project.id}", hops=2)
+    assert nodes == {
+        ("file", earlier.id): 1,
+        ("file", later.id): 1,
+        ("file", past_earlier.id): 2,
+    }
+
+
+async def test_a_neighbourhood_is_refused_past_its_reach(
+    client: AsyncClient, acting_user, session
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    response = await client.get(
+        a.g("/relationships/neighbourhood"),
+        headers=a.headers,
+        params={"entity": f"project:{a.project.id}", "hops": 4},
+    )
+    assert response.status_code == 422
+
+
+async def test_a_neighbourhood_of_something_out_of_reach_is_absent(
+    client: AsyncClient, acting_user, session
+):
+    owner = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    hidden_initiative = await create_initiative(session, owner.guild, owner.user)
+    hidden = await create_file(session, hidden_initiative, owner.user)
+    reader = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=owner.guild,
+        initiative=owner.initiative,
+        initiative_role="member",
+    )
+    response = await client.get(
+        reader.g("/relationships/neighbourhood"),
+        headers=reader.headers,
+        params={"entity": f"file:{hidden.id}"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == RelationshipMessages.ENDPOINT_NOT_FOUND
