@@ -2,10 +2,9 @@
 
 A data job is a row in its community's own schema (an ``ImportJob`` or an
 ``ExportJob``) that a background visit claims and runs. The claim is visited
-when a wake says a job was queued or ended in the community (:data:`drain`),
-and by the ``data_jobs`` timer the same write arms, should the wake be lost.
-Every API process does
-this, so the claim is decided in the database: under a transaction-scoped
+by the ``data_jobs`` timer that queuing or ending a job arms at once, and again
+once the job's slot is free. Every API process does this, so the claim is
+decided in the database: under a transaction-scoped
 advisory lock on the community, so two processes never claim in the same
 community at once, a community with a job already active gets no second one,
 and the oldest queued job goes first.
@@ -46,8 +45,8 @@ from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import set_rls_context
 from app.models.platform.notification import NotificationType
-from app.services import guild_work
-from app.services.guild_sweeps import Drain, Scope, each_guild
+from app.services import sweep_timers
+from app.services.guild_sweeps import Scope, each_guild
 from app.services.platform import notice_outbox
 from app.db.request_context import SystemGuild, Unattributed
 
@@ -71,9 +70,6 @@ Runner = Callable[..., Awaitable[JobOutcome | None]]
 
 #: Every dispatcher, for :func:`cancel_running_jobs`.
 _dispatchers: weakref.WeakSet[Dispatcher[Any]] = weakref.WeakSet()
-
-#: Communities a wake says have a job queued or ended, for the claim.
-drain = Drain("data-jobs", settle=0.0)
 
 
 @dataclass(eq=False)
@@ -264,7 +260,7 @@ class Dispatcher(Generic[JobT]):
                 # Out of the slot before the wake, so this process can claim
                 # again.
                 self.running.pop((guild_id, job_id), None)
-        await guild_work.send(guild_work.DATA_JOBS, guild_id)
+        sweep_timers.wake("data_jobs", guild_id)
 
 
 async def cancel_running_jobs() -> None:

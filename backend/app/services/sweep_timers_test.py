@@ -1,25 +1,32 @@
 """Sweep timers: the write arms them, the worker visits only what is due."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import cast
 
+import asyncpg
 import pytest
 from sqlalchemy import text, update
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from conftest import TEST_DATABASE_URL
 from app.core import metrics
-from app.db import cohorts
+from app.core.config import settings
+from app.db import cohorts, timers
 from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.models.platform.community_timer import CommunityTimer
+from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.post import Post
+from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.webhook_subscription import WebhookSubscription
 from app.models.platform.user_notification_prefs import EmailCadence
 from app.services import notifications, sweep_timers
 from app.services.guild_sweeps import Scan, Scope
+from app.services.platform import notify_bus
 from app.services.platform.notification_prefs import EmailSchedule
 from app.services.tenant import outbox_poller, post_publication, recent_views
 from app.services.tenant.expiry import Expiring
@@ -112,6 +119,53 @@ async def test_a_routed_write_arms_its_timer_once(session: AsyncSession):
     sooner = soon - timedelta(minutes=30)
     await _as_community(community_id, _reschedule(second, sooner))
     assert [due for _c, _k, due in await _timers(session)] == [sooner, soon]
+
+
+async def test_a_timer_due_at_once_wakes_the_worker(session: AsyncSession, monkeypatch):
+    monkeypatch.setattr(settings, "DATABASE_URL_LISTEN", TEST_DATABASE_URL)
+    _author, _initiative, community_id = await _community(session)
+    woken = asyncio.Event()
+    listener = await asyncpg.connect(dsn=notify_bus._dsn())
+    try:
+        await listener.add_listener(timers.WAKE_CHANNEL, lambda *_: woken.set())
+
+        await _as_community(
+            community_id, text("SELECT public.arm_timer('posts', now())")
+        )
+
+        await asyncio.wait_for(woken.wait(), timeout=10)
+    finally:
+        await listener.close()
+
+
+async def test_work_brought_back_arms_its_sweep(session: AsyncSession):
+    """A done status reopened, and updates switched back on."""
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    await create_task(session, project, status_category=TaskStatusCategory.done)
+    plugin = await create_guild_plugin(
+        session,
+        await session.get(Guild, community_id),
+        author,
+        definition={
+            "plugin_kind": "service",
+            "service": {"public_id": "tests.reopen", "protocol": 1},
+        },
+        auto_update=False,
+    )
+
+    await _as_community(
+        community_id,
+        update(TaskStatus).values(category=TaskStatusCategory.todo),
+        update(GuildPlugin)
+        .where(GuildPlugin.id == plugin.id)  # type: ignore[arg-type]
+        .values(auto_update=True),
+    )
+
+    assert {kind for _c, kind, _due in await _timers(session)} >= {
+        "overdue",
+        "plugin_updates",
+    }
 
 
 async def test_a_change_arms_the_upkeep_and_the_webhook_backstop(

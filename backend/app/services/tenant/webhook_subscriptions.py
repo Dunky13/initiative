@@ -28,7 +28,6 @@ from app.schemas.tenant.webhook_subscription import (
     WebhookSubscriptionUpdate,
 )
 from app.services import audit as audit_service
-from app.services import guild_work
 from app.services.marketplace.registration_lookup import (
     load_registrations,
     service_public_id,
@@ -343,7 +342,6 @@ async def create_subscription(
             "plugin_install_id": plugin_install_id,
         },
     )
-    guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()
     await session.refresh(subscription)
     return subscription, secret
@@ -446,8 +444,6 @@ async def update_subscription(
                 target_id=subscription.id,
                 detail={**changed, "target_host_changed": host_changed},
             )
-    if subscription.active:
-        guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()
     await session.refresh(subscription)
     return subscription
@@ -525,5 +521,4 @@ async def delete_subscription(
                 "plugin_install_id": plugin_install_id,
             },
         )
-    guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()
