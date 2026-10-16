@@ -1,4 +1,4 @@
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,13 +14,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useEmailLinkToken } from "@/hooks/useEmailLinkToken";
 
 type VerificationStatus = "pending" | "success" | "error";
 
 export const VerifyEmailPage = () => {
   const { t } = useTranslation("auth");
-  const searchParams = useSearch({ strict: false }) as { token?: string };
-  const token = searchParams.token;
+  const token = useEmailLinkToken();
   const [status, setStatus] = useState<VerificationStatus>("pending");
   const [message, setMessage] = useState(t("verifyEmail.verifying"));
 
@@ -35,8 +35,7 @@ export const VerifyEmailPage = () => {
         await confirmVerification({ token });
         setStatus("success");
         setMessage(t("verifyEmail.success"));
-      } catch (err) {
-        console.error(err);
+      } catch {
         setStatus("error");
         setMessage(t("verifyEmail.error"));
       }
