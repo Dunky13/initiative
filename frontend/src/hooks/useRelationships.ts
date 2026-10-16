@@ -10,11 +10,12 @@
  * a write says which tool sits at *each* end and refreshes both.
  */
 
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import {
   type EndpointRef,
+  type NeighbourhoodRead,
   type RelatedEnd,
   type RelationshipCreate,
   type RelationshipRead,
@@ -22,7 +23,11 @@ import {
   SearchEntityType,
   type Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { getListRelationshipsQueryKey } from "@/api/generated/relationships/relationships";
+import {
+  getGetRelationsNeighbourhoodQueryKey,
+  getListRelationshipsQueryKey,
+  getRelationsNeighbourhood,
+} from "@/api/generated/relationships/relationships";
 import { invalidate, q } from "@/api/query-keys";
 import {
   createRelationship,
@@ -120,20 +125,8 @@ export const useUnrelate = (
     options
   );
 
-/** How far out the graph will walk. */
+/** How far out the graph will walk. The endpoint refuses further. */
 export const MAX_HOPS = 3;
-
-/**
- * How many things a hop may ask about.
- *
- * Each one is a request, and a thing at the centre of a busy initiative can name
- * a great many. Without a ceiling, "show me three hops" is an unbounded fan-out
- * over somebody's whole community — and a picture of a thousand nodes says less
- * than a picture of forty anyway, so the limit costs nothing that was worth
- * drawing. The nearest are kept: what came back first is what the thing itself
- * names, before anything further out.
- */
-export const HOP_BUDGET = 40;
 
 /** One thing in a neighbourhood, and how many hops out it was found. */
 export interface GraphNode {
@@ -156,6 +149,8 @@ export interface Neighbourhood {
   nodes: GraphNode[];
   edges: GraphEdge[];
   isLoading: boolean;
+  /** The walk further out failed, and this is the one hop the list holds. */
+  walkFailed: boolean;
 }
 
 const keyOf = (ref: { type: SearchEntityType; id: number }) => `${ref.type}:${ref.id}`;
@@ -163,15 +158,19 @@ const keyOf = (ref: { type: SearchEntityType; id: number }) => `${ref.type}:${re
 /**
  * Everything within `hops` of one thing.
  *
- * The endpoint answers for one thing at a time, so a second hop is a request per
- * neighbour found in the first. That is the honest cost of walking a graph whose
- * every step is gated: each of those requests is what proves the reader may see
- * that far. React Query holds them, so opening the same neighbourhood again is
- * free, and a hop nobody asked for is never fetched.
+ * One hop is the list of the thing's own links, which the section around the
+ * graph already holds, so it is not asked for twice. Further out is one request
+ * for the whole walk: the server goes a hop at a time, a batch per hop, and
+ * gates each edge and far end as the list does. Asking per neighbour instead
+ * cost a request for every thing found, and labels — shared by everything
+ * carrying them — made that dozens.
  *
- * Capped at {@link MAX_HOPS}, and written as a fixed number of levels rather
- * than a loop, because the number of hooks a component calls cannot vary between
- * renders. Three is also about as much as a picture this size can say.
+ * Labels are left out unless asked for, and left out of the *walk* rather than
+ * the drawing: walking through one reaches the whole community in a hop, so
+ * leaving it in the walk and out of the picture would be the worst of both.
+ *
+ * A walk that fails falls back to the one hop the list already holds, so the
+ * picture and its controls stay up and the reader can step back in.
  */
 export const useRelationsNeighbourhood = (
   entity: EndpointRef,
@@ -181,115 +180,66 @@ export const useRelationsNeighbourhood = (
   const communityId = useActiveCommunityId();
   const enabled = options?.enabled ?? true;
   const includeTags = options?.includeTags ?? false;
+  const walks = hops >= 2;
+  const centre = keyOf(entity);
 
-  /**
-   * Labels, left out unless asked for — and left out *here* rather than when
-   * drawing, which is the whole point. A tag is shared by everything carrying
-   * it, so walking through one reaches the whole community in a hop: leaving it
-   * in the picture and out of the walk would be the worst of both.
-   */
-  const keep = useCallback(
-    (row: RelationshipRead) =>
-      includeTags ||
-      (row.relationship_type !== RelationshipType.tagged_with &&
-        row.other.type !== SearchEntityType.tag),
-    [includeTags]
-  );
+  const near = useRelationshipsFor(entity, { enabled });
 
-  /** One entity's edges, as a query `useQueries` can be handed. */
-  const ask = (ref: EndpointRef, active: boolean) => ({
-    queryKey: getListRelationshipsQueryKey(communityId, {
-      entity: keyOf(ref),
-      relationship_type: null,
-      other_type: null,
-      direction: "both" as const,
-    }),
-    queryFn: () => listRelated(communityId, ref, null, null, "both"),
-    enabled: active,
+  const params = { entity: centre, hops, include_tags: includeTags };
+  const far = useQuery<NeighbourhoodRead>({
+    queryKey: getGetRelationsNeighbourhoodQueryKey(communityId, params),
+    queryFn: () => getRelationsNeighbourhood(communityId, params),
+    enabled: enabled && walks,
   });
 
-  // Three levels, written out. `useQueries` takes a list that may change length,
-  // so the fan-out is fine; what cannot change is how many times it is called.
-  const first = useQueries({ queries: [ask(entity, enabled)] });
-  const firstRows = useMemo(() => (first[0]?.data ?? []).filter(keep), [first[0]?.data, keep]);
-
-  const secondRefs = useMemo(
-    () =>
-      hops >= 2
-        ? firstRows.slice(0, HOP_BUDGET).map((row) => ({ type: row.other.type, id: row.other.id }))
-        : [],
-    [firstRows, hops]
-  );
-  const second = useQueries({
-    queries: secondRefs.map((ref) => ask(ref, enabled && hops >= 2)),
-  });
-
-  const thirdRefs = useMemo(() => {
-    if (hops < 3) return [];
-    const seen = new Set([keyOf(entity), ...secondRefs.map(keyOf)]);
-    const next: EndpointRef[] = [];
-    for (const query of second) {
-      for (const row of (query.data ?? []).filter(keep)) {
-        if (next.length >= HOP_BUDGET) return next;
-        const ref = { type: row.other.type, id: row.other.id };
-        if (seen.has(keyOf(ref))) continue;
-        seen.add(keyOf(ref));
-        next.push(ref);
-      }
-    }
-    return next;
-  }, [second, secondRefs, entity, hops, keep]);
-  const third = useQueries({
-    queries: thirdRefs.map((ref) => ask(ref, enabled && hops >= 3)),
-  });
+  const walkFailed = walks && far.isError;
 
   return useMemo(() => {
+    if (walks && !walkFailed) {
+      return {
+        nodes: (far.data?.nodes ?? []).map((node) => ({
+          ref: { type: node.end.type, id: node.end.id },
+          end: node.end,
+          depth: node.depth,
+        })),
+        edges: (far.data?.edges ?? []).map((edge) => ({
+          id: edge.id,
+          from: keyOf(edge.anchor),
+          to: keyOf(edge.other),
+          relationship_type: edge.relationship_type,
+          direction: edge.direction,
+          provenance: edge.provenance,
+        })),
+        isLoading: far.isLoading,
+        walkFailed: false,
+      };
+    }
+
+    const rows = (near.data ?? []).filter(
+      (row) =>
+        includeTags ||
+        (row.relationship_type !== RelationshipType.tagged_with &&
+          row.other.type !== SearchEntityType.tag)
+    );
     const nodes = new Map<string, GraphNode>();
-    const edges = new Map<number, GraphEdge>();
-
-    const absorb = (anchor: EndpointRef, rows: RelationshipRead[], depth: number) => {
-      for (const row of rows.filter(keep)) {
-        const far = { type: row.other.type, id: row.other.id };
-        const key = keyOf(far);
-        const found = nodes.get(key);
-        // Kept at the shortest way round: a thing two hops out one way and one
-        // hop out another is one hop out.
-        if (!found || found.depth > depth) {
-          nodes.set(key, { ref: far, end: row.other, depth });
-        }
-        edges.set(row.id, {
-          id: row.id,
-          from: keyOf(anchor),
-          to: key,
-          relationship_type: row.relationship_type,
-          direction: row.direction,
-          provenance: row.provenance,
-        });
-      }
-    };
-
-    absorb(entity, firstRows, 1);
-    if (hops >= 2) {
-      secondRefs.forEach((ref, index) => {
-        absorb(ref, second[index]?.data ?? [], 2);
-      });
+    for (const row of rows) {
+      const ref = { type: row.other.type, id: row.other.id };
+      nodes.set(keyOf(ref), { ref, end: row.other, depth: 1 });
     }
-    if (hops >= 3) {
-      thirdRefs.forEach((ref, index) => {
-        absorb(ref, third[index]?.data ?? [], 3);
-      });
-    }
-    nodes.delete(keyOf(entity));
-
     return {
       nodes: [...nodes.values()],
-      edges: [...edges.values()],
-      isLoading:
-        (first[0]?.isLoading ?? false) ||
-        second.some((query) => query.isLoading) ||
-        third.some((query) => query.isLoading),
+      edges: rows.map((row) => ({
+        id: row.id,
+        from: centre,
+        to: keyOf(row.other),
+        relationship_type: row.relationship_type,
+        direction: row.direction,
+        provenance: row.provenance,
+      })),
+      isLoading: near.isLoading,
+      walkFailed,
     };
-  }, [entity, firstRows, secondRefs, second, thirdRefs, third, first[0]?.isLoading, hops, keep]);
+  }, [walks, walkFailed, far.data, far.isLoading, near.data, near.isLoading, includeTags, centre]);
 };
 
 /** The links an item is set to have, of every kind. */
