@@ -41,8 +41,7 @@ export const OidcCallbackPage = () => {
         await completeOidcLogin();
         // A step-up sign-in returns to the page it interrupted.
         await resumeAfterSignIn(searchParams.next);
-      } catch (err) {
-        console.error(err);
+      } catch {
         setStatus(t("oidcCallback.error"));
       }
     };

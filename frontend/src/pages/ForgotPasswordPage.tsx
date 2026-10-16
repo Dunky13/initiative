@@ -51,8 +51,7 @@ export const ForgotPasswordPage = () => {
     try {
       await requestPasswordReset({ email: email.toLowerCase().trim() });
       setStatus("sent");
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError(t("forgotPassword.error"));
       setStatus("idle");
     }
@@ -75,7 +74,6 @@ export const ForgotPasswordPage = () => {
       });
       setRecoverStatus("success");
     } catch (err) {
-      console.error(err);
       setError(getErrorMessage(err, "auth:forgotPassword.recoverError"));
       setRecoverStatus("idle");
     }
