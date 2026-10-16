@@ -35,7 +35,7 @@ import logging
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import update
+from sqlalchemy import ColumnElement, and_, func, update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -113,6 +113,20 @@ async def _author_of(session: AsyncSession, post: Post) -> User | PluginAuthor |
     return PluginAuthor(name=name) if name is not None else None
 
 
+def scheduled() -> ColumnElement[bool]:
+    """A notice waiting for its time: scheduled, not yet up, not in the trash."""
+    return and_(
+        Post.published_at.is_(None),  # type: ignore[union-attr]
+        Post.scheduled_for.is_not(None),  # type: ignore[union-attr]
+        Post.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+
+
+def next_due(_now: datetime):
+    """When the community's next scheduled notice goes up."""
+    return select(func.min(Post.scheduled_for)).where(scheduled())
+
+
 async def publish_due_posts(session: AsyncSession, *, now: datetime) -> list[int]:
     """Publish every scheduled notice whose time has come, in one guild.
 
@@ -126,12 +140,7 @@ async def publish_due_posts(session: AsyncSession, *, now: datetime) -> list[int
     claimed = (
         await session.exec(
             update(Post)
-            .where(
-                Post.published_at.is_(None),
-                Post.scheduled_for.is_not(None),
-                Post.scheduled_for <= now,
-                Post.deleted_at.is_(None),
-            )
+            .where(scheduled(), Post.scheduled_for <= now)  # type: ignore[operator]
             .values(published_at=now, updated_at=now)
             .returning(Post.id)
         )

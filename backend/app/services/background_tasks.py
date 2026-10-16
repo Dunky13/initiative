@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 #: How often each pass over the communities runs.
 MINUTE_PASS_SECONDS = 60
-SLOW_PASS_SECONDS = 300
 HOURLY_PASS_SECONDS = 3600
 
 #: The minute pass sends overdue digests on every this-many-th pass.
@@ -73,18 +72,12 @@ class Loop:
 
 
 async def minute_pass() -> None:
-    """Event-driven work's backstop and the minute-grained notices, in one
-    visit per community.
-
-    Webhook deliveries (retries that have come due, and anything a lost wake
-    left), plug-ins' due schedules, data-job claims, both digests, event reminders
-    and scheduled posts, and every :data:`OVERDUE_EVERY`-th pass the overdue
-    digests. Posts are published in active communities only: a hold must not
-    keep announcing new notices to its members.
-    """
+    """The minute-grained notices, in one visit per community: both digests,
+    event reminders, and every :data:`OVERDUE_EVERY`-th pass the overdue
+    digests. Everything else that works community by community runs on timers
+    (``app.services.sweep_timers``)."""
     from app.services import notifications
-    from app.services.guild_sweeps import Scope, each_guild
-    from app.services.tenant import plugin_schedules, outbox_poller, post_publication
+    from app.services.guild_sweeps import each_guild
 
     now = datetime.now(timezone.utc)
     scans = [
@@ -101,80 +94,20 @@ async def minute_pass() -> None:
         scans.append(reminders)
     if next(_minute_passes) % OVERDUE_EVERY == 0:
         scans.append(notifications.overdue_scan(now=now))
-    await each_guild(
-        [
-            (Scope.ACTIVE, outbox_poller.drain_guild),
-            (Scope.ACTIVE, plugin_schedules.run_due),
-            *_claims(),
-            (
-                Scope.ACTIVE,
-                lambda session, _guild_id: post_publication.publish_due_posts(
-                    session, now=now
-                ),
-            ),
-        ],
-        name="minute",
-        scans=scans,
-    )
-
-
-async def slow_pass() -> None:
-    """Data jobs whose rows have gone quiet. The stale window is 15 minutes,
-    so five is often enough."""
-    from app.services.export import worker as export_worker
-    from app.services.guild_sweeps import Scope, each_guild
-    from app.services.import_engine import worker as import_worker
-
-    await each_guild(
-        [
-            (Scope.ACTIVE, export_worker.jobs.sweep_stale),
-            (Scope.ACTIVE, import_worker.jobs.sweep_stale),
-        ],
-        name="slow",
-    )
+    await each_guild([], name="minute", scans=scans)
 
 
 async def hourly_pass() -> None:
-    """Retention and upkeep: trash, expired exports and imports, every record
-    a community keeps for a while (``app.services.tenant.expiry``), spent
-    digest items, evidence past its keeping, plug-in auto-updates, and each
-    community's engagement levels.
-
-    Trash is purged and plug-ins updated in active communities only: a
-    read-only or suspended one is frozen until it returns. Exports, imports,
-    expiring records and engagement levels go wherever the schema still exists.
-    """
+    """Plug-in auto-updates in active communities, which follow the catalog
+    rather than anything a community writes, then the settled mail and read
+    notifications, and the security-signal windows no rule can still read."""
     from app.services import notifications
-    from app.services.export import worker as export_worker
     from app.services.guild_sweeps import Scope, each_guild
-    from app.services.import_engine import worker as import_worker
-    from app.services.platform import evidence, holds
-    from app.services.tenant import (
-        engagement_levels,
-        expiry,
-        plugin_updates,
-        trash_purge,
-    )
-
-    await each_guild(
-        [
-            (Scope.ACTIVE, trash_purge.purge_guild),
-            (Scope.PROVISIONED, export_worker.expire_artifacts),
-            (Scope.PROVISIONED, import_worker.expire_payloads),
-            (Scope.PROVISIONED, await expiry.prepare()),
-            # After expiry, so what it let go no longer counts.
-            (Scope.PROVISIONED, await engagement_levels.prepare()),
-            (Scope.ACTIVE, evidence.purge_due),
-            # Held content keeps its community whatever its status.
-            (Scope.PROVISIONED, holds.remind_due),
-            (Scope.ACTIVE, plugin_updates.update_guild),
-        ],
-        name="hourly",
-        scans=[notifications.digest_gc_scan(now=datetime.now(timezone.utc))],
-    )
-    # Windows no security rule can still read.
     from app.services.platform import security_signals
+    from app.services.tenant import plugin_updates
 
+    await each_guild([(Scope.ACTIVE, plugin_updates.update_guild)], name="hourly")
+    await notifications.drop_spent_notifications(now=datetime.now(timezone.utc))
     await security_signals.sweep()
 
 
@@ -191,7 +124,7 @@ def _claims() -> list[tuple[Scope, Visit]]:
 
 
 def start_background_tasks() -> list[asyncio.Task]:
-    from app.services import data_jobs
+    from app.services import data_jobs, sweep_timers
     from app.services.guild_sweeps import Scope
     from app.services.notifications import (
         process_hold_summaries,
@@ -263,12 +196,13 @@ def start_background_tasks() -> list[asyncio.Task]:
     )
 
     tasks = [
-        # Every sweep that visits the communities, grouped by how often it
-        # needs to run.
+        # Every sweep that visits only the communities with work due.
+        asyncio.create_task(sweep_timers.loop.run(sweep_timers.process_due_timers)),
+        # The sweeps that still visit every community, grouped by how often
+        # they need to run.
         asyncio.create_task(
             Loop("minute", interval=MINUTE_PASS_SECONDS).run(minute_pass)
         ),
-        asyncio.create_task(Loop("slow", interval=SLOW_PASS_SECONDS).run(slow_pass)),
         asyncio.create_task(
             Loop("hourly", interval=HOURLY_PASS_SECONDS).run(hourly_pass)
         ),

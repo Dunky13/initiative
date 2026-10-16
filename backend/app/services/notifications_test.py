@@ -6,6 +6,7 @@ test harness commits real data and truncates between tests).
 """
 
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import urlencode
@@ -47,7 +48,7 @@ from app.services.notifications import (
 from app.services.notifications import (
     ASSIGNMENT_DIGEST,
     REACTION_DIGEST,
-    digest_gc_scan,
+    expire_digest_items,
     digest_scan,
     event_when,
     overdue_scan,
@@ -1099,13 +1100,14 @@ async def test_assignment_gc_drops_items_past_retention(session: AsyncSession):
     # Well inside the window: nothing is touched.
     session.expunge_all()
     await set_rls_context(session, Unattributed())
-    await _sweep(digest_gc_scan(now=datetime.now(timezone.utc)))
+    await each_guild([(Scope.LIVE, expire_digest_items)], name="test")
     assert await _row_count() == 1
 
     session.expunge_all()
     await set_rls_context(session, Unattributed())
-    await _sweep(
-        digest_gc_scan(now=datetime.now(timezone.utc) + ASSIGNMENT_ITEM_RETENTION)
+    later = datetime.now(timezone.utc) + ASSIGNMENT_ITEM_RETENTION
+    await each_guild(
+        [(Scope.LIVE, partial(expire_digest_items, now=later))], name="test"
     )
     assert await _row_count() == 0
 

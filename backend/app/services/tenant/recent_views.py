@@ -57,7 +57,7 @@ async def record_view(
     persist: bool = True,
 ) -> RecentView:
     """Upsert a recent-view row, with where this open came from. What a person
-    no longer keeps goes in the hourly pass (:func:`expire`), not here.
+    no longer keeps goes in the expiry sweep (:func:`expire`), not here.
 
     ``persist=False`` returns a transient (unsaved) row instead of writing.
     A PAM grantee's browsing is transient by design, so it is not recorded.

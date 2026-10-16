@@ -88,6 +88,8 @@ _SIDE_EFFECTS: frozenset[str] = frozenset(
         "search_entries",
         # Queued when a task is assigned, cleared when it is unassigned.
         "task_assignment_digest_items",
+        # The sweep timers a write arms, read and written by public.arm_timer.
+        "timer_marks",
         # The files content shows, stored, copied and claimed as a step of
         # saving that content, by the filenames the saved row shows.
         "uploads",

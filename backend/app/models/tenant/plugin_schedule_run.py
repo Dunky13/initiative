@@ -3,8 +3,8 @@
 A plug-in's manifest may declare ``schedules``: intervals at which Initiative
 calls its ``schedule`` hook, once for each community that installed it. A row
 here is one install's schedule, kept in step with the install's pinned
-definition (:func:`app.services.tenant.plugin_schedules.reconcile`) and run by the
-minute pass (:func:`app.services.tenant.plugin_schedules.run_due`).
+definition (:func:`app.services.tenant.plugin_schedules.reconcile`) and run when
+its timer comes due (:func:`app.services.tenant.plugin_schedules.run_due`).
 
 Written and read by the system engine alone.
 """

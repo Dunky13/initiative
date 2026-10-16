@@ -1,0 +1,733 @@
+"""The sweeps that run on timers, and the worker that runs them.
+
+Each :class:`Sweep` says what it does in one community (its visit), when it
+next has work there (``next_due``, read from the community's own schema), and
+which writes give it work (its :class:`~app.db.timers.TimerSource` entries,
+rendered into every community's schema as triggers by ``app.db.timers``).
+Those triggers arm ``public.community_timers`` in the transaction that made
+the work.
+
+The worker claims timers that have come due, a batch at a time, across every
+replica (``FOR UPDATE SKIP LOCKED``, so each timer is claimed once). Claiming
+moves a timer :data:`LEASE` into the future: if the visit never finishes, the
+timer comes due again. Each visit runs through the same runner as every other
+sweep (``app.services.guild_sweeps.each_guild``), on the community's own
+cohort and routing. After it, the sweep's next timer is armed from what the
+community holds then, never sooner than ``every`` from now, which is the
+cadence the sweep had before it ran on timers.
+
+A timer may come early: the visit finds nothing and arms the next one. A
+source must never arm one later than its work. A community whose status no
+longer admits a sweep keeps that sweep's timer on its lease, so the work
+resumes within a lease of the community coming back.
+
+Once a day each community's ``reconcile`` timer arms any sweep that has work
+but no timer: a write no source covered, or a session that could not arm (a
+filer, a migration). Each one it arms is counted
+(``initiative_sweep_timer_repairs``), since it means a source is missing.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from functools import cache
+from typing import Any
+
+from sqlalchemy import case, delete, exists, func, literal, or_, text
+from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core import metrics
+from app.db import cohorts
+from app.db.request_context import SystemGuild, Unattributed
+from app.db.session import set_rls_context
+from app.db.timers import TimerSource, on_insert, on_row
+from app.models.tenant.timer_mark import TimerMark
+from app.services.background_tasks import Loop
+from app.services.guild_sweeps import Scope, Visit, each_guild
+
+logger = logging.getLogger(__name__)
+
+#: How far into the future claiming a timer moves it. A visit that never
+#: finishes leaves its timer to come due again then.
+LEASE = timedelta(minutes=5)
+
+#: Timers claimed at once. A tick claims batch after batch until one comes
+#: back short.
+BATCH = 500
+
+#: How often the worker looks for due timers.
+TICK_SECONDS = 60
+
+#: How often each community is reconciled.
+RECONCILE_EVERY = timedelta(days=1)
+
+RECONCILE = "reconcile"
+
+#: ``(now)``: a SELECT of one value, the earliest time the sweep could have
+#: work in the routed community, or NULL when it has none. Read with the
+#: trash filter off, so it states its own ``deleted_at`` conditions.
+NextDue = Callable[[datetime], Any]
+
+
+@dataclass(frozen=True)
+class Sweep:
+    """One sweep that runs community by community, on timers."""
+
+    #: The timer kind: the sweep's name in ``community_timers``.
+    kind: str
+    scope: Scope
+    #: The least time between two visits to one community: the cadence the
+    #: sweep ran at before timers, so nothing runs more often than it did.
+    every: timedelta
+    next_due: NextDue
+    #: The visit, or ``None`` when ``prepare`` makes it.
+    visit: Visit | None = None
+    #: Makes the visit, from what the tick shares (read once, before any
+    #: community is visited).
+    prepare: Callable[[], Awaitable[Visit]] | None = None
+    #: The visit returns the sweep's next due time itself (or ``None`` for no
+    #: work), in place of ``next_due``.
+    answers: bool = False
+    #: The writes that give the sweep work.
+    sources: tuple[TimerSource, ...] = ()
+
+
+@cache
+def sweeps() -> tuple[Sweep, ...]:
+    """Every sweep that runs on timers, read once."""
+    from app.core.intake import IntakeStream, meta
+    from app.db.soft_delete_filter import SOFT_DELETE_MODELS
+    from app.models.tenant.content_hold import ContentHold
+    from app.models.tenant.engagement_level import EngagementLevel
+    from app.models.tenant.event_outbox import EventOutbox
+    from app.models.tenant.event_reminder_dispatch import EventReminderDispatch
+    from app.models.tenant.evidence import Evidence
+    from app.models.tenant.export_job import ExportJob, ExportJobStatus
+    from app.models.tenant.import_job import ImportJob, ImportJobStatus
+    from app.models.tenant.intake import IntakeCase
+    from app.models.tenant.moderation import ModerationReport
+    from app.models.tenant.plugin_event_outbox import PluginEventOutbox
+    from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
+    from app.models.tenant.reaction_digest import ReactionDigestItem
+    from app.models.tenant.recent_view import RecentView
+    from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
+    from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
+    from app.models.tenant.upload import Upload
+    from app.models.tenant.webhook_delivery import WebhookDelivery
+    from app.services import notifications
+    from app.services.export import worker as export_worker
+    from app.services.import_engine import worker as import_worker
+    from app.services.platform import evidence, holds
+    from app.services.tenant import (
+        change_log,
+        engagement_levels,
+        expiry,
+        outbox_poller,
+        plugin_hooks,
+        plugin_schedules,
+        post_publication,
+        recent_views,
+        trash_purge,
+    )
+    from app.services.tenant.attachments import (
+        PASTED_IMAGE_PREFIX,
+        UNCLAIMED_PASTED_IMAGE_GRACE,
+    )
+
+    def least(*parts: Any) -> Any:
+        """The earliest of several one-value SELECTs (NULLs ignored)."""
+        return select(func.least(*(part.scalar_subquery() for part in parts)))
+
+    def when_exists(condition: Any) -> Any:
+        """``now()`` when ``condition`` holds, else NULL."""
+        return select(func.now()).where(condition)
+
+    hour, minute = timedelta(hours=1), timedelta(minutes=1)
+    imports_pending = (
+        ImportJobStatus.staged.value,
+        ImportJobStatus.fetching.value,
+        ImportJobStatus.queued.value,
+    )
+    imports_finished = tuple(
+        status.value
+        for status in ImportJobStatus
+        if status.value not in (*imports_pending, ImportJobStatus.running.value)
+    )
+    change_log_sources = (
+        on_insert(
+            "event_outbox",
+            after=change_log.RETENTION,
+        ),
+        on_insert("plugin_event_outbox", after=change_log.RETENTION),
+    )
+    digest_items = (TaskAssignmentDigestItem, ReactionDigestItem)
+    shortest_case_keep = min(
+        timedelta(days=meta(stream).retention_days) for stream in IntakeStream
+    )
+    report_keep = timedelta(days=meta(IntakeStream.moderation).retention_days)
+
+    async def claim_jobs(session: AsyncSession, guild_id: int) -> None:
+        await export_worker.jobs.claim(session, guild_id)
+        await import_worker.jobs.claim(session, guild_id)
+
+    async def sweep_stale_jobs(session: AsyncSession, guild_id: int) -> None:
+        await export_worker.jobs.sweep_stale(session, guild_id)
+        await import_worker.jobs.sweep_stale(session, guild_id)
+
+    async def publish_posts(session: AsyncSession, _guild_id: int) -> None:
+        await post_publication.publish_due_posts(
+            session, now=datetime.now(timezone.utc)
+        )
+
+    return (
+        Sweep(
+            kind="webhooks",
+            scope=Scope.ACTIVE,
+            every=minute,
+            visit=outbox_poller.drain_guild,
+            # Retries. New events wake the drain at once; the outbox sources
+            # are its backstop should that wake be lost. A community with no
+            # subscription answers that visit with one read.
+            next_due=lambda _now: select(
+                func.min(WebhookDelivery.next_attempt_at)
+            ).where(
+                col(WebhookDelivery.delivered_at).is_(None),
+                col(WebhookDelivery.dead_lettered_at).is_(None),
+            ),
+            sources=(
+                on_insert("event_outbox", after=minute),
+                on_insert("plugin_event_outbox", after=minute),
+                on_row(
+                    "webhook_subscriptions",
+                    "now()",
+                    events="INSERT OR UPDATE OF active",
+                    when="NEW.active",
+                ),
+            ),
+        ),
+        Sweep(
+            kind="plugin_schedules",
+            scope=Scope.ACTIVE,
+            every=minute,
+            visit=plugin_schedules.run_due,
+            answers=True,
+            next_due=lambda _now: plugin_schedules.next_due(),
+            sources=(
+                on_row(
+                    "plugin_schedule_runs",
+                    "GREATEST({row}.next_due_at, {row}.claimed_until)",
+                    events="INSERT OR UPDATE OF next_due_at, claimed_until",
+                ),
+            ),
+        ),
+        Sweep(
+            kind="data_jobs",
+            scope=Scope.ACTIVE,
+            every=minute,
+            visit=claim_jobs,
+            # Queued jobs are claimed at once by the data-jobs drain; this is
+            # its backstop, and the next queued job's once one ends.
+            next_due=lambda _now: least(
+                when_exists(
+                    exists().where(ExportJob.status == ExportJobStatus.queued.value)
+                    & ~exists().where(ExportJob.status == ExportJobStatus.running.value)
+                ),
+                when_exists(
+                    exists().where(ImportJob.status == ImportJobStatus.queued.value)
+                    & ~exists().where(
+                        col(ImportJob.status).in_(
+                            (
+                                ImportJobStatus.fetching.value,
+                                ImportJobStatus.running.value,
+                            )
+                        )
+                    )
+                ),
+            ),
+            sources=tuple(
+                on_row(
+                    table,
+                    "now()",
+                    after=minute,
+                    events="INSERT OR UPDATE OF status",
+                )
+                for table in ("export_jobs", "import_jobs")
+            ),
+        ),
+        Sweep(
+            kind="posts",
+            scope=Scope.ACTIVE,
+            every=minute,
+            visit=publish_posts,
+            next_due=post_publication.next_due,
+            sources=(
+                on_row(
+                    "posts",
+                    "{row}.scheduled_for",
+                    events=(
+                        "INSERT OR UPDATE OF scheduled_for, published_at, deleted_at"
+                    ),
+                    when=(
+                        "NEW.published_at IS NULL AND NEW.scheduled_for IS NOT NULL"
+                        " AND NEW.deleted_at IS NULL"
+                    ),
+                ),
+            ),
+        ),
+        Sweep(
+            kind="stale_jobs",
+            scope=Scope.ACTIVE,
+            every=timedelta(minutes=5),
+            visit=sweep_stale_jobs,
+            # Heartbeats only push these later, so they arm nothing.
+            next_due=lambda _now: least(
+                select(
+                    func.min(ExportJob.updated_at) + export_worker.STALE_RUNNING
+                ).where(ExportJob.status == ExportJobStatus.running.value),
+                select(
+                    func.min(ImportJob.updated_at) + import_worker.STALE_RUNNING
+                ).where(ImportJob.status == ImportJobStatus.running.value),
+                select(
+                    func.min(ImportJob.updated_at) + import_worker.STALE_FETCHING
+                ).where(ImportJob.status == ImportJobStatus.fetching.value),
+            ),
+            sources=(
+                on_row(
+                    "export_jobs",
+                    "now()",
+                    after=export_worker.STALE_RUNNING,
+                    events="INSERT OR UPDATE OF status",
+                    when=f"NEW.status = '{ExportJobStatus.running.value}'",
+                ),
+                on_row(
+                    "import_jobs",
+                    "now()",
+                    after=min(
+                        import_worker.STALE_RUNNING, import_worker.STALE_FETCHING
+                    ),
+                    events="INSERT OR UPDATE OF status",
+                    when=(
+                        f"NEW.status IN ('{ImportJobStatus.running.value}',"
+                        f" '{ImportJobStatus.fetching.value}')"
+                    ),
+                ),
+            ),
+        ),
+        Sweep(
+            kind="trash",
+            scope=Scope.ACTIVE,
+            every=hour,
+            visit=trash_purge.purge_guild,
+            next_due=lambda _now: least(
+                *(
+                    select(func.min(model.purge_at)).where(  # type: ignore[attr-defined]
+                        model.purge_at.is_not(None)  # type: ignore[attr-defined]
+                    )
+                    for model in SOFT_DELETE_MODELS
+                ),
+                select(
+                    func.min(Upload.created_at) + UNCLAIMED_PASTED_IMAGE_GRACE
+                ).where(
+                    col(Upload.filename).startswith(PASTED_IMAGE_PREFIX),
+                    col(Upload.claimed_at).is_(None),
+                ),
+            ),
+            sources=(
+                *(
+                    on_row(
+                        str(model.__tablename__),
+                        "{row}.purge_at",
+                        events="INSERT OR UPDATE OF purge_at",
+                        when="NEW.purge_at IS NOT NULL",
+                    )
+                    for model in SOFT_DELETE_MODELS
+                ),
+                on_row(
+                    "uploads",
+                    "{row}.created_at",
+                    after=UNCLAIMED_PASTED_IMAGE_GRACE,
+                    when=f"NEW.filename LIKE '{PASTED_IMAGE_PREFIX}%'",
+                ),
+            ),
+        ),
+        Sweep(
+            kind="export_expiry",
+            scope=Scope.PROVISIONED,
+            every=hour,
+            visit=export_worker.expire_artifacts,
+            next_due=lambda _now: select(func.min(ExportJob.expires_at)).where(
+                ExportJob.status == ExportJobStatus.done.value,
+                col(ExportJob.expires_at).is_not(None),
+            ),
+            sources=(
+                on_row(
+                    "export_jobs",
+                    "{row}.expires_at",
+                    events="INSERT OR UPDATE OF expires_at, status",
+                    when=(
+                        f"NEW.status = '{ExportJobStatus.done.value}'"
+                        " AND NEW.expires_at IS NOT NULL"
+                    ),
+                ),
+            ),
+        ),
+        Sweep(
+            kind="import_expiry",
+            scope=Scope.PROVISIONED,
+            every=hour,
+            visit=import_worker.expire_payloads,
+            next_due=lambda _now: least(
+                select(func.min(ImportJob.expires_at)).where(
+                    col(ImportJob.status).in_(imports_pending),
+                    col(ImportJob.expires_at).is_not(None),
+                ),
+                when_exists(
+                    exists().where(
+                        col(ImportJob.status).in_(imports_finished),
+                        col(ImportJob.secret_encrypted).is_not(None),
+                    )
+                ),
+            ),
+            sources=(
+                on_row(
+                    "import_jobs",
+                    "{row}.expires_at",
+                    events="INSERT OR UPDATE OF expires_at",
+                    when="NEW.expires_at IS NOT NULL",
+                ),
+                on_row(
+                    "import_jobs",
+                    "now()",
+                    events="UPDATE OF status",
+                    when=(
+                        f"NEW.status IN ({', '.join(repr(s) for s in imports_finished)})"
+                        " AND NEW.secret_encrypted IS NOT NULL"
+                    ),
+                ),
+            ),
+        ),
+        Sweep(
+            kind="expiry",
+            scope=Scope.PROVISIONED,
+            every=hour,
+            prepare=expiry.prepare,
+            next_due=lambda _now: least(
+                *(
+                    select(func.min(log.occurred_at) + change_log.RETENTION)
+                    for log in (EventOutbox, PluginEventOutbox)
+                ),
+                select(func.min(PluginHookDelivery.expires_at)),
+                select(func.min(RecentView.last_viewed_at) + recent_views.WINDOW),
+                select(
+                    func.min(EventReminderDispatch.event_start_at)
+                    + notifications.EVENT_REMINDER_DISPATCH_RETENTION
+                ),
+            ),
+            sources=(
+                *change_log_sources,
+                on_insert("plugin_hook_deliveries", after=plugin_hooks.DELIVERY_TTL),
+                on_insert("recent_views", after=recent_views.WINDOW),
+                on_row(
+                    "event_reminder_dispatches",
+                    "{row}.event_start_at",
+                    after=notifications.EVENT_REMINDER_DISPATCH_RETENTION,
+                ),
+            ),
+        ),
+        Sweep(
+            kind="engagement",
+            scope=Scope.PROVISIONED,
+            every=hour,
+            prepare=engagement_levels.prepare,
+            # Levels decay, so a community active this week is worked out
+            # every hour, and one quiet all week is left alone.
+            next_due=lambda now: when_exists(
+                or_(
+                    exists().where(
+                        RecentView.last_viewed_at > now - recent_views.WINDOW
+                    ),
+                    exists().where(
+                        EventOutbox.occurred_at > now - change_log.RETENTION
+                    ),
+                    exists().where(EngagementLevel.level.is_not(None)),
+                )
+            ),
+            sources=(
+                on_insert("event_outbox", after=hour),
+                on_insert("recent_views", after=hour),
+            ),
+        ),
+        Sweep(
+            kind="evidence",
+            scope=Scope.ACTIVE,
+            every=hour,
+            visit=evidence.purge_due,
+            # A case's evidence is kept from when its task closes: any task
+            # closing arms the shortest retention, which is never later.
+            next_due=lambda _now: least(
+                select(
+                    func.min(
+                        func.least(
+                            Task.deleted_at,
+                            case(
+                                (
+                                    TaskStatus.category == TaskStatusCategory.done,
+                                    Task.completed_at,
+                                ),
+                            ),
+                        )
+                    )
+                    + shortest_case_keep
+                )
+                .select_from(IntakeCase)
+                .join(Task, col(Task.id) == IntakeCase.task_id)
+                .join(TaskStatus, col(TaskStatus.id) == Task.task_status_id)
+                .where(col(IntakeCase.id).in_(select(Evidence.case_id))),
+                select(func.min(ModerationReport.decided_at) + report_keep).where(
+                    col(ModerationReport.id).in_(select(Evidence.report_id))
+                ),
+            ),
+            sources=(
+                on_row("evidence", "now()"),
+                on_row(
+                    "tasks",
+                    "now()",
+                    after=shortest_case_keep,
+                    events="UPDATE OF completed_at, deleted_at",
+                    when="NEW.completed_at IS NOT NULL OR NEW.deleted_at IS NOT NULL",
+                ),
+                on_row(
+                    "moderation_reports",
+                    "{row}.decided_at",
+                    after=report_keep,
+                    events="UPDATE OF decided_at",
+                    when="NEW.decided_at IS NOT NULL",
+                ),
+            ),
+        ),
+        Sweep(
+            kind="hold_reminders",
+            scope=Scope.PROVISIONED,
+            every=hour,
+            visit=holds.remind_due,
+            next_due=lambda _now: select(
+                func.min(func.coalesce(ContentHold.reminded_at, ContentHold.placed_at))
+                + holds.REMINDER_INTERVAL
+            ).where(
+                col(ContentHold.released_at).is_(None),
+                col(ContentHold.case_task_id).is_not(None),
+            ),
+            sources=(
+                on_row(
+                    "content_holds", "{row}.placed_at", after=holds.REMINDER_INTERVAL
+                ),
+            ),
+        ),
+        Sweep(
+            kind="digest_gc",
+            scope=Scope.LIVE,
+            every=hour,
+            visit=notifications.expire_digest_items,
+            next_due=lambda _now: least(
+                *(
+                    select(
+                        func.min(item.created_at)
+                        + notifications.ASSIGNMENT_ITEM_RETENTION
+                    )
+                    for item in digest_items
+                )
+            ),
+            sources=tuple(
+                on_insert(
+                    str(item.__tablename__),
+                    after=notifications.ASSIGNMENT_ITEM_RETENTION,
+                )
+                for item in digest_items
+            ),
+        ),
+        Sweep(
+            kind=RECONCILE,
+            scope=Scope.PROVISIONED,
+            every=RECONCILE_EVERY,
+            visit=reconcile,
+            answers=True,
+            next_due=lambda now: select(literal(now + RECONCILE_EVERY)),
+            # A community's first change starts its daily reconcile; after
+            # that each reconcile arms the next.
+            sources=(on_insert("event_outbox", after=RECONCILE_EVERY),),
+        ),
+    )
+
+
+def _by_kind() -> dict[str, Sweep]:
+    return {sweep.kind: sweep for sweep in sweeps()}
+
+
+async def arm(session: AsyncSession, kind: str, due: datetime) -> None:
+    """Arm ``kind`` in the routed community at ``due``, the way a write does."""
+    await session.exec(
+        text("SELECT public.arm_timer(:kind, :due)").bindparams(kind=kind, due=due)  # type: ignore[call-overload]
+    )
+
+
+async def _next_due(
+    session: AsyncSession, sweep: Sweep, now: datetime
+) -> datetime | None:
+    return (
+        await session.exec(sweep.next_due(now).execution_options(include_deleted=True))
+    ).first()
+
+
+def _visit_and_rearm(
+    sweep: Sweep, visit: Visit, ids: list[int], done: set[int]
+) -> Visit:
+    """``visit``, then the sweep's next timer, then the claimed rows marked
+    for deletion."""
+
+    async def run(session: AsyncSession, guild_id: int) -> None:
+        # Taken: a write from here on arms afresh rather than counting on the
+        # timer this visit is.
+        await session.exec(delete(TimerMark).where(col(TimerMark.kind) == sweep.kind))
+        await session.commit()
+        answered = await visit(session, guild_id)
+        await session.commit()
+        now = datetime.now(timezone.utc)
+        # A visit may leave its session routed elsewhere (a data job's
+        # outcome is written from the unrouted context).
+        await set_rls_context(session, SystemGuild(guild_id))
+        due = answered if sweep.answers else await _next_due(session, sweep, now)
+        if due is not None:
+            await arm(session, sweep.kind, max(due, now + sweep.every))
+        await session.commit()
+        done.update(ids)
+
+    return run
+
+
+async def _claim(now: datetime) -> list[Any]:
+    """Claim up to :data:`BATCH` due timers, moving each a lease ahead."""
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        rows = (
+            await session.exec(
+                text(
+                    """
+                    WITH due AS (
+                        SELECT id, due_at FROM community_timers
+                        WHERE due_at <= :now AND community_id IS NOT NULL
+                        ORDER BY due_at
+                        LIMIT :batch
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE community_timers t SET due_at = :lease
+                    FROM due WHERE t.id = due.id
+                    RETURNING t.id, t.community_id, t.kind, due.due_at
+                    """
+                ).bindparams(now=now, batch=BATCH, lease=now + LEASE)  # type: ignore[call-overload]
+            )
+        ).all()
+        await session.commit()
+    return list(rows)
+
+
+async def _delete(ids: set[int]) -> None:
+    if not ids:
+        return
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            text("DELETE FROM community_timers WHERE id = ANY(:ids)").bindparams(  # type: ignore[call-overload]
+                ids=sorted(ids)
+            )
+        )
+        await session.commit()
+
+
+async def _run(claimed: list[Any], now: datetime) -> None:
+    """Visit each claimed timer's community for its sweep."""
+    registry = _by_kind()
+    taken: dict[int, dict[str, list[int]]] = {}
+    for timer_id, community_id, kind, due_at in claimed:
+        if kind in registry:
+            metrics.sweep_timer_lag.labels(kind).observe(
+                max(0.0, (now - due_at).total_seconds())
+            )
+        taken.setdefault(community_id, {}).setdefault(kind, []).append(timer_id)
+    prepared: dict[str, Visit] = {}
+    for kind in {kind for kinds in taken.values() for kind in kinds}:
+        sweep = registry.get(kind)
+        if sweep is not None and sweep.prepare is not None:
+            prepared[kind] = await sweep.prepare()
+    done: set[int] = set()
+    plan: dict[int, list[tuple[Scope, Visit]]] = {}
+    for community_id, kinds in taken.items():
+        for kind, ids in kinds.items():
+            # A kind this version does not know is another version's: left to
+            # its lease for a process that does.
+            sweep = registry.get(kind)
+            if sweep is None:
+                continue
+            visit = prepared[kind] if sweep.prepare is not None else sweep.visit
+            assert visit is not None
+            plan.setdefault(community_id, []).append(
+                (sweep.scope, _visit_and_rearm(sweep, visit, ids, done))
+            )
+    # A community the pass did not visit for a sweep (its status does not
+    # admit it now) keeps that timer on its lease.
+    await each_guild([], name="timers", planned=plan)
+    await _delete(done)
+
+
+async def process_due_timers() -> None:
+    """Run every timer that has come due, a batch at a time."""
+    while True:
+        now = datetime.now(timezone.utc)
+        claimed = await _claim(now)
+        if claimed:
+            await _run(claimed, now)
+        if len(claimed) < BATCH:
+            return
+
+
+async def _pending_kinds(guild_id: int) -> set[str]:
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        return set(
+            (
+                await session.exec(
+                    text(
+                        "SELECT DISTINCT kind FROM community_timers"
+                        " WHERE community_id = :community"
+                    ).bindparams(community=guild_id)  # type: ignore[call-overload]
+                )
+            ).scalars()
+        )
+
+
+async def reconcile(session: AsyncSession, guild_id: int) -> datetime:
+    """Arm every sweep that has work in the community and no timer for it, and
+    count each one: a write no source covered. Returns the next reconcile."""
+    now = datetime.now(timezone.utc)
+    pending = await _pending_kinds(guild_id)
+    checked = [sweep for sweep in sweeps() if sweep.kind != RECONCILE]
+    probe = select(
+        *(sweep.next_due(now).scalar_subquery().label(sweep.kind) for sweep in checked)
+    ).execution_options(include_deleted=True)
+    row = (await session.exec(probe)).one()
+    for sweep, due in zip(checked, row):
+        if due is None or sweep.kind in pending:
+            continue
+        await session.exec(delete(TimerMark).where(col(TimerMark.kind) == sweep.kind))
+        await arm(session, sweep.kind, max(due, now))
+        metrics.sweep_timer_repairs.labels(sweep.kind).inc()
+        logger.warning("reconcile: armed %s with no timer", sweep.kind)
+    await session.commit()
+    return now + RECONCILE_EVERY
+
+
+#: The worker's loop.
+loop = Loop("timers", interval=TICK_SECONDS)

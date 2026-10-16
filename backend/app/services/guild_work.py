@@ -6,7 +6,8 @@ the ``guild_work`` channel. Every process hears it, the sender included, and
 hands the community to that kind's drain, which visits it alone.
 
 A wake is a hint. The bus delivers at most once and may be down, so the
-minute pass finds whatever a lost wake left behind.
+write also arms a timer (``app.services.sweep_timers``), which finds whatever
+a lost wake left behind.
 """
 
 from __future__ import annotations

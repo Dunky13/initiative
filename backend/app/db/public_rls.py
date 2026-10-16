@@ -2422,6 +2422,31 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             guest_base=frozenset({INSERT}),
         ),
     ),
+    # When a background sweep next has work in a community: the community, the
+    # sweep and a time, and nothing else (``app.db.timers``).
+    "community_timers": SharedTable(
+        rls=TableRls(
+            policies=(
+                # Armed by a trigger in the community's schema, as a step of
+                # the write that made the work, for that community only.
+                Policy(
+                    "community_timers_arm_routed",
+                    INSERT,
+                    ("app_guild_base", "plugin_install_base", "guest_base"),
+                    check=routed_or_pam("community_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The worker claims what is due, runs it and deletes it.
+            app_admin=DML,
+            app_user=None,
+            # A routed request adds timers and never reads one back.
+            app_guild_base=frozenset({INSERT}),
+            plugin_install_base=frozenset({INSERT}),
+            guest_base=frozenset({INSERT}),
+        ),
+    ),
     # A device of one account, which spans many guilds.
     "push_tokens": SharedTable(
         rls=TableRls(

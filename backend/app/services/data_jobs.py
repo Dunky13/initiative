@@ -3,7 +3,8 @@
 A data job is a row in its community's own schema (an ``ImportJob`` or an
 ``ExportJob``) that a background visit claims and runs. The claim is visited
 when a wake says a job was queued or ended in the community (:data:`drain`),
-and in every active community by the minute pass. Every API process does
+and by the ``data_jobs`` timer the same write arms, should the wake be lost.
+Every API process does
 this, so the claim is decided in the database: under a transaction-scoped
 advisory lock on the community, so two processes never claim in the same
 community at once, a community with a job already active gets no second one,
@@ -14,8 +15,8 @@ renders), and a process runs at most so many of each kind at once. A claimed
 job runs as a task of its own, on a system session of its own, and tells its
 creator how it ended.
 
-The slow pass sweeps each community for jobs whose row has gone quiet, which
-nobody is running any more. What happens to one depends on the job type, so
+The ``stale_jobs`` timer sweeps a community for jobs whose row has gone quiet,
+which nobody is running any more. What happens to one depends on the job type, so
 the sweep is the worker's. Jobs this process is running are left out of it:
 they are known to be alive.
 

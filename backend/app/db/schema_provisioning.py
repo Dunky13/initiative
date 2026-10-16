@@ -207,7 +207,7 @@ SYSTEM_GUILD_MAINTENANCE_SEQUENCE_GRANTS: dict[str, tuple[str, ...]] = {
 #: A schema's comment records one digest per part; a boot re-applies only the
 #: parts whose digest moved, except that new structure re-applies every part,
 #: since the others reach the tables it adds.
-PARTS = ("schema", "checks", "grants", "rls", "capture", "search")
+PARTS = ("schema", "checks", "grants", "rls", "capture", "search", "timers")
 _STAMP_PREFIX = "provisioned:"
 
 
@@ -232,6 +232,7 @@ class ProvisioningBundle:
     rls_ddl: str
     capture_ddl: str
     search_ddl: str
+    timer_ddl: str
     digests: dict[str, str]
 
     @property
@@ -280,6 +281,7 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
             render_guild_registry_validate_ddl,
         )
         from app.db.search_index import render_guild_search_ddl
+        from app.db.timers import render_guild_timer_ddl
 
         schema_ddl = await render_guild_schema_ddl(db_session.provisioning_engine)
         checks_ddl = render_guild_registry_check_ddl()
@@ -290,6 +292,7 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
         # that were created without it.
         opclass = f"public.{SEARCH_OPCLASS}" if await search_operator_ready() else None
         search_ddl = render_guild_search_ddl(opclass)
+        timer_ddl = render_guild_timer_ddl()
         grants = _grant_statements("__stamp__", 0)
         _bundle = ProvisioningBundle(
             schema_ddl=schema_ddl,
@@ -298,6 +301,7 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
             rls_ddl=rls_ddl,
             capture_ddl=capture_ddl,
             search_ddl=search_ddl,
+            timer_ddl=timer_ddl,
             digests={
                 "schema": _digest(schema_ddl),
                 "checks": _digest(checks_ddl),
@@ -305,6 +309,7 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
                 "rls": _digest(rls_ddl),
                 "capture": _digest(capture_ddl),
                 "search": _digest(search_ddl),
+                "timers": _digest(timer_ddl),
             },
         )
         return _bundle
@@ -370,8 +375,8 @@ async def apply_guild_rls(conn: AsyncConnection, schema: str) -> None:
 
 
 async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
-    """Re-assert the shared ``public`` functions the capture and search
-    triggers call, from their registries.
+    """Re-assert the shared ``public`` functions the capture, search and
+    timer triggers call, from their registries.
 
     Migrations create them, but a migration freezes the body it was written
     with; the registries are the current truth, so re-rendering them here is
@@ -386,6 +391,7 @@ async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
         SEARCH_FUNCTION_SQL,
         WRITE_FUNCTION_SQL,
     )
+    from app.db.timers import ARM_FUNCTION_SQL, ARM_ON_WRITE_FUNCTION_SQL
 
     raw = await conn.get_raw_connection()
     # The write function first: both search trigger functions call it.
@@ -397,6 +403,8 @@ async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
                 WRITE_FUNCTION_SQL,
                 SEARCH_FUNCTION_SQL,
                 DEPENDENT_FUNCTION_SQL,
+                ARM_FUNCTION_SQL,
+                ARM_ON_WRITE_FUNCTION_SQL,
             )
         )
     )
@@ -427,6 +435,19 @@ async def apply_guild_search(conn: AsyncConnection, schema: str) -> None:
     shared functions that :func:`apply_guild_trigger_functions` keeps current.
     """
     ddl = (await get_provisioning_bundle()).search_ddl
+    raw = await conn.get_raw_connection()
+    await raw.driver_connection.execute(
+        f'SET search_path TO "{schema}", public;\n{ddl}\nSET search_path TO public;'
+    )
+
+
+async def apply_guild_timers(conn: AsyncConnection, schema: str) -> None:
+    """Install the sweep-timer triggers on ``schema``'s tables.
+
+    Same shape as :func:`apply_guild_capture`: per-table triggers calling
+    shared functions that :func:`apply_guild_trigger_functions` keeps current.
+    """
+    ddl = (await get_provisioning_bundle()).timer_ddl
     raw = await conn.get_raw_connection()
     await raw.driver_connection.execute(
         f'SET search_path TO "{schema}", public;\n{ddl}\nSET search_path TO public;'
@@ -785,6 +806,8 @@ async def _apply_parts(
         await apply_guild_capture(conn, schema)  # change-capture triggers
     if "search" in parts:
         await apply_guild_search(conn, schema)  # search-index refresh triggers
+    if "timers" in parts:
+        await apply_guild_timers(conn, schema)  # sweep-timer triggers
     bundle = await get_provisioning_bundle()
     pending = "checks" in parts and not validate_checks
     await _write_stamp(

@@ -626,8 +626,8 @@ async def _drain_subscription(
             )
         elif not accepted:
             if retry_at is not None:
-                # A retry due before the minute pass would come round is
-                # woken for, so the first backoff steps keep their timing.
+                # A retry due before the next timer tick is woken for, so the
+                # first backoff steps keep their timing.
                 delay = (retry_at - now).total_seconds()
                 if delay < RETRY_WAKE_WITHIN_SECONDS:
                     asyncio.get_running_loop().call_later(delay, drain.wake, guild_id)
@@ -681,8 +681,8 @@ def _roster(live_listings: Iterable[str]):
 
 
 #: Communities with an active subscription, as this process last read them.
-#: The minute pass's visit keeps it current, and a subscription changing
-#: wakes the drain, whose visit does the same.
+#: The drain's visits keep it current, the ``webhooks`` timer's included, and a
+#: subscription changing wakes the drain.
 _subscribed: set[int] = set()
 
 #: Communities whose log moved and which have somebody to deliver it to.
