@@ -15,7 +15,7 @@ the placement allows; at the community level, and for a surface marked
 that is there. A plug-in never has to make that decision, and never sees a request
 from somebody who failed it.
 
-**The token carries the minimum.** Guild, install, surface, who is opening it,
+**The token carries the minimum.** Guild and its status, install, surface, who is opening it,
 whether they administer the community, and — where the surface was opened
 inside an initiative — which one and whether they moderate it. Nothing about
 their name or their address, and no other role. What a plug-in may do with a person is a function of what the
@@ -24,8 +24,10 @@ claim set.
 
 The claims a plug-in receives:
 
-* ``sub`` — the member, by the reference this install knows them by;
-* ``community_ref`` — the community, by the reference this install knows it by;
+* ``sub`` — the member, by the reference this plug-in knows them by in the
+  community, which a reinstall keeps;
+* ``community_ref`` — the community, by the reference this plug-in knows it by;
+* ``community_status`` — where the community stands now;
 * ``plugin_install_id`` and ``surface_id`` — which install and which surface;
 * ``community_admin`` — ``true`` when the viewer administers the community, read
   from the same standing that decided whether they may open the surface. A
@@ -74,6 +76,7 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.marketplace import plugin_refs, registration_lookup
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.tenant import plugin_age
 from app.services.tenant.plugin_age import AgeViewer
@@ -238,14 +241,16 @@ async def mint_page_handoff(
             detail=PluginServiceMessages.SIGNING_NOT_CONFIGURED,
         ) from exc
 
+    guild_id = routed_guild_id(session)
     subject = await plugin_refs.ensure_plugin_ref(
-        guild_id=routed_guild_id(session),
-        plugin_install_id=plugin.id,
+        guild_id=guild_id,
+        public_id=registration.public_id,
         user_id=context.user_id,
     )
     guild_ref = await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=routed_guild_id(session), plugin_install_id=plugin.id
+        guild_id=guild_id, public_id=registration.public_id
     )
+    standing = await community_status(guild_id)
 
     now = datetime.now(timezone.utc)
     audience = plugin_platform_audience(registration.public_id)
@@ -253,9 +258,10 @@ async def mint_page_handoff(
         # One-shot marker: the plug-in blocklists a handoff once it has exchanged
         # it, so a captured token is not replayable inside its short window.
         "jti": str(uuid.uuid4()),
-        # The reference this install knows the member by (OIDC Core §8.1
-        # pairwise), never the row id: it is stable for this install and
-        # unrelated to what any other sector holds for the same person.
+        # The reference this plug-in knows the member by in this community
+        # (OIDC Core §8.1 pairwise), never the row id: it is stable for the
+        # plug-in here, across a reinstall, and unrelated to what any other
+        # sector holds for the same person.
         "sub": subject,
         "aud": audience,
         "iss": TOKEN_ISSUER,
@@ -265,6 +271,8 @@ async def mint_page_handoff(
         # index names a row to us, not an entity to somebody else.
         "community_ref": guild_ref,
         "plugin_install_id": plugin.id,
+        # Where the community stands now, which every token carries.
+        "community_status": standing,
         "surface_id": surface_id,
         # The viewer's community role, from the standing the access decision
         # above was measured on, so a plug-in need not ask for it separately.

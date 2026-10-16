@@ -628,9 +628,10 @@ class TestContextToken:
         )
         # Named the way this install knows the guild, and by nothing else.
         assert claims["community_ref"] == await ensure_plugin_guild_ref(
-            guild_id=a.guild.id, plugin_install_id=plugin.id
+            guild_id=a.guild.id, public_id=plugin.definition["service"]["public_id"]
         )
         assert "guild_id" not in claims
+        assert claims["community_status"] == "active"
         assert claims["plugin_install_id"] == plugin.id
         assert claims["scope"] == "endpoint"
         assert claims["endpoint_id"] == ORDERS_SUMMARY
@@ -1900,7 +1901,7 @@ class TestActions:
         assert claims["subject"] == {"type": "task", "id": tasks["shared"]}
         assert claims["viewer"] == await ensure_plugin_ref(
             guild_id=member.guild.id,
-            plugin_install_id=plugin.id,
+            public_id=plugin.definition["service"]["public_id"],
             user_id=member.user.id,
         )
         assert "act" not in claims and "member" not in claims

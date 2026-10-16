@@ -265,12 +265,11 @@ async def call_plugin(
         clear_rls_context(session)
         await session.rollback()
 
-    target_id = int(target.id or 0)
     member_user_id = caller.member_user_id
     member_ref = (
         await ensure_plugin_ref(
             guild_id=caller.guild_id,
-            plugin_install_id=target_id,
+            public_id=registration.public_id,
             user_id=member_user_id,
         )
         if member_user_id is not None

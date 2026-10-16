@@ -395,7 +395,9 @@ async def test_an_attendee_it_does_not_know_is_unprocessable(
         listing_uid="TOKENCLIENT002",
     )
     foreign = await plugin_refs.ensure_plugin_ref(
-        guild_id=guild_id, plugin_install_id=other.id, user_id=attendee.user.id
+        guild_id=guild_id,
+        public_id=other.definition["service"]["public_id"],
+        user_id=attendee.user.id,
     )
     headers = install_headers(installed, ["calendars:write", "members:read"])
 

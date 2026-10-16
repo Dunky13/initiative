@@ -53,7 +53,6 @@ from app.core.security import (
     create_billing_portal_handoff_token,
 )
 from app.services.platform.identity_refs import billing_refs
-from app.services.marketplace import plugin_refs
 from app.db import cohorts, post_commit
 from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
@@ -1366,13 +1365,10 @@ async def delete_community(
     # The receipt, once the deletion is a fact. Never allowed to fail it.
     await email_service.announce_community_deleted(system_session, notice)
     # See soft_delete_guild: these live on another connection, so they go after
-    # the commit that made the deletion real. Billing keeps its name for the
-    # guild until the purge, and is told to go and read what happened to it.
-    # The references go after the revocations, which name the guild by them.
+    # the commit that made the deletion real. Billing and the community's
+    # plug-ins keep their names for it until the purge, and billing is told to
+    # go and read what happened to it.
     background_tasks.add_task(post_commit.settle, session)
-    background_tasks.add_task(
-        plugin_refs.forget_guild, guild_id=guild_id, keep_billing=True
-    )
     billing_ping.notify_lifecycle_changed(guild_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -136,14 +136,18 @@ async def _route(session: AsyncSession, guild_id: int, *, read_only: bool) -> No
 
 
 async def _install_guild_ref(session: AsyncSession, plugin: GuildPlugin) -> str:
-    """What this install calls the guild it is in.
+    """What this install's plug-in calls the guild it is in.
 
     Every payload on this channel names the guild by it, because it is the only
     name the plug-in on the other end has for it. The community is the one the
-    session read the install from.
+    session read the install from, and the plug-in is the one the install's
+    registration names.
     """
+    public_id = await guild_plugins_service.install_public_id(plugin)
+    if public_id is None:
+        raise PluginChannelError(PluginChannelMessages.INSTALL_NOT_FOUND, 404)
     return await ensure_plugin_guild_ref(
-        guild_id=routed_guild_id(session), plugin_install_id=plugin.id
+        guild_id=routed_guild_id(session), public_id=public_id
     )
 
 

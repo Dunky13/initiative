@@ -485,11 +485,13 @@ async def test_a_member_call_carries_the_targets_reference_never_the_callers(
     assert response.status_code == 200, response.text
     claims = upstream.claims()
     target_ref = await ensure_plugin_ref(
-        guild_id=installed.guild.id, plugin_install_id=target.id, user_id=member.user.id
+        guild_id=installed.guild.id,
+        public_id=target.definition["service"]["public_id"],
+        user_id=member.user.id,
     )
     caller_ref = await ensure_plugin_ref(
         guild_id=installed.guild.id,
-        plugin_install_id=installed.plugin.id,
+        public_id=installed.public_id,
         user_id=member.user.id,
     )
     assert claims["actor"] == "member"

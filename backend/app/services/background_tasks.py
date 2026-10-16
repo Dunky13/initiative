@@ -78,6 +78,7 @@ def start_background_tasks() -> list[asyncio.Task]:
         process_hold_summaries,
         HOLD_SUMMARY_POLL_SECONDS,
     )
+    from app.services.marketplace import community_hooks
     from app.services.platform import email_outbox, notice_outbox
     from app.services.platform import security_signals
     from app.services.platform.presence import (
@@ -161,6 +162,10 @@ def start_background_tasks() -> list[asyncio.Task]:
         # Notices, delivered as they are written.
         asyncio.create_task(
             notice_outbox.loop.run(notice_outbox.process_notice_outbox)
+        ),
+        # What happened to a community, told to its plug-ins.
+        asyncio.create_task(
+            community_hooks.loop.run(community_hooks.process_community_hooks)
         ),
         # The one way notification email leaves the building.
         asyncio.create_task(email_outbox.loop.run(email_outbox.process_email_outbox)),

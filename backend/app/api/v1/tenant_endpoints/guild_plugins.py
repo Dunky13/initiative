@@ -44,7 +44,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy import func, union
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -110,7 +110,6 @@ from app.schemas.tenant.guild_plugin import (
 from app.services import audit as audit_service
 from app.services.platform import billing_ping
 from app.services.marketplace import plugin_installs as plugin_installs_service
-from app.services.marketplace import plugin_refs
 from app.services.marketplace import catalog as catalog_service
 from app.services.marketplace import plugin_entitlements, registration_lookup
 from app.services.marketplace.definitions import (
@@ -896,45 +895,39 @@ async def uninstall_community_plugin(
     current_user: CurrentUser,
     guild_context: SeatWriteContextDep,
     background_tasks: BackgroundTasks,
+    erase: Annotated[bool, Query()] = False,
 ) -> None:
     """Remove a plug-in, ending its access and trashing what it created
     (:func:`~app.services.tenant.guild_plugins.uninstall_plugin`).
 
-    A plug-in the deployment provides to every guild is not removable here (§7.7):
-    the operator's registration decides whether it exists at all.
+    What the plug-in calls the community and its members is kept, so installing
+    it again picks up where it left off. ``erase`` also asks the plug-in to
+    delete everything it holds about the community, and forgets those names
+    once it has: the community's admins' choice alone (403
+    ``COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY`` for anyone else).
+
+    A plug-in the deployment provides to every guild is not removable here, and
+    so not erasable either (§7.7): the operator's registration decides whether
+    it exists at all.
     """
     # Held for the rest of this transaction, so a calendar being given to the
     # plug-in either lands before this read and is trashed with everything else, or
     # finds no install and is refused.
     plugin = await _load(session, plugin_id, for_update=True)
     await _require_removable(plugin, guild_context.guild_id)
+    if erase and not guild_context.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildPluginMessages.ERASE_ADMIN_ONLY,
+        )
 
     install_id, guild_id = plugin.id, routed_guild_id(session)
     await guild_plugins_service.uninstall_plugin(
-        session, plugin, actor_user_id=current_user.id
+        session, plugin, actor_user_id=current_user.id, erase=erase
     )
     await session.commit()
     await plugin_installs_service.forget(guild_id, install_id)
-    # After the revocations, which name the guild by these references.
     background_tasks.add_task(post_commit.settle, session)
-    background_tasks.add_task(_drop_install_refs, guild_id, install_id)
-
-
-async def _drop_install_refs(guild_id: int, install_id: int) -> None:
-    """Remove what an uninstalled install called each member. Explicit, because
-    the reference lives in a platform-wide table that no foreign key reaches
-    from here. A reference left behind names an install that no longer exists,
-    so it resolves to nobody."""
-    try:
-        await plugin_refs.drop_install_refs(
-            guild_id=guild_id, plugin_install_id=install_id
-        )
-    except SQLAlchemyError:
-        logger.warning(
-            "plug-in refs: references for install %s in guild %s were not removed",
-            install_id,
-            guild_id,
-        )
 
 
 # ---------------------------------------------------------------------------

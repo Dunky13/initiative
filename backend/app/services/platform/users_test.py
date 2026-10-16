@@ -351,7 +351,7 @@ async def test_erasing_a_user_stops_their_references_resolving(
         entity_id=victim.id,
         purpose=IdentityPurpose.plugin,
         sector_guild_id=1,
-        sector_id=1,
+        sector_plugin="acme.tracker",
     )
     kept = await ensure_ref(
         session,

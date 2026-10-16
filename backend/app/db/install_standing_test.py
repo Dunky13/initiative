@@ -760,13 +760,9 @@ async def test_the_install_floor_reads_only_what_its_standing_needs(
 
 async def _sector_refs(session, install: _Install) -> dict[str, str]:
     """References in and around the install's sector, minted as the system
-    engine would: the seat's and the community's in its own sector, the seat's
-    at another install, and the seat's for billing."""
-    guild_id, install_id, user_id = (
-        install.guild.id,
-        install.plugin.id,
-        install.seat.user.id,
-    )
+    engine would: the seat's and the community's in its own plug-in's sector,
+    the seat's for another plug-in, and the seat's for billing."""
+    guild_id, user_id = install.guild.id, install.seat.user.id
     refs = {
         "own": await ensure_ref(
             session,
@@ -774,7 +770,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=user_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id,
+            sector_plugin=CLIENT,
         ),
         "guild": await ensure_ref(
             session,
@@ -782,7 +778,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=guild_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id,
+            sector_plugin=CLIENT,
         ),
         "other_install": await ensure_ref(
             session,
@@ -790,7 +786,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=user_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id + 1000,
+            sector_plugin="someone.else",
         ),
         "billing": await ensure_ref(
             session,
@@ -847,7 +843,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
 
     insert = text(
         "INSERT INTO public.identity_refs "
-        "(ref, entity_type, entity_id, purpose, sector_guild_id, sector_id, "
+        "(ref, entity_type, entity_id, purpose, sector_guild_id, sector_plugin, "
         "created_at, retired_at) "
         "VALUES (:ref, :kind, :entity, :purpose, :g, :i, now(), :retired)"
     )
@@ -856,7 +852,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
         entity=install.seat.user.id + 1,
         purpose="plugin",
         g=install.guild.id,
-        i=install.plugin.id,
+        i=CLIENT,
         retired=None,
     )
 
@@ -871,7 +867,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
     assert await attempt(insert, ref="uplu_minted-here", **own_sector)
     for n, refused in enumerate(
         (
-            {"i": install.plugin.id + 1000},
+            {"i": "someone.else"},
             {"g": install.guild.id + 1000},
             {"purpose": "billing"},
             {"kind": "guild", "entity": install.guild.id + 1000},

@@ -1363,6 +1363,9 @@ class GuildPluginMessages:
     #: The listing installs only in a community holding an active entitlement
     #: for it, and this one holds none.
     ENTITLEMENT_REQUIRED = "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED"
+    #: Erasing a plug-in's data with its removal is the community's admins'
+    #: choice, and this caller is not one.
+    ERASE_ADMIN_ONLY = "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY"
 
     # --- service plug-ins ---
     #: This install's plug-in service is not wired up here — never registered, or

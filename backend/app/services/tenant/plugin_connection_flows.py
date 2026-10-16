@@ -27,7 +27,9 @@ Three things happen here and nowhere else:
   renews one; :func:`mint_jwt_bearer` mints a token for a connection that
   declares a ``jwt_bearer`` token, and caches it.
 * **Hooks.** :func:`call_hook` calls the plug-in at ``POST {base}/v1/hooks/{name}``
-  with a ``lifecycle`` context token naming the install and the hook.
+  with a ``lifecycle`` context token naming the install and the hook. The hooks
+  about the community itself go through it too, queued and retried by
+  :mod:`app.services.marketplace.community_hooks`.
 
 Every call to a vendor goes through the pinned egress helper, https only, with
 a timeout and a size cap. A call to the plug-in goes to its registration's
@@ -80,6 +82,7 @@ from app.services.marketplace.plugin_data import (
     REQUEST_TIMEOUT_SECONDS,
 )
 from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.vendor_values import load_vendor_values
 from app.services.safe_http import ResponseTooLargeError, request_public_target
@@ -162,6 +165,9 @@ VENDOR_MAX_RESPONSE_BYTES = 512 * 1024
 HOOKS_PATH = "/v1/hooks"
 HOOK_NAMES: frozenset[str] = frozenset(
     {"after_connect", "revoke", "webhook", "schedule", "entitlement"}
+    # The hooks about the community's install, delivered by
+    # ``app.services.marketplace.community_hooks``.
+    | {"installed", "uninstalled", "erase", "community_status"}
 )
 #: The widest account label kept, matching what the members view shows.
 MAX_ACCOUNT_LABEL_LENGTH = 200
@@ -181,15 +187,21 @@ class VendorRefusedError(Exception):
 
 
 class HookError(Exception):
-    """The plug-in's hook could not be reached, or answered with something else."""
+    """The plug-in's hook could not be reached, or answered with something else.
+
+    ``status`` is the HTTP status the plug-in answered with, when it answered.
+    """
+
+    def __init__(self, message: str, *, status: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class RevocationAnsweredError(HookError):
     """The vendor answered a revocation with something other than success."""
 
     def __init__(self, status: int) -> None:
-        super().__init__(f"revocation answered {status}")
-        self.status = status
+        super().__init__(f"revocation answered {status}", status=status)
 
 
 @dataclass(frozen=True)
@@ -678,14 +690,23 @@ async def call_hook(
     guild_id: int,
     install_id: int,
     body: Mapping[str, Any],
+    guild_ref: Optional[str] = None,
 ) -> Optional[Any]:
     """Call one of the plug-in's hooks and return its JSON answer (``None`` for an
-    empty one). Raises :class:`HookError` for anything but a 2xx answer."""
+    empty one). Raises :class:`HookError` for anything but a 2xx answer, with
+    the status the plug-in answered with when it answered.
+
+    The token names the community by what the plug-in calls it, minted on first
+    use; ``guild_ref`` hands one in instead, for a hook that must not mint a
+    name (``erase``). ``install_id`` is the install the hook is about, or ``0``
+    when the community has none to name."""
     if name not in HOOK_NAMES:
         raise HookError(f"unknown hook {name!r}")
-    guild_ref = await ensure_plugin_guild_ref(
-        guild_id=guild_id, plugin_install_id=install_id
-    )
+    if guild_ref is None:
+        guild_ref = await ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=public_id
+        )
+    standing = await community_status(guild_id)
     try:
         token, _ = mint_context_token(
             public_id=public_id,
@@ -693,6 +714,7 @@ async def call_hook(
             plugin_install_id=install_id,
             scope="lifecycle",
             hook=name,
+            community_status=standing,
         )
     except PluginPlatformSigningNotConfiguredError as exc:
         raise HookError("signing is not configured") from exc
@@ -723,13 +745,17 @@ async def call_hook(
     ) as exc:
         raise HookError(f"hook {name} could not be reached: {exc}") from exc
     if not 200 <= response.status_code < 300:
-        raise HookError(f"hook {name} answered {response.status_code}")
+        raise HookError(
+            f"hook {name} answered {response.status_code}", status=response.status_code
+        )
     if not response.content:
         return None
     try:
         return response.json()
     except ValueError as exc:
-        raise HookError(f"hook {name} did not answer with JSON") from exc
+        raise HookError(
+            f"hook {name} did not answer with JSON", status=response.status_code
+        ) from exc
 
 
 @dataclass(frozen=True)

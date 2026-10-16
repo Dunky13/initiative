@@ -296,6 +296,51 @@ async def test_the_purge_is_what_drops_billings_name(
     assert await _billing_ref(guild.id) is None
 
 
+async def test_its_plugins_keep_their_names_until_the_purge_erases_them(
+    client: AsyncClient, session: AsyncSession, monkeypatch
+):
+    """A deleted community can come back under the names its plug-ins hold, so
+    the delete keeps them. The purge tells each plug-in holding one to erase
+    what it has, while the community still has its row, and then drops them."""
+    from app.services.marketplace import community_hooks, plugin_refs
+
+    admin, guild = await _seated_guild(session)
+    member = await plugin_refs.ensure_plugin_ref(
+        guild_id=guild.id, public_id="tests.purged", user_id=admin.id
+    )
+    await _delete_via_danger_zone(client, guild=guild, headers=get_auth_headers(admin))
+    assert await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
+
+    told: list[tuple[int, list[str], bool]] = []
+
+    async def erase_for_purge(guild_id: int, **_kw) -> None:
+        still_there = (
+            await session.exec(select(Guild.id).where(Guild.id == guild_id))
+        ).first() is not None
+        told.append(
+            (
+                guild_id,
+                await plugin_refs.plugins_with_refs(guild_id=guild_id),
+                still_there,
+            )
+        )
+
+    monkeypatch.setattr(community_hooks, "erase_for_purge", erase_for_purge)
+    session.expunge_all()
+    row = (await session.exec(select(Guild).where(Guild.id == guild.id))).one()
+    await guild_purge.purge_due_guilds(
+        session,
+        now=row.status_changed_at
+        + timedelta(days=DEFAULT_GUILD_RETENTION_DAYS, minutes=1),
+    )
+
+    assert told == [(guild.id, ["tests.purged"], True)]
+    assert (
+        await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
+        is None
+    )
+
+
 async def test_restore_refuses_a_community_that_is_not_deleted(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

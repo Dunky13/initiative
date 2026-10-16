@@ -193,7 +193,7 @@ async def run_action(
         session, plugin=plugin, endpoint=write, user_id=None, actor="installation"
     )
     viewer = await ensure_plugin_ref(
-        guild_id=context.guild_id, plugin_install_id=install_id, user_id=user_id
+        guild_id=context.guild_id, public_id=registration.public_id, user_id=user_id
     )
     # Nothing is held open while the plug-in works, and what was read stays
     # readable; the next statement routes the session again.

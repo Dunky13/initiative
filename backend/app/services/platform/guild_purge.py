@@ -4,9 +4,10 @@ Deleting a guild no longer destroys it: it moves to ``CommunityStatus.deleted``
 and keeps everything — the shared rows, the ``guild_<id>`` schema, the stored
 blobs — so a platform operator can put the community back. This worker is what
 eventually does the destroying, and it does exactly what the delete used to do
-inline: remove the shared guild row (whose ``ON DELETE CASCADE`` clears the
-roster), forget the identities its plug-ins knew its members by, then drop the
-schema and purge the blobs. Each pass then reclaims any ``guild_<id>`` schema
+inline: tell its plug-ins to erase what they hold about it, remove the shared
+guild row (whose ``ON DELETE CASCADE`` clears the roster), forget the
+identities its plug-ins knew it and its members by, then drop the schema and
+purge the blobs. Each pass then reclaims any ``guild_<id>`` schema
 whose row is already gone — a teardown that deleted the row but did not finish
 dropping the schema, here or where a guild's creation was rolled back.
 
@@ -40,7 +41,7 @@ from app.db.schema_provisioning import deprovision_guild
 from app.db.session import SystemSessionLocal, set_rls_context
 from app.models.platform.guild import Guild
 from app.services import audit as audit_service
-from app.services.marketplace import plugin_refs
+from app.services.marketplace import community_hooks, plugin_refs
 from app.services.platform.retention import COMMUNITY_DELETION, COMMUNITY_HOLD
 from app.db.request_context import SystemGuild, Unattributed
 
@@ -90,10 +91,9 @@ async def _delete_expired_hold(session: AsyncSession, guild: Guild, _days: int) 
 
     await email_service.announce_community_deleted(session, notice)
     # These live on other connections, so they go after the commit that made
-    # the deletion real, and after the revocations, which name the guild by
-    # them.
+    # the deletion real. What its plug-ins call the community is kept until the
+    # purge, which tells them to erase it first.
     await post_commit.settle(guild_session)
-    await plugin_refs.forget_guild(guild_id=guild_id, keep_billing=True)
     billing_ping.notify_lifecycle_changed(guild_id)
 
 
@@ -132,7 +132,15 @@ async def _refuse_while_held(session: AsyncSession, guild_id: int) -> None:
 
 
 async def _remove(session: AsyncSession, guild_id: int, days: int) -> None:
-    """The row, recorded and committed, then the schema and blobs."""
+    """Its plug-ins told to erase what they hold, the row, recorded and
+    committed, then the references, the schema and blobs.
+
+    The plug-ins are told first, while the community still has its row and
+    the references to name it by, and with a bounded number of tries: a
+    plug-in that does not answer does not keep the community from being
+    purged (``community_hooks.erase_for_purge``).
+    """
+    await community_hooks.erase_for_purge(guild_id)
     await session.exec(delete(Guild).where(Guild.id == guild_id))
     await audit_service.record(
         session,

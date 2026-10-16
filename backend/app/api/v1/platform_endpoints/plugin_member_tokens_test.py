@@ -105,7 +105,7 @@ async def _member(acting_user, installed: InstalledPlugin):
 async def _ref(installed: InstalledPlugin, user_id: int) -> str:
     return await ensure_plugin_ref(
         guild_id=installed.guild.id,
-        plugin_install_id=installed.plugin.id,
+        public_id=installed.public_id,
         user_id=user_id,
     )
 
@@ -127,7 +127,7 @@ async def _grant_token(
 ):
     extra: dict[str, Any] = {
         "installation": await ensure_plugin_guild_ref(
-            guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+            guild_id=installed.guild.id, public_id=installed.public_id
         )
     }
     if purpose is not None:
@@ -216,7 +216,7 @@ async def test_a_request_names_a_member_by_this_install_s_reference(
     member = await _member(acting_user, installed)
     elsewhere = await ensure_plugin_ref(
         guild_id=installed.guild.id,
-        plugin_install_id=installed.plugin.id + 1000,
+        public_id="someone.else",
         user_id=member.user.id,
     )
 
@@ -693,3 +693,101 @@ async def test_an_install_is_limited_however_it_asks(
     refused = await _ask(client, installed, member=member_ref, purpose="node-1")
     assert refused.status_code == 429
     assert refused.json()["detail"] == PluginMessages.CONSENT_RATE_LIMITED
+
+
+async def _reinstall(session: AsyncSession, installed: InstalledPlugin):
+    """The same plug-in removed and installed again: a new install row, placed
+    where the old one was, with the same grant."""
+    from dataclasses import replace
+
+    from app.models.tenant.guild_plugin import GuildPlugin
+    from app.models.tenant.plugin_placement import PluginPlacement
+    from app.testing import create_guild_plugin
+
+    await route_session_to_guild(session, installed.guild.id)
+    old = await session.get(GuildPlugin, installed.plugin.id)
+    assert old is not None
+    definition, listing, granted = (
+        dict(old.definition),
+        old.listing_uid,
+        list(old.granted_scopes),
+    )
+    await session.delete(old)
+    await session.commit()
+    plugin = await create_guild_plugin(
+        session,
+        installed.guild,
+        installed.seat.user,
+        definition=definition,
+        listing_uid=listing,
+        granted_scopes=granted,
+    )
+    await route_session_to_guild(session, installed.guild.id)
+    session.add(
+        PluginPlacement(install_id=plugin.id, initiative_id=installed.placed.id)
+    )
+    await session.commit()
+    return replace(installed, plugin=plugin)
+
+
+async def test_a_member_is_the_same_reference_after_a_reinstall(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    """The reference is the plug-in's in the community, not the install's: it
+    names the same member to the new install, whose token endpoint issues on
+    it once the member has answered the new install's request."""
+    installed = await install_plugin(
+        session, acting_user, role_session, granted=["files:read"]
+    )
+    member = await _member(acting_user, installed)
+    member_ref = await _ref(installed, member.user.id)
+    community = await ensure_plugin_guild_ref(
+        guild_id=installed.guild.id, public_id=installed.public_id
+    )
+
+    again = await _reinstall(session, installed)
+    assert again.plugin.id != installed.plugin.id
+    assert await _ref(again, member.user.id) == member_ref
+    assert (
+        await ensure_plugin_guild_ref(
+            guild_id=again.guild.id, public_id=again.public_id
+        )
+        == community
+    )
+
+    asked = await _ask(
+        client,
+        again,
+        member=member_ref,
+        purpose="node-1",
+        token=_installation_token(again),
+    )
+    assert asked.status_code == 201, asked.text
+    await _answer(
+        client, member, again, await _consent_id(client, member, again), "read"
+    )
+
+    issued = await _grant_token(client, again, member_ref)
+    assert issued.status_code == 200, issued.text
+    token = unseal_access_token(issued.json()["access_token"])
+    assert isinstance(token, InstallAccessToken)
+    assert (token.install_id, token.user_id) == (again.plugin.id, member.user.id)
+
+
+async def test_no_member_token_while_the_plugin_is_not_installed(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    installed = await install_plugin(
+        session, acting_user, role_session, granted=["files:read"]
+    )
+    member = await _member(acting_user, installed)
+    member_ref = await _ref(installed, member.user.id)
+    await route_session_to_guild(session, installed.guild.id)
+    from app.models.tenant.guild_plugin import GuildPlugin
+
+    await session.delete(await session.get(GuildPlugin, installed.plugin.id))
+    await session.commit()
+
+    refused = await _grant_token(client, installed, member_ref)
+    assert refused.status_code == 400
+    assert refused.json()["error"] == "invalid_grant"

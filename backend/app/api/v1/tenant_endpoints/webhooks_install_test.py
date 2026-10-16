@@ -111,7 +111,7 @@ async def test_an_install_subscribes_to_what_its_scopes_read(
     assert_names_nobody(response.text, [installed.seat.user.id, installed.guild.id])
     # The same name every other response to this install gives its community.
     assert body["community_ref"] == await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+        guild_id=installed.guild.id, public_id=installed.public_id
     )
 
     row = await _row(session, installed.guild.id, body["id"])

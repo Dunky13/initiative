@@ -125,6 +125,11 @@ class InstalledPlugin:
     def guild(self) -> Any:
         return self.seat.guild
 
+    @property
+    def public_id(self) -> str:
+        """The plug-in, whose sector the install's references are in."""
+        return self.plugin.definition["service"]["public_id"]
+
 
 async def install_plugin(
     session: AsyncSession,

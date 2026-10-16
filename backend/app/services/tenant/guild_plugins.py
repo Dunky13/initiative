@@ -59,7 +59,11 @@ from app.core.messages import GuildPluginMessages
 from app.db.session import routed_guild_id
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services import audit as audit_service
-from app.services.marketplace import plugin_entitlements, registration_lookup
+from app.services.marketplace import (
+    community_hooks,
+    plugin_entitlements,
+    registration_lookup,
+)
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.platform import guilds as guilds_service
 from app.schemas.tenant.resource_grant import initiative_readable
@@ -412,14 +416,31 @@ async def install_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+        # Told once the install commits, by either route, first time or again.
+        community_hooks.queue_community_hooks(
+            session,
+            guild_id=guild_id,
+            public_id=public_id,
+            hooks=("installed",),
+            install_id=plugin.id,
+        )
     plugin_entitlements.after_install(session, guild_id, listing_uid)
     return plugin
 
 
 async def uninstall_plugin(
-    session: AsyncSession, plugin: GuildPlugin, *, actor_user_id: int
+    session: AsyncSession,
+    plugin: GuildPlugin,
+    *,
+    actor_user_id: int,
+    erase: bool = False,
 ) -> None:
     """Remove an install, ending its access and trashing what it created.
+
+    What the plug-in calls the community and its members is kept, so a later
+    install brings the same names back. It is told ``uninstalled`` once the
+    removal commits; with ``erase``, it is then told ``erase``, and the names
+    are dropped once it answers (``community_hooks``).
 
     The two halves are deliberately different. **Credentials are deleted**, both
     the guild's and every member's, and each plug-in is told to let go at the vendor
@@ -474,6 +495,13 @@ async def uninstall_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+        community_hooks.queue_community_hooks(
+            session,
+            guild_id=guild_id,
+            public_id=public_id,
+            hooks=("uninstalled", "erase") if erase else ("uninstalled",),
+            install_id=plugin.id,
+        )
     install_id, listing_uid = plugin.id, plugin.listing_uid
     await session.delete(plugin)
     # Staged before the commit that removes the row, and reading the counts the
@@ -489,6 +517,7 @@ async def uninstall_plugin(
             "listing_uid": listing_uid,
             "connections": connections,
             "consents": consents,
+            "erase": erase,
         },
     )
     if listing_uid:

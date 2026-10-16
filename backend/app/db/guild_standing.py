@@ -310,13 +310,14 @@ _GUILD_ADMIN_SCOPE = LEVEL_SCOPES[InstallLevel.community_admin]
 _LIVE_STATUSES_SQL = sql_values(sorted(LIVE_STATUS_VALUES))
 
 #: A reference row in this install's own sector: the ``plugin`` purpose, the
-#: routed community and the routed install. The same predicate the
+#: routed community and the plug-in the token was issued to, which ``install``
+#: below holds to the routed install's registration. The same predicate the
 #: ``identity_refs`` policies for the install floor hold every read and insert
 #: to (``app.db.public_rls``).
 _IN_INSTALL_SECTOR = (
     f"r.purpose = '{IdentityPurpose.plugin.value}'"
     f" AND r.sector_guild_id = {gucs.GUILD_ID}"
-    f" AND r.sector_id = {gucs.INSTALL_ID}"
+    f" AND r.sector_plugin = {gucs.TOKEN_CLIENT_ID}"
 )
 #: How long a replaced reference keeps resolving, as an interval.
 _GRACE_INTERVAL = f"interval '{int(REF_GRACE_PERIOD.total_seconds())} seconds'"
@@ -475,8 +476,8 @@ _INSTALL_STANDING: dict[gucs.Guc, str] = {
 #: sign-in rules, so that value too is what ``live`` says.
 #:
 #: Two more columns carry what the install calls things, both read only in its
-#: own sector (``purpose = 'plugin'``, the routed community and the routed
-#: install): ``guild_ref``, its live reference for the community, and
+#: own sector (``purpose = 'plugin'``, the routed community and the token's
+#: plug-in): ``guild_ref``, its live reference for the community, and
 #: ``named_refs``, the references in ``:named_refs`` that name somebody there,
 #: as ``{ref: [entity_type, entity_id, member]}``, where ``member`` says
 #: whether a person is a member of the community — the profiles an install

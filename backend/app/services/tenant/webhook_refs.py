@@ -7,17 +7,16 @@ rule every other boundary follows.
 Which reference depends on who is receiving, because a reference is pairwise:
 
 * **A plug-in registered the subscription.** It already holds a name for the guild
-  and for each member, minted at its install and used on every other exchange
-  it has with us. A delivery arrives under those, so the plug-in can match an
+  and for each member, minted for it in this guild and used on every other
+  exchange it has with us. A delivery arrives under those, so the plug-in can match an
   envelope to what it has stored without learning a second set of names for the
   same people.
-* **A member registered it against a URL of their own.** There is no install to
+* **A member registered it against a URL of their own.** There is no plug-in to
   borrow a sector from, so the subscription is the sector. The names are stable
   for that subscription and unrelated to every other subscriber's.
 
-Either way the ids are per-guild-schema sequences, so the sector is
-``(guild_id, <thing>)`` and the purpose says which kind of thing — an install
-and a subscription in one guild can both be number three.
+Either way the sector is ``(guild_id, <thing>)``: the plug-in by its
+``public_id``, or the subscription by its per-guild row id.
 
 Reached only on the system engine, like every other minting path, so each call
 opens a session of its own: the callers are a background poller routed into a
@@ -40,23 +39,25 @@ __all__ = [
 
 
 def _sector(
-    *, guild_id: int, plugin_install_id: int | None, subscription_id: int
-) -> tuple[IdentityPurpose, int]:
-    """The purpose and the id inside the guild that this subscriber is named by."""
-    if plugin_install_id is not None:
-        return IdentityPurpose.plugin, plugin_install_id
-    return IdentityPurpose.webhook, subscription_id
+    *, plugin: str | None, subscription_id: int
+) -> tuple[IdentityPurpose, int | None, str | None]:
+    """The purpose, and the row or plug-in inside the guild, that this
+    subscriber is named by."""
+    if plugin is not None:
+        return IdentityPurpose.plugin, None, plugin
+    return IdentityPurpose.webhook, subscription_id, None
 
 
-#: ``(plugin_install_id, subscription_id, actor_ids)`` — one subscriber to name,
-#: and the people it will be told about.
-Subscriber = tuple[int | None, int, Collection[int]]
+#: ``(plugin, subscription_id, actor_ids)`` — one subscriber to name, by the
+#: ``public_id`` of the plug-in that registered it (or ``None`` for a member's
+#: own), and the people it will be told about.
+Subscriber = tuple[str | None, int, Collection[int]]
 
 
 async def name_for_subscriber(
     *,
     guild_id: int,
-    plugin_install_id: int | None,
+    plugin: str | None,
     subscription_id: int,
     actor_ids: Collection[int] = (),
 ) -> tuple[str, dict[int, str]]:
@@ -67,7 +68,7 @@ async def name_for_subscriber(
     transaction it describes touched.
     """
     (names,) = await names_for_subscribers(
-        guild_id=guild_id, subscribers=[(plugin_install_id, subscription_id, actor_ids)]
+        guild_id=guild_id, subscribers=[(plugin, subscription_id, actor_ids)]
     )
     return names
 
@@ -81,11 +82,9 @@ async def names_for_subscribers(
         return []
     names = []
     async with db_session.SystemSessionLocal() as session:
-        for plugin_install_id, subscription_id, actor_ids in subscribers:
-            purpose, sector_id = _sector(
-                guild_id=guild_id,
-                plugin_install_id=plugin_install_id,
-                subscription_id=subscription_id,
+        for plugin, subscription_id, actor_ids in subscribers:
+            purpose, sector_id, sector_plugin = _sector(
+                plugin=plugin, subscription_id=subscription_id
             )
             guild_ref = await identity_refs.ensure_ref(
                 session,
@@ -94,6 +93,7 @@ async def names_for_subscribers(
                 purpose=purpose,
                 sector_guild_id=guild_id,
                 sector_id=sector_id,
+                sector_plugin=sector_plugin,
             )
             actor_refs = {
                 actor_id: await identity_refs.ensure_ref(
@@ -103,6 +103,7 @@ async def names_for_subscribers(
                     purpose=purpose,
                     sector_guild_id=guild_id,
                     sector_id=sector_id,
+                    sector_plugin=sector_plugin,
                 )
                 for actor_id in sorted(
                     {actor_id for actor_id in actor_ids if actor_id is not None}
@@ -117,7 +118,7 @@ async def drop_subscription_refs(*, guild_id: int, subscription_id: int) -> int:
     """Remove the references minted for one subscription's own sector.
 
     Only the sector this module owns: a subscription a plug-in registered is named
-    in that plug-in's, which outlives it and belongs to the install.
+    in that plug-in's, which outlives it.
     """
     async with db_session.SystemSessionLocal() as session:
         dropped = await identity_refs.drop_sector_refs(

@@ -535,6 +535,7 @@ async def _drain_subscription(
     now: datetime,
     reach: InstallReach | None = None,
     plugin_ids: Mapping[str, str] | None = None,
+    subscriber: str | None = None,
 ) -> None:
     """Deliver one subscription's pending transactions, within its own scope.
 
@@ -559,9 +560,15 @@ async def _drain_subscription(
     ``reach`` is what the plug-in that registered this subscription may hear, read
     with the roster; ``plugin_ids`` maps an install's ``listing_uid`` to its
     registration's ``public_id``, for naming the plug-in that wrote a change.
+    ``subscriber`` is the ``public_id`` of the plug-in that registered this
+    subscription, whose sector its deliveries name the guild and people in.
     Transactions outside the reach are settled like any other non-match, so
     they are not delivered later either.
     """
+    if subscription.plugin_install_id is not None and subscriber is None:
+        # Its plug-in has no registration here to name anything for; what it
+        # is owed waits for one.
+        return
     await set_rls_context(session, SystemMaintenance(guild_id))
     pending = await _pending_transactions(session, subscription, now=now)
 
@@ -615,7 +622,7 @@ async def _drain_subscription(
             continue
 
         # One transaction, one actor — the batch is what a single request
-        # touched. Named for this subscriber, in the sector its install or its
+        # touched. Named for this subscriber, in the sector its plug-in or its
         # own registration gives it. A plug-in's events name the plug-in that emitted
         # them and no person.
         if batch:
@@ -630,7 +637,7 @@ async def _drain_subscription(
             actor_id, actor_plugin = None, plugin_events[0][1]
         guild_ref, actor_refs = await webhook_refs.name_for_subscriber(
             guild_id=guild_id,
-            plugin_install_id=subscription.plugin_install_id,
+            plugin=subscriber,
             subscription_id=subscription.id,
             actor_ids=() if actor_id is None else (actor_id,),
         )
@@ -701,6 +708,7 @@ def _roster(live_listings: Iterable[str]):
             live.label("live"),
             placed.label("placed"),
             GuildPlugin.granted_scopes,
+            GuildPlugin.listing_uid,
         )
         .outerjoin(GuildPlugin, GuildPlugin.id == WebhookSubscription.plugin_install_id)
         .where(
@@ -757,6 +765,9 @@ async def drain_guild(
             else InstallReach.from_row(
                 live=row.live, placed=row.placed, granted_scopes=row.granted_scopes
             ),
+            None
+            if row.plugin_install_id is None
+            else plugin_ids.get(row.listing_uid or ""),
         )
         for row in await session.exec(_roster(live_listings))
     ]
@@ -764,7 +775,7 @@ async def drain_guild(
         _subscribed.add(guild_id)
     else:
         _subscribed.discard(guild_id)
-    for subscription_id, reach in roster:
+    for subscription_id, reach, subscriber in roster:
         try:
             subscription = await session.get(WebhookSubscription, subscription_id)
             if subscription is None or not subscription.active:
@@ -776,6 +787,7 @@ async def drain_guild(
                 now=now,
                 reach=reach,
                 plugin_ids=plugin_ids,
+                subscriber=subscriber,
             )
         except Exception:
             logger.exception(

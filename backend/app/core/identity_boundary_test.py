@@ -59,6 +59,7 @@ def _boundary(**overrides) -> InstallBoundary:
     values = {
         "guild_id": _GUILD,
         "install_id": _INSTALL,
+        "public_id": "acme.reports",
         "guild_ref": _GUILD_REF,
         "named": {
             _PERSON_REF: (IdentityEntity.user, 11),
