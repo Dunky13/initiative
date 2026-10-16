@@ -13,6 +13,7 @@ from app.db import cohorts
 from app.db import session as db_session
 from app.db.session import get_system_session
 from app.models.platform.user import User, UserStatus
+from app.testing import in_request_tasks
 
 
 def _request() -> Request:
@@ -58,7 +59,7 @@ async def test_a_system_session_is_from_the_cohort_of_the_community_served():
     installed = {"Authorization": f"Bearer {token}"}
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=in_request_tasks(app)), base_url="http://test"
     ) as client:
         await client.get("/c/5/probe")
         await client.get("/probe")

@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GET /projects/{id}/activity` is removed. Use `GET /activity/`, which narrows to a project.
   - `AccessGrantRead.user_email` and `approved_by_email` are replaced by `user` and `approved_by`, which name people by handle.
   - `POST /api/v1/me/tickets` and `POST /api/v1/me/tickets/{task_id}/replies` take `multipart/form-data`: the ticket as JSON in `payload`, or the answer in `body`, beside any `files`.
+  - **Server logs are JSON.** Standard error is one JSON object per line, the web server's request lines included, and each line names its request, account, community and route. The request line names the route a request matched rather than its address, leaves out the query string, and is written to standard error, so standard output carries the audit stream alone.
 - **Fields save as you change them.** Tasks and events have no Save button, and an event's settings page is gone: edit it on its own page. Properties on every tool save the same way. Descriptions keep a draft and show you someone else's edit before overwriting it. People who can't edit see values, not disabled boxes.
 - **Adding a task, event, queue item or counter shows its layout**, and closing the dialog discards it.
 - **Layouts decide what boards and tables show, for everyone.** The board's **Fields** and the table's **Columns** menus are gone; set them in **Edit layouts**.

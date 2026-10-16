@@ -92,6 +92,7 @@ from app.testing.passkeys import (
 )
 from app.testing.notices import drain_notices
 from app.testing.push import create_push_token, push_switched_on
+from app.testing.server import in_request_tasks
 from app.testing.routing import (
     as_role,
     platform_session,
@@ -102,6 +103,7 @@ from app.testing.routing import (
 from app.testing.schema_harness import guild_of, route_session_to_guild
 
 __all__ = [
+    "in_request_tasks",
     "as_role",
     "captcha_switched_on",
     "drain_notices",

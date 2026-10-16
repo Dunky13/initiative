@@ -50,6 +50,7 @@ from app.db.session import (
 )
 from app.testing import guild_pool
 from app.testing.schema_harness import clear_search_path_pin
+from app.testing.server import in_request_tasks
 from app.db.guild_ddl import render_guild_schema_ddl
 from app.db.guild_migrations import GUILD_SCHEMA_REGEX
 from app.db.schema_provisioning import guild_schema_name
@@ -1151,7 +1152,7 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     try:
         async with AsyncClient(
-            transport=ASGITransport(app=app),
+            transport=ASGITransport(app=in_request_tasks(app)),
             base_url="http://test",
             # What a browser on this origin actually sends. Every unsafe method
             # from a page carries it, and CsrfOriginMiddleware requires it (or

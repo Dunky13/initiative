@@ -1,14 +1,41 @@
 """What a line says about the request it came from."""
 
+import asyncio
+
 import pytest
 
 from app.core import audit_context
 
 
 def test_outside_a_request_there_is_no_context():
-    """A background sweep writes a line with nothing to say about a request,
+    """A startup seed writes a line with nothing to say about a request,
     rather than an invented one."""
     assert audit_context.envelope_context(caller=True) is None
+
+
+@pytest.mark.parametrize("named, community", [("7", 7), ("\u00b2", None), ("x", None)])
+def test_a_path_names_its_community_in_ascii_digits_only(named, community):
+    scope = {"path_params": {"community_id": named}}
+    assert audit_context.RequestContext("r", scope=scope).community_id() == community
+
+
+async def test_a_pass_is_named_and_each_visit_names_its_own_community():
+    """Communities visited at once each keep their own, under the one name
+    the pass has."""
+    seen = {}
+
+    async def visit(guild_id: int) -> None:
+        with audit_context.visiting(guild_id):
+            await asyncio.sleep(0)
+            context = audit_context.current()
+            seen[guild_id] = (context.request_id, context.community_id())
+
+    with audit_context.job("hourly") as job:
+        await asyncio.gather(visit(1), visit(2))
+        assert audit_context.current() is job
+    assert job.request_id.startswith("job-hourly-")
+    assert seen == {1: (job.request_id, 1), 2: (job.request_id, 2)}
+    assert audit_context.current() is None
 
 
 def test_a_request_carries_its_id_and_where_it_came_from():
