@@ -59,6 +59,8 @@ export interface DocumentExtensionOptions {
   editable: boolean;
   /** What the document opens with, or `null` for an empty one. */
   initialEditorState?: InitialEditorStateType;
+  /** What becomes of an error the editor catches; logged by default. */
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -72,6 +74,7 @@ export function documentExtension({
   collaborative,
   editable,
   initialEditorState = null,
+  onError = (error) => console.error(error),
 }: DocumentExtensionOptions) {
   return defineExtension({
     name: "@initiative/document-editor",
@@ -91,7 +94,7 @@ export function documentExtension({
     ],
     theme: editorTheme,
     editable,
-    onError: (error) => console.error(error),
+    onError,
     // In collaborative mode, leave the initial state empty.
     // CollaborationPlugin owns the initial state via its initialEditorState prop.
     $initialEditorState: collaborative ? null : initialEditorState,

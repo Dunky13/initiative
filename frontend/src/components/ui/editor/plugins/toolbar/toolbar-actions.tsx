@@ -1,4 +1,5 @@
-import { $createCodeNode, $isCodeNode, CODE_LANGUAGE_FRIENDLY_NAME_MAP } from "@lexical/code";
+import { $createCodeNode, $isCodeNode } from "@lexical/code";
+import { CODE_LANGUAGE_FRIENDLY_NAME_MAP } from "@lexical/code-prism";
 import { INSERT_HORIZONTAL_RULE_COMMAND } from "@lexical/extension";
 import { $isLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link";
 import {

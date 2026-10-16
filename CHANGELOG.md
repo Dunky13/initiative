@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`#` waits for its search before saying nothing matches.** Typing after `#` briefly said nothing in the initiative matched the new words, from the answer to the words before them, then switched to "Searching…".
 - **Pictures show on a wiki page being read.** A picture nobody had captioned showed "An error was thrown." in its place until the page was opened for editing.
 - **An invite with no use limit takes any number of people.** One made with the uses left at 0 stopped working after the first person joined.
 - **Whoever added a queue item isn't offered a report of it.**

@@ -96,6 +96,26 @@ describe("probe: # in a document", () => {
     );
     expect(screen.getByText(/Only this document.s initiative/)).toBeInTheDocument();
   });
+
+  it("does not answer for words it has not searched for yet", async () => {
+    server.use(communityHttp.get("/search/suggest", () => HttpResponse.json([])));
+
+    renderPage(Harness);
+    await waitFor(() => expect(editor).toBeTruthy());
+    type("#a");
+    await waitFor(() => expect(screen.getByText(/matches “a”/)).toBeInTheDocument(), {
+      timeout: 4000,
+    });
+
+    // The answer for "a" is still on screen while "zzz" waits out the debounce.
+    type("#zzz");
+    await waitFor(() => expect(screen.queryByText(/matches “a”/)).not.toBeInTheDocument());
+    expect(screen.queryByText(/matches “zzz”/)).not.toBeInTheDocument();
+    expect(screen.getByText("Searching…")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/matches “zzz”/)).toBeInTheDocument(), {
+      timeout: 4000,
+    });
+  });
 });
 
 describe("a page does not point at itself", () => {
