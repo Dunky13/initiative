@@ -250,17 +250,19 @@ async def test_ledger_delivers_each_transaction_once(
     assert (await session.exec(select(WebhookDelivery))).all() == []
 
 
-async def test_a_refused_batch_is_retried_not_lost(
+async def test_a_refused_batch_is_retried_not_lost_or_overtaken(
     session, role_session, acting_user, monkeypatch
 ):
     """A refusal leaves the transaction pending, so it comes back once its
-    backoff expires rather than being skipped."""
+    backoff expires rather than being skipped, and the transaction after it
+    waits for it on every pass, not only the one that was refused."""
     from app.models.platform.guild import CommunityRole
     from app.services.tenant import outbox_poller as poller
     from app.testing import create_task
 
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
     guild_id, user_id = a.guild.id, a.user.id
+    await create_task(session, a.project)
     await create_task(session, a.project)
 
     session.add(
@@ -279,25 +281,31 @@ async def test_a_refused_batch_is_retried_not_lost(
 
     attempts: list[str] = []
 
-    async def _refuse(*, target_url, secret, envelope):
+    async def _refuse_the_first(*, target_url, secret, envelope):
         attempts.append(envelope["event_id"])
-        return False
+        return len(attempts) > 1
 
-    monkeypatch.setattr(poller, "deliver", _refuse)
+    monkeypatch.setattr(poller, "deliver", _refuse_the_first)
 
     system = await role_session("app_admin")
 
-    await poller.drain_guild(system, guild_id, now=datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    await poller.drain_guild(system, guild_id, now=now)
     assert len(attempts) == 1
 
-    # Past the backoff, the same batch is offered again under the same id.
-    later = datetime.now(timezone.utc) + timedelta(hours=2)
-    await poller.drain_guild(system, guild_id, now=later)
-    assert len(attempts) == 2, "a refused batch was dropped instead of retried"
+    # Inside the backoff, the second transaction waits behind the first.
+    await poller.drain_guild(system, guild_id, now=now + timedelta(seconds=1))
+    assert len(attempts) == 1, "a later transaction overtook a refused one"
+
+    # Past the backoff, the same batch is offered again under the same id,
+    # and the second follows it.
+    await poller.drain_guild(system, guild_id, now=now + timedelta(hours=2))
+    assert len(attempts) == 3, "a refused batch was dropped instead of retried"
     assert attempts[0] == attempts[1], (
         "the retry carried a different event_id, so a receiver deduping on it "
         "would treat the redelivery as new work"
     )
+    assert attempts[2] != attempts[0]
 
 
 async def test_repeated_refusals_escalate_the_backoff(

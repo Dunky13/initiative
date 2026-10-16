@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Webhooks arrive in order after a refusal.** When a receiver turned a delivery away, later changes could reach it before the retry did. They now wait for the retry.
 - **Assignment and reaction emails group again after you mute a community.** Items already waiting from a community you switched off were kept for a week, and while they waited your other communities' emails went out one at a time instead of together.
 - **The task tables keep the project path readable on narrower screens.** On My Tasks and a tag's tasks, the path no longer squeezes into a thin column one word per line; the table scrolls sideways instead.
 - **A dialog no longer opens behind its own backdrop.** The blurred backdrop could cover the dialog, so it couldn't be used. This happened with **Prove it's you** when adding an email address.

@@ -20,7 +20,7 @@ txn_id)`` — two replicas racing the same batch is settled by the database rath
 than by a lease the application has to reason about.
 
 Retry state lives per transaction, so a refusal backs off exactly the batch that
-was refused.
+was refused, and the subscription's later transactions wait behind it.
 """
 
 from __future__ import annotations
