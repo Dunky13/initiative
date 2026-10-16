@@ -109,6 +109,9 @@ _WRAPPERS: dict[tuple[str, str], str] = {
     (f"{_SERVICES}/provider_placement.py", "list_targets"): (
         "lists a placeable community's initiatives for a provider placement rule"
     ),
+    (f"{_ENDPOINTS}/settings.py", "_routed_to_community"): (
+        "routes the operator's community sheet into a community that is still there"
+    ),
 }
 
 #: Every call site that routes into a community, and why it may.
@@ -158,6 +161,13 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "plug-in connections in its own schema"
     ),
     # --- Aggregates ----------------------------------------------------------
+    (f"{_ENDPOINTS}/settings.py", "list_community_plugin_summaries"): (
+        "the operator's community sheet: which installs report a usage summary"
+    ),
+    (f"{_ENDPOINTS}/settings.py", "read_community_plugin_summary"): (
+        "the operator's community sheet: one install's usage summary, read "
+        "with no member's connection"
+    ),
     # --- Account closure and erasure -----------------------------------------
     # --- Intake: the platform owner's setting, in the operations community ---
     (f"{_SERVICES}/intake.py", "stream_is_bound"): (

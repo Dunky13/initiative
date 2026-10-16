@@ -1104,7 +1104,12 @@ def _plugin_predicates(table: str) -> dict[str, str]:
                 f"{_plugin_placed_initiatives()})"
             )
             return dict.fromkeys(("SELECT", "INSERT", "UPDATE", "DELETE"), placed)
-        if "INSERT" not in _WRITTEN_BY.get(table, {}):
+        # The initiative gate already asks of a side effect it governs; one with
+        # no gate of its own (timer_marks) is written by a trigger alone.
+        if (
+            "INSERT" not in _WRITTEN_BY.get(table, {})
+            and table in INITIATIVE_SCOPED_TABLES
+        ):
             return {}
         by_trigger = f"({_IID} IS NULL OR pg_trigger_depth() > 0)"
         predicates = dict.fromkeys(("SELECT", "INSERT", "UPDATE", "DELETE"), by_trigger)
