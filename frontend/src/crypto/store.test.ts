@@ -62,16 +62,22 @@ describe("the message log", () => {
       mine: false,
     }));
 
+    // Two fresh copies, so both tabs read the same store: the copy the other
+    // tests share keeps whichever account they served last, and empties only
+    // that account's store before each test.
+    vi.resetModules();
+    const tab = await import("./store");
     vi.resetModules();
     const otherTab = await import("./store");
+    await tab.forgetDevice();
 
     await Promise.all(
       messages.map((message, index) =>
-        (index % 2 ? otherTab.messageLog : messageLog).append("conv", message)
+        (index % 2 ? otherTab : tab).messageLog.append("conv", message)
       )
     );
 
-    expect(await messageLog.get("conv")).toHaveLength(12);
+    expect(await tab.messageLog.get("conv")).toHaveLength(12);
     // Deleting the database waits on every open connection; each lets go of
     // its own, and the next call opens afresh.
     await new Promise<void>((resolve, reject) => {
@@ -80,7 +86,7 @@ describe("the message log", () => {
       request.onerror = () => reject(request.error);
       request.onblocked = () => reject(new Error("an open connection held the database"));
     });
-    expect(await messageLog.get("conv")).toEqual([]);
+    expect(await tab.messageLog.get("conv")).toEqual([]);
   });
 
   it("ignores a message it already holds", async () => {
