@@ -36,6 +36,15 @@ class OidcHttpError(Exception):
     oversized body, or invalid JSON. Callers wrap it in their own error."""
 
 
+def _status_message(url: str, status: int, answer: Any) -> str:
+    """An error status, with the OAuth ``error`` code (RFC 6749 §5.2) the
+    answer carries, if it carries one."""
+    code = answer.get("error") if isinstance(answer, dict) else None
+    if isinstance(code, str) and code:
+        return f"{url} returned {status} ({code[:64]})"
+    return f"{url} returned {status}"
+
+
 class OidcHttpStatusError(OidcHttpError):
     """The server answered, with an error status. ``body`` is what it said,
     parsed when it was JSON."""
@@ -123,8 +132,8 @@ async def _request_json(
         async with factory() as client:
             async with client.stream(method, url, data=data, headers=headers) as resp:
                 if resp.status_code >= 400:
-                    # Read a bounded snippet of the error body: an OAuth error
-                    # response ({"error": "invalid_grant", ...}) is the one
+                    # Read a bounded snippet of the error body for its OAuth
+                    # error code ({"error": "invalid_grant", ...}), the one
                     # diagnostic the server operator needs in the logs.
                     error_status = resp.status_code
                     max_bytes = _ERROR_SNIPPET_MAX_BYTES
@@ -138,8 +147,11 @@ async def _request_json(
     except httpx.HTTPError as exc:
         raise OidcHttpError(f"fetch failed for {url}: {exc}") from exc
     if error_status is not None:
-        snippet = body[:_ERROR_SNIPPET_MAX_BYTES].decode("utf-8", errors="replace")
-        raise OidcHttpError(f"{url} returned {error_status}: {snippet}")
+        try:
+            answer = json.loads(body[:_ERROR_SNIPPET_MAX_BYTES])
+        except ValueError:
+            answer = None
+        raise OidcHttpError(_status_message(url, error_status, answer))
     if over_cap:
         raise OidcHttpError(
             f"response from {url} exceeds the {max_response_bytes}-byte cap"
@@ -206,9 +218,8 @@ async def post_form_json_pinned(
         else:
             parsed = None
     if response.status_code >= 400:
-        snippet = body[:_ERROR_SNIPPET_MAX_BYTES].decode("utf-8", errors="replace")
         raise OidcHttpStatusError(
-            f"{url} returned {response.status_code}: {snippet}",
+            _status_message(url, response.status_code, parsed),
             status=response.status_code,
             body=parsed,
         )

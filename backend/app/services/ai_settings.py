@@ -1154,27 +1154,31 @@ def _sort_openai_models(models: list[str]) -> list[str]:
 _MODEL_LIST_CAP = 1000
 
 
-def _error_detail(response: httpx.Response) -> str:
-    """The provider's own error message when it sent one, else the status."""
+def _error_kind(response: httpx.Response) -> str:
+    """The kind of error the provider named (its ``type``, ``code`` or
+    ``status``) when it named one, else the HTTP status."""
     try:
         error = response.json().get("error")
     except Exception:
         error = None
     if isinstance(error, dict):
-        error = error.get("message")
-    return error if isinstance(error, str) and error else str(response.status_code)
+        for key in ("type", "code", "status"):
+            kind = error.get(key)
+            if isinstance(kind, (str, int)) and str(kind):
+                return str(kind)[:64]
+    return str(response.status_code)
 
 
 def refusal_code(
     provider: AIProvider, response: httpx.Response, *, sent_key: bool
 ) -> str:
-    """The message code for a provider's non-200 answer. What the provider
-    said is logged, not returned."""
+    """The message code for a provider's non-200 answer. The kind of error
+    the provider named is logged, not returned."""
     logger.warning(
         "AI provider %s answered %s: %s",
         provider.value,
         response.status_code,
-        _error_detail(response),
+        _error_kind(response),
     )
     if response.status_code == 401 and sent_key:
         return AIMessages.INVALID_API_KEY
