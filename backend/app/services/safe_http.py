@@ -173,10 +173,14 @@ async def request_public_target(
             except httpx.HTTPError as exc:
                 _log_sent(method, original, began, failure=exc)
                 raise
+            if max_bytes is not None:
+                try:
+                    response = await _read_bounded(response, max_bytes)
+                except (httpx.HTTPError, ResponseTooLargeError) as exc:
+                    _log_sent(method, original, began, failure=exc)
+                    raise
             _log_sent(method, original, began, status=response.status_code)
-            if max_bytes is None:
-                return response
-            return await _read_bounded(response, max_bytes)
+            return response
     if last_exc is not None:
         raise last_exc
     # Unreachable: resolve_validated_target_async guarantees at least one

@@ -94,7 +94,7 @@ class RequestContext:
             named = (self.scope.get("path_params") or {}).get("community_id")
             if isinstance(named, int):
                 return named
-            if isinstance(named, str) and named.isdigit():
+            if isinstance(named, str) and named.isascii() and named.isdigit():
                 return int(named)
         return self.guild_id
 

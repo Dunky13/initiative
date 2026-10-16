@@ -259,9 +259,14 @@ def _gzipped(body: bytes):
     return httpx.MockTransport(handler)
 
 
-async def test_a_bounded_read_is_counted_after_decoding():
-    """A small compressed body that inflates past the bound is refused."""
-    with _resolves_to("93.184.216.34"), pytest.raises(ResponseTooLargeError):
+async def test_a_bounded_read_is_counted_after_decoding(caplog):
+    """A small compressed body that inflates past the bound is refused, and
+    the request's line says so."""
+    with (
+        _resolves_to("93.184.216.34"),
+        caplog.at_level(logging.DEBUG, logger="app.services.safe_http"),
+        pytest.raises(ResponseTooLargeError),
+    ):
         await request_public_target(
             "GET",
             "https://site.example.com/big",
@@ -269,6 +274,9 @@ async def test_a_bounded_read_is_counted_after_decoding():
             transport=_gzipped(b"0" * 10_000),
             max_bytes=1_000,
         )
+    [line] = [r for r in caplog.records if r.name == "app.services.safe_http"]
+    assert line.levelno == logging.INFO
+    assert "ResponseTooLargeError" in line.getMessage()
 
 
 async def test_a_bounded_read_within_its_bound_reads_as_usual():

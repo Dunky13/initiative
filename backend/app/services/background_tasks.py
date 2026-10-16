@@ -54,11 +54,11 @@ class Loop:
                 await self._wait()
             while True:
                 self._woken.clear()
-                try:
-                    with audit_context.job(self.name):
+                with audit_context.job(self.name):
+                    try:
                         await work()
-                except Exception:  # pragma: no cover
-                    logger.exception("%s worker encountered an error", self.name)
+                    except Exception:  # pragma: no cover
+                        logger.exception("%s worker encountered an error", self.name)
                 await self._wait()
         except asyncio.CancelledError:  # pragma: no cover
             logger.info("%s worker cancelled", self.name)

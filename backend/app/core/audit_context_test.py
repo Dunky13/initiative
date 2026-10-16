@@ -13,6 +13,12 @@ def test_outside_a_request_there_is_no_context():
     assert audit_context.envelope_context(caller=True) is None
 
 
+@pytest.mark.parametrize("named, community", [("7", 7), ("\u00b2", None), ("x", None)])
+def test_a_path_names_its_community_in_ascii_digits_only(named, community):
+    scope = {"path_params": {"community_id": named}}
+    assert audit_context.RequestContext("r", scope=scope).community_id() == community
+
+
 async def test_a_pass_is_named_and_each_visit_names_its_own_community():
     """Communities visited at once each keep their own, under the one name
     the pass has."""
