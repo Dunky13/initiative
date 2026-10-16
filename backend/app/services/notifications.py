@@ -20,7 +20,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlencode
 
 from sqlalchemy import column as sa_column
@@ -89,6 +89,9 @@ from app.services.platform import (
 )
 from app.core.user_input_validators import resolve_zone
 from app.db.request_context import Platform, Unattributed
+
+if TYPE_CHECKING:
+    from app.services.tenant.expiry import Expiring
 
 logger = logging.getLogger(__name__)
 
@@ -1726,6 +1729,20 @@ HOLD_SUMMARY_POLL_SECONDS = 600
 # Events that started within this window are still eligible, so a 0-minute
 # ("at start") reminder fires on the next poll rather than being missed.
 EVENT_REMINDER_GRACE = timedelta(minutes=5)
+
+# How long past its start a reminder's dispatch row is kept. The scan reads
+# none that started before the grace window, so a day is a wide margin.
+EVENT_REMINDER_DISPATCH_RETENTION = timedelta(days=1)
+
+
+async def expire_reminder_dispatches(session: AsyncSession, expiring: Expiring) -> None:
+    """Drop dispatch rows past :data:`EVENT_REMINDER_DISPATCH_RETENTION`."""
+    cutoff = expiring.now - EVENT_REMINDER_DISPATCH_RETENTION
+    await session.exec(
+        delete(EventReminderDispatch).where(
+            EventReminderDispatch.event_start_at < cutoff
+        )
+    )
 
 
 def _starting(lower: datetime, upper: datetime) -> Any:

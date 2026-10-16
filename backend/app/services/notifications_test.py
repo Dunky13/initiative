@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 import re
 
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import usernames
@@ -41,6 +41,7 @@ from app.services.notifications import (
     ASSIGNMENT_ITEM_RETENTION,
     ASSIGNMENT_MAX_WINDOW,
     ASSIGNMENT_QUIET_PERIOD,
+    EVENT_REMINDER_DISPATCH_RETENTION,
     notify,
 )
 from app.services.notifications import (
@@ -52,7 +53,8 @@ from app.services.notifications import (
     overdue_scan,
     reminder_scan,
 )
-from app.services.guild_sweeps import Scan, each_guild
+from app.services.guild_sweeps import Scan, Scope, each_guild
+from app.services.tenant import expiry
 from app.models.platform.guild import Guild, CommunityRole
 from app.testing import (
     guild_of,
@@ -69,7 +71,7 @@ from app.testing import (
     drain_notices,
     set_notification_prefs,
 )
-from app.testing import route_as
+from app.testing import route_as, route_session_to_guild
 from app.db.request_context import Platform, SystemGuild, Unattributed
 
 
@@ -225,6 +227,28 @@ async def test_event_reminder_fires_once_within_lead_window(
         )
     )
     assert len(list(dispatches.all())) == 1
+
+    # The hourly expiry pass keeps the row while its event is upcoming and
+    # drops it once the start is past the retention.
+    await set_rls_context(session, Unattributed())
+    await route_session_to_guild(session, guild.id)
+
+    async def _expire() -> list[EventReminderDispatch]:
+        await each_guild(
+            [(Scope.PROVISIONED, await expiry.prepare())], name="test", only=[guild.id]
+        )
+        return list((await session.exec(select(EventReminderDispatch))).all())
+
+    assert len(await _expire()) == 1
+    await session.exec(
+        update(EventReminderDispatch).values(
+            event_start_at=datetime.now(timezone.utc)
+            - EVENT_REMINDER_DISPATCH_RETENTION
+            - timedelta(minutes=1)
+        )
+    )
+    await session.commit()
+    assert await _expire() == []
 
 
 async def test_event_reminder_fires_for_each_occurrence_of_a_repeat(
