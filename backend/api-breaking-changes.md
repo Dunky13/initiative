@@ -7,4 +7,147 @@ message the check printed, under a `## After <release>` heading naming the
 release it breaks from. Once the next release ships, its entries no longer
 matter and can be deleted.
 
-Nothing is listed: the API takes everything 0.75.3's did.
+## After 0.75.3
+
+### Removed or reshaped
+
+- GET /api/v1/access-grants/ removed the required property `items/items/approved_by_email` from the response with the `200` status
+- GET /api/v1/access-grants/ removed the required property `items/items/user_email` from the response with the `200` status
+- POST /api/v1/access-grants/ removed the required property `approved_by_email` from the response with the `201` status
+- POST /api/v1/access-grants/ removed the required property `user_email` from the response with the `201` status
+- POST /api/v1/access-grants/break-glass removed the required property `approved_by_email` from the response with the `201` status
+- POST /api/v1/access-grants/break-glass removed the required property `user_email` from the response with the `201` status
+- GET /api/v1/access-grants/queue removed the required property `items/items/approved_by_email` from the response with the `200` status
+- GET /api/v1/access-grants/queue removed the required property `items/items/user_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/approve removed the required property `approved_by_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/approve removed the required property `user_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/deny removed the required property `approved_by_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/deny removed the required property `user_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/revoke removed the required property `approved_by_email` from the response with the `200` status
+- POST /api/v1/access-grants/{grant_id}/revoke removed the required property `user_email` from the response with the `200` status
+- POST /api/v1/c/{community_id}/initiatives/{initiative_id}/plugins/{plugin_id}/handoff/{surface_id} removed the required property `embed_url` from the response with the `200` status
+- POST /api/v1/c/{community_id}/plugins/{plugin_id}/handoff/{surface_id} removed the required property `embed_url` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/ removed the required property `items/items/default_view_mode` from the response with the `200` status
+- POST /api/v1/c/{community_id}/projects/ removed the required property `default_view_mode` from the response with the `201` status
+- GET /api/v1/c/{community_id}/projects/favorites removed the required property `items/default_view_mode` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/{project_id} removed the required property `default_view_mode` from the response with the `200` status
+- PATCH /api/v1/c/{community_id}/projects/{project_id} removed the required property `default_view_mode` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/{project_id}/activity api path removed without deprecation
+- POST /api/v1/c/{community_id}/projects/{project_id}/duplicate removed the required property `default_view_mode` from the response with the `201` status
+- GET /api/v1/c/{community_id}/projects/{project_id}/filter-presets/ api path removed without deprecation
+- POST /api/v1/c/{community_id}/projects/{project_id}/filter-presets/ api path removed without deprecation
+- POST /api/v1/c/{community_id}/projects/{project_id}/filter-presets/reorder api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/projects/{project_id}/filter-presets/{preset_id} api path removed without deprecation
+- PATCH /api/v1/c/{community_id}/projects/{project_id}/filter-presets/{preset_id} api path removed without deprecation
+- PUT /api/v1/c/{community_id}/projects/{project_id}/grants removed the required property `default_view_mode` from the response with the `200` status
+- GET /api/v1/c/{community_id}/smart-chips/ api removed without deprecation
+- GET /api/v1/c/{community_id}/smart-chips/embeds api removed without deprecation
+- GET /api/v1/c/{community_id}/tags/{tag_id}/entities added the new required `query` request parameter `kind`
+- GET /api/v1/communities/{community_id}/invites removed the required property `items/code` from the response with the `200` status
+- GET /api/v1/me/projects removed the required property `items/items/default_view_mode` from the response with the `200` status
+- POST /api/v1/me/tickets removed the media type `application/json` from the request body
+- POST /api/v1/me/tickets/{task_id}/replies removed the media type `application/json` from the request body
+- GET /api/v1/plugin-services/ removed the required property `items/embed_origin` from the response with the `200` status
+- POST /api/v1/plugin-services/ removed the required property `embed_origin` from the response with the `201` status
+- PATCH /api/v1/plugin-services/{registration_id} removed the required property `embed_origin` from the response with the `200` status
+- POST /api/v1/plugin-services/{registration_id}/connect removed the required property `embed_origin` from the response with the `200` status
+- POST /api/v1/plugin-services/{registration_id}/vendor-setup/complete removed the required property `embed_origin` from the response with the `200` status
+
+### New values in a response's enums
+
+- POST /api/v1/auth/register added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `201`
+- POST /api/v1/auth/register added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `201`
+- POST /api/v1/auth/register added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `201`
+- GET /api/v1/c/{community_id}/initiatives/{initiative_id}/reports added the new `held` enum value to the `items/items/outcome/anyOf[subschema #1: ReportOutcome]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/marketplace/listings added the new `home_layout` enum value to the `items/items/kind` response property for the response status `200`
+- GET /api/v1/c/{community_id}/marketplace/listings/by-uid/{uid} added the new `home_layout` enum value to the `kind` response property for the response status `200`
+- POST /api/v1/c/{community_id}/marketplace/listings/by-uid/{uid}/install added the new `home_layout` enum value to the `kind` response property for the response status `201`
+- GET /api/v1/c/{community_id}/marketplace/listings/{public_id} added the new `home_layout` enum value to the `kind` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `calendar_event` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `counter` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `gallery_image` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `queue_item` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `task` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} added the new `wiki_page` enum value to the `entity_type` response property for the response status `200`
+- POST /api/v1/c/{community_id}/reports/{report_id}/settle added the new `held` enum value to the `outcome/anyOf[subschema #1: ReportOutcome]/` response property for the response status `200`
+- GET /api/v1/communities/ added the new `guest` enum value to the `items/role` response property for the response status `200`
+- POST /api/v1/communities/ added the new `guest` enum value to the `role` response property for the response status `201`
+- POST /api/v1/communities/directory/{community_id}/join added the new `guest` enum value to the `role` response property for the response status `200`
+- POST /api/v1/communities/invite/accept added the new `guest` enum value to the `role` response property for the response status `200`
+- GET /api/v1/communities/{community_id} added the new `guest` enum value to the `role` response property for the response status `200`
+- PATCH /api/v1/communities/{community_id} added the new `guest` enum value to the `role` response property for the response status `200`
+- DELETE /api/v1/communities/{community_id}/banner added the new `guest` enum value to the `role` response property for the response status `200`
+- PUT /api/v1/communities/{community_id}/banner added the new `guest` enum value to the `role` response property for the response status `200`
+- DELETE /api/v1/communities/{community_id}/icon added the new `guest` enum value to the `role` response property for the response status `200`
+- PUT /api/v1/communities/{community_id}/icon added the new `guest` enum value to the `role` response property for the response status `200`
+- GET /api/v1/marketplace/local/mine added the new `home_layout` enum value to the `items/kind` response property for the response status `200`
+- GET /api/v1/marketplace/local/pending added the new `home_layout` enum value to the `items/kind` response property for the response status `200`
+- GET /api/v1/me added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/me added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/me added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/me/notification-preferences added the new `cases` enum value to the `categories/items/category` response property for the response status `200`
+- GET /api/v1/me/notification-preferences added the new `moderation` enum value to the `categories/items/category` response property for the response status `200`
+- PUT /api/v1/me/notification-preferences added the new `cases` enum value to the `categories/items/category` response property for the response status `200`
+- PUT /api/v1/me/notification-preferences added the new `moderation` enum value to the `categories/items/category` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `case_opened` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `case_replied` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `moderation_removal` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `moderation_warning` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `profile_field_cleared` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `case_opened` enum value to the `notification/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `case_replied` enum value to the `notification/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `moderation_removal` enum value to the `notification/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `moderation_warning` enum value to the `notification/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `profile_field_cleared` enum value to the `notification/type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `case_opened` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `case_replied` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `moderation_removal` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `moderation_warning` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `profile_field_cleared` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `case_opened` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `case_replied` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `moderation_removal` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `moderation_warning` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `profile_field_cleared` enum value to the `type` response property for the response status `200`
+- GET /api/v1/operator/users added the new `billing.support` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- GET /api/v1/operator/users added the new `communities.read` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- GET /api/v1/operator/users added the new `communities.suspend` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
