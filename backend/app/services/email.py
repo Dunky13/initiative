@@ -291,7 +291,7 @@ async def send_email(
         await asyncio.to_thread(_deliver, config, message)
     except EmailNotConfiguredError:
         raise
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         # Records the failure's type and SMTP reply code; the error raised to
         # callers carries no chained cause.
         if isinstance(exc, smtplib.SMTPResponseException):
