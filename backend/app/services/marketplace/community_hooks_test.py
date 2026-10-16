@@ -17,7 +17,7 @@ import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -42,7 +42,7 @@ PUBLIC_ID = "tests.hooked"
 LISTING_UID = "TESTAPP0000071"
 BASE_URL = "https://hooked.example.test"
 
-_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_KEY = ed25519.Ed25519PrivateKey.generate()
 _PEM = _KEY.private_bytes(
     serialization.Encoding.PEM,
     serialization.PrivateFormat.PKCS8,
@@ -63,7 +63,7 @@ class Plugin:
         claims = jwt.decode(
             token,
             _KEY.public_key(),
-            algorithms=["RS256"],
+            algorithms=["EdDSA"],
             audience=f"initiative-plugin:{PUBLIC_ID}",
         )
         self.calls.append(
@@ -291,6 +291,31 @@ class TestErasing:
             )
             is None
         )
+
+    async def test_the_issuer_hears_of_an_erase_once_it_is_answered(
+        self, session, monkeypatch
+    ):
+        from app.services.marketplace import plugin_entitlements
+
+        _user, guild, _install = await _setup(session)
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+        told: list[tuple[int, str]] = []
+
+        async def erased(guild_id: int, listing_uid: str) -> None:
+            told.append((guild_id, listing_uid))
+
+        monkeypatch.setattr(plugin_entitlements, "erased", erased)
+        _answering(monkeypatch, Plugin(500, 204))
+
+        await community_hooks.deliver_community_hook(
+            guild_id=guild.id, public_id=PUBLIC_ID, hook="erase"
+        )
+        await community_hooks.run_pass()
+        assert told == []
+        await community_hooks.run_pass(now=_later(5))
+        assert told == [(guild.id, LISTING_UID)]
 
     async def test_a_plugin_that_takes_no_erase_hook_is_forgotten_too(
         self, session, monkeypatch

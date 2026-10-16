@@ -24,7 +24,7 @@ from app.core import config as config_module
 from app.core.messages import GuildPluginMessages
 from app.db import post_commit
 from app.models.platform.guild import CommunityRole
-from app.services.marketplace import plugin_entitlements, tuf_registry
+from app.services.marketplace import community_hooks, plugin_entitlements, tuf_registry
 from app.services.platform import billing_ping
 from app.services.tenant import plugin_connection_flows as flows
 from app.testing import (
@@ -134,7 +134,8 @@ def hooks(monkeypatch) -> list[tuple[str, dict]]:
     delivered: list[tuple[str, dict]] = []
 
     async def call_hook(name, *, body, **_kwargs):
-        delivered.append((name, dict(body)))
+        if name == plugin_entitlements.ENTITLEMENT_HOOK:
+            delivered.append((name, dict(body)))
 
     monkeypatch.setattr(flows, "call_hook", call_hook)
     return delivered
@@ -144,6 +145,9 @@ async def _settle() -> None:
     # A step started by a commit may start a ping of its own.
     for _ in range(3):
         await post_commit.settle_all()
+    # And every hook the commits queued, sent: one per plug-in a pass, in order.
+    while await community_hooks.run_pass():
+        pass
 
 
 async def _install(client: AsyncClient, actor):

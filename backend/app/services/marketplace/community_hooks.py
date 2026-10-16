@@ -10,7 +10,12 @@ rather than to one of its connections:
   purged. Once the plug-in answers, its references in the community are
   dropped, and a later install starts afresh.
 * ``community_status`` — the community's status changed. The body is
-  ``{"status": <CommunityStatus value>}``; the other three send ``{}``.
+  ``{"status": <CommunityStatus value>}``.
+* ``entitlement`` — the statement this deployment's issuer made of what the
+  community holds of the plug-in, ``{version, values}``, queued by
+  ``plugin_entitlements.deliver_entitlement``.
+
+``installed``, ``uninstalled`` and ``erase`` send ``{}``.
 
 Each is a ``lifecycle`` context token with ``hook=<name>``, posted to the
 plug-in's ``/v1/hooks/<name>`` by ``plugin_connection_flows.call_hook``.
@@ -94,7 +99,7 @@ __all__ = [
 #: ``plugin_connection_flows.HOOK_NAMES``, which is what lets ``call_hook``
 #: send it.
 COMMUNITY_HOOK_NAMES: frozenset[str] = frozenset(
-    {"installed", "uninstalled", "erase", "community_status"}
+    {"installed", "uninstalled", "erase", "community_status", "entitlement"}
 )
 
 #: Hooks that state where something stands now, so a newer one replaces one
@@ -452,6 +457,24 @@ def _backoff(attempts: int) -> timedelta:
     return timedelta(seconds=BACKOFF_SECONDS[min(attempts, len(BACKOFF_SECONDS)) - 1])
 
 
+async def _report_erased(guild_id: int, public_id: str) -> None:
+    """Tell the entitlement issuer the plug-in's data is erased, for a listing
+    it has terms for."""
+    from app.services.marketplace import plugin_entitlements
+
+    registration = (await registration_lookup.load_registrations()).get(public_id)
+    if registration is None or not registration.listing_uid:
+        return
+    try:
+        await plugin_entitlements.erased(guild_id, registration.listing_uid)
+    except Exception:
+        logger.exception(
+            "community hooks: the erase of %s in guild %s was not reported",
+            public_id,
+            guild_id,
+        )
+
+
 async def _settle(claimed: _Claimed, outcome: _Outcome, now: datetime) -> None:
     """Record how one attempt ended, and drop the references an answered
     ``erase`` let go."""
@@ -465,6 +488,7 @@ async def _settle(claimed: _Claimed, outcome: _Outcome, now: datetime) -> None:
             claimed.guild_id,
             dropped,
         )
+        await _report_erased(claimed.guild_id, claimed.public_id)
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
         row = await session.get(PluginCommunityHook, claimed.id)
