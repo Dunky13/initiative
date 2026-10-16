@@ -56,9 +56,6 @@ SERVER_LOGGER_NAME = "uvicorn"
 
 #: The attribute a record carries its request's fields in.
 CONTEXT_ATTR = "log_context"
-#: Set on an exception once the request it ended has written it down, so the
-#: server's own report of the same exception is not written twice.
-_REPORTED_ATTR = "_initiative_reported"
 
 _DATABASE_ERRORS = (
     StatementError,
@@ -128,23 +125,6 @@ def _stamped(*args: Any, **kwargs: Any) -> logging.LogRecord:
     record = _base_record_factory(*args, **kwargs)
     setattr(record, CONTEXT_ATTR, context_fields())
     return record
-
-
-def mark_reported(exc: BaseException) -> None:
-    """Note that ``exc`` has been written down with its request's fields."""
-    try:
-        setattr(exc, _REPORTED_ATTR, True)
-    except (AttributeError, TypeError):
-        pass
-
-
-class SkipReported(logging.Filter):
-    """Drops the server's report of an exception the request already wrote."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if not record.name.startswith(SERVER_LOGGER_NAME) or not record.exc_info:
-            return True
-        return not getattr(record.exc_info[1], _REPORTED_ATTR, False)
 
 
 def _access_fields(record: logging.LogRecord) -> dict[str, Any] | None:
@@ -305,15 +285,11 @@ def logging_config() -> dict[str, Any]:
             "json": {"()": "app.core.logging_config.JsonFormatter"},
             "line": {"format": "%(message)s"},
         },
-        "filters": {
-            "reported": {"()": "app.core.logging_config.SkipReported"},
-        },
         "handlers": {
             "app": {
                 "()": "app.core.logging_config.LiveStreamHandler",
                 "stream_name": "stderr",
                 "formatter": "json",
-                "filters": ["reported"],
             },
             "audit": {
                 "()": "app.core.logging_config.LiveStreamHandler",

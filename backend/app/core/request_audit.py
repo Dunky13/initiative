@@ -39,10 +39,10 @@ import time
 from typing import Any, Awaitable, Callable
 
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.requests import HTTPConnection
-from starlette.responses import PlainTextResponse
+from starlette.requests import HTTPConnection, Request
+from starlette.responses import PlainTextResponse, Response
 
-from app.core import audit_context, logging_config, metrics
+from app.core import audit_context, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.services import audit as audit_service
@@ -190,16 +190,27 @@ async def _record_activity(
         logger.exception("access grant activity: could not record a request")
 
 
-def _report_failure(exc: Exception) -> None:
-    """Write the exception that ended a request, while the request's fields
-    are still there to name it."""
-    logger.exception("Exception in ASGI application")
-    logging_config.mark_reported(exc)
+async def server_error(_request: Request, _exc: Exception) -> Response:
+    """The 500 for a request that raised, carrying the request's id.
+
+    Starlette's own error middleware answers with this, outside every other
+    middleware, and then raises on to the server, which writes the traceback.
+    """
+    context = audit_context.current()
+    headers = {REQUEST_ID_HEADER: context.request_id} if context is not None else None
+    return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)
 
 
 class RequestAuditMiddleware:
     """Open each request's context; close it with a line if it was
-    privileged."""
+    privileged.
+
+    The context is left open when the request ends. The server runs each
+    request in a task of its own, begun with an empty context, so it ends
+    with that task, and what the server writes after the app has returned —
+    its request line, the traceback of a request that raised — still names
+    the request.
+    """
 
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -211,7 +222,7 @@ class RequestAuditMiddleware:
             return
 
         headers = Headers(scope=scope)
-        context, token = audit_context.begin(
+        context, _token = audit_context.begin(
             request_id=_incoming_request_id(headers) or audit_context.new_request_id(),
             source_ip=(scope.get("client") or (None,))[0],
             user_agent=headers.get("user-agent"),
@@ -226,12 +237,8 @@ class RequestAuditMiddleware:
             metrics.websocket_connections.inc()
             try:
                 await self.app(scope, receive, send)
-            except Exception as exc:
-                _report_failure(exc)
-                raise
             finally:
                 metrics.websocket_connections.dec()
-                audit_context.end(token)
             return
 
         answered: dict[str, int] = {}
@@ -250,15 +257,6 @@ class RequestAuditMiddleware:
 
         try:
             await self.app(scope, receive, named_send)
-        except Exception as exc:
-            _report_failure(exc)
-            if "status" not in answered:
-                # Answered here rather than by the server, so the response
-                # carries the request's id and its line names the route.
-                await PlainTextResponse("Internal Server Error", status_code=500)(
-                    scope, receive, named_send
-                )
-            raise
         finally:
             elapsed = time.perf_counter() - began
             in_progress.dec()
@@ -297,7 +295,6 @@ class RequestAuditMiddleware:
                     status=int(answered.get("status", 500)),
                     reached=reached,
                 )
-            audit_context.end(token)
 
 
 def record_privileged_edit(
