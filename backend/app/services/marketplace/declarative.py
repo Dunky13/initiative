@@ -616,10 +616,7 @@ async def run_endpoint(
             ) from outcome
         if outcome.detail:
             logger.info(
-                "plug-in data: %s answered %s (%s)",
-                endpoint.get("id"),
-                outcome.code,
-                outcome.detail,
+                "plug-in data: %s answered %s", endpoint.get("id"), outcome.code
             )
         return {"unavailable": outcome.code}
 
@@ -690,7 +687,6 @@ async def after_connect(
     except _Outcome as outcome:
         raise flows.HookError(
             f"after_connect answered {outcome.code or TRANSIENT_CODE}"
-            + (f" ({outcome.detail})" if outcome.detail else "")
         ) from outcome
     except PluginDataError as exc:
         raise flows.HookError(f"after_connect answered {exc.code}") from exc
@@ -737,7 +733,10 @@ async def health_state(
             return row["state"]
         return "ok" if 200 <= answer.status <= 299 else "unavailable"
     except (_Outcome, PluginDataError) as exc:
-        logger.info("plug-in health: the check answered no state (%s)", exc)
+        logger.info(
+            "plug-in health: the check answered no state (%s)",
+            exc.code or TRANSIENT_CODE,
+        )
         return "unavailable"
 
 
@@ -774,7 +773,7 @@ async def map_delivery(
     The expressions read ``headers`` (names in lowercase), ``payload``, the
     routed connection's non-secret fields as ``connection``, and ``now``.
     ``events`` and ``status`` are read apart: one failing leaves the other's
-    answer, and the failure is in ``failures``. An evaluation that may answer
+    answer, and where it failed is in ``failures``. An evaluation that may answer
     if asked again raises :class:`ExpressionError` with ``transient`` set.
     """
     millis, at = _clock(now or datetime.now(timezone.utc))
@@ -801,7 +800,7 @@ async def map_delivery(
             except ExpressionError as exc:
                 if exc.transient:
                     raise
-                failures.append(f"{what}/{index}/when: {exc}")
+                failures.append(f"{what}/{index}/when: the expression failed")
                 return None
         return None
 
@@ -815,13 +814,15 @@ async def map_delivery(
         except ExpressionError as exc:
             if exc.transient:
                 raise
-            failures.append(f"{where}: {exc}")
+            failures.append(f"{where}: the expression failed")
         else:
             problem = _fits(mapped, returns.get(row["emit"]) or [])
             if problem is None:
                 event = (row["emit"], mapped)
             else:
-                failures.append(f"{where}: the {row['emit']} event {problem}")
+                failures.append(
+                    f"{where}: the {row['emit']} event does not fit its returns"
+                )
     status: Optional[tuple[str, str]] = None
     matched = await first("status")
     if matched is not None:

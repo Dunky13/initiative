@@ -616,6 +616,12 @@ class SettingsMessages:
     # Object storage
     STORAGE_BACKFILL_RUNNING = "SETTINGS_STORAGE_BACKFILL_RUNNING"
     STORAGE_BACKFILL_NOT_CONFIGURED = "SETTINGS_STORAGE_BACKFILL_NOT_CONFIGURED"
+    #: The backfill stopped on an error; its cause is in the server log.
+    STORAGE_BACKFILL_FAILED = "SETTINGS_STORAGE_BACKFILL_FAILED"
+    #: A connection test of S3 storage with no bucket named.
+    STORAGE_BUCKET_REQUIRED = "SETTINGS_STORAGE_BUCKET_REQUIRED"
+    #: The bucket could not be reached; the cause is in the server log.
+    STORAGE_CONNECTION_FAILED = "SETTINGS_STORAGE_CONNECTION_FAILED"
 
 
 class EvidenceMessages:

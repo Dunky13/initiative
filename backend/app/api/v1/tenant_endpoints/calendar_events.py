@@ -255,14 +255,20 @@ async def import_ical_events(
         )
 
     created = 0
-    for event in events:
+    for position, event in enumerate(events, start=1):
         try:
             async with session.begin_nested():
                 session.add(event)
                 await session.flush()
             created += 1
-        except Exception:
-            logger.exception("iCal import could not save event %r", event.title)
+        except Exception as exc:
+            logger.error(
+                "iCal import into calendar %s could not save event %s of %s (%s)",
+                calendar.id,
+                position,
+                len(events),
+                type(exc).__name__,
+            )
             errors.append(
                 ICalImportError(problem=ICalImportProblem.not_saved, title=event.title)
             )
