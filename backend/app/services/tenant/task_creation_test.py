@@ -60,11 +60,13 @@ async def test_adding_keeps_someone_put_on_since_the_task_was_read(
         ).bindparams(task=task.id, user=first.user.id)  # type: ignore[call-overload]
     )
 
-    await change_task_assignees(
+    added = await change_task_assignees(
         session, stale, add=[second.user.id], project=stale.project
     )
 
     assert {a.id for a in stale.assignees} == {first.user.id, second.user.id}
+    # Only who this change put on it is told they were assigned by it.
+    assert added == [second.user.id]
 
 
 async def test_removing_takes_off_only_who_it_names(session: AsyncSession, acting_user):
@@ -77,7 +79,7 @@ async def test_removing_takes_off_only_who_it_names(session: AsyncSession, actin
     )
 
     # Someone both added and removed is removed; adding who is on it is a no-op.
-    await change_task_assignees(
+    added = await change_task_assignees(
         session,
         loaded,
         add=[second.user.id, owner.user.id],
@@ -86,3 +88,4 @@ async def test_removing_takes_off_only_who_it_names(session: AsyncSession, actin
     )
 
     assert {a.id for a in loaded.assignees} == {second.user.id}
+    assert added == []

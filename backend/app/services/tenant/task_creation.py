@@ -177,20 +177,33 @@ async def change_task_assignees(
     add: Sequence[int] = (),
     remove: Sequence[int] = (),
     project: Project,
-) -> None:
+) -> list[int]:
     """Put people on a task and take others off, leaving whoever else is on
     it. Written as the change rather than as a new list, so two changes made
-    at once both land. Someone both added and removed is removed."""
+    at once both land. Someone both added and removed is removed.
+
+    Returns who this change put on the task: not anyone already on it, nor
+    anyone another change put on it meanwhile."""
     removing = set(remove)
     adding = [user_id for user_id in dict.fromkeys(add) if user_id not in removing]
     governing = named_people.Governing.of(Tool.project, project)
     await named_people.require_readers(session, governing, adding)
 
+    added: list[int] = []
     if adding:
-        await session.exec(
-            pg_insert(TaskAssignee)
-            .values([{"task_id": task.id, "user_id": user_id} for user_id in adding])
-            .on_conflict_do_nothing(index_elements=["task_id", "user_id"])
+        added = list(
+            (
+                await session.exec(
+                    pg_insert(TaskAssignee)
+                    .values(
+                        [{"task_id": task.id, "user_id": user_id} for user_id in adding]
+                    )
+                    .on_conflict_do_nothing(index_elements=["task_id", "user_id"])
+                    .returning(TaskAssignee.user_id)
+                )
+            )
+            .scalars()
+            .all()
         )
     if removing:
         removed = (
@@ -213,6 +226,7 @@ async def change_task_assignees(
 
     await session.flush()
     await session.refresh(task, attribute_names=["assignees"])
+    return added
 
 
 async def advance_recurrence_if_needed(

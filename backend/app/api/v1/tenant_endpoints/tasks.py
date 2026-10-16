@@ -28,7 +28,6 @@ from app.core.messages import ChecklistMessages, TaskMessages
 from app.db.query import build_paginated_response, paginated_query
 from app.db.session import routed_guild_id
 from app.models.platform.user import User
-from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.comment import Comment
 from app.models.tenant.project import Project
 from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
@@ -635,35 +634,36 @@ async def update_task(
         task, task.task_status.category if task.task_status else None, now=now
     )
 
-    new_assignees: list[MemberProfile] = []
-    if assignee_ids is not None:
+    new_assignee_ids: list[int] = []
+    if relative:
+        # Who this request put on the task, rather than whoever is on it now
+        # and wasn't when it was read: another change may have added them.
+        new_assignee_ids = await task_creation_service.change_task_assignees(
+            session,
+            task,
+            add=adding or [],
+            remove=removing or [],
+            project=project,
+        )
+    elif assignee_ids is not None:
         existing_assignee_ids = {assignee.id for assignee in task.assignees}
-        if relative:
-            await task_creation_service.change_task_assignees(
-                session,
-                task,
-                add=adding or [],
-                remove=removing or [],
-                project=project,
-            )
-        else:
-            await task_creation_service.set_task_assignees(
-                session, task, assignee_ids, project=project
-            )
-        new_assignees = [
-            assignee
+        await task_creation_service.set_task_assignees(
+            session, task, assignee_ids, project=project
+        )
+        new_assignee_ids = [
+            assignee.id
             for assignee in task.assignees
             if assignee.id not in existing_assignee_ids
         ]
 
-    if new_assignees:
+    if new_assignee_ids:
         assigned_by = await notifications_service.author_of(
             session, guild_context, current_user
         )
         await notifications_service.notify_assigned(
             session,
             task,
-            [assignee.id for assignee in new_assignees],
+            new_assignee_ids,
             assigned_by=assigned_by,
             project_name=project.name,
         )
