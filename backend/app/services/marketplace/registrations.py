@@ -74,7 +74,7 @@ from app.models.platform.publisher import (
 from app.services import audit as audit_service
 from app.services.marketplace.plugin_keys import (
     PRIVATE_JWK_MEMBERS,
-    PUBLIC_JWK_TYPES,
+    is_plugin_key,
     KeySetUnreadableError,
     jwk_thumbprint,
     jwks_uri_allowed,
@@ -362,11 +362,11 @@ def normalize_jwks(value: Optional[dict]) -> Optional[dict]:
                 f"two keys share the kid {kid!r}",
             )
         seen.add(kid)
-        if entry.get("kty") not in PUBLIC_JWK_TYPES:
+        if not is_plugin_key(entry):
             raise _bad_request(
                 PluginServiceMessages.INVALID_JWKS,
-                f"key {kid!r} is not a public key type "
-                f"({', '.join(sorted(PUBLIC_JWK_TYPES))})",
+                f"key {kid!r} is not an Ed25519 key (kty OKP, crv Ed25519): "
+                "a plug-in signs with Ed25519",
             )
         private = sorted(PRIVATE_JWK_MEMBERS.intersection(entry))
         if private:

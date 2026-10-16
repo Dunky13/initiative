@@ -624,7 +624,7 @@ class TestContextToken:
         claims = jwt.decode(
             header.removeprefix("Bearer "),
             options={"verify_signature": False},
-            algorithms=["RS256"],
+            algorithms=["EdDSA"],
         )
         # Named the way this install knows the guild, and by nothing else.
         assert claims["community_ref"] == await ensure_plugin_guild_ref(
@@ -709,7 +709,7 @@ class TestConnections:
         claims = jwt.decode(
             upstream.calls[0].headers["Authorization"].removeprefix("Bearer "),
             options={"verify_signature": False},
-            algorithms=["RS256"],
+            algorithms=["EdDSA"],
         )
         assert claims["connection_refs"] == {"github": "cr_alice"}
         assert str(a.user.id) not in str(claims.get("connection_refs"))
@@ -1894,7 +1894,7 @@ class TestActions:
         claims = jwt.decode(
             call.headers["Authorization"].removeprefix("Bearer "),
             options={"verify_signature": False},
-            algorithms=["RS256"],
+            algorithms=["EdDSA"],
         )
         assert claims["endpoint_id"] == LINK_ISSUE
         assert claims["subject"] == {"type": "task", "id": tasks["shared"]}

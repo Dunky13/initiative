@@ -22,7 +22,7 @@ import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from httpx import AsyncClient
 from sqlalchemy import delete, text, update
 from sqlmodel import select
@@ -83,6 +83,15 @@ PRIVATE_KEY_PEM = _KEY.private_bytes(
     serialization.PrivateFormat.PKCS8,
     serialization.NoEncryption(),
 ).decode()
+PLATFORM_KEY_PEM = (
+    ed25519.Ed25519PrivateKey.generate()
+    .private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    .decode()
+)
 PUBLIC_KEY_PEM = (
     _KEY.public_key()
     .public_bytes(
@@ -198,9 +207,10 @@ DEFINITION = {
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    """Initiative signs its hook calls with the plug-in platform's own key."""
+    """Initiative signs its hook calls with the plug-in platform's own key, an
+    Ed25519 key of its own (the RSA key above is the vendor's GitHub App key)."""
     monkeypatch.setattr(
-        settings, "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM", PRIVATE_KEY_PEM
+        settings, "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM", PLATFORM_KEY_PEM
     )
     monkeypatch.setattr(settings, "PLUGIN_PLATFORM_SIGNING_KEY_ID", "plugin-platform-1")
 

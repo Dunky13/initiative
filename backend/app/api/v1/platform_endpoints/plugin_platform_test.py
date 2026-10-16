@@ -10,7 +10,7 @@ simply not been wired up yet.
 
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
 
 from app.core.config import settings
@@ -20,7 +20,7 @@ from app.services.marketplace import context_jwt
 
 JWKS_URL = "/api/v1/plugin-platform/jwks.json"
 
-_keypair = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_keypair = ed25519.Ed25519PrivateKey.generate()
 _PRIVATE_PEM = _keypair.private_bytes(
     serialization.Encoding.PEM,
     serialization.PrivateFormat.PKCS8,
@@ -51,15 +51,16 @@ async def test_the_key_set_is_served_without_any_credential(
 
     keys = response.json()["keys"]
     assert len(keys) == 1
-    assert keys[0]["kty"] == "RSA"
-    assert keys[0]["alg"] == "RS256"
+    assert keys[0]["kty"] == "OKP"
+    assert keys[0]["crv"] == "Ed25519"
+    assert keys[0]["alg"] == "EdDSA"
     assert keys[0]["kid"] == "plugin-platform-1"
-    assert keys[0]["n"] and keys[0]["e"]
+    assert keys[0]["x"]
 
 
 async def test_it_never_serves_private_material(client: AsyncClient, configured):
     entry = (await client.get(JWKS_URL)).json()["keys"][0]
-    assert set(entry) <= {"kty", "use", "alg", "kid", "n", "e"}
+    assert set(entry) <= {"kty", "crv", "use", "alg", "kid", "x"}
 
 
 async def test_an_unconfigured_deployment_says_so_rather_than_publishing_nothing(

@@ -21,7 +21,11 @@ from app.core.config import settings
 from app.core.errors import CodedError
 from app.core.identify import bearer_token
 from app.core.messages import BillingMessages
-from app.core.security import PublicKeyBundleError, load_verification_keys
+from app.core.security import (
+    PUBLIC_KEY_JWT_ALGORITHM,
+    PublicKeyBundleError,
+    load_verification_keys,
+)
 from app.models.platform.billing import (
     BillingEventLog,
     BillingJti,
@@ -95,7 +99,7 @@ def verify_billing_envelope(
     """Verify the envelope on a billing call. Pure — no DB.
 
     Order: config presence, timestamp recency, HMAC over the raw body, then
-    the RS256 JWT. The one-shot ``jti`` redemption is not done here — it is
+    the EdDSA JWT. The one-shot ``jti`` redemption is not done here — it is
     a DB write and belongs inside the endpoint's transaction.
     """
     if not billing_inbound_enabled():
@@ -149,7 +153,7 @@ def verify_billing_envelope(
             payload = jwt.decode(
                 token,
                 key,
-                algorithms=["RS256"],
+                algorithms=[PUBLIC_KEY_JWT_ALGORITHM],
                 audience=BILLING_AUDIENCE,
                 issuer=BILLING_ISSUER,
                 options={"require": ["exp", "iat", "iss", "aud", "jti"]},

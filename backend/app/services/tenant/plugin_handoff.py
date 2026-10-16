@@ -2,7 +2,7 @@
 
 A page is a cross-origin iframe, so the token that bootstraps it crosses a
 trust boundary: the plug-in verifies it against the published public half of the
-plug-in platform's own keypair. That is why it is RS256 with a dedicated key, why
+plug-in platform's own keypair. That is why it is EdDSA with a dedicated key, why
 the audience names one registration, and why the lifetime is a minute.
 
 **Authorization is settled here, before a token exists.** The member's real
@@ -68,7 +68,7 @@ from app.core.security import (
     PluginPlatformSigningNotConfiguredError,
     plugin_platform_audience,
     resolve_plugin_platform_signing_material,
-    sign_rs256,
+    sign_eddsa,
 )
 from app.models.tenant.guild_plugin import GuildPlugin
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -278,7 +278,7 @@ async def mint_page_handoff(
             initiative_id in context.manager_initiatives
             and initiative_id in context.override_initiatives
         )
-    token = sign_rs256(payload, key, kid, typ=PLUGIN_HANDOFF_TOKEN_TYPE)
+    token = sign_eddsa(payload, key, kid, typ=PLUGIN_HANDOFF_TOKEN_TYPE)
 
     return PageHandoff(
         token=token,

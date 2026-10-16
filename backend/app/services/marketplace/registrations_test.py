@@ -55,20 +55,20 @@ def _signing_key(monkeypatch):
     )
 
 
-def _rsa_jwk(kid: str) -> dict:
+def _ed25519_jwk(kid: str) -> dict:
     """A usable public JWK, generated rather than pasted so the test asserts on
     the parser rather than on one frozen key."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from jwt.algorithms import RSAAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from jwt.algorithms import OKPAlgorithm
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    jwk = json.loads(RSAAlgorithm.to_jwk(key.public_key()))
+    key = ed25519.Ed25519PrivateKey.generate()
+    jwk = json.loads(OKPAlgorithm.to_jwk(key.public_key()))
     jwk["kid"] = kid
     return jwk
 
 
 def test_jwks_accepts_a_usable_key_set():
-    key_set = {"keys": [_rsa_jwk("auto.core-1")]}
+    key_set = {"keys": [_ed25519_jwk("auto.core-1")]}
     assert service.normalize_jwks(key_set) == key_set
 
 
@@ -78,7 +78,7 @@ def test_jwks_treats_empty_as_cleared():
 
 
 def test_jwks_requires_a_kid_on_every_key():
-    keyless = _rsa_jwk("dropped")
+    keyless = _ed25519_jwk("dropped")
     del keyless["kid"]
     with pytest.raises(HTTPException) as excinfo:
         service.normalize_jwks({"keys": [keyless]})
@@ -88,22 +88,49 @@ def test_jwks_requires_a_kid_on_every_key():
 
 def test_jwks_refuses_two_keys_sharing_a_kid():
     with pytest.raises(HTTPException) as excinfo:
-        service.normalize_jwks({"keys": [_rsa_jwk("same"), _rsa_jwk("same")]})
+        service.normalize_jwks({"keys": [_ed25519_jwk("same"), _ed25519_jwk("same")]})
     assert excinfo.value.detail == PluginServiceMessages.INVALID_JWKS
 
 
 def test_jwks_refuses_a_private_key():
     """The column is served in full to the owner's settings, so it holds the half
     that is meant to be read."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from jwt.algorithms import RSAAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from jwt.algorithms import OKPAlgorithm
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    private_jwk = json.loads(RSAAlgorithm.to_jwk(key))
+    key = ed25519.Ed25519PrivateKey.generate()
+    private_jwk = json.loads(OKPAlgorithm.to_jwk(key))
     private_jwk["kid"] = "pasted-the-whole-key"
 
     with pytest.raises(HTTPException) as excinfo:
         service.normalize_jwks({"keys": [private_jwk]})
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail == PluginServiceMessages.INVALID_JWKS
+
+
+@pytest.mark.parametrize("kind", ["rsa", "p-256"])
+def test_jwks_refuses_a_key_that_is_not_ed25519(kind):
+    """A plug-in signs with Ed25519; any other key is refused when registered,
+    not when it first fails to authenticate."""
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from jwt.algorithms import ECAlgorithm, RSAAlgorithm
+
+    if kind == "rsa":
+        jwk = json.loads(
+            RSAAlgorithm.to_jwk(
+                rsa.generate_private_key(
+                    public_exponent=65537, key_size=2048
+                ).public_key()
+            )
+        )
+    else:
+        jwk = json.loads(
+            ECAlgorithm.to_jwk(ec.generate_private_key(ec.SECP256R1()).public_key())
+        )
+    jwk["kid"] = "not-ed25519"
+
+    with pytest.raises(HTTPException) as excinfo:
+        service.normalize_jwks({"keys": [jwk]})
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == PluginServiceMessages.INVALID_JWKS
 
@@ -195,7 +222,7 @@ async def test_registration_fails_closed_without_a_signing_key(session, monkeypa
 async def test_create_stores_what_it_is_told(session):
     """Nothing is fetched: the id and the keys are the operator's, and the plug-in
     facts wait for its listing."""
-    key_set = {"keys": [_rsa_jwk("acme.widgets-1")]}
+    key_set = {"keys": [_ed25519_jwk("acme.widgets-1")]}
     row = await _create(session, jwks=key_set)
 
     assert row.public_id == "acme.widgets"
@@ -247,7 +274,7 @@ async def test_live_needs_a_key_set(session):
     await _create(
         session,
         public_id="acme.keyed",
-        jwks={"keys": [_rsa_jwk("acme.keyed-1")]},
+        jwks={"keys": [_ed25519_jwk("acme.keyed-1")]},
     )
     await _create(
         session,
@@ -300,11 +327,11 @@ async def test_moving_the_base_url_rechecks_the_key_set_address(session):
 
 
 async def test_keys_are_provisioned_and_cleared(session):
-    key_set = {"keys": [_rsa_jwk("acme.shopify-1")]}
+    key_set = {"keys": [_ed25519_jwk("acme.shopify-1")]}
     row = await _create(session, jwks=key_set)
     assert row.jwks == key_set
 
-    rotated = {"keys": [_rsa_jwk("acme.shopify-2")]}
+    rotated = {"keys": [_ed25519_jwk("acme.shopify-2")]}
     updated = await service.update_registration(session, row.id, jwks=rotated)
     assert updated.jwks == rotated
 
@@ -330,7 +357,7 @@ def _serving(*documents: dict):
 
 
 async def test_connect_shows_the_fingerprints_of_the_set_the_plugin_serves(session):
-    key = _rsa_jwk("acme.widgets-1")
+    key = _ed25519_jwk("acme.widgets-1")
     fetched, transport = _serving({"keys": [key]})
     row = await _create(session)
 
@@ -349,7 +376,7 @@ async def test_connect_pins_the_confirmed_set_in_place_of_a_key_set_address(
     session,
 ):
     base_url = "https://127.0.0.1:9443"
-    key_set = {"keys": [_rsa_jwk("acme.widgets-1")]}
+    key_set = {"keys": [_ed25519_jwk("acme.widgets-1")]}
     _fetched, transport = _serving(key_set)
     row = await _create(
         session, base_url=base_url, jwks_uri=f"{base_url}/.well-known/jwks.json"
@@ -374,7 +401,7 @@ def _renamed(key_set: dict, kid: str) -> dict:
     "now_served",
     [
         # Another key under the same kid.
-        lambda shown: {"keys": [_rsa_jwk("acme.widgets-1")]},
+        lambda shown: {"keys": [_ed25519_jwk("acme.widgets-1")]},
         # The same key under another kid.
         lambda shown: _renamed(shown, "acme.widgets-2"),
     ],
@@ -382,9 +409,9 @@ def _renamed(key_set: dict, kid: str) -> dict:
 async def test_connect_refuses_a_set_that_changed_since_it_was_shown(
     session, now_served
 ):
-    shown = {"keys": [_rsa_jwk("acme.widgets-1")]}
+    shown = {"keys": [_ed25519_jwk("acme.widgets-1")]}
     _fetched, transport = _serving(shown, now_served(shown))
-    row = await _create(session, jwks={"keys": [_rsa_jwk("acme.widgets-0")]})
+    row = await _create(session, jwks={"keys": [_ed25519_jwk("acme.widgets-0")]})
     confirmed = await service.published_keys(session, row.id, transport=transport)
 
     with pytest.raises(HTTPException) as excinfo:
@@ -401,7 +428,7 @@ async def test_connect_refuses_a_set_that_changed_since_it_was_shown(
 async def test_connect_refuses_when_the_base_url_moved_during_the_read(
     session, monkeypatch
 ):
-    key_set = {"keys": [_rsa_jwk("acme.widgets-1")]}
+    key_set = {"keys": [_ed25519_jwk("acme.widgets-1")]}
     row = await _create(session)
     registration_id = row.id
     (shown,) = await service.published_keys(

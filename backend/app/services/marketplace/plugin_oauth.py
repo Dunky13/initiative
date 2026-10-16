@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import jwt
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlalchemy import Row, TextClause, text
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
@@ -163,21 +163,10 @@ def token_endpoint_url() -> str:
 
 
 def _algorithm_for(key: Any) -> str | None:
-    """The one algorithm a key may verify with, decided by its type.
-
-    Ed25519 (EdDSA, RFC 8037) is the shape a deployment mints for the plug-ins
-    it runs: deterministic signatures, so no per-signature nonce whose reuse or
-    bias would give the key away. P-256 and RSA keys stay accepted for a
-    plug-in that holds one.
-    """
+    """The one algorithm a plug-in key verifies with: EdDSA, for the Ed25519
+    key every plug-in signs with (RFC 8037). Any other key verifies nothing."""
     if isinstance(key, ed25519.Ed25519PublicKey):
         return "EdDSA"
-    if isinstance(key, rsa.RSAPublicKey):
-        return "RS256"
-    if isinstance(key, ec.EllipticCurvePublicKey) and isinstance(
-        key.curve, ec.SECP256R1
-    ):
-        return "ES256"
     return None
 
 

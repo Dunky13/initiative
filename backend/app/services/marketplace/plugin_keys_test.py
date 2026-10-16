@@ -10,8 +10,8 @@ from types import MappingProxyType
 
 import httpx
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm
 
 from app.services.marketplace import plugin_keys
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
@@ -20,12 +20,12 @@ from app.services.marketplace.registration_lookup import RegistrationSnapshot
 BASE = "https://127.0.0.1:9443"
 JWKS_URI = f"{BASE}/.well-known/jwks.json"
 
-_published = ec.generate_private_key(ec.SECP256R1())
-_pasted = ec.generate_private_key(ec.SECP256R1())
+_published = ed25519.Ed25519PrivateKey.generate()
+_pasted = ed25519.Ed25519PrivateKey.generate()
 
 
 def _jwk(key, kid: str) -> dict:
-    entry = json.loads(ECAlgorithm.to_jwk(key.public_key()))
+    entry = json.loads(OKPAlgorithm.to_jwk(key.public_key()))
     entry["kid"] = kid
     return entry
 
@@ -68,7 +68,7 @@ async def test_a_published_key_is_found_by_its_kid():
     key = await plugin_keys.key_for(_snapshot(), "pub-1", transport=transport)
 
     assert key is not None
-    assert key.public_numbers() == _published.public_key().public_numbers()
+    assert key.public_bytes_raw() == _published.public_key().public_bytes_raw()
     assert fetched == [JWKS_URI]
 
 
@@ -144,22 +144,26 @@ def test_the_address_rule():
 
 
 def test_a_thumbprint_is_rfc_7638():
-    """The worked example in RFC 7638 §3.1: only the required members count,
-    in order, whatever else the key carries."""
+    """RFC 8037 §A.3: an Ed25519 key's thumbprint, over crv, kty and x only,
+    whatever else the key carries."""
     key = {
-        "kty": "RSA",
-        "n": (
-            "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFx"
-            "uhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_R"
-            "N5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvR"
-            "L5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_x"
-            "BniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
-        ),
-        "e": "AQAB",
-        "alg": "RS256",
-        "kid": "2011-04-29",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+        "kid": "ignored",
+        "use": "sig",
     }
 
     assert (
-        plugin_keys.jwk_thumbprint(key) == "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
+        plugin_keys.jwk_thumbprint(key) == "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
     )
+
+
+async def test_a_published_key_that_is_not_ed25519_is_left_out():
+    p256 = json.loads(
+        ECAlgorithm.to_jwk(ec.generate_private_key(ec.SECP256R1()).public_key())
+    )
+    p256["kid"] = "p256-1"
+    _fetched, transport = _serving({"keys": [p256]})
+
+    assert await plugin_keys.key_for(_snapshot(), "p256-1", transport=transport) is None

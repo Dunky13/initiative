@@ -1,7 +1,7 @@
 """``POST /api/v1/billing/community-notice``: billing asks for a fixed notice
 to reach a community's owner.
 
-Pinned: the same double envelope as the tier write (HMAC + one-shot RS256
+Pinned: the same double envelope as the tier write (HMAC + one-shot EdDSA
 jti); exactly-once per ``event_id`` via ``billing_event_log``; only Paddle's
 source and the two trial kinds; the owner billing names while they are still
 a member, else the community's superadmins; nothing for a deleted community;

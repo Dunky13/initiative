@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlsplit
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -66,10 +66,10 @@ from app.testing import (
 SERVICE_ID = "tests.widgetco"
 SERVICE_UID = marketplace_uid("widgetco")
 
-# Generated once for this module: the mint needs a real RS256 key, and a
+# Generated once for this module: the mint needs a real Ed25519 key, and a
 # deployment's own keypair is the one thing it will not improvise.
 _SIGNING_KEY_PEM = (
-    rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    ed25519.Ed25519PrivateKey.generate()
     .private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
