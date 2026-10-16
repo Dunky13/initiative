@@ -213,6 +213,32 @@ async def test_a_failed_send_keeps_its_timer(session: AsyncSession, monkeypatch)
     assert due > datetime.now(timezone.utc)
 
 
+async def test_a_next_timer_that_fails_to_save_keeps_the_claimed_one(
+    session: AsyncSession, monkeypatch
+):
+    _author, _initiative, community_id = await _community(session)
+    await _due_now(session, community_id, "reminders")
+
+    async def found(_session, _guild_id):
+        return datetime.now(timezone.utc) + timedelta(hours=1)
+
+    async def sent():
+        return None
+
+    async def scan(*, now):
+        return Scan(Scope.LIVE, found, sent)
+
+    async def fails(*_args, **_kwargs):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(notifications, "reminder_scan", scan)
+    monkeypatch.setattr(sweep_timers, "_arm_next", fails)
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, due)] = await _timers(session, "reminders")
+    assert due > datetime.now(timezone.utc)
+
+
 async def test_reconcile_arms_what_no_write_did_and_counts_it(session: AsyncSession):
     author, initiative, community_id = await _community(session)
     await _scheduled(session, initiative, author, due_in=timedelta(hours=2))

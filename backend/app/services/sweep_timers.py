@@ -736,18 +736,20 @@ def _visit_and_rearm(
         await session.commit()
         answered = await visit(session, guild_id)
         await session.commit()
-        if finishing is not None:
+        if finishing is not None and not sweep.answers:
             finishing[guild_id] = ids
-            if not sweep.answers:
-                return
+            return
         due = (
             answered
             if sweep.answers
             else await _next_due(session, sweep, datetime.now(timezone.utc))
         )
         await _arm_next(session, guild_id, sweep, due)  # type: ignore[arg-type]
+        # Only once the next timer is saved.
         if finishing is None:
             done.update(ids)
+        else:
+            finishing[guild_id] = ids
 
     return run
 
