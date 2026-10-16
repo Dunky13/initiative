@@ -1,9 +1,11 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  GetTagEntitiesParams,
   TagCreate,
+  TagEntityCountsResponse,
   TaggedEntitiesResponse,
   TagRead,
   TagUpdate,
@@ -11,10 +13,12 @@ import type {
 import {
   createTag,
   deleteTag,
+  getGetTagCountsQueryKey,
   getGetTagEntitiesQueryKey,
   getGetTagQueryKey,
   getListTagsQueryKey,
   getTag,
+  getTagCounts,
   getTagEntities,
   listTags,
   updateTag,
@@ -146,12 +150,26 @@ export const useDeleteTag = (
   });
 };
 
-export const useTagEntities = (tagId: number | null) => {
+/** How many things of each taggable kind carry the tag, keyed by kind — the
+ *  tag page's tabs, before any of their tables is read. */
+export const useTagCounts = (tagId: number | null) => {
   const communityId = useActiveCommunityId();
-  return useQuery<TaggedEntitiesResponse>({
-    queryKey: getGetTagEntitiesQueryKey(communityId, tagId!),
-    queryFn: () => getTagEntities(communityId, tagId!),
+  return useQuery<TagEntityCountsResponse>({
+    queryKey: getGetTagCountsQueryKey(communityId, tagId!),
+    queryFn: () => getTagCounts(communityId, tagId!),
     enabled: !!tagId,
     staleTime: 30 * 1000,
+  });
+};
+
+/** One page of the things of one kind carrying the tag. The page in hand stays
+ *  up while the next one is read. */
+export const useTagEntities = (tagId: number, params: GetTagEntitiesParams) => {
+  const communityId = useActiveCommunityId();
+  return useQuery<TaggedEntitiesResponse>({
+    queryKey: getGetTagEntitiesQueryKey(communityId, tagId, params),
+    queryFn: () => getTagEntities(communityId, tagId, params),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
   });
 };

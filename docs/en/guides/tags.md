@@ -27,7 +27,7 @@ Done. It's attached, and now available everywhere else too.
 - **Filter by tag** on a list — tasks in a **Table** view, and most tool lists under **Filters**.
 - The **Tags** view on a tool's list browses it by the tag tree. See [Tools](tools.md#lists).
 - The **Tags** tab in the sidebar lists every tag in the community.
-- A tag's **detail page** shows everything carrying it, with one tab per kind of tool and how many are in each. A tagged task sits under **Projects**, a tagged page under **Wikis**.
+- A tag's **detail page** shows everything carrying it, with one tab per kind of tool and how many are in each. A tab has a table of the tools themselves, which you can search and sort, and one for each kind of thing inside them: a tagged task is in **Tasks** on the **Projects** tab, a tagged page in **Pages** on **Wikis**. Every table shows a page at a time, so a tag on thousands of things opens as quickly as one on a few.
 
 ![Everything sharing a tag](../images/tags/tag-detail.png)
 

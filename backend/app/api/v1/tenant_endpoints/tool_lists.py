@@ -1141,7 +1141,7 @@ def _mount_list(spec: ToolListSpec) -> None:
     )
 
 
-async def _view_conditions(
+async def view_conditions(
     spec: ToolListSpec,
     session: AsyncSession,
     current_user: User,
@@ -1174,7 +1174,7 @@ async def get_tool_counts_by_initiative(
     selects = [
         select(literal(spec.tool.value), spec.model.initiative_id, func.count())
         .where(
-            *await _view_conditions(
+            *await view_conditions(
                 spec, session, current_user, guild_context, **spec.views["active"]
             )
         )
@@ -1247,7 +1247,7 @@ async def get_tool_counts(
             union_all(
                 *[
                     select(literal(name), func.count()).where(
-                        *await _view_conditions(
+                        *await view_conditions(
                             spec,
                             session,
                             current_user,
@@ -1265,7 +1265,7 @@ async def get_tool_counts(
         return ToolCountsResponse(views=dict(view_counts))
 
     shown = select(spec.model.id).where(
-        *await _view_conditions(
+        *await view_conditions(
             spec,
             session,
             current_user,

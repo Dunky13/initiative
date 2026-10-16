@@ -10197,6 +10197,16 @@ export interface TagCreate {
   color?: string;
 }
 
+export type TagEntityCountsResponseCounts = { [key: string]: number };
+
+/**
+ * Response for GET /tags/{id}/counts — how many things of each taggable
+ * kind carry the tag, keyed by kind. A kind with none is absent.
+ */
+export interface TagEntityCountsResponse {
+  counts: TagEntityCountsResponseCounts;
+}
+
 export interface TagRead {
   /**
    * @minLength 1
@@ -10225,12 +10235,32 @@ export interface TagUpdate {
 }
 
 /**
- * Response for GET /tags/{id}/entities — everything carrying a tag, of
- * every taggable kind. Each item names itself and the tool it lives in, the
- * shape a search hit already has.
+ * One thing carrying a tag: a search hit's address, plus the name of the
+ * tool it lives in and when it last changed, which a table of them shows.
+ */
+export interface TaggedEntity {
+  entity_type: SearchEntityType;
+  entity_id: number;
+  title: string;
+  snippet: string | null;
+  initiative_id: number | null;
+  tool: Tool | null;
+  tool_id: number | null;
+  tool_title: string;
+  updated_at: string | null;
+}
+
+/**
+ * Response for GET /tags/{id}/entities — one page of the things of one
+ * taggable kind carrying a tag.
  */
 export interface TaggedEntitiesResponse {
-  items: SearchHit[];
+  total_count: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  has_prev: boolean;
+  items: TaggedEntity[];
 }
 
 /**
@@ -12984,6 +13014,22 @@ export type GetTagParams = {
    * Also return the resource if it is in the trash. For reading a resource back after a deleted event — the row still exists until retention purges it, and access is checked exactly as for a live one.
    */
   include_deleted?: boolean;
+};
+
+export type GetTagEntitiesParams = {
+  /**
+   * The taggable kind to list
+   */
+  kind: TagTarget;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
 };
 
 export type SearchCommunityParams = {
