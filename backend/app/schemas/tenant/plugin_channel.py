@@ -25,7 +25,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import ConfigDict, Field
+from pydantic import AwareDatetime, ConfigDict, Field
 
 from app.core.tools import METADATA_TARGETS
 from app.schemas.base import SanitizedBaseModel
@@ -197,3 +197,29 @@ class PluginMetadataValues(SanitizedBaseModel):
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     values: Dict[str, Any] = {}
+
+
+class PluginEntitlementRead(SanitizedBaseModel):
+    """The entitlement statement held for the install's community and
+    listing: the issuer's version and the plug-in's own values."""
+
+    version: int
+    values: Dict[str, Any]
+
+
+class PluginUsageReport(SanitizedBaseModel):
+    """A period's cumulative total for one meter, as the plug-in counted it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quantity: int = Field(ge=0, le=2**63 - 1, strict=True)
+    #: When the total was counted.
+    as_of: AwareDatetime
+
+
+class PluginUsageRead(SanitizedBaseModel):
+    """The total held for one meter and period after a report."""
+
+    meter: str
+    period: str
+    quantity: int

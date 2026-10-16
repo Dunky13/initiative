@@ -7,15 +7,17 @@ excluded from the OpenAPI schema.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.core.messages import BillingMessages
 from app.models.platform.billing import BillingSource
 from app.models.platform.identity_ref import REF_MAX_LENGTH
+from app.models.platform.marketplace import UID_LENGTH
 from app.models.platform.guild import BILLING_SETTABLE_STATUSES, CommunityStatus
 from app.schemas.base import SanitizedBaseModel
 
@@ -212,3 +214,43 @@ class BillingPortalHandoffResponse(SanitizedBaseModel):
 
     handoff_token: str
     expires_in_seconds: int
+
+
+#: The most a statement's values may weigh, serialized.
+MAX_ENTITLEMENT_VALUES_BYTES = 16 * 1024
+#: The highest version a statement may carry: a JSON number every client reads
+#: exactly.
+MAX_ENTITLEMENT_VERSION = 2**53 - 1
+
+
+class BillingPluginEntitlementApply(SanitizedBaseModel):
+    """Body of ``POST /billing/plugin-entitlement``.
+
+    The current statement for one (community, listing): ``values`` is a flat
+    object whose keys belong to the plug-in, and ``version`` rises with every
+    change. A version no higher than the one held changes nothing, so a replay,
+    a retry or a full re-send is harmless.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
+    listing_uid: str = Field(min_length=UID_LENGTH, max_length=UID_LENGTH)
+    version: int = Field(ge=1, le=MAX_ENTITLEMENT_VERSION, strict=True)
+    values: dict[str, Any]
+
+    @field_validator("values")
+    @classmethod
+    def _bounded(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(value, separators=(",", ":"))) > MAX_ENTITLEMENT_VALUES_BYTES:
+            raise ValueError("values is too large")
+        return value
+
+
+class BillingPluginEntitlementRead(SanitizedBaseModel):
+    """What the deployment holds after the verb: the stored version, and
+    whether this statement replaced it."""
+
+    listing_uid: str
+    version: int
+    applied: bool

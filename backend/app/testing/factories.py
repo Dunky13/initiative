@@ -20,7 +20,7 @@ import base64
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from jwt.algorithms import ECAlgorithm
@@ -1445,6 +1445,39 @@ async def create_marketplace_listing(
     if commit:
         await session.commit()
         await session.refresh(listing)
+    return listing
+
+
+async def create_listing_with_terms(
+    session: AsyncSession,
+    *,
+    uid: str,
+    public_id: str,
+    access: str,
+    mandatory: bool = False,
+    meters: Sequence[str] = (),
+    **overrides: Any,
+) -> MarketplaceListing:
+    """A plug-in listing as the registry carries one a package names terms for.
+
+    Published like any listing, then given the registry's source and the
+    terms a refresh writes from the ``package`` role. A test honouring them
+    also patches ``tuf_registry.configured_root_is_builtin`` to answer true.
+    """
+    overrides.setdefault(
+        "definition",
+        {"plugin_kind": "service", "service": {"public_id": public_id}},
+    )
+    listing = await create_marketplace_listing(
+        session, uid=uid, public_id=public_id, kind="plugin", commit=False, **overrides
+    )
+    listing.source = "registry"
+    listing.access = access
+    listing.mandatory = mandatory
+    listing.meters = list(meters)
+    session.add(listing)
+    await session.commit()
+    await session.refresh(listing)
     return listing
 
 

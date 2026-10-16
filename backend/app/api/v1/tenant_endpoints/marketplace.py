@@ -45,6 +45,8 @@ from app.schemas.platform.marketplace import (
     ListingKind,
     ListingSource,
     ListingStartFrom,
+    ListingUnavailable,
+    ListingUnavailableReason,
     MarketplaceInstallRequest,
     MarketplaceInstallResult,
     MarketplaceListingCaller,
@@ -55,7 +57,7 @@ from app.schemas.platform.marketplace import (
     serialize_listing_summary,
 )
 from app.services.marketplace import catalog as catalog_service
-from app.services.marketplace import registration_lookup
+from app.services.marketplace import plugin_entitlements, registration_lookup
 from app.services.marketplace.definitions import TOOL_LISTING_KINDS
 from app.services.marketplace.installs import (
     count_install,
@@ -90,6 +92,16 @@ router = APIRouter()
 MAX_PAGE_SIZE = 100
 
 
+def _unavailable(guild_id: int, uid: str, gated: set[str]) -> ListingUnavailable | None:
+    """Why this community cannot install listing ``uid`` yet, if it cannot."""
+    if uid not in gated:
+        return None
+    return ListingUnavailable(
+        reason=ListingUnavailableReason.entitlement_required,
+        action_url=plugin_entitlements.action_url(guild_id, uid),
+    )
+
+
 @router.get("/listings", response_model=MarketplaceListingPage)
 async def list_marketplace_listings(
     session: RLSSessionDep,
@@ -121,11 +133,18 @@ async def list_marketplace_listings(
     versions = await catalog_service.get_listing_versions(
         session, [listing.latest_version_id for listing in listings]
     )
+    gated = await plugin_entitlements.gated_listings(guild_context.guild_id, listings)
     return MarketplaceListingPage(
         **build_paginated_response(
             [
                 serialize_listing_summary(
                     listing, versions.get(listing.latest_version_id)
+                ).model_copy(
+                    update={
+                        "unavailable": _unavailable(
+                            guild_context.guild_id, listing.uid, gated
+                        )
+                    }
                 )
                 for listing in listings
             ],
@@ -157,7 +176,13 @@ async def _detail(session, listing: MarketplaceListing) -> MarketplaceListingDet
             status_code=status.HTTP_404_NOT_FOUND,
             detail=MarketplaceMessages.LISTING_NOT_FOUND,
         )
+    guild_id = routed_guild_id(session)
     summary = serialize_listing_summary(listing, latest)
+    summary.unavailable = _unavailable(
+        guild_id,
+        listing.uid,
+        await plugin_entitlements.gated_listings(guild_id, [listing]),
+    )
     definition = dict(latest.definition) if latest else {}
     # What the install dialog asks the seat about, from the version it would
     # install and the registration's ceiling. Empty for anything not a plug-in.

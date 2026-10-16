@@ -34,7 +34,15 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from sqlalchemy import func, union
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import select
@@ -56,6 +64,7 @@ from app.api.deps import (
     CurrentUser,
 )
 from app.core.audit_events import AuditEventType
+from app.core.rate_limit import limiter
 from app.core.plugin_scopes import plugin_scope_target
 from app.core.messages import (
     GuildPluginMessages,
@@ -88,6 +97,7 @@ from app.schemas.tenant.guild_plugin import (
     CommunityPluginListResponse,
     CommunityPluginMembersResponse,
     CommunityPluginRead,
+    CommunityPluginUninstallNotice,
     CommunityPluginUpdate,
     CommunityPluginUpgrade,
     serialize_consent,
@@ -98,10 +108,11 @@ from app.schemas.tenant.guild_plugin import (
     upgrade_asks_read,
 )
 from app.services import audit as audit_service
+from app.services.platform import billing_ping
 from app.services.marketplace import plugin_installs as plugin_installs_service
 from app.services.marketplace import plugin_refs
 from app.services.marketplace import catalog as catalog_service
-from app.services.marketplace import registration_lookup
+from app.services.marketplace import plugin_entitlements, registration_lookup
 from app.services.marketplace.definitions import (
     PLUGIN_KINDS,
     GUILD_INSTALLABLE_PLUGIN_KINDS,
@@ -525,6 +536,13 @@ async def install_community_plugin(
     listing, version = await resolve_listing_install(
         session, payload.listing_uid, kind="plugin"
     )
+    if await plugin_entitlements.entitlement_blocks(
+        guild_context.guild_id, listing.uid, session
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ENTITLEMENT_REQUIRED,
+        )
 
     existing = (
         await session.exec(
@@ -829,6 +847,46 @@ async def update_community_plugin(
     await session.refresh(plugin)
     await plugin_installs_service.record(guild_context.guild_id, plugin)
     return await _read(session, plugin, guild_context, viewer)
+
+
+@router.get(
+    "/{plugin_id}/uninstall-notice", response_model=CommunityPluginUninstallNotice
+)
+@limiter.limit("30/minute")
+async def read_uninstall_notice(
+    request: Request,
+    plugin_id: int,
+    session: SeatSessionDep,
+    guild_context: SeatContextDep,
+    locale: Annotated[
+        str, Query(max_length=35, pattern=r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
+    ] = "en",
+) -> CommunityPluginUninstallNotice:
+    """What the removal dialog says about this plug-in beyond the usual.
+
+    For a plug-in whose listing carries package terms, the entitlement issuer
+    is asked, for this response only and within two seconds, what removing it
+    means for this community; its sentence comes back as it gave it. Anything
+    else is ``managed: false``. Read by the seat, which is who removes one.
+    """
+    plugin = await _load(session, plugin_id)
+    listing_uid = plugin.listing_uid
+    if (
+        not listing_uid
+        or await plugin_entitlements.listing_terms(listing_uid, session) is None
+    ):
+        return CommunityPluginUninstallNotice()
+    notice = await billing_ping.plugin_uninstall_notice(
+        guild_context.guild_id, listing_uid=listing_uid, locale=locale
+    )
+    fallback = plugin_entitlements.action_url(guild_context.guild_id, listing_uid)
+    if notice is None:
+        return CommunityPluginUninstallNotice(managed=True, action_url=fallback)
+    return CommunityPluginUninstallNotice(
+        managed=True,
+        message=notice.message,
+        action_url=notice.action_url or fallback,
+    )
 
 
 @router.delete("/{plugin_id}", status_code=status.HTTP_204_NO_CONTENT)
