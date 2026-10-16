@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import AwareDatetime, ConfigDict, Field
 
 from app.core.tools import METADATA_TARGETS
-from app.schemas.base import SanitizedBaseModel
+from app.schemas.base import RawTextStr, SanitizedBaseModel
 
 __all__ = [
     "MetadataTarget",
@@ -201,10 +201,11 @@ class PluginMetadataValues(SanitizedBaseModel):
 
 class PluginEntitlementRead(SanitizedBaseModel):
     """The entitlement statement held for the install's community and
-    listing: the issuer's version and the plug-in's own values."""
+    listing: the compact JWS the issuer signed, exactly as it was sent. The
+    plug-in verifies it with the issuer's key and reads ``version`` and
+    ``values`` from its claims."""
 
-    version: int
-    values: Dict[str, Any]
+    statement: RawTextStr
 
 
 class PluginUsageReport(SanitizedBaseModel):

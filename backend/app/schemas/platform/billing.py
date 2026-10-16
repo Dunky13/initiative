@@ -7,19 +7,28 @@ excluded from the OpenAPI schema.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from datetime import date
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.core.messages import BillingMessages
 from app.models.platform.billing import BillingSource
 from app.models.platform.identity_ref import REF_MAX_LENGTH
 from app.models.platform.marketplace import UID_LENGTH
 from app.models.platform.guild import BILLING_SETTABLE_STATUSES, CommunityStatus
-from app.schemas.base import SanitizedBaseModel
+from app.schemas.base import RawTextStr, SanitizedBaseModel
 
 
 _ACTOR_REQUIRED_SOURCES = frozenset(
@@ -221,23 +230,42 @@ MAX_ENTITLEMENT_VALUES_BYTES = 16 * 1024
 #: The highest version a statement may carry: a JSON number every client reads
 #: exactly.
 MAX_ENTITLEMENT_VERSION = 2**53 - 1
+#: The most a whole signed statement may weigh: its values at their bound,
+#: base64url-encoded, with room for the header, the other claims and the
+#: signature.
+MAX_ENTITLEMENT_STATEMENT_BYTES = 32 * 1024
+#: The only header a statement is taken under.
+ENTITLEMENT_STATEMENT_ALG = "EdDSA"
+ENTITLEMENT_STATEMENT_TYPE = "initiative-entitlement+jwt"
+#: Who issues statements.
+ENTITLEMENT_STATEMENT_ISSUER = "initiative-billing"
+#: An Ed25519 signature's length in bytes.
+_ED25519_SIGNATURE_BYTES = 64
 
 
-class BillingPluginEntitlementApply(SanitizedBaseModel):
-    """Body of ``POST /billing/plugin-entitlement``.
+class EntitlementStatementClaims(SanitizedBaseModel):
+    """What a signed entitlement statement says: the current statement for one
+    (community, listing). ``values`` is a flat object whose keys belong to the
+    plug-in, and ``version`` rises with every change.
 
-    The current statement for one (community, listing): ``values`` is a flat
-    object whose keys belong to the plug-in, and ``version`` rises with every
-    change. A version no higher than the one held changes nothing, so a replay,
-    a retry or a full re-send is harmless.
+    Claims this deployment does not read (``iat``, ``kid`` in the header) are
+    left to the plug-in, which verifies the whole statement.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-    listing_uid: str = Field(min_length=UID_LENGTH, max_length=UID_LENGTH)
+    iss: str = Field(strict=True)
+    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH, strict=True)
+    listing_uid: str = Field(min_length=UID_LENGTH, max_length=UID_LENGTH, strict=True)
     version: int = Field(ge=1, le=MAX_ENTITLEMENT_VERSION, strict=True)
-    values: dict[str, Any]
+    values: dict[str, Any] = Field(strict=True)
+
+    @field_validator("iss")
+    @classmethod
+    def _issued_by_billing(cls, value: str) -> str:
+        if value != ENTITLEMENT_STATEMENT_ISSUER:
+            raise ValueError("iss is not the issuer")
+        return value
 
     @field_validator("values")
     @classmethod
@@ -245,6 +273,80 @@ class BillingPluginEntitlementApply(SanitizedBaseModel):
         if len(json.dumps(value, separators=(",", ":"))) > MAX_ENTITLEMENT_VALUES_BYTES:
             raise ValueError("values is too large")
         return value
+
+
+def _b64url(segment: str) -> bytes:
+    """One compact-JWS segment, decoded: unpadded base64url and nothing else."""
+    if not segment or "=" in segment:
+        raise ValueError("not a base64url segment")
+    return base64.b64decode(
+        segment + "=" * (-len(segment) % 4), altchars=b"-_", validate=True
+    )
+
+
+def _json_object(segment: str) -> dict[str, Any]:
+    def _refuse_constant(name: str) -> None:
+        raise ValueError(f"{name} is not JSON")
+
+    decoded = json.loads(_b64url(segment), parse_constant=_refuse_constant)
+    if not isinstance(decoded, dict):
+        raise ValueError("not a JSON object")
+    return decoded
+
+
+def read_entitlement_statement(statement: str) -> EntitlementStatementClaims:
+    """The claims of a compact-JWS entitlement statement, read without checking
+    its signature, which is the plug-in's to verify.
+
+    Raises ``ValueError`` unless the header is exactly
+    :data:`ENTITLEMENT_STATEMENT_ALG` with :data:`ENTITLEMENT_STATEMENT_TYPE`,
+    the signature segment is the length of an Ed25519 signature, and the claims
+    hold everything :class:`EntitlementStatementClaims` names.
+    """
+    try:
+        parts = statement.split(".")
+        if len(parts) != 3:
+            raise ValueError("not a compact JWS")
+        header_segment, claims_segment, signature_segment = parts
+        header = _json_object(header_segment)
+        if (
+            header.get("alg") != ENTITLEMENT_STATEMENT_ALG
+            or header.get("typ") != ENTITLEMENT_STATEMENT_TYPE
+        ):
+            raise ValueError("not an entitlement statement header")
+        if len(_b64url(signature_segment)) != _ED25519_SIGNATURE_BYTES:
+            raise ValueError("not an Ed25519 signature")
+        return EntitlementStatementClaims.model_validate(_json_object(claims_segment))
+    except (ValueError, binascii.Error, UnicodeDecodeError, ValidationError) as exc:
+        raise ValueError(BillingMessages.INVALID_STATEMENT) from exc
+
+
+class BillingPluginEntitlementApply(SanitizedBaseModel):
+    """Body of ``POST /billing/plugin-entitlement``: one signed statement.
+
+    ``statement`` is a compact JWS the issuer signed; everything the verb acts
+    on comes from its claims (:attr:`claims`), and the statement itself is kept
+    and handed to the plug-in exactly as sent. A version no higher than the
+    one held changes nothing, so a replay, a retry or a full re-send is
+    harmless.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    statement: RawTextStr = Field(
+        min_length=1, max_length=MAX_ENTITLEMENT_STATEMENT_BYTES, strict=True
+    )
+    _claims: Optional[EntitlementStatementClaims] = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _read_claims(self) -> "BillingPluginEntitlementApply":
+        self._claims = read_entitlement_statement(self.statement)
+        return self
+
+    @property
+    def claims(self) -> EntitlementStatementClaims:
+        assert self._claims is not None  # set by the validator
+        return self._claims
 
 
 class BillingPluginEntitlementRead(SanitizedBaseModel):
