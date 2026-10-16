@@ -14,11 +14,11 @@ export const Route = createFileRoute("/_serverRequired/_authenticated/profile/ac
 });
 
 function AccountPage() {
-  const { user, refreshUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   if (!user) return null;
   return (
     <Suspense fallback={null}>
-      <UserSettingsAccountPage user={user} refreshUser={refreshUser} logout={logout} />
+      <UserSettingsAccountPage user={user} logout={logout} />
     </Suspense>
   );
 }

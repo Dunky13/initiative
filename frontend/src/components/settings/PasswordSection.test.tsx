@@ -1,5 +1,5 @@
 /**
- * The password area of the account page.
+ * The password section of the security page.
  *
  * Two things it has to get right. Which question it asks: an account that
  * holds a password is changing one and is asked for the old; an account that
@@ -10,9 +10,11 @@
  */
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildUser } from "@/__tests__/factories";
+import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
 import type { UserRead } from "@/api/generated/initiativeAPI.schemas";
 
@@ -22,13 +24,6 @@ const mocks = vi.hoisted(() => ({
   removeAnswer: vi.fn(),
   update: vi.fn(),
   refreshUser: vi.fn(),
-  logout: vi.fn(),
-}));
-
-// The addresses above the password form are their own surface, with their own
-// requests and their own test.
-vi.mock("@/components/settings/AddressManager", () => ({
-  AddressManager: () => null,
 }));
 
 vi.mock("@/hooks/useUsers", () => ({
@@ -36,7 +31,6 @@ vi.mock("@/hooks/useUsers", () => ({
     mocks.update(options);
     return { mutate: vi.fn(), isPending: false };
   },
-  useDeleteOwnAccount: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/api/generated/auth/auth", () => ({
@@ -54,7 +48,7 @@ vi.mock("@/api/generated/auth/auth", () => ({
   }),
 }));
 
-import { UserSettingsAccountPage } from "./UserSettingsAccountPage";
+import { PasswordSection } from "./PasswordSection";
 
 const holding = (count: number, rest: Record<string, unknown> = {}) => ({
   data: {
@@ -73,12 +67,10 @@ const render = async (
   options: Parameters<typeof renderPage>[1] = {}
 ) => {
   const result = renderPage(
-    () => (
-      <UserSettingsAccountPage user={user} refreshUser={mocks.refreshUser} logout={mocks.logout} />
-    ),
+    () => <PasswordSection user={user} refreshUser={mocks.refreshUser} />,
     options
   );
-  await screen.findByText("Username");
+  await screen.findByLabelText(/new password/i);
   return result;
 };
 
@@ -94,7 +86,7 @@ const giveUpPassword = async (user: ReturnType<typeof userEvent.setup>) => {
   );
 };
 
-describe("UserSettingsAccountPage", () => {
+describe("PasswordSection", () => {
   beforeEach(() => {
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.passkeys.mockReturnValue(holding(1));
@@ -174,5 +166,19 @@ describe("UserSettingsAccountPage", () => {
     expect(screen.getByLabelText(/new password/i)).toBeInTheDocument();
     // Nothing on the page reads the list, so nothing asks for it.
     expect(mocks.passkeys).toHaveBeenCalledWith({ query: { enabled: false } });
+  });
+
+  it("is left out where this deployment signs nobody in with a password", async () => {
+    let configServed = false;
+    server.use(
+      http.get("/api/v1/config", () => {
+        configServed = true;
+        return HttpResponse.json({ login_methods: ["passkey"] });
+      })
+    );
+    renderPage(() => <PasswordSection user={buildUser()} refreshUser={mocks.refreshUser} />);
+
+    await waitFor(() => expect(configServed).toBe(true));
+    await waitFor(() => expect(screen.queryByLabelText(/new password/i)).not.toBeInTheDocument());
   });
 });
