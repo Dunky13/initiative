@@ -2,11 +2,11 @@
 
 Each record states its own rule beside its own code: how long the change log
 keeps events, which delivery records go with them, which recent views a person
-no longer keeps. :func:`prepare` runs every rule in order, in one visit per
-community and one transaction, from the hourly pass. Each rule is one
-statement. Most are a probe of an index when nothing is due; the recent-views
-rule ranks the community's views every time, which is one row per person per
-thing they opened.
+no longer keeps, which sent reminders are past their event. :func:`prepare`
+runs every rule in order, in one visit per community and one transaction, from
+the hourly pass. Each rule is one statement. Most are a probe of an index when
+nothing is due; the recent-views rule ranks the community's views every time,
+which is one row per person per thing they opened.
 
 Rules run wherever the community's schema exists, whatever its status: how long
 something is kept does not wait for the community to be active again.
@@ -45,6 +45,7 @@ Rule = Callable[[AsyncSession, Expiring], Awaitable[None]]
 def _rules() -> tuple[Rule, ...]:
     """Every rule, in the order they run: a record that goes with another runs
     after it."""
+    from app.services import notifications
     from app.services.tenant import (
         change_log,
         outbox_poller,
@@ -57,6 +58,7 @@ def _rules() -> tuple[Rule, ...]:
         outbox_poller.expire_deliveries,
         plugin_hooks.expire_deliveries,
         recent_views.expire,
+        notifications.expire_reminder_dispatches,
     )
 
 
