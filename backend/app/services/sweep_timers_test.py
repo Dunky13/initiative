@@ -17,7 +17,9 @@ from app.core.config import settings
 from app.db import cohorts, timers
 from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.models.platform.community_timer import CommunityTimer
+from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.post import Post
+from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.webhook_subscription import WebhookSubscription
@@ -134,6 +136,36 @@ async def test_a_timer_due_at_once_wakes_the_worker(session: AsyncSession, monke
         await asyncio.wait_for(woken.wait(), timeout=10)
     finally:
         await listener.close()
+
+
+async def test_work_brought_back_arms_its_sweep(session: AsyncSession):
+    """A done status reopened, and updates switched back on."""
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    await create_task(session, project, status_category=TaskStatusCategory.done)
+    plugin = await create_guild_plugin(
+        session,
+        await session.get(Guild, community_id),
+        author,
+        definition={
+            "plugin_kind": "service",
+            "service": {"public_id": "tests.reopen", "protocol": 1},
+        },
+        auto_update=False,
+    )
+
+    await _as_community(
+        community_id,
+        update(TaskStatus).values(category=TaskStatusCategory.todo),
+        update(GuildPlugin)
+        .where(GuildPlugin.id == plugin.id)  # type: ignore[arg-type]
+        .values(auto_update=True),
+    )
+
+    assert {kind for _c, kind, _due in await _timers(session)} >= {
+        "overdue",
+        "plugin_updates",
+    }
 
 
 async def test_a_change_arms_the_upkeep_and_the_webhook_backstop(

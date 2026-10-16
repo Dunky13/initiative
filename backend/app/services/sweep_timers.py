@@ -643,6 +643,8 @@ def sweeps() -> tuple[Sweep, ...]:
                     "now()",
                     events="UPDATE OF archived_at, is_template",
                 ),
+                # A status moved out of done reopens its tasks.
+                on_row("task_statuses", "now()", events="UPDATE OF category"),
             ),
         ),
         Sweep(
@@ -655,6 +657,14 @@ def sweeps() -> tuple[Sweep, ...]:
             answers=True,
             next_due=lambda _now: when_exists(
                 exists().where(col(GuildPlugin.auto_update).is_(True))
+            ),
+            sources=(
+                on_row(
+                    "guild_plugins",
+                    "now()",
+                    events="UPDATE OF auto_update",
+                    when="NEW.auto_update AND NOT OLD.auto_update",
+                ),
             ),
         ),
         Sweep(
