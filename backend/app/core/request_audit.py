@@ -91,11 +91,13 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     read.
 
     Uvicorn reads that header only from a peer named in
-    ``--forwarded-allow-ips`` (``127.0.0.1`` unless told otherwise, which is
-    what ``BEHIND_PROXY=true`` does), so a proxy anywhere else leaves every
-    visitor resolving to the proxy's address rather than their own. Nothing
-    else reports that, so this does. It is a hint about configuration: the
-    header decides nothing here, and this changes no behaviour.
+    ``--forwarded-allow-ips``: ``127.0.0.1`` without ``BEHIND_PROXY``, and with
+    it the local network ranges unless ``FORWARDED_ALLOW_IPS`` names others
+    (``start.sh``). A proxy anywhere else leaves every visitor resolving to the
+    proxy's address rather than their own. Nothing else reports that, so this
+    does: for a peer on the local network, and with ``BEHIND_PROXY`` set for
+    any peer. It is a hint about configuration: the header decides nothing
+    here, and this changes no behaviour.
     """
     global _forwarded_hint_at
     if resolved is None:
@@ -113,15 +115,17 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     # header names; one that was not leaves the peer itself, which is not.
     if resolved in {hop.strip() for hop in forwarded.split(",")}:
         return
-    if not _is_local_network_peer(resolved):
+    if not settings.BEHIND_PROXY and not _is_local_network_peer(resolved):
         return
     _forwarded_hint_at = now
     logger.warning(
         "Requests carry X-Forwarded-For but this peer is not configured as a "
-        "trusted proxy, so every client resolves to %s. Set BEHIND_PROXY=true "
-        "(and FORWARDED_ALLOW_IPS to the proxy's address) so rate limits and "
-        "recorded sign-in addresses are per-visitor.",
+        "trusted proxy, so every client resolves to %s. Set %s so rate limits "
+        "and recorded sign-in addresses are per-visitor.",
         resolved,
+        "FORWARDED_ALLOW_IPS to the proxy's address"
+        if settings.BEHIND_PROXY
+        else "BEHIND_PROXY=true",
     )
 
 

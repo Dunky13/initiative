@@ -2,11 +2,12 @@
 
 import logging
 
+from starlette.datastructures import Headers
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
-from app.core import audit_context, metrics
+from app.core import audit_context, metrics, request_audit
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.request_audit import (
@@ -324,3 +325,18 @@ async def test_every_429_is_counted_and_nothing_else():
         assert "rate_limit_burst" in security_signals._counts.rules
     finally:
         security_signals.discard()
+
+
+def test_a_proxy_not_trusted_is_pointed_out_where_one_is_expected(monkeypatch, caplog):
+    """A forwarded header left unread from a public peer is a proxy to name
+    in FORWARDED_ALLOW_IPS when the deployment says one sits in front, and
+    passing traffic otherwise."""
+    forwarded = Headers({"x-forwarded-for": "198.51.100.20"})
+    with caplog.at_level(logging.WARNING, logger=request_audit.logger.name):
+        for behind_proxy in (False, True):
+            monkeypatch.setattr(settings, "BEHIND_PROXY", behind_proxy)
+            monkeypatch.setattr(request_audit, "_forwarded_hint_at", None)
+            request_audit._note_ignored_forwarded_header(forwarded, "93.184.216.34")
+
+    [hint] = [r.getMessage() for r in caplog.records]
+    assert "Set FORWARDED_ALLOW_IPS to the proxy's address" in hint

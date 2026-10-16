@@ -139,10 +139,10 @@ For any real deployment you'll put Initiative behind a reverse proxy that handle
 | Variable | What it does | Default |
 |---|---|---|
 | `BEHIND_PROXY` | Trust `X-Forwarded-*` headers from your proxy (so client IPs and HTTPS are detected correctly). | `false` |
-| `FORWARDED_ALLOW_IPS` | Which proxy IPs to trust when `BEHIND_PROXY=true`. | `*` |
+| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Set it when your proxy reaches the app from a public address. | Loopback, private and link-local ranges |
 
 !!! warning "Only enable proxy trust behind an actual proxy"
-    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them.
+    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them. It believes them from the machine itself, its container network and your LAN; a proxy that reaches the app from anywhere else goes in `FORWARDED_ALLOW_IPS`, and the log says so on the first request that shows one.
 
 ## The app association files
 
