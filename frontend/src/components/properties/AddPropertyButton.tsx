@@ -126,7 +126,7 @@ export const AddPropertyButton = ({
                             }}
                             className="cursor-pointer"
                           >
-                            <Icon className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <div className="flex flex-col">
                               <span>{definition.name}</span>
                               <span className="text-muted-foreground text-xs">
@@ -146,7 +146,7 @@ export const AddPropertyButton = ({
                       onSelect={startCreating}
                       className="cursor-pointer"
                     >
-                      <Plus className="mr-2 h-4 w-4" />
+                      <Plus className="h-4 w-4" />
                       {t("properties:picker.createHeading")}
                     </CommandItem>
                   </CommandGroup>

@@ -1,0 +1,64 @@
+// A control whose root sets a gap (Button, the menu and command items, the
+// sidebar buttons, the alert dialog's actions) already spaces its icon from
+// its label. A margin on one of its children adds to that gap, so the same
+// control is spaced differently in different places. ml-auto and negative
+// margins are not spacing and are allowed.
+language js
+
+pattern gap_control() {
+  or { `Button`, `Toggle`, `ToggleGroupItem`, `DropdownMenuItem`, `DropdownMenuSubTrigger`, `CommandItem`, `SidebarMenuButton`, `SidebarMenuSubButton`, `AlertDialogAction`, `AlertDialogCancel`, `ImagePicker` }
+}
+
+pattern margined() {
+  or { `<$_ $attrs />`, `<$_ $attrs>$_</$_>` } where {
+    $attrs <: some JsxAttribute() as $class where {
+      $class <: r"(?s)className=.*?[\s\"'`](?:[a-z0-9-]+:)*m[lrse]-(?:[0-9]|px|\[).*"
+    }
+  }
+}
+
+pattern report_value() {
+  or {
+    JsParenthesizedExpression(expression=$inner) where { $inner <: report_value() },
+    JsxTagExpression(tag=$tag) where {
+      or {
+        $tag <: margined() where {
+          register_diagnostic(span=$tag, message="This control already spaces its children with a gap: drop the margin (ml-auto, which pushes a child to the end, is fine).", severity="error")
+        },
+        $tag <: `<>$kids</>` where { $kids <: report_margins() }
+      }
+    }
+  }
+}
+
+pattern report_margin() {
+  or {
+    margined() as $child where {
+      register_diagnostic(span=$child, message="This control already spaces its children with a gap: drop the margin (ml-auto, which pushes a child to the end, is fine).", severity="error")
+    },
+    JsxExpressionChild(expression=$value) where {
+      or {
+        $value <: `$_ && $then` where { $then <: report_value() },
+        $value <: `$_ ? $then : $else` where {
+          $then <: maybe report_value(),
+          $else <: maybe report_value()
+        }
+      }
+    }
+  }
+}
+
+pattern report_margins() {
+  every or { report_margin(), $_ }
+}
+
+`<$tag $attrs>$kids</$tag>` where {
+  $tag <: gap_control(),
+  or {
+    and {
+      $attrs <: some JsxAttribute() as $slot where { $slot <: r"asChild" },
+      $kids <: some `<$_ $_>$inner</$_>` where { $inner <: report_margins() }
+    },
+    $kids <: report_margins()
+  }
+}

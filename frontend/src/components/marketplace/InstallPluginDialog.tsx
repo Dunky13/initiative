@@ -285,9 +285,9 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
           </Button>
           <Button onClick={submit} disabled={install.isPending}>
             {install.isPending ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Download className="mr-1.5 h-4 w-4" />
+              <Download className="h-4 w-4" />
             )}
             {t("plugins:install.action")}
           </Button>

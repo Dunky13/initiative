@@ -69,7 +69,8 @@
   "plugins": [
     "./biome-plugins/no-other-widths.grit",
     "./biome-plugins/no-other-widths-css.grit",
-    "./biome-plugins/one-formatter.grit"
+    "./biome-plugins/one-formatter.grit",
+    "./biome-plugins/no-gap-margins.grit"
   ],
   "linter": {
     "enabled": true,

@@ -108,7 +108,7 @@ export const SearchableCombobox = ({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "h-4 w-4",
                       item.value === selectedValue ? "opacity-100" : "opacity-0"
                     )}
                   />

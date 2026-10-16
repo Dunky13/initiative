@@ -88,7 +88,7 @@ export const AIConnectionManager = ({
           <p className="text-muted-foreground text-sm">{t("aiConnections.subtitle")}</p>
         </div>
         <Button type="button" onClick={openCreate} className="shrink-0">
-          <Plus className="mr-1 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           {t("aiConnections.add")}
         </Button>
       </div>

@@ -161,7 +161,7 @@ export function PluginMembersPanel({ pluginId, enabled }: PluginMembersPanelProp
             onClick={() => setConfirmingRevokeAll(true)}
             disabled={revokeAll.isPending}
           >
-            {revokeAll.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {revokeAll.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {t("plugins:members.revokeAll")}
           </Button>
         </div>
@@ -292,7 +292,7 @@ function MemberConsents({
                         })
                       }
                     >
-                      <UserX className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                      <UserX className="h-3.5 w-3.5" aria-hidden />
                       {t("plugins:members.revoke")}
                     </Button>
                   )}
@@ -310,7 +310,7 @@ function MemberConsents({
           disabled={revokeAll.isPending}
           onClick={() => setConfirming(true)}
         >
-          {revokeAll.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          {revokeAll.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {t("plugins:consent.revokeAll")}
         </Button>
       )}
@@ -429,7 +429,7 @@ function ConnectionMembers({
                           disabled={revoke.isPending}
                           onClick={() => revokeMember(item)}
                         >
-                          <UserX className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                          <UserX className="h-3.5 w-3.5" aria-hidden />
                           {t("plugins:members.revoke")}
                         </Button>
                       )}
@@ -439,7 +439,7 @@ function ConnectionMembers({
                         disabled={block.isPending}
                         onClick={() => toggleBlock(item)}
                       >
-                        <ShieldOff className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                        <ShieldOff className="h-3.5 w-3.5" aria-hidden />
                         {item.blocked ? t("plugins:members.unblock") : t("plugins:members.block")}
                       </Button>
                     </div>

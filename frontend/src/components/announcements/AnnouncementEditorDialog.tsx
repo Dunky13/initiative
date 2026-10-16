@@ -476,7 +476,7 @@ export const AnnouncementEditorDialog = ({
                       }))
                     }
                   >
-                    <Plus className="mr-1 h-4 w-4" />
+                    <Plus className="h-4 w-4" />
                     {t("operator.addSection")}
                   </Button>
                 </div>
@@ -505,7 +505,7 @@ export const AnnouncementEditorDialog = ({
 
           <DialogFooter className="shrink-0 border-t pt-4">
             <Button type="button" variant="ghost" onClick={() => setPreviewOpen(true)}>
-              <Eye className="mr-1 h-4 w-4" />
+              <Eye className="h-4 w-4" />
               {t("operator.preview")}
             </Button>
             <div className="flex-1" />
@@ -517,7 +517,7 @@ export const AnnouncementEditorDialog = ({
               onClick={() => void handleSave()}
               disabled={saving || triggerProblem !== null}
             >
-              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {t("common:save")}
             </Button>
           </DialogFooter>
@@ -651,9 +651,9 @@ const SectionEditor = ({
             onSelect={handleFile}
           >
             {upload.isPending ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <ImagePlus className="mr-1 h-4 w-4" />
+              <ImagePlus className="h-4 w-4" />
             )}
             {section.image_url ? t("operator.replaceImage") : t("operator.addImage")}
           </ImagePicker>

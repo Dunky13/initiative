@@ -175,13 +175,13 @@ export function BottomNav() {
               <DropdownMenuContent align="end" side="top" className="mb-2">
                 {globalCreate.task && (
                   <DropdownMenuItem onSelect={() => getOpenCreateTaskWizard()?.()}>
-                    <SquareCheckBig className="mr-2 h-4 w-4" />
+                    <SquareCheckBig className="h-4 w-4" />
                     {t("bottomNav.addTask")}
                   </DropdownMenuItem>
                 )}
                 {globalCreate.tool && (
                   <DropdownMenuItem onSelect={() => getOpenCreateToolWizard(Tool.file)?.()}>
-                    <FilePlus className="mr-2 h-4 w-4" />
+                    <FilePlus className="h-4 w-4" />
                     {t("bottomNav.addFile")}
                   </DropdownMenuItem>
                 )}

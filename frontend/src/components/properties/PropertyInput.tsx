@@ -455,7 +455,7 @@ const PropertyOptionPicker = ({
                       role="button"
                       tabIndex={0}
                       aria-label={t("properties:input.clear")}
-                      className="ml-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
                         onChangeMulti((selectedMulti ?? []).filter((v) => v !== option.value));
