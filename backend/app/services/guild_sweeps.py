@@ -29,7 +29,7 @@ from sqlalchemy import text
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core import metrics
+from app.core import audit_context, metrics
 from app.db import cohorts
 from app.db.session import set_rls_context
 from app.services.background_tasks import Loop
@@ -147,13 +147,14 @@ async def _communities(
 async def _visit(
     session: AsyncSession, visit: Visit, guild_id: int, *, name: str
 ) -> None:
-    try:
-        await set_rls_context(session, SystemGuild(guild_id))
-        await visit(session, guild_id)
-        await session.commit()
-    except Exception:
-        logger.exception("%s: visit failed guild=%s", name, guild_id)
-        await session.rollback()
+    with audit_context.visiting(guild_id):
+        try:
+            await set_rls_context(session, SystemGuild(guild_id))
+            await visit(session, guild_id)
+            await session.commit()
+        except Exception:
+            logger.exception("%s: visit failed", name)
+            await session.rollback()
 
 
 class Drain:

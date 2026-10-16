@@ -40,8 +40,9 @@ from typing import Any, Awaitable, Callable
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.requests import HTTPConnection
+from starlette.responses import PlainTextResponse
 
-from app.core import audit_context, metrics
+from app.core import audit_context, logging_config, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.services import audit as audit_service
@@ -189,11 +190,11 @@ async def _record_activity(
         logger.exception("access grant activity: could not record a request")
 
 
-def _route_template(scope: Scope) -> str | None:
-    """The route as it is written, rather than as it was typed; ``None``
-    when no route answered."""
-    path = getattr(scope.get("route"), "path", None)
-    return path if isinstance(path, str) else None
+def _report_failure(exc: Exception) -> None:
+    """Write the exception that ended a request, while the request's fields
+    are still there to name it."""
+    logger.exception("Exception in ASGI application")
+    logging_config.mark_reported(exc)
 
 
 class RequestAuditMiddleware:
@@ -215,6 +216,7 @@ class RequestAuditMiddleware:
             source_ip=(scope.get("client") or (None,))[0],
             user_agent=headers.get("user-agent"),
             country=plugin_age.request_country(HTTPConnection(scope)),
+            scope=scope,
         )
         _note_ignored_forwarded_header(headers, context.source_ip)
         if kind == "websocket":
@@ -224,6 +226,9 @@ class RequestAuditMiddleware:
             metrics.websocket_connections.inc()
             try:
                 await self.app(scope, receive, send)
+            except Exception as exc:
+                _report_failure(exc)
+                raise
             finally:
                 metrics.websocket_connections.dec()
                 audit_context.end(token)
@@ -245,10 +250,19 @@ class RequestAuditMiddleware:
 
         try:
             await self.app(scope, receive, named_send)
+        except Exception as exc:
+            _report_failure(exc)
+            if "status" not in answered:
+                # Answered here rather than by the server, so the response
+                # carries the request's id and its line names the route.
+                await PlainTextResponse("Internal Server Error", status_code=500)(
+                    scope, receive, named_send
+                )
+            raise
         finally:
             elapsed = time.perf_counter() - began
             in_progress.dec()
-            route = _route_template(scope)
+            route = audit_context.route_of(scope)
             label = route or metrics.UNMATCHED_ROUTE
             # No response started means the request ended in an exception,
             # which the server answers with a 500.

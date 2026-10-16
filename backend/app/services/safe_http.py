@@ -12,11 +12,15 @@ verification, and the ``Host`` header. Redirects are not followed.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 import httpx
 
 from app.services.webhook_target_url import resolve_validated_target_async
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseTooLargeError(Exception):
@@ -28,6 +32,29 @@ class ResponseTooLargeError(Exception):
     def __init__(self, max_bytes: int, *, status_code: int | None = None):
         super().__init__(max_bytes)
         self.status_code = status_code
+
+
+def _log_sent(
+    method: str,
+    url: httpx.URL,
+    began: float,
+    *,
+    status: int | None = None,
+    failure: BaseException | None = None,
+) -> None:
+    """One line per request sent: the method, the target's origin, what it
+    answered and how long it took. A failure or a non-2xx answer is ``INFO``,
+    a success ``DEBUG``."""
+    ok = failure is None and status is not None and 200 <= status < 300
+    logger.log(
+        logging.DEBUG if ok else logging.INFO,
+        "%s %s://%s %s %.0f ms",
+        method,
+        url.scheme,
+        _authority(url),
+        type(failure).__name__ if failure is not None else status,
+        (time.perf_counter() - began) * 1000,
+    )
 
 
 def _authority(url: httpx.URL) -> str:
@@ -135,12 +162,18 @@ async def request_public_target(
                 content=content,
                 json=json,
             )
+            began = time.perf_counter()
             try:
                 response = await client.send(request, stream=max_bytes is not None)
             except httpx.ConnectError as exc:
                 # Fast failure for this validated address; try the next one.
+                _log_sent(method, original, began, failure=exc)
                 last_exc = exc
                 continue
+            except httpx.HTTPError as exc:
+                _log_sent(method, original, began, failure=exc)
+                raise
+            _log_sent(method, original, began, status=response.status_code)
             if max_bytes is None:
                 return response
             return await _read_bounded(response, max_bytes)

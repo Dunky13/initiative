@@ -17,8 +17,13 @@ saying so; ``services.audit.record`` copies it into the envelope. A holder
 rather than a value per write, so what the gate adds reaches the middleware
 that opened the request whichever task each of them runs in.
 
-Outside a request — a background sweep, a startup seed — there is no holder,
-and a line written there carries ``"context": null``.
+Background work names itself the same way: :func:`job` opens a holder for one
+pass of a worker or one data job, with an id of its own, and :func:`visiting`
+names the community a sweep is in. Outside both — a startup seed, a script —
+there is no holder, and a line written there carries ``"context": null``.
+
+The application log reads the same holder (``app.core.logging_config``), so a
+request's audit lines and its log lines carry one id.
 
 The address and agent are read here once per request, and everything else
 that wants them — a session's bookkeeping, a rate limit's key, a captcha
@@ -30,7 +35,9 @@ from __future__ import annotations
 
 import contextvars
 import ipaddress
-from dataclasses import dataclass
+from collections.abc import Iterator, MutableMapping
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -59,7 +66,8 @@ class RequestContext:
     country: Optional[str] = None
     #: The account the request is being served as, once it has authenticated.
     actor_user_id: Optional[int] = None
-    #: The community a grant reaches, and the grant that reaches it.
+    #: The community a grant or an install reaches, or the one a background
+    #: job is working in; and the grant that reaches it.
     guild_id: Optional[int] = None
     grant_id: Optional[int] = None
     access_level: Optional[str] = None
@@ -72,6 +80,23 @@ class RequestContext:
     #: ``public_id`` and the install in the community.
     plugin: Optional[str] = None
     install_id: Optional[int] = None
+    #: The ASGI scope the request is served under. Routing fills in the route
+    #: it matched and the path's parameters, which :func:`route_of` and
+    #: :meth:`community_id` read.
+    scope: Optional[MutableMapping[str, Any]] = field(
+        default=None, repr=False, compare=False
+    )
+
+    def community_id(self) -> Optional[int]:
+        """The community the request's path names, else the one a grant, an
+        install or a job named."""
+        if self.scope is not None:
+            named = (self.scope.get("path_params") or {}).get("community_id")
+            if isinstance(named, int):
+                return named
+            if isinstance(named, str) and named.isdigit():
+                return int(named)
+        return self.guild_id
 
     @property
     def is_privileged(self) -> bool:
@@ -150,6 +175,7 @@ def begin(
     source_ip: Optional[str] = None,
     user_agent: Optional[str] = None,
     country: Optional[str] = None,
+    scope: Optional[MutableMapping[str, Any]] = None,
 ) -> tuple[RequestContext, contextvars.Token]:
     """Open a request's context and return it with the token that closes it.
 
@@ -162,6 +188,7 @@ def begin(
         source_ip=_inet(source_ip),
         user_agent=(user_agent or None) and user_agent[:MAX_USER_AGENT],
         country=country,
+        scope=scope,
     )
     return context, _request.set(context)
 
@@ -174,6 +201,55 @@ def end(token: contextvars.Token) -> None:
 def current() -> Optional[RequestContext]:
     """This request's context, or ``None`` outside a request."""
     return _request.get()
+
+
+@contextmanager
+def job(name: str, *, guild_id: Optional[int] = None) -> Iterator[RequestContext]:
+    """Name one unit of background work — a worker's pass, a data job — for
+    the lines written while it runs, as a request is named for its own.
+
+    The id starts ``job-<name>-``, so a job's lines are told from a request's
+    by their id alone.
+    """
+    context, token = begin(request_id=f"job-{name}-{uuid4().hex[:12]}")
+    context.guild_id = guild_id
+    try:
+        yield context
+    finally:
+        end(token)
+
+
+@contextmanager
+def visiting(guild_id: int) -> Iterator[None]:
+    """Name the community a sweep is visiting, for the lines written there.
+
+    A copy of the pass's context rather than a change to it: a pass visits
+    several communities at once, and each visit keeps its own.
+    """
+    within = _request.get()
+    named = replace(
+        within if within is not None else RequestContext(new_request_id()),
+        guild_id=guild_id,
+    )
+    token = _request.set(named)
+    try:
+        yield
+    finally:
+        _request.reset(token)
+
+
+def route_of(scope: MutableMapping[str, Any]) -> Optional[str]:
+    """The route as it is written, rather than as it was typed; ``None``
+    when no route answered."""
+    path = getattr(scope.get("route"), "path", None)
+    return path if isinstance(path, str) else None
+
+
+def note_actor(user_id: int) -> None:
+    """Record the account this request authenticated as."""
+    context = _request.get()
+    if context is not None:
+        context.actor_user_id = user_id
 
 
 def client_ip() -> Optional[str]:

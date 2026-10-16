@@ -1,11 +1,16 @@
 """Every request is named, and says so on the way out."""
 
+import logging
+from types import SimpleNamespace
+
+import pytest
 from httpx import AsyncClient
 from prometheus_client import REGISTRY
 
 from app.core import audit_context, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
+from app.core.logging_config import SkipReported
 from app.core.request_audit import (
     REQUEST_ID_HEADER,
     RequestAuditMiddleware,
@@ -91,6 +96,51 @@ async def test_a_line_written_by_nobody_carries_no_request(session, capfd):
 
     (line,) = emitted(capfd, AuditEventType.USER_AVATAR_REMOVED)
     assert line["context"] is None
+
+
+async def test_a_request_that_fails_is_written_down_once_naming_it(caplog):
+    """The request writes the exception while its fields are still there,
+    answers with its id, and the server's own report of it is dropped."""
+    sent: list[dict] = []
+
+    async def app(scope, _receive, _send):
+        scope["route"] = SimpleNamespace(
+            path="/api/v1/c/{community_id}/tasks/{task_id}"
+        )
+        scope["path_params"] = {"community_id": "7", "task_id": "3"}
+        raise RuntimeError("task 3 failed")
+
+    async def receive():
+        return {"type": "http.request"}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError) as raised:
+        await RequestAuditMiddleware(app)(scope, receive, send)
+
+    [record] = [
+        r for r in caplog.records if r.getMessage() == "Exception in ASGI application"
+    ]
+    start = sent[0]
+    request_id = dict(start["headers"])[REQUEST_ID_HEADER.encode()].decode()
+    assert start["status"] == 500
+    assert record.log_context == {
+        "request_id": request_id,
+        "guild_id": 7,
+        "route": "/api/v1/c/{community_id}/tasks/{task_id}",
+    }
+    servers = logging.getLogger("uvicorn.error").makeRecord(
+        "uvicorn.error",
+        logging.ERROR,
+        __file__,
+        0,
+        "Exception in ASGI application\n",
+        (),
+        (RuntimeError, raised.value, raised.value.__traceback__),
+    )
+    assert not SkipReported().filter(servers)
 
 
 # --- sockets ------------------------------------------------------------
