@@ -13,7 +13,17 @@
     "saving": "Saving…",
     "save": "Save",
     "toolTab": "{{tool}} ({{count}})",
-    "empty": "Nothing carries this tag yet."
+    "empty": "Nothing carries this tag yet.",
+    "children": {
+      "task": "Tasks",
+      "calendar_event": "Events",
+      "gallery_image": "Pictures",
+      "queue_item": "Queue items",
+      "wiki_page": "Pages"
+    },
+    "columns": {
+      "in": "In"
+    }
   },
   "manage": {
     "edit": "Edit tags",

@@ -13,7 +13,17 @@
     "saving": "Wird gespeichert…",
     "save": "Speichern",
     "toolTab": "{{tool}} ({{count}})",
-    "empty": "Noch trägt nichts diesen Tag."
+    "empty": "Noch trägt nichts diesen Tag.",
+    "children": {
+      "task": "Aufgaben",
+      "calendar_event": "Termine",
+      "gallery_image": "Bilder",
+      "queue_item": "Warteschlangeneinträge",
+      "wiki_page": "Seiten"
+    },
+    "columns": {
+      "in": "In"
+    }
   },
   "manage": {
     "edit": "Tags bearbeiten",

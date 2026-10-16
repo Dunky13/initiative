@@ -13,7 +13,17 @@
     "saving": "Enregistrement…",
     "save": "Enregistrer",
     "toolTab": "{{tool}} ({{count}})",
-    "empty": "Rien ne porte encore cette étiquette."
+    "empty": "Rien ne porte encore cette étiquette.",
+    "children": {
+      "task": "Tâches",
+      "calendar_event": "Événements",
+      "gallery_image": "Images",
+      "queue_item": "Éléments de la file",
+      "wiki_page": "Pages"
+    },
+    "columns": {
+      "in": "Dans"
+    }
   },
   "manage": {
     "edit": "Modifier les étiquettes",

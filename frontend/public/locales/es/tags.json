@@ -13,7 +13,17 @@
     "saving": "Guardando…",
     "save": "Guardar",
     "toolTab": "{{tool}} ({{count}})",
-    "empty": "Todavía nada lleva esta etiqueta."
+    "empty": "Todavía nada lleva esta etiqueta.",
+    "children": {
+      "task": "Tareas",
+      "calendar_event": "Eventos",
+      "gallery_image": "Imágenes",
+      "queue_item": "Elementos de la cola",
+      "wiki_page": "Páginas"
+    },
+    "columns": {
+      "in": "En"
+    }
   },
   "manage": {
     "edit": "Editar etiquetas",
