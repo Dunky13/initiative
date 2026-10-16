@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two-factor authentication works for accounts without a password.** Setup goes straight to the code to scan, and turning it off asks for no password.
 - **Switching files no longer blanks the one you open**, which could save a blank page over it.
 - **Privacy:** your recent items, favorites and project order are yours alone, and leaving a community forgets your recent items there. Only you can answer a poll or event invitation, mark a notice read, edit or delete your comments, or change your reactions. Join requests are seen only by whoever asked and whoever answers.
 - Pasting a link no longer doubles its `https://`.

@@ -4,7 +4,9 @@ icon: lucide/shield-check
 
 # Two-factor authentication
 
-A password is one thing you know. Two-factor authentication adds one thing you have: a six-digit code from an app on your phone, changing every thirty seconds, asked for after your password.
+A password, or a code in your inbox, is one thing. Two-factor authentication adds one thing you have: a six-digit code from an app on your phone, changing every thirty seconds, asked for after your password or your emailed code.
+
+Signing in with a passkey or single sign-on doesn't ask for it. A community or your server can still ask for a second factor, though, and the code from your app answers that wherever you signed in from.
 
 It takes about two minutes to set up and it is the single biggest improvement you can make to the security of your account.
 
@@ -15,7 +17,7 @@ An authenticator app. Google Authenticator, Microsoft Authenticator, Authy, 1Pas
 ## Turning it on
 
 1. **My Settings → Security → Two-factor authentication → Set up**.
-2. Confirm your password. No password on your account, or none on your server? Then it asks you to prove it's you with a fresh sign-in.
+2. Confirm your password. No password on your account, or none on your server? It skips this step, and asks you to sign in again first if you last did more than ten minutes ago.
 3. Scan the square with your authenticator app. Can't scan — desktop app, cracked camera, phone at the bottom of a bag? There's a key underneath the code you can type in instead.
 4. Type the six digits your app is now showing.
 
@@ -30,7 +32,7 @@ That's it. It's on.
 
 ## Signing in from now on
 
-Your password, then your code. Same as before with one extra step.
+Your password or emailed code, then the code from your app. Same as before with one extra step.
 
 Signing in on your phone works the same way — the app asks for the code too, which is the point: a second factor that only guards one door isn't guarding much.
 
