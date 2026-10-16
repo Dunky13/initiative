@@ -26,6 +26,11 @@ const refused = {
     '<AlertDialogAction>{busy ? (<><Loader2 className="mr-2 h-4 w-4" />Leaving</>) : "Leave"}</AlertDialogAction>',
   "a margined icon in a slotted child":
     '<Button asChild><Link><Plus className="mr-2 h-4 w-4" />Add</Link></Button>',
+  "a margined icon in a slot asked for explicitly":
+    '<Button asChild={true}><Link><Plus className="mr-2 h-4 w-4" />Add</Link></Button>',
+  "a margined icon in a fragment child": '<Button><><Plus className="mr-2" />Add</></Button>',
+  "a margined icon behind two conditions":
+    '<Button>{on && (busy ? <Plus className="mr-2" /> : null)}Add</Button>',
 };
 const allowed = {
   "an icon and label left to the gap": '<Button><Plus className="h-4 w-4" />Add</Button>',
@@ -37,6 +42,8 @@ const allowed = {
   "a margin in a context menu item, which sets no gap":
     '<ContextMenuItem><Copy className="mr-2 h-4 w-4" />Copy</ContextMenuItem>',
   "a margin on the control itself": '<Button className="ml-2"><Plus />Add</Button>',
+  "a margin in a child when asChild is off":
+    '<Button asChild={false}><span className="flex"><Plus className="mr-2" />Add</span></Button>',
 };
 
 /** Lints every fixture in one Biome run, and says which files it flagged. */

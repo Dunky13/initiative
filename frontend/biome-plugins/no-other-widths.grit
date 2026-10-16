@@ -15,9 +15,5 @@ or {
     $text <: r"(?s).*(?:^|[\s\"'`{(,:!])(?:max-|min-|@max-|@min-|@)\[[^\]]*\]:.*",
     $text <: r"(?s).*\(\s*(?:(?:min-|max-)?width\s*:\s*[\d.]|width\s*[<>]=?\s*[\d.]|[\d.]+\s*(?:px|r?em|vw|ch)?\s*[<>]=?\s*width).*"
   },
-  register_diagnostic(
-    span=$text,
-    message="Only sm:, md:, lg: and xl: set a width (canvas-sm: … for a region; useWidthClass and useRegionWidthClass in code). Grids, forms and rows fill or wrap instead (grid-cols-fill-*, grid-cols-pair, flex-wrap). See the widths in styles.css.",
-    severity="error"
-  )
+  register_diagnostic(span=$text, message="Only sm:, md:, lg: and xl: set a width (canvas-sm: … for a region; useWidthClass and useRegionWidthClass in code). Grids, forms and rows fill or wrap instead (grid-cols-fill-*, grid-cols-pair, flex-wrap). See the widths in styles.css.", severity="error")
 }

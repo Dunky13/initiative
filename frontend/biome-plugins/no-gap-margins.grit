@@ -6,20 +6,39 @@
 language js
 
 pattern gap_control() {
-  or { `Button`, `Toggle`, `ToggleGroupItem`, `DropdownMenuItem`, `DropdownMenuSubTrigger`, `CommandItem`, `SidebarMenuButton`, `SidebarMenuSubButton`, `AlertDialogAction`, `AlertDialogCancel`, `ImagePicker` }
+  or {
+    `Button`,
+    `Toggle`,
+    `ToggleGroupItem`,
+    `DropdownMenuItem`,
+    `DropdownMenuSubTrigger`,
+    `CommandItem`,
+    `SidebarMenuButton`,
+    `SidebarMenuSubButton`,
+    `AlertDialogAction`,
+    `AlertDialogCancel`,
+    `ImagePicker`
+  }
 }
 
 pattern margined() {
-  or { `<$_ $attrs />`, `<$_ $attrs>$_</$_>` } where {
+  or {
+    `<$_ $attrs />`,
+    `<$_ $attrs>$_</$_>`
+  } where {
     $attrs <: some JsxAttribute() as $class where {
       $class <: r"(?s)className=.*?[\s\"'`](?:[a-z0-9-]+:)*m[lrse]-(?:[0-9]|px|\[).*"
     }
   }
 }
 
+// A value a child renders: an element, a fragment, or either behind any
+// number of conditions and parentheses.
 pattern report_value() {
   or {
     JsParenthesizedExpression(expression=$inner) where { $inner <: report_value() },
+    `$_ && $then` where { $then <: report_value() },
+    `$_ ? $then : $else` where { $then <: maybe report_value(), $else <: maybe report_value() },
     JsxTagExpression(tag=$tag) where {
       or {
         $tag <: margined() where {
@@ -36,27 +55,24 @@ pattern report_margin() {
     margined() as $child where {
       register_diagnostic(span=$child, message="This control already spaces its children with a gap: drop the margin (ml-auto, which pushes a child to the end, is fine).", severity="error")
     },
-    JsxExpressionChild(expression=$value) where {
-      or {
-        $value <: `$_ && $then` where { $then <: report_value() },
-        $value <: `$_ ? $then : $else` where {
-          $then <: maybe report_value(),
-          $else <: maybe report_value()
-        }
-      }
-    }
+    `<>$kids</>` where { $kids <: report_margins() },
+    JsxExpressionChild(expression=$value) where { $value <: report_value() }
   }
 }
 
 pattern report_margins() {
-  every or { report_margin(), $_ }
+  every or {
+    report_margin(),
+    $_
+  }
 }
 
 `<$tag $attrs>$kids</$tag>` where {
   $tag <: gap_control(),
   or {
     and {
-      $attrs <: some JsxAttribute() as $slot where { $slot <: r"asChild" },
+      // asChild or asChild={true}: the gap lands on the slotted child.
+      $attrs <: some JsxAttribute() as $slot where { $slot <: r"asChild(?:=\{true\})?" },
       $kids <: some `<$_ $_>$inner</$_>` where { $inner <: report_margins() }
     },
     $kids <: report_margins()
