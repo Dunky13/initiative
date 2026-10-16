@@ -361,7 +361,7 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
                     })
                   }
                 >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  <Plus className="h-3.5 w-3.5" />
                   {t("dashboards:filterBuilder.addToGroup")}
                 </Button>
               </div>
@@ -383,7 +383,7 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
           variant="outline"
           onClick={() => emit({ rows: [...rows, emptyLeaf(fields)] })}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           {t("dashboards:filterBuilder.add")}
         </Button>
         <Button

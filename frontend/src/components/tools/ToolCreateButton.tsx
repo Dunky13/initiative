@@ -48,7 +48,7 @@ export function ToolCreateButton({ tool, initiativeId, variant }: ToolCreateButt
     return (
       <DropdownMenuItem asChild>
         <Link to={to} search={search}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           {label}
         </Link>
       </DropdownMenuItem>

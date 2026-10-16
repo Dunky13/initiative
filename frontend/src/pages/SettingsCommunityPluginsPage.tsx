@@ -88,7 +88,7 @@ export function SettingsCommunityPluginsPage() {
             {holdsTheSeat && (
               <Button variant="outline" asChild>
                 <Link to={gp("/marketplace")} search={{ kind: ListingKind.plugin }}>
-                  <Store className="mr-1.5 h-4 w-4" />
+                  <Store className="h-4 w-4" />
                   {t("plugins:manage.browse")}
                 </Link>
               </Button>
@@ -203,7 +203,7 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
                 onClick={() => save({ enabled: !plugin.enabled })}
                 disabled={update.isPending}
               >
-                {update.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {plugin.enabled ? t("plugins:manage.disable") : t("plugins:manage.enable")}
               </Button>
               <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>

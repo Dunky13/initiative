@@ -144,12 +144,12 @@ export const AsyncCombobox = ({
                     >
                       <Check
                         className={cn(
-                          "mt-0.5 mr-2 h-4 w-4 shrink-0",
+                          "mt-0.5 h-4 w-4 shrink-0",
                           item.value === value ? "opacity-100" : "opacity-0"
                         )}
                       />
                       {item.icon ? (
-                        <item.icon className="mt-0.5 mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       ) : null}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">{item.label}</span>

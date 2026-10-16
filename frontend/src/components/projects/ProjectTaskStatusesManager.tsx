@@ -702,7 +702,7 @@ const SortableStatusRow = ({
           disabled={disabled}
           aria-label={t("statuses.deleteStatus", { name: status.name })}
         >
-          <Trash2 className="mr-1 h-4 w-4" />
+          <Trash2 className="h-4 w-4" />
         </Button>
       </TableCell>
     </TableRow>

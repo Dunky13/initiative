@@ -155,14 +155,14 @@ export const SuggestCombobox = ({
                     onSelect={() => choose(search)}
                     className="text-muted-foreground"
                   >
-                    <Check className="mr-2 h-4 w-4 opacity-0" />
+                    <Check className="h-4 w-4 opacity-0" />
                     {typedLabel(search)}
                   </CommandItem>
                 )}
                 {matching.map((item) => (
                   <CommandItem key={item} value={item} onSelect={() => choose(item)}>
                     <Check
-                      className={cn("mr-2 h-4 w-4", value === item ? "opacity-100" : "opacity-0")}
+                      className={cn("h-4 w-4", value === item ? "opacity-100" : "opacity-0")}
                     />
                     {item}
                   </CommandItem>

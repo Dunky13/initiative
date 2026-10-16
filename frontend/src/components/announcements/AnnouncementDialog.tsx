@@ -147,7 +147,7 @@ export const AnnouncementDialog = ({
                   disabled={safeIndex === 0}
                   onClick={() => goTo(safeIndex - 1)}
                 >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  <ChevronLeft className="h-4 w-4" />
                   {t("dialog.back")}
                 </Button>
                 <span className="text-muted-foreground text-xs">
@@ -160,7 +160,7 @@ export const AnnouncementDialog = ({
             ) : (
               <Button onClick={() => goTo(safeIndex + 1)}>
                 {t("dialog.continue")}
-                <ChevronRight className="ml-1 h-4 w-4" />
+                <ChevronRight className="h-4 w-4" />
               </Button>
             )}
           </DialogFooter>

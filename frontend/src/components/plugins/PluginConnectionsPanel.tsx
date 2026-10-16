@@ -259,7 +259,7 @@ function CommunityConnection({
           <div className="flex flex-wrap items-center gap-2">
             {vendorFlow && (
               <Button size="sm" onClick={start} disabled={connect.isPending}>
-                {connect.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {connect.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {connection.satisfied
                   ? t("plugins:connections.reconnect")
                   : t("plugins:connections.connect")}
@@ -267,7 +267,7 @@ function CommunityConnection({
             )}
             {typed.length > 0 && (
               <Button size="sm" onClick={submit} disabled={!touched.length || save.isPending}>
-                {save.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {t("common:save")}
               </Button>
             )}
@@ -453,7 +453,7 @@ function PersonalConnection({
           ) : null}
 
           <Button size="sm" onClick={start} disabled={connect.isPending}>
-            {connect.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {connect.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {connection.status
               ? t("plugins:connections.reconnect")
               : t("plugins:connections.connect")}

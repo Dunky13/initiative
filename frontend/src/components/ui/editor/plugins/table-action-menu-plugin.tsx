@@ -262,28 +262,28 @@ function TableActionMenuContainer({ anchorElem }: { anchorElem: HTMLElement }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={insertRowAbove}>
-            <ArrowUpToLine className="mr-2 h-4 w-4" />
+            <ArrowUpToLine className="h-4 w-4" />
             {t("insertRowAbove")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={insertRowBelow}>
-            <ArrowDownToLine className="mr-2 h-4 w-4" />
+            <ArrowDownToLine className="h-4 w-4" />
             {t("insertRowBelow")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={insertColumnLeft}>
-            <ArrowLeftToLine className="mr-2 h-4 w-4" />
+            <ArrowLeftToLine className="h-4 w-4" />
             {t("insertColumnLeft")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={insertColumnRight}>
-            <ArrowRightToLine className="mr-2 h-4 w-4" />
+            <ArrowRightToLine className="h-4 w-4" />
             {t("insertColumnRight")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={deleteRow}>
-            <Trash2 className="mr-2 h-4 w-4" />
+            <Trash2 className="h-4 w-4" />
             {t("deleteRow")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={deleteColumn}>
-            <Trash2 className="mr-2 h-4 w-4" />
+            <Trash2 className="h-4 w-4" />
             {t("deleteColumn")}
           </DropdownMenuItem>
           {(position.canMerge || position.canUnmerge) && (
@@ -291,13 +291,13 @@ function TableActionMenuContainer({ anchorElem }: { anchorElem: HTMLElement }) {
               <DropdownMenuSeparator />
               {position.canMerge && (
                 <DropdownMenuItem onSelect={mergeCells}>
-                  <Merge className="mr-2 h-4 w-4" />
+                  <Merge className="h-4 w-4" />
                   {t("mergeCells")}
                 </DropdownMenuItem>
               )}
               {position.canUnmerge && (
                 <DropdownMenuItem onSelect={unmergeCell}>
-                  <Split className="mr-2 h-4 w-4" />
+                  <Split className="h-4 w-4" />
                   {t("unmergeCells")}
                 </DropdownMenuItem>
               )}
@@ -305,16 +305,16 @@ function TableActionMenuContainer({ anchorElem }: { anchorElem: HTMLElement }) {
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={toggleHeaderRow}>
-            <Heading className="mr-2 h-4 w-4" />
+            <Heading className="h-4 w-4" />
             {t("toggleHeaderRow")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={toggleHeaderColumn}>
-            <Heading className="mr-2 h-4 w-4" />
+            <Heading className="h-4 w-4" />
             {t("toggleHeaderColumn")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={deleteTable} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
+            <Trash2 className="h-4 w-4" />
             {t("deleteTable")}
           </DropdownMenuItem>
         </DropdownMenuContent>

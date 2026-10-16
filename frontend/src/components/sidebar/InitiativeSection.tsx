@@ -191,7 +191,7 @@ export const InitiativeSection = memo(
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
                     <Link to={gp(`${initiativeRoute(initiative.id)}/settings`)}>
-                      <Settings className="mr-2 h-4 w-4" />
+                      <Settings className="h-4 w-4" />
                       {t("initiativeSettings")}
                     </Link>
                   </DropdownMenuItem>
@@ -353,7 +353,7 @@ export const InitiativeSection = memo(
                                     `${toolDetailRoute(Tool.project, initiative.id, project.id)}/settings`
                                   )}
                                 >
-                                  <Settings className="mr-2 h-4 w-4" />
+                                  <Settings className="h-4 w-4" />
                                   {t("projectSettings")}
                                 </Link>
                               </DropdownMenuItem>

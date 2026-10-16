@@ -334,7 +334,7 @@ export const UploadedFileViewer = ({
                   <History className="h-4 w-4" />
                   {t("versions.label")}
                   {versions.length > 1 && (
-                    <Badge variant="secondary" className="ml-2 px-1.5">
+                    <Badge variant="secondary" className="px-1.5">
                       {versions.length}
                     </Badge>
                   )}

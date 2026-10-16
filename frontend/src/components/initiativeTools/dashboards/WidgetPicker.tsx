@@ -139,7 +139,7 @@ export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps)
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <Button size="sm" disabled={atCap || !catalog}>
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {t("canvas.addWidget")}
           </Button>
         </DialogTrigger>
@@ -298,7 +298,7 @@ function WidgetDetail({
         className="shrink-0 self-end"
         onClick={() => onAdd(NEW_WIDGET_SOURCE, Object.keys(options).length ? options : undefined)}
       >
-        <Plus className="mr-1.5 h-4 w-4" />
+        <Plus className="h-4 w-4" />
         {t("picker.add", { widget: name })}
       </Button>
     </div>

@@ -89,7 +89,7 @@ export function PluginUpdatesPanel({ plugin }: { plugin: CommunityPluginDetail }
               })
             }
           >
-            {upgrade.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {upgrade.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {t("plugins:manage.upgradeTo", { version: pending })}
           </Button>
         ) : (
@@ -161,12 +161,12 @@ function PendingUpdate({
       )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" disabled={busy} onClick={accept}>
-          {upgrade.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          {upgrade.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {t("plugins:updates.accept")}
         </Button>
         {!asks.declined && (
           <Button size="sm" variant="outline" disabled={busy} onClick={refuse}>
-            {decline.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {decline.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {t("plugins:updates.decline")}
           </Button>
         )}

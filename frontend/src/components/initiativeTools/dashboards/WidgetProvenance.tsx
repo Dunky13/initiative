@@ -159,7 +159,7 @@ export function WidgetProvenance({
 
         {onRefresh && (
           <Button variant="outline" size="sm" className="w-full" onClick={onRefresh}>
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            <RefreshCw className="h-3.5 w-3.5" />
             {t("dashboards:provenance.refresh")}
           </Button>
         )}

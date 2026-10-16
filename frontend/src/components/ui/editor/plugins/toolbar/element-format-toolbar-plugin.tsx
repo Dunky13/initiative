@@ -79,14 +79,14 @@ export function ElementFormatToolbarPlugin() {
             className={action.active ? "bg-accent" : ""}
           >
             {action.icon}
-            <span className="ml-2">{action.label}</span>
+            <span>{action.label}</span>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
         {indents.map((action) => (
           <DropdownMenuItem key={action.id} onClick={action.run}>
             {action.icon}
-            <span className="ml-2">{action.label}</span>
+            <span>{action.label}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

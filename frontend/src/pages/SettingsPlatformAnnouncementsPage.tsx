@@ -75,7 +75,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
               setEditorOpen(true);
             }}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {t("operator.new")}
           </Button>
         </CardHeader>
@@ -138,7 +138,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
                         setEditorOpen(true);
                       }}
                     >
-                      <Pencil className="mr-1 h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                       {t("common:edit")}
                     </Button>
                     <Button

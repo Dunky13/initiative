@@ -277,7 +277,7 @@ export const MemberMultiSelect = ({
                         <span className="truncate">{label}</span>
                         <button
                           type="button"
-                          className="ml-0.5 rounded-sm hover:opacity-70 focus:outline-none"
+                          className="rounded-sm hover:opacity-70 focus:outline-none"
                           aria-label={t("projects:assignee.removeAssignee", { name: label })}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -326,7 +326,7 @@ export const MemberMultiSelect = ({
                           >
                             <div
                               className={cn(
-                                "mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary",
+                                "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary",
                                 token.selected
                                   ? "bg-primary text-primary-foreground"
                                   : "opacity-50 [&_svg]:invisible"
@@ -354,7 +354,7 @@ export const MemberMultiSelect = ({
                         >
                           <div
                             className={cn(
-                              "mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary",
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary",
                               isSelected
                                 ? "bg-primary text-primary-foreground"
                                 : "opacity-50 [&_svg]:invisible"
@@ -362,10 +362,10 @@ export const MemberMultiSelect = ({
                           >
                             <Check className="h-3 w-3" />
                           </div>
-                          <MemberAvatar user={user} className="mr-2" />
+                          <MemberAvatar user={user} />
                           <span className="truncate">{getUserDisplayName(user)}</span>
                           {isCurrentUser ? (
-                            <span className="ml-2 text-muted-foreground text-xs">
+                            <span className="text-muted-foreground text-xs">
                               {t("projects:assignee.you")}
                             </span>
                           ) : null}
@@ -491,7 +491,7 @@ export const MemberSelect = ({
                         }}
                         className="cursor-pointer text-muted-foreground"
                       >
-                        <X className="mr-2 h-4 w-4" />
+                        <X className="h-4 w-4" />
                         {t("common:clear")}
                       </CommandItem>
                     ) : null}
@@ -507,11 +507,11 @@ export const MemberSelect = ({
                       >
                         <Check
                           className={cn(
-                            "mr-2 h-4 w-4 shrink-0",
+                            "h-4 w-4 shrink-0",
                             user.id === value ? "opacity-100" : "opacity-0"
                           )}
                         />
-                        <MemberAvatar user={user} className="mr-2" />
+                        <MemberAvatar user={user} />
                         <span className="truncate">{getUserDisplayName(user)}</span>
                       </CommandItem>
                     ))}

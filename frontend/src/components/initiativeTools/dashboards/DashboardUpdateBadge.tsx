@@ -67,9 +67,9 @@ export function DashboardUpdateBadge({ dashboard, canEdit }: DashboardUpdateBadg
   return (
     <Button size="sm" variant="outline" onClick={apply} disabled={upgrade.isPending}>
       {upgrade.isPending ? (
-        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+        <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
-        <ArrowUpCircle className="mr-1.5 h-4 w-4" />
+        <ArrowUpCircle className="h-4 w-4" />
       )}
       {t("update.available", { version: latest.version })}
     </Button>

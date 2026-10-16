@@ -199,7 +199,7 @@ export function MarketplaceListingPage() {
                   (isPlugin ? !holdsTheSeat || isInstalled === undefined : !tool)
                 }
               >
-                <Download className="mr-1.5 h-4 w-4" />
+                <Download className="h-4 w-4" />
                 {isPlugin ? t("plugins:install.action") : t("detail.install")}
               </Button>
             )}
