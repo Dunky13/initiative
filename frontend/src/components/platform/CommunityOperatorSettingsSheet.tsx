@@ -474,7 +474,16 @@ const NarrowingsSection = ({
  * other.
  */
 const PluginSummarySections = ({ communityId }: { communityId: number }) => {
-  const { data } = useListCommunityPluginSummaries(communityId);
+  const { t } = useTranslation("settings");
+  const { data, isError } = useListCommunityPluginSummaries(communityId);
+  // A failed list is not an empty one: say so, rather than drawing nothing.
+  if (isError) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        {t("communities.sheet.pluginSummariesUnavailable")}
+      </p>
+    );
+  }
   return (
     <>
       {(data?.items ?? []).map((summary) => (

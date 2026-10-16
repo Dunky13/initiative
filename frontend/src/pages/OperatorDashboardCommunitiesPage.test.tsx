@@ -149,13 +149,15 @@ const agreeNarrowing = vi.fn();
 // Where each community stands with the plug-ins that say, as its Usage tab
 // shows it, by community.
 let pluginSummaries: Record<number, unknown[]> = {};
+let pluginSummariesFail = false;
 
 vi.mock("@/api/generated/settings/settings", () => ({
   createPlatformCommunityBillingServiceHandoff: (communityId: number, answer: unknown) =>
     answer ? mintHandoff(communityId, answer) : mintHandoff(communityId),
-  useListCommunityPluginSummaries: (communityId: number) => ({
-    data: { items: pluginSummaries[communityId] ?? [] },
-  }),
+  useListCommunityPluginSummaries: (communityId: number) =>
+    pluginSummariesFail
+      ? { data: undefined, isError: true }
+      : { data: { items: pluginSummaries[communityId] ?? [] }, isError: false },
   useReadCommunityPluginSummary: () => ({
     data: { values: { used: 250, allowed: 500 }, rows: [] },
     isError: false,
@@ -250,6 +252,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
     billingConfig = { url: "https://billing.example.com", operator_handoff: true };
     supportBound = true;
     pluginSummaries = {};
+    pluginSummariesFail = false;
     narrowings = [];
   });
 
@@ -582,6 +585,14 @@ describe("OperatorDashboardCommunitiesPage", () => {
       expect(screen.getByText("Automations")).toBeInTheDocument();
       expect(screen.getByText("Runs this month")).toBeInTheDocument();
       expect(screen.getByText("250 of 500")).toBeInTheDocument();
+      expect(screen.queryByText("Plug-in usage could not be loaded.")).not.toBeInTheDocument();
+    });
+
+    it("says the list could not be loaded rather than showing none", async () => {
+      pluginSummariesFail = true;
+      await openSheet("Capped Community");
+
+      expect(screen.getByText("Plug-in usage could not be loaded.")).toBeInTheDocument();
     });
   });
 
