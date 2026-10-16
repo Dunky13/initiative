@@ -30,7 +30,9 @@
     "autoUpdateOff": "Las actualizaciones ahora se aplican a mano.",
     "upgradeTo": "Actualizar a {{version}}",
     "upToDate": "Actualizada",
-    "upgraded": "Actualizada a {{version}}."
+    "upgraded": "Actualizada a {{version}}.",
+    "removeManagedNeutral": "Los cargos de este complemento los gestiona tu proveedor.",
+    "removeManagedAction": "Gestionar"
   },
   "updates": {
     "wants": "La versión {{version}} quiere:",
@@ -60,7 +62,9 @@
       "moderator": "Moderadores",
       "project_manager": "Responsables de proyecto",
       "member": "Miembros"
-    }
+    },
+    "entitlementRequired": "Hay que activar este complemento para tu comunidad antes de poder añadirlo.",
+    "entitlementAction": "Ver opciones"
   },
   "connections": {
     "none": "Este complemento no pide nada que configurar.",

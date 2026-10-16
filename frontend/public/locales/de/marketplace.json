@@ -8,7 +8,8 @@
   "card": {
     "installed": "Installiert",
     "version": "v{{version}}",
-    "needsUpdate": "Benötigt neuere App"
+    "needsUpdate": "Benötigt neuere App",
+    "unavailable": "Noch nicht verfügbar"
   },
   "provenance": {
     "builtin": "von Initiative",

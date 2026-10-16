@@ -30,7 +30,9 @@ const opensInBrowserSheet = (): boolean => {
  * the handoff, and is null with no portal configured.
  *
  * `openPortal` opens that address in a new tab, falling back to the bare
- * portal page when the handoff fails. The tab is opened before the handoff
+ * portal page when the handoff fails. `openAddress` does the same for a portal
+ * address the server handed out, such as where a community acts on a plug-in
+ * it cannot install yet. The tab is opened before the handoff
  * token is minted so the browser keeps attributing it to the click that
  * started it. `reserveTab` exposes that step on its own for callers with their
  * own await between the click and the hop (community creation), which would
@@ -87,15 +89,14 @@ export const useBillingPortal = () => {
     return tab;
   }, [canSell]);
 
-  const openPortal = useCallback(
-    async (communityId: number, page: BillingPortalPage, reserved?: Window | null) => {
+  const openAddress = useCallback(
+    async (communityId: number, base: string, reserved?: Window | null) => {
       if (!canSell) return;
-      const base = pageUrl(communityId, page);
-      if (!base) return;
       const tab = reserved ?? reserveTab();
       let url = base;
       try {
-        url = (await portalUrl(communityId, page)) ?? base;
+        const { handoff_token } = await createCommunityBillingHandoff(communityId);
+        url = `${base}#handoff=${encodeURIComponent(handoff_token)}`;
       } catch {
         // Without a handoff, the bare portal page.
       }
@@ -109,8 +110,26 @@ export const useBillingPortal = () => {
       } else if (tab) tab.location.href = url;
       else window.open(url, "_blank", "noopener,noreferrer");
     },
-    [canSell, pageUrl, portalUrl, reserveTab]
+    [canSell, reserveTab]
   );
 
-  return { billing, canSell, isLoading, openPortal, portalUrl, reserveTab, sellsNow };
+  const openPortal = useCallback(
+    async (communityId: number, page: BillingPortalPage, reserved?: Window | null) => {
+      const base = pageUrl(communityId, page);
+      if (!base) return;
+      await openAddress(communityId, base, reserved);
+    },
+    [openAddress, pageUrl]
+  );
+
+  return {
+    billing,
+    canSell,
+    isLoading,
+    openAddress,
+    openPortal,
+    portalUrl,
+    reserveTab,
+    sellsNow,
+  };
 };

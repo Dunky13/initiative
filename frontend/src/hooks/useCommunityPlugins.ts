@@ -14,6 +14,7 @@ import type {
   CommunityPluginInstall,
   CommunityPluginListResponse,
   CommunityPluginRead,
+  CommunityPluginUninstallNotice,
   CommunityPluginUpdate,
   DetailLayoutReadKind,
   PluginActionResult,
@@ -21,10 +22,12 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import {
   getListCommunityPluginsQueryKey,
+  getReadUninstallNoticeQueryKey,
   installCommunityPlugin,
   listCommunityPlugins,
   putCommunityPluginPlacement,
   putCommunityPluginScopes,
+  readUninstallNotice,
   runPluginAction,
   uninstallCommunityPlugin,
   updateCommunityPlugin,
@@ -47,6 +50,22 @@ export const useCommunityPlugins = (options?: QueryOpts<CommunityPluginListRespo
     queryFn: () => listCommunityPlugins(communityId),
     enabled: enabled && communityWide,
     ...rest,
+  });
+};
+
+/**
+ * What the removal dialog says about one plug-in beyond the usual: asked when
+ * the dialog opens, in the reader's language, and never cached past it.
+ */
+export const useUninstallNotice = (pluginId: number, locale: string, enabled: boolean) => {
+  const communityId = useActiveCommunityId();
+  return useQuery<CommunityPluginUninstallNotice>({
+    queryKey: getReadUninstallNoticeQueryKey(communityId, pluginId, { locale }),
+    queryFn: () => readUninstallNotice(communityId, pluginId, { locale }),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
   });
 };
 

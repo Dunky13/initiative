@@ -30,7 +30,9 @@
     "autoUpdateOff": "Les mises à jour sont désormais appliquées manuellement.",
     "upgradeTo": "Mettre à jour vers {{version}}",
     "upToDate": "À jour",
-    "upgraded": "Mise à jour vers {{version}}."
+    "upgraded": "Mise à jour vers {{version}}.",
+    "removeManagedNeutral": "Les frais de ce plug-in sont gérés par votre fournisseur.",
+    "removeManagedAction": "Gérer"
   },
   "updates": {
     "wants": "La version {{version}} souhaite :",
@@ -60,7 +62,9 @@
       "moderator": "Modérateurs",
       "project_manager": "Chefs de projet",
       "member": "Membres"
-    }
+    },
+    "entitlementRequired": "Ce plug-in doit être activé pour votre communauté avant de pouvoir être ajouté.",
+    "entitlementAction": "Voir les options"
   },
   "connections": {
     "none": "Ce plug-in ne demande aucune configuration.",

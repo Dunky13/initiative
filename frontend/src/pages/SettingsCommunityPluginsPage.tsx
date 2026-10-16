@@ -43,11 +43,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPluginDetail } from "@/hooks/useCommunityPluginDetail";
 import {
   useCommunityPlugins,
   useUninstallCommunityPlugin,
+  useUninstallNotice,
   useUpdateCommunityPlugin,
 } from "@/hooks/useCommunityPlugins";
 import { useCommunityPath } from "@/lib/communityUrl";
@@ -122,7 +124,7 @@ export interface PluginListItem {
 }
 
 function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: boolean }) {
-  const { t } = useTranslation(["plugins", "common"]);
+  const { t, i18n } = useTranslation(["plugins", "common"]);
   const [name, setName] = useState(plugin.name);
   const [confirming, setConfirming] = useState(false);
   const [open, setOpen] = useState(false);
@@ -232,13 +234,52 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
         open={confirming}
         onOpenChange={setConfirming}
         title={t("plugins:manage.removeTitle", { name: plugin.name })}
-        description={t("plugins:manage.removeBody")}
+        description={
+          <>
+            {t("plugins:manage.removeBody")}
+            {confirming && (
+              <RemovalNotice pluginId={plugin.id} locale={i18n.resolvedLanguage ?? i18n.language} />
+            )}
+          </>
+        }
         confirmLabel={t("plugins:manage.remove")}
         onConfirm={remove}
         isLoading={uninstall.isPending}
         destructive
       />
     </Collapsible>
+  );
+}
+
+/**
+ * What removing this plug-in means beyond the usual, when somebody other than
+ * this server has a say in it: their own sentence, shown as they gave it, or a
+ * neutral one when they did not answer in time. Nothing for any other plug-in.
+ */
+function RemovalNotice({ pluginId, locale }: { pluginId: number; locale: string }) {
+  const { t } = useTranslation(["plugins"]);
+  const notice = useUninstallNotice(pluginId, locale, true);
+  const { activeCommunity } = useCommunities();
+  const { canSell, openAddress } = useBillingPortal();
+  const data = notice.data;
+  if (!data?.managed) return null;
+  const actionUrl = data.action_url;
+  return (
+    <span className="mt-2 block">
+      {data.message ?? t("plugins:manage.removeManagedNeutral")}
+      {actionUrl && canSell && activeCommunity && (
+        <>
+          {" "}
+          <Button
+            variant="link"
+            className="h-auto p-0"
+            onClick={() => void openAddress(activeCommunity.id, actionUrl)}
+          >
+            {t("plugins:manage.removeManagedAction")}
+          </Button>
+        </>
+      )}
+    </span>
   );
 }
 
