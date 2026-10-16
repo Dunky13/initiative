@@ -11,6 +11,9 @@ const config: CapacitorConfig = {
     hostname: "studio.beyonders.initiative",
     iosScheme: "https",
   },
+  // Nothing from the bridge or the web view's console goes to the device log;
+  // the console is still read in the browser's developer tools.
+  loggingBehavior: "none",
   android: {
     // Allow HTTP requests (for self-hosted servers without HTTPS) (LOCAL development and LAN testing)
     // allowMixedContent: true,
