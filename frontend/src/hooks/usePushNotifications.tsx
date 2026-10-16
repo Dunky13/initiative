@@ -104,11 +104,8 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
 
         pushReceivedListener = await PushNotifications.addListener(
           "pushNotificationReceived",
-          (notification) => {
-            // Handle foreground notification
-            console.log("Push notification received (foreground):", notification);
-            // The system will display the notification automatically
-            // You could show a custom in-app notification here if desired
+          () => {
+            // The system displays a notification that arrives in the foreground.
           }
         );
 
@@ -116,7 +113,6 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
           "pushNotificationActionPerformed",
           (notification) => {
             // Handle notification tap (navigate to target)
-            console.log("Push notification action performed:", notification);
             const data = notification.notification.data;
             // A path in this app, or nowhere.
             const targetPath = returnPath(data.target_path as string | undefined);
