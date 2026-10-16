@@ -520,8 +520,10 @@ async def update_task(
     assignee_ids = update_data.pop("assignee_ids", None)
     adding = update_data.pop("add_assignee_ids", None)
     removing = update_data.pop("remove_assignee_ids", None)
-    if adding is not None or removing is not None:
-        # Against whoever is on the task now, not whoever the caller last saw.
+    relative = adding is not None or removing is not None
+    if relative:
+        # What the task's series compares and carries; the task itself is
+        # written as the change (below).
         current = [assignee.id for assignee in task.assignees]
         taken_off = set(removing or [])
         assignee_ids = [
@@ -636,9 +638,18 @@ async def update_task(
     new_assignees: list[MemberProfile] = []
     if assignee_ids is not None:
         existing_assignee_ids = {assignee.id for assignee in task.assignees}
-        await task_creation_service.set_task_assignees(
-            session, task, assignee_ids, project=project
-        )
+        if relative:
+            await task_creation_service.change_task_assignees(
+                session,
+                task,
+                add=adding or [],
+                remove=removing or [],
+                project=project,
+            )
+        else:
+            await task_creation_service.set_task_assignees(
+                session, task, assignee_ids, project=project
+            )
         new_assignees = [
             assignee
             for assignee in task.assignees

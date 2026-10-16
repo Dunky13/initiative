@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -164,6 +165,51 @@ async def set_task_assignees(
     await notifications_service.dequeue_task_assignment_events(
         session, task_id=task.id, user_ids=sorted(previous_ids - set(unique_ids))
     )
+
+    await session.flush()
+    await session.refresh(task, attribute_names=["assignees"])
+
+
+async def change_task_assignees(
+    session: AsyncSession,
+    task: Task,
+    *,
+    add: Sequence[int] = (),
+    remove: Sequence[int] = (),
+    project: Project,
+) -> None:
+    """Put people on a task and take others off, leaving whoever else is on
+    it. Written as the change rather than as a new list, so two changes made
+    at once both land. Someone both added and removed is removed."""
+    removing = set(remove)
+    adding = [user_id for user_id in dict.fromkeys(add) if user_id not in removing]
+    governing = named_people.Governing.of(Tool.project, project)
+    await named_people.require_readers(session, governing, adding)
+
+    if adding:
+        await session.exec(
+            pg_insert(TaskAssignee)
+            .values([{"task_id": task.id, "user_id": user_id} for user_id in adding])
+            .on_conflict_do_nothing(index_elements=["task_id", "user_id"])
+        )
+    if removing:
+        removed = (
+            (
+                await session.exec(
+                    delete(TaskAssignee)
+                    .where(
+                        TaskAssignee.task_id == task.id,
+                        TaskAssignee.user_id.in_(sorted(removing)),
+                    )
+                    .returning(TaskAssignee.user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await notifications_service.dequeue_task_assignment_events(
+            session, task_id=task.id, user_ids=sorted(removed)
+        )
 
     await session.flush()
     await session.refresh(task, attribute_names=["assignees"])
