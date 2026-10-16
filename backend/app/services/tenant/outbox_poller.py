@@ -367,6 +367,10 @@ async def _pending_transactions(
     and is out of backoff" — there is no position to maintain, so a transaction
     missed by one pass is simply still pending.
 
+    Nothing is owed while one of the subscription's batches is waiting, for its
+    backoff or for the pass that holds it: the rest of the backlog waits behind
+    it, on every pass, until it is delivered or dead-lettered.
+
     This runs as the system login with BYPASSRLS (``_drain_subscription``
     routes it so), which is what keeps it a two-column scan of the log rather
     than a policy evaluation per row. It therefore names transactions the
@@ -382,8 +386,13 @@ async def _pending_transactions(
             "  AND NOT EXISTS ("
             "    SELECT 1 FROM webhook_deliveries d "
             "    WHERE d.subscription_id = :sid AND d.txn_id = o.txn_id "
-            "      AND (d.delivered_at IS NOT NULL OR d.dead_lettered_at IS NOT NULL "
-            "           OR d.next_attempt_at > :now)"
+            "      AND (d.delivered_at IS NOT NULL OR d.dead_lettered_at IS NOT NULL)"
+            "  ) "
+            "  AND NOT EXISTS ("
+            "    SELECT 1 FROM webhook_deliveries w "
+            "    WHERE w.subscription_id = :sid "
+            "      AND w.delivered_at IS NULL AND w.dead_lettered_at IS NULL "
+            "      AND w.next_attempt_at > :now"
             "  ) "
             "GROUP BY o.txn_id "
             "ORDER BY min(o.id) ASC "
@@ -403,8 +412,8 @@ async def _claim(
     """Take one transaction for this pass, or report that someone else has it.
 
     The ledger's primary key is the claim: an insert conflicting with a live row
-    updates nothing and returns nothing, so the racing replica moves on. A row
-    that exists but is out of backoff is re-taken by extending its lease.
+    updates nothing and returns nothing, so the racing replica stands down. A
+    row that exists but is out of backoff is re-taken by extending its lease.
     """
     result = await session.exec(
         text(
@@ -526,7 +535,9 @@ async def _drain_subscription(
 
     for txn_id in pending:
         if not await _claim(session, subscription, txn_id, now=now):
-            continue
+            # Another pass has this batch, so the ones after it wait for that
+            # pass rather than overtaking it.
+            return
 
         # The writing plug-in's listing rides along with each row, so naming it
         # costs no statement of its own.
@@ -621,9 +632,10 @@ async def _drain_subscription(
                 if delay < RETRY_WAKE_WITHIN_SECONDS:
                     asyncio.get_running_loop().call_later(delay, drain.wake, guild_id)
             # Deliver in order: hold the rest of this subscription's backlog
-            # until the refused batch gets through. Once dead-lettered there is
-            # nothing left to wait on, so later transactions proceed instead of
-            # queuing behind a batch that will never be retried again.
+            # until the refused batch gets through. Later passes hold it too
+            # (_pending_transactions). Once dead-lettered there is nothing left
+            # to wait on, so later transactions proceed instead of queuing
+            # behind a batch that will never be retried again.
             return
 
 
