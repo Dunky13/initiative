@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, literal, union_all
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm import selectinload, undefer
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
@@ -21,24 +23,29 @@ from app.api.deps import (
 )
 from app.core.plugin_scopes import tool_resource
 from app.core.messages import PluginMessages, TagMessages
+from app.api.v1.tenant_endpoints.tool_lists import TOOL_LISTS, view_conditions
 from app.core.tools import KINDS, Tool
-from app.db.guild_standing import InstallContext
+from app.db.guild_standing import GuildContext, InstallContext
 from app.db.initiative_rls import governing_path
+from app.db.query import build_paginated_response, paginated_query
+from app.models.tenant._mixins import ArchiveMixin
 from app.models.tenant.tag import Tag
 from app.models.platform.user import User
-from app.services import permissions as permissions_service
 from app.services.tenant import tags as tags_service
+from app.services.tenant.archive import archive_filter_clause
 from app.services.tenant.names import ensure_name_free
 from app.services.tenant.soft_delete import trash
-from app.schemas.tenant.search import SearchHit
 from app.schemas.tenant.tag import (
     TagBulkEditRequest,
     TagBulkEditResponse,
     TagCreate,
+    TagEntityCountsResponse,
     TagRead,
+    TagTarget,
     serialize_tag,
     TagUpdate,
     TaggedEntitiesResponse,
+    TaggedEntity,
 )
 
 # The tag dictionary is a guild-wide folksonomy BY DESIGN: every guild member
@@ -272,58 +279,148 @@ async def delete_tag(
     await session.commit()
 
 
+async def _tagged_conditions(
+    kind: str,
+    tag_id: int,
+    session: AsyncSession,
+    current_user: User,
+    guild_context: GuildContext,
+) -> list:
+    """The WHERE for the things of one kind carrying ``tag_id``, as the tag's
+    page lists them.
+
+    A tool's row is narrowed exactly as the tool's own community-wide list
+    narrows its ``active`` view, so a tab's count and the table under it agree.
+    A sub-resource is shared as part of its tool, so it is listed only when its
+    parent passes that same list, and leaves out its own archive where it has
+    one.
+    """
+    spec = tags_service.TAG_LINKS[kind]
+    tool, chain = _governing(spec)
+    tool_list = TOOL_LISTS[tool]
+    if not chain:
+        return await view_conditions(
+            tool_list,
+            session,
+            current_user,
+            guild_context,
+            **tool_list.views["active"],
+            tag_ids=[tag_id],
+        )
+    model = spec.entity
+    parents = select(tool_list.model.id).where(
+        *await view_conditions(
+            tool_list,
+            session,
+            current_user,
+            guild_context,
+            **tool_list.views["active"],
+        )
+    )
+    conditions = [
+        model.id.in_(tags_service.tagged_entity_ids(spec, [tag_id])),
+        getattr(model, chain[0][0]).in_(parents),
+    ]
+    if issubclass(model, ArchiveMixin):
+        conditions.append(archive_filter_clause(model, None))
+    return conditions
+
+
+@router.get("/{tag_id}/counts", response_model=TagEntityCountsResponse)
+async def get_tag_counts(
+    tag_id: int,
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> TagEntityCountsResponse:
+    """How many things of each taggable kind carry this tag, in one statement.
+
+    A tag reaches across every initiative in the community, so this counts
+    what has been shared with the reader — the same rule the community-wide
+    tool lists and the ``/me/*`` views follow. A guild admin's authority over
+    any one initiative is unchanged; it is asked about by opening that
+    initiative, not by opening a tag. Each figure is the ``total_count`` of
+    the list the tag's page shows for that kind.
+    """
+    tag = await _get_tag_or_404(session, tag_id, guild_context.guild_id)
+    selects = [
+        select(literal(kind), func.count())
+        .select_from(spec.entity)
+        .where(
+            *await _tagged_conditions(
+                kind, tag.id, session, current_user, guild_context
+            )
+        )
+        for kind, spec in tags_service.TAG_LINKS.items()
+    ]
+    rows = (await session.exec(union_all(*selects))).all()
+    return TagEntityCountsResponse(
+        counts={kind: count for kind, count in rows if count}
+    )
+
+
 @router.get("/{tag_id}/entities", response_model=TaggedEntitiesResponse)
 async def get_tag_entities(
     tag_id: int,
     session: RLSSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
     guild_context: GuildContextDep,
+    kind: Annotated[TagTarget, Query(description="The taggable kind to list")],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> TaggedEntitiesResponse:
-    """Everything carrying this tag, of every taggable kind.
+    """One page of the things of one kind carrying this tag, by name.
 
-    A tag reaches across every initiative in the community, so this listing
-    answers what has been shared with the reader — the same rule the community
-    front page's table and the ``/me/*`` views follow. A guild admin's authority
-    over any one initiative is unchanged; it is asked about by opening that
-    initiative, not by opening a tag.
-
-    Each row names itself and the tool it lives in, the way a search hit does,
-    which is everything a client needs to address it.
+    Shared with the reader on the same rule as ``GET /tags/{id}/counts``, whose
+    figure for ``kind`` is this list's ``total_count``. Each row names itself
+    and the tool it lives in, the way a search hit does, which is everything a
+    client needs to address it.
     """
     tag = await _get_tag_or_404(session, tag_id, guild_context.guild_id)
+    spec = tags_service.TAG_LINKS[kind.value]
+    model = spec.entity
+    tool, chain = _governing(spec)
+    parent = tags_service.TOOL_TAG_LINKS[tool].entity
+    tool_id = getattr(model, chain[0][0]) if chain else model.id
+    label = getattr(model, model.display_field())
+    parent_label = getattr(parent, parent.display_field())
+    updated_at = getattr(model, "updated_at", None)
+    conditions = await _tagged_conditions(
+        kind.value, tag.id, session, current_user, guild_context
+    )
 
-    items: list[SearchHit] = []
-    for spec in tags_service.TAG_LINKS.values():
-        model = spec.entity
-        tool, chain = _governing(spec)
-        # A sub-resource is shared as part of its tool, so the sharing leg and
-        # the initiative are both read off the parent row.
-        parent = tags_service.TOOL_TAG_LINKS[tool].entity
-        tool_id = getattr(model, chain[0][0]) if chain else model.id
-        label = getattr(model, model.display_field())
-        statement = (
-            select(model.id, label, parent.initiative_id, tool_id)
-            .where(
-                model.id.in_(tags_service.tagged_entity_ids(spec, [tag.id])),
-                permissions_service.granted_scope_clause(
-                    tool, tool_id, current_user.id, context=guild_context
-                ),
-            )
-            .order_by(label)
+    statement = (
+        select(
+            model.id,
+            label,
+            parent.initiative_id,
+            tool_id,
+            parent_label,
+            updated_at if updated_at is not None else literal(None),
         )
-        if chain:
-            statement = statement.join_from(model, parent, parent.id == tool_id)
-        items.extend(
-            SearchHit(
-                entity_type=spec.kind,
-                entity_id=entity_id,
-                title=title or "",
-                initiative_id=initiative_id,
-                tool=tool,
-                tool_id=parent_id,
-            )
-            for entity_id, title, initiative_id, parent_id in (
-                await session.exec(statement)
-            ).all()
+        .select_from(model)
+        .where(*conditions)
+        .order_by(func.lower(label), model.id)
+    )
+    if chain:
+        statement = statement.join(parent, parent.id == tool_id)
+    count_statement = select(func.count()).select_from(model).where(*conditions)
+    rows, total_count, page = await paginated_query(
+        session, statement, count_statement, page, page_size
+    )
+    items = [
+        TaggedEntity(
+            entity_type=spec.kind,
+            entity_id=entity_id,
+            title=title or "",
+            initiative_id=initiative_id,
+            tool=tool,
+            tool_id=parent_id,
+            tool_title=parent_title or "",
+            updated_at=changed_at,
         )
-    return TaggedEntitiesResponse(items=items)
+        for entity_id, title, initiative_id, parent_id, parent_title, changed_at in rows
+    ]
+    return TaggedEntitiesResponse(
+        **build_paginated_response(items, total_count, page, page_size)
+    )
