@@ -206,6 +206,25 @@ class PluginSurfaceAccessRead(SanitizedBaseModel):
     openable_initiatives: List[int] = []
 
 
+class CommunityPluginUninstallNotice(SanitizedBaseModel):
+    """What to tell somebody about to remove a plug-in, beyond what removing
+    any plug-in does.
+
+    ``managed`` is whether this deployment's entitlement issuer has a say about
+    this plug-in at all: false, and nothing else, for every plug-in whose
+    listing carries no package terms. When it does, ``message`` is the
+    issuer's own sentence in the reader's language, shown as it is, or null
+    when it could not say in time, in which case the client shows its own
+    neutral text. ``action_url`` is where to go about it.
+    """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    managed: bool = False
+    message: Optional[str] = None
+    action_url: Optional[str] = None
+
+
 class CommunityPluginRead(SanitizedBaseModel):
     model_config = ConfigDict(
         from_attributes=True, json_schema_serialization_defaults_required=True

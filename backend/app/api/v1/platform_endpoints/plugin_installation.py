@@ -18,6 +18,10 @@ and is refused.
   poller to deliver to the community's subscriptions.
 * ``GET`` / ``PUT /installation/metadata`` and ``GET /installation/metadata/lookup``
   — the values the plug-in keeps on items and on its install.
+* ``GET /installation/entitlement`` — the entitlement statement held for the
+  install's community and listing (404 ``NO_ENTITLEMENT`` without one).
+* ``PUT /installation/usage/{meter}/{period}`` — a period's cumulative total
+  for a meter the listing's terms name.
 
 The token is checked by the install seam (``establish_install_access``),
 whose standing statement admits the install only while it may act: the
@@ -34,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import (
@@ -53,12 +57,18 @@ from app.core.identify import bearer_plugin_token
 from app.core.messages import AuthMessages, PluginChannelMessages
 from app.db.guild_standing import InstallContext
 from app.db.session import clear_rls_context
+from app.models.platform.plugin_entitlement import (
+    METER_MAX_LENGTH,
+    METER_PATTERN,
+    PERIOD_PATTERN,
+)
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.schemas.tenant.plugin_channel import (
     MetadataTarget,
     PluginConnectionRead,
     PluginConnectionsResponse,
     PluginConnectionToken,
+    PluginEntitlementRead,
     PluginInstallConfigRead,
     PluginInstallationEvent,
     PluginMetadataItem,
@@ -67,8 +77,10 @@ from app.schemas.tenant.plugin_channel import (
     PluginMetadataWrite,
     PluginStatusRead,
     PluginStatusReport,
+    PluginUsageRead,
+    PluginUsageReport,
 )
-from app.services.marketplace import registration_lookup
+from app.services.marketplace import plugin_entitlements, registration_lookup
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.services.tenant import plugin_channels as channels_service
 from app.services.tenant import plugin_metadata as metadata_service
@@ -307,6 +319,72 @@ async def ingest_installation_event(
         token_initiative_id=installation.initiative_id,
     )
     return {"status": "accepted"}
+
+
+@router.get("/entitlement", response_model=PluginEntitlementRead)
+async def read_installation_entitlement(
+    installation: InstallationDep, session: SystemSessionDep
+) -> PluginEntitlementRead:
+    """The entitlement statement this deployment's issuer sent for the
+    install's community and listing, as the ``entitlement`` hook delivers it.
+
+    404 ``NO_ENTITLEMENT`` when there is none, which is every install on a
+    deployment with no issuer.
+    """
+    plugin = await _load(session, installation)
+    statement = (
+        await plugin_entitlements.read_statement(
+            installation.guild_id, plugin.listing_uid
+        )
+        if plugin.listing_uid
+        else None
+    )
+    if statement is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=PluginChannelMessages.NO_ENTITLEMENT,
+        )
+    return PluginEntitlementRead(version=statement.version, values=statement.values)
+
+
+@router.put("/usage/{meter}/{period}", response_model=PluginUsageRead)
+@_bounded
+async def report_installation_usage(
+    payload: PluginUsageReport,
+    installation: InstallationDep,
+    session: SystemSessionDep,
+    meter: Annotated[str, Path(max_length=METER_MAX_LENGTH, pattern=METER_PATTERN)],
+    period: Annotated[str, Path(pattern=PERIOD_PATTERN)],
+) -> PluginUsageRead:
+    """A period's cumulative total for one meter, kept and passed on.
+
+    The meter must be one the terms of the install's listing name (403
+    ``METER_NOT_ALLOWED``, which is every meter on a deployment whose listings
+    carry none), and the total may not fall below the one held for the period
+    (409 ``USAGE_TOTAL_DECREASED``). The same total again is accepted.
+    """
+    plugin = await _load(session, installation)
+    terms = await plugin_entitlements.listing_terms(plugin.listing_uid)
+    if terms is None or meter not in terms.meters:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=PluginChannelMessages.METER_NOT_ALLOWED,
+        )
+    assert plugin.listing_uid is not None  # a listing with terms has a uid
+    outcome = await plugin_entitlements.record_usage(
+        installation.guild_id,
+        plugin.listing_uid,
+        meter=meter,
+        period=period,
+        quantity=payload.quantity,
+        as_of=payload.as_of,
+    )
+    if outcome.decreased:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=PluginChannelMessages.USAGE_TOTAL_DECREASED,
+        )
+    return PluginUsageRead(meter=meter, period=period, quantity=outcome.quantity)
 
 
 def _items(

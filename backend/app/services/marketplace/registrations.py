@@ -7,9 +7,8 @@ Every plug-in splits the same way, whatever published its listing
   registry, a local upload, the operator's catalog directory, the build) may
   carry a ``registration`` block, and ``upsert_listing`` hands it to
   :func:`read_listing_registration` and :func:`apply_listing_registration`,
-  which write the listing, scope ceiling, image, reference sectors and
-  Compose service onto the registration for the service it names, creating the row when there is
-  none. Reference sectors are honoured only from the registry.
+  which write the listing, scope ceiling, image and Compose service onto the
+  registration for the service it names, creating the row when there is none.
 * **The operator gives the deployment facts**: where the plug-in runs, the keys
   its container signs with, its vendor values, the switch, the mandatory and
   operations-only flags and the origins. Through the ``plugins.manage`` endpoints, or in
@@ -61,13 +60,11 @@ from app.models.platform.plugin_service_registration import (
     IMAGE_REFERENCE_MAX_LENGTH,
     LISTING_STATED_FIELDS,
     MAX_PLUGIN_ID_LENGTH,
-    REFERENCE_SECTORS,
     PluginServiceRegistration,
     RegistrationKind,
     RegistrationSource,
 )
 from app.models.platform.publisher import (
-    FIRST_PARTY_PUBLISHER_PREFIX,
     Publisher,
     publisher_prefix,
 )
@@ -110,7 +107,6 @@ AUDITED_FIELDS: tuple[str, ...] = (
     "enabled",
     "source",
     "image_digest",
-    "reference_sectors",
     "compose",
 )
 
@@ -862,9 +858,6 @@ class ListingRegistration:
     kind: str
     image: Optional[str]
     scope_ceiling: list[str]
-    reference_sectors: list[str]
-    #: Whether the registry listing verified under the root this image ships.
-    root_is_builtin: bool
     #: The Compose service its publisher wrote, placeholders unfilled.
     compose: Optional[dict[str, str]] = None
 
@@ -976,15 +969,13 @@ async def read_listing_registration(
     listing_public_id: str,
     definition: Any,
     source: str,
-    root_is_builtin: bool = False,
 ) -> ListingRegistration:
     """Read a listing's ``registration`` block, before the listing is written.
 
     The block is the same from every source: ``kind`` — ``container``, or
     ``declarative`` for a plug-in with no service block — an optional ``image``
     pinned by digest and its Compose service (a container's only), the
-    ``scope_ceiling``, and ``reference_sectors``, which only a registry listing
-    may name. It names no location and no keys. The registration it writes is
+    and the ``scope_ceiling``. It names no location and no keys. The registration it writes is
     the one for the plug-in the listing's definition names, under the listing's own
     prefix; one another listing already holds is refused.
     """
@@ -1011,13 +1002,6 @@ async def read_listing_registration(
         raise ListingRegistrationError(
             f"a container's location and keys are the deployment's: {', '.join(stated)}"
         )
-    registry = source == RegistrationSource.REGISTRY
-    declared_sectors = spec.get("reference_sectors")
-    if declared_sectors and not registry:
-        raise ListingRegistrationError(
-            "reference sectors are honoured only from a registry listing"
-        )
-
     declared_image = spec.get("image")
     image = _image_reference(declared_image) if declared_image is not None else None
     declared_compose = spec.get("compose")
@@ -1039,18 +1023,6 @@ async def read_listing_registration(
         ),
         what=f"{public_id} ceiling",
     )
-    sectors = _vocabulary(
-        declared_sectors, REFERENCE_SECTORS, what=f"{public_id} reference sectors"
-    )
-    if sectors and prefix != FIRST_PARTY_PUBLISHER_PREFIX:
-        # A sector names one of this deployment's own services, so only this
-        # project's own plug-ins are given one.
-        logger.warning(
-            "plug-in services: %s is not this project's plug-in; reference sectors dropped",
-            public_id,
-        )
-        sectors = []
-
     held = await _by_public_id(session, public_id)
     if held is not None and held.listing_uid not in (None, listing_uid):
         raise ListingRegistrationError(
@@ -1064,8 +1036,6 @@ async def read_listing_registration(
         kind=kind,
         image=image,
         scope_ceiling=ceiling,
-        reference_sectors=sectors,
-        root_is_builtin=registry and root_is_builtin,
         compose=compose,
     )
 
@@ -1098,10 +1068,8 @@ async def apply_listing_registration(
         row.base_url = row.page_origin = row.jwks = row.jwks_uri = None
         row.allowed_origins = []
     row.scope_ceiling = registration.scope_ceiling
-    row.reference_sectors = registration.reference_sectors
     row.image_digest = registration.image
     row.compose = registration.compose
-    row.root_is_builtin = registration.root_is_builtin
     row.source = (
         RegistrationSource.REGISTRY
         if registration.source == RegistrationSource.REGISTRY

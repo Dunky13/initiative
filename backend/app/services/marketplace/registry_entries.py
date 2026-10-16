@@ -18,8 +18,8 @@ that the files are the ones the entry names, and turns the entry into rows:
 * **for a plug-in, its registration's plug-in facts** (``plugin_service_registrations``,
   ``source='registry'``), from the entry's ``registration`` block, through the
   same ``upsert_listing`` as every other source's listing. The block is the
-  container image, the scope ceiling and the reference sectors; where the
-  container runs and its keys are the deployment's.
+  container image and the scope ceiling; where the container runs and its keys
+  are the deployment's.
 
 The caller runs each entry in its own savepoint, so a refusal part-way leaves
 nothing of that entry behind.
@@ -176,8 +176,6 @@ class EntryContext:
     #: The bytes of ``publishers/<prefix>.json`` as the top-level role signs
     #: it, or ``None`` when there is no record.
     publisher_record: Callable[[str], Awaitable[Optional[bytes]]]
-    #: Whether the repository verified under the root shipped in the image.
-    root_is_builtin: bool
     now: datetime
 
 
@@ -540,7 +538,6 @@ async def apply_entry(session: AsyncSession, path: str, context: EntryContext) -
                 session,
                 published,
                 source=REGISTRY_SOURCE,
-                root_is_builtin=context.root_is_builtin,
             )
         except CatalogSourceConflict as exc:
             raise RegistryError(Codes.SOURCE_CONFLICT, str(exc)) from exc

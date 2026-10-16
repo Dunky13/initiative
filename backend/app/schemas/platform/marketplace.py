@@ -64,6 +64,25 @@ class MarketplaceVersionRead(SanitizedBaseModel):
     compatible: bool = True
 
 
+class ListingUnavailableReason(str, Enum):
+    """Why this community cannot install a listing it is offered."""
+
+    #: The listing installs only in a community holding an active
+    #: entitlement for it.
+    entitlement_required = "entitlement_required"
+
+
+class ListingUnavailable(SanitizedBaseModel):
+    """A listing the asking community is shown and cannot install yet."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    reason: ListingUnavailableReason
+    #: Where the community can do something about it, when this deployment
+    #: has somewhere: a page of its billing portal, opened with a handoff.
+    action_url: Optional[str] = None
+
+
 class MarketplaceListingSummary(SanitizedBaseModel):
     """A listing as it appears on a browse card."""
 
@@ -93,6 +112,9 @@ class MarketplaceListingSummary(SanitizedBaseModel):
     #: False when nothing about this listing can be installed on this build —
     #: withdrawn, or its only versions need a newer app.
     installable: bool = True
+    #: Set when the asking community cannot install it yet, and why. Absent on
+    #: every surface that is not asked from a community.
+    unavailable: Optional[ListingUnavailable] = None
     updated_at: datetime
 
 

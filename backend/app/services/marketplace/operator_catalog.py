@@ -20,8 +20,7 @@ so an operator listing is held to the same validation, the same uid and
 ``public_id`` rules, the same required attribution, and the same same-origin
 artwork rule as everything else in the catalog. The ``core.*`` namespace stays
 with the build. A plug-in's manifest may carry the registry's ``registration``
-block, and its scope ceiling is the operator's approval; it names no
-reference sectors, which only a registry listing may.
+block, and its scope ceiling is the operator's approval.
 
 Two behaviours are worth stating plainly:
 

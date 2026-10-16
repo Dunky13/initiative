@@ -3408,6 +3408,23 @@ export interface CommunityPluginScopesUpdate {
   granted?: string[];
 }
 
+/**
+ * What to tell somebody about to remove a plug-in, beyond what removing
+ * any plug-in does.
+ *
+ * ``managed`` is whether this deployment's entitlement issuer has a say about
+ * this plug-in at all: false, and nothing else, for every plug-in whose
+ * listing carries no package terms. When it does, ``message`` is the
+ * issuer's own sentence in the reader's language, shown as it is, or null
+ * when it could not say in time, in which case the client shows its own
+ * neutral text. ``action_url`` is where to go about it.
+ */
+export interface CommunityPluginUninstallNotice {
+  managed: boolean;
+  message: string | null;
+  action_url: string | null;
+}
+
 export interface CommunityPluginUpdate {
   name?: string | null;
   enabled?: boolean | null;
@@ -6807,6 +6824,24 @@ export const ListingStartFrom = {
   example: "example",
 } as const;
 
+/**
+ * Why this community cannot install a listing it is offered.
+ */
+export type ListingUnavailableReason =
+  (typeof ListingUnavailableReason)[keyof typeof ListingUnavailableReason];
+
+export const ListingUnavailableReason = {
+  entitlement_required: "entitlement_required",
+} as const;
+
+/**
+ * A listing the asking community is shown and cannot install yet.
+ */
+export interface ListingUnavailable {
+  reason: ListingUnavailableReason;
+  action_url: string | null;
+}
+
 export type ListingUploadRequestManifest = { [key: string]: unknown };
 
 /**
@@ -6925,6 +6960,7 @@ export interface MarketplaceListingDetail {
   available: boolean;
   latest_version: MarketplaceVersionRead | null;
   installable: boolean;
+  unavailable: ListingUnavailable | null;
   updated_at: string;
   long_description: string | null;
   definition: MarketplaceListingDetailDefinition;
@@ -6955,6 +6991,7 @@ export interface MarketplaceListingSummary {
   available: boolean;
   latest_version: MarketplaceVersionRead | null;
   installable: boolean;
+  unavailable: ListingUnavailable | null;
   updated_at: string;
 }
 
@@ -7026,6 +7063,7 @@ export interface MarketplaceSharedListingRead {
   available: boolean;
   latest_version: MarketplaceVersionRead | null;
   installable: boolean;
+  unavailable: ListingUnavailable | null;
   updated_at: string;
   pending_versions: string[];
 }
@@ -12874,6 +12912,14 @@ export type ReadPluginParamOptionsParams = {
    * What the form has answered so far, as a JSON object. Only the answers a source's `needs` names are ever forwarded.
    */
   params?: string | null;
+};
+
+export type ReadUninstallNoticeParams = {
+  /**
+   * @maxLength 35
+   * @pattern ^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$
+   */
+  locale?: string;
 };
 
 export type ListCommunityPluginMembersParams = {

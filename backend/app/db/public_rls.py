@@ -2041,6 +2041,14 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             app_user=None,
         ),
     ),
+    # The current entitlement statement per (community, listing), from this
+    # deployment's issuer. Written by the billing verb and read by the plug-in's
+    # pull route, the install gate and the hook delivery, all on the system
+    # engine after the caller is authenticated. No request role reaches it.
+    "plugin_entitlements": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(app_admin=frozenset({SELECT, INSERT, UPDATE})),
+    ),
     # Which community holds which install, and the value a vendor webhook routes to it
     # by. An index over the guild schemas, holding no content.
     "plugin_installs": SharedTable(
@@ -2103,6 +2111,13 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # beside the one on guilds.
             plugin_install_base=None,
         ),
+    ),
+    # The latest total a plug-in reported per (community, listing, meter, month).
+    # Written by the usage route on the system engine once the installation
+    # token is admitted. No request role reaches it.
+    "plugin_usage": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(app_admin=frozenset({SELECT, INSERT, UPDATE})),
     ),
     # Who publishes the plug-ins in ``plugin_service_registrations``: one row per
     # public_id prefix, with the switch that stops every plug-in under it. Deployment

@@ -161,7 +161,7 @@ VENDOR_MAX_RESPONSE_BYTES = 512 * 1024
 #: The hooks Initiative calls.
 HOOKS_PATH = "/v1/hooks"
 HOOK_NAMES: frozenset[str] = frozenset(
-    {"after_connect", "revoke", "webhook", "schedule"}
+    {"after_connect", "revoke", "webhook", "schedule", "entitlement"}
 )
 #: The widest account label kept, matching what the members view shows.
 MAX_ACCOUNT_LABEL_LENGTH = 200

@@ -59,7 +59,7 @@ from app.core.messages import GuildPluginMessages
 from app.db.session import routed_guild_id
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services import audit as audit_service
-from app.services.marketplace import registration_lookup
+from app.services.marketplace import plugin_entitlements, registration_lookup
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.platform import guilds as guilds_service
 from app.schemas.tenant.resource_grant import initiative_readable
@@ -412,6 +412,7 @@ async def install_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+    plugin_entitlements.after_install(session, guild_id, listing_uid)
     return plugin
 
 
@@ -490,6 +491,8 @@ async def uninstall_plugin(
             "consents": consents,
         },
     )
+    if listing_uid:
+        plugin_entitlements.after_uninstall(session, guild_id, listing_uid)
 
 
 async def clear_static_connection(

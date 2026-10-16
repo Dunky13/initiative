@@ -33,6 +33,7 @@ import type {
   CommunityPluginMembersResponse,
   CommunityPluginRead,
   CommunityPluginScopesUpdate,
+  CommunityPluginUninstallNotice,
   CommunityPluginUpdate,
   CommunityPluginUpgrade,
   HTTPValidationError,
@@ -47,6 +48,7 @@ import type {
   PluginWidgetCatalogResponse,
   ReadPluginDataParams,
   ReadPluginParamOptionsParams,
+  ReadUninstallNoticeParams,
 } from "../initiativeAPI.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -1771,6 +1773,174 @@ export const useDeclineCommunityPluginUpgrade = <
 > => {
   return useMutation(getDeclineCommunityPluginUpgradeMutationOptions(options), queryClient);
 };
+/**
+ * What the removal dialog says about this plug-in beyond the usual.
+ *
+ * For a plug-in whose listing carries package terms, the entitlement issuer
+ * is asked, for this response only and within two seconds, what removing it
+ * means for this community; its sentence comes back as it gave it. Anything
+ * else is ``managed: false``. Read by the seat, which is who removes one.
+ * @summary Read Uninstall Notice
+ */
+export const readUninstallNotice = (
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<CommunityPluginUninstallNotice>(
+    {
+      url: `/api/v1/c/${communityId}/plugins/${pluginId}/uninstall-notice`,
+      method: "GET",
+      params,
+      signal,
+    },
+    options
+  );
+};
+
+export const getReadUninstallNoticeQueryKey = (
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams
+) => {
+  return [
+    `/api/v1/c/${communityId}/plugins/${pluginId}/uninstall-notice`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getReadUninstallNoticeQueryOptions = <
+  TData = Awaited<ReturnType<typeof readUninstallNotice>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReadUninstallNoticeQueryKey(communityId, pluginId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readUninstallNotice>>> = ({ signal }) =>
+    readUninstallNotice(communityId, pluginId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      communityId !== null &&
+      communityId !== undefined &&
+      pluginId !== null &&
+      pluginId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ReadUninstallNoticeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readUninstallNotice>>
+>;
+export type ReadUninstallNoticeQueryError = ErrorType<HTTPValidationError>;
+
+export function useReadUninstallNotice<
+  TData = Awaited<ReturnType<typeof readUninstallNotice>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  params: undefined | ReadUninstallNoticeParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readUninstallNotice>>,
+          TError,
+          Awaited<ReturnType<typeof readUninstallNotice>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useReadUninstallNotice<
+  TData = Awaited<ReturnType<typeof readUninstallNotice>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readUninstallNotice>>,
+          TError,
+          Awaited<ReturnType<typeof readUninstallNotice>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useReadUninstallNotice<
+  TData = Awaited<ReturnType<typeof readUninstallNotice>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read Uninstall Notice
+ */
+
+export function useReadUninstallNotice<
+  TData = Awaited<ReturnType<typeof readUninstallNotice>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  pluginId: number,
+  params?: ReadUninstallNoticeParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUninstallNotice>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadUninstallNoticeQueryOptions(communityId, pluginId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 /**
  * Set the guild-wide values a plug-in's connections ask for.
  *

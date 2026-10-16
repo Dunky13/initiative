@@ -33,6 +33,7 @@ from sqlmodel import select
 
 from app.db import session as db_session
 from app.models.platform.app_setting import AppSetting
+from app.models.platform.marketplace import MarketplaceListing
 from app.models.platform.plugin_service_registration import (
     PluginServiceRegistration,
     RegistrationKind,
@@ -86,7 +87,9 @@ class RegistrationSnapshot:
     #: snapshot is built rather than per token.
     #: Empty on a plug-in that has not been provisioned with a pasted set.
     keys: Mapping[str, Any]
-    #: The deployment installs this plug-in in every guild (§7.7).
+    #: The deployment installs this plug-in in every guild (§7.7): the
+    #: registration says so, or the package serving its listing does. The
+    #: package's word adds the flag and never clears it.
     mandatory: bool
     #: The operator's kill switch on the registration itself.
     enabled: bool
@@ -177,9 +180,12 @@ async def load_registrations(*, force: bool = False) -> dict[str, RegistrationSn
 
     Runs on the system engine: the table carries no request-path grant beyond
     the install standing's few columns, so this is the reader everything else
-    shares. One statement joins each registration to its publisher and reads
-    the operations community beside it.
+    shares. One statement joins each registration to its publisher and its
+    listing, and reads the operations community beside it.
     """
+    from app.services.marketplace.catalog import REGISTRY_SOURCE
+    from app.services.marketplace.tuf_registry import configured_root_is_builtin
+
     global _cache, _loaded_at
     if not force and _cache is not None:
         if (time.monotonic() - _loaded_at) < CACHE_TTL_SECONDS:
@@ -197,11 +203,19 @@ async def load_registrations(*, force: bool = False) -> dict[str, RegistrationSn
                     PluginServiceRegistration,
                     live_registration_clause().label("live"),
                     operations.label("operations_guild_id"),
+                    MarketplaceListing.mandatory,
+                    MarketplaceListing.source,
                 )
                 .join(Publisher, Publisher.id == PluginServiceRegistration.publisher_id)
+                .outerjoin(
+                    MarketplaceListing,
+                    MarketplaceListing.uid == PluginServiceRegistration.listing_uid,
+                )
                 .order_by(PluginServiceRegistration.public_id)
             )
         ).all()
+    # The package's terms hold only under the shipped root.
+    packaged = configured_root_is_builtin()
 
     snapshots = {
         row.public_id: RegistrationSnapshot(
@@ -211,7 +225,8 @@ async def load_registrations(*, force: bool = False) -> dict[str, RegistrationSn
             page_origin=row.page_origin,
             allowed_origins=tuple(row.allowed_origins or []),
             keys=_parse_keys(row),
-            mandatory=bool(row.mandatory),
+            mandatory=bool(row.mandatory)
+            or (packaged and bool(signed) and source == REGISTRY_SOURCE),
             enabled=bool(row.enabled),
             live=bool(live),
             scope_ceiling=tuple(sorted(row.scope_ceiling or [])),
@@ -220,7 +235,7 @@ async def load_registrations(*, force: bool = False) -> dict[str, RegistrationSn
             operations_only=row.operations_only,
             operations_guild_id=operations_guild_id,
         )
-        for row, live, operations_guild_id in rows
+        for row, live, operations_guild_id, signed, source in rows
     }
     _cache = snapshots
     _loaded_at = time.monotonic()

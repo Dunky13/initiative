@@ -177,7 +177,6 @@ class TestApplying:
         assert registration.image_digest == "ghcr.io/acme/tracker@sha256:" + "0" * 64
         assert (registration.base_url, registration.jwks) == (None, None)
         assert registration.scope_ceiling == ["projects:read", "projects:write"]
-        assert registration.root_is_builtin is True
 
         status = await _status(session)
         assert status is not None
@@ -256,25 +255,6 @@ class TestApplying:
         registration = await _registration(session, "acme.tracker")
         assert registration is not None
         assert registration.scope_ceiling == ["projects:read"]
-
-    async def test_a_sector_is_kept_only_for_this_projects_own_plugins(
-        self, session, repo, trusted
-    ):
-        repo.add_publisher("beyonders-studio", name="BeyondersStudio")
-        sectored = container_registration(reference_sectors=["billing", "weather"])
-        repo.add_listing(
-            "beyonders-studio", "MRXT0000000001", slug="auto", registration=sectored
-        )
-        repo.add_listing("acme", PLUGIN_UID, slug="tracker", registration=sectored)
-        repo.publish()
-
-        result, _ = await _refresh(session, repo)
-
-        assert result.ok, result
-        ours = await _registration(session, "beyonders-studio.auto")
-        assert ours is not None and ours.reference_sectors == ["billing"]
-        theirs = await _registration(session, "acme.tracker")
-        assert theirs is not None and theirs.reference_sectors == []
 
     async def test_a_kind_this_build_does_not_carry_is_passed_over(
         self, session, repo, trusted
@@ -720,8 +700,6 @@ class TestConfiguration:
 
         assert result.ok, result
         assert tuf_registry.configured_root_is_builtin() is False
-        registration = await _registration(session, "acme.tracker")
-        assert registration is not None and registration.root_is_builtin is False
 
     async def test_a_repository_signed_under_another_root_is_refused(
         self, session, trusted, monkeypatch
@@ -836,3 +814,229 @@ class TestBundle:
         with pytest.raises(tuf_registry.RegistryError) as refused:
             tuf_registry.read_bundle(buffer.getvalue())
         assert refused.value.code == Codes.BUNDLE_INVALID
+
+
+# ---------------------------------------------------------------------------
+# A package's terms
+# ---------------------------------------------------------------------------
+
+
+def _terms(uid: str = PLUGIN_UID, **overrides):
+    return {
+        "listing_uid": uid,
+        "access": "entitled",
+        "mandatory": False,
+        "meters": [],
+        **overrides,
+    }
+
+
+MANDATORY_TERMS = {"access": "open", "mandatory": True, "meters": ["runs"]}
+
+
+class TestPackageTerms:
+    async def test_terms_land_on_the_listing_under_the_shipped_root(
+        self, session, repo, trusted
+    ):
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.add_listing("acme", OTHER_UID, slug="other")
+        repo.set_terms(PLUGIN_UID, _terms())
+        repo.set_terms(OTHER_UID, _terms(OTHER_UID, **MANDATORY_TERMS))
+        repo.publish()
+
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        paid = await _listing(session, PLUGIN_UID)
+        assert paid is not None
+        assert (paid.access, paid.mandatory, paid.meters) == ("entitled", False, [])
+        metered = await _listing(session, OTHER_UID)
+        assert metered is not None
+        assert (metered.access, metered.mandatory, metered.meters) == (
+            "open",
+            True,
+            ["runs"],
+        )
+
+    async def test_terms_are_not_honoured_under_another_root(
+        self, session, repo, trusted, monkeypatch, tmp_path
+    ):
+        other = TufRepository()
+        monkeypatch.setattr(
+            tuf_registry,
+            "BUILTIN_ROOT_PATH",
+            _write_root(tmp_path / "shipped.json", other.root_bytes()),
+        )
+        monkeypatch.setattr(settings, "MARKETPLACE_REGISTRY_ROOT", str(trusted))
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms(**MANDATORY_TERMS))
+        repo.publish()
+
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None
+        assert (listing.access, listing.mandatory, listing.meters) == (None, False, [])
+
+    async def test_terms_a_root_change_leaves_are_dropped(
+        self, session, repo, trusted, monkeypatch, tmp_path
+    ):
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms())
+        repo.publish()
+        await _refresh(session, repo)
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access == "entitled"
+
+        other = TufRepository()
+        monkeypatch.setattr(
+            tuf_registry,
+            "BUILTIN_ROOT_PATH",
+            _write_root(tmp_path / "shipped.json", other.root_bytes()),
+        )
+        monkeypatch.setattr(settings, "MARKETPLACE_REGISTRY_ROOT", str(trusted))
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access is None
+
+    async def test_a_delegation_with_no_role_file_means_no_terms(
+        self, session, repo, trusted
+    ):
+        """The public index delegates the role and publishes no file for it."""
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.add_package(publish_role=False)
+        repo.publish()
+
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        assert result.skipped == []
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"access": "entitled", "mandatory": True},
+            {"access": "entitled", "meters": ["runs"]},
+            {"access": "open", "mandatory": False},
+            {"access": "open", "mandatory": False, "meters": ["runs"]},
+            {"access": "paid"},
+            {"mandatory": "yes"},
+            {"meters": ["Runs"]},
+            {"meters": ["runs", "runs"], "access": "open", "mandatory": True},
+            {"listing_uid": OTHER_UID},
+            {"price": 5},
+        ],
+    )
+    async def test_terms_outside_the_two_shapes_are_refused(
+        self, session, repo, trusted, bad
+    ):
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms(**bad))
+        repo.publish()
+
+        result, _ = await _refresh(session, repo)
+
+        assert [entry.code for entry in result.skipped] == [Codes.TERMS_INVALID]
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access is None
+
+    async def test_refused_terms_keep_the_ones_held(self, session, repo, trusted):
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms())
+        repo.publish()
+        await _refresh(session, repo)
+
+        repo.set_terms(PLUGIN_UID, _terms(mandatory=True))
+        repo.publish()
+        result, _ = await _refresh(session, repo)
+
+        assert [entry.code for entry in result.skipped] == [Codes.TERMS_INVALID]
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access == "entitled"
+
+    async def test_a_package_role_that_does_not_verify_keeps_every_term(
+        self, session, repo, trusted
+    ):
+        from securesystemslib.signer import CryptoSigner
+
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms())
+        repo.publish()
+        await _refresh(session, repo)
+
+        repo.package_signed_by = CryptoSigner.generate_ed25519()
+        repo.remove_terms(PLUGIN_UID)
+        repo.publish()
+        result, _ = await _refresh(session, repo)
+
+        assert [entry.name for entry in result.skipped] == ["package"]
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access == "entitled"
+
+    async def test_terms_a_package_drops_are_dropped(self, session, repo, trusted):
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms())
+        repo.publish()
+        await _refresh(session, repo)
+
+        repo.remove_terms(PLUGIN_UID)
+        repo.publish()
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access is None
+
+    async def test_a_publisher_cannot_sign_terms(self, session, repo, trusted):
+        """Terms are read from the package role alone: a publisher's own role
+        listing an ``entitlements/`` path gives nothing."""
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.content["acme"][f"entitlements/{PLUGIN_UID}.json"] = json.dumps(
+            _terms(**MANDATORY_TERMS)
+        ).encode()
+        repo.add_package()
+        repo.publish()
+
+        result, _ = await _refresh(session, repo)
+
+        assert result.ok, result
+        listing = await _listing(session, PLUGIN_UID)
+        assert listing is not None and listing.access is None
+
+    async def test_the_package_makes_a_listing_mandatory_whatever_the_registration_says(
+        self, session, repo, trusted
+    ):
+        from app.services.marketplace import registration_lookup
+
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.set_terms(PLUGIN_UID, _terms(**MANDATORY_TERMS))
+        repo.publish()
+        await _refresh(session, repo)
+        registration = await _registration(session, "acme.tracker")
+        assert registration is not None
+        # The operator clears the flag on the registration.
+        registration.mandatory = False
+        session.add(registration)
+        await session.commit()
+
+        snapshots = await registration_lookup.load_registrations(force=True)
+
+        assert snapshots["acme.tracker"].mandatory is True
+
+    async def test_a_listing_without_terms_follows_the_registration(
+        self, session, repo, trusted
+    ):
+        from app.services.marketplace import registration_lookup
+
+        repo.add_listing("acme", PLUGIN_UID, slug="tracker")
+        repo.publish()
+        await _refresh(session, repo)
+
+        snapshots = await registration_lookup.load_registrations(force=True)
+
+        assert snapshots["acme.tracker"].mandatory is False

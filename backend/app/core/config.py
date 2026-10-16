@@ -1044,20 +1044,6 @@ class Settings(BaseSettings):
     # let billing start signing with it, then drop the old block. A token is
     # accepted if any block verifies it. The HMAC has a second accepted value
     # for the same staged rotation protocol.
-    # --- A bundled service's own channel ----------------------------------
-    # A plug-in this deployment ships rather than installs from the marketplace,
-    # named by the ``public_id`` its registration carries, plus the secret it
-    # signs its calls on that channel with.
-    #
-    # What it is for: a reference is minted per sector, so one party's name for
-    # a guild is unrelated to another's and only this deployment holds both. A
-    # bundled service that has to reconcile two of them asks here.
-    #
-    # Either value unset ⇒ the channel answers 503 and nothing on it is
-    # reachable.
-    BUNDLED_SERVICE_PUBLIC_ID: str | None = None
-    BUNDLED_SERVICE_SHARED_SECRET: str | None = None
-
     BILLING_PUBLIC_KEY_PEM: str | None = None
     BILLING_HMAC_SECRET: str | None = None
     # Second accepted HMAC value during a staged rotation. It may hold the next
@@ -1097,7 +1083,8 @@ class Settings(BaseSettings):
     #
     # ``MARKETPLACE_REGISTRY_ROOT`` is a path to a different trusted root, for a
     # repository signed under somebody else's keys. Listings and plug-ins from it
-    # land as usual; reference sectors are honoured only under the shipped root.
+    # land as usual; a package's entitlement terms are honoured only under the
+    # shipped root.
     MARKETPLACE_REGISTRY_URL: str = (
         "https://beyonders-studio.github.io/initiative-developer/public/"
     )

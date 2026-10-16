@@ -5,8 +5,7 @@ A marketplace **listing** says what a plug-in is and what it declares. A
 splits the same way, whatever published its listing:
 
 * **Plug-in facts** come from the plug-in's listing, and only a listing apply writes
-  them: ``listing_uid``, ``scope_ceiling``, ``image_digest``,
-  ``reference_sectors`` and ``compose``. Every source reads the same
+  them: ``listing_uid``, ``scope_ceiling``, ``image_digest`` and ``compose``. Every source reads the same
   ``registration`` block (the registry, a local upload, the operator's catalog
   directory, the build).
 * **Deployment facts** come from the operator, through ``PLUGIN_SERVICES_CONFIG``
@@ -83,13 +82,11 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
 
 from app.core.encryption import FERNET_SALT, SALT_PLUGIN_VENDOR
-from app.models.platform.identity_ref import IdentityPurpose
 
 __all__ = [
     "IMAGE_REFERENCE_MAX_LENGTH",
     "LISTING_STATED_FIELDS",
     "MAX_PLUGIN_ID_LENGTH",
-    "REFERENCE_SECTORS",
     "PluginServiceRegistration",
     "RegistrationKind",
     "BrowserAddressed",
@@ -105,11 +102,6 @@ MAX_PLUGIN_ID_LENGTH = 120
 #: The widest container image reference stored.
 IMAGE_REFERENCE_MAX_LENGTH = 500
 
-#: The sectors a registration may name in ``reference_sectors``: the other
-#: parties this deployment keeps its own reference for a community in, which
-#: a plug-in may be allowed to learn. A sector outside this set is dropped.
-REFERENCE_SECTORS: frozenset[str] = frozenset({IdentityPurpose.billing.value})
-
 #: What only a plug-in's listing states. A ``PLUGIN_SERVICES_CONFIG`` entry or a
 #: settings request naming one is refused: it gives deployment facts only.
 LISTING_STATED_FIELDS: tuple[str, ...] = (
@@ -118,7 +110,6 @@ LISTING_STATED_FIELDS: tuple[str, ...] = (
     "scope_ceiling",
     "image",
     "image_digest",
-    "reference_sectors",
     "registry",
     "compose",
 )
@@ -280,24 +271,12 @@ class PluginServiceRegistration(SQLModel, table=True):
         default=None,
         sa_column=Column(String(IMAGE_REFERENCE_MAX_LENGTH), nullable=True),
     )
-    # Which of this deployment's other sectors the plug-in may learn a community's
-    # reference in. Honoured only from a registry listing; empty otherwise.
-    reference_sectors: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
-    )
     # The Compose service its listing's publisher wrote for running the plug-in
     # beside Initiative: ``{"service": <YAML text>, "base_url": <address on
     # the Compose network>}``, its placeholders unfilled. NULL when the listing
     # carries none.
     compose: Optional[dict] = Field(
         default=None, sa_column=Column(JSONB, nullable=True)
-    )
-    # Whether the registry listing behind this row was verified under the root
-    # shipped in the image. Reference sectors are honoured only when it was.
-    root_is_builtin: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     # What the operator supplies for the plug-in's vendor client, by the key the
     # listing's manifest declares under ``vendor``. Every value is a Fernet

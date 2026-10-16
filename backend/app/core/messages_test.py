@@ -8,7 +8,7 @@ is invisible until somebody hits the path, which is why it is asserted here
 rather than noticed in review.
 
 The **machine surfaces** below are deliberately out of scope: service-to-service
-channels — billing, the bundled-reference channel, an installed plug-in's
+channels — billing, an installed plug-in's
 installation calls — where no person is on the other end and the code IS the
 answer. The ``KindMessages`` refusals are worded once with the kind's name
 filled in, so what a locale owes for a new tool or kind is its name, under
@@ -38,7 +38,6 @@ MACHINE_SURFACES = frozenset(
         "PluginDataMessages",
         "PluginServiceMessages",
         "BillingMessages",
-        "BundledChannelMessages",
     }
 )
 

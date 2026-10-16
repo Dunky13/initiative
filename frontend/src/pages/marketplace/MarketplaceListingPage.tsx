@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPlugins } from "@/hooks/useCommunityPlugins";
 import { useWidgetCatalog } from "@/hooks/useDashboards";
@@ -81,6 +82,11 @@ export function MarketplaceListingPage() {
   // button says so rather than failing after the click.
   // Adding a plug-in is the superadmin's consent, so only the seat is offered it.
   const holdsTheSeat = Boolean(activeCommunity?.can.seat);
+  // A listing this community cannot install yet says why, and where the seat
+  // can do something about it.
+  const unavailable = listing?.unavailable ?? null;
+  const { canSell, openAddress } = useBillingPortal();
+  const actionUrl = unavailable?.action_url ?? null;
   // Whether this community already has it. Every member may read the installs, so
   // this answers for the person asking as well as the one who could act.
   //
@@ -196,6 +202,7 @@ export function MarketplaceListingPage() {
                 // page should not take on a guess.
                 disabled={
                   !listing.installable ||
+                  unavailable !== null ||
                   (isPlugin ? !holdsTheSeat || isInstalled === undefined : !tool)
                 }
               >
@@ -207,6 +214,21 @@ export function MarketplaceListingPage() {
               <span className="text-muted-foreground text-xs">
                 {listing.available ? t("detail.needsUpdate") : t("detail.withdrawn")}
               </span>
+            ) : unavailable && !isInstalled ? (
+              <div className="flex max-w-xs flex-col items-end gap-1 text-right">
+                <span className="text-muted-foreground text-xs">
+                  {t("plugins:install.entitlementRequired")}
+                </span>
+                {holdsTheSeat && canSell && actionUrl && activeCommunity && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openAddress(activeCommunity.id, actionUrl)}
+                  >
+                    {t("plugins:install.entitlementAction")}
+                  </Button>
+                )}
+              </div>
             ) : isPlugin && pluginInstalls.isError ? (
               <span className="text-muted-foreground text-xs">
                 {t("plugins:install.unknownState")}

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **For platform staff:** a **Communities** list in the Operator dashboard; a **Moderate** access level that reads everything, held content included, and changes nothing; suspending communities as a moderator; more account actions on an account's Manage panel; access grants tied to the case they serve; **Cases** notifications and **Take this case**; security cases the server opens itself; and more in the audit log.
 - **Members' AI keys.** The superadmin seat sees which members added their own key to the community's AI connections, and can remove one.
 - **More security emails.** New recovery codes and a newly linked sign-in provider each send an email with **This wasn't me**, which now opens a security case.
+- **Plug-in entitlements.** A plug-in a server's package names terms for can be limited to communities holding an entitlement for it, which the catalog shows as unavailable with where to get one. An installed plug-in reads its community's entitlement and reports its usage, and the removal dialog says what removing it means for the community's charges.
 
 ### Changed
 
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AccessGrantRead.user_email` and `approved_by_email` are replaced by `user` and `approved_by`, which name people by handle.
   - `POST /api/v1/me/tickets` and `POST /api/v1/me/tickets/{task_id}/replies` take `multipart/form-data`: the ticket as JSON in `payload`, or the answer in `body`, beside any `files`.
   - **Database login passwords travel as their SCRAM hash.** The start-up role setup and `python -m app.db.bootstrap --print-sql` give Postgres the hash it stores, not the password.
+  - **Reference sectors and the bundled-service channel are removed.** `POST /api/v1/plugin-platform/community-reference`, a registration's `reference_sectors`, and the `BUNDLED_SERVICE_PUBLIC_ID` / `BUNDLED_SERVICE_SHARED_SECRET` settings are gone.
   - **`BEHIND_PROXY=true` trusts forwarded headers from the local network only.** Unless `FORWARDED_ALLOW_IPS` says otherwise, the proxy must reach the app from loopback, a private range or link-local. A proxy on a public address needs its addresses in `FORWARDED_ALLOW_IPS`; the log names the address it saw.
   - **Audit lines name people by id only.** `user.username_changed` carries no handles, a suspension's detail is `reason_given` rather than the reason, a native sign-in carries no device name, and an SSO sign-in lists `claim_names` rather than the claims' values.
   - **Server logs are JSON.** Standard error is one JSON object per line, the web server's request lines included, and each line names its request, account, community and route. The request line names the route a request matched rather than its address, leaves out the query string, and is written to standard error, so standard output carries the audit stream alone.
