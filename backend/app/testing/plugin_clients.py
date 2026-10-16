@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
 import jwt
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from jwt.algorithms import ECAlgorithm, RSAAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
 from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -58,18 +58,23 @@ CLIENT = "tests.token-client"
 LISTING = "TOKENCLIENT001"
 RSA_KID = "token-client-rsa-1"
 EC_KID = "token-client-ec-1"
+ED_KID = "token-client-ed25519-1"
 
 _rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _ec_key = ec.generate_private_key(ec.SECP256R1())
+_ed_key = ed25519.Ed25519PrivateKey.generate()
 
 
 def client_jwks() -> dict[str, Any]:
-    """The key set the plug-in's registration publishes: one RSA key, one P-256."""
+    """The key set the plug-in's registration publishes: one RSA key, one P-256,
+    one Ed25519."""
     rsa_entry = json.loads(RSAAlgorithm.to_jwk(_rsa_key.public_key()))
     rsa_entry["kid"] = RSA_KID
     ec_entry = json.loads(ECAlgorithm.to_jwk(_ec_key.public_key()))
     ec_entry["kid"] = EC_KID
-    return {"keys": [rsa_entry, ec_entry]}
+    ed_entry = json.loads(OKPAlgorithm.to_jwk(_ed_key.public_key()))
+    ed_entry["kid"] = ED_KID
+    return {"keys": [rsa_entry, ec_entry, ed_entry]}
 
 
 def mint_client_assertion(
@@ -92,9 +97,11 @@ def mint_client_assertion(
     disagree with the key. ``extra`` adds claims, as a member grant's
     ``installation`` and ``purpose``.
     """
-    private = _rsa_key if key == "rsa" else _ec_key
-    default_kid = RSA_KID if key == "rsa" else EC_KID
-    default_alg = "RS256" if key == "rsa" else "ES256"
+    private, default_kid, default_alg = {
+        "rsa": (_rsa_key, RSA_KID, "RS256"),
+        "ec": (_ec_key, EC_KID, "ES256"),
+        "ed25519": (_ed_key, ED_KID, "EdDSA"),
+    }[key]
     iat = int(time.time() if issued_at is None else issued_at)
     claims = {
         "iss": client_id,
