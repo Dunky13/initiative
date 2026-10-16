@@ -1277,6 +1277,9 @@ class MarketplaceRegistryMessages:
     PUBLISHER_CONFLICT = "MARKETPLACE_REGISTRY_PUBLISHER_CONFLICT"
     #: The listing itself was refused by the catalog's validator.
     LISTING_REJECTED = "MARKETPLACE_REGISTRY_LISTING_REJECTED"
+    #: A package's terms for a listing are not in the expected format, or name
+    #: a combination terms never take. The listing keeps the terms it had.
+    TERMS_INVALID = "MARKETPLACE_REGISTRY_TERMS_INVALID"
 
 
 class QueueMessages:
@@ -1357,6 +1360,9 @@ class GuildPluginMessages:
     #: not remove or disable it. The affordances are absent rather than
     #: erroring; this answers a request that arrives anyway.
     MANDATORY = "COMMUNITY_PLUGIN_MANDATORY"
+    #: The listing installs only in a community holding an active entitlement
+    #: for it, and this one holds none.
+    ENTITLEMENT_REQUIRED = "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED"
 
     # --- service plug-ins ---
     #: This install's plug-in service is not wired up here — never registered, or
@@ -1392,35 +1398,6 @@ class GuildPluginMessages:
     #: The consent or the decline names a version other than the one the
     #: catalog offers now.
     UPGRADE_VERSION_MOVED = "COMMUNITY_PLUGIN_UPGRADE_VERSION_MOVED"
-
-
-class BundledChannelMessages:
-    """Codes for calls a service this deployment ships makes to it.
-
-    Machine-to-machine, read by that service's logs and retry logic rather than
-    ``errors.json`` — the same reasoning :class:`BillingMessages` gives. No
-    surface renders one to a person.
-    """
-
-    #: No bundled service is named, or its secret is unwired. The channel is
-    #: inert on a deployment that ships none.
-    NOT_CONFIGURED = "BUNDLED_NOT_CONFIGURED"
-    #: The envelope arrived without both halves of its signature.
-    MISSING_SIGNATURE = "BUNDLED_MISSING_SIGNATURE"
-    #: Outside the clock window, or not a timestamp at all.
-    STALE_TIMESTAMP = "BUNDLED_STALE_TIMESTAMP"
-    #: The signature is not one this deployment's secret produces.
-    BAD_SIGNATURE = "BUNDLED_BAD_SIGNATURE"
-    #: The reference names no guild, or names one through an install that is
-    #: not the caller's own.
-    UNKNOWN_GUILD = "BUNDLED_UNKNOWN_COMMUNITY"
-    #: No reference has been minted for that guild in the sector asked about.
-    NO_SUCH_NAME = "BUNDLED_NO_SUCH_NAME"
-    #: The signed body is not the shape this route takes.
-    INVALID_PAYLOAD = "BUNDLED_INVALID_PAYLOAD"
-    #: That sector names something inside a guild, so it is not one a caller
-    #: holding only a guild reference can ask for.
-    SECTOR_NOT_ANSWERABLE = "BUNDLED_SECTOR_NOT_ANSWERABLE"
 
 
 class PluginServiceMessages:
@@ -1589,6 +1566,16 @@ class PluginChannelMessages:
     outside what the pinned manifest declared.
     """
 
+    # --- entitlements and usage ---
+    #: This deployment holds no entitlement statement for the install's
+    #: community and listing.
+    NO_ENTITLEMENT = "NO_ENTITLEMENT"
+    #: The meter is not one the listing's terms let this plug-in report: every
+    #: meter, on a deployment whose listings carry no terms.
+    METER_NOT_ALLOWED = "METER_NOT_ALLOWED"
+    #: The total is lower than the one already reported for that period.
+    USAGE_TOTAL_DECREASED = "USAGE_TOTAL_DECREASED"
+
     # --- the install being addressed ---
     #: No install of this plug-in in that guild — never installed, uninstalled, or
     #: the guild is not one this caller may see.
@@ -1710,6 +1697,9 @@ class BillingMessages:
     PORTAL_NOT_CONFIGURED = "BILLING_PORTAL_NOT_CONFIGURED"
     PORTAL_SIGNING_NOT_CONFIGURED = "BILLING_PORTAL_SIGNING_NOT_CONFIGURED"
     PORTAL_GRANT_UNAVAILABLE = "BILLING_PORTAL_GRANT_UNAVAILABLE"
+    #: A statement for a listing no package names terms for here: it takes
+    #: none on this deployment.
+    LISTING_HAS_NO_TERMS = "BILLING_LISTING_HAS_NO_TERMS"
 
 
 class DirectMessageMessages:

@@ -26,6 +26,9 @@ and nothing it serves is used until the metadata chain above it verifies.
 4. Apply each listing in its own savepoint
    (:mod:`app.services.marketplace.registry_entries`), withdraw what the
    repository no longer lists, and store the metadata the client verified.
+5. Under the root shipped in the image, read the terms the ``package`` role
+   signs for each listing (:mod:`app.services.marketplace.package_terms`) and
+   write them onto the listings. Under any other root every listing holds none.
 
 The catalog moves as one transaction. A refusal of the repository itself
 (unreachable, expired, not verifying) rolls it back and records the code on the
@@ -84,7 +87,7 @@ from app.models.platform.marketplace_registry import (
     MarketplaceRegistryStatus,
     MarketplaceTufMetadata,
 )
-from app.services.marketplace import registry_entries
+from app.services.marketplace import package_terms, registry_entries
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.marketplace.registry_entries import RegistryError
 from app.services.platform import app_settings as app_settings_service
@@ -571,6 +574,11 @@ class VerifiedRepository:
         for role in roles:
             prefix = role.name
             probe = registry_entries.listing_path(prefix, _PROBE_UID)
+            if prefix == package_terms.PACKAGE_ROLE and not role.is_delegated_path(
+                probe
+            ):
+                # The package's role, read by :meth:`package_role`.
+                continue
             if registry_entries.parse_prefix(
                 prefix
             ) is None or not role.is_delegated_path(probe):
@@ -602,6 +610,52 @@ class VerifiedRepository:
                 f"the repository lists {len(found)} listings, more than {MAX_LISTINGS}",
             )
         return sorted(found)
+
+    def package_role(self) -> Optional[tuple[DelegatedRole, Targets]]:
+        """The ``package`` delegation and the targets it signs, or ``None``
+        when the repository carries no package role file.
+
+        A repository may delegate the role and publish no file for it, as the
+        public index does: that is no terms, not a failure. A role file the
+        snapshot lists that does not verify raises ``RegistryError``.
+        """
+        top = self._kept_targets(Targets.type)
+        delegations = top.delegations
+        role = (
+            delegations.roles.get(package_terms.PACKAGE_ROLE)
+            if delegations is not None and delegations.roles
+            else None
+        )
+        probe = package_terms.terms_path(_PROBE_UID)
+        if role is None or not role.is_delegated_path(probe):
+            return None
+        snapshot = self._read(_metadata_filename(Snapshot.type), Snapshot)
+        if f"{role.name}.json" not in snapshot.meta:
+            return None
+        try:
+            self._updater.get_targetinfo(probe)
+            return role, self._kept_targets(role.name)
+        except (
+            tuf_errors.RepositoryError,
+            tuf_errors.DownloadError,
+            OSError,
+        ) as exc:
+            raise RegistryError(
+                _tuf_code(exc), f"the package role did not load: {exc}"
+            ) from exc
+
+    def package_terms(
+        self, role: DelegatedRole, targets: Targets, uid: str
+    ) -> Optional[bytes]:
+        """The terms file the package role signs for listing ``uid``, or
+        ``None`` when it signs none. Read from that role alone."""
+        path = package_terms.terms_path(uid)
+        if not role.is_delegated_path(path):
+            return None
+        info = targets.targets.get(path)
+        if info is None:
+            return None
+        return self._download(info, package_terms.MAX_TERMS_BYTES)
 
     def uncertain(self, path: str) -> bool:
         """Whether ``path`` is covered by a delegation that did not load."""
@@ -804,6 +858,10 @@ async def _apply(
         )
         result = RefreshResult(ran=True, root_version=facts.root_version)
         if unchanged:
+            if not anchor.builtin:
+                # The same repository, trusted under another root than the
+                # shipped one: none of its terms hold here.
+                await package_terms.apply_terms(session, {})
             files = await asyncio.to_thread(repo.verified_files)
             await _keep_files(session, files, now=now)
             _record_attempt(status, anchor, facts, source=source, now=now)
@@ -829,7 +887,6 @@ async def _apply(
         context = registry_entries.EntryContext(
             fetch=fetch,
             publisher_record=publisher_record,
-            root_is_builtin=anchor.builtin,
             now=now,
         )
         present: set[str] = set()
@@ -862,6 +919,13 @@ async def _apply(
         result.withdrawn = await registry_entries.withdraw_missing(
             session, present=present, uncertain=repo.uncertain, now=now
         )
+        if anchor.builtin:
+            terms, keep = await _read_terms(repo, present, result)
+        else:
+            terms, keep = {}, set()
+        await package_terms.apply_terms(
+            session, terms, keep=keep, uncertain=repo.uncertain
+        )
         files = await asyncio.to_thread(repo.verified_files)
         await _keep_files(session, files, now=now)
 
@@ -874,6 +938,48 @@ async def _apply(
         status.last_success_at = now
     session.add(status)
     return result
+
+
+async def _read_terms(
+    repo: VerifiedRepository, present: set[str], result: RefreshResult
+) -> tuple[dict[str, package_terms.ListingTerms], Optional[set[str]]]:
+    """The package's terms for each listing present, and the uids whose
+    terms could not be read and so stay as they are (``None`` for every one,
+    when the package role itself did not load)."""
+    try:
+        package = await asyncio.to_thread(repo.package_role)
+    except RegistryError as exc:
+        logger.warning(
+            "marketplace registry: package terms not read (%s): %s",
+            exc.code,
+            exc.detail,
+        )
+        result.skipped.append(
+            SkippedEntry(name=package_terms.PACKAGE_ROLE, code=exc.code)
+        )
+        return {}, None
+    if package is None:
+        return {}, set()
+    role, targets = package
+    terms: dict[str, package_terms.ListingTerms] = {}
+    keep: set[str] = set()
+    for uid in sorted(present):
+        try:
+            raw = await asyncio.to_thread(repo.package_terms, role, targets, uid)
+            if raw is not None:
+                terms[uid] = package_terms.parse_terms(raw, uid=uid)
+        except RegistryError as exc:
+            logger.warning(
+                "marketplace registry: terms for %s refused (%s): %s",
+                uid,
+                exc.code,
+                exc.detail,
+            )
+            result.skipped.append(
+                SkippedEntry(name=package_terms.terms_path(uid), code=exc.code)
+            )
+            keep.add(uid)
+    return terms, keep
 
 
 def _record_attempt(

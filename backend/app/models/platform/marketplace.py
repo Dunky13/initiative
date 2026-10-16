@@ -23,6 +23,7 @@ from typing import Any, List, Optional, TYPE_CHECKING
 from pydantic import ConfigDict
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -30,8 +31,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -46,12 +48,29 @@ UID_LENGTH = 14
 UID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
+#: Who may install a listing a package names (``MarketplaceListing.access``).
+ACCESS_OPEN = "open"
+ACCESS_ENTITLED = "entitled"
+
+#: The two shapes a listing's package terms take, and the shape of none.
+LISTING_TERMS_CHECK = (
+    "(access IS NULL AND NOT mandatory AND cardinality(meters) = 0)"
+    " OR (access = 'entitled' AND NOT mandatory AND cardinality(meters) = 0)"
+    " OR (access = 'open' AND mandatory)"
+)
+
+
 class MarketplaceListing(SQLModel, table=True):
     """One installable product, at whatever versions it has published."""
 
     __tablename__ = "marketplace_listings"
     __allow_unmapped__ = True
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    __table_args__ = (
+        CheckConstraint(
+            LISTING_TERMS_CHECK, name="ck_marketplace_listings_package_terms"
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     # The catalog UPC. Assigned by the publisher and carried in the manifest —
@@ -149,6 +168,26 @@ class MarketplaceListing(SQLModel, table=True):
             nullable=True,
             index=True,
         ),
+    )
+    # The terms a package signs for this listing (``entitlements/<uid>.json``
+    # under the registry's ``package`` role), honoured only from the registry
+    # verified under the root shipped in the image. ``access`` is who may
+    # install it: ``open`` (anyone) or ``entitled`` (a community holding an
+    # active entitlement statement); NULL for every listing no package names,
+    # which is every listing from any other source. ``meters`` are the usage
+    # counters its plug-in may report, and ``mandatory`` makes it part of every
+    # community. Only two shapes exist: ``entitled`` with neither, or ``open``
+    # and mandatory, which may meter.
+    access: Optional[str] = Field(
+        default=None, sa_column=Column(String(16), nullable=True)
+    )
+    meters: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
+    )
+    mandatory: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     # False once a registry withdraws a listing. Never deleted: installed
     # instances keep working and keep their provenance.

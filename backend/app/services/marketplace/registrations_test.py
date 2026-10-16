@@ -649,16 +649,6 @@ async def test_a_listing_block_with_a_fact_it_cannot_state_is_refused(session, b
         await upsert_listing(session, _plugin_listing(block), source="local")
 
 
-@pytest.mark.parametrize("source", ["builtin", "operator", "local"])
-async def test_reference_sectors_are_honoured_only_from_the_registry(session, source):
-    with pytest.raises(CatalogError, match="reference sectors"):
-        await upsert_listing(
-            session,
-            _plugin_listing({**CONTAINER, "reference_sectors": ["billing"]}),
-            source=source,
-        )
-
-
 async def test_a_registration_another_listing_holds_is_refused(session):
     await create_plugin_service_registration(
         session, public_id="acme.widgets", listing_uid="ABCDEFGHJKMNPQ"

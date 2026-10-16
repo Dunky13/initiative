@@ -421,7 +421,6 @@ async def upsert_listing(
     bundled_with: Optional[str] = None,
     hold_for_review: bool = False,
     submitted_by: Optional[int] = None,
-    root_is_builtin: bool = False,
 ) -> MarketplaceListing:
     """Create or update one listing and the version its manifest describes.
 
@@ -445,8 +444,7 @@ async def upsert_listing(
     shared a new listing; it is never changed afterwards.
 
     A plug-in's ``registration`` block is read before anything is written and
-    applied once its version is offered. ``root_is_builtin`` is whether a
-    registry listing verified under the root this image ships.
+    applied once its version is offered.
     """
     if source not in LISTING_SOURCES:
         raise CatalogError(f"unknown listing source {source!r}")
@@ -490,7 +488,6 @@ async def upsert_listing(
                 listing_public_id=public_id,
                 definition=definition,
                 source=source,
-                root_is_builtin=root_is_builtin,
             )
         except registrations_service.ListingRegistrationError as exc:
             error = CatalogSourceConflict if exc.conflict else CatalogError

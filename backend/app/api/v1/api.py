@@ -91,7 +91,6 @@ from app.api.v1.platform_endpoints import (
     config,
     contacts,
     demo,
-    guild_reference,
     guild_provider_connections,
     guilds,
     health,
@@ -190,9 +189,6 @@ api_router.include_router(
 # credential, because requiring one to fetch a verification key is circular.
 api_router.include_router(
     plugin_platform.router, prefix="/plugin-platform", tags=["plugin-platform"]
-)
-api_router.include_router(
-    guild_reference.router, prefix="/plugin-platform", tags=["plugin-platform"]
 )
 # The token endpoint: a plug-in authenticates with a JWT it signs and is issued a
 # plug-in or installation token. The listing of its installs takes the plug-in token.
