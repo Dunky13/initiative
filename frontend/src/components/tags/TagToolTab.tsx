@@ -20,23 +20,24 @@ import {
   type TaggedEntity,
   TagTarget,
   type TaskListRead,
-  type Tool,
+  Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
-import { globalTaskColumns } from "@/components/tasks/globalTaskColumns";
+import { sharedTaskColumns } from "@/components/tasks/globalTaskColumns";
 import { type ToolSortField, ToolTable } from "@/components/toolBrowser/ToolTable";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { MentionText } from "@/components/user/MentionText";
 import { useCommunityToolRows } from "@/hooks/useCommunityToolRows";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useInitiatives } from "@/hooks/useInitiatives";
-import { useMyTaskStatusChanges } from "@/hooks/useMyTaskStatusChanges";
 import { useServerTableState } from "@/hooks/useServerTableState";
 import { useTagEntities } from "@/hooks/useTags";
 import { useTasks } from "@/hooks/useTasks";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { taskSortFields } from "@/lib/filters/taskFilters";
+import { fieldColumn } from "@/lib/layouts/columns";
 import { LAYOUT_NAMESPACES, type LayoutEnv } from "@/lib/layouts/fields";
 import { taskFields } from "@/lib/layouts/tasks";
 import { hitIcon, searchHitPath } from "@/lib/searchResults";
@@ -71,6 +72,19 @@ export const TAGGED_CHILDREN = Object.fromEntries(
  *  children's, from the tag's counts. */
 export const toolTabCount = (tool: Tool, counts: Record<string, number>): number =>
   (counts[tool] ?? 0) + TAGGED_CHILDREN[tool].reduce((sum, kind) => sum + (counts[kind] ?? 0), 0);
+
+/** A section or the page whose list could not be read, and the way to ask again. */
+export const TagLoadError = ({ onRetry }: { onRetry: () => void }) => {
+  const { t } = useTranslation(["tags", "common"]);
+  return (
+    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+      <span>{t("detail.loadError")}</span>
+      <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
+        {t("common:tryAgain")}
+      </Button>
+    </div>
+  );
+};
 
 const FIRST_PAGE_SIZE = 20;
 /** A child kind's table has no sort control of its own: rows come by name. */
@@ -132,14 +146,20 @@ const TagToolTable = ({
   const search = useDebouncedValue(draft, 250).trim();
   const [sortBy, setSortBy] = useState<ToolSortField>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const { rows, totalCount, isLoading } = useCommunityToolRows(tool, page, pageSize, {
-    search,
-    sortBy,
-    sortDir,
-    tagIds: [tagId],
-  });
+  const { rows, totalCount, isLoading, isError, refetch } = useCommunityToolRows(
+    tool,
+    page,
+    pageSize,
+    {
+      search,
+      sortBy,
+      sortDir,
+      tagIds: [tagId],
+    }
+  );
 
   if (isLoading) return <TableSkeleton rows={4} columns={5} />;
+  if (isError && rows.length === 0) return <TagLoadError onRetry={refetch} />;
 
   return (
     <ToolTable
@@ -170,30 +190,22 @@ const TagToolTable = ({
   );
 };
 
-/** Columns of My Tasks a tag's list has no use for: the community (there is
- *  one), the date window it groups by, and the focus pin. */
-const LEFT_OUT_TASK_COLUMNS = new Set(["guild", "date group", "focus"]);
-
-/** The tasks carrying the tag, across every project the reader can open, with
- *  the columns and the status controls a task table has everywhere. */
+/** The tasks carrying the tag, across every project the reader can open.
+ *
+ * Read-only, as a task embed is: these rows come from many projects, and a
+ * row does not say which of them the reader may change, so a control here
+ * could only offer what the server then refuses. A task is changed on its
+ * own page, a click away. */
 const TagTasksTable = ({ tagId }: { tagId: number }) => {
-  const { t } = useTranslation(["tasks", "dates", "common", "projects"]);
+  const { t } = useTranslation("tasks");
   const { t: viewT } = useTranslation(LAYOUT_NAMESPACES);
   const communityPath = useCommunityPath();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(FIRST_PAGE_SIZE);
   const [sorting, setSorting] = useState<SortingState>([]);
-  const {
-    changeTaskStatus,
-    changeTaskStatusById,
-    fetchProjectStatuses,
-    projectStatusCache,
-    isUpdatingTask,
-    rememberStatuses,
-  } = useMyTaskStatusChanges();
 
   const sort = taskSortFields(sorting);
-  const { data, isLoading, isPlaceholderData } = useTasks(
+  const { data, isLoading, isError, isPlaceholderData, refetch } = useTasks(
     {
       conditions: [{ field: "tag_ids", op: "in_", value: [tagId] }],
       page,
@@ -205,9 +217,6 @@ const TagTasksTable = ({ tagId }: { tagId: number }) => {
   const tasks = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total_count ?? 0;
 
-  useEffect(() => {
-    rememberStatuses(tasks);
-  }, [tasks, rememberStatuses]);
   // Fewer pages than the reader was on — something was untagged while they
   // looked — and the server answers with its last page: follow it.
   useEffect(() => {
@@ -230,30 +239,60 @@ const TagTasksTable = ({ tagId }: { tagId: number }) => {
     }),
     [viewT, communityPath]
   );
-  const columns = useMemo(
-    () =>
-      globalTaskColumns({
-        activeCommunityId: null,
-        isUpdatingTask,
-        changeTaskStatus,
-        changeTaskStatusById,
-        fetchProjectStatuses,
-        projectStatusCache,
-        t: t as TranslateFn,
-        fields,
-        env,
-      }).filter((column) => !LEFT_OUT_TASK_COLUMNS.has(String(column.id))),
-    [
-      isUpdatingTask,
-      changeTaskStatus,
-      changeTaskStatusById,
-      fetchProjectStatuses,
-      projectStatusCache,
-      t,
+  const columns = useMemo<AppColumnDef<TaskListRead>[]>(() => {
+    const shared = sharedTaskColumns<TaskListRead>({
       fields,
       env,
-    ]
-  );
+      isPriorityDisabled: () => true,
+    });
+    const priority = fields.get("priority");
+    return [
+      shared.title,
+      {
+        id: "path",
+        header: () => <span className="font-medium">{t("columns.projectPath")}</span>,
+        cell: ({ row }) => {
+          const task = row.original;
+          return (
+            <div className="flex min-w-30 flex-wrap items-center gap-2 text-sm">
+              {task.initiative_id != null && task.initiative_name ? (
+                <>
+                  <Link
+                    to={communityPath(initiativeRoute(task.initiative_id))}
+                    className="text-muted-foreground hover:underline"
+                  >
+                    {task.initiative_name}
+                  </Link>
+                  <span className="text-muted-foreground" aria-hidden>
+                    &gt;
+                  </span>
+                </>
+              ) : null}
+              <Link
+                to={communityPath(
+                  toolDetailRoute(Tool.project, task.initiative_id ?? null, task.project_id)
+                )}
+                className="font-medium text-primary hover:underline"
+              >
+                {task.project_name ?? t("projectFallback", { id: task.project_id })}
+              </Link>
+            </div>
+          );
+        },
+      },
+      {
+        id: "status",
+        header: () => <span className="font-medium">{t("columns.status")}</span>,
+        cell: ({ row }) => <span className="text-sm">{row.original.task_status.name}</span>,
+        enableSorting: false,
+      },
+      // Priority reads as what it is, without the picker.
+      ...(priority ? [fieldColumn<TaskListRead>(priority, env, { size: 140 })] : []),
+      shared.startDate,
+      shared.dueDate,
+      shared.tags,
+    ];
+  }, [t, fields, env, communityPath]);
 
   const onPaginationChange = useCallback(
     (next: { pageIndex: number; pageSize: number }) => {
@@ -268,6 +307,7 @@ const TagTasksTable = ({ tagId }: { tagId: number }) => {
   );
 
   if (isLoading) return <TableSkeleton rows={4} columns={6} />;
+  if (isError && !data) return <TagLoadError onRetry={() => void refetch()} />;
 
   return (
     <DataTable
@@ -305,7 +345,7 @@ const TagEntityTable = ({
   const { t } = useTranslation(["tags", "communityHome"]);
   const communityPath = useCommunityPath();
   const { params, tableProps } = useServerTableState(NO_SORT_FIELDS);
-  const { data, isLoading } = useTagEntities(tagId, {
+  const { data, isLoading, isError, refetch } = useTagEntities(tagId, {
     kind: kind as TagTarget,
     page: params.page,
     page_size: params.page_size,
@@ -405,6 +445,7 @@ const TagEntityTable = ({
   );
 
   if (isLoading) return <TableSkeleton rows={4} columns={4} />;
+  if (isError && !data) return <TagLoadError onRetry={() => void refetch()} />;
 
   return (
     <DataTable

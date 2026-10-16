@@ -23,7 +23,8 @@
     },
     "columns": {
       "in": "Dans"
-    }
+    },
+    "loadError": "Impossible de charger ce qui porte cette étiquette."
   },
   "manage": {
     "edit": "Modifier les étiquettes",

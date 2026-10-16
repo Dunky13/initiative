@@ -71,5 +71,6 @@ export function useCommunityToolRows(
     totalCount: query.data?.total_count ?? 0,
     isLoading: query.isLoading,
     isError: query.isError,
+    refetch: () => void query.refetch(),
   };
 }

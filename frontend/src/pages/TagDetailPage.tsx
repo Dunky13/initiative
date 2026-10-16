@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { StatusMessage } from "@/components/StatusMessage";
 import { TableSkeleton, TagDetailSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TagToolTab, toolTabCount } from "@/components/tags/TagToolTab";
+import { TagLoadError, TagToolTab, toolTabCount } from "@/components/tags/TagToolTab";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +44,7 @@ export const TagDetailPage = () => {
   const { tool: toolSegment } = useSearch({ strict: false }) as { tool?: string };
 
   const { data: tag, isLoading: tagLoading, error: tagError } = useTag(tagId);
-  const { data: tagCounts } = useTagCounts(tagId);
+  const { data: tagCounts, isError: countsFailed, refetch: refetchCounts } = useTagCounts(tagId);
   const deleteTagMutation = useDeleteTag();
   const updateTagMutation = useUpdateTag();
 
@@ -201,7 +201,9 @@ export const TagDetailPage = () => {
         )}
       </div>
 
-      {!tagCounts ? (
+      {!tagCounts && countsFailed ? (
+        <TagLoadError onRetry={() => void refetchCounts()} />
+      ) : !tagCounts ? (
         <TableSkeleton rows={6} columns={5} />
       ) : selected === null ? (
         <p className="text-muted-foreground text-sm">{t("detail.empty")}</p>

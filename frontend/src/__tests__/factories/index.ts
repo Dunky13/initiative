@@ -79,6 +79,7 @@ export {
   buildSearchHit,
   buildSearchResults,
   buildSearchSuggestion,
+  buildTaggedEntity,
   resetCounter as resetSearchCounter,
 } from "./search.factory";
 export { buildTag, buildTagSummary, resetCounter as resetTagCounter } from "./tag.factory";

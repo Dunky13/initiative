@@ -9,7 +9,13 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { buildPage, buildProject, buildTag, buildTask } from "@/__tests__/factories";
+import {
+  buildPage,
+  buildProject,
+  buildTag,
+  buildTaggedEntity,
+  buildTask,
+} from "@/__tests__/factories";
 import { buildTaskListResponse } from "@/__tests__/factories/task.factory";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
@@ -20,17 +26,15 @@ import { TagDetailPage } from "./TagDetailPage";
 
 const tag = buildTag({ id: 3, name: "Urgent" });
 
-const wikiPage = {
+const wikiPage = buildTaggedEntity({
   entity_type: SearchEntityType.wiki_page,
   entity_id: 11,
   title: "Rota",
-  snippet: null,
   initiative_id: 5,
   tool: Tool.wiki,
   tool_id: 4,
   tool_title: "Handbook",
-  updated_at: null,
-};
+});
 
 /** The tag carries a project, a task in it and a wiki page; records what the
  *  lists were asked for. */
@@ -124,6 +128,35 @@ describe("TagDetailPage", () => {
       "href",
       "/c/1/i/5/wikis/4/pages/11"
     );
+  });
+
+  it("says when the tag's counts could not be read, and asks again", async () => {
+    let fail = true;
+    server.use(
+      communityHttp.get("/tags/:tagId", () => HttpResponse.json(tag)),
+      communityHttp.get("/tags/:tagId/counts", () =>
+        fail
+          ? HttpResponse.json({ detail: "boom" }, { status: 500 })
+          : HttpResponse.json({ counts: {} })
+      )
+    );
+    renderTagPage();
+
+    expect(await screen.findByText("Couldn't load what carries this tag.")).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Nothing carries this tag yet.")).toBeInTheDocument();
+  });
+
+  it("lists tagged tasks without controls a row cannot promise", async () => {
+    serveTag();
+    renderTagPage();
+
+    const link = await screen.findByRole("link", { name: /Wire the doorbell/ });
+    const row = link.closest("tr") as HTMLElement;
+    expect(within(row).getByText("To Do")).toBeInTheDocument();
+    expect(within(row).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(row).queryByRole("combobox")).not.toBeInTheDocument();
   });
 
   it("says so when nothing carries the tag", async () => {
