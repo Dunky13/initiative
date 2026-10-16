@@ -39,6 +39,22 @@ describe("DialogContent", () => {
     expect(content.className).toContain("[&>*]:min-w-0");
   });
 
+  // Both sit at the same z-index, so as siblings the later one paints on top,
+  // and which is later depends on which mounted last. Inside the overlay, the
+  // content is above it whatever the order.
+  it("renders its content inside the overlay, so the overlay never covers it", () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Anything</DialogTitle>
+        </DialogContent>
+      </Dialog>
+    );
+
+    const content = screen.getByRole("dialog");
+    expect(content.parentElement?.dataset.slot).toBe("dialog-overlay");
+  });
+
   it("keeps the viewport cap when a caller sets its own width", () => {
     render(
       <Dialog open>
