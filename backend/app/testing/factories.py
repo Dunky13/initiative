@@ -1481,6 +1481,61 @@ async def create_listing_with_terms(
     return listing
 
 
+#: The key test entitlement statements are signed with. Nothing here verifies
+#: the signature (the plug-in does), so one key serves every test.
+_STATEMENT_KEY = ed25519.Ed25519PrivateKey.generate()
+
+
+def entitlement_statement(
+    *,
+    community_ref: str,
+    listing_uid: str,
+    version: int,
+    values: dict[str, Any],
+    header: dict[str, Any] | None = None,
+    drop: Sequence[str] = (),
+    **claims: Any,
+) -> str:
+    """A compact JWS entitlement statement, as the issuer signs one.
+
+    ``header`` replaces header fields, ``claims`` replaces or adds claims, and
+    ``drop`` removes claims, so a test can build each malformed shape.
+    """
+
+    def segment(value: dict[str, Any]) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    body: dict[str, Any] = {
+        "iss": "initiative-billing",
+        "listing_uid": listing_uid,
+        "community_ref": community_ref,
+        "version": version,
+        "values": values,
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        **claims,
+    }
+    for name in drop:
+        body.pop(name, None)
+    signing_input = ".".join(
+        [
+            segment(
+                {
+                    "alg": "EdDSA",
+                    "typ": "initiative-entitlement+jwt",
+                    "kid": "test-statement-key",
+                    **(header or {}),
+                }
+            ),
+            segment(body),
+        ]
+    )
+    signature = _STATEMENT_KEY.sign(signing_input.encode())
+    return (
+        f"{signing_input}.{base64.urlsafe_b64encode(signature).rstrip(b'=').decode()}"
+    )
+
+
 async def create_profile_pack(
     session: AsyncSession,
     *,

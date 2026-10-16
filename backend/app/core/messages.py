@@ -1700,6 +1700,10 @@ class BillingMessages:
     #: A statement for a listing no package names terms for here: it takes
     #: none on this deployment.
     LISTING_HAS_NO_TERMS = "BILLING_LISTING_HAS_NO_TERMS"
+    #: An entitlement statement that is not a compact JWS with the statement
+    #: header (``alg`` EdDSA, ``typ`` initiative-entitlement+jwt), the issuer's
+    #: ``iss``, and every claim present with its type.
+    INVALID_STATEMENT = "BILLING_INVALID_STATEMENT"
 
 
 class DirectMessageMessages:

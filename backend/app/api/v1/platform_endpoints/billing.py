@@ -59,6 +59,7 @@ def _payload_error_code(exc: ValidationError) -> str:
             BillingMessages.SUPPORT_SOURCE_RESTRICTED,
             BillingMessages.ACTOR_REQUIRED,
             BillingMessages.NOTICE_SOURCE_NOT_ALLOWED,
+            BillingMessages.INVALID_STATEMENT,
         ):
             if code in message:
                 return code
@@ -278,20 +279,27 @@ async def plugin_entitlement(
 ) -> BillingPluginEntitlementRead:
     """The current entitlement statement for one community and listing.
 
+    The body is ``{"statement": "<jws>"}``, a statement the issuer signed. Its
+    claims name the community, the listing, the version and the values; the
+    signature is left to the plug-in, which holds the issuer's key. A statement
+    that is not one (wrong header, issuer or claims) is refused (422
+    ``INVALID_STATEMENT``) with nothing consumed.
+
     Taken only for a listing whose package names terms for it here: any other
     listing is refused (409) with nothing consumed. A version higher than the
-    one held replaces it and is handed to the installed plug-in as its
-    ``entitlement`` hook; an equal or lower one changes nothing
-    (``applied: false``), so a retry is harmless. A plug-in that is not
-    installed is handed it when it is.
+    one held replaces it, and the statement is handed, exactly as sent, to the
+    installed plug-in as its ``entitlement`` hook; an equal or lower one
+    changes nothing (``applied: false``), so a retry is harmless. A plug-in
+    that is not installed is handed it when it is.
 
     The jti is burned and committed on the billing session first; the
     statement is written on the system engine, which the billing role does not
     reach.
     """
     claims, payload = await _verify_and_parse(request, BillingPluginEntitlementApply)
-    guild_id = await _resolve_guild(payload.community_ref)
-    if await plugin_entitlements.listing_terms(payload.listing_uid) is None:
+    issued = payload.claims
+    guild_id = await _resolve_guild(issued.community_ref)
+    if await plugin_entitlements.listing_terms(issued.listing_uid) is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=BillingMessages.LISTING_HAS_NO_TERMS,
@@ -306,16 +314,17 @@ async def plugin_entitlement(
     await session.commit()  # persist the one-shot jti redemption
     stored = await plugin_entitlements.store_statement(
         guild_id,
-        payload.listing_uid,
-        version=payload.version,
-        values=payload.values,
+        issued.listing_uid,
+        statement=payload.statement,
+        version=issued.version,
+        values=issued.values,
     )
     if stored.applied:
         post_commit.spawn(
-            plugin_entitlements.deliver_entitlement(guild_id, payload.listing_uid)
+            plugin_entitlements.deliver_entitlement(guild_id, issued.listing_uid)
         )
     return BillingPluginEntitlementRead(
-        listing_uid=payload.listing_uid,
+        listing_uid=issued.listing_uid,
         version=stored.version,
         applied=stored.applied,
     )

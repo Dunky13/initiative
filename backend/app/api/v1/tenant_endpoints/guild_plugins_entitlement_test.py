@@ -32,6 +32,7 @@ from app.testing import (
     create_listing_with_terms,
     create_marketplace_listing,
     create_plugin_service_registration,
+    entitlement_statement,
     marketplace_uid,
 )
 
@@ -47,6 +48,21 @@ def _definition() -> dict:
         "service": {"public_id": SERVICE_ID, "protocol": 1, "scopes": []},
         "default_name": "PaidCo",
     }
+
+
+async def _hold(guild_id: int, values: dict) -> str:
+    """Keep a version-1 statement of ``values`` for the community, as the
+    billing verb would; the signed statement is returned."""
+    statement = entitlement_statement(
+        community_ref=await billing_guild_ref(guild_id),
+        listing_uid=SERVICE_UID,
+        version=1,
+        values=values,
+    )
+    await plugin_entitlements.store_statement(
+        guild_id, SERVICE_UID, statement=statement, version=1, values=values
+    )
+    return statement
 
 
 @pytest.fixture(autouse=True)
@@ -183,9 +199,7 @@ class TestGating:
         self, client: AsyncClient, acting_user, entitled, billing, hooks
     ):
         a = await _seat(acting_user)
-        await plugin_entitlements.store_statement(
-            a.guild.id, SERVICE_UID, version=1, values={"active": True}
-        )
+        statement = await _hold(a.guild.id, {"active": True})
 
         detail = await client.get(
             a.g(f"/marketplace/listings/by-uid/{SERVICE_UID}"), headers=a.headers
@@ -195,15 +209,13 @@ class TestGating:
         assert detail.json()["unavailable"] is None
         assert response.status_code == 201, response.text
         # The statement already held is handed to the plug-in it was for.
-        assert hooks == [("entitlement", {"version": 1, "values": {"active": True}})]
+        assert hooks == [("entitlement", {"statement": statement})]
 
     async def test_a_statement_that_says_inactive_does_not(
         self, client: AsyncClient, acting_user, entitled, billing
     ):
         a = await _seat(acting_user)
-        await plugin_entitlements.store_statement(
-            a.guild.id, SERVICE_UID, version=1, values={"active": False}
-        )
+        await _hold(a.guild.id, {"active": False})
 
         response = await _install(client, a)
 
@@ -213,9 +225,7 @@ class TestGating:
         self, client: AsyncClient, acting_user, entitled, billing, hooks
     ):
         a = await _seat(acting_user)
-        await plugin_entitlements.store_statement(
-            a.guild.id, SERVICE_UID, version=1, values={"owned": ["pack-1"]}
-        )
+        await _hold(a.guild.id, {"owned": ["pack-1"]})
 
         response = await _install(client, a)
 
@@ -242,9 +252,7 @@ class TestInstallPings:
         self, client: AsyncClient, acting_user, entitled, billing, hooks
     ):
         a = await _seat(acting_user)
-        await plugin_entitlements.store_statement(
-            a.guild.id, SERVICE_UID, version=1, values={"active": True}
-        )
+        await _hold(a.guild.id, {"active": True})
         ref = await billing_guild_ref(a.guild.id)
 
         installed = await _install(client, a)
@@ -300,9 +308,7 @@ class TestInstallPings:
 class TestUninstallNotice:
     async def _installed(self, client, acting_user):
         a = await _seat(acting_user)
-        await plugin_entitlements.store_statement(
-            a.guild.id, SERVICE_UID, version=1, values={"active": True}
-        )
+        await _hold(a.guild.id, {"active": True})
         response = await _install(client, a)
         assert response.status_code == 201, response.text
         return a, response.json()["id"]

@@ -1,7 +1,8 @@
 """An installed plug-in's entitlement statement and usage reports.
 
-* ``GET /installation/entitlement`` answers the statement held for the
-  install's community and listing, or 404 ``NO_ENTITLEMENT``;
+* ``GET /installation/entitlement`` answers the signed statement held for
+  the install's community and listing, exactly as the issuer sent it, or 404
+  ``NO_ENTITLEMENT``;
 * ``PUT /installation/usage/{meter}/{period}`` keeps a period's total for a
   meter the listing's terms name, refuses any other meter (403), a total lower
   than the one held (409) and a malformed report (422), and passes each total
@@ -26,7 +27,11 @@ from app.db import post_commit
 from app.models.platform.plugin_entitlement import PluginUsage
 from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.platform import billing_ping
-from app.testing import billing_guild_ref, create_listing_with_terms
+from app.testing import (
+    billing_guild_ref,
+    create_listing_with_terms,
+    entitlement_statement,
+)
 from app.testing.plugin_clients import CLIENT, install_headers, install_plugin
 
 BASE = "/api/v1/plugin-platform/installation"
@@ -83,14 +88,21 @@ async def test_the_statement_held_is_answered(
     await create_listing_with_terms(
         session, uid=LISTING, public_id=CLIENT, access="entitled"
     )
+    values = {"active": True, "plan": "pro"}
+    statement = entitlement_statement(
+        community_ref=await billing_guild_ref(installed.guild.id),
+        listing_uid=LISTING,
+        version=7,
+        values=values,
+    )
     await plugin_entitlements.store_statement(
-        installed.guild.id, LISTING, version=7, values={"active": True, "plan": "pro"}
+        installed.guild.id, LISTING, statement=statement, version=7, values=values
     )
 
     response = await client.get(f"{BASE}/entitlement", headers=_headers(installed))
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"version": 7, "values": {"active": True, "plan": "pro"}}
+    assert response.json() == {"statement": statement}
 
 
 async def test_no_statement_is_404(

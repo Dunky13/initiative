@@ -2042,7 +2042,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
         ),
     ),
     # The current entitlement statement per (community, listing), from this
-    # deployment's issuer. Written by the billing verb and read by the plug-in's
+    # deployment's issuer: the signed statement as sent, with its version and
+    # values. Written by the billing verb and read by the plug-in's
     # pull route, the install gate and the hook delivery, all on the system
     # engine after the caller is authenticated. No request role reaches it.
     "plugin_entitlements": SharedTable(

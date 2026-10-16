@@ -326,7 +326,8 @@ async def read_installation_entitlement(
     installation: InstallationDep, session: SystemSessionDep
 ) -> PluginEntitlementRead:
     """The entitlement statement this deployment's issuer sent for the
-    install's community and listing, as the ``entitlement`` hook delivers it.
+    install's community and listing, as the ``entitlement`` hook delivers it:
+    ``{"statement": "<jws>"}``, the signed statement exactly as it was sent.
 
     404 ``NO_ENTITLEMENT`` when there is none, which is every install on a
     deployment with no issuer.
@@ -344,7 +345,7 @@ async def read_installation_entitlement(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=PluginChannelMessages.NO_ENTITLEMENT,
         )
-    return PluginEntitlementRead(version=statement.version, values=statement.values)
+    return PluginEntitlementRead(statement=statement.jws)
 
 
 @router.put("/usage/{meter}/{period}", response_model=PluginUsageRead)

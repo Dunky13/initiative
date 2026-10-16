@@ -3,11 +3,16 @@ whose listing a package names terms for, and what the plug-in reports it used.
 
 Neutral vocabulary throughout. The **issuer** (this deployment's billing
 service, on its signed boundary) sends a **statement** per (community,
-listing): ``{version, values}``, the values the plug-in's own. This deployment
-stores the latest, hands it to the installed plug-in as the ``entitlement``
-hook, and answers the plug-in's pull for it. A plug-in reports **usage** as a
-period's cumulative total for a meter its terms name, and the total is passed
-on to the issuer.
+listing): a compact JWS it signed, whose claims carry ``version`` and
+``values``, the values the plug-in's own. This deployment stores the latest
+exactly as sent, hands it to the installed plug-in as the ``entitlement`` hook
+(``{"statement": "<jws>"}``), and answers the plug-in's pull for it the same
+way. It never re-signs or rewrites one: the plug-in verifies the issuer's
+signature with the issuer's key, which reaches it from the deployment. The
+version and values kept beside it are read from the claims for this
+deployment's own use: the install gate and the delivery's dedup. A plug-in
+reports **usage** as a period's cumulative total for a meter its terms name,
+and the total is passed on to the issuer.
 
 Only a listing with terms takes part (:func:`listing_terms`): its
 ``access`` comes from the package serving it, under the root shipped in the
@@ -85,8 +90,14 @@ DELIVERY_BACKOFF: tuple[float, ...] = (2.0, 10.0)
 
 @dataclass(frozen=True)
 class Statement:
+    #: The signed statement, exactly as the issuer sent it.
+    jws: str
     version: int
     values: dict[str, Any]
+
+    @classmethod
+    def of(cls, row: PluginEntitlement) -> "Statement":
+        return cls(jws=row.statement, version=row.version, values=dict(row.values))
 
 
 @dataclass(frozen=True)
@@ -165,7 +176,7 @@ async def read_statement(guild_id: int, listing_uid: str) -> Optional[Statement]
     """The statement held for one (community, listing), or ``None``."""
     async with db_session.SystemSessionLocal() as session:
         row = await session.get(PluginEntitlement, (guild_id, listing_uid))
-    return Statement(version=row.version, values=dict(row.values)) if row else None
+    return Statement.of(row) if row else None
 
 
 async def statements_for(
@@ -183,10 +194,7 @@ async def statements_for(
                 )
             )
         ).all()
-    return {
-        row.listing_uid: Statement(version=row.version, values=dict(row.values))
-        for row in rows
-    }
+    return {row.listing_uid: Statement.of(row) for row in rows}
 
 
 def entitlement_satisfied(
@@ -242,10 +250,17 @@ def action_url(guild_id: int, listing_uid: str) -> Optional[str]:
 
 
 async def store_statement(
-    guild_id: int, listing_uid: str, *, version: int, values: Mapping[str, Any]
+    guild_id: int,
+    listing_uid: str,
+    *,
+    statement: str,
+    version: int,
+    values: Mapping[str, Any],
 ) -> StoredStatement:
     """Keep a statement when it is newer than the one held.
 
+    ``statement`` is the signed statement exactly as the issuer sent it, and
+    ``version`` and ``values`` its claims, which the caller has read from it.
     One statement: insert, or replace a row holding a lower version. A version
     no higher than the one held changes nothing and reports what is held.
     """
@@ -253,6 +268,7 @@ async def store_statement(
     insert = pg_insert(PluginEntitlement).values(
         guild_id=guild_id,
         listing_uid=listing_uid,
+        statement=statement,
         version=version,
         values=dict(values),
         received_at=now,
@@ -260,6 +276,7 @@ async def store_statement(
     upsert = insert.on_conflict_do_update(
         index_elements=[PluginEntitlement.guild_id, PluginEntitlement.listing_uid],
         set_={
+            "statement": insert.excluded.statement,
             "version": insert.excluded.version,
             "values": insert.excluded["values"],
             "received_at": insert.excluded.received_at,
@@ -414,7 +431,8 @@ async def _remember(guild_id: int, install_id: int, version: int) -> None:
 
 async def deliver_entitlement(guild_id: int, listing_uid: str) -> bool:
     """Hand the installed plug-in the statement held for ``listing_uid`` in
-    ``guild_id``, as its ``entitlement`` hook with ``{version, values}``.
+    ``guild_id``, as its ``entitlement`` hook with ``{"statement": "<jws>"}``,
+    the signed statement exactly as the issuer sent it.
 
     Nothing is sent when there is no statement, no live install, or the
     install already took this version. A plug-in that does not accept it is
@@ -442,7 +460,7 @@ async def deliver_entitlement(guild_id: int, listing_uid: str) -> bool:
                     base_url=registration.base_url,
                     guild_id=guild_id,
                     install_id=plugin.id,
-                    body={"version": statement.version, "values": statement.values},
+                    body={"statement": statement.jws},
                 )
             except flows.HookError as exc:
                 logger.warning(
