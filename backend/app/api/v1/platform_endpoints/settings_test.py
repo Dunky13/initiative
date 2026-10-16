@@ -1401,7 +1401,7 @@ _INSIGHTS = "/api/v1/settings/billing/insights-handoff"
 async def test_the_insights_handoff_names_a_person_and_no_community(
     client: AsyncClient, operator, monkeypatch, handoff_signing_key
 ) -> None:
-    """RS256 under the portal's key, its own audience, and nothing about any
+    """EdDSA under the portal's key, its own audience, and nothing about any
     community or grant — the page it opens shows none."""
     import jwt
 
@@ -1417,7 +1417,7 @@ async def test_the_insights_handoff_names_a_person_and_no_community(
     payload = jwt.decode(
         token,
         handoff_signing_key,
-        algorithms=["RS256"],
+        algorithms=["EdDSA"],
         audience=BILLING_INSIGHTS_AUDIENCE,
         issuer="initiative",
     )

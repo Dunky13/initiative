@@ -33,7 +33,6 @@ from app.services.tenant import plugin_updates
 from app.testing import route_session_to_guild
 from app.testing.plugin_clients import (
     CLIENT,
-    RSA_KID,
     InstalledPlugin,
     install_plugin,
     mint_client_assertion,
@@ -121,14 +120,17 @@ async def test_an_assertion_presented_twice_is_refused_and_written_down(
     assert line["detail"] == {"channel": "plugin_assertion", "install": CLIENT}
 
 
-async def test_a_p256_key_authenticates_too(
+async def test_a_key_the_plugin_never_registered_is_refused(
     client: AsyncClient, session: AsyncSession, acting_user, role_session
 ):
+    """Only the registered Ed25519 key authenticates: an RSA key, even under the
+    plug-in's own kid, is refused, as is any non-EdDSA algorithm."""
     await install_plugin(session, acting_user, role_session, granted=["files:read"])
 
-    response = await _ask(client, assertion=_assertion(key="ec"))
+    response = await _ask(client, assertion=_assertion(key="foreign-rsa"))
 
-    assert response.status_code == 200, response.text
+    assert response.status_code == 401
+    assert _error(response) == "invalid_client"
 
 
 # ---------------------------------------------------------------------------
@@ -664,9 +666,9 @@ async def test_an_unknown_grant_type_is_unsupported(
     [
         pytest.param({"audience": "https://elsewhere.example/token"}, id="bad-aud"),
         pytest.param({"kid": "no-such-kid"}, id="unknown-kid"),
-        # Signed with the P-256 key under the RSA key's kid: the header says
-        # ES256 and the key it names is RSA.
-        pytest.param({"key": "ec", "kid": RSA_KID}, id="alg-disagrees-with-key"),
+        # Signed RS256 with a key the plug-in never registered, under its own
+        # kid: the key the kid names decides the algorithm, never the header.
+        pytest.param({"key": "foreign-rsa"}, id="foreign-key-under-the-kid"),
         pytest.param({"lifetime": 301}, id="lives-too-long"),
         pytest.param({"issued_ago": 120, "lifetime": 60}, id="expired"),
         pytest.param({"issued_ago": -300, "lifetime": 60}, id="issued-in-future"),

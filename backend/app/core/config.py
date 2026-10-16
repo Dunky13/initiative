@@ -971,12 +971,12 @@ class Settings(BaseSettings):
             )
         return url
 
-    # RSA private key (PEM) for signing handoff JWTs. Handoff tokens cross a
-    # trust boundary — the receiving service verifies them with the matching
-    # public key — so signing is always RS256 and no secret is shared across
-    # that boundary. Required by whichever handoff a deployment uses: unset,
-    # those mint endpoints fail closed (503).
-    # Generate a 2048-bit keypair with ``openssl genrsa -out private.pem 2048``
+    # Ed25519 private key (PEM) for signing handoff JWTs. Handoff tokens cross
+    # a trust boundary — the receiving service verifies them with the matching
+    # public key — so signing is always EdDSA and no secret is shared across
+    # that boundary. Required by whichever handoff a deployment uses: unset, or
+    # any other kind of key, and those mint endpoints fail closed (503).
+    # Generate one with ``openssl genpkey -algorithm ed25519 -out private.pem``
     # and feed the PEM here.
     HANDOFF_SIGNING_PRIVATE_KEY_PEM: str | None = None
     # Key id stamped on the JWT header. The proprietary side reads ``kid``
@@ -989,11 +989,12 @@ class Settings(BaseSettings):
     # install generates its own signing key, and an owner wires plug-ins up from
     # the settings pages.
     #
-    # RSA private key (PEM) signing what Initiative sends a plug-in. Optional:
-    # unset, Initiative generates one on first start and keeps it in the
-    # database, encrypted under SECRET_KEY, so every replica signs with the same
-    # key. Set it to supply your own (``openssl genrsa -out plugin-platform.pem
-    # 2048``); while set it wins, and changing it is how the key is rotated.
+    # Ed25519 private key (PEM) signing what Initiative sends a plug-in, EdDSA.
+    # Optional: unset, Initiative generates one on first start and keeps it in
+    # the database, encrypted under SECRET_KEY, so every replica signs with the
+    # same key. Set it to supply your own (``openssl genpkey -algorithm ed25519
+    # -out plugin-platform.pem``); while set it wins, and changing it is how the
+    # key is rotated. Any other kind of key is refused when it is used.
     PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM: str | None = None
     # Key id stamped on the JWT header for the key above, so a plug-in picks it out
     # of the published JWKS during a rotation. A generated key uses its RFC 7638
@@ -1033,7 +1034,7 @@ class Settings(BaseSettings):
     # solely by what the operator sets (PATCH /settings/communities/{id}).
     #
     # Inbound calls from the billing service (initiative-billing). Requests
-    # carry an RS256 service JWT (verified against this public key) plus an
+    # carry an EdDSA service JWT (verified against this Ed25519 public key) plus an
     # HMAC-SHA256 over METHOD\nPATH\nTIMESTAMP\nsha256(body) keyed by the
     # shared secret. Both must be configured or the /billing endpoints
     # refuse every request.

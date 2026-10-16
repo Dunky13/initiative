@@ -47,7 +47,7 @@ async def read_plugin_platform_jwks() -> dict[str, Any]:
         PluginPlatformSigningNotConfiguredError,
         context_jwt.ContextTokenError,
     ) as exc:
-        # Configured but unusable — an unreadable or non-RSA key. Reported the
+        # Configured but unusable — an unreadable or non-Ed25519 key. Reported the
         # same way as absent, because from a plug-in's side it is the same state.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

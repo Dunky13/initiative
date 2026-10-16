@@ -47,7 +47,9 @@ __all__ = [
     "KEY_SET_PATH",
     "KeySetUnreadableError",
     "PRIVATE_JWK_MEMBERS",
-    "PUBLIC_JWK_TYPES",
+    "PLUGIN_KEY_CURVE",
+    "PLUGIN_KEY_TYPE",
+    "is_plugin_key",
     "clear_fetched_keys",
     "jwk_thumbprint",
     "jwks_uri_allowed",
@@ -59,10 +61,13 @@ __all__ = [
 #: The largest key set document read. A key set is a handful of public keys.
 JWKS_MAX_BYTES = 64 * 1024
 
-#: Key types a verification key may be. ``oct`` is absent deliberately: a
-#: symmetric key is the signing key, and a key set holds the half that is
-#: meant to be read.
-PUBLIC_JWK_TYPES: frozenset[str] = frozenset({"RSA", "EC", "OKP"})
+#: The one kind of key a plug-in signs with: Ed25519 (RFC 8037: ``kty`` OKP,
+#: ``crv`` Ed25519), verified EdDSA. Its signatures are deterministic, so there
+#: is no per-signature nonce whose reuse or bias would give the key away.
+#: Anything else in a key set is refused when it is registered and left out
+#: when it is fetched.
+PLUGIN_KEY_TYPE = "OKP"
+PLUGIN_KEY_CURVE = "Ed25519"
 
 #: JWK members that only ever appear on a private key (RFC 7517 §9.3 / RFC
 #: 7518). Their presence means the whole key was given, not its public half.
@@ -70,14 +75,14 @@ PRIVATE_JWK_MEMBERS: frozenset[str] = frozenset(
     {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
 )
 
-#: The members a key's RFC 7638 thumbprint is computed over, by key type.
-_THUMBPRINT_MEMBERS: Mapping[str, tuple[str, ...]] = MappingProxyType(
-    {
-        "RSA": ("e", "kty", "n"),
-        "EC": ("crv", "kty", "x", "y"),
-        "OKP": ("crv", "kty", "x"),
-    }
-)
+#: The members an Ed25519 key's RFC 7638 thumbprint is computed over.
+_THUMBPRINT_MEMBERS: tuple[str, ...] = ("crv", "kty", "x")
+
+
+def is_plugin_key(entry: Mapping[str, Any]) -> bool:
+    """Whether a JWK is the one kind a plug-in may sign with: Ed25519."""
+    return entry.get("kty") == PLUGIN_KEY_TYPE and entry.get("crv") == PLUGIN_KEY_CURVE
+
 
 #: Where a plug-in serves its key set, under its base URL.
 KEY_SET_PATH = "/.well-known/jwks.json"
@@ -118,9 +123,9 @@ def jwk_thumbprint(entry: Mapping[str, Any]) -> str:
     """A public key's RFC 7638 SHA-256 thumbprint, base64url without padding.
 
     The fingerprint a plug-in logs for its key, so an operator can match the two.
-    ``entry`` is a public key of a type in :data:`PUBLIC_JWK_TYPES`.
+    ``entry`` is an Ed25519 public key (:func:`is_plugin_key`).
     """
-    members = _THUMBPRINT_MEMBERS[entry["kty"]]
+    members = _THUMBPRINT_MEMBERS
     canonical = json.dumps(
         {name: entry[name] for name in members}, separators=(",", ":"), sort_keys=True
     )
@@ -156,7 +161,7 @@ def _parse(document: Any, source: str) -> Mapping[str, Any]:
         kid = entry.get("kid")
         if not isinstance(kid, str) or not kid or kid in parsed:
             continue
-        if entry.get("kty") not in PUBLIC_JWK_TYPES:
+        if not is_plugin_key(entry):
             continue
         if PRIVATE_JWK_MEMBERS.intersection(entry):
             continue

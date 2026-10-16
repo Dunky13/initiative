@@ -101,7 +101,7 @@ async def test_the_request_carries_a_signed_handoff_and_no_bare_identity(
     claims = jwt.decode(
         seen["json"]["handoff_token"],
         billing_configured,
-        algorithms=["RS256"],
+        algorithms=["EdDSA"],
         audience=BILLING_PORTAL_AUDIENCE,
     )
     assert claims["community_role"] == "admin"

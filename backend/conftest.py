@@ -26,7 +26,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from cryptography.hazmat.primitives import serialization as _serialization
-from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
 from httpx import ASGITransport, AsyncClient
 from starlette.requests import HTTPConnection
 from sqlalchemy import event, text
@@ -92,7 +92,7 @@ RUN_ID = f"{CHECKOUT_ID}_{WORKER_ID}"
 settings.GUILD_ROLE_PREFIX = f"test_{RUN_ID}_"
 settings.PLATFORM_ROLE_PREFIX = f"test_{RUN_ID}_"
 
-# Handoff tokens are RS256 and need a real signing key, which a test that mints
+# Handoff tokens are EdDSA and need a real signing key, which a test that mints
 # one asks for through ``handoff_signing_key``. Everywhere else the deployment
 # default holds: no key.
 settings.HANDOFF_SIGNING_PRIVATE_KEY_PEM = None
@@ -558,8 +558,8 @@ def _reset_presence_roll():
 
 @functools.cache
 def _handoff_keypair() -> tuple[str, str]:
-    """One RSA keypair per process, built the first time a test asks for it."""
-    key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    """One Ed25519 keypair per process, built the first time a test asks for it."""
+    key = _ed25519.Ed25519PrivateKey.generate()
     private_pem = key.private_bytes(
         encoding=_serialization.Encoding.PEM,
         format=_serialization.PrivateFormat.PKCS8,

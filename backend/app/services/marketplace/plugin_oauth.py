@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import jwt
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlalchemy import Row, TextClause, text
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
@@ -163,13 +163,10 @@ def token_endpoint_url() -> str:
 
 
 def _algorithm_for(key: Any) -> str | None:
-    """The one algorithm a key may verify with, decided by its type."""
-    if isinstance(key, rsa.RSAPublicKey):
-        return "RS256"
-    if isinstance(key, ec.EllipticCurvePublicKey) and isinstance(
-        key.curve, ec.SECP256R1
-    ):
-        return "ES256"
+    """The one algorithm a plug-in key verifies with: EdDSA, for the Ed25519
+    key every plug-in signs with (RFC 8037). Any other key verifies nothing."""
+    if isinstance(key, ed25519.Ed25519PublicKey):
+        return "EdDSA"
     return None
 
 

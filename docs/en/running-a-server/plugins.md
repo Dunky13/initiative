@@ -121,7 +121,7 @@ Rather click nothing? `PLUGIN_SERVICES_CONFIG` names a JSON file Initiative read
 | `public_id` | Which plug-in. Required. |
 | `base_url` | Where Initiative's server calls it. Giving one gives its browser address and keys with it, and clears whichever of those the entry leaves out. |
 | `page_origin` | Its **Browser address**. |
-| `jwks` / `jwks_uri` | Its keys, pasted or by address. |
+| `jwks` / `jwks_uri` | Its Ed25519 keys (EdDSA), pasted or by address. Any other kind of key is refused. |
 | `allowed_origins` | A list of origins. |
 | `mandatory` | `true` installs it in every community. |
 | `operations_only` | `true` offers it to the operations community alone. |
@@ -130,7 +130,7 @@ Rather click nothing? `PLUGIN_SERVICES_CONFIG` names a JSON file Initiative read
 What the plug-in *is* comes from its listing, so an entry naming its image, its scopes or its listing is refused. An entry for a plug-in whose listing hasn't arrived waits for it. And a plug-in you switched off stays off, whatever the file says.
 
 ??? techspec "Initiative's own signing key"
-    Initiative signs what it sends plug-ins with a key it makes and keeps itself. To supply your own instead, set `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` (a PEM from `openssl genrsa 2048`) and `PLUGIN_PLATFORM_SIGNING_KEY_ID`. Most servers never touch either.
+    Initiative signs what it sends plug-ins with a key it makes and keeps itself. To supply your own instead, set `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` (an Ed25519 PEM from `openssl genpkey -algorithm ed25519`) and `PLUGIN_PLATFORM_SIGNING_KEY_ID`. Most servers never touch either.
 
 ## Related
 

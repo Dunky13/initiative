@@ -22,8 +22,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from jwt.algorithms import OKPAlgorithm
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -1282,16 +1282,16 @@ async def create_plugin_user_connection(
     return row
 
 
-_TEST_PLUGIN_KEY = ec.generate_private_key(ec.SECP256R1())
+_TEST_PLUGIN_KEY = ed25519.Ed25519PrivateKey.generate()
 
 
 def sample_plugin_jwks(kid: str = "tests-plugin-key") -> dict[str, Any]:
-    """A public key set for a test registration: one P-256 key under ``kid``.
+    """A public key set for a test registration: one Ed25519 key under ``kid``.
 
     A registration is live only with a key set, so every test registration
     carries one unless the test says otherwise.
     """
-    entry = json.loads(ECAlgorithm.to_jwk(_TEST_PLUGIN_KEY.public_key()))
+    entry = json.loads(OKPAlgorithm.to_jwk(_TEST_PLUGIN_KEY.public_key()))
     entry["kid"] = kid
     return {"keys": [entry]}
 

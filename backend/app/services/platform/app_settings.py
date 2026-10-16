@@ -361,7 +361,9 @@ async def load_plugin_platform_signing_key(session: AsyncSession) -> None:
     Only while ``PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM`` is unset; the env key
     is used as it is. The first start generates a key and stores it, and every
     start after it, on any replica, loads that one: the write only fills an
-    empty column, and the key is read back from the row. System engine only,
+    empty column, and the key is read back from the row. A key stored before
+    the platform key became Ed25519 is RSA, and is replaced once, the same
+    way: the write only lands over the value it read. System engine only,
     after :func:`seed_app_settings`. Commits.
     """
     if app_config.PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM:
@@ -407,6 +409,29 @@ async def load_plugin_platform_signing_key(session: AsyncSession) -> None:
             "to the key it was stored under."
         )
         return
+    if not context_jwt.is_platform_key(private_pem):
+        await session.exec(
+            update(AppSettingSecret.__table__)
+            .where(
+                AppSettingSecret.__table__.c.id == GLOBAL_SETTINGS_ID,
+                column == encrypted,
+            )
+            .values(
+                {
+                    column: encrypt_field(
+                        context_jwt.generate_signing_key(),
+                        SALT_PLUGIN_PLATFORM_SIGNING_KEY,
+                    )
+                }
+            )
+        )
+        await session.commit()
+        logger.warning(
+            "plug-in platform: replaced the stored RSA signing key with an Ed25519 one"
+        )
+        private_pem = decrypt_field(
+            await session.scalar(stored_query), SALT_PLUGIN_PLATFORM_SIGNING_KEY
+        )
     use_stored_plugin_platform_signing_key(
         private_pem, context_jwt.key_thumbprint(private_pem)
     )

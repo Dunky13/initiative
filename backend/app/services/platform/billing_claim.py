@@ -16,7 +16,7 @@ FOSS balance: on a self-hosted install (``BILLING_SERVICE_URL`` /
 :func:`claim_new_guild` returns before doing anything: no outbound call, no
 queued work, no logging.
 
-The credential is the same RS256 billing-portal handoff a browser carries, so
+The credential is the same EdDSA billing-portal handoff a browser carries, so
 the service authenticates a claim the way it authenticates the tab.
 """
 
@@ -46,7 +46,7 @@ _CLAIM_TIMEOUT = httpx.Timeout(3.0, connect=2.0)
 def billing_claim_enabled() -> bool:
     """True only when a hosted deployment configured the outbound side.
 
-    The claim's credential is the RS256 handoff, so it is the signing key that
+    The claim's credential is the EdDSA handoff, so it is the signing key that
     is required here rather than the ping's shared secret.
     """
     return bool(

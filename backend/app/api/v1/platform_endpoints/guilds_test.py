@@ -1157,7 +1157,7 @@ async def test_the_billing_handoff_needs_a_portal_and_a_signing_key(
 async def test_guild_billing_handoff_succeeds_for_admin(
     client: AsyncClient, acting_user, monkeypatch, handoff_signing_key
 ):
-    """Admin gets an RS256 token with the billing-portal audience and role."""
+    """Admin gets an EdDSA token with the billing-portal audience and role."""
     from app.core.config import settings as app_settings
     from app.core.security import BILLING_PORTAL_AUDIENCE
     import jwt
@@ -1172,7 +1172,7 @@ async def test_guild_billing_handoff_succeeds_for_admin(
     body = response.json()
     assert body["expires_in_seconds"] > 0
 
-    assert jwt.get_unverified_header(body["handoff_token"])["alg"] == "RS256"
+    assert jwt.get_unverified_header(body["handoff_token"])["alg"] == "EdDSA"
     payload = jwt.decode(body["handoff_token"], options={"verify_signature": False})
     assert payload["aud"] == BILLING_PORTAL_AUDIENCE
     assert payload["iss"] == "initiative"

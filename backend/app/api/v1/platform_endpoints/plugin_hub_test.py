@@ -157,7 +157,7 @@ def upstream(monkeypatch):
             return jwt.decode(
                 header.removeprefix("Bearer "),
                 options={"verify_signature": False},
-                algorithms=["RS256"],
+                algorithms=["EdDSA"],
             )
 
     recorder = Recorder()

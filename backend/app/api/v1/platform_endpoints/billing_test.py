@@ -3,7 +3,7 @@
 Exercises the security properties of ``POST /api/v1/billing/*``:
 
 * the double envelope — HMAC over METHOD/PATH/TIMESTAMP/sha256(body) inside
-  a replay window, plus an RS256 service JWT with one-shot jti — with
+  a replay window, plus an EdDSA service JWT with one-shot jti — with
   negative tests for every layer (unconfigured, missing headers, stale or
   altered signatures, wrong key/aud/iss, reused jti);
 * exactly-once application via the ``billing_event_log`` claim (a retried
@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -55,7 +55,7 @@ from app.core.audit_events import AuditEventType
 from app.testing.audit import emitted
 
 
-_keypair = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_keypair = ed25519.Ed25519PrivateKey.generate()
 _PRIVATE_PEM = _keypair.private_bytes(
     serialization.Encoding.PEM,
     serialization.PrivateFormat.PKCS8,
@@ -69,7 +69,7 @@ _PUBLIC_PEM = (
     )
     .decode()
 )
-_OTHER_KEYPAIR = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_OTHER_KEYPAIR = ed25519.Ed25519PrivateKey.generate()
 _OTHER_PRIVATE_PEM = _OTHER_KEYPAIR.private_bytes(
     serialization.Encoding.PEM,
     serialization.PrivateFormat.PKCS8,
@@ -102,6 +102,7 @@ def _mint_token(
     iss: str = "initiative-billing",
     private_pem: str = _PRIVATE_PEM,
     expires_in: int = 300,
+    algorithm: str = "EdDSA",
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -112,7 +113,7 @@ def _mint_token(
         "iat": int(now.timestamp()),
         "exp": now + timedelta(seconds=expires_in),
     }
-    return jwt.encode(payload, private_pem, algorithm="RS256")
+    return jwt.encode(payload, private_pem, algorithm=algorithm)
 
 
 def _signed_headers(
@@ -1055,6 +1056,29 @@ async def test_dropping_the_old_block_ends_its_access(
         "community-tier",
         await _tier_payload(guild.id),
         token=_mint_token(private_pem=_PRIVATE_PEM),
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
+
+
+async def test_an_rs256_token_is_refused(client: AsyncClient, session: AsyncSession):
+    """Billing signs with Ed25519 and nothing else: a token signed RS256 is
+    refused whatever key signed it."""
+    guild = await create_guild(session)
+    rsa_pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    response = await _post(
+        client,
+        "community-tier",
+        await _tier_payload(guild.id),
+        token=_mint_token(private_pem=rsa_pem, algorithm="RS256"),
     )
     assert response.status_code == 403
     assert response.json()["detail"] == "BILLING_INVALID_TOKEN"

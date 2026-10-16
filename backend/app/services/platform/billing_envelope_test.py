@@ -7,7 +7,7 @@ import jwt
 import pytest
 from starlette.datastructures import Headers
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from app.core import config as config_module
 from app.core.messages import BillingMessages
@@ -26,7 +26,7 @@ PREVIOUS_SIGNATURE = "a4540074f996db02b176903e05102613e56c994fe367984342df854b07
 
 @pytest.fixture
 def envelope(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, str], str]:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key = ed25519.Ed25519PrivateKey.generate()
     private_pem = key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -61,7 +61,7 @@ def envelope(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, str], str]:
             "exp": real_now + timedelta(minutes=5),
         },
         private_pem,
-        algorithm="RS256",
+        algorithm="EdDSA",
     )
     headers = {
         "Authorization": f"Bearer {token}",

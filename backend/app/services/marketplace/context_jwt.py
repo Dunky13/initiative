@@ -49,15 +49,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from app.core.security import (
-    HANDOFF_JWT_ALGORITHM,
     PLUGIN_CONTEXT_TOKEN_TYPE,
+    PUBLIC_KEY_JWT_ALGORITHM,
     TOKEN_ISSUER,
     plugin_platform_audience,
     resolve_plugin_platform_signing_material,
-    sign_rs256,
+    sign_eddsa,
 )
 
 __all__ = [
@@ -66,6 +66,7 @@ __all__ = [
     "ContextTokenError",
     "context_jwks",
     "generate_signing_key",
+    "is_platform_key",
     "key_thumbprint",
     "mint_context_token",
 ]
@@ -94,34 +95,67 @@ class ContextTokenError(RuntimeError):
     """The token could not be built from what was asked for."""
 
 
-def _b64u(value: int) -> str:
-    """A JWKS integer: big-endian bytes, base64url, no padding."""
-    length = max(1, (value.bit_length() + 7) // 8)
-    return base64.urlsafe_b64encode(value.to_bytes(length, "big")).rstrip(b"=").decode()
+def _b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def is_platform_key(private_pem: str) -> bool:
+    """Whether a PEM is the one kind of key the platform signs with: Ed25519."""
+    try:
+        key = serialization.load_pem_private_key(
+            private_pem.encode("utf-8"), password=None
+        )
+    except (ValueError, TypeError):
+        return False
+    return isinstance(key, ed25519.Ed25519PrivateKey)
+
+
+def _load_platform_key(private_pem: str) -> ed25519.Ed25519PrivateKey:
+    try:
+        key = serialization.load_pem_private_key(
+            private_pem.encode("utf-8"), password=None
+        )
+    except (ValueError, TypeError) as exc:
+        raise ContextTokenError(
+            "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM is not a readable private key"
+        ) from exc
+    if not isinstance(key, ed25519.Ed25519PrivateKey):
+        raise ContextTokenError(
+            "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM must be an Ed25519 key (EdDSA)"
+        )
+    return key
+
+
+def _public_x(key: ed25519.Ed25519PrivateKey) -> str:
+    raw = key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return _b64u(raw)
 
 
 def generate_signing_key() -> str:
-    """A new 2048-bit RSA signing key, as an unencrypted PKCS #8 PEM."""
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    return private_key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode("ascii")
+    """A new Ed25519 signing key, as an unencrypted PKCS #8 PEM."""
+    return (
+        ed25519.Ed25519PrivateKey.generate()
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode("ascii")
+    )
 
 
 def key_thumbprint(private_pem: str) -> str:
-    """The RFC 7638 SHA-256 thumbprint of an RSA key's public half, base64url."""
-    private_key = serialization.load_pem_private_key(
-        private_pem.encode("utf-8"), password=None
-    )
-    if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise ContextTokenError("the plug-in platform signing key must be an RSA key")
-    numbers = private_key.public_key().public_numbers()
-    members = {"e": _b64u(numbers.e), "kty": "RSA", "n": _b64u(numbers.n)}
+    """The RFC 7638 SHA-256 thumbprint of the key's public half (members crv,
+    kty, x), base64url."""
+    members = {
+        "crv": "Ed25519",
+        "kty": "OKP",
+        "x": _public_x(_load_platform_key(private_pem)),
+    }
     canonical = json.dumps(members, separators=(",", ":"), sort_keys=True)
-    digest = hashlib.sha256(canonical.encode("utf-8")).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return _b64u(hashlib.sha256(canonical.encode("utf-8")).digest())
 
 
 def mint_context_token(
@@ -200,7 +234,7 @@ def mint_context_token(
     if subject is not None:
         payload["subject"] = dict(subject)
 
-    token = sign_rs256(
+    token = sign_eddsa(
         payload,
         *resolve_plugin_platform_signing_material(),
         typ=PLUGIN_CONTEXT_TOKEN_TYPE,
@@ -230,26 +264,12 @@ def context_jwks() -> dict[str, Any]:
         if cached_pem == private_pem and cached_kid == kid:
             return document
 
-    try:
-        private_key = serialization.load_pem_private_key(
-            private_pem.encode("utf-8"), password=None
-        )
-    except (ValueError, TypeError) as exc:
-        raise ContextTokenError(
-            "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM is not a readable private key"
-        ) from exc
-    if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise ContextTokenError(
-            "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM must be an RSA key for RS256"
-        )
-
-    numbers = private_key.public_key().public_numbers()
     entry: dict[str, Any] = {
-        "kty": "RSA",
+        "kty": "OKP",
+        "crv": "Ed25519",
         "use": "sig",
-        "alg": HANDOFF_JWT_ALGORITHM,
-        "n": _b64u(numbers.n),
-        "e": _b64u(numbers.e),
+        "alg": PUBLIC_KEY_JWT_ALGORITHM,
+        "x": _public_x(_load_platform_key(private_pem)),
     }
     if kid:
         entry["kid"] = kid
