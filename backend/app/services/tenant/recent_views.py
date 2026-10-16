@@ -107,6 +107,22 @@ _LETS_GO = (
     "(NOT ranked.is_tab OR ranked.n > COALESCE(chosen.tab_limit, :default_limit))"
 )
 
+#: Every view :func:`expire` drops: past the window, and let go.
+_EXPIRE = (
+    "DELETE FROM recent_views rv USING "
+    + _RANKED
+    + " WHERE rv.user_id = ranked.user_id"
+    " AND rv.entity_type = ranked.entity_type"
+    " AND rv.entity_id = ranked.entity_id"
+    " AND rv.last_viewed_at = ranked.last_viewed_at"
+    " AND rv.last_viewed_at < :cutoff AND " + _LETS_GO
+)
+
+#: The oldest view :func:`expire` would drop once it passes the window.
+_OLDEST_LET_GO = (
+    "SELECT min(ranked.last_viewed_at) FROM " + _RANKED + " WHERE " + _LETS_GO
+)
+
 
 def _ranking(expiring: Expiring) -> dict:
     users = list(expiring.tab_limits)
@@ -123,29 +139,14 @@ async def expire(session: AsyncSession, expiring: Expiring) -> None:
     newest ``recent_tabs_limit``. A view reopened while this runs is left: it
     no longer has the time it was ranked by."""
     await session.exec(
-        text(
-            f"""
-            DELETE FROM recent_views rv
-            USING {_RANKED}
-            WHERE rv.user_id = ranked.user_id
-              AND rv.entity_type = ranked.entity_type
-              AND rv.entity_id = ranked.entity_id
-              AND rv.last_viewed_at = ranked.last_viewed_at
-              AND rv.last_viewed_at < :cutoff
-              AND {_LETS_GO}
-            """
-        ).bindparams(cutoff=expiring.now - WINDOW, **_ranking(expiring))
+        text(_EXPIRE).bindparams(cutoff=expiring.now - WINDOW, **_ranking(expiring))
     )
 
 
 async def next_due(session: AsyncSession, expiring: Expiring) -> datetime | None:
     """When the next view :func:`expire` would drop passes the window."""
     oldest = (
-        await session.exec(
-            text(
-                f"SELECT min(ranked.last_viewed_at) FROM {_RANKED} WHERE {_LETS_GO}"
-            ).bindparams(**_ranking(expiring))
-        )
+        await session.exec(text(_OLDEST_LET_GO).bindparams(**_ranking(expiring)))
     ).scalar_one()
     return None if oldest is None else oldest + WINDOW
 

@@ -34,6 +34,8 @@ from app.schemas.platform.notification_prefs import (
     QuietHours,
 )
 from app.services import notifications as notifications_service
+from app.services import sweep_timers
+from app.services.cross_guild import member_guild_ids
 from app.services.platform import case_notices, email_outbox
 from app.services.platform import notification_prefs as prefs_service
 
@@ -267,6 +269,14 @@ async def update_my_notification_preferences(
     # The choice is saved before any queue is emptied, so a queue is only ever
     # discarded for a choice that stuck.
     await session.commit()
+
+    if payload.email is not None or any(
+        change.category is NotificationCategory.due_dates for change in payload.channels
+    ):
+        # The overdue digest goes out on their schedule, to those who want it.
+        await sweep_timers.arm_in(
+            "overdue", await member_guild_ids(session, current_user.id)
+        )
 
     # A queue nobody will ever be sent is discarded, not kept: it is guild
     # scoped, so this reaches into each of the account's guild schemas.

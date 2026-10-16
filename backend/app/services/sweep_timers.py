@@ -30,10 +30,10 @@ filer, a migration). Each one it arms is counted
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from functools import cache
+from functools import cache, partial
 from typing import Any
 
 from sqlalchemy import case, delete, exists, func, literal, or_, text
@@ -47,7 +47,7 @@ from app.db.session import set_rls_context
 from app.db.timers import TimerSource, on_insert, on_row
 from app.models.tenant.timer_mark import TimerMark
 from app.services.background_tasks import Loop
-from app.services.guild_sweeps import Scope, Visit, each_guild
+from app.services.guild_sweeps import Scan, Scope, Visit, each_guild
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,10 @@ class Sweep:
     #: The visit, or ``None`` when ``prepare`` makes it.
     visit: Visit | None = None
     #: Makes the visit, from what the tick shares (read once, before any
-    #: community is visited).
-    prepare: Callable[[], Awaitable[Visit]] | None = None
+    #: community is visited); ``None`` when there is nothing to do this tick.
+    #: A :class:`Scan` finishes once every community is visited, and answers
+    #: each one's next due time unless ``answers`` says the visit does.
+    prepare: Callable[[], Awaitable[Visit | Scan | None]] | None = None
     #: The visit returns the sweep's next due time itself (or ``None`` for no
     #: work), in place of ``next_due``.
     answers: bool = False
@@ -111,6 +113,8 @@ def sweeps() -> tuple[Sweep, ...]:
     from app.models.tenant.moderation import ModerationReport
     from app.models.tenant.reaction_digest import ReactionDigestItem
     from app.models.tenant.recent_view import RecentView
+    from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
+    from app.models.tenant.guild_plugin import GuildPlugin
     from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
     from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
     from app.models.tenant.upload import Upload
@@ -118,6 +122,7 @@ def sweeps() -> tuple[Sweep, ...]:
     from app.services.export import worker as export_worker
     from app.services.import_engine import worker as import_worker
     from app.services.platform import evidence, holds
+    from app.services.tenant import plugin_updates
     from app.services.tenant import (
         change_log,
         engagement_levels,
@@ -544,6 +549,110 @@ def sweeps() -> tuple[Sweep, ...]:
                 for item in digest_items
             ),
         ),
+        *(
+            Sweep(
+                kind=spec.name.replace("-", "_"),
+                scope=Scope.LIVE,
+                every=minute,
+                # A person's digest gathers from every community they are in;
+                # the finish answers when each community's waiting items are
+                # next due.
+                prepare=partial(_digest, spec),
+                next_due=lambda now, spec=spec: select(
+                    func.min(spec.model.created_at) + spec.quiet_period
+                ).where(
+                    col(spec.model.processed_at).is_(None),
+                    spec.model.created_at > now - timedelta(days=1),
+                ),
+                sources=(
+                    on_insert(str(spec.model.__tablename__), after=spec.quiet_period),
+                ),
+            )
+            for spec in (notifications.ASSIGNMENT_DIGEST, notifications.REACTION_DIGEST)
+        ),
+        Sweep(
+            kind="reminders",
+            scope=Scope.LIVE,
+            every=minute,
+            # The visit reads each attendee's lead, so it answers exactly.
+            prepare=_reminders,
+            answers=True,
+            next_due=lambda now: least(
+                select(func.min(CalendarEvent.start_at) - timedelta(days=1))
+                .join(
+                    CalendarEventAttendee,
+                    col(CalendarEventAttendee.calendar_event_id) == CalendarEvent.id,
+                )
+                .where(
+                    col(CalendarEvent.recurrence).is_(None),
+                    col(CalendarEvent.deleted_at).is_(None),
+                    CalendarEvent.start_at > now - notifications.EVENT_REMINDER_GRACE,
+                ),
+                when_exists(
+                    exists()
+                    .where(
+                        col(CalendarEventAttendee.calendar_event_id) == CalendarEvent.id
+                    )
+                    .where(
+                        col(CalendarEvent.recurrence).is_not(None),
+                        col(CalendarEvent.deleted_at).is_(None),
+                        or_(
+                            col(CalendarEvent.recurrence_until).is_(None),
+                            CalendarEvent.recurrence_until > now,
+                        ),
+                    )
+                ),
+            ),
+            sources=(
+                on_row(
+                    "calendar_events",
+                    "CASE WHEN {row}.recurrence IS NULL"
+                    " THEN {row}.start_at - interval '1 day' ELSE now() END",
+                    events=(
+                        "INSERT OR UPDATE OF start_at, recurrence,"
+                        " recurrence_until, deleted_at"
+                    ),
+                    when="NEW.deleted_at IS NULL",
+                ),
+                on_row("calendar_event_attendees", "now()"),
+                on_row("calendar_event_answers", "now()", events="INSERT OR UPDATE"),
+            ),
+        ),
+        Sweep(
+            kind="overdue",
+            scope=Scope.LIVE,
+            every=timedelta(minutes=5),
+            # The finish answers each community's next digest time: the
+            # soonest of its people with overdue work.
+            prepare=_overdue,
+            next_due=lambda _now: notifications.next_overdue(),
+            sources=(
+                on_row(
+                    "tasks",
+                    "{row}.due_date",
+                    events="INSERT OR UPDATE OF due_date, task_status_id, archived_at",
+                    when="NEW.due_date IS NOT NULL AND NEW.archived_at IS NULL",
+                ),
+                on_row("task_assignees", "now()"),
+                on_row(
+                    "projects",
+                    "now()",
+                    events="UPDATE OF archived_at, is_template",
+                ),
+            ),
+        ),
+        Sweep(
+            kind="plugin_updates",
+            scope=Scope.ACTIVE,
+            every=hour,
+            # Armed by a catalog change (watch_catalog). A visit leaves no
+            # timer; the daily reconcile looks again where installs track.
+            visit=plugin_updates.update_guild,
+            answers=True,
+            next_due=lambda _now: when_exists(
+                exists().where(col(GuildPlugin.auto_update).is_(True))
+            ),
+        ),
         Sweep(
             kind=RECONCILE,
             scope=Scope.PROVISIONED,
@@ -556,6 +665,24 @@ def sweeps() -> tuple[Sweep, ...]:
             sources=(on_insert("event_outbox", after=RECONCILE_EVERY),),
         ),
     )
+
+
+async def _digest(spec: Any) -> Scan:
+    from app.services import notifications
+
+    return notifications.digest_scan(spec, now=datetime.now(timezone.utc))
+
+
+async def _reminders() -> Scan | None:
+    from app.services import notifications
+
+    return await notifications.reminder_scan(now=datetime.now(timezone.utc))
+
+
+async def _overdue() -> Scan:
+    from app.services import notifications
+
+    return notifications.overdue_scan(now=datetime.now(timezone.utc))
 
 
 def _by_kind() -> dict[str, Sweep]:
@@ -577,11 +704,30 @@ async def _next_due(
     ).first()
 
 
+async def _arm_next(
+    session: AsyncSession, guild_id: int, sweep: Sweep, due: datetime | None
+) -> None:
+    """Arm the sweep's next timer in the community, never sooner than its
+    cadence."""
+    now = datetime.now(timezone.utc)
+    # A visit may leave its session routed elsewhere (a data job's outcome is
+    # written from the unrouted context).
+    await set_rls_context(session, SystemGuild(guild_id))
+    if due is not None:
+        await arm(session, sweep.kind, max(due, now + sweep.every))
+    await session.commit()
+
+
 def _visit_and_rearm(
-    sweep: Sweep, visit: Visit, ids: list[int], done: set[int]
+    sweep: Sweep,
+    visit: Visit,
+    ids: list[int],
+    done: set[int],
+    finishing: dict[int, list[int]] | None,
 ) -> Visit:
     """``visit``, then the sweep's next timer, then the claimed rows marked
-    for deletion."""
+    for deletion. With ``finishing`` (a scan's), the rows wait for the scan's
+    finish, and so does the next timer unless the visit answers it."""
 
     async def run(session: AsyncSession, guild_id: int) -> None:
         # Taken: a write from here on arms afresh rather than counting on the
@@ -590,17 +736,58 @@ def _visit_and_rearm(
         await session.commit()
         answered = await visit(session, guild_id)
         await session.commit()
-        now = datetime.now(timezone.utc)
-        # A visit may leave its session routed elsewhere (a data job's
-        # outcome is written from the unrouted context).
-        await set_rls_context(session, SystemGuild(guild_id))
-        due = answered if sweep.answers else await _next_due(session, sweep, now)
-        if due is not None:
-            await arm(session, sweep.kind, max(due, now + sweep.every))
-        await session.commit()
-        done.update(ids)
+        if finishing is not None and not sweep.answers:
+            finishing[guild_id] = ids
+            return
+        due = (
+            answered
+            if sweep.answers
+            else await _next_due(session, sweep, datetime.now(timezone.utc))
+        )
+        await _arm_next(session, guild_id, sweep, due)  # type: ignore[arg-type]
+        # Only once the next timer is saved.
+        if finishing is None:
+            done.update(ids)
+        else:
+            finishing[guild_id] = ids
 
     return run
+
+
+async def _finish(
+    sweep: Sweep, scan: Scan, finishing: dict[int, list[int]], done: set[int]
+) -> None:
+    """Finish ``scan``, then arm each visited community's next timer from what
+    it answered. A finish that fails leaves the timers to their lease."""
+    try:
+        answers = await scan.finish() or {}
+    except Exception:
+        logger.exception("timers: finishing %s failed", sweep.kind)
+        return
+    for guild_id, ids in finishing.items():
+        async with cohorts.system_session(guild_id) as session:
+            await _arm_next(session, guild_id, sweep, answers.get(guild_id))
+        done.update(ids)
+
+
+async def arm_in(kind: str, community_ids: Iterable[int]) -> None:
+    """Arm ``kind`` now in each of ``community_ids``, from outside them: for
+    work a change in ``public`` gives them (a catalog release, a person's
+    reminder lead). A community already due for it is left alone."""
+    ids = sorted(set(community_ids))
+    if not ids:
+        return
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            text(
+                "INSERT INTO community_timers (community_id, kind, due_at)"
+                " SELECT c, :kind, now() FROM unnest(CAST(:ids AS integer[])) c"
+                " WHERE NOT EXISTS (SELECT 1 FROM community_timers t"
+                " WHERE t.community_id = c AND t.kind = :kind AND t.due_at <= now())"
+            ).bindparams(kind=kind, ids=ids)  # type: ignore[call-overload]
+        )
+        await session.commit()
 
 
 async def _claim(now: datetime) -> list[Any]:
@@ -652,13 +839,14 @@ async def _run(claimed: list[Any], now: datetime) -> None:
                 max(0.0, (now - due_at).total_seconds())
             )
         taken.setdefault(community_id, {}).setdefault(kind, []).append(timer_id)
-    prepared: dict[str, Visit] = {}
+    prepared: dict[str, Visit | Scan | None] = {}
     for kind in {kind for kinds in taken.values() for kind in kinds}:
         sweep = registry.get(kind)
         if sweep is not None and sweep.prepare is not None:
             prepared[kind] = await sweep.prepare()
     done: set[int] = set()
     plan: dict[int, list[tuple[Scope, Visit]]] = {}
+    scans: dict[str, tuple[Scan, dict[int, list[int]]]] = {}
     for community_id, kinds in taken.items():
         for kind, ids in kinds.items():
             # A kind this version does not know is another version's: left to
@@ -666,14 +854,37 @@ async def _run(claimed: list[Any], now: datetime) -> None:
             sweep = registry.get(kind)
             if sweep is None:
                 continue
-            visit = prepared[kind] if sweep.prepare is not None else sweep.visit
-            assert visit is not None
+            made = prepared[kind] if sweep.prepare is not None else sweep.visit
+            if made is None:
+                # Nothing to do anywhere this tick, and nothing to arm.
+                done.update(ids)
+                continue
+            finishing = None
+            if isinstance(made, Scan):
+                scan, finishing = scans.setdefault(kind, (made, {}))
+                visit = scan.visit
+            else:
+                visit = made
             plan.setdefault(community_id, []).append(
-                (sweep.scope, _visit_and_rearm(sweep, visit, ids, done))
+                (sweep.scope, _visit_and_rearm(sweep, visit, ids, done, finishing))
             )
     # A community the pass did not visit for a sweep (its status does not
     # admit it now) keeps that timer on its lease.
     await each_guild([], name="timers", planned=plan)
+    for kind, (scan, finishing) in scans.items():
+        sweep = registry[kind]
+        if sweep.answers:
+            # What the visits found is sent here: a finish that fails leaves
+            # the timers to their lease.
+            try:
+                await scan.finish()
+            except Exception:
+                logger.exception("timers: finishing %s failed", kind)
+                continue
+            for ids in finishing.values():
+                done.update(ids)
+        else:
+            await _finish(sweep, scan, finishing, done)
     await _delete(done)
 
 
@@ -724,5 +935,43 @@ async def reconcile(session: AsyncSession, guild_id: int) -> datetime:
     return now + RECONCILE_EVERY
 
 
+#: How often the catalog is looked at for changes.
+CATALOG_WATCH_SECONDS = 60
+
+
+async def watch_catalog() -> None:
+    """Arm plug-in updates and schedules in each community with an install of
+    a listing the catalog changed lately: a new version, an edited listing, a
+    registration that went live or changed. Looks back two intervals, so a
+    change between two looks is never missed; arming one already due adds
+    nothing."""
+    since = datetime.now(timezone.utc) - timedelta(seconds=2 * CATALOG_WATCH_SECONDS)
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        changed = (
+            (
+                await session.exec(
+                    text(
+                        "SELECT DISTINCT i.guild_id FROM plugin_installs i"
+                        " WHERE i.listing_uid IN ("
+                        " SELECT l.uid FROM marketplace_listings l"
+                        " WHERE l.updated_at > :since"
+                        " UNION SELECT l.uid FROM marketplace_listing_versions v"
+                        " JOIN marketplace_listings l ON l.id = v.listing_id"
+                        " WHERE v.published_at > :since"
+                        " UNION SELECT r.listing_uid FROM plugin_service_registrations r"
+                        " WHERE r.updated_at > :since)"
+                    ).bindparams(since=since)  # type: ignore[call-overload]
+                )
+            )
+            .scalars()
+            .all()
+        )
+    for kind in ("plugin_updates", "plugin_schedules"):
+        await arm_in(kind, changed)
+
+
 #: The worker's loop.
 loop = Loop("timers", interval=TICK_SECONDS)
+#: The catalog watch's loop.
+catalog_loop = Loop("catalog-watch", interval=CATALOG_WATCH_SECONDS)

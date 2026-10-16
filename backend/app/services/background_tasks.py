@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -14,14 +13,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: How often each pass over the communities runs.
-MINUTE_PASS_SECONDS = 60
+#: How often the hourly pass runs.
 HOURLY_PASS_SECONDS = 3600
-
-#: The minute pass sends overdue digests on every this-many-th pass.
-OVERDUE_EVERY = 5
-
-_minute_passes = itertools.count()
 
 
 class Loop:
@@ -71,42 +64,13 @@ class Loop:
         await asyncio.sleep(self.settle)
 
 
-async def minute_pass() -> None:
-    """The minute-grained notices, in one visit per community: both digests,
-    event reminders, and every :data:`OVERDUE_EVERY`-th pass the overdue
-    digests. Everything else that works community by community runs on timers
-    (``app.services.sweep_timers``)."""
-    from app.services import notifications
-    from app.services.guild_sweeps import each_guild
-
-    now = datetime.now(timezone.utc)
-    scans = [
-        notifications.digest_scan(notifications.ASSIGNMENT_DIGEST, now=now),
-        notifications.digest_scan(notifications.REACTION_DIGEST, now=now),
-    ]
-    try:
-        reminders = await notifications.reminder_scan(now=now)
-    except Exception:
-        # The rest of the pass goes ahead without them.
-        logger.exception("minute: reading reminder opt-ins failed")
-        reminders = None
-    if reminders is not None:
-        scans.append(reminders)
-    if next(_minute_passes) % OVERDUE_EVERY == 0:
-        scans.append(notifications.overdue_scan(now=now))
-    await each_guild([], name="minute", scans=scans)
-
-
 async def hourly_pass() -> None:
-    """Plug-in auto-updates in active communities, which follow the catalog
-    rather than anything a community writes, then the settled mail and read
-    notifications, and the security-signal windows no rule can still read."""
+    """The settled mail and read notifications past their keeping, and the
+    security-signal windows no rule can still read. Work in the communities
+    runs on timers (``app.services.sweep_timers``)."""
     from app.services import notifications
-    from app.services.guild_sweeps import Scope, each_guild
     from app.services.platform import security_signals
-    from app.services.tenant import plugin_updates
 
-    await each_guild([(Scope.ACTIVE, plugin_updates.update_guild)], name="hourly")
     await notifications.drop_spent_notifications(now=datetime.now(timezone.utc))
     await security_signals.sweep()
 
@@ -196,13 +160,11 @@ def start_background_tasks() -> list[asyncio.Task]:
     )
 
     tasks = [
-        # Every sweep that visits only the communities with work due.
+        # Every sweep that works community by community, in only the
+        # communities whose timers have come due.
         asyncio.create_task(sweep_timers.loop.run(sweep_timers.process_due_timers)),
-        # The sweeps that still visit every community, grouped by how often
-        # they need to run.
-        asyncio.create_task(
-            Loop("minute", interval=MINUTE_PASS_SECONDS).run(minute_pass)
-        ),
+        # A catalog change arms the communities with an install of it.
+        asyncio.create_task(sweep_timers.catalog_loop.run(sweep_timers.watch_catalog)),
         asyncio.create_task(
             Loop("hourly", interval=HOURLY_PASS_SECONDS).run(hourly_pass)
         ),
@@ -316,11 +278,7 @@ def start_background_tasks() -> list[asyncio.Task]:
     if settings.DEMO_MODE:
         from app.demo.copies import pool_pass
 
-        tasks.append(
-            asyncio.create_task(
-                Loop("demo-pool", interval=MINUTE_PASS_SECONDS).run(pool_pass)
-            )
-        )
+        tasks.append(asyncio.create_task(Loop("demo-pool", interval=60).run(pool_pass)))
 
     # The marketplace registry needs a trusted root. A build without one runs
     # no worker at all. Each pass asks the platform switch first, so turning

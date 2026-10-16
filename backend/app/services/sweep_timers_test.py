@@ -11,16 +11,24 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import metrics
 from app.db import cohorts
-from app.models.platform.guild import CommunityStatus
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.models.platform.community_timer import CommunityTimer
 from app.models.tenant.post import Post
+from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.webhook_subscription import WebhookSubscription
-from app.services import sweep_timers
+from app.models.platform.user_notification_prefs import EmailCadence
+from app.services import notifications, sweep_timers
+from app.services.guild_sweeps import Scan, Scope
+from app.services.platform.notification_prefs import EmailSchedule
 from app.services.tenant import outbox_poller, post_publication, recent_views
 from app.services.tenant.expiry import Expiring
 from app.testing import (
+    create_calendar,
+    create_calendar_event,
     create_guild,
+    create_guild_plugin,
+    create_marketplace_listing,
     create_initiative,
     create_post,
     create_project,
@@ -183,6 +191,54 @@ async def test_a_failed_visit_keeps_its_timer(session: AsyncSession, monkeypatch
     assert kind == "posts" and due > datetime.now(timezone.utc)
 
 
+async def test_a_failed_send_keeps_its_timer(session: AsyncSession, monkeypatch):
+    """A scan whose visits answer the next time still sends in its finish; a
+    finish that fails leaves the timer to its lease."""
+    _author, _initiative, community_id = await _community(session)
+    await _due_now(session, community_id, "reminders")
+
+    async def found(_session, _guild_id):
+        return None
+
+    async def fails():
+        raise RuntimeError("down")
+
+    async def scan(*, now):
+        return Scan(Scope.LIVE, found, fails)
+
+    monkeypatch.setattr(notifications, "reminder_scan", scan)
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, due)] = await _timers(session, "reminders")
+    assert due > datetime.now(timezone.utc)
+
+
+async def test_a_next_timer_that_fails_to_save_keeps_the_claimed_one(
+    session: AsyncSession, monkeypatch
+):
+    _author, _initiative, community_id = await _community(session)
+    await _due_now(session, community_id, "reminders")
+
+    async def found(_session, _guild_id):
+        return datetime.now(timezone.utc) + timedelta(hours=1)
+
+    async def sent():
+        return None
+
+    async def scan(*, now):
+        return Scan(Scope.LIVE, found, sent)
+
+    async def fails(*_args, **_kwargs):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(notifications, "reminder_scan", scan)
+    monkeypatch.setattr(sweep_timers, "_arm_next", fails)
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, due)] = await _timers(session, "reminders")
+    assert due > datetime.now(timezone.utc)
+
+
 async def test_reconcile_arms_what_no_write_did_and_counts_it(session: AsyncSession):
     author, initiative, community_id = await _community(session)
     await _scheduled(session, initiative, author, due_in=timedelta(hours=2))
@@ -294,3 +350,132 @@ async def test_a_kept_tab_is_not_work_but_an_old_view_is(session: AsyncSession):
     )
     await session.commit()
     assert await next_due() == old + recent_views.WINDOW
+
+
+async def test_a_digest_is_armed_for_when_its_items_are_due(session: AsyncSession):
+    """The finish answers each community's next due time: here, the end of
+    the quiet period after the one item waiting."""
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    task = await create_task(session, project)
+    await route_session_to_guild(session, community_id)
+    item = TaskAssignmentDigestItem(
+        user_id=author.id,
+        task_id=task.id,
+        project_id=project.id,
+        task_title=task.title,
+        project_name=project.name,
+        assigned_by_name="Assigner",
+    )
+    session.add(item)
+    await session.commit()
+    due = item.created_at + notifications.ASSIGNMENT_DIGEST.quiet_period
+    await _due_now(session, community_id, "task_digest")
+
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, armed)] = await _timers(session, "task_digest")
+    assert abs((armed - due).total_seconds()) < 5
+
+
+async def test_a_reminder_is_armed_for_its_lead(session: AsyncSession):
+    author, initiative, community_id = await _community(session)
+    calendar = await create_calendar(session, initiative, author)
+    start = datetime.now(timezone.utc) + timedelta(hours=3)
+    await create_calendar_event(
+        session,
+        calendar,
+        author,
+        attendees=[author],
+        start_at=start,
+        end_at=start + timedelta(hours=1),
+    )
+    await _due_now(session, community_id, "reminders")
+
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, armed)] = await _timers(session, "reminders")
+    assert armed == start - timedelta(minutes=author.event_reminder_minutes_before)
+
+
+async def test_nothing_ahead_arms_no_reminder(session: AsyncSession):
+    _author, _initiative, community_id = await _community(session)
+    await _due_now(session, community_id, "reminders")
+
+    await sweep_timers.process_due_timers()
+
+    assert await _timers(session, "reminders") == []
+
+
+async def test_a_deadline_still_ahead_stays_armed(session: AsyncSession):
+    """With nothing overdue yet, the overdue visit arms the next deadline."""
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    due = datetime.now(timezone.utc) + timedelta(hours=3)
+    await create_task(session, project, assignees=[author], due_date=due)
+    await _due_now(session, community_id, "overdue")
+
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, armed)] = await _timers(session, "overdue")
+    assert abs((armed - due).total_seconds()) < 1
+
+
+async def test_a_catalog_release_arms_the_communities_that_installed_it(
+    session: AsyncSession,
+):
+    author, _initiative, community_id = await _community(session)
+    community = await session.get(Guild, community_id)
+    await create_guild_plugin(
+        session,
+        community,
+        author,
+        definition={
+            "plugin_kind": "service",
+            "service": {"public_id": "tests.release", "protocol": 1},
+        },
+    )
+    await create_marketplace_listing(session, uid="TESTAPP0000001")
+
+    await sweep_timers.watch_catalog()
+
+    assert {kind for _c, kind, _due in await _timers(session)} >= {
+        "plugin_updates",
+        "plugin_schedules",
+    }
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "change", "kind"),
+    [
+        # Longer than the default lead of 15 minutes.
+        ("PATCH", "/api/v1/me", {"event_reminder_minutes_before": 60}, "reminders"),
+        ("PATCH", "/api/v1/me", {"timezone": "Pacific/Auckland"}, "overdue"),
+        (
+            "PUT",
+            "/api/v1/me/notification-preferences",
+            {"email": {"cadence": "daily", "at": "07:00"}},
+            "overdue",
+        ),
+    ],
+)
+async def test_a_preference_that_brings_work_sooner_arms_it(
+    client, acting_user, session: AsyncSession, method, path, change, kind
+):
+    a = await acting_user(guild_role=CommunityRole.member)
+
+    response = await client.request(method, path, headers=a.headers, json=change)
+
+    assert response.status_code == 200
+    assert [community for community, *_ in await _timers(session, kind)] == [a.guild.id]
+
+
+def test_a_weekly_overdue_digest_waits_for_its_day():
+    schedule = EmailSchedule(
+        cadence=EmailCadence.weekly, at="09:00", weekday=1, personal_instant=False
+    )
+    friday = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
+
+    assert notifications._following_digest(friday, schedule) == datetime(
+        2026, 10, 19, 9, tzinfo=timezone.utc
+    )

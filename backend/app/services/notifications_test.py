@@ -495,9 +495,8 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     session: AsyncSession, monkeypatch
 ):
     """The overdue digest must collect a user's overdue tasks from EVERY guild
-    they belong to. Under schema-per-guild each guild's tasks live in its own
-    schema, so a single public-scoped scan (the old behaviour) would miss all
-    but the routed guild — this asserts both guilds' tasks reach the email."""
+    they belong to, including one whose timer has not come due: the day's
+    digest is claimed once, so it has to hold them all."""
     user = await create_user(
         session,
         email="multi-overdue@example.com",
@@ -505,7 +504,7 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     )
     # The scheduled clock is a preference now; midnight is always past.
     await set_notification_prefs(session, user, {"email": {"at": "00:00"}})
-    await _overdue_task_in_new_guild(session, user, label="Alpha")
+    alpha = await _overdue_task_in_new_guild(session, user, label="Alpha")
     await _overdue_task_in_new_guild(session, user, label="Beta")
 
     captured: dict = {}
@@ -518,7 +517,12 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
 
     await set_rls_context(session, Unattributed())
-    await _sweep(overdue_scan(now=datetime.now(timezone.utc)))
+    await each_guild(
+        [],
+        name="test",
+        scans=[overdue_scan(now=datetime.now(timezone.utc))],
+        only=[alpha.id],
+    )
 
     assert captured.get("user_id") == user.id
     assert {"Alpha overdue", "Beta overdue"} <= captured["titles"]
@@ -925,6 +929,36 @@ async def test_assignment_digest_waits_for_the_flurry_to_end(
         )
     )
     assert sent == [2]
+
+
+async def test_assignment_digest_waits_for_a_community_it_did_not_visit(
+    session: AsyncSession, monkeypatch
+):
+    """An item still arriving in a community whose timer has not come due holds
+    the digest back as well."""
+    user = await create_user(session, email="unvisited@example.com")
+    alpha = await _assignment_item_in_new_guild(session, user, label="Alpha")
+    await _assignment_item_in_new_guild(session, user, label="Beta")
+    # Alpha's item has settled; Beta's has just landed.
+    await route_as(session, user_id=user.id, guild_id=alpha.id)
+    await session.exec(
+        update(TaskAssignmentDigestItem).values(
+            created_at=datetime.now(timezone.utc) - 2 * ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+    await session.commit()
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(email_outbox, "enqueue", sent)
+
+    await set_rls_context(session, Unattributed())
+    await each_guild(
+        [],
+        name="test",
+        scans=[digest_scan(ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc))],
+        only=[alpha.id],
+    )
+
+    sent.assert_not_called()
 
 
 async def test_assignment_digest_caps_a_steady_trickle(

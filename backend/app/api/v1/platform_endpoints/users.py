@@ -135,6 +135,8 @@ from app.services.auth import addresses, held_changes
 
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
+from app.services import sweep_timers
+from app.services.cross_guild import member_guild_ids
 from app.core.tools import Tool
 from app.api import resource_access
 from app.services.tenant import initiatives as initiatives_service
@@ -1489,15 +1491,22 @@ async def update_me(
         current_user.count_toward_engagement_ranking = update_data[
             "count_toward_engagement_ranking"
         ]
+    # Sweeps a change can bring due sooner in the person's communities.
+    sooner: list[str] = []
     if "timezone" in update_data:
         normalized_timezone = normalize_timezone(update_data["timezone"])
         if normalized_timezone:
+            if normalized_timezone != current_user.timezone:
+                # The overdue digest goes out at a time of their day.
+                sooner.append("overdue")
             current_user.timezone = normalized_timezone
     if "event_reminder_minutes_before" in update_data:
         # ``None`` is a valid value here (reminders off), so assign directly.
-        current_user.event_reminder_minutes_before = normalize_reminder_minutes(
-            update_data["event_reminder_minutes_before"]
-        )
+        lead = normalize_reminder_minutes(update_data["event_reminder_minutes_before"])
+        before = current_user.event_reminder_minutes_before
+        if lead is not None and (before is None or lead > before):
+            sooner.append("reminders")
+        current_user.event_reminder_minutes_before = lead
     if "color_theme" in update_data:
         current_user.color_theme = update_data["color_theme"]
     if "task_completion_visual_feedback" in update_data:
@@ -1563,6 +1572,10 @@ async def update_me(
         # rather than at the next reconnect. Told after the commit, so nothing
         # is shown on the strength of a write that did not land.
         presence.online.chose(current_user.id, current_user.presence)
+    if sooner:
+        communities = await member_guild_ids(session, current_user.id)
+        for kind in sooner:
+            await sweep_timers.arm_in(kind, communities)
     # Platform path — no initiative_roles enrichment (see read_me).
     return await users_service.to_self_read(session, current_user)
 
