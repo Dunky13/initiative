@@ -26,6 +26,7 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.platform.intake_setup import set_operations_guild
 from app.services.tenant.initiatives import get_moderator_role
+from app.services.tenant import mandatory_plugins
 from app.services.tenant.mandatory_plugins import backfill_mandatory_plugins
 from app.testing import (
     create_plugin_service_registration,
@@ -242,6 +243,8 @@ class TestBackfill:
     async def test_running_it_twice_installs_once(
         self, session: AsyncSession, mandatory_registration
     ):
+        """And the second run visits nothing: the install index says every
+        community is settled."""
         creator = await create_user(session, email="twice@example.com")
         guild = await create_guild(session, creator=creator, name="Twice guild")
         await create_guild_membership(
@@ -251,7 +254,29 @@ class TestBackfill:
         await backfill_mandatory_plugins()
         second = await backfill_mandatory_plugins()
 
-        assert second.installed == 0
+        assert second.guilds == 0
+        assert len(await _installed_plugins(session, guild.id)) == 1
+
+    async def test_a_guild_whose_install_rolled_back_is_visited_again(
+        self, session: AsyncSession, mandatory_registration, monkeypatch
+    ):
+        creator = await create_user(session, email="rolled-back@example.com")
+        guild = await create_guild(session, creator=creator, name="Rolled back")
+        await create_guild_membership(
+            session, user=creator, guild=guild, role=CommunityRole.admin
+        )
+        install = mandatory_plugins.install_mandatory_plugins
+
+        async def fails(session, **kwargs):
+            await install(session, **kwargs)
+            raise RuntimeError("down")
+
+        monkeypatch.setattr(mandatory_plugins, "install_mandatory_plugins", fails)
+        await backfill_mandatory_plugins()
+        monkeypatch.setattr(mandatory_plugins, "install_mandatory_plugins", install)
+        retried = await backfill_mandatory_plugins()
+
+        assert retried.installed == 1
         assert len(await _installed_plugins(session, guild.id)) == 1
 
     async def test_with_nothing_mandatory_it_touches_no_guild(
@@ -291,11 +316,11 @@ class TestBackfill:
 
 
 class TestPlacement:
-    async def test_it_is_placed_in_every_initiative_and_each_new_one(
+    async def test_it_is_placed_in_every_initiative_there_is(
         self, session: AsyncSession, mandatory_registration
     ):
-        """In every initiative there is when it lands, with the moderator role,
-        and in each initiative created afterwards."""
+        """In every initiative there is when it lands, with the moderator role.
+        One created afterwards is the seat's to place."""
         creator = await create_user(session, email="placed@example.com")
         guild = await create_guild(session, creator=creator, name="Placed guild")
         await create_guild_membership(
@@ -305,9 +330,8 @@ class TestPlacement:
 
         await backfill_mandatory_plugins()
         [plugin] = await _installed_plugins(session, guild.id)
-        assert plugin.follows_new_initiatives is True
 
-        after = await create_initiative(session, guild, creator, name="After")
+        await create_initiative(session, guild, creator, name="After")
 
         await route_session_to_guild(session, guild.id)
         rows = (
@@ -316,18 +340,15 @@ class TestPlacement:
             )
         ).all()
         placed = {row.initiative_id: list(row.role_ids) for row in rows}
-        expected = {}
-        for initiative in (before, after):
-            role = await get_moderator_role(session, initiative_id=initiative.id)
-            assert role is not None
-            expected[initiative.id] = [role.id]
-        assert placed == expected
+        role = await get_moderator_role(session, initiative_id=before.id)
+        assert role is not None
+        assert placed == {before.id: [role.id]}
 
-    async def test_an_install_already_there_starts_following(
+    async def test_an_install_already_there_is_left_as_the_seat_set_it(
         self, session: AsyncSession, mandatory_registration
     ):
-        """Marked mandatory after it landed: it follows new initiatives from
-        then on, and the initiatives already there keep the seat's placement."""
+        """Marked mandatory after it landed: the initiatives keep the seat's
+        placement."""
         creator = await create_user(session, email="late@example.com")
         guild = await create_guild(session, creator=creator, name="Late guild")
         await create_guild_membership(
@@ -345,7 +366,6 @@ class TestPlacement:
         await backfill_mandatory_plugins()
 
         [plugin] = await _installed_plugins(session, guild.id)
-        assert plugin.follows_new_initiatives is True
         await route_session_to_guild(session, guild.id)
         assert (
             await session.exec(
@@ -415,8 +435,8 @@ class TestScopes:
 
 
 class TestScopesOnAnInstallAlreadyThere:
-    """The sweep gives an existing mandatory install that holds no grant what a
-    new one would get, and leaves a grant the seat set alone."""
+    """The sweep leaves an existing mandatory install's grant as the seat set
+    it, empty or not."""
 
     PUBLIC_ID = "platform.scoped-later"
     UID = marketplace_uid("scopedlater")
@@ -480,13 +500,13 @@ class TestScopesOnAnInstallAlreadyThere:
                 await system.commit()
         return guild
 
-    async def test_an_empty_grant_is_filled_in(self, session: AsyncSession):
+    async def test_an_empty_grant_stays_empty(self, session: AsyncSession):
         guild = await self._guild_with_install(session, "empty-grant@example.com")
 
         await backfill_mandatory_plugins()
 
         [plugin] = await _installed_plugins(session, guild.id)
-        assert plugin.granted_scopes == ["comments:read", "projects:read"]
+        assert plugin.granted_scopes == []
 
     async def test_a_grant_the_seat_set_is_left_alone(self, session: AsyncSession):
         guild = await self._guild_with_install(

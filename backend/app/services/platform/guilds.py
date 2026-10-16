@@ -1141,12 +1141,13 @@ async def seed_guild_content(
     async with cohorts.system_session(guild_id) as guild_session:
         await set_rls_context(guild_session, SystemGuild(guild_id))
         await create_guild_settings(guild_session, guild_id)
+        installed: list[str] = []
         try:
             # Inside a savepoint, so a failure here rolls back the plug-in install
             # and nothing else: the guild being created must survive whatever
             # a plug-in's listing or registration is doing.
             async with guild_session.begin_nested():
-                await mandatory_plugins_service.install_mandatory_plugins(
+                installed = await mandatory_plugins_service.install_mandatory_plugins(
                     guild_session, guild_id=guild_id, created_by=owner.id
                 )
         except Exception:
@@ -1156,6 +1157,9 @@ async def seed_guild_content(
                 guild_id,
             )
         await guild_session.commit()
+        await mandatory_plugins_service.index_installs(
+            guild_session, guild_id, installed
+        )
 
 
 class GuildProvisionError(Exception):

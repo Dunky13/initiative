@@ -124,11 +124,6 @@ class TestConsentAtInstall:
             expected.append({"initiative_id": initiative_id, "role_ids": roles})
         assert body["placements"] == expected
 
-        # "Every current initiative", as the placement panel means it: an
-        # initiative created later is the seat's to place.
-        (plugin,) = await _installs(session, a.guild.id)
-        assert plugin.follows_new_initiatives is False
-
     async def test_picked_initiatives_start_with_their_moderators(
         self, client: AsyncClient, acting_user, session: AsyncSession, listing
     ):

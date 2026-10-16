@@ -9,11 +9,9 @@ initiatives, and the export that carries them.
 from __future__ import annotations
 
 import pytest
-from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.platform.guild import CommunityRole
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.tool_layout import ToolLayout
 from app.services.export.guild_sections import SectionContext, _build_plugins
@@ -158,7 +156,7 @@ class TestIsPlaced:
         assert await is_placed(session, plugin.id, None) is True
 
 
-class TestFollowingNewInitiatives:
+class TestPlaceInEveryInitiative:
     async def test_place_in_every_initiative_covers_the_existing_ones(
         self, session: AsyncSession
     ):
@@ -172,59 +170,6 @@ class TestFollowingNewInitiatives:
         assert await _rows(session, guild.id, plugin.id) == {
             first.id: [await _moderator_id(session, first.id)],
             second.id: [await _moderator_id(session, second.id)],
-        }
-
-    async def test_a_new_initiative_places_a_following_install_only(
-        self, session: AsyncSession
-    ):
-        user = await create_user(session)
-        guild = await create_guild(session, creator=user)
-        following = await create_guild_plugin(
-            session,
-            guild,
-            user,
-            definition=DEFINITION,
-            follows_new_initiatives=True,
-        )
-        ordinary = await create_guild_plugin(
-            session,
-            guild,
-            user,
-            definition=DEFINITION,
-            listing_uid="TESTAPP0000002",
-        )
-
-        initiative = await create_initiative(session, guild, user)
-
-        assert await _rows(session, guild.id, following.id) == {
-            initiative.id: [await _moderator_id(session, initiative.id)]
-        }
-        assert await _rows(session, guild.id, ordinary.id) == {}
-
-    async def test_an_initiative_created_through_the_route_is_placed(
-        self, client: AsyncClient, session: AsyncSession, acting_user
-    ):
-        """Created by a guild admin who is not the seat: the row arrives from
-        the trigger, under the request's own role."""
-        seat = await acting_user(guild_role=CommunityRole.superadmin)
-        admin = await acting_user(guild_role=CommunityRole.admin, guild=seat.guild)
-        plugin = await create_guild_plugin(
-            session,
-            seat.guild,
-            seat.user,
-            definition=DEFINITION,
-            follows_new_initiatives=True,
-        )
-
-        response = await client.post(
-            admin.g("/initiatives/"), headers=admin.headers, json={"name": "Fresh"}
-        )
-        assert response.status_code in (200, 201), response.text
-        initiative_id = response.json()["id"]
-
-        await route_session_to_guild(session, seat.guild.id)
-        assert await _rows(session, seat.guild.id, plugin.id) == {
-            initiative_id: [await _moderator_id(session, initiative_id)]
         }
 
 

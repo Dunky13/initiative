@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A plug-in your server provides follows your community's choices.** It is still installed in every community and placed in each initiative it has. From then on the community's admins decide where it appears and what it may do: it no longer adds itself to initiatives created later, and its permissions are not reset on restart.
 - **Breaking changes**
   - **Every key on a service boundary is Ed25519 (EdDSA), and nothing else.** A plug-in's registered key set must hold Ed25519 keys, and an RSA or P-256 key is refused. The plug-in platform key that signs context, lifecycle and page tokens is Ed25519: a stored RSA key is replaced with a new one on start, and `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM`, if set, must be Ed25519. `HANDOFF_SIGNING_PRIVATE_KEY_PEM` (the billing handoffs) and `BILLING_PUBLIC_KEY_PEM` must be Ed25519 too. Make one with `openssl genpkey -algorithm ed25519`. Plug-ins need initiative-plugin-sdk 8.
   - **Plug-ins need SDK 6.0.** Initiative serves plug-in API 6.0: `embeds` are now `pages`, and a project's `default_view_mode` is gone. Installing or updating a plug-in needs a release built with SDK 6.0; installed ones keep working.
