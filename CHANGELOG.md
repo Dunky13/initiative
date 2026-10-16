@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The task tables keep the project path readable on narrower screens.** On My Tasks and a tag's tasks, the path no longer squeezes into a thin column one word per line; the table scrolls sideways instead.
 - **A dialog no longer opens behind its own backdrop.** The blurred backdrop could cover the dialog, so it couldn't be used. This happened with **Prove it's you** when adding an email address.
 - **Two-factor authentication works for accounts without a password.** Setup goes straight to the code to scan, and turning it off asks for no password.
 - **Switching files no longer blanks the one you open**, which could save a blank page over it.

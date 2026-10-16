@@ -254,7 +254,7 @@ const TagTasksTable = ({ tagId }: { tagId: number }) => {
         cell: ({ row }) => {
           const task = row.original;
           return (
-            <div className="flex min-w-30 flex-wrap items-center gap-2 text-sm">
+            <div className="flex min-w-72 flex-wrap items-center gap-2 text-sm">
               {task.initiative_id != null && task.initiative_name ? (
                 <>
                   <Link
