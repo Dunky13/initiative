@@ -106,6 +106,7 @@ DECLARE
     v_memo text := current_setting(v_memo_name, true);
     v_community integer := {gucs.ROUTED_GUILD_ID};
     v_mark timestamp with time zone;
+    v_moved boolean;
 BEGIN
     IF p_due IS NULL
        OR (COALESCE(v_memo, '') <> '' AND v_memo::numeric <= extract(epoch FROM p_due))
@@ -125,10 +126,18 @@ BEGIN
        OR v_mark > p_due
        OR v_mark < now() - interval '{interval(MARK_STALE_AFTER)}'
     THEN
-        INSERT INTO public.community_timers (community_id, kind, due_at)
-            VALUES (v_community, p_kind, p_due);
+        -- Writers arming at once decide one at a time: the mark only moves
+        -- earlier (or past a stale one), and only the writer that moved it
+        -- adds the timer.
         INSERT INTO timer_marks (kind, due_at) VALUES (p_kind, p_due)
-            ON CONFLICT (kind) DO UPDATE SET due_at = EXCLUDED.due_at;
+            ON CONFLICT (kind) DO UPDATE SET due_at = EXCLUDED.due_at
+            WHERE timer_marks.due_at > EXCLUDED.due_at
+               OR timer_marks.due_at < now() - interval '{interval(MARK_STALE_AFTER)}'
+            RETURNING true INTO v_moved;
+        IF v_moved THEN
+            INSERT INTO public.community_timers (community_id, kind, due_at)
+                VALUES (v_community, p_kind, p_due);
+        END IF;
     END IF;
     PERFORM set_config(v_memo_name, extract(epoch FROM p_due)::text, true);
 END

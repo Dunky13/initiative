@@ -14,12 +14,17 @@ from app.db import cohorts
 from app.models.platform.guild import CommunityStatus
 from app.models.platform.community_timer import CommunityTimer
 from app.models.tenant.post import Post
+from app.models.tenant.recent_view import RecentView
+from app.models.tenant.webhook_subscription import WebhookSubscription
 from app.services import sweep_timers
-from app.services.tenant import post_publication
+from app.services.tenant import outbox_poller, post_publication, recent_views
+from app.services.tenant.expiry import Expiring
 from app.testing import (
     create_guild,
     create_initiative,
     create_post,
+    create_project,
+    create_task,
     create_user,
     route_session_to_guild,
     route_system,
@@ -224,3 +229,68 @@ def test_a_timer_names_the_community_the_sweep_and_the_time_and_nothing_else():
         "kind",
         "due_at",
     }
+
+
+async def _read_as_community(community_id: int, statement):
+    async with cohorts.system_session(community_id) as routed:
+        await route_system(routed, guild_id=community_id)
+        return (await routed.exec(statement)).first()
+
+
+async def test_a_webhook_backlog_keeps_the_drain_due(session: AsyncSession):
+    """A change nobody has been sent yet is work, before any delivery row
+    names it."""
+    author, initiative, community_id = await _community(session)
+    await create_post(session, initiative, author)
+    now = datetime.now(timezone.utc)
+    assert await _read_as_community(community_id, outbox_poller.next_due(now)) is None
+
+    session.add(
+        WebhookSubscription(
+            initiative_id=None,
+            created_by=author.id,
+            target_url="https://example.test/hook",
+            hmac_secret="secret",
+            event_types=["posts.created"],
+            active=True,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    await session.commit()
+    owed = await _read_as_community(community_id, outbox_poller.next_due(now))
+    assert owed is not None and owed <= datetime.now(timezone.utc)
+
+
+async def test_a_kept_tab_is_not_work_but_an_old_view_is(session: AsyncSession):
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    task = await create_task(session, project)
+    project_id, task_id = project.id, task.id
+    now = datetime.now(timezone.utc)
+    old = now - recent_views.WINDOW - timedelta(days=1)
+    await route_session_to_guild(session, community_id)
+    session.add(
+        RecentView(
+            user_id=author.id,
+            entity_type="project",
+            entity_id=project_id,
+            last_viewed_at=old,
+        )
+    )
+    await session.commit()
+
+    async def next_due():
+        async with cohorts.system_session(community_id) as routed:
+            await route_system(routed, guild_id=community_id)
+            return await recent_views.next_due(routed, Expiring(now=now, tab_limits={}))
+
+    assert await next_due() is None
+    await route_session_to_guild(session, community_id)
+    session.add(
+        RecentView(
+            user_id=author.id, entity_type="task", entity_id=task_id, last_viewed_at=old
+        )
+    )
+    await session.commit()
+    assert await next_due() == old + recent_views.WINDOW

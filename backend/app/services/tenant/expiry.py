@@ -17,7 +17,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
+from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -84,16 +86,63 @@ async def _tab_limits() -> dict[int, int]:
         }
 
 
+def _kept() -> list[Any]:
+    """When each record but the recent views next has a row to let go."""
+    from app.models.tenant.event_outbox import EventOutbox
+    from app.models.tenant.event_reminder_dispatch import EventReminderDispatch
+    from app.models.tenant.plugin_event_outbox import PluginEventOutbox
+    from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
+    from app.services import notifications
+    from app.services.tenant import change_log
+
+    return [
+        *(
+            select(func.min(log.occurred_at) + change_log.RETENTION)
+            for log in (EventOutbox, PluginEventOutbox)
+        ),
+        select(func.min(PluginHookDelivery.expires_at)),
+        select(
+            func.min(EventReminderDispatch.event_start_at)
+            + notifications.EVENT_REMINDER_DISPATCH_RETENTION
+        ),
+    ]
+
+
+def next_due(_now: datetime) -> Any:
+    """When the community next has something to let go, counting every
+    recent view, tabs a person keeps included. Early for those: the visit
+    answers exactly, with each person's tab limit."""
+    from app.models.tenant.recent_view import RecentView
+    from app.services.tenant.recent_views import WINDOW
+
+    return select(
+        func.least(
+            *(part.scalar_subquery() for part in _kept()),
+            select(func.min(RecentView.last_viewed_at) + WINDOW).scalar_subquery(),
+        )
+    )
+
+
 async def prepare() -> Visit:
     """The visit that runs every rule in one community, with what the pass
-    shares read once."""
+    shares read once. It answers when the community next has something to
+    let go."""
+    from app.services.tenant import recent_views
+
     now = datetime.now(timezone.utc)
     tab_limits = await _tab_limits()
     rules = _rules()
 
-    async def visit(session: AsyncSession, guild_id: int) -> None:
+    async def visit(session: AsyncSession, guild_id: int) -> datetime | None:
         expiring = Expiring(now=now, tab_limits=tab_limits)
         for rule in rules:
             await rule(session, expiring)
+        kept = (
+            await session.exec(
+                select(func.least(*(part.scalar_subquery() for part in _kept())))
+            )
+        ).first()
+        views = await recent_views.next_due(session, expiring)
+        return min((due for due in (kept, views) if due is not None), default=None)
 
     return visit

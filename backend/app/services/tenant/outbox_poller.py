@@ -72,7 +72,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Table, and_, func, or_, text
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import webhook_events
@@ -354,6 +354,49 @@ def _envelope(
     }
 
 
+#: Both change logs, as the transactions a subscription may be owed.
+_LOG = (
+    "(SELECT id, txn_id FROM event_outbox"
+    " UNION ALL SELECT id, txn_id FROM plugin_event_outbox)"
+)
+#: Transaction ``o`` is not yet delivered or dead-lettered for ``{sid}``.
+_UNSETTLED = (
+    "NOT EXISTS (SELECT 1 FROM webhook_deliveries d"
+    " WHERE d.subscription_id = {sid} AND d.txn_id = o.txn_id"
+    " AND (d.delivered_at IS NOT NULL OR d.dead_lettered_at IS NOT NULL))"
+)
+#: None of ``{sid}``'s batches is waiting, for its backoff or for a pass.
+_NOT_WAITING = (
+    "NOT EXISTS (SELECT 1 FROM webhook_deliveries w"
+    " WHERE w.subscription_id = {sid}"
+    " AND w.delivered_at IS NULL AND w.dead_lettered_at IS NULL"
+    " AND w.next_attempt_at > :now)"
+)
+
+
+def next_due(now: datetime):
+    """When the community's subscriptions are next owed a delivery: now while
+    one is owed a transaction and not waiting on a batch, else the earliest
+    retry. The same terms :func:`_pending_transactions` reads."""
+    owed = text(
+        "EXISTS (SELECT 1 FROM webhook_subscriptions s WHERE s.active"
+        f" AND {_NOT_WAITING.format(sid='s.id')}"
+        f" AND EXISTS (SELECT 1 FROM {_LOG} o"
+        f" WHERE {_UNSETTLED.format(sid='s.id')}))"
+    ).bindparams(now=now)
+    return select(
+        func.least(
+            select(func.now()).where(owed).scalar_subquery(),
+            select(func.min(WebhookDelivery.next_attempt_at))
+            .where(
+                col(WebhookDelivery.delivered_at).is_(None),
+                col(WebhookDelivery.dead_lettered_at).is_(None),
+            )
+            .scalar_subquery(),
+        )
+    )
+
+
 async def _pending_transactions(
     session: AsyncSession, subscription: WebhookSubscription, *, now: datetime
 ) -> list[int]:
@@ -380,20 +423,10 @@ async def _pending_transactions(
     rows = await session.exec(
         text(
             "SELECT o.txn_id "
-            "FROM (SELECT id, txn_id FROM event_outbox "
-            "      UNION ALL SELECT id, txn_id FROM plugin_event_outbox) o "
+            f"FROM {_LOG} o "
             "WHERE pg_visible_in_snapshot(o.txn_id::text::xid8, pg_current_snapshot()) "
-            "  AND NOT EXISTS ("
-            "    SELECT 1 FROM webhook_deliveries d "
-            "    WHERE d.subscription_id = :sid AND d.txn_id = o.txn_id "
-            "      AND (d.delivered_at IS NOT NULL OR d.dead_lettered_at IS NOT NULL)"
-            "  ) "
-            "  AND NOT EXISTS ("
-            "    SELECT 1 FROM webhook_deliveries w "
-            "    WHERE w.subscription_id = :sid "
-            "      AND w.delivered_at IS NULL AND w.dead_lettered_at IS NULL "
-            "      AND w.next_attempt_at > :now"
-            "  ) "
+            f"  AND {_UNSETTLED.format(sid=':sid')} "
+            f"  AND {_NOT_WAITING.format(sid=':sid')} "
             "GROUP BY o.txn_id "
             "ORDER BY min(o.id) ASC "
             "LIMIT :limit"

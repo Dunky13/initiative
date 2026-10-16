@@ -104,20 +104,16 @@ def sweeps() -> tuple[Sweep, ...]:
     from app.models.tenant.content_hold import ContentHold
     from app.models.tenant.engagement_level import EngagementLevel
     from app.models.tenant.event_outbox import EventOutbox
-    from app.models.tenant.event_reminder_dispatch import EventReminderDispatch
     from app.models.tenant.evidence import Evidence
     from app.models.tenant.export_job import ExportJob, ExportJobStatus
     from app.models.tenant.import_job import ImportJob, ImportJobStatus
     from app.models.tenant.intake import IntakeCase
     from app.models.tenant.moderation import ModerationReport
-    from app.models.tenant.plugin_event_outbox import PluginEventOutbox
-    from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
     from app.models.tenant.reaction_digest import ReactionDigestItem
     from app.models.tenant.recent_view import RecentView
     from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
     from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
     from app.models.tenant.upload import Upload
-    from app.models.tenant.webhook_delivery import WebhookDelivery
     from app.services import notifications
     from app.services.export import worker as export_worker
     from app.services.import_engine import worker as import_worker
@@ -165,9 +161,11 @@ def sweeps() -> tuple[Sweep, ...]:
         on_insert("plugin_event_outbox", after=change_log.RETENTION),
     )
     digest_items = (TaskAssignmentDigestItem, ReactionDigestItem)
-    shortest_case_keep = min(
-        timedelta(days=meta(stream).retention_days) for stream in IntakeStream
-    )
+    case_keep = {
+        stream.value: timedelta(days=meta(stream).retention_days)
+        for stream in IntakeStream
+    }
+    shortest_case_keep = min(case_keep.values())
     report_keep = timedelta(days=meta(IntakeStream.moderation).retention_days)
 
     async def claim_jobs(session: AsyncSession, guild_id: int) -> None:
@@ -176,6 +174,8 @@ def sweeps() -> tuple[Sweep, ...]:
 
     async def sweep_stale_jobs(session: AsyncSession, guild_id: int) -> None:
         await export_worker.jobs.sweep_stale(session, guild_id)
+        # Telling a job's creator leaves the session unrouted.
+        await set_rls_context(session, SystemGuild(guild_id))
         await import_worker.jobs.sweep_stale(session, guild_id)
 
     async def publish_posts(session: AsyncSession, _guild_id: int) -> None:
@@ -189,15 +189,10 @@ def sweeps() -> tuple[Sweep, ...]:
             scope=Scope.ACTIVE,
             every=minute,
             visit=outbox_poller.drain_guild,
-            # Retries. New events wake the drain at once; the outbox sources
-            # are its backstop should that wake be lost. A community with no
+            # New events wake the drain at once; the outbox sources are its
+            # backstop should that wake be lost. A community with no
             # subscription answers that visit with one read.
-            next_due=lambda _now: select(
-                func.min(WebhookDelivery.next_attempt_at)
-            ).where(
-                col(WebhookDelivery.delivered_at).is_(None),
-                col(WebhookDelivery.dead_lettered_at).is_(None),
-            ),
+            next_due=outbox_poller.next_due,
             sources=(
                 on_insert("event_outbox", after=minute),
                 on_insert("plugin_event_outbox", after=minute),
@@ -221,6 +216,13 @@ def sweeps() -> tuple[Sweep, ...]:
                     "plugin_schedule_runs",
                     "GREATEST({row}.next_due_at, {row}.claimed_until)",
                     events="INSERT OR UPDATE OF next_due_at, claimed_until",
+                ),
+                # Switched back on: its schedules may be overdue already.
+                on_row(
+                    "guild_plugins",
+                    "now()",
+                    events="UPDATE OF enabled",
+                    when="NEW.enabled AND NOT OLD.enabled",
                 ),
             ),
         ),
@@ -415,22 +417,14 @@ def sweeps() -> tuple[Sweep, ...]:
             scope=Scope.PROVISIONED,
             every=hour,
             prepare=expiry.prepare,
-            next_due=lambda _now: least(
-                *(
-                    select(func.min(log.occurred_at) + change_log.RETENTION)
-                    for log in (EventOutbox, PluginEventOutbox)
-                ),
-                select(func.min(PluginHookDelivery.expires_at)),
-                select(func.min(RecentView.last_viewed_at) + recent_views.WINDOW),
-                select(
-                    func.min(EventReminderDispatch.event_start_at)
-                    + notifications.EVENT_REMINDER_DISPATCH_RETENTION
-                ),
-            ),
+            answers=True,
+            next_due=expiry.next_due,
             sources=(
                 *change_log_sources,
                 on_insert("plugin_hook_deliveries", after=plugin_hooks.DELIVERY_TTL),
-                on_insert("recent_views", after=recent_views.WINDOW),
+                # A new tab can push an old one past its person's limit, so a
+                # view is looked at within the hour, as before timers.
+                on_insert("recent_views", after=hour),
                 on_row(
                     "event_reminder_dispatches",
                     "{row}.event_start_at",
@@ -466,8 +460,9 @@ def sweeps() -> tuple[Sweep, ...]:
             scope=Scope.ACTIVE,
             every=hour,
             visit=evidence.purge_due,
-            # A case's evidence is kept from when its task closes: any task
-            # closing arms the shortest retention, which is never later.
+            # A case's evidence is kept from when its task closes, for its
+            # stream's retention: any task closing arms the shortest, which is
+            # never later.
             next_due=lambda _now: least(
                 select(
                     func.min(
@@ -480,8 +475,8 @@ def sweeps() -> tuple[Sweep, ...]:
                                 ),
                             ),
                         )
+                        + case(case_keep, value=IntakeCase.stream)
                     )
-                    + shortest_case_keep
                 )
                 .select_from(IntakeCase)
                 .join(Task, col(Task.id) == IntakeCase.task_id)
