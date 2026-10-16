@@ -1,8 +1,8 @@
 """Auto-purge background worker for trashed entities past their retention.
 
-Visited by the hourly pass in every active guild, on a system session routed
-into the guild's schema; the policies' system leg names that login. See
-:func:`purge_guild`.
+Visited in an active guild when its ``trash`` timer comes due (armed as a row
+is trashed, for its ``purge_at``), on a system session routed into the guild's
+schema; the policies' system leg names that login. See :func:`purge_guild`.
 
 Each table's due rows are purged together, parents first, through the same
 ``hard_purge_entities`` the trash can's purge button uses: files and

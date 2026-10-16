@@ -1642,6 +1642,7 @@ def _registry_ddl() -> str:
     from app.db.event_capture import render_guild_capture_ddl
     from app.db.registry_checks import render_guild_registry_check_ddl
     from app.db.search_index import render_guild_search_ddl
+    from app.db.timers import render_guild_timer_ddl
 
     return "\n".join(
         (
@@ -1649,6 +1650,7 @@ def _registry_ddl() -> str:
             render_guild_rls_ddl(),
             render_guild_capture_ddl(),
             render_guild_search_ddl(None),
+            render_guild_timer_ddl(),
         )
     )
 

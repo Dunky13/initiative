@@ -57,7 +57,7 @@ async def record_view(
     persist: bool = True,
 ) -> RecentView:
     """Upsert a recent-view row, with where this open came from. What a person
-    no longer keeps goes in the hourly pass (:func:`expire`), not here.
+    no longer keeps goes in the expiry sweep (:func:`expire`), not here.
 
     ``persist=False`` returns a transient (unsaved) row instead of writing.
     A PAM grantee's browsing is transient by design, so it is not recorded.
@@ -83,44 +83,71 @@ async def record_view(
     return record
 
 
+#: Each view, ranked among its person's tabs or other views, beside that
+#: person's tab limit when it is not the default.
+_RANKED = """
+    (
+        SELECT user_id, entity_type, entity_id, last_viewed_at,
+               entity_type = ANY (CAST(:tabs AS text[])) AS is_tab,
+               row_number() OVER (
+                   PARTITION BY user_id,
+                                entity_type = ANY (CAST(:tabs AS text[]))
+                   ORDER BY last_viewed_at DESC
+               ) AS n
+          FROM recent_views
+    ) ranked
+    LEFT JOIN unnest(CAST(:users AS integer[]), CAST(:limits AS integer[]))
+           AS chosen(user_id, tab_limit)
+           ON chosen.user_id = ranked.user_id
+"""
+
+#: The view goes once it is past the window: anything but a tab among its
+#: person's newest ``recent_tabs_limit``.
+_LETS_GO = (
+    "(NOT ranked.is_tab OR ranked.n > COALESCE(chosen.tab_limit, :default_limit))"
+)
+
+
+def _ranking(expiring: Expiring) -> dict:
+    users = list(expiring.tab_limits)
+    return dict(
+        tabs=list(RECENT_TAB_TYPES),
+        users=users,
+        limits=[expiring.tab_limits[user] for user in users],
+        default_limit=DEFAULT_RECENT_VIEWS,
+    )
+
+
 async def expire(session: AsyncSession, expiring: Expiring) -> None:
     """Drop each person's views past :data:`WINDOW`, except a tab among their
     newest ``recent_tabs_limit``. A view reopened while this runs is left: it
     no longer has the time it was ranked by."""
-    users = list(expiring.tab_limits)
     await session.exec(
         text(
-            """
+            f"""
             DELETE FROM recent_views rv
-            USING (
-                SELECT user_id, entity_type, entity_id, last_viewed_at,
-                       entity_type = ANY (CAST(:tabs AS text[])) AS is_tab,
-                       row_number() OVER (
-                           PARTITION BY user_id,
-                                        entity_type = ANY (CAST(:tabs AS text[]))
-                           ORDER BY last_viewed_at DESC
-                       ) AS n
-                  FROM recent_views
-            ) ranked
-            LEFT JOIN unnest(CAST(:users AS integer[]), CAST(:limits AS integer[]))
-                   AS chosen(user_id, tab_limit)
-                   ON chosen.user_id = ranked.user_id
+            USING {_RANKED}
             WHERE rv.user_id = ranked.user_id
               AND rv.entity_type = ranked.entity_type
               AND rv.entity_id = ranked.entity_id
               AND rv.last_viewed_at = ranked.last_viewed_at
               AND rv.last_viewed_at < :cutoff
-              AND (NOT ranked.is_tab
-                   OR ranked.n > COALESCE(chosen.tab_limit, :default_limit))
+              AND {_LETS_GO}
             """
-        ).bindparams(
-            tabs=list(RECENT_TAB_TYPES),
-            cutoff=expiring.now - WINDOW,
-            users=users,
-            limits=[expiring.tab_limits[user] for user in users],
-            default_limit=DEFAULT_RECENT_VIEWS,
-        )
+        ).bindparams(cutoff=expiring.now - WINDOW, **_ranking(expiring))
     )
+
+
+async def next_due(session: AsyncSession, expiring: Expiring) -> datetime | None:
+    """When the next view :func:`expire` would drop passes the window."""
+    oldest = (
+        await session.exec(
+            text(
+                f"SELECT min(ranked.last_viewed_at) FROM {_RANKED} WHERE {_LETS_GO}"
+            ).bindparams(**_ranking(expiring))
+        )
+    ).scalar_one()
+    return None if oldest is None else oldest + WINDOW
 
 
 async def clear_view(

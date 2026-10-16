@@ -10,7 +10,8 @@ Each install's schedules are rows in its community's ``plugin_schedule_runs``.
 a plug-in is installed and when an install moves to a new version, and the rows
 go with the install when it is removed.
 
-:func:`run_due` is the minute pass's visit to one active community. It claims
+:func:`run_due` is the ``plugin_schedules`` timer's visit to one active
+community (``app.services.sweep_timers``), armed when a row comes due. It claims
 one due row at a time, with ``FOR UPDATE SKIP LOCKED`` and a lease, so two
 workers never run the same row; calls the hook with a ``lifecycle`` token
 naming the install; and settles the row. A success is next due one interval
@@ -35,7 +36,7 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
-from sqlalchemy import Row, delete, or_, update
+from sqlalchemy import Row, delete, func, or_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -228,9 +229,33 @@ async def _settle(
     await session.commit()
 
 
-async def run_due(session: AsyncSession, guild_id: int) -> None:
+def next_due(live_listings: list[str] | None = None):
+    """When the community's next schedule comes due, leases included, among
+    its switched-on installs (and only those whose registration is live, when
+    ``live_listings`` names them)."""
+    statement = (
+        select(
+            func.min(
+                func.greatest(
+                    PluginScheduleRun.next_due_at,
+                    func.coalesce(
+                        PluginScheduleRun.claimed_until, PluginScheduleRun.next_due_at
+                    ),
+                )
+            )
+        )
+        .join(GuildPlugin, col(GuildPlugin.id) == PluginScheduleRun.install_id)
+        .where(col(GuildPlugin.enabled).is_(True))
+    )
+    if live_listings is not None:
+        statement = statement.where(col(GuildPlugin.listing_uid).in_(live_listings))
+    return statement
+
+
+async def run_due(session: AsyncSession, guild_id: int) -> datetime | None:
     """Call the ``schedule`` hook for each of the community's due schedules,
-    on a session routed into it."""
+    on a session routed into it. Returns when the next one comes due, among
+    the installs whose registration is live."""
     live = {
         registration.listing_uid: registration
         for registration in (await load_registrations()).values()
@@ -289,6 +314,7 @@ async def run_due(session: AsyncSession, guild_id: int) -> None:
             )
             succeeded = False
         await _settle(session, run, every=every, started=started, succeeded=succeeded)
+    return (await session.exec(next_due(sorted(live)))).first()
 
 
 async def _check_health(

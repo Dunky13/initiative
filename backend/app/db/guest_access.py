@@ -62,6 +62,9 @@ _NAMED: dict[str, GuestAccess] = {
     "comments": GuestAccess.write,
     "reactions": GuestAccess.write,
     "reaction_digest_items": GuestAccess.write,
+    # The sweep timers a guest's writes arm (public.arm_timer reads the mark
+    # before it writes one).
+    "timer_marks": GuestAccess.write,
     "recent_views": GuestAccess.write,
     "favorites": GuestAccess.write,
     # How widely what they reach was engaged with, read beside it.

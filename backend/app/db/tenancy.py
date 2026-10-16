@@ -119,6 +119,8 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         # read through the install (LEDGER_TABLES below).
         "plugin_schedule_runs",  # when an install's schedules last ran and run
         # next; read through the install (LEDGER_TABLES below).
+        "timer_marks",  # the earliest sweep timer the community has waiting,
+        # written by public.arm_timer as a step of the write that armed it.
         "tags",  # tags are guild-level, shared across initiatives (purge-guarded)
         # Structural initiative tables — guild-scoped for reading (a roster is
         # read by its co-members, and the standing statement reads it before
@@ -353,6 +355,7 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         "reaction_digest_items",
         "task_assignment_digest_items",
         "webhook_deliveries",
+        "timer_marks",
         # The key -> task map the intake writer reads. The case it points at
         # carries the author, and a system-opened one has none by design.
         "intake_cases",

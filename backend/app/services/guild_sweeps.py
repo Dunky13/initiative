@@ -13,7 +13,8 @@ per cohort.
 
 Work that is woken rather than timed goes through a :class:`Drain`: a
 community said to have work waiting is added to it, and its loop visits just
-those communities.
+those communities. Work armed by a timer (``app.services.sweep_timers``) is
+handed in as each community's own visits, and visits just those.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from enum import Enum
 from typing import NamedTuple
 
@@ -83,16 +84,22 @@ async def each_guild(
     name: str,
     only: Iterable[int] | None = None,
     scans: Sequence[Scan] = (),
+    planned: Mapping[int, Sequence[tuple[Scope, Visit]]] | None = None,
 ) -> None:
     """Run every visit in every community its scope admits, then finish each
     scan.
 
-    ``only`` restricts the pass to those communities. ``name`` labels the log
-    lines and the pass-duration metric."""
+    ``planned`` adds each community's own visits, and restricts the pass to
+    those communities. ``only`` restricts the pass to those communities.
+    ``name`` labels the log lines and the pass-duration metric."""
     started = time.monotonic()
     every = [*visits, *((scan.scope, scan.visit) for scan in scans)]
+    plan = planned or {}
+    if planned is not None:
+        only = list(planned)
+    all_visits = [*every, *(pair for own in plan.values() for pair in own)]
     by_cohort: dict[int, list[tuple[int, str, bool]]] = {}
-    for community in await _communities(every, only):
+    for community in await _communities(all_visits, only):
         by_cohort.setdefault(cohorts.cohort_of(community[0]), []).append(community)
     limit = asyncio.Semaphore(COHORTS_AT_ONCE)
 
@@ -102,7 +109,7 @@ async def each_guild(
                 for guild_id, status, provisioned in communities:
                     # Ids repeat across schemas.
                     session.expunge_all()
-                    for scope, visit in every:
+                    for scope, visit in [*plan.get(guild_id, ()), *every]:
                         if scope.admits(status, provisioned=provisioned):
                             await _visit(session, visit, guild_id, name=name)
         except Exception:

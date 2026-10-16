@@ -1220,36 +1220,35 @@ async def _send_digests(
         await session.commit()
 
 
-def digest_gc_scan(*, now: datetime) -> Scan:
-    """Drop digest items older than the retention window, community by
-    community, then the settled mail and the read notifications past theirs.
+async def expire_digest_items(
+    routed: AsyncSession, _guild_id: int, *, now: datetime | None = None
+) -> None:
+    """Drop one community's digest items older than the retention window.
 
     Sent items are bookkeeping once the mail is gone. Unsent items of the same
     age are dropped too: they are either orphaned (the user turned the channel
     off in a guild an admin could not reach) or so stale that announcing them
     would be noise.
     """
-    cutoff = now - ASSIGNMENT_ITEM_RETENTION
+    cutoff = (now or datetime.now(timezone.utc)) - ASSIGNMENT_ITEM_RETENTION
+    for model in (TaskAssignmentDigestItem, ReactionDigestItem):
+        await routed.exec(delete(model).where(model.created_at < cutoff))
 
-    async def _visit(routed: AsyncSession, _guild_id: int) -> None:
-        for model in (TaskAssignmentDigestItem, ReactionDigestItem):
-            await routed.exec(delete(model).where(model.created_at < cutoff))
 
-    async def _finish() -> None:
-        async with cohorts.system_session(None) as session:
-            await set_rls_context(session, Unattributed())
-            # Mail that has gone out, or run out of attempts, is bookkeeping on
-            # the same terms as a spent digest row.
-            dropped = await email_outbox.sweep_settled(session, now=now)
-            if dropped:
-                logger.info("digest-gc: dropped %d settled email row(s)", dropped)
-            await session.commit()
-            # Read notifications past their retention go on the same sweep.
-            pruned = await user_notifications.prune_read(session, now=now)
-            if pruned:
-                logger.info("digest-gc: deleted %d read notification(s)", pruned)
-
-    return Scan(Scope.LIVE, _visit, _finish)
+async def drop_spent_notifications(*, now: datetime) -> None:
+    """Drop the settled mail and the read notifications past their keeping."""
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        # Mail that has gone out, or run out of attempts, is bookkeeping on
+        # the same terms as a spent digest row.
+        dropped = await email_outbox.sweep_settled(session, now=now)
+        if dropped:
+            logger.info("digest-gc: dropped %d settled email row(s)", dropped)
+        await session.commit()
+        # Read notifications past their retention go on the same sweep.
+        pruned = await user_notifications.prune_read(session, now=now)
+        if pruned:
+            logger.info("digest-gc: deleted %d read notification(s)", pruned)
 
 
 def _assignment_row(item, guild_id: int) -> dict:
