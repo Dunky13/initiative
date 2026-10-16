@@ -108,7 +108,7 @@ describe("what the editor allows", () => {
       fields
     ).map((each) => each.id);
 
-    expect(ids).toEqual(["startDate", "priority", "comments", "tags", "property:12"]);
+    expect(ids).toEqual(["assignees", "startDate", "priority", "comments", "tags", "property:12"]);
   });
 
   it("offers each of a plug-in's parts once, and none past the server's limit", () => {

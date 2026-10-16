@@ -20,6 +20,8 @@ type RowActionsMenuProps = {
   /** `DropdownMenuItem`s. Render nothing and the trigger doesn't draw. */
   children?: ReactNode;
   className?: string;
+  /** Told when the menu opens or closes, for one that changes what it shows. */
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -34,7 +36,12 @@ type RowActionsMenuProps = {
  * Callers pass only the items that apply, so this draws nothing at all for a
  * row with nothing to do — an empty trigger would promise otherwise.
  */
-export const RowActionsMenu = ({ subject, children, className }: RowActionsMenuProps) => {
+export const RowActionsMenu = ({
+  subject,
+  children,
+  className,
+  onOpenChange,
+}: RowActionsMenuProps) => {
   const { t } = useTranslation("common");
 
   // `Children.count` would count a `{false && …}` guard as an item; an array
@@ -45,7 +52,7 @@ export const RowActionsMenu = ({ subject, children, className }: RowActionsMenuP
 
   return (
     <div className={cn("flex justify-end", className)}>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"

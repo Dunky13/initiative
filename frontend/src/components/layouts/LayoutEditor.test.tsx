@@ -186,6 +186,7 @@ describe("LayoutEditor", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(saved("table")?.columns).toEqual([
       "title",
+      "assignees",
       "startDate",
       "dueDate",
       "priority",
@@ -399,6 +400,7 @@ describe("LayoutEditor", () => {
       await waitFor(() => expect(sent).toHaveLength(1));
       expect(saved("table")?.columns).toEqual([
         "title",
+        "assignees",
         "startDate",
         "dueDate",
         "priority",

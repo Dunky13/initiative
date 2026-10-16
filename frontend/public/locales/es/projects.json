@@ -283,5 +283,14 @@
     "incomplete": "Pendientes",
     "unassigned": "Sin asignar",
     "mine": "Mías"
+  },
+  "quickActions": {
+    "assignToMe": "Asignarme",
+    "assignToMeFor": "Asignarme {{title}}",
+    "unassignMe": "Quitarme",
+    "assigned": "Asignada a ti",
+    "unassigned": "Ya no estás en esta tarea",
+    "assignError": "No se pudo cambiar quién está en esta tarea.",
+    "moveTo": "Mover a"
   }
 }

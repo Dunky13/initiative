@@ -3,7 +3,7 @@ from string import ascii_letters, digits
 from typing import Final, List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import AliasChoices, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from app.core.identity_boundary import GuildId, PersonId
 from app.schemas.base import (
@@ -154,6 +154,13 @@ class TaskUpdate(PropertiesOnUpdate):
     status_category: Optional[TaskStatusCategory] = None
     priority: Optional[TaskPriority] = None
     assignee_ids: Optional[List[PersonId]] = None
+    #: People put on the task beside whoever is on it when the change is
+    #: written, rather than a list that replaces them all. Not with
+    #: ``assignee_ids``.
+    add_assignee_ids: Optional[List[PersonId]] = Field(default=None, max_length=100)
+    #: People taken off the task, leaving whoever else is on it. Not with
+    #: ``assignee_ids``.
+    remove_assignee_ids: Optional[List[PersonId]] = Field(default=None, max_length=100)
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     recurrence: Optional[TaskRule] = None
@@ -170,6 +177,17 @@ class TaskUpdate(PropertiesOnUpdate):
     scope: Optional[OccurrenceScope] = None
 
     _required = reject_null("title", "priority")
+
+    @model_validator(mode="after")
+    def _one_way_to_change_assignees(self) -> "TaskUpdate":
+        if self.assignee_ids is not None and (
+            self.add_assignee_ids is not None or self.remove_assignee_ids is not None
+        ):
+            raise ValueError(
+                "assignee_ids replaces the assignees; send it without "
+                "add_assignee_ids or remove_assignee_ids"
+            )
+        return self
 
 
 class TaskMoveRequest(SanitizedBaseModel):

@@ -13,7 +13,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { priorityVariant } from "@/components/projects/projectTasksConfig";
-import { TaskAssigneeList } from "@/components/projects/TaskAssigneeList";
+import { TaskAssigneeList, TaskAssigneeStack } from "@/components/projects/TaskAssigneeList";
 import { TaskBlockersHoverCard } from "@/components/projects/TaskBlockersHoverCard";
 import { TaskDescriptionHoverCard } from "@/components/projects/TaskDescriptionHoverCard";
 import { PropertyValueCell } from "@/components/properties/PropertyValueCell";
@@ -91,6 +91,9 @@ export type LayoutEnv = {
   /** A community-relative path, made absolute in the item's community. */
   communityPath: (path: string, item: LayoutItem) => string;
   taskHref: (task: LayoutItem) => string;
+  /** What can be done with an item from where it is drawn, beside its title
+   *  on a card: a board its reader may change. */
+  itemActions?: ComponentType<{ item: LayoutItem }>;
 };
 
 // The namespaces a layout's names are in, loaded together so none shows as a
@@ -127,7 +130,8 @@ export type FieldRendererProps = {
 export const isEmptyValue = (value: unknown): boolean =>
   value == null || value === "" || (Array.isArray(value) && value.length === 0);
 
-// A table's title cell carries what the card shows as fields of their own.
+// A table's title cell carries what the card shows as fields of their own,
+// where the table has no column for it.
 const TitleCell = ({
   title,
   task,
@@ -158,12 +162,9 @@ const TitleCell = ({
           {title}
           {unread ? <UnreadDot /> : null}
         </Link>
-        <div className="space-y-1 text-muted-foreground text-xs">
-          {task.assignees.length > 0 ? (
-            <TaskAssigneeList assignees={task.assignees} className="text-xs" />
-          ) : null}
-          {recurrence ? <p>{truncateText(recurrence, 100)}</p> : null}
-        </div>
+        {recurrence ? (
+          <p className="text-muted-foreground text-xs">{truncateText(recurrence, 100)}</p>
+        ) : null}
         <TaskChecklistProgress progress={task.checklist_progress} className="mt-2 max-w-[200px]" />
       </div>
       <TaskBlockersHoverCard task={task} />
@@ -179,7 +180,8 @@ const TitleField = ({ value, item, variant, env }: FieldRendererProps) => {
   if (variant === "cell") {
     return <TitleCell title={value as string} task={item} unread={unread} env={env} />;
   }
-  return (
+  const Actions = variant === "card" ? env.itemActions : undefined;
+  const link = (
     <Link
       to={env.taskHref(item)}
       draggable={false}
@@ -188,6 +190,13 @@ const TitleField = ({ value, item, variant, env }: FieldRendererProps) => {
       {value as string}
       {unread ? <UnreadDot className="ml-2 inline-block align-middle" /> : null}
     </Link>
+  );
+  if (!Actions) return link;
+  return (
+    <div className="flex w-full min-w-0 items-start gap-1">
+      {link}
+      <Actions item={item} />
+    </div>
   );
 };
 
@@ -198,9 +207,17 @@ const ExcerptField = ({ value }: FieldRendererProps) => (
   </p>
 );
 
-const PeopleField = ({ value }: FieldRendererProps) => (
-  <TaskAssigneeList assignees={value as TaskAssigneeSummary[]} className="text-xs" />
-);
+const PeopleField = ({ value, variant }: FieldRendererProps) => {
+  const people = value as TaskAssigneeSummary[];
+  if (variant === "cell") {
+    return people.length > 0 ? (
+      <TaskAssigneeStack assignees={people} />
+    ) : (
+      <span className="text-muted-foreground text-sm">&mdash;</span>
+    );
+  }
+  return <TaskAssigneeList assignees={people} className="text-xs" />;
+};
 
 // `formatDateTime`, as every timestamp in the app: it honours the reader's
 // 12/24-hour choice. A cell says how far off the date is instead.

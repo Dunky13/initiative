@@ -61,7 +61,13 @@ _BOARD = _card(
 _TABLE = {
     "kind": "table",
     "definition": {
-        "columns": ["title", "dueDate", "property:12", "plugin:3:ci.state"],
+        "columns": [
+            "title",
+            "assignees",
+            "dueDate",
+            "property:12",
+            "plugin:3:ci.state",
+        ],
     },
 }
 #: A task's layout: the regions left out are drawn as shipped.
@@ -447,7 +453,7 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         (_table(columns=["property:Size"]), 422, None),
         (_table(columns=["plugin:3:CI"]), 422, None),
         (_card({"type": "comments"}), 422, None),
-        (_table(columns=["assignees"]), 422, None),
+        (_table(columns=["checklist"]), 422, None),
         (_table(sort=[{"field": "dueDate"}]), 422, None),
         (_table(filters={"assignees": ["me"]}), 422, None),
         (_table(presets=[_preset(), _preset()]), 422, None),
