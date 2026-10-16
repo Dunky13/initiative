@@ -831,6 +831,55 @@ async def test_assignment_digest_gathers_items_across_user_guilds(
         assert pending == [], f"guild {guild_id} items not marked processed"
 
 
+async def test_assignment_digest_takes_an_opted_out_community_unsent(
+    session: AsyncSession, monkeypatch
+):
+    """A community switched off after its items were queued leaves them out of
+    the digest, and takes them anyway, so they stop counting as waiting."""
+    user = await create_user(session, email="digest-guild-optout@example.com")
+    await _assignment_item_in_new_guild(session, user, label="Alpha")
+    muted = await _assignment_item_in_new_guild(session, user, label="Beta")
+    await set_rls_context(session, Unattributed())
+    await set_notification_prefs(
+        session,
+        user,
+        {
+            "guilds": {
+                str(muted.id): {
+                    "categories": {"assignments": {"email": False, "push": False}}
+                }
+            }
+        },
+    )
+
+    captured: dict = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        captured["titles"] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await set_rls_context(session, Unattributed())
+    await _sweep(
+        digest_scan(
+            ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc) + ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+
+    assert "Alpha task" in captured["titles"]
+    assert "Beta task" not in captured["titles"]
+    await route_as(session, user_id=user.id, guild_id=muted.id)
+    pending = (
+        await session.exec(
+            select(TaskAssignmentDigestItem).where(
+                TaskAssignmentDigestItem.processed_at.is_(None)
+            )
+        )
+    ).all()
+    assert pending == []
+
+
 async def test_assignment_digest_waits_for_the_flurry_to_end(
     session: AsyncSession, monkeypatch
 ):
