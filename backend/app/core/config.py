@@ -334,6 +334,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # A setting that fails is named in the error, never shown.
+        hide_input_in_errors=True,
     )
 
     # The database, in one of two shapes.
@@ -965,8 +967,7 @@ class Settings(BaseSettings):
         absolute = parts.scheme in ("http", "https") and bool(parts.netloc)
         if not (same_origin_path or absolute):
             raise ValueError(
-                "FARO_COLLECTOR_URL must be a path starting with / or an "
-                f"http(s) URL; got {value!r}"
+                "FARO_COLLECTOR_URL must be a path starting with / or an http(s) URL"
             )
         return url
 

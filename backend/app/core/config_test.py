@@ -186,9 +186,12 @@ def test_database_login_reads_the_url_and_falls_back_to_the_canonical_name():
     ],
 )
 def test_one_login_url_without_the_other_is_refused(given, missing):
+    """The error names the settings and shows none of their values."""
     with pytest.raises(ValidationError) as exc_info:
-        _owner_settings(**{given: "postgresql+asyncpg://x:y@localhost/app"})
+        _owner_settings(**{given: "postgresql+asyncpg://x:pw-7Qz@localhost/app"})
     assert f"{given} is set but {missing} is not" in str(exc_info.value)
+    assert "pw-7Qz" not in str(exc_info.value)
+    assert "input_value" not in str(exc_info.value)
 
 
 def test_bootstrap_url_beside_an_owner_database_url_is_refused():
@@ -500,8 +503,9 @@ def test_csp_collector_origin_only_when_one_is_on_another_origin():
 
 @pytest.mark.parametrize("value", ["faro.example.com", "//faro.example.com", "ftp://x"])
 def test_collector_url_must_be_a_path_or_http_url(value):
-    with pytest.raises(ValidationError, match="FARO_COLLECTOR_URL"):
+    with pytest.raises(ValidationError, match="FARO_COLLECTOR_URL") as raised:
         _settings(FARO_COLLECTOR_URL=value)
+    assert "input_value" not in str(raised.value)
 
 
 def test_blank_collector_url_is_unset():

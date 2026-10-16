@@ -178,12 +178,19 @@ async def test_token_endpoint_error_rejected():
     idp = FakeIdp()
     provider = _provider(idp)
     begun = await provider.begin()
-    idp.token_response = httpx.Response(400, json={"error": "invalid_grant"})
+    idp.token_response = httpx.Response(
+        400,
+        json={
+            "error": "invalid_grant",
+            "error_description": "User someone@example.com is not assigned",
+        },
+    )
     with pytest.raises(OidcFlowError) as err:
         await provider.complete(code="c", state=begun.state)
     assert err.value.code == "token_request_failed"
-    # The OAuth error body survives into the (server-side) detail for debugging.
+    # The server-side detail carries the OAuth error code, not its description.
     assert "invalid_grant" in str(err.value)
+    assert "someone@example.com" not in str(err.value)
 
 
 def test_empty_client_id_rejected_at_construction():

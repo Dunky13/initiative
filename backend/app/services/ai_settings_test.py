@@ -11,6 +11,9 @@ End-to-end resolution, connection CRUD, and the exfil-impossible property are
 covered by the endpoint integration tests (``ai_connections_test.py``).
 """
 
+import logging
+
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -190,3 +193,20 @@ async def test_list_anthropic_models_requests_a_full_page(monkeypatch):
     assert models == ["claude-haiku-4-5-20251001"]
     # Without an explicit limit the endpoint returns only its small first page.
     assert captured["params"] == {"limit": ai_settings._MODEL_LIST_CAP}
+
+
+def test_a_refusal_logs_the_kind_of_error_the_provider_named(caplog):
+    answer = httpx.Response(
+        401,
+        json={
+            "error": {
+                "type": "authentication_error",
+                "message": "Incorrect API key provided: sk-12...abcd",
+            }
+        },
+    )
+    with caplog.at_level(logging.WARNING, logger=ai_settings.logger.name):
+        code = ai_settings.refusal_code(AIProvider.openai, answer, sent_key=True)
+    assert code == AIMessages.INVALID_API_KEY
+    assert "answered 401: authentication_error" in caplog.text
+    assert "sk-12" not in caplog.text
