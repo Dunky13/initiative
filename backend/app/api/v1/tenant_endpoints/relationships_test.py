@@ -1080,6 +1080,29 @@ async def test_a_neighbourhood_walks_on_from_the_earliest_links_first(
     }
 
 
+async def test_a_busy_hop_is_looked_up_in_pieces(
+    client: AsyncClient, acting_user, session, monkeypatch
+):
+    """A hop can name more far ends than one statement takes ids for, so they
+    are looked up in pieces, and the answer is the same as in one."""
+    from app.services.tenant import relationships as relationships_service
+
+    monkeypatch.setattr(relationships_service, "RESOLVE_CHUNK", 1)
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    files = [await create_file(session, a.initiative, a.user) for _ in range(3)]
+    await _seed(
+        session,
+        a.guild.id,
+        *[(("project", a.project.id), "attached", ("file", f.id)) for f in files],
+    )
+
+    nodes, edges = await _neighbourhood(client, a, f"project:{a.project.id}", hops=2)
+    assert nodes == {("file", f.id): 1 for f in files}
+    assert len(edges) == 3
+
+
 async def test_a_neighbourhood_is_refused_past_its_reach(
     client: AsyncClient, acting_user, session
 ):

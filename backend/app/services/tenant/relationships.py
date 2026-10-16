@@ -828,6 +828,11 @@ MAX_NEIGHBOURHOOD_HOPS = 3
 #: first.
 HOP_BUDGET = 40
 
+#: How many far ends one lookup asks about. A hop is bounded in what it walks on
+#: from, not in what those name — forty busy tags can name tens of thousands —
+#: and each id is a bound parameter, of which a statement takes a limited number.
+RESOLVE_CHUNK = 1000
+
 
 @dataclass(frozen=True)
 class Crossing:
@@ -938,11 +943,16 @@ async def neighbourhood(
             if crossing.other not in depths:
                 wanted.setdefault(crossing.other.kind, []).append(crossing.other.id)
         for kind, ids in wanted.items():
-            resolved = await reference_targets.resolve_many(
-                session, kind, ids, user_id=user_id
-            )
-            for entity_id, found in resolved.items():
-                ends[Endpoint(kind, entity_id)] = found
+            unique = list(dict.fromkeys(ids))
+            for offset in range(0, len(unique), RESOLVE_CHUNK):
+                resolved = await reference_targets.resolve_many(
+                    session,
+                    kind,
+                    unique[offset : offset + RESOLVE_CHUNK],
+                    user_id=user_id,
+                )
+                for entity_id, found in resolved.items():
+                    ends[Endpoint(kind, entity_id)] = found
 
         frontier = []
         for crossing in crossings:

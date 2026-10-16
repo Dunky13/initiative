@@ -410,6 +410,7 @@ export const RelationsSection = ({
               showTags={showTags}
               onShowTagsChange={setShowTags}
               loading={neighbourhood.isLoading}
+              walkFailed={neighbourhood.walkFailed}
             />
           </Suspense>
         ) : layout === "carousel" ? (

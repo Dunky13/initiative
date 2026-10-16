@@ -11,6 +11,7 @@
     "hopsN_one": "{{count}} saut",
     "hopsN_other": "{{count}} sauts",
     "walking": "Recherche plus loin…",
+    "walkFailed": "Impossible de chercher plus loin : seuls les liens directs sont affichés.",
     "showTags": "Afficher les étiquettes"
   },
   "layout": {

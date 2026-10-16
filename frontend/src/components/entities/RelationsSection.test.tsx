@@ -365,6 +365,30 @@ describe("RelationsSection", () => {
     expect(listed.every((entity) => entity === "task:1")).toBe(true);
   });
 
+  it("keeps the first hop up when the walk further out fails", async () => {
+    // The list already holds the thing's own links, so a failed walk is no
+    // reason to draw nothing, nor to take away the way back to one hop.
+    const user = userEvent.setup();
+    server.use(
+      communityHttp.get("/relationships/", () =>
+        HttpResponse.json([row("attached", "outbound", "A brief")])
+      ),
+      communityHttp.get("/relationships/neighbourhood", () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 })
+      )
+    );
+    mount(true, "graph");
+
+    await screen.findByRole("region", { name: /1 thing/ });
+    await user.click(screen.getByRole("button", { name: "2 hops" }));
+
+    expect(
+      await screen.findByText("Couldn't look further out, so this shows only direct links.")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /1 thing/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1 hop" })).toBeInTheDocument();
+  });
+
   it("leaves labels out of the graph until asked, and out of the walk", async () => {
     // A tag is carried by everything that carries it, so walking through one
     // reaches most of the community in a hop. Filtering it when drawing would

@@ -149,6 +149,8 @@ export interface Neighbourhood {
   nodes: GraphNode[];
   edges: GraphEdge[];
   isLoading: boolean;
+  /** The walk further out failed, and this is the one hop the list holds. */
+  walkFailed: boolean;
 }
 
 const keyOf = (ref: { type: SearchEntityType; id: number }) => `${ref.type}:${ref.id}`;
@@ -166,6 +168,9 @@ const keyOf = (ref: { type: SearchEntityType; id: number }) => `${ref.type}:${re
  * Labels are left out unless asked for, and left out of the *walk* rather than
  * the drawing: walking through one reaches the whole community in a hop, so
  * leaving it in the walk and out of the picture would be the worst of both.
+ *
+ * A walk that fails falls back to the one hop the list already holds, so the
+ * picture and its controls stay up and the reader can step back in.
  */
 export const useRelationsNeighbourhood = (
   entity: EndpointRef,
@@ -178,7 +183,7 @@ export const useRelationsNeighbourhood = (
   const walks = hops >= 2;
   const centre = keyOf(entity);
 
-  const near = useRelationshipsFor(entity, { enabled: enabled && !walks });
+  const near = useRelationshipsFor(entity, { enabled });
 
   const params = { entity: centre, hops, include_tags: includeTags };
   const far = useQuery<NeighbourhoodRead>({
@@ -187,8 +192,10 @@ export const useRelationsNeighbourhood = (
     enabled: enabled && walks,
   });
 
+  const walkFailed = walks && far.isError;
+
   return useMemo(() => {
-    if (walks) {
+    if (walks && !walkFailed) {
       return {
         nodes: (far.data?.nodes ?? []).map((node) => ({
           ref: { type: node.end.type, id: node.end.id },
@@ -204,6 +211,7 @@ export const useRelationsNeighbourhood = (
           provenance: edge.provenance,
         })),
         isLoading: far.isLoading,
+        walkFailed: false,
       };
     }
 
@@ -229,8 +237,9 @@ export const useRelationsNeighbourhood = (
         provenance: row.provenance,
       })),
       isLoading: near.isLoading,
+      walkFailed,
     };
-  }, [walks, far.data, far.isLoading, near.data, near.isLoading, includeTags, centre]);
+  }, [walks, walkFailed, far.data, far.isLoading, near.data, near.isLoading, includeTags, centre]);
 };
 
 /** The links an item is set to have, of every kind. */
