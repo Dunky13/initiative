@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlencode
 
 from sqlalchemy import column as sa_column
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy import table as sa_table
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects import postgresql
@@ -1105,12 +1105,12 @@ def digest_scan(spec: DigestSpec, *, now: datetime) -> Scan:
         for user_id, first, last in rows.all():
             pending.setdefault(user_id, {})[guild_id] = [first, last]
 
-    async def _finish() -> None:
+    async def _finish() -> dict[int, datetime]:
         if not pending:
-            return
+            return {}
         async with cohorts.system_session(None) as session:
             await set_rls_context(session, Unattributed())
-            await _send_digests(session, spec, pending, now=now)
+            return await _send_digests(session, spec, pending, now=now)
 
     return Scan(Scope.LIVE, _waiting, _finish)
 
@@ -1121,10 +1121,12 @@ async def _send_digests(
     pending: dict[int, dict[int, list[datetime]]],
     *,
     now: datetime,
-) -> None:
+) -> dict[int, datetime]:
     """Send the digests of the accounts ``pending`` names, whose items have
-    settled."""
+    settled. Returns when each community holding items not yet due is next
+    due."""
     model = spec.model
+    later: dict[int, datetime] = {}
     # Settings are sparse and default to on, so the opted-in set is "everyone
     # who has not said otherwise". Filtered here rather than in the SELECT: the
     # resolution order lives in one function, and re-expressing it as a JSON
@@ -1134,12 +1136,16 @@ async def _send_digests(
     for user_id, held in pending.items():
         if not wants_digest(all_prefs.get(user_id), spec.category):
             continue
+        stamps = [stamp for pair in held.values() for stamp in pair]
         if not _digest_is_due(
-            [stamp for pair in held.values() for stamp in pair],
+            stamps,
             now=now,
             quiet_period=spec.quiet_period,
             max_window=spec.max_window,
         ):
+            due = min(max(stamps) + spec.quiet_period, min(stamps) + spec.max_window)
+            for guild_id in held:
+                later[guild_id] = min(later.get(guild_id, due), due)
             continue
 
         # Defaults bind the loop variables now rather than by reference (B023).
@@ -1162,13 +1168,14 @@ async def _send_digests(
             )
             return [spec.row(item, gid) for item in items]
 
-        # Only the communities holding something for them, and only while they
-        # still belong to it. Digests act on membership (no live session exists
-        # here) — the system sentinel clears the guild auth-policy gate.
+        # Every community they still belong to, not only those this pass
+        # visited: items elsewhere join the same digest. Digests act on
+        # membership (no live session exists here) — the system sentinel
+        # clears the guild auth-policy gate.
         batch = await gather_across_guilds(
             session,
             user_id,
-            await member_guild_ids(session, user_id, restrict_to=list(held)),
+            await member_guild_ids(session, user_id),
             _take,
             on_behalf=True,
             writes=True,
@@ -1218,6 +1225,7 @@ async def _send_digests(
             setattr(user, spec.stamp, now)
             session.add(user)
         await session.commit()
+    return later
 
 
 async def expire_digest_items(
@@ -1811,7 +1819,7 @@ async def _left_out(
     )
 
 
-def _overdue_assignments(*columns: Any) -> Any:
+def _overdue_assignments(*columns: Any, overdue: bool = True) -> Any:
     """Assigned, unfinished, past-due tasks in the routed guild schema.
 
     Template projects are excluded: their tasks are blueprints, not work, so a
@@ -1819,9 +1827,10 @@ def _overdue_assignments(*columns: Any) -> Any:
     tasks are excluded for the same reason — archiving is how a user says the
     work is off their plate, so a past due date on one is not a deadline the
     digest should still be chasing. This matches the filters the cross-guild My
-    Tasks list already applies.
+    Tasks list already applies. ``overdue=False`` takes the due date as it
+    stands, past or not.
     """
-    return (
+    statement = (
         select(*columns)
         .select_from(Task)
         .join(Project, Task.project_id == Project.id)
@@ -1833,10 +1842,18 @@ def _overdue_assignments(*columns: Any) -> Any:
             Project.archived_at.is_(None),
             Task.archived_at.is_(None),
             Task.due_date.is_not(None),
-            Task.due_date < datetime.now(timezone.utc),
             TaskStatus.category != TaskStatusCategory.done,
         )
     )
+    if overdue:
+        statement = statement.where(Task.due_date < datetime.now(timezone.utc))
+    return statement
+
+
+def next_overdue() -> Any:
+    """When an assigned, unfinished task in the routed community first is (or
+    was) overdue."""
+    return _overdue_assignments(func.min(Task.due_date), overdue=False)
 
 
 async def _overdue_tasks_for_user(
@@ -1914,22 +1931,41 @@ def overdue_scan(*, now: datetime) -> Scan:
         ).scalars():
             overdue.setdefault(user_id, []).append(guild_id)
 
-    async def _finish() -> None:
+    async def _finish() -> dict[int, datetime]:
         if not overdue:
             logger.debug("overdue-digest: nothing overdue")
-            return
+            return {}
         async with cohorts.system_session(None) as session:
             await set_rls_context(session, Unattributed())
-            await _send_overdue(session, overdue, now=now)
+            return await _send_overdue(session, overdue, now=now)
 
     return Scan(Scope.LIVE, _overdue_here, _finish)
 
 
+def _following_digest(target_local: datetime, schedule: Any) -> datetime:
+    """The digest time after ``target_local``: the next day, or the next of
+    the chosen weekday on a weekly cadence."""
+    following = target_local + timedelta(days=1)
+    while (
+        schedule.cadence is EmailCadence.weekly
+        and following.isoweekday() != schedule.weekday
+    ):
+        following += timedelta(days=1)
+    return following
+
+
 async def _send_overdue(
     session: AsyncSession, overdue: dict[int, list[int]], *, now: datetime
-) -> None:
+) -> dict[int, datetime]:
     """Send the digests of the accounts ``overdue`` names, in the communities
-    it names them in."""
+    it names them in. Returns when each of those communities is next due: the
+    soonest digest time among its people."""
+    later: dict[int, datetime] = {}
+
+    def _next(user_id: int, at: datetime) -> None:
+        for guild_id in overdue[user_id]:
+            later[guild_id] = min(later.get(guild_id, at), at)
+
     users = (
         (await session.exec(select(User).where(User.id.in_(list(overdue)))))
         .scalars()
@@ -1946,7 +1982,7 @@ async def _send_overdue(
     ]
     if not users:
         logger.debug("overdue-digest: no users opted in")
-        return
+        return later
     # Capture plain fields up front: gathering routes per guild and expunges the
     # identity map, which would detach these ORM rows. The channel preferences
     # are deliberately NOT snapshotted here; they are read off the freshly
@@ -1970,17 +2006,19 @@ async def _send_overdue(
         target_local = now_local.replace(
             hour=hour, minute=minute, second=0, microsecond=0
         )
-        if now_local < target_local:
-            continue
+        following = _following_digest(target_local, schedule)
         # A weekly cadence gets this with its weekly mail rather than daily:
         # somebody who asked to hear from us once a week did not ask to be
         # chased about the same tasks on the other six days.
-        if (
-            schedule.cadence is EmailCadence.weekly
-            and now_local.isoweekday() != schedule.weekday
-        ):
+        today = (
+            schedule.cadence is not EmailCadence.weekly
+            or now_local.isoweekday() == schedule.weekday
+        )
+        if now_local < target_local:
+            _next(user_id, target_local if today else following)
             continue
-        if last_at and last_at.astimezone(tz).date() == now_local.date():
+        if not today or (last_at and last_at.astimezone(tz).date() == now_local.date()):
+            _next(user_id, following)
             continue
         # User-scoped: visit each of the user's guild schemas with their own
         # membership context (no all-guild access) and collect their overdue tasks.
@@ -2028,6 +2066,7 @@ async def _send_overdue(
         )
         if not claimed.rowcount:
             await session.rollback()
+            _next(user_id, following)
             continue
         # A channel that is merely unconfigured (no SMTP, no FCM) hands the day
         # back below, so the next poll tries again instead of the user's one
@@ -2069,8 +2108,12 @@ async def _send_overdue(
             )
         if delivered:
             await session.commit()
+            _next(user_id, following)
         else:
+            # Handed back: tried again on the next look.
             await session.rollback()
+            _next(user_id, now)
+    return later
 
 
 # Holds: one summary when a hold lifts
@@ -2349,7 +2392,19 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
     # and not yet sent; only they are routed into it below.
     due_in: dict[int, set[int]] = {}
 
-    async def _visit(routed: AsyncSession, guild_id: int) -> None:
+    # Read a day past the horizon: the longest lead is a day, so every
+    # reminder that comes due before the next look falls inside it.
+    ahead = horizon + timedelta(days=1)
+    attending = (
+        CalendarEventAttendee.user_id.in_(list(lead)),
+        ~calendar_occurrences.answered(
+            CalendarEventAttendee.user_id, RSVPStatus.declined
+        ),
+        CalendarEvent.deleted_at.is_(None),
+    )
+
+    async def _visit(routed: AsyncSession, guild_id: int) -> datetime | None:
+        """Note who has a reminder due here, and answer when the next one is."""
         rows = (
             await routed.exec(
                 select(
@@ -2363,42 +2418,71 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
                     CalendarEvent,
                     CalendarEventAttendee.calendar_event_id == CalendarEvent.id,
                 )
-                .where(
-                    CalendarEventAttendee.user_id.in_(list(lead)),
-                    ~calendar_occurrences.answered(
-                        CalendarEventAttendee.user_id, RSVPStatus.declined
-                    ),
-                    CalendarEvent.deleted_at.is_(None),
-                    _starting(lower, horizon),
-                )
+                .where(*attending, _starting(lower, ahead))
             )
         ).all()
-        if not rows:
-            return
-        sent = set(
-            (
-                await routed.exec(
-                    select(
-                        EventReminderDispatch.event_id,
-                        EventReminderDispatch.user_id,
-                        EventReminderDispatch.event_start_at,
-                    ).where(
-                        EventReminderDispatch.event_id.in_({row[1] for row in rows}),
-                        EventReminderDispatch.event_start_at > lower,
+        upcoming: list[datetime] = []
+        if rows:
+            sent = set(
+                (
+                    await routed.exec(
+                        select(
+                            EventReminderDispatch.event_id,
+                            EventReminderDispatch.user_id,
+                            EventReminderDispatch.event_start_at,
+                        ).where(
+                            EventReminderDispatch.event_id.in_(
+                                {row[1] for row in rows}
+                            ),
+                            EventReminderDispatch.event_start_at > lower,
+                        )
+                    )
+                ).all()
+            )
+            changed, declined = await _left_out(
+                routed, {row[1] for row in rows if row[3]}
+            )
+            for user_id, event_id, start_at, repeat, shift in rows:
+                for start in _starts(start_at, repeat, shift, lower, ahead):
+                    if (
+                        (event_id, user_id, start) in sent
+                        or (event_id, user_id, start) in declined
+                        or start in changed.get(event_id, ())
+                    ):
+                        continue
+                    if start - lead[user_id] <= now:
+                        due_in.setdefault(user_id, set()).add(guild_id)
+                    else:
+                        upcoming.append(start - lead[user_id])
+        # Anything starting past what was read is looked at again in a day.
+        if (
+            await routed.exec(
+                select(
+                    exists()
+                    .where(
+                        CalendarEventAttendee.calendar_event_id == CalendarEvent.id,
+                        *attending,
+                    )
+                    .where(
+                        or_(
+                            and_(
+                                CalendarEvent.recurrence.is_(None),
+                                CalendarEvent.start_at > ahead,
+                            ),
+                            and_(
+                                CalendarEvent.recurrence.isnot(None),
+                                or_(
+                                    CalendarEvent.recurrence_until.is_(None),
+                                    CalendarEvent.recurrence_until > ahead,
+                                ),
+                            ),
+                        )
                     )
                 )
-            ).all()
-        )
-        changed, declined = await _left_out(routed, {row[1] for row in rows if row[3]})
-        for user_id, event_id, start_at, repeat, shift in rows:
-            if any(
-                start - lead[user_id] <= now
-                and (event_id, user_id, start) not in sent
-                and (event_id, user_id, start) not in declined
-                and start not in changed.get(event_id, ())
-                for start in _starts(start_at, repeat, shift, lower, horizon)
-            ):
-                due_in.setdefault(user_id, set()).add(guild_id)
+            )
+        ).first():
+            upcoming.append(now + timedelta(days=1))
+        return min(upcoming, default=None)
 
     async def _dispatch(session: AsyncSession, guild_id: int, user_id: int) -> list:
         events = (

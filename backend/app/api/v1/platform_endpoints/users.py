@@ -135,6 +135,8 @@ from app.services.auth import addresses, held_changes
 
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
+from app.services import sweep_timers
+from app.services.cross_guild import member_guild_ids
 from app.core.tools import Tool
 from app.api import resource_access
 from app.services.tenant import initiatives as initiatives_service
@@ -1493,11 +1495,13 @@ async def update_me(
         normalized_timezone = normalize_timezone(update_data["timezone"])
         if normalized_timezone:
             current_user.timezone = normalized_timezone
+    reminders_sooner = False
     if "event_reminder_minutes_before" in update_data:
         # ``None`` is a valid value here (reminders off), so assign directly.
-        current_user.event_reminder_minutes_before = normalize_reminder_minutes(
-            update_data["event_reminder_minutes_before"]
-        )
+        lead = normalize_reminder_minutes(update_data["event_reminder_minutes_before"])
+        before = current_user.event_reminder_minutes_before
+        reminders_sooner = lead is not None and (before is None or lead > before)
+        current_user.event_reminder_minutes_before = lead
     if "color_theme" in update_data:
         current_user.color_theme = update_data["color_theme"]
     if "task_completion_visual_feedback" in update_data:
@@ -1563,6 +1567,12 @@ async def update_me(
         # rather than at the next reconnect. Told after the commit, so nothing
         # is shown on the strength of a write that did not land.
         presence.online.chose(current_user.id, current_user.presence)
+    if reminders_sooner:
+        # A longer lead can bring a reminder due sooner in any community they
+        # attend something in.
+        await sweep_timers.arm_in(
+            "reminders", await member_guild_ids(session, current_user.id)
+        )
     # Platform path — no initiative_roles enrichment (see read_me).
     return await users_service.to_self_read(session, current_user)
 

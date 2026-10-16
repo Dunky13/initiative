@@ -11,16 +11,23 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import metrics
 from app.db import cohorts
-from app.models.platform.guild import CommunityStatus
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.models.platform.community_timer import CommunityTimer
 from app.models.tenant.post import Post
+from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.models.tenant.recent_view import RecentView
 from app.models.tenant.webhook_subscription import WebhookSubscription
-from app.services import sweep_timers
+from app.models.platform.user_notification_prefs import EmailCadence
+from app.services import notifications, sweep_timers
+from app.services.platform.notification_prefs import EmailSchedule
 from app.services.tenant import outbox_poller, post_publication, recent_views
 from app.services.tenant.expiry import Expiring
 from app.testing import (
+    create_calendar,
+    create_calendar_event,
     create_guild,
+    create_guild_plugin,
+    create_marketplace_listing,
     create_initiative,
     create_post,
     create_project,
@@ -294,3 +301,101 @@ async def test_a_kept_tab_is_not_work_but_an_old_view_is(session: AsyncSession):
     )
     await session.commit()
     assert await next_due() == old + recent_views.WINDOW
+
+
+async def test_a_digest_is_armed_for_when_its_items_are_due(session: AsyncSession):
+    """The finish answers each community's next due time: here, the end of
+    the quiet period after the one item waiting."""
+    author, initiative, community_id = await _community(session)
+    project = await create_project(session, initiative, author)
+    task = await create_task(session, project)
+    await route_session_to_guild(session, community_id)
+    item = TaskAssignmentDigestItem(
+        user_id=author.id,
+        task_id=task.id,
+        project_id=project.id,
+        task_title=task.title,
+        project_name=project.name,
+        assigned_by_name="Assigner",
+    )
+    session.add(item)
+    await session.commit()
+    due = item.created_at + notifications.ASSIGNMENT_DIGEST.quiet_period
+    await _due_now(session, community_id, "task_digest")
+
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, armed)] = await _timers(session, "task_digest")
+    assert abs((armed - due).total_seconds()) < 5
+
+
+async def test_a_reminder_is_armed_for_its_lead(session: AsyncSession):
+    author, initiative, community_id = await _community(session)
+    calendar = await create_calendar(session, initiative, author)
+    start = datetime.now(timezone.utc) + timedelta(hours=3)
+    await create_calendar_event(
+        session,
+        calendar,
+        author,
+        attendees=[author],
+        start_at=start,
+        end_at=start + timedelta(hours=1),
+    )
+    await _due_now(session, community_id, "reminders")
+
+    await sweep_timers.process_due_timers()
+
+    [(_c, _k, armed)] = await _timers(session, "reminders")
+    assert armed == start - timedelta(minutes=author.event_reminder_minutes_before)
+
+
+async def test_a_catalog_release_arms_the_communities_that_installed_it(
+    session: AsyncSession,
+):
+    author, _initiative, community_id = await _community(session)
+    community = await session.get(Guild, community_id)
+    await create_guild_plugin(
+        session,
+        community,
+        author,
+        definition={
+            "plugin_kind": "service",
+            "service": {"public_id": "tests.release", "protocol": 1},
+        },
+    )
+    await create_marketplace_listing(session, uid="TESTAPP0000001")
+
+    await sweep_timers.watch_catalog()
+
+    assert {kind for _c, kind, _due in await _timers(session)} >= {
+        "plugin_updates",
+        "plugin_schedules",
+    }
+
+
+async def test_a_longer_reminder_lead_arms_reminders_where_they_belong(
+    client, acting_user, session: AsyncSession
+):
+    a = await acting_user(guild_role=CommunityRole.member)
+    assert a.user.event_reminder_minutes_before == 15
+    longer = 60
+
+    response = await client.patch(
+        "/api/v1/me", headers=a.headers, json={"event_reminder_minutes_before": longer}
+    )
+
+    assert response.status_code == 200
+    assert [community for community, *_ in await _timers(session, "reminders")] == [
+        a.guild.id
+    ]
+
+
+def test_a_weekly_overdue_digest_waits_for_its_day():
+    schedule = EmailSchedule(
+        cadence=EmailCadence.weekly, at="09:00", weekday=1, personal_instant=False
+    )
+    friday = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
+
+    assert notifications._following_digest(friday, schedule) == datetime(
+        2026, 10, 19, 9, tzinfo=timezone.utc
+    )
