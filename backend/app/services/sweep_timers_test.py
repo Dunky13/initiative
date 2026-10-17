@@ -319,6 +319,19 @@ async def test_a_next_timer_that_fails_to_save_keeps_the_claimed_one(
     assert due > datetime.now(timezone.utc)
 
 
+async def test_arming_skips_a_community_that_is_gone(session: AsyncSession):
+    """A community can be purged between being named and being armed (a wake
+    still waiting, a catalog change): it is skipped, and the rest are armed."""
+    _author, _initiative, community_id = await _community(session)
+    gone = community_id + 1000
+
+    await sweep_timers.arm_in("data_jobs", [community_id, gone])
+    sweep_timers.wake("data_jobs", gone)
+    await sweep_timers.process_due_timers()
+
+    assert {c for c, _k, _d in await _timers(session, "data_jobs")} <= {community_id}
+
+
 async def test_reconcile_arms_what_no_write_did_and_counts_it(session: AsyncSession):
     author, initiative, community_id = await _community(session)
     await _scheduled(session, initiative, author, due_in=timedelta(hours=2))

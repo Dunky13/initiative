@@ -40,11 +40,22 @@ async def test_the_request_path_reads_a_client_reference(session, role_session):
 
 
 @pytest.mark.parametrize(
-    "purpose",
-    [IdentityPurpose.billing, IdentityPurpose.plugin, IdentityPurpose.webhook],
+    ("purpose", "sector"),
+    [
+        # The deployment's billing service: one sector for the platform.
+        (IdentityPurpose.billing, {}),
+        # One plug-in in one community.
+        (
+            IdentityPurpose.plugin,
+            {"sector_guild_id": 1, "sector_plugin": "acme.tracker"},
+        ),
+        # One webhook subscription in one community.
+        (IdentityPurpose.webhook, {"sector_guild_id": 1, "sector_id": 1}),
+    ],
+    ids=["billing", "plugin", "webhook"],
 )
 async def test_the_request_path_reads_no_other_sector(
-    session, role_session, purpose: IdentityPurpose
+    session, role_session, purpose: IdentityPurpose, sector: dict
 ):
     user = await create_user(session)
     ref = await identity_refs.ensure_ref(
@@ -52,6 +63,7 @@ async def test_the_request_path_reads_no_other_sector(
         entity_type=IdentityEntity.user,
         entity_id=user.id,
         purpose=purpose,
+        **sector,
     )
     await session.commit()
 

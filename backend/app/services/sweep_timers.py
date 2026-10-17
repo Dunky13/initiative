@@ -823,7 +823,8 @@ async def arm_now(
 ) -> None:
     """Arm ``kind`` now in each of ``community_ids`` on ``session``, a system
     session, in its transaction: for work it writes in ``public`` for them. A
-    community already due for it is left alone."""
+    community already due for it is left alone, and one that is gone (purged
+    since it was named) is skipped."""
     ids = sorted(set(community_ids))
     if not ids:
         return
@@ -831,7 +832,8 @@ async def arm_now(
         text(
             "INSERT INTO public.community_timers (community_id, kind, due_at)"
             " SELECT c, :kind, now() FROM unnest(CAST(:ids AS integer[])) c"
-            " WHERE NOT EXISTS (SELECT 1 FROM public.community_timers t"
+            " WHERE EXISTS (SELECT 1 FROM public.guilds g WHERE g.id = c)"
+            " AND NOT EXISTS (SELECT 1 FROM public.community_timers t"
             " WHERE t.community_id = c AND t.kind = :kind AND t.due_at <= now())"
         ).bindparams(kind=kind, ids=ids)  # type: ignore[call-overload]
     )

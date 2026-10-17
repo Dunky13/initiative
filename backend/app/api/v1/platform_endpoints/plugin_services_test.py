@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from jwt.algorithms import OKPAlgorithm
 from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -29,13 +31,24 @@ from app.services.marketplace import plugin_keys, vendor_setup
 from app.services.marketplace.vendor_values import load_vendor_values
 from app.services.webhook_target_url import ValidatedTarget
 from app.testing import emitted
-from app.testing.oidc import IDP_KEY, OTHER_KEY, jwks_doc
 from app.testing.factories import (
     create_plugin_service_registration,
     create_marketplace_listing,
     create_user,
     get_auth_headers,
 )
+
+
+#: A plug-in's keys are Ed25519, the only kind its registration takes.
+IDP_KEY = ed25519.Ed25519PrivateKey.generate()
+OTHER_KEY = ed25519.Ed25519PrivateKey.generate()
+
+
+def jwks_doc(priv=IDP_KEY, kid: str = "k1") -> dict:
+    """A plug-in's published key set: one Ed25519 key under ``kid``."""
+    entry = json.loads(OKPAlgorithm.to_jwk(priv.public_key()))
+    entry.update({"kid": kid, "alg": "EdDSA", "use": "sig"})
+    return {"keys": [entry]}
 
 
 BASE = "/api/v1/plugin-services/"
