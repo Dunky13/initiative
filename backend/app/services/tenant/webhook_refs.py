@@ -29,6 +29,7 @@ from collections.abc import Collection, Sequence
 
 from app.db import session as db_session
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+from app.services.marketplace import plugin_refs
 from app.services.platform import identity_refs
 
 __all__ = [
@@ -36,16 +37,6 @@ __all__ = [
     "name_for_subscriber",
     "names_for_subscribers",
 ]
-
-
-def _sector(
-    *, plugin: str | None, subscription_id: int
-) -> tuple[IdentityPurpose, int | None, str | None]:
-    """The purpose, and the row or plug-in inside the guild, that this
-    subscriber is named by."""
-    if plugin is not None:
-        return IdentityPurpose.plugin, None, plugin
-    return IdentityPurpose.webhook, subscription_id, None
 
 
 #: ``(plugin, subscription_id, actor_ids)`` — one subscriber to name, by the
@@ -83,35 +74,75 @@ async def names_for_subscribers(
     names = []
     async with db_session.SystemSessionLocal() as session:
         for plugin, subscription_id, actor_ids in subscribers:
-            purpose, sector_id, sector_plugin = _sector(
-                plugin=plugin, subscription_id=subscription_id
-            )
-            guild_ref = await identity_refs.ensure_ref(
-                session,
-                entity_type=IdentityEntity.guild,
-                entity_id=guild_id,
-                purpose=purpose,
-                sector_guild_id=guild_id,
-                sector_id=sector_id,
-                sector_plugin=sector_plugin,
-            )
-            actor_refs = {
-                actor_id: await identity_refs.ensure_ref(
+            if plugin is not None:
+                try:
+                    names.append(
+                        await _named_in(
+                            session,
+                            guild_id=guild_id,
+                            purpose=IdentityPurpose.plugin,
+                            sector_plugin=plugin,
+                            actor_ids=actor_ids,
+                            before_mint=plugin_refs.mint_guard(guild_id, plugin),
+                        )
+                    )
+                    continue
+                except plugin_refs.PluginNameRefused:
+                    # The plug-in may not be named here any more (its data was
+                    # erased): what it registered is named as its own sector.
+                    # Only a subscription switched off with its install comes
+                    # here; the delivery roster needs a live install.
+                    pass
+            names.append(
+                await _named_in(
                     session,
-                    entity_type=IdentityEntity.user,
-                    entity_id=actor_id,
-                    purpose=purpose,
-                    sector_guild_id=guild_id,
-                    sector_id=sector_id,
-                    sector_plugin=sector_plugin,
+                    guild_id=guild_id,
+                    purpose=IdentityPurpose.webhook,
+                    sector_id=subscription_id,
+                    actor_ids=actor_ids,
                 )
-                for actor_id in sorted(
-                    {actor_id for actor_id in actor_ids if actor_id is not None}
-                )
-            }
-            names.append((guild_ref, actor_refs))
+            )
         await session.commit()
     return names
+
+
+async def _named_in(
+    session,
+    *,
+    guild_id: int,
+    purpose: IdentityPurpose,
+    actor_ids: Collection[int],
+    sector_id: int | None = None,
+    sector_plugin: str | None = None,
+    before_mint=None,
+) -> tuple[str, dict[int, str]]:
+    """The guild's and each actor's names in one sector, minted on first use."""
+    guild_ref = await identity_refs.ensure_ref(
+        session,
+        entity_type=IdentityEntity.guild,
+        entity_id=guild_id,
+        purpose=purpose,
+        sector_guild_id=guild_id,
+        sector_id=sector_id,
+        sector_plugin=sector_plugin,
+        before_mint=before_mint,
+    )
+    actor_refs = {
+        actor_id: await identity_refs.ensure_ref(
+            session,
+            entity_type=IdentityEntity.user,
+            entity_id=actor_id,
+            purpose=purpose,
+            sector_guild_id=guild_id,
+            sector_id=sector_id,
+            sector_plugin=sector_plugin,
+            before_mint=before_mint,
+        )
+        for actor_id in sorted(
+            {actor_id for actor_id in actor_ids if actor_id is not None}
+        )
+    }
+    return guild_ref, actor_refs
 
 
 async def drop_subscription_refs(*, guild_id: int, subscription_id: int) -> int:

@@ -784,10 +784,13 @@ async def list_installations(
     refs = await plugin_refs.ensure_plugin_guild_refs(
         (entry.guild_id, client.public_id) for entry in entries
     )
+    # An install the plug-in may not be named in (one whose erase is not
+    # finished) is not listed.
     return [
         InstallationListing(
             installation=refs[(entry.guild_id, client.public_id)],
             active=entry.active and client.serves(entry.guild_id),
         )
         for entry in entries
+        if (entry.guild_id, client.public_id) in refs
     ], next_cursor

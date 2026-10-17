@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -60,6 +60,7 @@ from app.services.platform import identity_refs
 
 __all__ = [
     "REF_MAX_LENGTH",
+    "PluginNameRefused",
     "current_install_id",
     "drop_guild_plugin_refs",
     "drop_plugin_refs",
@@ -72,6 +73,7 @@ __all__ = [
     "forget_guild",
     "guild_for_plugin_ref",
     "install_refs",
+    "mint_guard",
     "plugins_with_refs",
     "reissue_plugin_ref",
     "reissue_plugin_refs",
@@ -240,12 +242,47 @@ async def install_refs(
     return found, minted
 
 
+class PluginNameRefused(Exception):
+    """A plug-in may not be given a new name in this community: it has no live
+    install here, or the community's request that it erase its data is not
+    finished. A name that already exists is still answered."""
+
+
+def mint_guard(guild_id: int, public_id: str) -> Callable[[], Awaitable[None]]:
+    """What ``identity_refs.ensure_ref`` runs before it mints a name in
+    ``public_id``'s sector in the community: raises :class:`PluginNameRefused`
+    unless the community has a live install of the plug-in and no erase of it
+    is pending. Asked once however many names are minted with it, and only
+    when one is."""
+    allowed: list[bool] = []
+
+    async def check() -> None:
+        if not allowed:
+            from app.services.marketplace import community_hooks
+
+            allowed.append(
+                await current_install_id(guild_id=guild_id, public_id=public_id)
+                is not None
+                and not await community_hooks.erase_pending(
+                    guild_id=guild_id, public_id=public_id
+                )
+            )
+        if not allowed[0]:
+            raise PluginNameRefused(public_id)
+
+    return check
+
+
 async def ensure_plugin_entity_ref(
     *, guild_id: int, public_id: str, entity: IdentityEntity, entity_id: int
 ) -> str:
     """What one plug-in calls one entity in one guild, minting it on first use,
     on a system-engine session of its own from the guild's cohort. Read every
-    time: an erase that has committed is never answered from memory."""
+    time: an erase that has committed is never answered from memory.
+
+    Raises :class:`PluginNameRefused` instead of minting a name for a plug-in
+    the community has no live install of, or is erasing (:func:`mint_guard`),
+    so no late call can bring back a name an erase dropped."""
     async with cohorts.system_session(guild_id) as session:
         ref = await identity_refs.ensure_ref(
             session,
@@ -254,6 +291,7 @@ async def ensure_plugin_entity_ref(
             purpose=_PURPOSE,
             sector_guild_id=guild_id,
             sector_plugin=public_id,
+            before_mint=mint_guard(guild_id, public_id),
         )
         await session.commit()
     return ref
@@ -312,18 +350,23 @@ async def ensure_plugin_guild_refs(
     sectors: Iterable[tuple[int, str]],
 ) -> dict[tuple[int, str], str]:
     """:func:`ensure_plugin_guild_ref` for several ``(guild_id, public_id)`` at
-    once, in one transaction."""
+    once, in one transaction. A sector refused a new name
+    (:class:`PluginNameRefused`) is left out of the answer."""
     refs: dict[tuple[int, str], str] = {}
     async with db_session.SystemSessionLocal() as session:
         for guild_id, public_id in sectors:
-            refs[(guild_id, public_id)] = await identity_refs.ensure_ref(
-                session,
-                entity_type=IdentityEntity.guild,
-                entity_id=guild_id,
-                purpose=_PURPOSE,
-                sector_guild_id=guild_id,
-                sector_plugin=public_id,
-            )
+            try:
+                refs[(guild_id, public_id)] = await identity_refs.ensure_ref(
+                    session,
+                    entity_type=IdentityEntity.guild,
+                    entity_id=guild_id,
+                    purpose=_PURPOSE,
+                    sector_guild_id=guild_id,
+                    sector_plugin=public_id,
+                    before_mint=mint_guard(guild_id, public_id),
+                )
+            except PluginNameRefused:
+                continue
         await session.commit()
     return refs
 

@@ -48,7 +48,10 @@ from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
 from app.services.marketplace.registration_lookup import service_public_id
 from app.services.marketplace.service_plugins import (
     CONNECTION_STATES,
@@ -146,9 +149,12 @@ async def _install_guild_ref(session: AsyncSession, plugin: GuildPlugin) -> str:
     public_id = await guild_plugins_service.install_public_id(plugin)
     if public_id is None:
         raise PluginChannelError(PluginChannelMessages.INSTALL_NOT_FOUND, 404)
-    return await ensure_plugin_guild_ref(
-        guild_id=routed_guild_id(session), public_id=public_id
-    )
+    try:
+        return await ensure_plugin_guild_ref(
+            guild_id=routed_guild_id(session), public_id=public_id
+        )
+    except PluginNameRefused as exc:
+        raise PluginChannelError(PluginChannelMessages.INSTALL_NOT_FOUND, 404) from exc
 
 
 async def _guild_row(session: AsyncSession, guild_id: int) -> Optional[Guild]:

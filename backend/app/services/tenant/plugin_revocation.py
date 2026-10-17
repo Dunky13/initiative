@@ -16,6 +16,12 @@ it too, the way the connection's manifest says (``flow.revoke``):
 
 Two properties this module keeps:
 
+* **An uninstall's revocations to the plug-in ride its hook queue.** One whose
+  flow says ``hook`` is written as a ``revoke`` row on the community-hook queue
+  (``community_hooks``) in the uninstall's own transaction, ahead of
+  ``uninstalled`` and ``erase``, so the plug-in is asked to end each grant
+  before it is told to forget the community (:func:`queue_hook_revocations`).
+  Revocations to a vendor (``rfc7009``, ``github_grant``) are sent as below.
 * **Captured during the transaction, sent after it.** An intent carries the
   sealed tokens of the row it ends, read before the row is deleted, and is
   queued on the session's commit (:func:`app.db.post_commit.after_commit`), so
@@ -57,6 +63,7 @@ __all__ = [
     "REVOKE_ATTEMPTS",
     "RevocationIntent",
     "dispatch_revocations",
+    "queue_hook_revocations",
     "queue_install_revocations",
     "queue_revocations_for_rows",
 ]
@@ -158,9 +165,72 @@ class _Revocations(list[RevocationIntent]):
         return dispatch_revocations(self)
 
 
+#: Where an uninstall's revocations to the plug-in itself wait for
+#: :func:`queue_hook_revocations`.
+_HOOK_KEY = "plugin_hook_revocations"
+
+
+def _to_the_plugin(intent: RevocationIntent) -> bool:
+    """Whether an uninstall's intent goes to the plug-in itself (its revoke
+    hook), and so rides the community-hook queue ahead of ``uninstalled`` and
+    ``erase``, rather than to a vendor after the commit."""
+    return (
+        intent.reason == "uninstalled"
+        and (intent.flow or {}).get("revoke") == "hook"
+        and bool(intent.sealed_tokens)
+        and not intent.declarative
+        and bool(intent.public_id)
+    )
+
+
 def _queue(session: Any, intent: RevocationIntent) -> None:
-    """Record one intent, to be sent once the caller commits."""
+    """Record one intent: to be sent once the caller commits, or, for an
+    uninstall's revocation to the plug-in, held for
+    :func:`queue_hook_revocations`."""
+    if _to_the_plugin(intent):
+        sync = getattr(session, "sync_session", session)
+        sync.info.setdefault(_HOOK_KEY, []).append(intent)
+        return
     post_commit.after_commit(session, _Revocations(), key=_STEP_KEY).append(intent)
+
+
+async def queue_hook_revocations(session: Any, *, guild_id: int, plugin_id: int) -> int:
+    """Write the uninstall's revocations to the plug-in that ``_queue`` held,
+    for install ``plugin_id``, as ``revoke`` hooks on the community-hook queue
+    in ``session``'s transaction. The uninstall writes them before
+    ``uninstalled`` and ``erase``, so the plug-in is asked to let go of each
+    grant before it is told to forget the community. The tokens are kept
+    sealed, as they were stored, and opened only to be sent. Returns how many
+    were written."""
+    from app.services.marketplace import community_hooks
+
+    sync = getattr(session, "sync_session", session)
+    held: list[RevocationIntent] = sync.info.get(_HOOK_KEY, [])
+    mine = [intent for intent in held if intent.plugin_id == plugin_id]
+    sync.info[_HOOK_KEY] = [intent for intent in held if intent.plugin_id != plugin_id]
+    for intent in mine:
+        logger.info(
+            "plug-in credential revoked: guild=%s plug-in=%s listing=%s connection=%s "
+            "ref=%s reason=%s (queued for the plug-in)",
+            intent.guild_id,
+            intent.plugin_id,
+            intent.listing_uid,
+            intent.connection_id,
+            intent.connection_ref or "-",
+            intent.reason,
+        )
+        await community_hooks.queue_community_hooks(
+            session,
+            guild_id=guild_id,
+            public_id=str(intent.public_id),
+            hooks=("revoke",),
+            install_id=plugin_id,
+            body={
+                "connection": intent.connection_id,
+                "sealed_tokens": dict(intent.sealed_tokens),
+            },
+        )
+    return len(mine)
 
 
 def queue_install_revocations(

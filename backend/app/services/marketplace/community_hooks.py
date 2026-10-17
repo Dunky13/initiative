@@ -121,6 +121,9 @@ KIND = "plugin_hooks"
 #: send it.
 COMMUNITY_HOOK_NAMES: frozenset[str] = frozenset(
     {"installed", "uninstalled", "erase", "community_status", "entitlement"}
+    # A connection's grant, ended by the plug-in, queued by an uninstall ahead
+    # of ``uninstalled`` and ``erase`` (``plugin_revocation``).
+    | {"revoke"}
 )
 
 #: Hooks that state where something stands now, so a newer one replaces one
@@ -357,6 +360,15 @@ async def _current_body(
         from app.services.marketplace.community_status import community_status
 
         return {"status": await community_status(guild_id)}
+    if hook == "revoke":
+        from app.core.encryption import SALT_PLUGIN_CONFIG
+
+        sealed = stored.get("sealed_tokens") or {}
+        return {
+            "connection": stored.get("connection"),
+            "access_token": _opened(sealed.get("access_token"), SALT_PLUGIN_CONFIG),
+            "refresh_token": _opened(sealed.get("refresh_token"), SALT_PLUGIN_CONFIG),
+        }
     if hook == "entitlement":
         from app.services.marketplace import plugin_entitlements
 
@@ -416,6 +428,9 @@ async def _send(
             body=body,
             guild_ref=guild_ref,
         )
+    except flows.HookNameRefused:
+        # It may not be named here, so there is nobody to tell.
+        return _Outcome("unnamed")
     except flows.HookError as exc:
         if exc.status == 404:
             return _Outcome("not_taken")
@@ -424,6 +439,13 @@ async def _send(
             return _Outcome("delivered")
         return _Outcome(None, str(exc))
     return _Outcome("delivered")
+
+
+def _opened(sealed: Any, salt: str) -> Optional[str]:
+    """A sealed token, opened to be sent."""
+    from app.core.encryption import decrypt_field
+
+    return decrypt_field(sealed, salt) if isinstance(sealed, str) else None
 
 
 def _backoff(attempts: int) -> timedelta:
@@ -515,6 +537,9 @@ async def _settle(
             )
         else:
             values["next_attempt_at"] = now + _backoff(attempts)
+    if row.hook == "revoke" and "done_at" in values:
+        # A finished revocation keeps no tokens, sealed or not.
+        values["body"] = {}
     await session.exec(update(_TABLE).where(_TABLE.c.id == row.id).values(**values))
     erased = row.hook == "erase" and "done_at" in values
     dropped = 0

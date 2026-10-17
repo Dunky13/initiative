@@ -305,9 +305,19 @@ async def test_its_plugins_keep_their_names_until_the_purge_erases_them(
     from app.services.marketplace import community_hooks, plugin_refs
 
     admin, guild = await _seated_guild(session)
-    member = await plugin_refs.ensure_plugin_ref(
-        guild_id=guild.id, public_id="tests.purged", user_id=admin.id
+    from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+    from app.services.platform.identity_refs import ensure_ref
+
+    # The name a plug-in the community had installed holds for its admin.
+    member = await ensure_ref(
+        session,
+        entity_type=IdentityEntity.user,
+        entity_id=admin.id,
+        purpose=IdentityPurpose.plugin,
+        sector_guild_id=guild.id,
+        sector_plugin="tests.purged",
     )
+    await session.commit()
     await _delete_via_danger_zone(client, guild=guild, headers=get_auth_headers(admin))
     assert await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
 

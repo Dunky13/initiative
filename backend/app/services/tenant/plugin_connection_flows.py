@@ -81,7 +81,10 @@ from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
     REQUEST_TIMEOUT_SECONDS,
 )
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
 from app.services.marketplace.community_status import community_status
 from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.vendor_values import load_vendor_values
@@ -195,6 +198,12 @@ class HookError(Exception):
     def __init__(self, message: str, *, status: Optional[int] = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+class HookNameRefused(HookError):
+    """The plug-in may not be given a name for the community (no live install,
+    or an erase is pending), so it has none to be told under and nothing is
+    sent."""
 
 
 class RevocationAnsweredError(HookError):
@@ -703,9 +712,12 @@ async def call_hook(
     if name not in HOOK_NAMES:
         raise HookError(f"unknown hook {name!r}")
     if guild_ref is None:
-        guild_ref = await ensure_plugin_guild_ref(
-            guild_id=guild_id, public_id=public_id
-        )
+        try:
+            guild_ref = await ensure_plugin_guild_ref(
+                guild_id=guild_id, public_id=public_id
+            )
+        except PluginNameRefused as exc:
+            raise HookNameRefused(f"hook {name}: no name for the community") from exc
     standing = await community_status(guild_id)
     try:
         token, _ = mint_context_token(
@@ -1618,6 +1630,18 @@ async def revocation_sender(
     base_url = registration.base_url
 
     async def send_hook() -> None:
+        try:
+            await _revoke_hook()
+        except HookNameRefused:
+            # The plug-in has no name for the community any more, so it holds
+            # nothing to let go under one.
+            logger.info(
+                "plug-in credential revocation: %s has no name in guild %s; dropped",
+                public_id,
+                guild_id,
+            )
+
+    async def _revoke_hook() -> None:
         await call_hook(
             "revoke",
             public_id=public_id,

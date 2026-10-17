@@ -110,6 +110,26 @@ async def _ref(installed: InstalledPlugin, user_id: int) -> str:
     )
 
 
+async def _foreign_ref(guild_id: int, user_id: int) -> str:
+    """What another plug-in calls ``user_id`` in the community, written as its
+    own install would have it."""
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+    from app.services.platform.identity_refs import ensure_ref
+
+    async with SystemSessionLocal() as session:
+        ref = await ensure_ref(
+            session,
+            entity_type=IdentityEntity.user,
+            entity_id=user_id,
+            purpose=IdentityPurpose.plugin,
+            sector_guild_id=guild_id,
+            sector_plugin="someone.else",
+        )
+        await session.commit()
+    return ref
+
+
 async def _ask(client: AsyncClient, installed: InstalledPlugin, **body):
     token = body.pop("token", None) or _installation_token(installed)
     body.setdefault("label", "Comment on the linked issue as you")
@@ -214,11 +234,8 @@ async def test_a_request_names_a_member_by_this_install_s_reference(
         session, acting_user, role_session, granted=["files:read"]
     )
     member = await _member(acting_user, installed)
-    elsewhere = await ensure_plugin_ref(
-        guild_id=installed.guild.id,
-        public_id="someone.else",
-        user_id=member.user.id,
-    )
+    # A name another plug-in holds, which only its own install could mint.
+    elsewhere = await _foreign_ref(installed.guild.id, member.user.id)
 
     response = await _ask(client, installed, member=elsewhere)
 
@@ -782,6 +799,10 @@ async def test_no_member_token_while_the_plugin_is_not_installed(
     )
     member = await _member(acting_user, installed)
     member_ref = await _ref(installed, member.user.id)
+    # The community's name stands, and is what the assertion names it by.
+    await ensure_plugin_guild_ref(
+        guild_id=installed.guild.id, public_id=installed.public_id
+    )
     await route_session_to_guild(session, installed.guild.id)
     from app.models.tenant.guild_plugin import GuildPlugin
 

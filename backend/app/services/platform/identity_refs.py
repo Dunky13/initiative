@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, exists, func, or_
@@ -82,8 +82,12 @@ async def ensure_ref(
     sector_guild_id: int | None = None,
     sector_id: int | None = None,
     sector_plugin: str | None = None,
+    before_mint: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     """This entity's live reference for this sector, minting one on first use.
+
+    ``before_mint`` runs only when there is none to return, before one is
+    minted, and refuses the mint by raising.
 
     Idempotent under concurrency: two callers racing the same first mint both
     insert, one loses on the partial unique index, and both read back the same
@@ -99,6 +103,8 @@ async def ensure_ref(
     )
     if existing is not None:
         return existing.ref
+    if before_mint is not None:
+        await before_mint()
 
     await session.exec(
         pg_insert(IdentityRef.__table__)

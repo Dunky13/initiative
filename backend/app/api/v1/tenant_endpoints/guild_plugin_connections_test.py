@@ -216,6 +216,19 @@ def recorded_revocations(monkeypatch):
         return asyncio.sleep(0)
 
     monkeypatch.setattr(plugin_revocation, "dispatch_revocations", _capture)
+
+    # An uninstall's revocations to the plug-in itself ride its hook queue
+    # instead, in the uninstall's transaction.
+    queue = plugin_revocation.queue_hook_revocations
+
+    async def _capture_queued(session, *, guild_id, plugin_id):
+        held = getattr(session, "sync_session", session).info.get(
+            plugin_revocation._HOOK_KEY, []
+        )
+        captured.extend(intent for intent in held if intent.plugin_id == plugin_id)
+        return await queue(session, guild_id=guild_id, plugin_id=plugin_id)
+
+    monkeypatch.setattr(plugin_revocation, "queue_hook_revocations", _capture_queued)
     return captured
 
 

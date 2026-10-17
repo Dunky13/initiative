@@ -1314,6 +1314,100 @@ class TestRevocation:
         )
         assert claims["hook"] == "revoke"
 
+    async def test_an_uninstall_asks_the_plugin_to_revoke_before_it_erases(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An uninstall's revocations to the plug-in ride its hook queue, in the
+        uninstall's transaction and ahead of ``uninstalled`` and ``erase``. The
+        tokens wait sealed and are opened only to be sent, and a finished
+        revocation keeps none."""
+        from app.models.platform.plugin_community_hook import PluginCommunityHook
+        from app.db.request_context import Unattributed
+        from app.services import sweep_timers
+        from app.services.marketplace import plugin_refs
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(session, a)
+        await _connected_row(
+            session, a, plugin, expires_in=3600, connection_id="hooked", ref="cr_hooked"
+        )
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=a.guild.id, public_id=PUBLIC_ID
+        )
+
+        response = await client.delete(
+            a.g(f"/plugins/{plugin.id}"), headers=a.headers, params={"erase": "true"}
+        )
+        assert response.status_code == 204, response.text
+        await post_commit.settle_all()
+        assert [hook for hook in vendor.hooks if hook[0] == "revoke"] == []
+
+        async def rows():
+            await set_rls_context(session, Unattributed())
+            found = (
+                await session.exec(
+                    select(PluginCommunityHook)
+                    .where(PluginCommunityHook.guild_id == a.guild.id)
+                    .order_by(PluginCommunityHook.id)
+                    .execution_options(populate_existing=True)
+                )
+            ).all()
+            await session.commit()
+            return found
+
+        queued = await rows()
+        assert [row.hook for row in queued] == ["revoke", "uninstalled", "erase"]
+        assert "gho_stored" not in str(queued[0].body)
+        assert set(queued[0].body["sealed_tokens"]) == {"access_token", "refresh_token"}
+
+        await sweep_timers.process_due_timers(outward=True)
+
+        sent = [name for name, _body, _auth in vendor.hooks]
+        assert sent == ["revoke", "uninstalled", "erase"]
+        name, body, _authorization = next(h for h in vendor.hooks if h[0] == "revoke")
+        assert body == {
+            "connection": "hooked",
+            "access_token": "gho_stored",
+            "refresh_token": "ghr_stored",
+        }
+        revoke = (await rows())[0]
+        assert revoke.done_at is not None and revoke.body == {}
+
+    async def test_a_revocation_after_the_erase_names_nobody(
+        self, acting_user, session, vendor, registration
+    ):
+        """Once the plug-in's names are erased and its install is gone, a late
+        revocation finds no name for the community and mints none."""
+        from app.models.platform.identity_ref import IdentityRef
+        from app.db.request_context import Unattributed
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(session, a)
+        guild_id, install_id = a.guild.id, plugin.id
+        await route_session_to_guild(session, guild_id)
+        await session.delete(await session.get(GuildPlugin, install_id))
+        await session.commit()
+
+        with pytest.raises(plugin_connection_flows.HookNameRefused):
+            await plugin_connection_flows.call_hook(
+                "revoke",
+                public_id=PUBLIC_ID,
+                base_url="https://app.example.test",
+                guild_id=guild_id,
+                install_id=install_id,
+                body={"connection": "hooked"},
+            )
+        await set_rls_context(session, Unattributed())
+        minted = (
+            await session.exec(
+                select(IdentityRef).where(
+                    IdentityRef.sector_guild_id == guild_id,
+                    IdentityRef.sector_plugin == PUBLIC_ID,
+                )
+            )
+        ).all()
+        assert minted == []
+
 
 # ---------------------------------------------------------------------------
 # The vendor values a registration needs

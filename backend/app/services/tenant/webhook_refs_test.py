@@ -19,14 +19,28 @@ from app.services.marketplace.plugin_refs import (
     ensure_plugin_ref,
 )
 from app.services.tenant import webhook_refs
-from app.testing import create_guild, create_user
+from app.testing import create_guild, create_guild_plugin, create_user
+
+
+async def _with_plugin(session, user):
+    """A guild with ``acme.tracker`` installed: only a plug-in installed in a
+    community is given names there."""
+    guild = await create_guild(session, creator=user)
+    await create_guild_plugin(
+        session,
+        guild,
+        user,
+        definition={"plugin_kind": "service", "service": {"public_id": "acme.tracker"}},
+    )
+    await session.commit()
+    return guild
 
 
 async def test_a_plugin_hears_the_names_it_already_holds(session):
     """The whole point of the branch. The plug-in channel minted these for it;
     a delivery repeats them rather than introducing a second set."""
     user = await create_user(session)
-    guild = await create_guild(session, creator=user)
+    guild = await _with_plugin(session, user)
     plugin = "acme.tracker"
 
     guild_ref, actor_refs = await webhook_refs.name_for_subscriber(
@@ -47,7 +61,7 @@ async def test_a_plugin_hears_the_names_it_already_holds(session):
 async def test_a_member_registered_target_is_named_by_its_subscription(session):
     """No plug-in to borrow a sector from, so the subscription is one."""
     user = await create_user(session)
-    guild = await create_guild(session, creator=user)
+    guild = await _with_plugin(session, user)
 
     guild_ref, actor_refs = await webhook_refs.name_for_subscriber(
         guild_id=guild.id,
@@ -66,7 +80,7 @@ async def test_a_member_registered_target_is_named_by_its_subscription(session):
 async def test_two_subscriptions_in_one_guild_are_unrelated(session):
     """Two targets comparing notes learn nothing about each other's guild."""
     user = await create_user(session)
-    guild = await create_guild(session, creator=user)
+    guild = await _with_plugin(session, user)
 
     first, first_actors = await webhook_refs.name_for_subscriber(
         guild_id=guild.id,
@@ -88,7 +102,7 @@ async def test_two_subscriptions_in_one_guild_are_unrelated(session):
 async def test_the_same_subscription_is_named_the_same_way_twice(session):
     """Minted on first use and then stable — a receiver stores it."""
     user = await create_user(session)
-    guild = await create_guild(session, creator=user)
+    guild = await _with_plugin(session, user)
 
     first, _ = await webhook_refs.name_for_subscriber(
         guild_id=guild.id, plugin=None, subscription_id=1
@@ -104,7 +118,7 @@ async def test_dropping_a_subscription_leaves_a_plugin_alone(session):
     """Deleting a subscription takes its own sector's names and never a
     plug-in's, which outlive any one subscription it registered."""
     user = await create_user(session)
-    guild = await create_guild(session, creator=user)
+    guild = await _with_plugin(session, user)
     shared_id = 3
 
     own, _ = await webhook_refs.name_for_subscriber(
@@ -127,3 +141,17 @@ async def test_dropping_a_subscription_leaves_a_plugin_alone(session):
         guild_id=guild.id, plugin=None, subscription_id=shared_id
     )
     assert fresh != own
+
+
+async def test_an_erased_plugins_subscription_is_named_as_its_own(session):
+    """Once a plug-in may not be named here (it has no install), a subscription
+    it registered is named in the subscription's own sector rather than
+    bringing the plug-in's names back."""
+    user = await create_user(session)
+    guild = await create_guild(session, creator=user)
+
+    guild_ref, _ = await webhook_refs.name_for_subscriber(
+        guild_id=guild.id, plugin="acme.tracker", subscription_id=5
+    )
+
+    assert guild_ref.startswith("g" + IdentityPurpose.webhook.code + "_")

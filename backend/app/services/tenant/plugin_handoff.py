@@ -242,14 +242,20 @@ async def mint_page_handoff(
         ) from exc
 
     guild_id = routed_guild_id(session)
-    subject = await plugin_refs.ensure_plugin_ref(
-        guild_id=guild_id,
-        public_id=registration.public_id,
-        user_id=context.user_id,
-    )
-    guild_ref = await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=guild_id, public_id=registration.public_id
-    )
+    try:
+        subject = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild_id,
+            public_id=registration.public_id,
+            user_id=context.user_id,
+        )
+        guild_ref = await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=registration.public_id
+        )
+    except plugin_refs.PluginNameRefused as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ERASE_PENDING,
+        ) from exc
     standing = await community_status(guild_id)
 
     now = datetime.now(timezone.utc)

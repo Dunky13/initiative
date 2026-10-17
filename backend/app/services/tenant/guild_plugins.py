@@ -73,6 +73,7 @@ from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant import webhook_subscriptions as webhook_subscriptions_service
+from app.services.tenant import plugin_revocation
 from app.services.tenant.plugin_revocation import queue_install_revocations
 from app.services.tenant.soft_delete import soft_delete_entity
 
@@ -94,6 +95,7 @@ __all__ = [
     "has_initiative_surfaces",
     "initiative_surface_ids",
     "install_plugin",
+    "definition_public_id",
     "install_public_id",
     "installed_plugin_ids",
     "is_placed",
@@ -356,14 +358,7 @@ async def _refuse_while_erasing(
 ) -> None:
     """Raise :class:`ErasePendingError` while an erase of this plug-in in the
     community is unfinished."""
-    registration = await registration_lookup.registration_for_definition(
-        definition, listing_uid=listing_uid
-    )
-    public_id = (
-        registration.public_id
-        if registration is not None
-        else registration_lookup.service_public_id(definition)
-    )
+    public_id = await definition_public_id(definition, listing_uid)
     if public_id is not None and await community_hooks.erase_pending(
         guild_id=guild_id, public_id=public_id
     ):
@@ -507,6 +502,10 @@ async def uninstall_plugin(
         secrets=secrets,
         reason="uninstalled",
     )
+    # The revocations to the plug-in itself go first on its hook queue.
+    await plugin_revocation.queue_hook_revocations(
+        session, guild_id=guild_id, plugin_id=plugin.id
+    )
     for artifact in await plugin_artifacts(session, plugin):
         await ARTIFACT_HANDLERS[artifact["type"]].remove(
             session,
@@ -526,15 +525,13 @@ async def uninstall_plugin(
             guild_id=guild_id,
         )
 
-    # Told with the removal, in its transaction. The plug-in is named as its
-    # references are: by the registration, or with none left, by the public id
-    # the install pinned, so an erase still reaches its names.
-    named = public_id or registration_lookup.service_public_id(plugin.definition)
-    if named is not None:
+    # Told with the removal, in its transaction, under the public id its
+    # references key on, registration or not, so an erase still reaches them.
+    if public_id is not None:
         await community_hooks.queue_community_hooks(
             session,
             guild_id=guild_id,
-            public_id=named,
+            public_id=public_id,
             hooks=("uninstalled", "erase") if erase else ("uninstalled",),
             install_id=plugin.id,
         )
@@ -1120,18 +1117,42 @@ def grantable_scopes(
     ]
 
 
+async def definition_public_id(
+    definition: dict, listing_uid: Optional[str]
+) -> Optional[str]:
+    """The public id of the plug-in a pinned definition is, for one that is
+    installed or about to be: the registration's when this deployment has
+    one, else the ``service.public_id`` the definition pinned, which is what
+    the plug-in's references key on. ``None`` for a plug-in with no service
+    behind it, and for a declarative one with no registration."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
+    if registration is not None:
+        return registration.public_id
+    return registration_lookup.service_public_id(definition)
+
+
 async def install_public_id(plugin: GuildPlugin) -> Optional[str]:
-    """The public id of the plug-in ``plugin`` is an install of, read the way the
-    hub reads its target: the registration speaks for this install's listing,
-    and the install names that plug-in. ``None`` for one with no registration."""
+    """The public id of the plug-in an existing install is of: what names it,
+    acts for it and keys its references, whether or not its registration still
+    stands. The registration's when it speaks for this install (its listing,
+    and the plug-in the install names), else the one the install pinned;
+    ``None`` when a registration stands that is not this install's, or for a
+    plug-in with no service behind it.
+
+    Reaching the plug-in's container is another question, which only a live
+    registration answers (``registration_lookup.registration_for_definition``)."""
     from app.services.tenant.plugin_channels import owns_install
 
     registration = await registration_lookup.registration_for_definition(
         plugin.definition, listing_uid=plugin.listing_uid
     )
-    if registration is None or not owns_install(plugin, registration):
+    if registration is not None:
+        return registration.public_id if owns_install(plugin, registration) else None
+    if plugin.plugin_kind != "service":
         return None
-    return registration.public_id
+    return registration_lookup.service_public_id(plugin.definition)
 
 
 async def installed_plugin_ids(session: AsyncSession) -> frozenset[str]:

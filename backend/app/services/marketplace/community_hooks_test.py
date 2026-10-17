@@ -265,7 +265,7 @@ class TestWritingArmsTheTimer:
         _user, guild, _install = await _setup(session)
 
         with pytest.raises(community_hooks.UnknownCommunityHookError):
-            await _deliver(guild.id, hook="revoke")
+            await _deliver(guild.id, hook="after_connect")
         assert await _hooks(session, guild.id) == []
 
     async def test_an_erase_reaches_names_whose_registration_is_gone(
