@@ -1,3 +1,4 @@
+import type { GroupingState } from "@tanstack/react-table";
 import { GripVertical, Plus } from "lucide-react";
 import {
   type ComponentProps,
@@ -13,7 +14,11 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  LayoutGrouping,
+  TaskListRead,
+  TaskStatusRead,
+} from "@/api/generated/initiativeAPI.schemas";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
 import type { ProjectTaskTableState } from "@/hooks/useProjectTaskView";
@@ -30,8 +35,17 @@ import {
   type Selection,
   sameSelection,
 } from "@/lib/layouts/draft";
-import type { FieldDef } from "@/lib/layouts/fields";
+import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
+import {
+  groupColumn,
+  offeredGroupings,
+  taskGroupings,
+  withGroupShown,
+} from "@/lib/layouts/grouping";
 import { cn } from "@/lib/utils";
+import type { TranslateFn } from "@/types/i18n";
+
+import { CanvasGrouping } from "./LayoutGroupings";
 
 /** How wide the canvas draws the layout: the widths a person might read it at. */
 export type PreviewWidth = "desktop" | "tablet" | "phone";
@@ -154,12 +168,15 @@ export const CanvasFrame = ({
   selection,
   onSelect,
   tools,
+  bar,
   children,
 }: {
   width: PreviewWidth;
   selection: Selection;
   onSelect: (selection: Selection) => void;
   tools: CanvasTools;
+  /** Controls of the editor's own above the layout, which, unlike it, are used. */
+  bar?: ReactNode;
   children: ReactNode;
 }) => {
   const { t } = useTranslation(["projects", "layouts"]);
@@ -316,6 +333,11 @@ export const CanvasFrame = ({
           .filter(Boolean)
           .join("\n")}
       </style>
+      {bar ? (
+        <div className="mx-auto mb-3" style={{ maxWidth: MAX_WIDTH[width] }}>
+          {bar}
+        </div>
+      ) : null}
       <div
         ref={frame}
         className="relative mx-auto"
@@ -486,6 +508,7 @@ export const LayoutCanvas = ({
   selection,
   onSelect,
   tools,
+  onGroupingsChange,
 }: {
   projectId: number;
   initiativeId: number;
@@ -496,8 +519,10 @@ export const LayoutCanvas = ({
   selection: Selection;
   onSelect: (selection: Selection) => void;
   tools: CanvasTools;
+  /** The list's groupings, with a group hidden or shown on the canvas. */
+  onGroupingsChange: (groupings: LayoutGrouping[]) => void;
 }) => {
-  const { t } = useTranslation(["projects", "layouts"]);
+  const { t } = useTranslation(LAYOUT_NAMESPACES);
   const { definition, kind: layout } = open;
   // Every task, in the project's order: filters and sorts are each person's.
   const params = useMemo(() => buildTaskListParams(EMPTY_TASK_FILTERS, { projectId }), [projectId]);
@@ -511,16 +536,48 @@ export const LayoutCanvas = ({
     for (const task of tasks) (groups[task.task_status_id] ??= []).push(task);
     return groups;
   }, [tasks, statuses]);
+  // The canvas is grouped as the list starts until it is grouped otherwise,
+  // so the groups of what it is grouped by can be hidden here.
+  const [grouping, setGrouping] = useState<GroupingState>(() =>
+    definition.group_by ? [groupColumn(definition.group_by)] : []
+  );
   const tableState = useMemo<ProjectTaskTableState>(
     () => [
-      { grouping: [], sorting: [] },
-      { setGrouping: noop, setSorting: noop },
+      { grouping, sorting: [] },
+      { setGrouping, setSorting: noop },
     ],
-    []
+    [grouping]
+  );
+  const offered = useMemo(
+    () =>
+      offeredGroupings(
+        taskGroupings({ fields, statuses, tasks, t: t as TranslateFn }),
+        definition.groupings
+      ),
+    [fields, statuses, tasks, t, definition.groupings]
   );
 
   return (
-    <CanvasFrame width={width} selection={selection} onSelect={onSelect} tools={tools}>
+    <CanvasFrame
+      width={width}
+      selection={selection}
+      onSelect={onSelect}
+      tools={tools}
+      bar={
+        layout === "table" && offered.length > 0 ? (
+          <CanvasGrouping
+            offered={offered}
+            grouping={grouping}
+            onGroupingChange={setGrouping}
+            tasks={tasks}
+            disabled={tools.locked}
+            onToggle={(id, key, shown) =>
+              onGroupingsChange(withGroupShown(definition.groupings, id, key, shown))
+            }
+          />
+        ) : undefined
+      }
+    >
       {layout === "board" ? (
         <ProjectTasksKanbanView
           projectId={projectId}
@@ -543,6 +600,8 @@ export const LayoutCanvas = ({
       ) : null}
       {layout === "table" ? (
         <ProjectTasksTableView
+          // The table takes its grouping as it mounts.
+          key={grouping.join()}
           projectId={projectId}
           initiativeId={initiativeId}
           tasks={tasks}
@@ -558,6 +617,7 @@ export const LayoutCanvas = ({
           taskHref={taskHref}
           tableState={tableState}
           viewColumns={columnsOf(definition, fields)}
+          viewGroupings={definition.groupings}
           editing
         />
       ) : null}

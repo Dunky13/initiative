@@ -142,6 +142,15 @@
     "descending": "Descendente",
     "full": "Un diseño ofrece como máximo {{count}} ajustes predefinidos. Quita uno para añadir otro."
   },
+  "groupings": {
+    "heading": "Agrupar por",
+    "help": "Por qué puede cualquiera agrupar esta tabla, en este orden. Desmarca una opción para dejar de ofrecerla. Para omitir un grupo, agrupa aquí la tabla por esa opción y haz clic en el grupo sobre la tabla.",
+    "moveUp": "Subir {{name}}",
+    "moveDown": "Bajar {{name}}",
+    "startsOn": "Empieza agrupada por",
+    "notGrouped": "Sin agrupar",
+    "shown": "Grupos visibles:"
+  },
   "calendarListHelp": "Cómo el calendario de la iniciativa muestra sus eventos y tareas. Sus ajustes predefinidos son puntos de partida para todos.",
   "blocks": {
     "accordion": "Acordeón",

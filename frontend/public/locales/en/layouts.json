@@ -142,6 +142,15 @@
     "descending": "Descending",
     "full": "A layout offers at most {{count}} presets. Remove one to add another."
   },
+  "groupings": {
+    "heading": "Group by",
+    "help": "What anyone can group this table by, in this order. Untick one to stop offering it. To leave a group out, group the table by it here and click the group above the table.",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "startsOn": "Starts grouped by",
+    "notGrouped": "Not grouped",
+    "shown": "Groups shown:"
+  },
   "calendarListHelp": "How the initiative's calendar lists its events and tasks. Its presets are where people can start from.",
   "blocks": {
     "accordion": "Accordion",

@@ -5,13 +5,17 @@
  * drop from one group into another changes. The table draws it as header rows.
  */
 
+import type { GroupingState } from "@tanstack/react-table";
 import type { ReactNode } from "react";
 
 import {
+  type LayoutGrouping,
+  type ListLayoutDefinitionOutput,
   type PropertyDefinitionRead,
   type PropertySummary,
   PropertyType,
   type PropertyValuesSetRequest,
+  TaskGroupingId,
   type TaskListRead,
   type TaskPriority,
   type TaskStatusRead,
@@ -24,8 +28,8 @@ import { TagBadge } from "@/components/tags/TagBadge";
 import { TaskStatusOption } from "@/components/tasks/TaskStatusOption";
 import { Badge } from "@/components/ui/badge";
 import { collator } from "@/lib/intl";
-import { type FieldDef, propertyFieldId } from "@/lib/layouts/fields";
-import { priorityRank } from "@/lib/sorting";
+import type { FieldDef } from "@/lib/layouts/fields";
+import { PRIORITY_ORDER, priorityRank } from "@/lib/sorting";
 import { getTaskDateStatus, getTaskDateStatusLabel } from "@/lib/taskDateStatus";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
@@ -42,11 +46,18 @@ export type GroupMove =
 
 /** One way to split a project's tasks. */
 export type TaskGrouping = {
+  /** What a layout names it by: the field's id, or the date window's or
+   *  status's. */
+  id: string;
   /** The table's hidden column for it, which is what a person's view keeps. */
   column: string;
   label: string;
   /** The groups a task is in: none puts it in {@link NO_GROUP}, several in each. */
   keys: (task: TaskListRead) => string[];
+  /** Every group the field defines, whether or not a task is in it: its
+   *  statuses, its priorities, its options. Left out where its groups are
+   *  only those its tasks hold (people, tags). */
+  values?: string[];
   /** The order of two groups. */
   compare: (a: string, b: string) => number;
   header: (key: string) => ReactNode;
@@ -65,6 +76,16 @@ const named = (name: (key: string) => string) => (a: string, b: string) =>
   emptyLast(a, b) || text.compare(name(a), name(b));
 
 const label = (content: ReactNode) => <span className="font-medium text-base">{content}</span>;
+
+/** A grouping's table column, as a person's view keeps it. */
+export const groupColumn = (id: string) => `${id} group`;
+
+/** What a list offers where its layout names no groupings of its own. */
+export const SHIPPED_GROUPINGS: string[] = Object.values(TaskGroupingId);
+
+/** A layout's groupings, or the shipped ones where it names none. */
+export const groupingsOf = (groupings: LayoutGrouping[] | null | undefined): LayoutGrouping[] =>
+  groupings ?? SHIPPED_GROUPINGS.map((field) => ({ field }));
 
 const byId = <T extends { id: number }>(items: T[]) =>
   new Map(items.map((item) => [String(item.id), item]));
@@ -101,7 +122,8 @@ const propertyGrouping = (
         ? { merge: true, removed: [id] }
         : { merge: true, values: [{ property_id: id, value }] },
   });
-  const base = { column: `${field.id} group`, label: field.label };
+  const base = { id: field.id, column: groupColumn(field.id), label: field.label };
+  const options = (definition.options ?? []).map((option) => option.value);
   switch (definition.type) {
     case PropertyType.select:
       return {
@@ -110,6 +132,7 @@ const propertyGrouping = (
           const value = heldBy(task);
           return typeof value === "string" && value ? [value] : [];
         },
+        values: options,
         compare: byOption,
         header: (key) => (key === NO_GROUP ? empty : <PropertyValueCell summary={summary(key)} />),
         move: (_from, to) => write(to, to),
@@ -123,6 +146,7 @@ const propertyGrouping = (
             ? value.filter((v): v is string => typeof v === "string")
             : [];
         },
+        values: options,
         compare: byOption,
         header: (key) =>
           key === NO_GROUP ? empty : <PropertyValueCell summary={summary([key])} />,
@@ -149,6 +173,7 @@ const propertyGrouping = (
       return {
         ...base,
         keys: (task) => [String(heldBy(task) === true)],
+        values: ["true", "false"],
         compare: (a, b) => Number(b === "true") - Number(a === "true"),
         header: (key) =>
           label(t(key === "true" ? "table.checked" : "table.unchecked", { name: field.label })),
@@ -166,13 +191,11 @@ const propertyGrouping = (
  */
 export const taskGroupings = ({
   fields,
-  definitions,
   statuses,
   tasks,
   t,
 }: {
   fields: ReadonlyMap<string, FieldDef>;
-  definitions: PropertyDefinitionRead[];
   statuses: TaskStatusRead[];
   tasks: TaskListRead[];
   t: TranslateFn;
@@ -184,15 +207,15 @@ export const taskGroupings = ({
   ]);
   const people = byId(tasks.flatMap((task) => task.assignees));
   const tags = byId(tasks.flatMap((task) => task.tags ?? []));
-  const definitionsByField = new Map(definitions.map((each) => [propertyFieldId(each.id), each]));
 
   const ofField = (field: FieldDef): TaskGrouping | null => {
-    const base = { column: `${field.id} group`, label: t(field.label) };
+    const base = { id: field.id, column: groupColumn(field.id), label: t(field.label) };
     switch (field.kind) {
       case "priority":
         return {
           ...base,
           keys: (task) => [task.priority],
+          values: PRIORITY_ORDER,
           // Most urgent first.
           compare: ranked((key) => -priorityRank[key as TaskPriority]),
           header: (key) => (
@@ -236,10 +259,8 @@ export const taskGroupings = ({
             return { tags: { add: add.map(Number), remove: remove.map(Number) } };
           },
         };
-      case "property": {
-        const definition = definitionsByField.get(field.id);
-        return definition ? propertyGrouping(field, definition, tasks, t) : null;
-      }
+      case "property":
+        return field.property ? propertyGrouping(field, field.property, tasks, t) : null;
       default:
         return null;
     }
@@ -247,7 +268,8 @@ export const taskGroupings = ({
 
   return [
     {
-      column: "date group",
+      id: TaskGroupingId.date,
+      column: groupColumn(TaskGroupingId.date),
       label: t("tasks:columns.dateWindow"),
       keys: (task) => [getTaskDateStatus(task.start_date, task.due_date)],
       // The windows' keys are numbered in their order.
@@ -255,9 +277,11 @@ export const taskGroupings = ({
       header: (key) => label(getTaskDateStatusLabel(key, t)),
     },
     {
-      column: "status group",
+      id: TaskGroupingId.status,
+      column: groupColumn(TaskGroupingId.status),
       label: t("table.statusColumn"),
       keys: (task) => [String(task.task_status_id)],
+      values: statuses.map((status) => String(status.id)),
       // Board order, as the columns stand.
       compare: ranked((key) => statusesById.get(key)?.position ?? Number.MAX_SAFE_INTEGER),
       header: (key) => {
@@ -271,6 +295,54 @@ export const taskGroupings = ({
     ...[...fields.values()].flatMap((field) => ofField(field) ?? []),
   ];
 };
+
+/** A grouping a list offers, and the groups it leaves out while grouped by it. */
+export type OfferedGrouping = { grouping: TaskGrouping; hidden: ReadonlySet<string> };
+
+/** What a list offers, in its order: the layout's own groupings, or the
+ *  shipped ones where it names none. One whose field the project no longer
+ *  has, or whose values no longer group, is passed over. */
+export const offeredGroupings = (
+  all: TaskGrouping[],
+  groupings: LayoutGrouping[] | null | undefined
+): OfferedGrouping[] => {
+  const byGrouping = new Map(all.map((each) => [each.id, each]));
+  return groupingsOf(groupings).flatMap((entry) => {
+    const grouping = byGrouping.get(entry.field);
+    return grouping ? [{ grouping, hidden: new Set(entry.hidden ?? []) }] : [];
+  });
+};
+
+/**
+ * What a person's list is grouped by: the pick they kept, None included,
+ * while the list still offers it, and otherwise the grouping the list starts
+ * on. `kept` is null where they never picked. Grouping by tag kept
+ * "tag group" before every field could group.
+ */
+export const viewGrouping = (
+  definition: Pick<ListLayoutDefinitionOutput, "groupings" | "group_by"> | undefined,
+  kept: GroupingState | null
+): GroupingState => {
+  const start = definition?.group_by ? [groupColumn(definition.group_by)] : [];
+  if (kept === null) return start;
+  const offered = groupingsOf(definition?.groupings).map((entry) => groupColumn(entry.field));
+  const picked = kept.map((column) => (column === "tag group" ? "tags group" : column));
+  return picked.every((column) => offered.includes(column)) ? picked : start;
+};
+
+/** `groupings` (the shipped ones where null) with the group `key` of the one
+ *  `id` names shown or left out. */
+export const withGroupShown = (
+  groupings: LayoutGrouping[] | null | undefined,
+  id: string,
+  key: string,
+  shown: boolean
+): LayoutGrouping[] =>
+  groupingsOf(groupings).map((entry) => {
+    if (entry.field !== id) return entry;
+    const others = (entry.hidden ?? []).filter((each) => each !== key);
+    return { ...entry, hidden: shown ? others : [...others, key] };
+  });
 
 /** A task as a row of a grouped table: the one group it is listed under, when
  *  the table is grouped, so a plain task list is a valid row list. */

@@ -142,6 +142,15 @@
     "descending": "Décroissant",
     "full": "Une disposition propose au plus {{count}} préréglages. Retirez-en un pour en ajouter un autre."
   },
+  "groupings": {
+    "heading": "Grouper par",
+    "help": "Ce par quoi chacun peut grouper ce tableau, dans cet ordre. Décochez une option pour ne plus la proposer. Pour masquer un groupe, groupez ici le tableau par cette option et cliquez sur le groupe au-dessus du tableau.",
+    "moveUp": "Monter {{name}}",
+    "moveDown": "Descendre {{name}}",
+    "startsOn": "Commence groupé par",
+    "notGrouped": "Non groupé",
+    "shown": "Groupes affichés :"
+  },
   "calendarListHelp": "Comment le calendrier de l'initiative présente ses événements et ses tâches. Ses préréglages sont les points de départ proposés à chacun.",
   "blocks": {
     "accordion": "Accordéon",

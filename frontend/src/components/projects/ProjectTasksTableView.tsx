@@ -16,7 +16,11 @@ import type React from "react";
 import { createContext, memo, useCallback, useContext, useMemo } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
-import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  LayoutGrouping,
+  TaskListRead,
+  TaskStatusRead,
+} from "@/api/generated/initiativeAPI.schemas";
 import { TaskAssigneesCell } from "@/components/projects/TaskQuickActions";
 import { SortHeader } from "@/components/SortIcon";
 import { sharedTaskColumns } from "@/components/tasks/globalTaskColumns";
@@ -36,6 +40,7 @@ import {
   groupRowId,
   groupRows,
   NO_GROUP,
+  offeredGroupings,
   type TaskGroupRow,
   taskGroupings,
   uniqueTasksFromRows,
@@ -72,6 +77,8 @@ type ProjectTasksListViewProps = {
   tableState: ReturnType<typeof useProjectTaskTableState>;
   /** The fields the view shows as columns, in order, where it names them. */
   viewColumns?: string[] | null;
+  /** The groupings the view offers, in order, where it names them. */
+  viewGroupings?: LayoutGrouping[] | null;
   /** The view is being edited. */
   editing?: boolean;
 };
@@ -282,6 +289,7 @@ const ProjectTasksTableViewComponent = ({
   onExitSelection,
   tableState: [tableState, { setGrouping, setSorting }],
   viewColumns,
+  viewGroupings,
   editing = false,
 }: ProjectTasksListViewProps) => {
   const { t, i18n } = useTranslation(["projects", "comments", "tasks"]);
@@ -296,19 +304,19 @@ const ProjectTasksTableViewComponent = ({
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
     [propertyDefinitions, plugins, i18n.language]
   );
-  const groupings = useMemo(
+  // What the view offers to group by, and the groups each leaves out.
+  const offered = useMemo(
     () =>
-      taskGroupings({
-        fields,
-        definitions: propertyDefinitions,
-        statuses: taskStatuses,
-        tasks,
-        t: env.t,
-      }),
-    [fields, propertyDefinitions, taskStatuses, tasks, env.t]
+      offeredGroupings(
+        taskGroupings({ fields, statuses: taskStatuses, tasks, t: env.t }),
+        viewGroupings
+      ),
+    [fields, taskStatuses, tasks, env.t, viewGroupings]
   );
+  const groupings = useMemo(() => offered.map((each) => each.grouping), [offered]);
   const { grouping, sorting } = tableState;
-  const grouped = groupings.find((each) => grouping.includes(each.column));
+  const active = offered.find((each) => grouping.includes(each.grouping.column));
+  const grouped = active?.grouping;
   // The columns the view shows, in its order: its own, or the shipped ones.
   // What the view leaves out is hidden, as are the columns that only group.
   const shown = useMemo(
@@ -523,10 +531,16 @@ const ProjectTasksTableViewComponent = ({
   // change what puts it there and the reader may change the task.
   const moveEnabled = grouped?.move !== undefined && !statusDisabled;
 
-  // Grouped, a task has a row in each group it is in, one per tag say.
+  // Grouped, a task has a row in each group it is in (one per tag, say) that
+  // the view shows.
   const rows = useMemo<TaskGroupRow[]>(
-    () => (grouped ? groupRows(tasks, grouped) : tasks),
-    [grouped, tasks]
+    () =>
+      active
+        ? groupRows(tasks, active.grouping).filter(
+            (row) => !active.hidden.has(row.group ?? NO_GROUP)
+          )
+        : tasks,
+    [active, tasks]
   );
 
   // Selection reports rows; a task in several groups holds one row in each,
@@ -654,6 +668,7 @@ export const ProjectTasksTableView = memo(
       prevProps.initiativeId === nextProps.initiativeId &&
       prevProps.tableState[0] === nextProps.tableState[0] &&
       prevProps.viewColumns === nextProps.viewColumns &&
+      prevProps.viewGroupings === nextProps.viewGroupings &&
       prevProps.editing === nextProps.editing
       // Note: Intentionally ignoring callback prop changes as they're functionally the same
     );

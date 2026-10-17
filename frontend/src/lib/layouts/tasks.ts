@@ -102,6 +102,7 @@ export const propertyFields = (
     hideable: true,
     icon: iconForPropertyType(definition.type),
     value: (item) => read(item, definition.id),
+    property: definition,
   }));
 
 const field = (id: string): LayoutNode => ({ type: "field", props: { field: id } });

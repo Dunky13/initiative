@@ -7,6 +7,7 @@ import type {
   DetailLayoutDefinitionInput,
   DetailLayoutRead,
   GetLayoutsParams,
+  LayoutGrouping,
   LayoutPreset,
   ListLayoutDefinitionInput,
   ListLayoutReadKind,
@@ -109,6 +110,9 @@ export type LayoutEdits = {
   addColumn: (field: string, index?: number) => void;
   /** The open list offers `presets`, in order. */
   changePresets: (presets: LayoutPreset[]) => void;
+  /** The open list offers `groupings`, in order, and starts grouped by
+   *  `groupBy`, one of them, or not at all. */
+  changeGroupings: (groupings: LayoutGrouping[], groupBy: string | null) => void;
   /** The open layout goes back to the shipped one. */
   resetLayout: () => void;
 };
@@ -374,6 +378,9 @@ export const LayoutEditor = ({
     },
     changePresets: (presets) => {
       if (current) changeList({ ...current.definition, presets });
+    },
+    changeGroupings: (groupings, groupBy) => {
+      if (current) changeList({ ...current.definition, groupings, group_by: groupBy });
     },
   };
 
@@ -646,6 +653,9 @@ export const LayoutEditor = ({
               selection={selection}
               onSelect={setSelected}
               tools={tools}
+              onGroupingsChange={(groupings) =>
+                edits.changeGroupings(groupings, current.definition.group_by ?? null)
+              }
             />
           </main>
           <aside className="min-h-0 overflow-y-auto border-l">

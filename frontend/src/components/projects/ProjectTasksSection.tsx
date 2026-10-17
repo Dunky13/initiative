@@ -1008,6 +1008,7 @@ export const ProjectTasksSection = ({
                 onExitSelection={() => setSelectedTasks([])}
                 tableState={tableState}
                 viewColumns={layout?.definition.columns}
+                viewGroupings={layout?.definition.groupings}
               />
             ) : null}
             {canEditTaskDetails && (

@@ -12,6 +12,7 @@ import {
   buildCalendarEvent,
   buildDefaultTaskStatuses,
   buildPropertyDefinition,
+  buildPropertyOption,
   buildSavedLayoutSet,
   buildTask,
   buildTaskListResponse,
@@ -23,10 +24,12 @@ import { renderPage } from "@/__tests__/helpers/render";
 import {
   type DetailLayoutWrite,
   type ListLayoutWrite,
+  PropertyType,
   Tool,
   type ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { instanceTarget, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
+import { SHIPPED_GROUPINGS } from "@/lib/layouts/grouping";
 import { MAX_PRESETS } from "@/lib/layouts/presets";
 import { TASK_COLUMNS } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
@@ -330,6 +333,64 @@ describe("LayoutEditor", () => {
     await waitFor(() => expect(saved("board")).toBeDefined());
     const presets = saved("board")?.presets as { slug: string }[] | undefined;
     expect(presets?.map((preset) => preset.slug)).toEqual(["mine", "unassigned"]);
+  });
+
+  it("offers a property's grouping once it is ticked, and starts the table on it", async () => {
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([
+          buildPropertyDefinition({
+            id: 12,
+            name: "Sprint",
+            type: PropertyType.select,
+            options: [buildPropertyOption({ value: "s1", label: "Sprint 1" })],
+          }),
+        ])
+      )
+    );
+    const { user } = editor("table");
+    await outline();
+
+    await user.click(await screen.findByRole("checkbox", { name: "Sprint" }));
+    await user.click(screen.getByRole("combobox", { name: /starts grouped by/i }));
+    await user.click(await screen.findByRole("option", { name: "Sprint" }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(saved("table")).toBeDefined());
+    expect(saved("table")?.groupings).toEqual([
+      ...SHIPPED_GROUPINGS.map((field) => ({ field })),
+      { field: "property:12" },
+    ]);
+    expect(saved("table")?.group_by).toBe("property:12");
+  });
+
+  it("leaves out a group clicked above the grouped preview", async () => {
+    const { user } = editor(
+      "table",
+      vi.fn(),
+      buildToolLayoutSet({
+        layouts: [
+          {
+            kind: "table",
+            is_default: true,
+            definition: { group_by: "status" },
+            updated_at: "2026-10-01T12:00:00.000Z",
+          },
+        ],
+      })
+    );
+    await outline();
+
+    const done = await screen.findByRole("button", { name: "Done", pressed: true });
+    await user.click(done);
+    expect(done).toHaveAttribute("aria-pressed", "false");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(saved("table")).toBeDefined());
+    const groupings = saved("table")?.groupings as { field: string; hidden?: string[] }[];
+    expect(groupings.find((entry) => entry.field === "status")?.hidden).toEqual([
+      String(STATUSES[2].id),
+    ]);
   });
 
   it("offers presets on the calendar's list, with the calendar's own filters", async () => {

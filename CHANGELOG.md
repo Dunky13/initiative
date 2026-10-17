@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Group a project's table by any field.** Group by status, priority, assignees, tags or a select, multi-select, person or checkbox property, as well as by date window, and each group says how many tasks it holds. Drag a task into another group to change that field. A task with two people or tags is listed under each, and dragging it moves it out of only the group it came from.
+- **Group a project's table by any field.** Group by date window, status, priority, assignees or tags, and by a select, multi-select, person or checkbox property once **Edit layouts** offers it. Each group says how many tasks it holds. Drag a task into another group to change that field. A task with two people or tags is listed under each, and dragging it moves it out of only the group it came from. In **Edit layouts**, choose what the table offers to group by, what it starts grouped by, and which groups it leaves out, such as finished sprints.
 - **Change one option of a multi-select (API).** `PUT /properties/{target}/{id}` with `merge` takes `options`, each putting options on and taking them off one multi-select value, against what it holds when the change is written.
 - **Targets on dashboards.** Give a chart, stat or progress bar a **Target** and a **Target date**. The chart draws it as a line, the progress bar marks it, and each says whether it is reached, on track, behind or missed, worked out from the trend so far, or how far there is to go.
 - **Each release publishes its API spec (API).** The GitHub release carries `openapi.json`, the OpenAPI spec of the image it ships, to generate a client from or check one against.
