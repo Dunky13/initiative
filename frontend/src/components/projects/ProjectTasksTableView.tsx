@@ -6,6 +6,8 @@ import {
   type DraggableAttributes,
   type DraggableSyntheticListeners,
   type DragStartEvent,
+  useDraggable,
+  useDroppable,
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -16,16 +18,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
 import { TaskAssigneesCell } from "@/components/projects/TaskQuickActions";
-import {
-  collectTagsByName,
-  fanOutTasksByTag,
-  TAG_GROUP_COLUMN_ID,
-  type TaskTagRow,
-  tagRowId,
-  uniqueTasksFromRows,
-} from "@/components/projects/taskTagGrouping";
 import { SortHeader } from "@/components/SortIcon";
-import { TagBadge } from "@/components/tags/TagBadge";
 import { sharedTaskColumns } from "@/components/tasks/globalTaskColumns";
 import { statusTriggerStyle, TaskStatusOption } from "@/components/tasks/TaskStatusOption";
 import { Button } from "@/components/ui/button";
@@ -35,9 +28,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { TableRow } from "@/components/ui/table";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
+import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { fieldColumnId } from "@/lib/layouts/columns";
 import { columnsOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
+import {
+  groupRowId,
+  groupRows,
+  NO_GROUP,
+  type TaskGroupRow,
+  taskGroupings,
+  uniqueTasksFromRows,
+} from "@/lib/layouts/grouping";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import type { AppColumnDef } from "@/lib/table";
@@ -87,7 +89,8 @@ const useSortableRowContext = () => useContext(SortableRowContext);
 
 /**
  * Plain row wrapper — no useSortable hook overhead.
- * Used when DnD is disabled (sorting/grouping active, or no reorder permission).
+ * Used when no row drags: the table is sorted, grouped by what a drop can't
+ * change, or the reader can't change it.
  */
 const PlainRowWrapper = ({
   row,
@@ -95,7 +98,7 @@ const PlainRowWrapper = ({
   virtualStyle,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskTagRow>) => {
+}: DataTableRowWrapperProps<TaskGroupRow>) => {
   return (
     <TableRow
       ref={measureRef}
@@ -119,7 +122,7 @@ const SortableRowWrapperInner = ({
   virtualStyle,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskTagRow>) => {
+}: DataTableRowWrapperProps<TaskGroupRow>) => {
   const {
     attributes,
     listeners,
@@ -175,6 +178,92 @@ const SortableRowWrapperInner = ({
   );
 };
 
+/**
+ * A row of a grouped table that drags into another group: its handle drags it,
+ * and the row takes a drop for its group, as the group's header does.
+ */
+const GroupDragRowWrapper = ({
+  row,
+  children,
+  virtualStyle,
+  virtualIndex,
+  measureRef,
+}: DataTableRowWrapperProps<TaskGroupRow>) => {
+  const group = row.original.group ?? NO_GROUP;
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
+    useDraggable({ id: row.id, data: { taskId: row.original.id, group } });
+  const drop = useDroppable({ id: `row:${row.id}`, data: { group } });
+
+  const contextValue = useMemo(
+    () => ({ attributes, listeners, setActivatorNodeRef, dragDisabled: false }),
+    [attributes, listeners, setActivatorNodeRef]
+  );
+  const setRefs = useCallback(
+    (el: HTMLElement | null) => {
+      setNodeRef(el);
+      drop.setNodeRef(el);
+      measureRef?.(el);
+    },
+    [setNodeRef, drop.setNodeRef, measureRef]
+  );
+
+  return (
+    <SortableRowContext.Provider value={contextValue}>
+      <TableRow
+        ref={setRefs}
+        style={{
+          ...virtualStyle,
+          transform: CSS.Translate.toString(transform) || virtualStyle?.transform,
+        }}
+        className={cn(
+          isDragging && "relative z-10 bg-muted/60",
+          drop.isOver && !isDragging && "bg-primary/10",
+          row.original.archived_at !== null && "opacity-50"
+        )}
+        data-state={row.getIsSelected() && "selected"}
+        data-index={virtualIndex}
+      >
+        {children}
+      </TableRow>
+    </SortableRowContext.Provider>
+  );
+};
+
+/** A group's header row, which takes a drop into its group. Its first row
+ *  stands for the group, as every row under it is in the group. */
+const GroupDropRowWrapper = ({
+  row,
+  children,
+  virtualIndex,
+  measureRef,
+}: DataTableRowWrapperProps<TaskGroupRow>) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `group:${row.id}`,
+    data: { group: row.original.group ?? NO_GROUP },
+  });
+  const setRefs = useCallback(
+    (el: HTMLElement | null) => {
+      setNodeRef(el);
+      measureRef?.(el);
+    },
+    [setNodeRef, measureRef]
+  );
+  return (
+    <TableRow
+      ref={setRefs}
+      className={cn("bg-muted/30", isOver && "bg-primary/10")}
+      data-state="grouped"
+      data-index={virtualIndex}
+    >
+      {children}
+    </TableRow>
+  );
+};
+
+const groupDropRow = (props: DataTableRowWrapperProps<TaskGroupRow>) => (
+  <GroupDropRowWrapper {...props} />
+);
+
 const ProjectTasksTableViewComponent = ({
   projectId,
   initiativeId,
@@ -198,6 +287,7 @@ const ProjectTasksTableViewComponent = ({
   const { t, i18n } = useTranslation(["projects", "comments", "tasks"]);
   const statusDisabled = !canEditTaskDetails || taskActionsDisabled;
   const env = useProjectLayoutEnv(taskHref);
+  const { mutate: moveTask } = useMoveTaskToGroup();
 
   // Scoped to the project's initiative so the column list stays focused.
   const { data: propertyDefinitions = [] } = useProperties({ initiativeId });
@@ -206,6 +296,19 @@ const ProjectTasksTableViewComponent = ({
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
     [propertyDefinitions, plugins, i18n.language]
   );
+  const groupings = useMemo(
+    () =>
+      taskGroupings({
+        fields,
+        definitions: propertyDefinitions,
+        statuses: taskStatuses,
+        tasks,
+        t: env.t,
+      }),
+    [fields, propertyDefinitions, taskStatuses, tasks, env.t]
+  );
+  const { grouping, sorting } = tableState;
+  const grouped = groupings.find((each) => grouping.includes(each.column));
   // The columns the view shows, in its order: its own, or the shipped ones.
   // What the view leaves out is hidden, as are the columns that only group.
   const shown = useMemo(
@@ -222,16 +325,10 @@ const ProjectTasksTableViewComponent = ({
           .filter((field) => field.hideable)
           .map(({ id }) => [fieldColumnId(id), shown.includes(fieldColumnId(id))])
       ),
-      "date group": false,
-      [TAG_GROUP_COLUMN_ID]: false,
+      ...Object.fromEntries(groupings.map(({ column }) => [column, false])),
     }),
-    [fields, shown]
+    [fields, shown, groupings]
   );
-
-  // Tag grouping keys rows by tag name; keep the tags around so a group header
-  // can render its badge, and name the group tasks without tags fall into.
-  const tagsByName = useMemo(() => collectTagsByName(tasks), [tasks]);
-  const untaggedLabel = t("table.untagged");
 
   // Memoize status lookups to avoid repeated array searches
   const statusLookup = useMemo(() => {
@@ -243,8 +340,8 @@ const ProjectTasksTableViewComponent = ({
     return { doneStatus, inProgressStatus };
   }, [taskStatuses]);
 
-  const columns = useMemo<AppColumnDef<TaskTagRow>[]>(() => {
-    const shared = sharedTaskColumns<TaskTagRow>({
+  const columns = useMemo<AppColumnDef<TaskGroupRow>[]>(() => {
+    const shared = sharedTaskColumns<TaskGroupRow>({
       fields,
       env,
       isPriorityDisabled: () => statusDisabled,
@@ -253,38 +350,27 @@ const ProjectTasksTableViewComponent = ({
       {
         id: "drag",
         header: () => <span className="sr-only">{t("table.reorder")}</span>,
-        cell: ({ table }) => {
-          const sorting = table.atoms.sorting?.get() ?? [];
-          const grouping = table.atoms.grouping?.get() ?? [];
-          const disableDnd = sorting.length > 0 || grouping.length > 0;
-          return !disableDnd ? <DragHandleCell /> : null;
-        },
+        // A handle wherever the row can be dragged: to reorder it, or into
+        // another group.
+        cell: () => <DragHandleCell />,
         enableSorting: false,
         size: 40,
         enableHiding: false,
       },
-      shared.dateGroup,
-      {
-        // Never rendered as a column of its own (see effectiveColumnVisibility);
-        // it holds the single tag a row is grouped under so the table can group
-        // by tag, and renders that tag as the group header.
-        id: TAG_GROUP_COLUMN_ID,
-        accessorFn: (task) => task.tagGroup ?? untaggedLabel,
-        header: () => <span className="font-medium">{t("table.tagGroup")}</span>,
-        cell: ({ getValue }) => {
-          const label = getValue<string>();
-          const tag = tagsByName.get(label);
-          return tag ? (
-            <TagBadge tag={tag} size="md" />
-          ) : (
-            <span className="font-medium text-base">{label}</span>
-          );
-        },
-        enableHiding: false,
-        enableSorting: true,
-        sortFn: "alphanumeric",
-        size: 150,
-      },
+      // One hidden column per grouping, which renders a group's header. The
+      // table's rows are its groups' while it is the one grouped by.
+      ...groupings.map(
+        (each): AppColumnDef<TaskGroupRow> => ({
+          id: each.column,
+          accessorFn: (task) =>
+            (each === grouped ? task.group : undefined) ?? each.keys(task)[0] ?? NO_GROUP,
+          header: () => <span className="font-medium">{each.label}</span>,
+          cell: ({ getValue }) => each.header(getValue<string>()),
+          sortFn: (rowA, rowB, columnId) =>
+            each.compare(rowA.getValue<string>(columnId), rowB.getValue<string>(columnId)),
+          enableHiding: false,
+        })
+      ),
       {
         id: "completed",
         header: () => <span className="font-medium">{t("table.doneColumn")}</span>,
@@ -387,11 +473,11 @@ const ProjectTasksTableViewComponent = ({
     env,
     onStatusChange,
     statusDisabled,
-    tagsByName,
+    groupings,
+    grouped,
     taskStatuses,
     statusLookup,
     t,
-    untaggedLabel,
   ]);
   // The view's columns take the places its columns held, in its order. While
   // the view is edited, each field's header is marked with the field, so the
@@ -409,7 +495,7 @@ const ProjectTasksTableViewComponent = ({
     const fieldOf = new Map(
       [...fields.values()].map((field) => [fieldColumnId(field.id), field.id])
     );
-    return ordered.map((column): AppColumnDef<TaskTagRow> => {
+    return ordered.map((column): AppColumnDef<TaskGroupRow> => {
       const fieldId = column.id === undefined ? undefined : fieldOf.get(column.id);
       const { header } = column;
       if (fieldId === undefined || typeof header !== "function") return column;
@@ -420,49 +506,68 @@ const ProjectTasksTableViewComponent = ({
             {header(context)}
           </span>
         ),
-      } as AppColumnDef<TaskTagRow>;
+      } as AppColumnDef<TaskGroupRow>;
     });
   }, [columns, shown, editing, fields]);
   const groupingOptions = useMemo(
-    () => [
-      { id: "date group", label: t("tasks:columns.dateWindow") },
-      { id: TAG_GROUP_COLUMN_ID, label: t("table.tagGroup") },
-    ],
-    [t]
+    () => groupings.map(({ column, label }) => ({ id: column, label })),
+    [groupings]
   );
 
   const sortableItems = useMemo(() => tasks.map((task) => task.id.toString()), [tasks]);
 
-  const { grouping, sorting } = tableState;
   // Grouping and sorting each disable drag-to-reorder: a manual order can only
   // be expressed by the table's own row order.
   const dndEnabled = canReorderTasks && sorting.length === 0 && grouping.length === 0;
+  // Grouped, a row drags into another group instead, where the grouping can
+  // change what puts it there and the reader may change the task.
+  const moveEnabled = grouped?.move !== undefined && !statusDisabled;
 
-  // Grouping by tag means one row per (task, tag) pair — a task with three tags
-  // belongs under all three, not under whichever one happens to come first.
-  const isTagGrouped = grouping.includes(TAG_GROUP_COLUMN_ID);
-  const rows = useMemo<TaskTagRow[]>(
-    () => (isTagGrouped ? fanOutTasksByTag(tasks, untaggedLabel) : tasks),
-    [isTagGrouped, tasks, untaggedLabel]
+  // Grouped, a task has a row in each group it is in, one per tag say.
+  const rows = useMemo<TaskGroupRow[]>(
+    () => (grouped ? groupRows(tasks, grouped) : tasks),
+    [grouped, tasks]
   );
 
-  // Selection reports rows; a tag-grouped task holds one row per tag, so
-  // collapse them back to the tasks themselves.
+  // Selection reports rows; a task in several groups holds one row in each,
+  // so collapse them back to the tasks themselves.
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const handleSelectionChange = useCallback(
-    (selectedRows: TaskTagRow[]) =>
+    (selectedRows: TaskGroupRow[]) =>
       onTaskSelectionChange?.(uniqueTasksFromRows(selectedRows, tasksById)),
     [onTaskSelectionChange, tasksById]
   );
 
   const rowWrapper = useCallback(
-    (props: DataTableRowWrapperProps<TaskTagRow>) => {
-      if (!dndEnabled) {
-        return <PlainRowWrapper {...props} />;
+    (props: DataTableRowWrapperProps<TaskGroupRow>) => {
+      if (dndEnabled) {
+        return <SortableRowWrapperInner {...props} />;
       }
-      return <SortableRowWrapperInner {...props} />;
+      if (moveEnabled) {
+        return <GroupDragRowWrapper {...props} />;
+      }
+      return <PlainRowWrapper {...props} />;
     },
-    [dndEnabled]
+    [dndEnabled, moveEnabled]
+  );
+
+  // A row dropped into another group: the one it was dragged from is the one
+  // it leaves, so a task in two groups moves out of only that one.
+  const handleGroupDrop = useCallback(
+    ({ active, over }: DragEndEvent) => {
+      const task = tasksById.get(active.data.current?.taskId);
+      const from = active.data.current?.group;
+      const to = over?.data.current?.group;
+      if (!grouped?.move || !task || typeof from !== "string" || typeof to !== "string") return;
+      if (from === to) return;
+      const move = grouped.move(from, to);
+      if ("status" in move) {
+        onStatusChange(task.id, move.status);
+      } else {
+        moveTask({ taskId: task.id, move });
+      }
+    },
+    [grouped, tasksById, onStatusChange, moveTask]
   );
 
   return (
@@ -470,7 +575,7 @@ const ProjectTasksTableViewComponent = ({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      onDragEnd={dndEnabled ? onDragEnd : handleGroupDrop}
       onDragCancel={onDragCancel}
     >
       <SortableContext
@@ -518,13 +623,14 @@ const ProjectTasksTableViewComponent = ({
             expanded: true,
           }}
           rowWrapper={rowWrapper}
+          groupRowWrapper={moveEnabled ? groupDropRow : undefined}
           enableFilterInput
           filterInputColumnKey="title"
           filterInputPlaceholder={t("table.filterPlaceholder")}
           enableResetSorting
           enableRowSelection
           onRowSelectionChange={handleSelectionChange}
-          getRowId={tagRowId}
+          getRowId={groupRowId}
           onExitSelection={onExitSelection}
         />
       </SortableContext>

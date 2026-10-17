@@ -225,6 +225,12 @@ export function useProjectTaskView({
    * arrive as a prop, so an empty list means "not loaded yet" and nothing is
    * pruned.
    */
+  // Grouping by tag kept "tag group" before every field could group.
+  const grouping = useMemo(
+    () => view.grouping.map((column) => (column === "tag group" ? "tags group" : column)),
+    [view.grouping]
+  );
+
   const appliedSpec = useMemo(() => {
     const spec = spec_;
     const statusIds = new Set(taskStatuses.map((status) => status.id));
@@ -263,7 +269,7 @@ export function useProjectTaskView({
     /** How they show the calendar: month, week, day or a list. */
     mode: view.mode,
     setMode: view.setMode,
-    grouping: view.grouping,
+    grouping,
     setGrouping: view.setGrouping,
   };
 }

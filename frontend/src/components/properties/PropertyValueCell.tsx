@@ -77,7 +77,7 @@ const SelectChip = ({ option, slug, unknownLabel, dense }: SelectChipProps) => {
   );
 };
 
-interface UserValue {
+export interface UserValue {
   id: number;
   username?: string | null;
   discriminator?: number | null;
@@ -85,7 +85,7 @@ interface UserValue {
   avatar_url?: string | null;
 }
 
-const extractUser = (raw: unknown): UserValue | null => {
+export const extractUser = (raw: unknown): UserValue | null => {
   if (raw && typeof raw === "object" && "id" in raw) {
     const id = (raw as { id: unknown }).id;
     if (typeof id === "number" && Number.isFinite(id)) {

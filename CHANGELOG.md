@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Group a project's table by any field.** Group by status, priority, assignees, tags or a select, multi-select, person or checkbox property, as well as by date window, and each group says how many tasks it holds. Drag a task into another group to change that field. A task with two people or tags is listed under each, and dragging it moves it out of only the group it came from.
+- **Change one option of a multi-select (API).** `PUT /properties/{target}/{id}` with `merge` takes `options`, each putting options on and taking them off one multi-select value, against what it holds when the change is written.
 - **Targets on dashboards.** Give a chart, stat or progress bar a **Target** and a **Target date**. The chart draws it as a line, the progress bar marks it, and each says whether it is reached, on track, behind or missed, worked out from the trend so far, or how far there is to go.
 - **Each release publishes its API spec (API).** The GitHub release carries `openapi.json`, the OpenAPI spec of the image it ships, to generate a client from or check one against.
 - **Home.** The page you land on after signing in is now a page of widgets you arrange with **Customize**: a greeting, Focus, My tasks, your calendar, recent items and activity, your communities, progress, Favorites, and a clock and timer. Keep several views as tabs, each from a blank page or a ready-made one and with its own banner. A new account's first view suits why it signed up, with a **Getting started** card. My Tasks is now Home in the sidebar, and until you change anything it shows what My Tasks did.

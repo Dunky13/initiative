@@ -79,6 +79,9 @@ interface DataTableProps<TData extends RowData> {
   columns: AppColumnDef<TData>[];
   data: TData[];
   rowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  /** Wraps a group's header row, as ``rowWrapper`` does a row: it renders the
+   *  row element around ``children``. */
+  groupRowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
   enableFilterInput?: boolean;
   filterInputPlaceholder?: string;
   filterInputColumnKey?: string;
@@ -162,6 +165,7 @@ export function DataTable<TData extends RowData>({
   columns,
   data,
   rowWrapper,
+  groupRowWrapper,
   enableFilterInput = false,
   filterInputPlaceholder = "Filter...",
   filterInputColumnKey = "name",
@@ -961,6 +965,7 @@ export function DataTable<TData extends RowData>({
                         groupingEnabled={groupingEnabled}
                         colSpan={visibleColCount}
                         rowWrapper={rowWrapper}
+                        groupRowWrapper={groupRowWrapper}
                         visibleColumnKey={visibleColumnKey}
                       />
                     );
@@ -977,7 +982,14 @@ export function DataTable<TData extends RowData>({
               ) : (
                 rows.map((row) => {
                   if (groupingEnabled && row.getIsGrouped()) {
-                    return <GroupedRow key={row.id} row={row} colSpan={visibleColCount} />;
+                    return (
+                      <GroupedRow
+                        key={row.id}
+                        row={row}
+                        colSpan={visibleColCount}
+                        wrapper={groupRowWrapper}
+                      />
+                    );
                   }
                   const cells = row
                     .getVisibleCells()
@@ -1081,38 +1093,32 @@ export function DataTable<TData extends RowData>({
 function GroupedRow<TData extends RowData>({
   row,
   colSpan,
+  wrapper,
+  virtualIndex,
+  measureRef,
 }: {
   row: AppRow<TData>;
   colSpan: number;
+  wrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  virtualIndex?: number;
+  measureRef?: (el: HTMLElement | null) => void;
 }) {
-  const groupedCell = row.getAllCells().find((cell) => cell.getIsGrouped?.());
-  const groupContent = groupedCell?.column.columnDef.cell
-    ? flexRender(groupedCell.column.columnDef.cell, groupedCell.getContext())
-    : ((groupedCell?.getValue() ?? row.id) as ReactNode);
-  const rawGroupValue = groupedCell?.getValue();
-  const groupLabelText = typeof rawGroupValue === "string" ? rawGroupValue : "grouped rows";
-  const toggleExpandHandler = row.getToggleExpandedHandler?.();
-  const canToggle = typeof toggleExpandHandler === "function";
-  const isExpanded = row.getIsExpanded();
+  const cell = (
+    <TableCell colSpan={colSpan} className="font-medium">
+      <GroupedRowContent row={row} />
+    </TableCell>
+  );
+  if (wrapper) {
+    return <>{wrapper({ row, children: cell, virtualIndex, measureRef })}</>;
+  }
   return (
-    <TableRow key={row.id} className="bg-muted/30" data-state="grouped">
-      <TableCell colSpan={colSpan} className="font-medium">
-        <div className="flex items-center gap-2">
-          {canToggle ? (
-            <button
-              type="button"
-              onClick={toggleExpandHandler}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${groupLabelText}`}
-            >
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
-              />
-            </button>
-          ) : null}
-          <span>{groupContent}</span>
-        </div>
-      </TableCell>
+    <TableRow
+      data-index={virtualIndex}
+      ref={measureRef}
+      className="bg-muted/30"
+      data-state="grouped"
+    >
+      {cell}
     </TableRow>
   );
 }
@@ -1156,6 +1162,7 @@ function VirtualRow<TData extends RowData>({
   groupingEnabled,
   colSpan,
   rowWrapper,
+  groupRowWrapper,
   visibleColumnKey,
 }: {
   row: AppRow<TData>;
@@ -1164,20 +1171,18 @@ function VirtualRow<TData extends RowData>({
   groupingEnabled: boolean;
   colSpan: number;
   rowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  groupRowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
   visibleColumnKey: string;
 }) {
   if (groupingEnabled && row.getIsGrouped()) {
     return (
-      <TableRow
-        data-index={virtualRow.index}
-        ref={measureElement}
-        className="bg-muted/30"
-        data-state="grouped"
-      >
-        <TableCell colSpan={colSpan} className="font-medium">
-          <GroupedRowContent row={row} />
-        </TableCell>
-      </TableRow>
+      <GroupedRow
+        row={row}
+        colSpan={colSpan}
+        wrapper={groupRowWrapper}
+        virtualIndex={virtualRow.index}
+        measureRef={measureElement}
+      />
     );
   }
 
@@ -1213,14 +1218,14 @@ function VirtualRow<TData extends RowData>({
   );
 }
 
-/** Renders the expand/collapse content for a grouped row. */
+/** A group's header: the toggle that collapses it, named by what the header
+ *  shows, then how many rows it holds. */
 function GroupedRowContent<TData extends RowData>({ row }: { row: AppRow<TData> }) {
+  const labelId = useId();
   const groupedCell = row.getAllCells().find((cell) => cell.getIsGrouped?.());
   const groupContent = groupedCell?.column.columnDef.cell
     ? flexRender(groupedCell.column.columnDef.cell, groupedCell.getContext())
     : ((groupedCell?.getValue() ?? row.id) as ReactNode);
-  const rawGroupValue = groupedCell?.getValue();
-  const groupLabelText = typeof rawGroupValue === "string" ? rawGroupValue : "grouped rows";
   const toggleExpandHandler = row.getToggleExpandedHandler?.();
   const canToggle = typeof toggleExpandHandler === "function";
   const isExpanded = row.getIsExpanded();
@@ -1231,14 +1236,16 @@ function GroupedRowContent<TData extends RowData>({ row }: { row: AppRow<TData> 
           type="button"
           onClick={toggleExpandHandler}
           className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-          aria-label={`${isExpanded ? "Collapse" : "Expand"} ${groupLabelText}`}
+          aria-expanded={isExpanded}
+          aria-labelledby={labelId}
         >
           <ChevronDown
             className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
           />
         </button>
       ) : null}
-      <span>{groupContent}</span>
+      <span id={labelId}>{groupContent}</span>
+      <span className="text-muted-foreground text-sm tabular-nums">{row.subRows.length}</span>
     </div>
   );
 }
