@@ -97,6 +97,10 @@ async def test_the_canvas_answers_what_each_widget_answers(
         "SELECT title, count(*) OVER (ORDER BY due_date "
         "RANGE BETWEEN '1 day' PRECEDING AND CURRENT ROW) AS near "
         "FROM tasks ORDER BY due_date",
+        # A window repeating an output grouped by its alias.
+        "SELECT priority = 'high' AS hot, "
+        "sum(count(*)) OVER (ORDER BY priority = 'high') AS t "
+        "FROM tasks GROUP BY hot",
     )
     dashboard_id = await _canvas(client, author, *statements)
 

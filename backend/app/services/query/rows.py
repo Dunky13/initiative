@@ -875,7 +875,8 @@ def _aggregate(
     values = [_value(argument, row, None) for row in rows]
     present = [value for value in values if value is not None]
     if node.agg_distinct:
-        present = _distinct(present)
+        # Each value once, compared the way ``SELECT DISTINCT`` compares rows.
+        present = [row[0] for row in _distinct([(value,) for value in present])]
     if name == "count":
         return len(present)
     if not present:
@@ -890,20 +891,6 @@ def _aggregate(
     if name == "sum":
         return sum(numbers)
     return sum(numbers) / len(numbers)
-
-
-def _distinct(values: list[Any]) -> list[Any]:
-    """Each value once, in the order first met. Equal as Postgres would have
-    them: ``1`` and ``1.0`` are one number."""
-    seen: set[Any] = set()
-    kept: list[Any] = []
-    for value in values:
-        key = value if not isinstance(value, (list, dict)) else repr(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        kept.append(value)
-    return kept
 
 
 def _scalar(name: str, arguments: list[Any]) -> Any:

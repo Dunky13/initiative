@@ -903,15 +903,24 @@ def _literal_positions(select: ast.SelectStmt) -> set[int]:
     every function can say what type it takes. A constant a cast names the
     type of stays one — the cast is the type, and a parameter there is bound
     as the wrong thing. And last, every constant inside a window's definition
-    (:func:`_window_constants`).
+    (:func:`_window_constants`), and inside an output ``GROUP BY`` names by
+    its position, which a window may repeat.
     """
     marked, grouped = _grouped_expressions(select)
     marked |= _function_arguments(select)
     marked |= _cast_arguments(select)
     marked |= _window_constants(select)
+    targets = list(select.targetList or ())
     for entry in select.groupClause or ():
         if isinstance(entry, ast.A_Const):
             marked.add(id(entry))
+            # ``GROUP BY 1`` groups the whole expression it names, and a window
+            # may repeat that expression, so it is written as the window writes it.
+            position = getattr(entry.val, "ival", None)
+            if isinstance(position, int) and 0 < position <= len(targets):
+                named = targets[position - 1]
+                if isinstance(named, ast.ResTarget):
+                    marked |= _constants_in(named.val)
     for entry in select.sortClause or ():
         if isinstance(entry, ast.SortBy) and isinstance(entry.node, ast.A_Const):
             marked.add(id(entry.node))

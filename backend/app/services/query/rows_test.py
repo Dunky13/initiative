@@ -244,6 +244,7 @@ class TestItAgreesWithPostgres:
         assert run(
             "SELECT count(DISTINCT shop) AS n, count(DISTINCT revenue) AS r FROM rows"
         ) == ((2, 3),)
+        assert run("SELECT sum(DISTINCT revenue) AS r FROM rows") == ((22.0,),)
 
     @pytest.mark.parametrize(
         "sql",

@@ -555,6 +555,18 @@ class TestWindows:
         assert resolved.parameters == ()
         assert "OVER (ORDER BY priority = 'high'" in resolved.sql
 
+    @pytest.mark.parametrize("grouping", ["hot", "1"])
+    def test_an_output_grouped_by_position_matches_its_window(self, grouping):
+        """``GROUP BY hot`` and ``GROUP BY 1`` group the whole comparison, so
+        it has to be written the way the window repeats it."""
+        resolved = resolve(
+            "SELECT priority = 'high' AS hot, "
+            "sum(count(*)) OVER (ORDER BY priority = 'high') AS t "
+            f"FROM tasks GROUP BY {grouping}"
+        )
+        assert resolved.parameters == ()
+        assert "SELECT priority = 'high' AS hot" in resolved.sql
+
     def test_a_window_reads_only_declared_fields(self):
         assert (
             refusal(
