@@ -718,7 +718,8 @@ export const ProjectTasksSection = ({
     if (taskType !== "task" && taskType !== "list-task") {
       return;
     }
-    const id = Number(event.active.id);
+    // A card on a grouped board is one of the task's, one for each band.
+    const id = event.active.data.current?.taskId ?? Number(event.active.id);
     if (Number.isFinite(id)) {
       setActiveTaskId(id);
     }
@@ -733,7 +734,7 @@ export const ProjectTasksSection = ({
     }
     const { active } = event;
     const finalOver = resolveKanbanDropTarget(event, lastKanbanOverRef.current);
-    const activeId = Number(active.id);
+    const activeId = active.data.current?.taskId ?? Number(active.id);
     const currentTask = Number.isFinite(activeId)
       ? tasks.find((task) => task.id === activeId)
       : undefined;
@@ -750,9 +751,12 @@ export const ProjectTasksSection = ({
 
     if (overData?.type === "task") {
       targetStatusId = overData.statusId ?? targetStatusId;
-      const parsed = Number(finalOver.id);
+      const parsed = overData.taskId ?? Number(finalOver.id);
       overTaskId = Number.isFinite(parsed) ? parsed : null;
-      if (targetStatusId === currentTask.task_status_id) {
+      if (
+        targetStatusId === currentTask.task_status_id &&
+        overData.group === active.data.current?.group
+      ) {
         // Same column: derive before/after from the cards' current order. This
         // is the reliable arrayMove semantics the list view uses and reaches
         // both the top and bottom slots — the rect heuristic is unreliable here
@@ -760,9 +764,10 @@ export const ProjectTasksSection = ({
         // would snap to the second slot).
         insertAfter = isDraggingDown(tasks, activeId, overTaskId);
       } else {
-        // Cross column: there's no existing order to compare against, so decide
-        // by which half of the target card the dragged card released over.
-        // Without this the first slot of the column would be unreachable.
+        // Another column, or another band of a grouped board: there's no
+        // order the cards shifted by to compare against, so decide by which
+        // half of the target card the dragged card released over. Without
+        // this the first slot of the column would be unreachable.
         insertAfter = shouldInsertAfter(active.rect.current.translated, finalOver.rect);
       }
     } else if (overData?.type === "column") {
@@ -953,6 +958,9 @@ export const ProjectTasksSection = ({
             }
             isArchivingDoneTasks={archiveDoneTasks.isPending}
             card={layout?.definition.card as LayoutNode | null | undefined}
+            grouping={grouping}
+            onGroupingChange={setGrouping}
+            viewGroupings={layout?.definition.groupings}
           />
         ) : null}
 

@@ -44,10 +44,82 @@ export const KanbanColumn = ({
   onArchiveDoneTasks,
   isArchiving,
 }: KanbanColumnProps) => {
-  const { t } = useTranslation(["projects", "common"]);
+  return (
+    <div
+      className={cn(
+        "flex h-full flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition-colors",
+        collapsed && "items-center text-center",
+        className
+      )}
+    >
+      <div
+        aria-hidden="true"
+        className="h-1 w-full shrink-0"
+        style={{ backgroundColor: status.color }}
+      />
+      {collapsed ? (
+        <CollapsedHeader
+          status={status}
+          taskCount={taskCount}
+          onToggleCollapse={onToggleCollapse}
+        />
+      ) : (
+        <ExpandedHeader status={status} taskCount={taskCount} onToggleCollapse={onToggleCollapse} />
+      )}
+      <KanbanCards
+        statusId={status.id}
+        tasks={tasks}
+        canWrite={canWrite}
+        view={view}
+        collapsed={collapsed}
+        className={cn(
+          "h-full w-full transition-colors",
+          collapsed
+            ? "flex flex-1 items-center justify-center px-2"
+            : "scrollbar-thin flex-1 space-y-3 overflow-y-auto p-3 pr-2"
+        )}
+      />
+      {!collapsed && status.category === "done" && onArchiveDoneTasks && (
+        <ArchiveDoneButton
+          statusId={status.id}
+          onArchiveDoneTasks={onArchiveDoneTasks}
+          isArchiving={isArchiving}
+        />
+      )}
+    </div>
+  );
+};
+
+/** A card's sortable id: a task with a card in several bands has one each. */
+const cardId = (task: TaskListRead, group?: string) =>
+  group === undefined ? task.id.toString() : `${task.id}::${group}`;
+
+/**
+ * The cards of a column, or of one band's cell in it: where a card dropped
+ * there goes, holding only the cards near the view once there are many.
+ */
+export const KanbanCards = ({
+  statusId,
+  group,
+  tasks,
+  canWrite,
+  view,
+  collapsed,
+  className,
+}: {
+  statusId: number;
+  /** The band they are in, on a grouped board. */
+  group?: string;
+  tasks: TaskListRead[];
+  canWrite: boolean;
+  view: LayoutContext;
+  collapsed: boolean;
+  className: string;
+}) => {
+  const { t } = useTranslation("projects");
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: `column-${status.id}`,
-    data: { type: "column", statusId: status.id },
+    id: group === undefined ? `column-${statusId}` : `cell-${statusId}-${group}`,
+    data: { type: "column", statusId, group },
   });
 
   const enableVirtualization = tasks.length > VIRTUALIZE_THRESHOLD;
@@ -76,98 +148,92 @@ export const KanbanColumn = ({
       ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
       : 0;
 
-  const taskIds = tasks.map((task) => task.id.toString());
+  const taskIds = tasks.map((task) => cardId(task, group));
 
   return (
-    <div
-      className={cn(
-        "flex h-full flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition-colors",
-        collapsed && "items-center text-center",
-        className
-      )}
-    >
-      <div
-        aria-hidden="true"
-        className="h-1 w-full shrink-0"
-        style={{ backgroundColor: status.color }}
-      />
+    <div ref={mergedRef} className={cn(className, isOver ? "bg-muted/40" : null)}>
       {collapsed ? (
-        <CollapsedHeader
-          status={status}
-          taskCount={taskCount}
-          onToggleCollapse={onToggleCollapse}
-        />
-      ) : (
-        <ExpandedHeader status={status} taskCount={taskCount} onToggleCollapse={onToggleCollapse} />
-      )}
-      <div
-        ref={mergedRef}
-        className={cn(
-          "h-full w-full transition-colors",
-          collapsed
-            ? "flex flex-1 items-center justify-center px-2"
-            : "scrollbar-thin flex-1 space-y-3 overflow-y-auto p-3 pr-2",
-          isOver ? "bg-muted/40" : null
-        )}
-      >
-        {collapsed ? (
+        // A band's cell of a folded column is only somewhere to drop.
+        group === undefined ? (
           <span className="text-muted-foreground text-xs">{t("kanban.dropHere")}</span>
-        ) : tasks.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t("kanban.noTasks")}</p>
-        ) : (
-          <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-            {enableVirtualization ? (
-              <>
-                {paddingTop > 0 && <div style={{ height: paddingTop }} />}
-                {virtualItems.map((virtualRow) => {
-                  const task = tasks[virtualRow.index];
-                  return canWrite ? (
-                    <KanbanTaskCardSortable
-                      key={task.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      task={task}
-                      view={view}
-                    />
-                  ) : (
-                    <KanbanTaskCardPlain
-                      key={task.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      task={task}
-                      view={view}
-                    />
-                  );
-                })}
-                {paddingBottom > 0 && <div style={{ height: paddingBottom }} />}
-              </>
-            ) : (
-              tasks.map((task) => (
-                <KanbanTaskCard key={task.id} task={task} canWrite={canWrite} view={view} />
-              ))
-            )}
-          </SortableContext>
-        )}
-      </div>
-      {!collapsed && status.category === "done" && onArchiveDoneTasks && (
-        <div className="border-t p-2" data-kanban-scroll-lock="true">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full text-xs"
-            onClick={() => onArchiveDoneTasks(status.id)}
-            disabled={isArchiving}
-          >
-            <Archive className="h-3.5 w-3.5" />
-            {isArchiving ? t("common:toolSettings.archive.archiving") : t("kanban.archiveDone")}
-          </Button>
-        </div>
+        ) : null
+      ) : tasks.length === 0 ? (
+        <p className={cn("text-muted-foreground text-sm", group !== undefined && "sr-only")}>
+          {t("kanban.noTasks")}
+        </p>
+      ) : (
+        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+          {enableVirtualization ? (
+            <>
+              {paddingTop > 0 && <div style={{ height: paddingTop }} />}
+              {virtualItems.map((virtualRow) => {
+                const task = tasks[virtualRow.index];
+                return canWrite ? (
+                  <KanbanTaskCardSortable
+                    key={task.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    task={task}
+                    view={view}
+                    group={group}
+                  />
+                ) : (
+                  <KanbanTaskCardPlain
+                    key={task.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    task={task}
+                    view={view}
+                  />
+                );
+              })}
+              {paddingBottom > 0 && <div style={{ height: paddingBottom }} />}
+            </>
+          ) : (
+            tasks.map((task) => (
+              <KanbanTaskCard
+                key={task.id}
+                task={task}
+                canWrite={canWrite}
+                view={view}
+                group={group}
+              />
+            ))
+          )}
+        </SortableContext>
       )}
     </div>
   );
 };
 
-const ExpandedHeader = ({
+/** Archiving a done column's tasks, at the foot of the column. */
+export const ArchiveDoneButton = ({
+  statusId,
+  onArchiveDoneTasks,
+  isArchiving,
+}: {
+  statusId: number;
+  onArchiveDoneTasks: (statusId: number) => void;
+  isArchiving?: boolean;
+}) => {
+  const { t } = useTranslation(["projects", "common"]);
+  return (
+    <div className="border-t p-2" data-kanban-scroll-lock="true">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full text-xs"
+        onClick={() => onArchiveDoneTasks(statusId)}
+        disabled={isArchiving}
+      >
+        <Archive className="h-3.5 w-3.5" />
+        {isArchiving ? t("common:toolSettings.archive.archiving") : t("kanban.archiveDone")}
+      </Button>
+    </div>
+  );
+};
+
+export const ExpandedHeader = ({
   status,
   taskCount,
   onToggleCollapse,
@@ -209,7 +275,7 @@ const ExpandedHeader = ({
   );
 };
 
-const CollapsedHeader = ({
+export const CollapsedHeader = ({
   status,
   taskCount,
   onToggleCollapse,
@@ -250,6 +316,7 @@ interface KanbanTaskCardVirtualProps {
   task: TaskListRead;
   view: LayoutContext;
   "data-index": number;
+  group?: string;
 }
 
 const KanbanTaskCardSortable = memo(
@@ -257,11 +324,12 @@ const KanbanTaskCardSortable = memo(
     task,
     view,
     "data-index": dataIndex,
+    group,
     ref,
   }: KanbanTaskCardVirtualProps & { ref?: React.Ref<HTMLDivElement> }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-      id: task.id.toString(),
-      data: { type: "task", statusId: task.task_status_id },
+      id: cardId(task, group),
+      data: { type: "task", statusId: task.task_status_id, taskId: task.id, group },
     });
 
     const mergedRef = useCallback(
@@ -334,12 +402,15 @@ interface KanbanTaskCardProps {
   task: TaskListRead;
   canWrite: boolean;
   view: LayoutContext;
+  /** The band the card is in, on a grouped board: a task in several bands
+   *  has a card in each. */
+  group?: string;
 }
 
-const KanbanTaskCard = ({ task, canWrite, view }: KanbanTaskCardProps) => {
+const KanbanTaskCard = ({ task, canWrite, view, group }: KanbanTaskCardProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: task.id.toString(),
-    data: { type: "task", statusId: task.task_status_id },
+    id: cardId(task, group),
+    data: { type: "task", statusId: task.task_status_id, taskId: task.id, group },
     disabled: !canWrite,
   });
 

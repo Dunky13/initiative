@@ -177,3 +177,33 @@ describe("a card's excerpt", () => {
     expect(screen.getByText(/Start from the coast with/)).toBeInTheDocument();
   });
 });
+
+describe("a grouped board", () => {
+  it("starts in its layout's bands, one for every priority, holding a task or not", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { group_by: "priority" },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+    board();
+
+    const medium = await screen.findByRole("button", { name: "Medium" });
+    expect(medium).toHaveAttribute("aria-expanded", "true");
+    for (const priority of ["Urgent", "High", "Low"]) {
+      expect(screen.getByRole("button", { name: priority })).toBeInTheDocument();
+    }
+    expect(await screen.findAllByText("Draw the map")).toHaveLength(1);
+    expect(screen.getByRole("combobox", { name: /group by/i })).toHaveTextContent(/priority/i);
+  });
+});

@@ -15,6 +15,7 @@ import {
 } from "@/api/generated/initiativeAPI.schemas";
 import { propertyFieldId } from "@/lib/layouts/fields";
 import {
+  boardBands,
   groupRowId,
   groupRows,
   NO_GROUP,
@@ -150,29 +151,42 @@ describe("what a list offers", () => {
   it("offers the shipped groupings until its layout names its own, in their order", () => {
     const all = allGroupings([]);
 
-    expect(offeredGroupings(all, null).map(({ grouping }) => grouping.id)).toEqual(
+    expect(offeredGroupings(all, null, "table").map(({ grouping }) => grouping.id)).toEqual(
       SHIPPED_GROUPINGS
     );
     expect(
-      offeredGroupings(all, [
-        { field: sprintField, hidden: ["s1"] },
-        { field: "status" },
-        // A property the project no longer has.
-        { field: "property:999" },
-      ]).map(({ grouping, hidden }) => [grouping.id, [...hidden]])
+      offeredGroupings(
+        all,
+        [
+          { field: sprintField, hidden: ["s1"] },
+          { field: "status" },
+          // A property the project no longer has.
+          { field: "property:999" },
+        ],
+        "table"
+      ).map(({ grouping, hidden }) => [grouping.id, [...hidden]])
     ).toEqual([
       [sprintField, ["s1"]],
       ["status", []],
     ]);
   });
 
+  it("never offers a board its statuses, which its columns are", () => {
+    const all = allGroupings([]);
+
+    expect(offeredGroupings(all, null, "board").map(({ grouping }) => grouping.id)).toEqual(
+      SHIPPED_GROUPINGS.filter((id) => id !== "status")
+    );
+    expect(viewGrouping(undefined, "board", ["status group"])).toEqual([]);
+  });
+
   it("hides a group of one grouping, and shows it again", () => {
-    const hidden = withGroupShown(null, "assignees", NO_GROUP, false);
+    const hidden = withGroupShown(null, "table", "assignees", NO_GROUP, false);
 
     expect(hidden.find((entry) => entry.field === "assignees")?.hidden).toEqual([NO_GROUP]);
     expect(hidden.map((entry) => entry.field)).toEqual(SHIPPED_GROUPINGS);
     expect(
-      withGroupShown(hidden, "assignees", NO_GROUP, true).find(
+      withGroupShown(hidden, "table", "assignees", NO_GROUP, true).find(
         (entry) => entry.field === "assignees"
       )?.hidden
     ).toEqual([]);
@@ -181,12 +195,54 @@ describe("what a list offers", () => {
   it("starts on the layout's grouping until a person picks, and keeps their pick while offered", () => {
     const layout = { groupings: [{ field: "status" }, { field: sprintField }], group_by: "status" };
 
-    expect(viewGrouping(layout, null)).toEqual(["status group"]);
-    expect(viewGrouping(layout, [])).toEqual([]);
-    expect(viewGrouping(layout, [`${sprintField} group`])).toEqual([`${sprintField} group`]);
+    expect(viewGrouping(layout, "table", null)).toEqual(["status group"]);
+    expect(viewGrouping(layout, "table", [])).toEqual([]);
+    expect(viewGrouping(layout, "table", [`${sprintField} group`])).toEqual([
+      `${sprintField} group`,
+    ]);
     // A pick the list no longer offers goes back to where it starts.
-    expect(viewGrouping(layout, ["priority group"])).toEqual(["status group"]);
+    expect(viewGrouping(layout, "table", ["priority group"])).toEqual(["status group"]);
     // An older release's name for the tag grouping reads as today's.
-    expect(viewGrouping(undefined, ["tag group"])).toEqual(["tags group"]);
+    expect(viewGrouping(undefined, "table", ["tag group"])).toEqual(["tags group"]);
+  });
+});
+
+describe("boardBands", () => {
+  it("bands every priority, holding a task or not, most urgent first", () => {
+    const urgent = buildTask({ priority: "urgent" });
+    const low = buildTask({ priority: "low" });
+    const [priorities] = offeredGroupings(
+      allGroupings([urgent, low]),
+      [{ field: "priority" }],
+      "board"
+    );
+
+    const bands = boardBands(priorities, [low, urgent]);
+
+    expect(bands.map((band) => [band.key, band.tasks])).toEqual([
+      ["urgent", [urgent]],
+      ["high", []],
+      ["medium", []],
+      ["low", [low]],
+    ]);
+  });
+
+  it("puts a task in the band of each person, keeps the unassigned, and leaves out the hidden", () => {
+    const ada = buildTaskAssignee({ id: 1, display_name: "Ada" });
+    const lin = buildTaskAssignee({ id: 2, display_name: "Lin" });
+    const shared = buildTask({ assignees: [ada, lin] });
+    const tasks = [shared, buildTask({ assignees: [] })];
+    const [people] = offeredGroupings(
+      allGroupings(tasks),
+      [{ field: "assignees", hidden: ["2"] }],
+      "board"
+    );
+
+    const bands = boardBands(people, tasks);
+
+    expect(bands.map((band) => [band.key, band.tasks.length])).toEqual([
+      ["1", 1],
+      [NO_GROUP, 1],
+    ]);
   });
 });
