@@ -390,6 +390,8 @@ class ProjectMessages:
 class TaskMessages:
     #: The task was not opened by an intake stream.
     NOT_A_CASE = "TASK_NOT_A_CASE"
+    #: The board column it would go into holds as many tasks as it takes.
+    STATUS_AT_LIMIT = "TASK_STATUS_AT_LIMIT"
     ALREADY_IN_PROJECT = "TASK_ALREADY_IN_PROJECT"
     CANNOT_MOVE_TO_TEMPLATE = "TASK_CANNOT_MOVE_TO_TEMPLATE"
     PROJECT_MISMATCH = "TASK_PROJECT_MISMATCH"

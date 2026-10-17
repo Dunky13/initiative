@@ -2241,6 +2241,18 @@ export interface CollaborationHandover {
 }
 
 /**
+ * How many open tasks one board column takes from a person.
+ */
+export interface ColumnLimit {
+  status_id: number;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit: number;
+}
+
+/**
  * Who a comment is said to.
  *
  * Every comment is said to the people who can read its thread. A comment on
@@ -6623,6 +6635,7 @@ export interface ListLayoutDefinitionOutput {
   presets?: LayoutPreset[] | null;
   groupings?: LayoutGrouping[] | null;
   group_by?: TaskGroupingId | string | null;
+  limits?: ColumnLimit[] | null;
 }
 
 /**
@@ -6829,6 +6842,7 @@ export interface ListLayoutDefinitionInput {
   presets?: LayoutPreset[] | null;
   groupings?: LayoutGrouping[] | null;
   group_by?: TaskGroupingId | string | null;
+  limits?: ColumnLimit[] | null;
 }
 
 export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof ListLayoutWriteKind];
@@ -10484,6 +10498,14 @@ export interface TaskReorderRequest {
   items: TaskReorderItem[];
 }
 
+/**
+ * How many open tasks one of a project's columns holds.
+ */
+export interface TaskStatusCount {
+  task_status_id: number;
+  count: number;
+}
+
 export interface TaskStatusCreate {
   /**
    * @minLength 1
@@ -12471,6 +12493,10 @@ export type ListTasksParams = {
    * IANA timezone name (e.g. America/Los_Angeles) for date_group calculation
    */
   tz?: string | null;
+};
+
+export type CountTasksByStatusParams = {
+  project_id: number;
 };
 
 export type ReadTaskParams = {

@@ -268,6 +268,8 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
             "groupings" in stored or "group_by" in stored
         ):
             raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+        if write.kind != "board" and "limits" in stored:
+            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
         # A board's columns are its statuses already, so its bands never are.
         grouped_by = [g["field"] for g in stored.get("groupings") or ()]
         if write.kind == "board" and "status" in [*grouped_by, stored.get("group_by")]:
@@ -368,11 +370,19 @@ def copied_definition(
     same_initiative: bool,
 ) -> dict[str, Any]:
     """``definition`` for a copied project. Status ids are the project's own
-    rows, so a preset's, and a status grouping's hidden statuses, go through
-    the copy's mapping, and one with no counterpart is dropped. Properties are
+    rows, so a preset's, a status grouping's hidden statuses and a column
+    limit's go through the copy's mapping, and one with no counterpart is
+    dropped. Properties are
     the initiative's, so a copy into another initiative keeps no property
     filters and no property groupings."""
     copy = dict(definition)
+    limits = definition.get("limits")
+    if isinstance(limits, list):
+        copy["limits"] = [
+            {**entry, "status_id": status_mapping[entry["status_id"]]}
+            for entry in limits
+            if entry.get("status_id") in status_mapping
+        ]
     groupings = definition.get("groupings")
     if isinstance(groupings, list):
         copy["groupings"] = [

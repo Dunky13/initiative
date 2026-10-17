@@ -2297,3 +2297,70 @@ async def test_a_blocker_the_reader_cannot_open_is_not_counted(
 
     assert response.status_code == 200
     assert response.json()["blocked_by_open_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Column limits
+# ---------------------------------------------------------------------------
+
+
+async def test_a_full_column_takes_no_more_from_a_person(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A person can't put a task into a column at its board's limit, by moving
+    one there or adding one; a task already in it still changes and moves
+    within it, and the column's counts are its open tasks."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    held = await create_task(
+        session, a.project, status_category=TaskStatusCategory.in_progress
+    )
+    waiting = await create_task(session, a.project)
+    await session.commit()
+    full = held.task_status_id
+    limited = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "project", "tool_id": a.project.id},
+        json={
+            "kind": "board",
+            "definition": {"limits": [{"status_id": full, "limit": 1}]},
+        },
+        headers=a.headers,
+    )
+    assert limited.status_code == 200, limited.text
+
+    moved = await client.patch(
+        a.g(f"/tasks/{waiting.id}"), headers=a.headers, json={"task_status_id": full}
+    )
+    added = await client.post(
+        a.g("/tasks/"),
+        headers=a.headers,
+        json={"title": "One more", "project_id": a.project.id, "task_status_id": full},
+    )
+    changed = await client.patch(
+        a.g(f"/tasks/{held.id}"), headers=a.headers, json={"title": "Still here"}
+    )
+    within = await client.post(
+        a.g("/tasks/reorder"),
+        headers=a.headers,
+        json={
+            "project_id": a.project.id,
+            "items": [{"id": held.id, "task_status_id": full, "position": 5}],
+        },
+    )
+    counts = await client.get(
+        a.g("/tasks/status-counts"),
+        params={"project_id": a.project.id},
+        headers=a.headers,
+    )
+
+    for refused in (moved, added):
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"] == TaskMessages.STATUS_AT_LIMIT
+    assert changed.status_code == 200, changed.text
+    assert within.status_code == 200, within.text
+    assert {entry["task_status_id"]: entry["count"] for entry in counts.json()} == {
+        full: 1,
+        waiting.task_status_id: 1,
+    }

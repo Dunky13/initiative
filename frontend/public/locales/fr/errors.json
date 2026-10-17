@@ -115,6 +115,7 @@
   "PROJECT_INVALID_TEMPLATE": "Le modèle sélectionné n'est pas valide",
   "PROJECT_INITIATIVE_REQUIRED": "L'initiative est obligatoire",
   "TASK_NOT_A_CASE": "Cette tâche n'a pas été envoyée comme ticket",
+  "TASK_STATUS_AT_LIMIT": "Cette colonne est pleine. Sortez-en d'abord une tâche.",
   "TASK_ALREADY_IN_PROJECT": "La tâche appartient déjà à ce projet",
   "TASK_CANNOT_MOVE_TO_TEMPLATE": "Impossible de déplacer une tâche vers un projet modèle",
   "TASK_PROJECT_MISMATCH": "La tâche n'appartient pas à ce projet",

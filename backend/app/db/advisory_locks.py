@@ -93,6 +93,8 @@ class LockNamespace(IntEnum):
     PLUGIN_METADATA = _tag(b"PMET")
     #: Changing one target's layouts, keyed by guild, tool and target.
     TOOL_LAYOUTS = _tag(b"LAYO")
+    #: Putting tasks into one limited board column, keyed by guild and status.
+    COLUMN_LIMIT = _tag(b"CLIM")
     #: Writing one property value, keyed by guild, item and property, so a
     #: change of a multi-select's options reads the value in its turn.
     PROPERTY_VALUE = _tag(b"PVAL")
