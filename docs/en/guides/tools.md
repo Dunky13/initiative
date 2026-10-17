@@ -134,7 +134,7 @@ Some cards show what's inside without opening anything: a dashboard's card is a 
 Along the top of a list:
 
 - **Show** switches between **Active** and **Archived** — and, for projects and files, **Templates** — each with how many are in it.
-- **Filters** narrows the list by name, by tag, and by the initiative's own [properties](initiatives.md).
+- **Filters** narrows the list by name, by tag, and by the initiative's own [properties](initiatives.md#custom-properties).
 - **More actions** holds the rest: **Select items**, for doing something to several at once: tag them, duplicate them, delete them, or change who can see or edit them (click the first, hold ++shift++, click the last — see [Sharing & access](../sharing/index.md)); **Import from file**, for bringing back something exported; and, where the [marketplace](plugins-and-marketplace.md) has ready-made ones, **Browse the marketplace**.
 
 There's one button for making a new one. On a phone it lives at the bottom of the screen.
@@ -145,7 +145,7 @@ Every tool has a **Connections** section, and so do the things inside one — a 
 
 ## Activity
 
-On a big enough screen, every tool page but a wiki's has **Activity** folded down the right-hand edge. Open it and it's the community's [activity feed](communities.md#the-community-front-page), kept to this one thing: who did what to it, and to everything inside it, this week. An initiative's own page has one too, for the whole initiative. It closes again when you've seen enough, which is usually about four cards in.
+On a big enough screen, every tool page but a wiki's has **Activity** folded down the right-hand edge. Open it and it's the community's [activity feed](communities.md#the-community-front-page), kept to this one thing and everything inside it: a card for each item other people touched this week, saying what happened to it — created, edited, moved, completed, commented on, rescheduled, published — who did it, and when. An initiative's own page has one too, for the whole initiative. It closes again when you've seen enough, which is usually about four cards in.
 
 ## Duplicating
 

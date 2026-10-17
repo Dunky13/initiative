@@ -58,7 +58,7 @@ Two steps, and most people never leave the first.
 
 **Build** is clicking. Pick what to read — tasks, files, queue items, notices, events, your community's own people — then which columns, what to group them by, and what to narrow it to. The dashboard writes the query for you.
 
-**SQL** is the tab beside it, for the question clicking can't describe. It's real SQL, with the tables and columns offered as you type and the statement checked as you pause. One thing to know before you start: once you've edited the text, that tile stays in SQL. The builder can't read arbitrary SQL back, so it stops trying rather than quietly mangling what you wrote.
+**SQL** is the tab beside it, for the question clicking can't describe. It's real SQL, with the tables and columns offered as you type and the statement checked as you pause. One thing to know before you start: once you've edited the text, **Build** can't read it back. It offers to build a new query instead, which replaces what you wrote, so it never quietly mangles it.
 
 Either way you can reach what a thing is *attached to* without writing a join. Tasks by the person assigned, by their status, by their project — pick the related column and the rest is worked out.
 
@@ -84,9 +84,9 @@ Group a date by **day**, **week**, **month**, **quarter** or **year** and a char
 
 ### Boards
 
-One of the tiles is a **board**: your tasks dealt into columns, and you say what a column stands for. A status. The people on the work, so everyone gets a column and you can see who is carrying what. Priority, project, tag — or one of your initiative's own properties, which is how you end up with a board columned by "Squad" or "Sprint" or whatever your group actually argues about.
+One of the tiles is a **board**: your tasks dealt into columns, and you say what a column stands for. A status. The people on the work, so everyone gets a column and you can see who is carrying what. Priority. Project. Any column the tile's query returns will do.
 
-A value that exists and has nothing in it still gets its column. An empty **Blocked** is information.
+Each value the tasks actually have gets a column. Tasks with nothing in that column share one more, at the end, named for what they're missing.
 
 Like everything else here it only displays. There's nothing to drag a card onto — moving work between states is still a project's job.
 

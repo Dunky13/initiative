@@ -58,6 +58,7 @@ nav = [
     "en/guides/initiatives.md",
     { "Tools" = [
       "en/guides/tools.md",
+      "en/guides/layouts.md",
       "en/guides/projects-and-tasks.md",
       "en/guides/files.md",
       "en/guides/calendar.md",
@@ -80,6 +81,7 @@ nav = [
     "en/sharing/index.md",
     "en/sharing/initiative-roles.md",
     "en/sharing/sharing-projects-and-files.md",
+    "en/sharing/guests.md",
   ] },
   { "Security & privacy" = [
     "en/security/index.md",

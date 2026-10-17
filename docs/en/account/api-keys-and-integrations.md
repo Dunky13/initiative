@@ -63,6 +63,69 @@ Worth knowing:
 
     The exposed tools are route-backed: each call goes through the normal API with your authentication and the same row-level-security access rules, so there's no ambient privilege. Running the server? See [Configuration](../running-a-server/configuration.md).
 
+## Webhooks
+
+A **webhook** tells another service when something changes: a task moved, an event was added, a file went in the trash. You give Initiative an address, it sends a short note there each time, and your service fetches the details with an API key.
+
+Webhooks are set up through the API, with a key that isn't **Read-only**. A read-only key can list them.
+
+- **They belong to the community**, not to whoever made them, and keep running after that person leaves. Anyone in an initiative can set one up for that initiative, and change or remove it. One covering the whole community is for its admins.
+- **The note says what changed, never what it now says.** Which item, and which fields. Your service reads the item back through the API, where it sees exactly what its key is allowed to.
+- **A delivery your service doesn't accept is tried again**, for a little under two hours, and later changes wait behind it so everything arrives in order. After the last try it's set aside and counted in `dead_letter_count`. Anything above zero means the receiving end wants a look.
+
+??? techspec "For the technically minded — subscriptions, deliveries and signatures"
+    **Endpoints**, under `/api/v1/c/{community_id}/webhooks/subscriptions`:
+
+    | | |
+    |---|---|
+    | `POST` | `{target_url, event_types, fields?, initiative_id?}`. Answers `201` with the subscription and `hmac_secret`. |
+    | `GET` | Every subscription you can reach, each with `dead_letter_count`. |
+    | `PATCH /{id}` | Any of `target_url`, `event_types`, `fields`, `active`. |
+    | `DELETE /{id}` | Removes it. |
+
+    `hmac_secret` is returned **once**, on create. Lost it? Delete the subscription and make a new one. `initiative_id` narrows it to one initiative; left out, it covers the community. `target_url` must be `https` and resolve to a public address (`WEBHOOK_INVALID_TARGET_URL`, `WEBHOOK_PRIVATE_TARGET_URL`).
+
+    **Event types** are `<resource>.created`, `.updated` and `.deleted`. Resources include `tasks`, `projects`, `files`, `wikis`, `wiki_pages`, `calendars`, `calendar_events`, `queues`, `queue_items`, `counter_groups`, `counters`, `galleries`, `posts`, `dashboards`, `comments`, `tags`, `initiatives` and `plugins`. Moving something to the trash sends `deleted`, and restoring it sends `created`. A plug-in in the community can declare events of its own, named `plugin.<plug-in id>.<event>`. An unknown name is refused with `WEBHOOK_UNKNOWN_EVENT_TYPE`.
+
+    **`fields`** narrows `updated` events to changes in those names: a resource's own fields, plus what changes beside it, such as `tags`, `assignees`, `checklist`, `attachments` or `properties` on a task. It doesn't apply to `created` or `deleted`. A name none of the chosen events can report is refused with `WEBHOOK_UNKNOWN_FIELD`.
+
+    **A delivery** is a `POST` of one JSON envelope per transaction:
+
+    ```json
+    {
+      "event_id": "…",
+      "subscription_id": 4,
+      "community_ref": "…",
+      "actor_ref": "…",
+      "actor_plugin": null,
+      "occurred_at": "2026-10-16T09:12:44.120931+00:00",
+      "changes": [
+        {
+          "event_type": "tasks.updated",
+          "initiative_id": 2,
+          "resource": {"type": "tasks", "id": 381},
+          "parents": [{"type": "projects", "id": 17}],
+          "action": "updated",
+          "changed": ["task_status_id", "tags"]
+        }
+      ]
+    }
+    ```
+
+    `community_ref` and `actor_ref` are names for the community and the person made for this subscription, not account ids; `GET` shows the same `community_ref`. `actor_plugin` names the plug-in that made the change, if one did. A plug-in's own event carries `plugin` and `payload` in place of `resource`.
+
+    **Headers and signature:**
+
+    | Header | |
+    |---|---|
+    | `X-Initiative-Event-ID` | The same on every retry of a batch. Use it to skip one you've already handled. |
+    | `X-Initiative-Timestamp` | Unix seconds. |
+    | `X-Initiative-Signature` | `sha256=` and the hex HMAC-SHA256 of `<timestamp>.<raw body>`, keyed with `hmac_secret`. |
+
+    Compute the signature over the body exactly as received, compare in constant time, and turn away a timestamp more than a few minutes old.
+
+    **Delivery** counts only a `2xx`; redirects aren't followed. Each attempt has 15 seconds end to end. The waits between attempts are 5 seconds, 30 seconds, 2 minutes, 10 minutes, 30 minutes and 1 hour; after the seventh failed attempt the batch is dead-lettered and not sent again. `PATCH` with `"active": false` stops a subscription's deliveries without deleting it.
+
 ## Related
 
 - [Profile & preferences](profile-and-preferences.md) — the rest of your account.

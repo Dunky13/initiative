@@ -1,0 +1,62 @@
+---
+icon: lucide/layout-template
+---
+
+# Layouts
+
+A **layout** decides how a tool shows what it holds: which columns a table has, what a card on a board says, where everything sits when you open one thing. Change it once and everybody who opens that tool sees the change.
+
+It changes how things are drawn, never what anybody can see. Filters and sorting stay each person's own.
+
+You can ignore this page entirely. Every layout ships ready to use, and plenty of projects finish without anyone touching one.
+
+## What has one
+
+| Tool | Its layouts |
+|---|---|
+| [Projects](projects-and-tasks.md#layouts) | **Table**, **Board**, **Calendar** and **Task detail**, per project. |
+| [Queues](queues.md) | **Queue item detail**, per queue. |
+| [Counters](counters.md) | **Counter detail**, per counter group. |
+| [Galleries](galleries.md) | **Picture detail**, per gallery. |
+| [Calendar](calendar.md) | **Event detail** and the calendar's presets, once for the whole initiative. |
+| [Posts](posts.md) | **Notice detail**, once for the whole initiative. |
+
+A detail layout is also how the add dialog is laid out, for tasks, events, queue items and counters. The form you fill in looks like the thing you get.
+
+## Who can change them
+
+- **A project, queue, counter group or gallery:** whoever owns it, anyone with full access in the initiative, a manager who can edit it, and community admins.
+- **The calendar and posts:** the initiative's managers and community admins.
+
+## The editor
+
+Open it from **Settings → Layouts → Edit layouts** on the tool. **Initiative settings → Layouts** lists every layout in the initiative, when each last changed, with the same button beside each.
+
+It needs a tablet or a computer. On a phone the button isn't offered, because a screen that size is no place to rearrange anything.
+
+- **Across the top:** which layout you're editing, a **Desktop**, **Tablet** or **Phone** preview, undo, redo, and **Save**.
+- **Outline**, on the left: everything in the layout. Drag to reorder; **Add** puts more in.
+- **Preview**, in the middle: the layout drawn with real items.
+- **Settings**, on the right: whatever you've selected.
+
+Nothing changes for anyone until you save, and leaving with unsaved changes asks first. **Use the shipped layout** puts one back exactly as it came.
+
+### What goes in
+
+- **Fields.** The built-ins, and the initiative's [custom properties](initiatives.md#custom-properties) one at a time, or **All properties** for every property a thing has a value for. Pick a type under **New field** to make a property without leaving the editor.
+- **Plug-in parts**, from plug-ins installed in your community, on a card or a detail.
+- **Row**, which puts what it holds side by side. A detail also takes an **Accordion** (a titled section that opens and closes, and can **Start closed**) and a **Box** (a border round what it holds).
+
+A table takes fields and nothing else, since a column is a column.
+
+A detail layout has three regions: **Header** across the top, **Main** the wide column, **Side** the narrow one beside it. On a phone the regions stack into one column, and the **Phone** preview shows in what order.
+
+Taking a part out hides it. It doesn't delete anything: the values are all still there, and **Add** puts the part back. The title is the one thing every layout keeps.
+
+**Opens first**, on a project's lists, picks the one the project opens on for anybody who hasn't picked their own.
+
+## Presets
+
+A list can offer **presets**: named filters, plus a sort on a table, that anyone can pick from **Filters** as a starting point. Picking one makes those filters that person's own, to narrow further if they like. The preset itself stays as it was.
+
+A project's lists start with **Incomplete**, **Unassigned** and **Mine**. The calendar starts with none. Add, rename, reorder or remove them in the editor under **Presets**, up to 20 per list.

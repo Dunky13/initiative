@@ -60,7 +60,7 @@ What lands is an ordinary project of your own. Rename the columns, delete the ex
 
 ### Adding a plug-in
 
-A **plug-in** adds something to the community as a whole rather than one effort: a page of its own, extra dashboard widgets, or a link to a service your group already uses. Because it affects everyone, **only your community's [superadmin](communities.md#why-superadmin-is-separate) can add or remove one**. Everybody else can browse, read the listing, and go and ask them nicely.
+A **plug-in** adds something to the community as a whole rather than one effort: a page of its own, extra dashboard widgets, [fields and buttons on your items](#what-a-plug-in-puts-on-items), or a link to a service your group already uses. Because it affects everyone, **only your community's [superadmin](communities.md#why-superadmin-is-separate) can add or remove one**. Everybody else can browse, read the listing, and go and ask them nicely.
 
 1. Switch the marketplace to the **Plug-ins** shelf and open a listing.
 2. **Add to community**, and name it.
@@ -86,7 +86,7 @@ A plug-in asking for nothing gets asked nothing. It just gets a name.
 
 Some plug-ins work through another one: automations that open GitHub issues, say. You're asked about that when the other one arrives, not before, so a community without GitHub is never asked whether automations may use it. Remove GitHub and that permission goes with it. Add it back and you're asked again.
 
-A plug-in allowed to change something, such as a task, can fill in that thing's [custom properties](initiatives.md#initiative-settings) as well. **Properties** on its own is for making new ones: it lets the plug-in read an initiative's property definitions, and with write, add to them.
+A plug-in allowed to change something, such as a task, can fill in that thing's [custom properties](initiatives.md#custom-properties) as well. **Properties** on its own is for making new ones: it lets the plug-in read an initiative's property definitions, and with write, add to them.
 
 !!! info "Some plug-ins have a minimum age"
     A listing that has one says so: **Ages 16+**, for the country your browser is set to. It can differ by country. The community can still add it; somebody under the age where they are just can't open or use it.
@@ -103,6 +103,22 @@ Some plug-ins can do more if you let them, and ask for it in two lines that star
 - **Act as an admin across your whole community.** Everything a community admin reaches, including initiatives it isn't placed in.
 
 Ticking either lets the plug-in ask for that standing; it doesn't use it everywhere at once. An automations plug-in, for example, uses it only for an automation somebody holding that role set up to run that way. Either way, it still reaches only the kinds of thing ticked above. An admin-standing plug-in that may read projects reads every project, and still no files.
+
+### What a plug-in puts on items
+
+Some plug-ins add to the things you already work with: an invoice number on a task, a **Paid** tick on a queue item, a progress bar on a counter that is very nearly at its fundraising target. They can appear on tasks, calendar events, queue items, counters, gallery pictures and posts.
+
+| | What you see |
+|---|---|
+| **Fields** | A labelled value, drawn like Initiative's own: text, a number, a date, a date and time, a link, a colored badge, a progress bar or a tick box. Task fields can be filtered on, like any other. |
+| **Sections** | A small panel on the item's page, made of the plug-in's fields and buttons. |
+| **Actions** | A button in a section, or an entry in the item's menu, that asks the plug-in to do something with this one item. Some check with you first. |
+
+The plug-in keeps those values in Initiative, so they show and filter without waiting on it.
+
+What the superadmin agreed to applies here too. A plug-in only puts values on items it may read, so one allowed to read projects can mark tasks, but not calendar events. They show in the initiatives under **Where it works**, to the roles under **Who can open it there**, and to community admins. A few actions belong to community admins alone.
+
+Placing a plug-in in an initiative adds its fields and sections to that initiative's item pages, and its task fields to boards and tables. Whoever looks after the layouts can move them or take them off in [Edit layouts](layouts.md). One taken off stays off, updates included.
 
 ### Updates
 
@@ -135,6 +151,7 @@ Each connection shows which service it uses and what it's allowed to do there, s
 - **Remove** takes it out entirely:
     - Anything it set up when it was added moves to the **Trash**, restorable during the retention window.
     - Anything it owned stays where it is, with no owner. An admin picks it up with **Claim unowned content** in **Settings → Users**.
+    - Every value it kept on items goes with it.
     - Every credential it held, the community's and each member's, is deleted, and the plug-in is told to stop using them.
 
 ## Your own marketplace

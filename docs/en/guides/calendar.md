@@ -91,6 +91,16 @@ So you can pull a whole season's fixtures in at once, or push the rehearsal sche
 
 Repeats go both ways too, with their skipped dates and any date changed on its own.
 
+### Subscribing from another calendar app
+
+A file is a snapshot. A **subscription** keeps itself up to date. **Subscribe**, in the same **More actions** menu, gives each calendar its own link for Google Calendar, Apple Calendar or Outlook, so it stays a separate calendar there. **Get link**, then **Copy link** or **Open in calendar app**.
+
+- **The link is yours.** It shows that calendar's events as you see them, and every refresh checks you still can.
+- **Keep it to yourself.** Anyone holding it can read that calendar. It's shown once; getting a new one stops the old one working.
+- **It's a personal [API key](../account/api-keys-and-integrations.md) underneath**, good for that one calendar's feed and nothing else. Delete it under **My Settings → Security**. Events the other app already copied stay there.
+
+No **Subscribe** in the menu? The community has switched off your [API access](../security/community-security.md#api-access), or the initiative keeps its content in.
+
 ??? techspec "Repeats in files and the API"
     A repeat is an RFC 5545 rule (`RRULE`, with `EXDATE` for skipped dates and `RDATE` for extra ones), kept in UTC. In an `.ics` file, a date changed on its own is a second `VEVENT` with the series' `UID` and a `RECURRENCE-ID`. Over the API, `PATCH` and `DELETE` on a repeating event take `scope` (`this`, `following`, `all`) and the `occurrence` they start from.
 

@@ -58,6 +58,12 @@ A direct link comes back "not found" rather than "access denied", because as far
 
     [:octicons-arrow-right-24: Sharing projects & files](sharing-projects-and-files.md)
 
+-   :material-account-clock-outline: __Guests__
+
+    Let somebody in for a set number of days, to just the initiatives and items they need.
+
+    [:octicons-arrow-right-24: Guests](guests.md)
+
 </div>
 
 ??? techspec "For the technically minded — where these layers are enforced"

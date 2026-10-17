@@ -33,7 +33,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
 ??? question "Can I add tools that aren't built in?"
     Yes — the **marketplace** has ready-made dashboards and plug-ins, and adding one takes a couple of clicks and no code. It holds what ships with Initiative plus whatever the person running your server has approved, so if something's missing, they're who to ask. See [Plug-ins & the marketplace](guides/plugins-and-marketplace.md).
 
-    A few plug-ins need a program running alongside Initiative before they work. The **GitHub integration** is one, and it's open source — you can stand it up yourself, though it's a real deployment rather than a setting. **Automations** are ours and live only on the hosted service. See [Plug-ins that need something running behind them](self-host-or-hosted.md#plug-ins-that-need-something-running-behind-them).
+    A few plug-ins need something set up behind them first. The **GitHub integration** runs inside Initiative, so there's no extra program to run; on your own server it needs a GitHub App, which is one button and a confirmation on GitHub. **Automations** are ours and live only on the hosted service. See [Plug-ins that need something running behind them](self-host-or-hosted.md#plug-ins-that-need-something-running-behind-them).
 
 ## Getting in
 

@@ -174,9 +174,28 @@ Hidden content is **held for the platform**:
 - **Details** — name, colour, description, and the **Tools** card, where you choose which tools it offers.
 - **Members** — **Joining**, any waiting requests, and who's in with their roles.
 - **Roles** — make roles and set what they can do.
-- **Properties** — custom fields anything in this initiative can carry.
+- **Custom properties** — fields of your own that anything in this initiative can carry. See below.
+- **Layouts** — every layout in the initiative, when each last changed, and the way into each one's editor (managers and above). See [Layouts](layouts.md).
 - **Export** — download the initiative's data (managers and above). **Keep content in this initiative** stops anyone, managers and community admins included, from exporting things from it one at a time, or copying or moving them to another initiative. Copies and moves inside it, this whole-initiative download and the community's own export carry on as normal.
 - **Danger zone** — archive, unarchive, delete.
+
+### Custom properties
+
+A property is a field your initiative needs and Initiative didn't think of: "Budget code", "Squad", "Signed off by". Make one here, or from **Add property** on anything that has properties. Once it exists, every project, task, file, event and the rest in this initiative can carry it.
+
+| Type | Holds |
+|---|---|
+| **Text** | Anything typed. |
+| **Number** | A number, for sorting and filtering by size. |
+| **Checkbox** | Yes or no. |
+| **Date** | A day. |
+| **Date & time** | A day and a time. |
+| **URL** | A link. |
+| **Select** | One option from a list you set, each with a colour. |
+| **Multi-select** | Several options from that list. |
+| **Person** | Somebody who can open the thing it's on. |
+
+Typing a new option into a select adds it to the list. Deleting a property deletes every value set for it in the initiative, so it asks first.
 
 ### Archiving vs. deleting
 

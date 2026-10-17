@@ -57,6 +57,12 @@ Direct messages are off by default: every account is created on the **Private** 
 
 It's read **once**, when an account is made. Changing it opens no existing account and closes none either — people who already have a setting keep it. See [Who can reach you](../guides/messages.md#who-can-reach-you).
 
+### Guests
+
+[Guests](../sharing/guests.md) are off until you switch on **Allow guests**, under the same **Settings → Platform → Community** tab. Beside it, **Longest a guest may stay (days)** caps every stay on the server, 90 days to start with. A community can set a shorter cap for itself, never a longer one.
+
+Switching guests off shuts every guest out at once and removes nobody: switch it back on and they're in again until their time ends.
+
 ### Ranking search by engagement
 
 Search puts what more members have recently opened or worked on a little higher, from a rough level per item that the server works out once an hour. It's on unless you switch off **Let communities rank results by engagement**, under the same **Settings → Platform → Community** tab. Off, no community ranks by engagement whatever it chose, and every level is deleted within the hour.

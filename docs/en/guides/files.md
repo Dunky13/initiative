@@ -188,9 +188,9 @@ Anyone who can reply can react. The author gets told — as a periodic summary, 
 
 ## Uploads and version history
 
-An upload keeps a **version history**. Upload a new version and the older ones stay put, each marked with its date.
+An upload keeps a **version history**. **Upload new version** and the older ones stay put, numbered and dated, so the copy from before somebody helpfully reorganised it is one click away to look at or download.
 
-So you can always get back to the copy from before somebody helpfully reorganised it.
+The file's owner can delete a version, for good. Delete the newest and the one before it becomes the file again. The last one left always stays.
 
 ## Attaching files to a project
 

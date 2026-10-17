@@ -34,11 +34,9 @@ Drag projects on the first page of the list to put them in your own order.
 
 ## Adding tasks
 
-Click **Add task**. The quick form wants a **title** and maybe a description. That's enough. You can fill the rest in later, or never, and nothing will nag you about it.
+Click **Add task**. Only the **title** is required. Everything else is in the same dialog, laid out exactly as the task will be once it exists, so there's one layout to learn instead of two. Fill in what you know. The rest can wait, possibly forever, and nothing will nag you about it.
 
-Need more detail now? Expand **Advanced details** for everything else, sorted into **Tracking**, **Schedule**, **People & labels**, and any custom **Properties** your initiative uses.
-
-Editing a task later shows you the same sections in the same order, so there's one layout to learn instead of two.
+Nothing is saved until **Create task**. Close the dialog and it's gone.
 
 A task can hold:
 
@@ -54,6 +52,7 @@ A task can hold:
 | **Checklist** | The smaller steps, ticked off, with a progress count. |
 | **Tags** | Labels for finding things later — see [Tags](tags.md). |
 | **Recurring** | Make it come back on a schedule. |
+| **Properties** | Your initiative's own fields — see [Custom properties](initiatives.md#custom-properties). |
 
 ![Editing a task's details](../images/projects/task-details.png)
 
@@ -126,18 +125,18 @@ Switching changes nothing about the tasks themselves — only what's on your scr
 
 ### Table
 
-A spreadsheet-style list. One row per task, with columns for status, priority, dates, assignees and the rest.
+A spreadsheet-style list. One row per task, with columns for status, priority, dates, assignees and whatever else the project's [layout](#layouts) adds.
 
 **Best for:** scanning a lot of tasks, sorting, and editing several at once.
 
 - Click a column heading to **sort** by it. Hold ++shift++ and click another to sort by both.
-- **Group** rows by status, priority or assignee.
+- **Group** rows by **Date window** (Overdue, Today, This Week, This Month, Later) or by **Tag**. A task with three tags turns up under all three.
 - **Filter** down to exactly what you want.
 - **Select** several rows and edit them together.
 
 ![A project in Table view](../images/projects/view-table.png)
 
-### Kanban
+### Board
 
 Cards in columns, one column per status. Drag a card along as the work moves.
 
@@ -145,7 +144,8 @@ Cards in columns, one column per status. Drag a card along as the work moves.
 
 - **Drag and drop** between columns to change status.
 - **Collapse** a column you're deliberately not thinking about.
-- **Fields** decides what a card shows. Turn off what this project doesn't use — priority, dates, tags, the checklist bar, the comment and blocker counts, any custom property — and the cards get shorter and quicker to read. It's *Fields* rather than *Columns* because on a board the columns are your statuses. Remembered per project, so a board you've never fiddled with shows everything it has.
+
+What a card shows is up to the project's [layout](#layouts). Take off what this project doesn't use and the cards get shorter and quicker to read.
 
 ![A project in Kanban view](../images/projects/view-kanban.png)
 
@@ -159,17 +159,17 @@ Your tasks laid out by their start and due dates.
 
 No wrong answer. A rhythm that works for most people:
 
-- **Kanban** day to day, for nudging things along.
+- **Board** day to day, for nudging things along.
 - **Table** when you're tidying up, sorting, or editing a lot at once.
 - **Calendar** when you're planning ahead, or working out how bad next week is going to be.
 
-Your choice is yours alone and it's remembered, so you can settle into one without inflicting it on anybody else.
+Your choice is yours alone and it's remembered, so you can settle into one without inflicting it on anybody else. Until you pick, the project opens on whichever one its layouts say.
 
 ## When a board gets busy
 
 - **Filter** by status, priority, assignee, due date and more.
 - **Sort** by any column. In Table view, hold ++shift++ and click more columns to sort by several at once.
-- **Group** by status, priority or assignee.
+- **Group** the table by date window or tag.
 - **Select several tasks** and act on them together — status, dates, assignees, priority, tags, or archive, all in one go.
 
 !!! tip "Archive things, don't delete them"
@@ -177,11 +177,26 @@ Your choice is yours alone and it's remembered, so you can settle into one witho
 
     And you can filter them back into view any time you'd like documentary evidence of how much you actually got done, which is useful when somebody asks and also just nice.
 
+## Layouts
+
+Each of the project's three lists has a layout, and so does a task:
+
+| Layout | What it decides |
+|---|---|
+| **Table** | Which columns, in what order. |
+| **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. |
+| **Calendar** | Only its presets. A calendar is a calendar. |
+| **Task detail** | Where everything sits when a task is open, and in **Create task**. |
+
+Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's.
+
+Change any of it from **Project settings → Layouts → Edit layouts**. That's for the project's owner, its initiative's managers and community admins; everybody else sees the result. See [Layouts](layouts.md) for the editor.
+
 ## Project settings
 
 - **Details** — icon, name, description, dates, tags.
 - **Access** — who can see or edit it. See [Sharing](../sharing/sharing-projects-and-files.md).
-- **Views** — the saved filter sets everyone in the project can pick from, and which view it opens on.
+- **Layouts** — how its lists and tasks are laid out, and which list it opens on. See [Layouts](#layouts).
 - **Task statuses** — your workflow.
 - **Advanced** — save as a template, [duplicate](tools.md#duplicating) it here or into another initiative, export, archive, delete.
 

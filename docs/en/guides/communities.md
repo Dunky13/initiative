@@ -123,6 +123,8 @@ The card shows the location exactly as you typed it, and tapping it on your comm
 
 Anyone who opens it joins after signing in or making an account.
 
+Somebody who needs one project for a fortnight rather than the whole community for good? Make them a [guest](../sharing/guests.md) instead.
+
 ![Managing members and invites in Community settings](../images/communities/community-users.png)
 
 ## Member roles
@@ -166,6 +168,7 @@ Open **Community settings** from the sidebar or the rail:
 | **Community** | Name, description, [location](#saying-where-your-community-is-admins), icon and banner (square, up to 512 KB), and the directory listing. |
 | **Users** | Members, roles, invite links. A superadmin also sees whose personal API keys reach the community, where the server grants it the security standard. |
 | **Initiatives** | Create and manage the community's initiatives. |
+| **Guests** | Guest invites, and the guests here now. Only where the server allows guests and the community takes them. See [Guests](../sharing/guests.md). |
 | **Security** | Who gets in and on what terms: the community's own single sign-on, where its people land, how long a session lasts, and how much a notification says once it leaves the app. Superadmin only, and only where your server has granted it — most communities never see this tab. See [Your community's sign-in and security](../security/community-security.md). |
 | **Integrations** | AI settings and installed plug-ins — see [AI features](../account/ai-features.md) and [Plug-ins & the marketplace](plugins-and-marketplace.md#adding-a-plug-in). |
 | **Trash** | Recently deleted things, restorable. |
