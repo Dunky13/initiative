@@ -268,6 +268,10 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
             "groupings" in stored or "group_by" in stored
         ):
             raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+        # A board's columns are its statuses already, so its bands never are.
+        grouped_by = [g["field"] for g in stored.get("groupings") or ()]
+        if write.kind == "board" and "status" in [*grouped_by, stored.get("group_by")]:
+            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
         _within_limits(
             stored,
             [definition.card] if definition.card is not None else [],

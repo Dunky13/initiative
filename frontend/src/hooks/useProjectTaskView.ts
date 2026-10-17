@@ -222,8 +222,8 @@ export function useProjectTaskView({
 
   const { grouping: kept, groupingKept } = view;
   const grouping = useMemo(
-    () => viewGrouping(layout?.definition, groupingKept ? kept : null),
-    [layout, kept, groupingKept]
+    () => viewGrouping(layout?.definition, kind, groupingKept ? kept : null),
+    [layout, kind, kept, groupingKept]
   );
 
   /**

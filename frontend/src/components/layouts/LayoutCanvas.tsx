@@ -6,6 +6,7 @@ import {
   type MouseEvent,
   type ReactNode,
   type SyntheticEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -536,24 +537,33 @@ export const LayoutCanvas = ({
     for (const task of tasks) (groups[task.task_status_id] ??= []).push(task);
     return groups;
   }, [tasks, statuses]);
-  // The preview is grouped as the list starts until a grouping is picked
-  // here, as a person's list is, so the groups of it can be hidden.
-  const [picked, setGrouping] = useState<GroupingState | null>(null);
-  const grouping = useMemo(() => viewGrouping(definition, picked), [definition, picked]);
+  // Each list's preview is grouped as the list starts until a grouping is
+  // picked here, as a person's list is, so the groups of it can be hidden.
+  const [picks, setPicks] = useState<Partial<Record<string, GroupingState>>>({});
+  const picked = picks[layout] ?? null;
+  const setGrouping = useCallback(
+    (next: GroupingState) => setPicks((all) => ({ ...all, [layout]: next })),
+    [layout]
+  );
+  const grouping = useMemo(
+    () => viewGrouping(definition, layout, picked),
+    [definition, layout, picked]
+  );
   const tableState = useMemo<ProjectTaskTableState>(
     () => [
       { grouping, sorting: [] },
       { setGrouping, setSorting: noop },
     ],
-    [grouping]
+    [grouping, setGrouping]
   );
   const offered = useMemo(
     () =>
       offeredGroupings(
         taskGroupings({ fields, statuses, tasks, t: t as TranslateFn }),
-        definition.groupings
+        definition.groupings,
+        layout
       ),
-    [fields, statuses, tasks, t, definition.groupings]
+    [fields, statuses, tasks, t, definition.groupings, layout]
   );
 
   return (
@@ -563,7 +573,7 @@ export const LayoutCanvas = ({
       onSelect={onSelect}
       tools={tools}
       bar={
-        layout === "table" && offered.length > 0 ? (
+        layout !== "calendar" && offered.length > 0 ? (
           <CanvasGrouping
             offered={offered}
             grouping={grouping}
@@ -571,7 +581,7 @@ export const LayoutCanvas = ({
             tasks={tasks}
             disabled={tools.locked}
             onToggle={(id, key, shown) =>
-              onGroupingsChange(withGroupShown(definition.groupings, id, key, shown))
+              onGroupingsChange(withGroupShown(definition.groupings, layout, id, key, shown))
             }
           />
         ) : undefined
@@ -594,6 +604,8 @@ export const LayoutCanvas = ({
           onDragCancel={noop}
           onToggleCollapse={noop}
           card={card}
+          grouping={grouping}
+          viewGroupings={definition.groupings}
           editing={paths}
         />
       ) : null}

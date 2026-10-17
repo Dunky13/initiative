@@ -150,24 +150,44 @@ export const KanbanColumn = ({
         )}
       </div>
       {!collapsed && status.category === "done" && onArchiveDoneTasks && (
-        <div className="border-t p-2" data-kanban-scroll-lock="true">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full text-xs"
-            onClick={() => onArchiveDoneTasks(status.id)}
-            disabled={isArchiving}
-          >
-            <Archive className="h-3.5 w-3.5" />
-            {isArchiving ? t("common:toolSettings.archive.archiving") : t("kanban.archiveDone")}
-          </Button>
-        </div>
+        <ArchiveDoneButton
+          statusId={status.id}
+          onArchiveDoneTasks={onArchiveDoneTasks}
+          isArchiving={isArchiving}
+        />
       )}
     </div>
   );
 };
 
-const ExpandedHeader = ({
+/** Archiving a done column's tasks, at the foot of the column. */
+export const ArchiveDoneButton = ({
+  statusId,
+  onArchiveDoneTasks,
+  isArchiving,
+}: {
+  statusId: number;
+  onArchiveDoneTasks: (statusId: number) => void;
+  isArchiving?: boolean;
+}) => {
+  const { t } = useTranslation(["projects", "common"]);
+  return (
+    <div className="border-t p-2" data-kanban-scroll-lock="true">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full text-xs"
+        onClick={() => onArchiveDoneTasks(statusId)}
+        disabled={isArchiving}
+      >
+        <Archive className="h-3.5 w-3.5" />
+        {isArchiving ? t("common:toolSettings.archive.archiving") : t("kanban.archiveDone")}
+      </Button>
+    </div>
+  );
+};
+
+export const ExpandedHeader = ({
   status,
   taskCount,
   onToggleCollapse,
@@ -209,7 +229,7 @@ const ExpandedHeader = ({
   );
 };
 
-const CollapsedHeader = ({
+export const CollapsedHeader = ({
   status,
   taskCount,
   onToggleCollapse,
@@ -261,7 +281,7 @@ const KanbanTaskCardSortable = memo(
   }: KanbanTaskCardVirtualProps & { ref?: React.Ref<HTMLDivElement> }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
       id: task.id.toString(),
-      data: { type: "task", statusId: task.task_status_id },
+      data: { type: "task", statusId: task.task_status_id, taskId: task.id },
     });
 
     const mergedRef = useCallback(
@@ -334,12 +354,15 @@ interface KanbanTaskCardProps {
   task: TaskListRead;
   canWrite: boolean;
   view: LayoutContext;
+  /** The band the card is in, on a grouped board: a task in several bands
+   *  has a card in each. */
+  group?: string;
 }
 
-const KanbanTaskCard = ({ task, canWrite, view }: KanbanTaskCardProps) => {
+export const KanbanTaskCard = ({ task, canWrite, view, group }: KanbanTaskCardProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: task.id.toString(),
-    data: { type: "task", statusId: task.task_status_id },
+    id: group === undefined ? task.id.toString() : `${task.id}::${group}`,
+    data: { type: "task", statusId: task.task_status_id, taskId: task.id, group },
     disabled: !canWrite,
   });
 

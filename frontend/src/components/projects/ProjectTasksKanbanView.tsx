@@ -11,24 +11,38 @@ import {
   pointerWithin,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
+import type { GroupingState } from "@tanstack/react-table";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
   CardPartInput,
+  LayoutGrouping,
   PropertyDefinitionRead,
   TaskListRead,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
+import { KanbanBands } from "@/components/projects/KanbanBands";
 import { KanbanColumn } from "@/components/projects/KanbanColumn";
 import { priorityVariant } from "@/components/projects/projectTasksConfig";
+import { resolveKanbanDropTarget } from "@/components/projects/taskOrdering";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MentionText } from "@/components/user/MentionText";
 import { useProperties } from "@/hooks/useProperties";
+import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { formatDateTime } from "@/lib/formatDate";
 import { cardOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
+import { boardBands, offeredGroupings, taskGroupings } from "@/lib/layouts/grouping";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/tree";
@@ -65,6 +79,12 @@ type ProjectTasksKanbanViewProps = {
   /** The view's card, where it has its own. */
   /** The project's own card; none draws the shipped one. */
   card?: LayoutNode | null;
+  /** What the board is grouped by, as its reader's view keeps it. */
+  grouping?: GroupingState;
+  /** Where the reader picks what it is grouped by; left out, nowhere. */
+  onGroupingChange?: (grouping: GroupingState) => void;
+  /** The groupings the board offers, in order, where its layout names them. */
+  viewGroupings?: LayoutGrouping[] | null;
   /** While the view is edited: the path of each part of its card. */
   editing?: WeakMap<LayoutNode, string>;
 };
@@ -72,6 +92,8 @@ type ProjectTasksKanbanViewProps = {
 // One empty list while the definitions load, so the fields aren't rebuilt on
 // every pass until they arrive.
 const NO_DEFINITIONS: PropertyDefinitionRead[] = [];
+const NOT_GROUPED: GroupingState = [];
+const NO_GROUPING = "__none__";
 
 export const ProjectTasksKanbanView = ({
   projectId,
@@ -94,6 +116,9 @@ export const ProjectTasksKanbanView = ({
   isArchivingDoneTasks,
   propertyDefinitions: givenDefinitions,
   card: ownCard,
+  grouping = NOT_GROUPED,
+  onGroupingChange,
+  viewGroupings,
   editing,
 }: ProjectTasksKanbanViewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -132,7 +157,7 @@ export const ProjectTasksKanbanView = ({
         : null,
     [canMove, taskStatuses]
   );
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation(["projects", "common"]);
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
@@ -154,6 +179,61 @@ export const ProjectTasksKanbanView = ({
     [fields, plugins, card, env, editing]
   );
 
+  // What the board offers to group by, and the bands of the one it is.
+  const tasks = useMemo(
+    () => taskStatuses.flatMap((status) => groupedTasks[status.id] ?? []),
+    [taskStatuses, groupedTasks]
+  );
+  const offered = useMemo(
+    () =>
+      offeredGroupings(
+        taskGroupings({ fields, statuses: taskStatuses, tasks, t: projectEnv.t }),
+        viewGroupings,
+        "board"
+      ),
+    [fields, taskStatuses, tasks, projectEnv.t, viewGroupings]
+  );
+  const active = offered.find((each) => grouping.includes(each.grouping.column));
+  const bands = useMemo(() => (active ? boardBands(active, tasks) : null), [active, tasks]);
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        taskStatuses.map((status) => [status.id, groupedTasks[status.id]?.length ?? 0])
+      ),
+    [taskStatuses, groupedTasks]
+  );
+
+  // A card dropped into another band changes the field the board is grouped
+  // by, beside what the drop does to its column and its place in it. One
+  // dropped on an empty part of a cell in its own column changes only that.
+  const { mutate: moveTask } = useMoveTaskToGroup();
+  const lastOver = useRef<DragOverEvent["over"] | null>(null);
+  const handleDragOver = (event: DragOverEvent) => {
+    if (event.over) lastOver.current = event.over;
+    onDragOver(event);
+  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    const target = resolveKanbanDropTarget(event, lastOver.current);
+    lastOver.current = null;
+    const dragged = event.active.data.current;
+    const from = dragged?.group;
+    const to = target?.data?.group;
+    const intoBand =
+      active?.grouping.move !== undefined &&
+      canEditTasks &&
+      typeof from === "string" &&
+      typeof to === "string" &&
+      from !== to;
+    if (intoBand && target?.data?.type === "column" && target.data.statusId === dragged?.statusId) {
+      onDragCancel();
+    } else {
+      onDragEnd(event);
+    }
+    if (!intoBand || typeof dragged?.taskId !== "number") return;
+    const move = active.grouping.move?.(from, to);
+    if (move && !("status" in move)) moveTask({ taskId: dragged.taskId, move });
+  };
+
   const taskStatusesLength = taskStatuses.length;
   // Basis rather than min-width: it is what the collapse animates.
   const columnBasis = cn(
@@ -163,42 +243,84 @@ export const ProjectTasksKanbanView = ({
 
   return (
     <BoardActionsContext.Provider value={boardActions}>
+      {onGroupingChange && offered.length > 0 && !editing ? (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <Label htmlFor="board-group-by" className="text-muted-foreground text-sm">
+            {t("common:groupBy")}
+          </Label>
+          <Select
+            value={active?.grouping.column ?? NO_GROUPING}
+            onValueChange={(value) => onGroupingChange(value === NO_GROUPING ? [] : [value])}
+          >
+            <SelectTrigger id="board-group-by" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_GROUPING}>{t("common:none")}</SelectItem>
+              {offered.map(({ grouping: each }) => (
+                <SelectItem key={each.id} value={each.column}>
+                  {each.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       <DndContext
         sensors={sensors}
         collisionDetection={kanbanCollisionDetection}
         onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
         onDragCancel={onDragCancel}
       >
         <div
           ref={scrollContainerRef}
-          className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
+          className={cn(
+            "scrollbar-thin cursor-grab overflow-x-auto pb-4",
+            bands && "max-h-[75vh] overflow-y-auto"
+          )}
           data-kanban-scroll-container
         >
-          <div className="flex gap-4">
-            {taskStatuses.map((status) => {
-              const isCollapsed = collapsedStatusIds.has(status.id);
-              return (
-                <KanbanColumn
-                  key={status.id}
-                  status={status}
-                  tasks={groupedTasks[status.id] ?? []}
-                  canWrite={canReorderTasks}
-                  view={view}
-                  collapsed={isCollapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  taskCount={groupedTasks[status.id]?.length ?? 0}
-                  className={cn(
-                    "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
-                    isCollapsed ? "grow-0 basis-12" : columnBasis
-                  )}
-                  onArchiveDoneTasks={onArchiveDoneTasks}
-                  isArchiving={isArchivingDoneTasks}
-                />
-              );
-            })}
-          </div>
+          {active && bands ? (
+            <KanbanBands
+              bands={bands}
+              grouping={active.grouping}
+              statuses={taskStatuses}
+              counts={counts}
+              collapsedStatusIds={collapsedStatusIds}
+              onToggleCollapse={onToggleCollapse}
+              canWrite={canReorderTasks}
+              view={view}
+              columnBasis={columnBasis}
+              onArchiveDoneTasks={onArchiveDoneTasks}
+              isArchiving={isArchivingDoneTasks}
+            />
+          ) : (
+            <div className="flex gap-4">
+              {taskStatuses.map((status) => {
+                const isCollapsed = collapsedStatusIds.has(status.id);
+                return (
+                  <KanbanColumn
+                    key={status.id}
+                    status={status}
+                    tasks={groupedTasks[status.id] ?? []}
+                    canWrite={canReorderTasks}
+                    view={view}
+                    collapsed={isCollapsed}
+                    onToggleCollapse={onToggleCollapse}
+                    taskCount={groupedTasks[status.id]?.length ?? 0}
+                    className={cn(
+                      "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
+                      isCollapsed ? "grow-0 basis-12" : columnBasis
+                    )}
+                    onArchiveDoneTasks={onArchiveDoneTasks}
+                    isArchiving={isArchivingDoneTasks}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
         <DragOverlay>
           {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}

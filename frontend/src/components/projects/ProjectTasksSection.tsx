@@ -718,7 +718,8 @@ export const ProjectTasksSection = ({
     if (taskType !== "task" && taskType !== "list-task") {
       return;
     }
-    const id = Number(event.active.id);
+    // A card on a grouped board is one of the task's, one for each band.
+    const id = event.active.data.current?.taskId ?? Number(event.active.id);
     if (Number.isFinite(id)) {
       setActiveTaskId(id);
     }
@@ -733,7 +734,7 @@ export const ProjectTasksSection = ({
     }
     const { active } = event;
     const finalOver = resolveKanbanDropTarget(event, lastKanbanOverRef.current);
-    const activeId = Number(active.id);
+    const activeId = active.data.current?.taskId ?? Number(active.id);
     const currentTask = Number.isFinite(activeId)
       ? tasks.find((task) => task.id === activeId)
       : undefined;
@@ -750,7 +751,7 @@ export const ProjectTasksSection = ({
 
     if (overData?.type === "task") {
       targetStatusId = overData.statusId ?? targetStatusId;
-      const parsed = Number(finalOver.id);
+      const parsed = overData.taskId ?? Number(finalOver.id);
       overTaskId = Number.isFinite(parsed) ? parsed : null;
       if (targetStatusId === currentTask.task_status_id) {
         // Same column: derive before/after from the cards' current order. This
@@ -953,6 +954,9 @@ export const ProjectTasksSection = ({
             }
             isArchivingDoneTasks={archiveDoneTasks.isPending}
             card={layout?.definition.card as LayoutNode | null | undefined}
+            grouping={grouping}
+            onGroupingChange={setGrouping}
+            viewGroupings={layout?.definition.groupings}
           />
         ) : null}
 

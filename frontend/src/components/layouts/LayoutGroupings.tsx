@@ -17,6 +17,7 @@ import {
 import type { ListLayout } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
 import {
+  groupingsFor,
   groupingsOf,
   MAX_GROUPINGS,
   MAX_HIDDEN_GROUPS,
@@ -48,11 +49,12 @@ export const LayoutGroupings = ({
   const { t } = useTranslation(LAYOUT_NAMESPACES);
   const translate = t as TranslateFn;
   const all = useMemo(
-    () => taskGroupings({ fields, statuses: [], tasks: [], t: translate }),
-    [fields, translate]
+    () =>
+      groupingsFor(taskGroupings({ fields, statuses: [], tasks: [], t: translate }), layout.kind),
+    [fields, translate, layout.kind]
   );
   const { groupings, group_by: groupBy = null } = layout.definition;
-  const entries = groupingsOf(groupings);
+  const entries = groupingsOf(groupings, layout.kind);
   const byId = new Map(all.map((each) => [each.id, each]));
   const ticked = entries.flatMap((entry) => byId.get(entry.field) ?? []);
   const unticked = all.filter((each) => !entries.some((entry) => entry.field === each.id));

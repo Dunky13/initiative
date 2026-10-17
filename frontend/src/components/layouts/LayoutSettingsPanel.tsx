@@ -88,7 +88,7 @@ export const ListLayoutSettings = ({
             </div>
           ) : null}
           <LayoutPresets layout={layout} of={presets} fields={fields} edits={edits} />
-          {layout.kind === "table" ? (
+          {layout.kind !== "calendar" ? (
             <LayoutGroupings layout={layout} fields={fields} edits={edits} />
           ) : null}
           <Shipped stored={stored} edits={edits} />

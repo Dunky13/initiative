@@ -311,7 +311,8 @@ const ProjectTasksTableViewComponent = ({
     () =>
       offeredGroupings(
         taskGroupings({ fields, statuses: taskStatuses, tasks, t: env.t }),
-        viewGroupings
+        viewGroupings,
+        "table"
       ),
     [fields, taskStatuses, tasks, env.t, viewGroupings]
   );
