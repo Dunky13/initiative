@@ -478,6 +478,15 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
+        (_table(groupings=[{"field": "title"}]), 422, None),
+        (_table(groupings=[{"field": "plugin:3:ci"}]), 422, None),
+        (_table(groupings=[{"field": "status"}, {"field": "status"}]), 422, None),
+        (_table(groupings=[{"field": "status"}], group_by="tags"), 422, None),
+        (
+            {"kind": "calendar", "definition": {"group_by": "status"}},
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
         (_task({"type": "field", "props": {"field": "startDate"}}), 422, None),
         (_task({"type": "card"}), 422, None),
         ({"kind": "gallery", "definition": {}}, 422, None),
@@ -505,6 +514,11 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "a preset naming someone by name",
         "a preset past the limit of property and plug-in filters together",
         "a sort on a board's preset, which a board does not sort by",
+        "a grouping by a field whose values do not group",
+        "a grouping by a plug-in field",
+        "a grouping offered twice",
+        "starting on a grouping the list does not offer",
+        "a grouped calendar",
         "a date alone on a task",
         "a card on a task",
         "a kind no tool draws",
@@ -572,7 +586,12 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
         "status_ids": [1, 2],
         "properties": [{"property_id": 9, "op": "eq", "value": "red"}],
     }
-    definition = {"presets": [_preset(filters=filters)]}
+    sprint = {"field": "property:9", "hidden": ["s1"]}
+    definition = {
+        "presets": [_preset(filters=filters)],
+        "groupings": [{"field": "status", "hidden": ["1", "2"]}, sprint],
+        "group_by": "property:9",
+    }
 
     copied = tool_layouts_service.copied_definition(
         definition, {1: 11}, same_initiative=same_initiative
@@ -585,6 +604,13 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
     assert preset["filters"]["properties"] == (
         filters["properties"] if same_initiative else []
     )
+    # So with groupings: a status grouping leaves out the copy's statuses, and
+    # a property's goes, with starting on it, where the property is not there.
+    assert copied["groupings"] == [
+        {"field": "status", "hidden": ["11"]},
+        *([sprint] if same_initiative else []),
+    ]
+    assert copied.get("group_by") == ("property:9" if same_initiative else None)
 
 
 async def test_a_layout_at_the_limits_is_kept(client: AsyncClient, acting_user):

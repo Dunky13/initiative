@@ -264,6 +264,10 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
         _require(write.kind, LIST_LAYOUTS.get(target.tool, ()))
         assert isinstance(definition, ListLayoutDefinition)
         _check_presets(target.tool, write.kind, stored.get("presets") or [])
+        if write.kind not in GROUPED_LISTS and (
+            "groupings" in stored or "group_by" in stored
+        ):
+            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
         _within_limits(
             stored,
             [definition.card] if definition.card is not None else [],
@@ -271,6 +275,9 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
         )
     return stored
 
+
+#: The lists that group their tasks: a project's table and board.
+GROUPED_LISTS = ("table", "board")
 
 #: The filters a tool's presets hold: the shape its list filters by.
 PRESET_FILTERS: dict[Tool, type[TaskFilterSpec] | type[CalendarFilterSpec]] = {
@@ -357,12 +364,23 @@ def copied_definition(
     same_initiative: bool,
 ) -> dict[str, Any]:
     """``definition`` for a copied project. Status ids are the project's own
-    rows, so a preset's go through the copy's mapping, and one with no
-    counterpart is dropped. Properties are the initiative's, so a copy into
-    another initiative keeps no property filters."""
+    rows, so a preset's, and a status grouping's hidden statuses, go through
+    the copy's mapping, and one with no counterpart is dropped. Properties are
+    the initiative's, so a copy into another initiative keeps no property
+    filters and no property groupings."""
+    copy = dict(definition)
+    groupings = definition.get("groupings")
+    if isinstance(groupings, list):
+        copy["groupings"] = [
+            {**grouping, "hidden": _copied_hidden(grouping, status_mapping)}
+            for grouping in groupings
+            if same_initiative or not _of_property(grouping.get("field"))
+        ]
+    if not same_initiative and _of_property(definition.get("group_by")):
+        copy.pop("group_by")
     presets = definition.get("presets")
     if not isinstance(presets, list):
-        return dict(definition)
+        return copy
 
     def copied(filters: dict[str, Any]) -> dict[str, Any]:
         statuses = [
@@ -377,12 +395,31 @@ def copied_definition(
         }
 
     return {
-        **definition,
+        **copy,
         "presets": [
             {**preset, "filters": copied(preset.get("filters", {}))}
             for preset in presets
         ],
     }
+
+
+def _of_property(field: Any) -> bool:
+    return isinstance(field, str) and field.startswith(PROPERTY_FIELD_PREFIX)
+
+
+def _copied_hidden(
+    grouping: dict[str, Any], status_mapping: dict[int, int]
+) -> list[str]:
+    """The groups a copied grouping leaves out: a status grouping's are the
+    copy's own statuses."""
+    hidden = grouping.get("hidden", [])
+    if grouping.get("field") != "status":
+        return hidden
+    return [
+        str(status_mapping[int(key)])
+        for key in hidden
+        if key.isdigit() and int(key) in status_mapping
+    ]
 
 
 async def copy_layouts(
