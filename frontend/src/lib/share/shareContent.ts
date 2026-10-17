@@ -72,12 +72,13 @@ export function shareTitle(share: ReceivedShare, fallback: string): string {
 }
 
 /**
- * What goes in the body: everything written, as written. A note that only says
- * what the title already does is left out rather than said twice.
+ * What goes in the body: everything written, as written. A note that says
+ * exactly what the title does is left out rather than said twice; one the title
+ * had to shorten or strip of a sigil keeps what the title lost.
  */
 export function shareNote(share: ReceivedShare, title: string): string {
   const note = share.texts.join("\n\n").trim();
-  return asTitle(note) === title ? "" : note;
+  return note === title ? "" : note;
 }
 
 /** A task's description: the note, then each picture below it. */

@@ -235,17 +235,19 @@ describe("ShareWizard", () => {
     expect(screen.getByRole("button", { name: "Create document" })).toBeInTheDocument();
   });
 
-  it("offers the place last shared to", async () => {
+  const BELLWETHER_POST = {
+    post: {
+      communityId: 8,
+      communityName: "Bellwether",
+      initiativeId: 5,
+      initiativeName: "Summer Play",
+    },
+  };
+
+  it("offers the place last shared to on this server", async () => {
     stored.set(
       "initiative-last-share-destination",
-      JSON.stringify({
-        post: {
-          communityId: 8,
-          communityName: "Bellwether",
-          initiativeId: 5,
-          initiativeName: "Summer Play",
-        },
-      })
+      JSON.stringify({ "http://localhost": BELLWETHER_POST })
     );
     const user = userEvent.setup();
     renderWizard();
@@ -254,6 +256,44 @@ describe("ShareWizard", () => {
     await user.click(await screen.findByText("Last used"));
 
     expect(await screen.findByText("Bellwether > Summer Play")).toBeInTheDocument();
+  });
+
+  it("does not offer a place last shared to on another server", async () => {
+    stored.set(
+      "initiative-last-share-destination",
+      JSON.stringify({ "https://elsewhere.example/api/v1": BELLWETHER_POST })
+    );
+    const user = userEvent.setup();
+    renderWizard();
+
+    await user.click(await screen.findByText("Post"));
+
+    expect(await screen.findByText("Anvil Club")).toBeInTheDocument();
+    expect(screen.queryByText("Last used")).not.toBeInTheDocument();
+  });
+
+  it("remembers where it shared, under this server", async () => {
+    shownCommunities = [communities[0]];
+    initiativesResult = oneInitiative;
+    landShare.mockResolvedValueOnce("/c/3/i/4/posts/9");
+    const user = userEvent.setup();
+    const onDone = renderWizard();
+
+    await user.click(await screen.findByText("Post"));
+    await user.click(await screen.findByRole("button", { name: "Post" }));
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalled());
+
+    const saved = JSON.parse(stored.get("initiative-last-share-destination") ?? "{}");
+    expect(saved).toEqual({
+      "http://localhost": {
+        post: {
+          communityId: 3,
+          communityName: "Anvil Club",
+          initiativeId: 4,
+          initiativeName: "Spring Play",
+        },
+      },
+    });
   });
 
   it("says why a title with a sigil cannot be used", async () => {

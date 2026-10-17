@@ -100,7 +100,17 @@ final class ShareViewController: UIViewController {
         return saved(data, name: url.lastPathComponent, type: UTType(filenameExtension: url.pathExtension))
     }
 
+    /// The picture formats the server keeps. Any other picture — a HEIC from Photos — is re-encoded as JPEG.
+    private let keptPictureTypes: [UTType] = [.png, .jpeg, .gif, .webP, .svg]
+
     private func saved(_ data: Data, name: String, type: UTType?) -> [String: String]? {
+        if let type, type.conforms(to: .image), !keptPictureTypes.contains(where: { type.conforms(to: $0) }) {
+            guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.9) else {
+                return nil
+            }
+            let base = (name as NSString).deletingPathExtension
+            return saved(jpeg, name: "\(base.isEmpty ? "image" : base).jpg", type: .jpeg)
+        }
         guard let directory = sharedFilesDirectory() else { return nil }
         let fileExtension = type?.preferredFilenameExtension ?? (name as NSString).pathExtension
         let destination = directory.appendingPathComponent(UUID().uuidString)

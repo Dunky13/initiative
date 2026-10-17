@@ -74,6 +74,17 @@ describe("shareNote", () => {
   it("leaves out a note that only repeats the title", () => {
     expect(shareNote(share({ texts: ["Buy milk"] }), "Buy milk")).toBe("");
   });
+
+  it("keeps a note the title had to strip of a sigil", () => {
+    const shared = share({ texts: ["Meet @bob at #3"] });
+    expect(shareNote(shared, shareTitle(shared, "fallback"))).toBe("Meet @bob at #3");
+  });
+
+  it("keeps a note too long to be a title", () => {
+    const long = "word ".repeat(80).trim();
+    const shared = share({ texts: [long] });
+    expect(shareNote(shared, shareTitle(shared, "fallback"))).toBe(long);
+  });
 });
 
 describe("shareMarkdown", () => {

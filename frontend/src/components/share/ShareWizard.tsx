@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { WizardFrame } from "@/components/ui/wizard-dialog";
 import { useApiMutation } from "@/hooks/useApiMutation";
 import { useCommunityInitiativeSteps } from "@/hooks/useCommunityInitiativeSteps";
+import { useServer } from "@/hooks/useServer";
 import { fileIcon } from "@/lib/fileIcon";
 import { hasReservedSigil } from "@/lib/mentions";
 import {
@@ -33,17 +34,27 @@ const STORAGE_KEY = "initiative-last-share-destination";
 
 type LastUsed = Partial<Record<ShareKind, ShareDestination>>;
 
-function loadLastUsed(): LastUsed {
+// Kept per server: the app talks to more than one, and a community's id on one
+// names something else, or nothing, on the next.
+function loadAll(): Record<string, LastUsed> {
   try {
     const raw = getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LastUsed) : {};
+    return raw ? (JSON.parse(raw) as Record<string, LastUsed>) : {};
   } catch {
     return {};
   }
 }
 
-function rememberDestination(kind: ShareKind, destination: ShareDestination) {
-  setItem(STORAGE_KEY, JSON.stringify({ ...loadLastUsed(), [kind]: destination }));
+function loadLastUsed(server: string): LastUsed {
+  return loadAll()[server] ?? {};
+}
+
+function rememberDestination(server: string, kind: ShareKind, destination: ShareDestination) {
+  const all = loadAll();
+  setItem(
+    STORAGE_KEY,
+    JSON.stringify({ ...all, [server]: { ...all[server], [kind]: destination } })
+  );
 }
 
 const KINDS: { kind: ShareKind; icon: LucideIcon }[] = [
@@ -102,7 +113,9 @@ export function ShareWizard({ share, onDone }: ShareWizardProps) {
   const kinds = useMemo(() => offeredKinds(share), [share]);
   const removeFile = (file: SharedFile) =>
     setFiles((current) => current.filter((other) => other !== file));
-  const lastUsed = useMemo(() => (kind ? loadLastUsed()[kind] : undefined), [kind]);
+  const { serverUrl, getServerOrigin } = useServer();
+  const server = serverUrl ?? getServerOrigin() ?? "";
+  const lastUsed = useMemo(() => (kind ? loadLastUsed(server)[kind] : undefined), [kind, server]);
 
   const steps = useCommunityInitiativeSteps<"select-project">({
     ns: "share",
@@ -146,7 +159,7 @@ export function ShareWizard({ share, onDone }: ShareWizardProps) {
     },
     {
       onSuccess: (path, input) => {
-        rememberDestination(input.kind, input.destination);
+        rememberDestination(server, input.kind, input.destination);
         onDone(path);
       },
     }

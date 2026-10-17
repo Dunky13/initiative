@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   getPendingShare,
@@ -72,5 +72,55 @@ describe("the pending share", () => {
     setPendingShare(receivedShare({ texts: ["first"] }));
     setPendingShare(receivedShare({ texts: ["second"] }));
     expect(getPendingShare()?.texts).toEqual(["second"]);
+  });
+});
+
+describe("a share waiting through a restart", () => {
+  // A fresh copy of the module is the app started again.
+  const restart = async () => {
+    vi.resetModules();
+    return import("@/lib/share/pendingShare");
+  };
+
+  it("is still waiting when the app comes back", async () => {
+    setPendingShare(receivedShare({ texts: ["hello"] }));
+
+    const after = await restart();
+
+    expect(after.getPendingShare()).toMatchObject({ texts: ["hello"], opened: false });
+    after.setPendingShare(null);
+  });
+
+  it("is let go once the share page has shown it", async () => {
+    setPendingShare(receivedShare({ texts: ["hello"] }));
+    markPendingShareOpened();
+
+    const after = await restart();
+
+    expect(after.getPendingShare()).toBeNull();
+  });
+
+  it("is let go after a day, when its files are gone", async () => {
+    const share = receivedShare({ texts: ["hello"] });
+    localStorage.setItem(
+      "initiative-pending-share",
+      JSON.stringify({ share, savedAt: Date.now() - 25 * 60 * 60 * 1000 })
+    );
+
+    const after = await restart();
+
+    expect(after.getPendingShare()).toBeNull();
+    expect(localStorage.getItem("initiative-pending-share")).toBeNull();
+  });
+
+  it("is told apart from the next share", async () => {
+    setPendingShare(receivedShare({ texts: ["first"] }));
+
+    const after = await restart();
+    const kept = after.getPendingShare();
+    const next = after.receivedShare({ texts: ["second"] });
+
+    expect(next?.id).not.toBe(kept?.id);
+    after.setPendingShare(null);
   });
 });
