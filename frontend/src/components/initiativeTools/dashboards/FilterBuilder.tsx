@@ -47,6 +47,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useProjects } from "@/hooks/useProjects";
+import { useProperties } from "@/hooks/useProperties";
 import { useTags } from "@/hooks/useTags";
 import type { MemberSearchScope } from "@/hooks/useUsers";
 import { toolViewParams } from "@/lib/tools";
@@ -190,6 +191,7 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
   // something they could not have found in the app anyway.
   const projects = useProjects({ slim: true, ...toolViewParams(Tool.project, "active") });
   const tags = useTags();
+  const properties = useProperties({ initiativeId });
 
   // What may be filtered on, from the server's field registry — one
   // declaration, so a control cannot offer an operator the engine refuses.
@@ -207,10 +209,14 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
         .filter((project) => project.initiative_id === initiativeId)
         .map((project) => ({ value: String(project.id), label: project.name })),
       tag: (tags.data ?? []).map((tag) => ({ value: String(tag.id), label: tag.name })),
+      property: (properties.data ?? []).map((property) => ({
+        value: String(property.id),
+        label: property.name,
+      })),
       // People are searched on the server, among the initiative's members.
       members: { type: "initiative", initiativeId } satisfies MemberSearchScope,
     }),
-    [projects.data, tags.data, initiativeId]
+    [projects.data, tags.data, properties.data, initiativeId]
   );
 
   const { lifecycle, match, rows } = splitFilters(value, defaults);
@@ -405,6 +411,7 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
 type Options = {
   project: { value: string; label: string }[];
   tag: { value: string; label: string }[];
+  property: { value: string; label: string }[];
   members: MemberSearchScope;
 };
 
@@ -560,7 +567,9 @@ function ValueControl({
           }))
         : spec.kind === "tag"
           ? options.tag
-          : [];
+          : spec.kind === "property"
+            ? options.property
+            : [];
     return (
       <MultiSelect
         selectedValues={list}

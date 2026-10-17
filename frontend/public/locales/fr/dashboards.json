@@ -167,7 +167,18 @@
     "title": "Titre",
     "description": "Description",
     "updated_at": "Mis à jour",
-    "created_by": "Créé par"
+    "created_by": "Créé par",
+    "property": "Propriété",
+    "property_id": "Propriété",
+    "value_text": "Texte",
+    "value_number": "Nombre",
+    "value_boolean": "Case à cocher",
+    "value_date": "Date",
+    "value_datetime": "Date et heure",
+    "value_user_id": "Personne",
+    "value_json": "Choix",
+    "entity_type": "Type d’élément",
+    "entity_id": "Élément"
   },
   "filterOp": {
     "eq": "est",
@@ -288,7 +299,9 @@
     "calendar_events": "Événements du calendrier",
     "counters": "Compteurs",
     "counter_groups": "Groupes de compteurs",
-    "task_statuses": "Statuts de tâche"
+    "task_statuses": "Statuts de tâche",
+    "property_values": "Valeurs des propriétés",
+    "property_definitions": "Propriétés"
   },
   "viewMode": {
     "label": "Exécuter le tableau de bord en tant que",

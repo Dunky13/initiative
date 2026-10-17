@@ -167,7 +167,18 @@
     "title": "Título",
     "description": "Descripción",
     "updated_at": "Actualizado",
-    "created_by": "Creado por"
+    "created_by": "Creado por",
+    "property": "Propiedad",
+    "property_id": "Propiedad",
+    "value_text": "Texto",
+    "value_number": "Número",
+    "value_boolean": "Casilla",
+    "value_date": "Fecha",
+    "value_datetime": "Fecha y hora",
+    "value_user_id": "Persona",
+    "value_json": "Opciones",
+    "entity_type": "Tipo de elemento",
+    "entity_id": "Elemento"
   },
   "filterOp": {
     "eq": "es",
@@ -288,7 +299,9 @@
     "calendar_events": "Eventos del calendario",
     "counters": "Contadores",
     "counter_groups": "Grupos de contadores",
-    "task_statuses": "Estados de tarea"
+    "task_statuses": "Estados de tarea",
+    "property_values": "Valores de propiedades",
+    "property_definitions": "Propiedades"
   },
   "viewMode": {
     "label": "Ejecutar el panel como",

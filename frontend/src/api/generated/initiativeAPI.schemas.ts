@@ -3854,6 +3854,7 @@ export const ControlKind = {
   calendar: "calendar",
   counter_group: "counter_group",
   reference: "reference",
+  property: "property",
   property_value: "property_value",
   date: "date",
   boolean: "boolean",

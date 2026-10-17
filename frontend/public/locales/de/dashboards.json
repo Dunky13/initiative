@@ -167,7 +167,18 @@
     "title": "Titel",
     "description": "Beschreibung",
     "updated_at": "Aktualisiert",
-    "created_by": "Erstellt von"
+    "created_by": "Erstellt von",
+    "property": "Eigenschaft",
+    "property_id": "Eigenschaft",
+    "value_text": "Text",
+    "value_number": "Zahl",
+    "value_boolean": "Kontrollkästchen",
+    "value_date": "Datum",
+    "value_datetime": "Datum und Uhrzeit",
+    "value_user_id": "Person",
+    "value_json": "Auswahl",
+    "entity_type": "Elementtyp",
+    "entity_id": "Element"
   },
   "filterOp": {
     "eq": "ist",
@@ -288,7 +299,9 @@
     "calendar_events": "Kalendertermine",
     "counters": "Zähler",
     "counter_groups": "Zählergruppen",
-    "task_statuses": "Aufgabenstatus"
+    "task_statuses": "Aufgabenstatus",
+    "property_values": "Eigenschaftswerte",
+    "property_definitions": "Eigenschaften"
   },
   "viewMode": {
     "label": "Dashboard ausführen als",

@@ -8,6 +8,8 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildPropertyDefinition } from "@/__tests__/factories/properties";
+import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
 import type { FilterNode } from "@/lib/widgets/conditions";
@@ -41,10 +43,10 @@ beforeEach(() => {
   );
 });
 
-const mount = (value: FilterNode[]) => {
+const mount = (value: FilterNode[], dataset = "tasks") => {
   const onChange = vi.fn();
   renderWithProviders(
-    <FilterBuilder value={value} onChange={onChange} initiativeId={1} dataset="tasks" />
+    <FilterBuilder value={value} onChange={onChange} initiativeId={1} dataset={dataset} />
   );
   return onChange;
 };
@@ -95,5 +97,36 @@ describe("FilterBuilder", () => {
     mount([{ field: "archived_at", op: "is_null", value: false } as FilterNode]);
     expect(await screen.findByRole("combobox", { name: /^archived$/i })).toHaveTextContent(/only/i);
     expect(screen.queryByText(/no filters/i)).not.toBeInTheDocument();
+  });
+
+  it("picks a property from the initiative's own", async () => {
+    server.use(
+      http.get("/api/v1/fields/:dataset", () =>
+        HttpResponse.json({
+          dataset: "property_values",
+          fields: [
+            {
+              name: "property_id",
+              type: "reference",
+              kind: "property",
+              ops: ["in_"],
+              multiple: true,
+              sortable: false,
+              options: [],
+            },
+          ],
+          relations: [],
+          default_filters: [],
+        })
+      ),
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([
+          buildPropertyDefinition({ id: 7, name: "Points" }),
+          buildPropertyDefinition({ id: 8, name: "Sprint" }),
+        ])
+      )
+    );
+    mount([{ field: "property_id", op: "in_", value: [7] } as FilterNode], "property_values");
+    expect(await screen.findByText("Points")).toBeInTheDocument();
   });
 });

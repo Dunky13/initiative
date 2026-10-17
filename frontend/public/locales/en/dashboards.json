@@ -167,7 +167,18 @@
     "title": "Title",
     "description": "Description",
     "updated_at": "Updated",
-    "created_by": "Created by"
+    "created_by": "Created by",
+    "property": "Property",
+    "property_id": "Property",
+    "value_text": "Text",
+    "value_number": "Number",
+    "value_boolean": "Checkbox",
+    "value_date": "Date",
+    "value_datetime": "Date and time",
+    "value_user_id": "Person",
+    "value_json": "Choices",
+    "entity_type": "Item type",
+    "entity_id": "Item"
   },
   "filterBuilder": {
     "add": "Add filter",
@@ -288,7 +299,9 @@
     "calendar_events": "Calendar events",
     "counters": "Counters",
     "counter_groups": "Counter groups",
-    "task_statuses": "Task statuses"
+    "task_statuses": "Task statuses",
+    "property_values": "Property values",
+    "property_definitions": "Properties"
   },
   "viewMode": {
     "label": "Run dashboard as",
