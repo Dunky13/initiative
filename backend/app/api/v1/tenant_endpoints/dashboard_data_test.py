@@ -172,6 +172,24 @@ async def test_a_property_is_reported_across_the_initiative(
     )
     assert [(name, float(total)) for name, total in result["rows"]] == [("Points", 8.0)]
 
+    releases = await create_property_definition(
+        session, author.initiative, name="Releases", type=PropertyType.multi_select
+    )
+    await create_property_value(session, task, releases, value_json=["a", "b"])
+    choices = await _one(
+        client,
+        author,
+        "SELECT value_json AS choices FROM property_values "
+        "WHERE property.name = 'Releases'",
+    )
+    assert choices["rows"] == [['["a", "b"]']]
+    one_choice = await _one(
+        client,
+        author,
+        "SELECT count(*) AS n FROM property_values WHERE value_json @> '[\"b\"]'",
+    )
+    assert one_choice["rows"] == [[1]]
+
 
 async def test_a_widget_that_fails_does_not_blank_the_canvas(
     client, session, acting_user

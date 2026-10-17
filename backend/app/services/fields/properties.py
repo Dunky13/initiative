@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from app.models.tenant.property import PropertyDefinition, PropertyValue
 from app.services.fields.derive import derive_fields
-from app.services.fields.spec import Dataset, Hop, Relation
+from app.services.fields.spec import ControlKind, Dataset, Hop, Relation, column
 
 
 def build_property_definitions() -> Dataset:
@@ -31,7 +31,19 @@ def build_property_values() -> Dataset:
         name_override="property_values",
         # A person-valued property holds an account id with no foreign key to
         # say so. Saying it here is what lets ``value_user_id = me`` read.
-        fields=derive_fields(PropertyValue, references={"value_user_id": "users"}),
+        fields=derive_fields(PropertyValue, references={"value_user_id": "users"})
+        + (
+            # A multi-select's choices, which live only here. Read out as the
+            # document's text (``["a", "b"]``); ``value_json @> '["a"]'`` counts
+            # one choice. A document is not something a filter compares.
+            column(
+                "value_json",
+                PropertyValue.value_json,
+                kind=ControlKind.text,
+                filterable=False,
+                offer=False,
+            ),
+        ),
         relations=(
             Relation(
                 name="property",
