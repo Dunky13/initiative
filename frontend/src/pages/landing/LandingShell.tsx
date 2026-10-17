@@ -39,7 +39,7 @@ const Header = ({ current }: { current?: Place }) => {
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-15 max-w-6xl items-center justify-between gap-4 px-4 md:h-17 sm:px-8">
+      <div className="mx-auto flex h-15 max-w-6xl items-center justify-between gap-4 px-4 sm:px-8 md:h-17">
         <Link
           to="/welcome"
           className="flex items-center gap-2.5 font-bold text-foreground text-xl tracking-tight sm:text-2xl"
@@ -161,7 +161,7 @@ const Footer = () => {
   return (
     <footer className="border-t">
       <div className="mx-auto max-w-6xl px-4 pt-14 pb-10 sm:px-8">
-        <div className="grid grid-cols-2 gap-6 md:grid-cols-[2fr_1fr_1fr_1fr] sm:gap-8">
+        <div className="grid grid-cols-2 gap-6 sm:gap-8 md:grid-cols-[2fr_1fr_1fr_1fr]">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5 font-bold text-foreground text-xl">
               <LogoIcon className="h-7 w-7" aria-hidden="true" />

@@ -273,7 +273,7 @@ const Directory = () => {
   const d = (key: string) => t(`directory.${key}` as never) as string;
 
   return (
-    <div className="sm:mt-20 mt-16 grid md:grid-cols-[5fr_6fr] items-center md:gap-14 gap-2 border-white/10 border-t sm:pt-14 pt-12">
+    <div className="mt-16 grid items-center gap-2 border-white/10 border-t pt-12 sm:mt-20 sm:pt-14 md:grid-cols-[5fr_6fr] md:gap-14">
       <div>
         <h2 className="font-extrabold text-3xl tracking-tight sm:text-4xl">
           {t("directory.title")}
@@ -319,7 +319,7 @@ const Directory = () => {
             key={card.key}
             aria-hidden={front === card.key ? undefined : "true"}
             className={cn(
-              "absolute top-6 left-1/2 -ml-[135px] md:-ml-[165px] flex md:w-[330px] w-[270px] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl transition-[transform,opacity] duration-500 motion-reduce:transition-none",
+              "absolute top-6 left-1/2 -ml-[135px] flex w-[270px] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl transition-[transform,opacity] duration-500 motion-reduce:transition-none md:-ml-[165px] md:w-[330px]",
               SLOT[slotOf(card.key, front)]
             )}
           >

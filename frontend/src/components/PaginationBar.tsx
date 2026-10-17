@@ -52,7 +52,7 @@ export const PaginationBar = ({
   return (
     <nav
       aria-label={label}
-      className={cn("flex flex-wrap gap-3 items-center justify-between", className)}
+      className={cn("flex flex-wrap items-center justify-between gap-3", className)}
     >
       <div className="flex items-center gap-2">
         {onPageSizeChange ? (

@@ -264,7 +264,9 @@ export const indexPaths = (root: LayoutNode): WeakMap<LayoutNode, string> => {
   const paths = new WeakMap<LayoutNode, string>();
   const walk = (node: LayoutNode, path: number[]) => {
     paths.set(node, pathKey(path));
-    node.children?.forEach((child, index) => walk(child, [...path, index]));
+    node.children?.forEach((child, index) => {
+      walk(child, [...path, index]);
+    });
   };
   walk(root, []);
   return paths;

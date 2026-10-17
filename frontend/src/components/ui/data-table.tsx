@@ -745,7 +745,7 @@ export function DataTable<TData extends RowData>({
             </div>
             <div className="ml-auto flex items-center justify-end gap-2">
               {/* Desktop: Show controls inline */}
-              <div className="hidden flex-wrap items-center justify-end gap-2 canvas-sm:flex">
+              <div className="canvas-sm:flex hidden flex-wrap items-center justify-end gap-2">
                 {enableClearSorting && (
                   <Button variant="ghost" onClick={() => table.resetSorting()}>
                     <span className="text-muted-foreground">{t("resetSorting")}</span>
@@ -1034,7 +1034,7 @@ export function DataTable<TData extends RowData>({
           </TableBody>
         </Table>
         {showPagination && (
-          <div className="pp4 flex flex-wrap gap-3 p-4 items-center justify-between">
+          <div className="pp4 flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-sm">{t("rowsPerPage")}</span>
               <Select

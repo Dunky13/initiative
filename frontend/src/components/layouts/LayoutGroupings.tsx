@@ -227,7 +227,7 @@ export const CanvasGrouping = ({
                 onClick={() => onToggle(active.grouping.id, key, !shown)}
                 className={cn(
                   "inline-flex items-center rounded-md border px-2 py-1",
-                  !shown && "border-dashed opacity-50 line-through"
+                  !shown && "border-dashed line-through opacity-50"
                 )}
               >
                 {active.grouping.header(key)}

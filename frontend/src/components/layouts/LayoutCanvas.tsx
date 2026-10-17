@@ -181,7 +181,7 @@ export const CanvasFrame = ({
   children: ReactNode;
 }) => {
   const { t } = useTranslation(["projects", "layouts"]);
-  const content = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   // The element pointed at, and the one last clicked: a board draws a part on
   // every card, and the layer marks the one the pointer is on.
@@ -339,6 +339,7 @@ export const CanvasFrame = ({
           {bar}
         </div>
       ) : null}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: it only notes the pointer leaving, to take the hover mark down; the frame takes no input */}
       <div
         ref={frame}
         className="relative mx-auto"
@@ -349,7 +350,7 @@ export const CanvasFrame = ({
           setHovered(null);
         }}
       >
-        <div
+        <section
           ref={content}
           className="@container rounded-lg border bg-background p-4 shadow-sm"
           onClickCapture={select}
@@ -361,10 +362,9 @@ export const CanvasFrame = ({
           onMouseOver={(event) => point(event.target)}
           onFocus={(event) => point(event.target)}
           aria-label={t("layouts:canvas")}
-          role="region"
         >
           {children}
-        </div>
+        </section>
         <div className="pointer-events-none absolute inset-0">
           {hovered && hoveredBox && !sameSelection(hovered.of, selection) ? (
             <NameTag box={hoveredBox}>{tools.nameOf(hovered.of)}</NameTag>
@@ -534,7 +534,10 @@ export const LayoutCanvas = ({
   const groupedTasks = useMemo(() => {
     const groups: Record<number, TaskListRead[]> = {};
     for (const status of statuses) groups[status.id] = [];
-    for (const task of tasks) (groups[task.task_status_id] ??= []).push(task);
+    for (const task of tasks) {
+      groups[task.task_status_id] ??= [];
+      groups[task.task_status_id].push(task);
+    }
     return groups;
   }, [tasks, statuses]);
   // Each list's preview is grouped as the list starts until a grouping is

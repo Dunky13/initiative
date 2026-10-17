@@ -32,7 +32,9 @@ export const LayoutList = ({ layouts }: { layouts: (ListLayoutRead | DetailLayou
               {layout.updated_at ? (
                 <time dateTime={layout.updated_at}>{formatDateTime(layout.updated_at)}</time>
               ) : (
-                <span aria-label={t("layouts:asShipped")}>—</span>
+                <span role="img" aria-label={t("layouts:asShipped")}>
+                  —
+                </span>
               )}
             </span>
           </li>

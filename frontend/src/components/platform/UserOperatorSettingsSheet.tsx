@@ -208,7 +208,7 @@ export const UserOperatorSettingsSheet = ({
   const mayNameCase = hasAnyCapability(viewer, [Capability.accessRequest, Capability.dataBypass]);
   const grantCases = useGrantCases({ enabled: open && mayNameCase });
   const [caseTaskId, setCaseTaskId] = useState<number | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new account starts with no case
+  // A new account starts with no case.
   useEffect(() => {
     setCaseTaskId(null);
   }, [user?.id]);

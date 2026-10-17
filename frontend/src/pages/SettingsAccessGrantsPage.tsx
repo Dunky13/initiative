@@ -390,7 +390,7 @@ const BreakGlassSection = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1 col-span-full">
+          <div className="col-span-full space-y-1">
             <Label htmlFor="bg-reason">{t("accessGrants.reasonLabel")}</Label>
             <Textarea
               id="bg-reason"
@@ -401,7 +401,7 @@ const BreakGlassSection = () => {
             />
           </div>
           {needsCode && (
-            <div className="space-y-1 col-span-full">
+            <div className="col-span-full space-y-1">
               <Label htmlFor="bg-code">{t("accessGrants.breakGlass.codeLabel")}</Label>
               <Input
                 id="bg-code"
@@ -421,7 +421,7 @@ const BreakGlassSection = () => {
               </p>
             </div>
           )}
-          <div className="flex flex-wrap gap-2 col-span-full">
+          <div className="col-span-full flex flex-wrap gap-2">
             <Button
               type="submit"
               variant="destructive"
@@ -584,7 +584,7 @@ const RequestSection = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1 col-span-full">
+          <div className="col-span-full space-y-1">
             <Label htmlFor="ag-reason">{t("accessGrants.reasonLabel")}</Label>
             <Textarea
               id="ag-reason"

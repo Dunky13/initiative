@@ -299,7 +299,7 @@ export const AnnouncementEditorDialog = ({
                   </p>
                 </div>
 
-                <div className="space-y-2 col-span-full">
+                <div className="col-span-full space-y-2">
                   <Label htmlFor="announcement-accounts">
                     {t("operator.fields.audienceAccounts")}
                   </Label>
@@ -397,7 +397,7 @@ export const AnnouncementEditorDialog = ({
               </div>
 
               <div className="grid grid-cols-pair gap-4">
-                <div className="space-y-2 col-span-full">
+                <div className="col-span-full space-y-2">
                   {/* Both times are entered and shown in whatever timezone this
                       browser is in, and stored as an instant (UTC) — so a
                       notice published "at 9am" appears at the author's 9am, not

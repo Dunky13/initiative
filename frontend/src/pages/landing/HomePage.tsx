@@ -355,7 +355,7 @@ const Tools = () => {
         {TOOLS.map((tool) => (
           <li
             key={tool}
-            className="flex flex-col gap-1.5 sm:gap-2.5 sm:rounded-2xl rounded-xl border bg-card sm:p-3.5 p-1.5"
+            className="flex flex-col gap-1.5 rounded-xl border bg-card p-1.5 sm:gap-2.5 sm:rounded-2xl sm:p-3.5"
             data-tool={tool}
           >
             <ToolSketch tool={tool} active />
@@ -382,7 +382,7 @@ const Safe = () => {
   const { t } = useTranslation("landing");
   return (
     <section className="bg-amber-50 dark:bg-amber-950/25" aria-labelledby="landing-safe-title">
-      <div className="mx-auto grid max-w-6xl md:grid-cols-[1fr_26rem] items-center md:gap-10 gap-4 sm:px-8 px-4 sm:py-14 py-10">
+      <div className="mx-auto grid max-w-6xl items-center gap-4 px-4 py-10 sm:px-8 sm:py-14 md:grid-cols-[1fr_26rem] md:gap-10">
         <div>
           <h2
             id="landing-safe-title"
