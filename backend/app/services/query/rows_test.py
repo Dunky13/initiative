@@ -233,6 +233,34 @@ class TestItAgreesWithPostgres:
         with pytest.raises(QueryError):
             plan("SELECT DISTINCT ON (shop) shop FROM rows", READS)
 
+    def test_an_aggregate_counts_only_what_its_filter_keeps(self):
+        assert run(
+            "SELECT count(*) FILTER (WHERE shop = 'south') AS n, "
+            "sum(revenue) FILTER (WHERE open) AS r FROM rows"
+        ) == ((2, 17.0),)
+
+    def test_an_aggregate_over_distinct_values_counts_each_once(self):
+        """A missing value is not one of them."""
+        assert run(
+            "SELECT count(DISTINCT shop) AS n, count(DISTINCT revenue) AS r FROM rows"
+        ) == ((2, 3),)
+        assert run("SELECT sum(DISTINCT revenue) AS r FROM rows") == ((22.0,),)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT sum(revenue) OVER (ORDER BY at) AS t FROM rows",
+            "SELECT row_number() AS r FROM rows",
+            "SELECT lag(shop) OVER w AS p FROM rows WINDOW w AS (ORDER BY at)",
+        ],
+    )
+    def test_a_window_is_refused_rather_than_answered_as_a_group(self, sql):
+        """Fetched rows have no window to run in, and a windowed sum read as
+        a plain one would be a different number."""
+        with pytest.raises(QueryError) as refused:
+            plan(sql, READS)
+        assert refused.value.code == QueryMessages.UNSUPPORTED_SYNTAX
+
     def test_offset_skips_before_the_limit_takes(self):
         assert run("SELECT shop FROM rows ORDER BY shop, revenue LIMIT 2 OFFSET 1") == (
             ("north",),

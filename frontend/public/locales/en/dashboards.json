@@ -286,7 +286,9 @@
     "sum": "Total",
     "avg": "Average",
     "min": "Lowest",
-    "max": "Highest"
+    "max": "Highest",
+    "running_count": "Running count",
+    "running_sum": "Running total"
   },
   "bucket": {
     "day": "By day",

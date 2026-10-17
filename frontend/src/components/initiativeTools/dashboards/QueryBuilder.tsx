@@ -43,6 +43,10 @@ const DATASETS = Object.values(DatasetName) as DatasetName[];
 
 /** What a column may be reduced to, mirroring the builder's own set. */
 const AGGREGATES = ["count", "sum", "avg", "min", "max"] as const;
+/** What may be added up along the grouping, mirroring the builder's set. */
+const RUNNING = ["count", "sum"] as const;
+/** How a running aggregate is held in the "Show as" choice. */
+const RUNNING_PREFIX = "running_";
 const BUCKETS = ["day", "week", "month", "quarter", "year"] as const;
 
 /** The one column that is not a field: how many rows there are. */
@@ -150,6 +154,9 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
     patch({ columns: spec.columns.map((held, at) => (at === index ? column : held)) });
 
   const isDate = (field?: { kind?: string }) => field?.kind === "date";
+  /** Whether another column is shown as it is, for this one to add up along. */
+  const runsAlong = (index: number) =>
+    spec.columns.some((other, at) => at !== index && !other.aggregate && other.field !== "*");
 
   return (
     <div className="space-y-4">
@@ -215,13 +222,22 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
             </Select>
 
             <Select
-              value={column.aggregate ?? "none"}
-              onValueChange={(aggregate) =>
+              value={
+                column.running
+                  ? `${RUNNING_PREFIX}${column.aggregate}`
+                  : (column.aggregate ?? "none")
+              }
+              onValueChange={(choice) => {
+                const running = choice.startsWith(RUNNING_PREFIX);
+                const aggregate = running ? choice.slice(RUNNING_PREFIX.length) : choice;
                 setColumn(index, {
                   ...column,
                   aggregate: aggregate === "none" ? null : aggregate,
-                })
-              }
+                  running: running || undefined,
+                  // Named for what it now is: "count" or "running_count".
+                  alias: null,
+                });
+              }}
             >
               <SelectTrigger className="w-32" aria-label={t("dashboards:builder.fn")}>
                 <SelectValue />
@@ -235,6 +251,18 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
                     })}
                   </SelectItem>
                 ))}
+                {/* Added up along another column, so offered once there is
+                    one. A running column already chosen stays shown, and the
+                    builder's refusal says why it no longer runs. */}
+                {(column.running || runsAlong(index)) &&
+                  RUNNING.map((aggregate) => (
+                    <SelectItem
+                      key={`${RUNNING_PREFIX}${aggregate}`}
+                      value={`${RUNNING_PREFIX}${aggregate}`}
+                    >
+                      {t(`dashboards:aggregate.${RUNNING_PREFIX}${aggregate}` as const)}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
 

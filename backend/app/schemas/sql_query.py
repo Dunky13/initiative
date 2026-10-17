@@ -73,6 +73,8 @@ class QueryColumnSpec(SanitizedBaseModel):
     #: Round a date down before grouping by it.
     bucket: Optional[str] = Field(default=None, max_length=20)
     alias: Optional[str] = Field(default=None, max_length=100)
+    #: Add a count or a total up along the grouping: a running total.
+    running: bool = False
 
 
 class QueryConditionSpec(SanitizedBaseModel):

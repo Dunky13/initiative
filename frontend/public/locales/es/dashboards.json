@@ -286,7 +286,9 @@
     "sum": "Total",
     "avg": "Media",
     "min": "Mínimo",
-    "max": "Máximo"
+    "max": "Máximo",
+    "running_count": "Recuento acumulado",
+    "running_sum": "Total acumulado"
   },
   "bucket": {
     "day": "Por día",

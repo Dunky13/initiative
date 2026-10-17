@@ -9219,6 +9219,7 @@ export interface QueryColumnSpec {
   aggregate?: string | null;
   bucket?: string | null;
   alias?: string | null;
+  running?: boolean;
 }
 
 export type QueryFilterGroupSpecLogic =
