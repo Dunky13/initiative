@@ -6,7 +6,8 @@
  * nothing but hand back a spec with the new dataset and its filters cleared —
  * which is exactly what re-rendering with that spec does.
  */
-import { waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -112,5 +113,53 @@ describe("seeding a new statement", () => {
     show(spec("members"));
     await new Promise((done) => setTimeout(done, 50));
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("grouping", () => {
+  it("groups by every column shown as it is once one is a count", async () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <QueryBuilder
+        spec={{
+          ...spec("members"),
+          columns: [COUNT_ALL, { field: "title" }, { field: "priority" }],
+          group_by: ["title", "priority"],
+        }}
+        onChange={onChange}
+        initiativeId={7}
+      />
+    );
+    expect(screen.getByText("One row for each Title and Priority")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /remove this column/i })[2]);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ columns: [COUNT_ALL, { field: "title" }], group_by: ["title"] })
+    );
+  });
+
+  it("says what a saved widget is grouped by until it is edited", () => {
+    // Built before the grouping was worked out: a plain column, grouped. The
+    // statement it builds is grouped, so that is what the line says.
+    renderWithProviders(
+      <QueryBuilder
+        spec={{ ...spec("members"), columns: [{ field: "title" }], group_by: ["title"] }}
+        onChange={vi.fn()}
+        initiativeId={7}
+      />
+    );
+    expect(screen.getByText("One row for each Title")).toBeInTheDocument();
+  });
+
+  it("groups nothing without a count or a total", () => {
+    renderWithProviders(
+      <QueryBuilder
+        spec={{ ...spec("members"), columns: [{ field: "title" }] }}
+        onChange={vi.fn()}
+        initiativeId={7}
+      />
+    );
+    expect(screen.getByText("Every row, as it is")).toBeInTheDocument();
   });
 });

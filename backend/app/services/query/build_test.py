@@ -91,6 +91,37 @@ def test_a_grouped_series_comes_back_in_order(bucket):
     assert "GROUP BY 1 ORDER BY 1 ASC" in sql
 
 
+def test_one_date_rounded_two_ways_is_grouped_both_ways():
+    """The two roundings share the date's name, and both have to be grouped
+    or the statement is refused."""
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="due_date", bucket="month"),
+                Column(field="due_date", bucket="day"),
+                Column(field="*", aggregate="count"),
+            ),
+            group_by=("due_date",),
+        )
+    )
+    assert "GROUP BY 1, 2 ORDER BY 1 ASC NULLS LAST, 2 ASC NULLS LAST" in sql
+
+
+def test_a_count_sharing_a_columns_name_is_not_grouped():
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="priority", alias="bucket"),
+                Column(field="*", aggregate="count", alias="bucket"),
+            ),
+            group_by=("bucket",),
+        )
+    )
+    assert "GROUP BY 1 ORDER BY 1 ASC NULLS LAST" in sql
+
+
 @pytest.mark.parametrize(
     "value",
     [

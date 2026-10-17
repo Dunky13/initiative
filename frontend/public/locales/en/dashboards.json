@@ -254,7 +254,8 @@
     "card": "Card",
     "column": "Column",
     "date": "Date",
-    "total": "Total"
+    "total": "Total",
+    "series": "Split by"
   },
   "builder": {
     "dataset": "Show data from",
@@ -265,8 +266,9 @@
     "asItIs": "Value",
     "exactTime": "Exact time",
     "groupBy": "Group by",
-    "everythingTogether": "Nothing — one total",
-    "groupByHelp": "Rows with the same value become one row; counts and totals are worked out for each.",
+    "groupedBy": "One row for each {{columns}}",
+    "notGrouped": "Every row, as it is",
+    "groupByHelp": "Once a column is a count or a total, it's worked out for each combination of the other columns.",
     "statement": "The statement this builds",
     "tabBuild": "Build",
     "tabSql": "SQL",

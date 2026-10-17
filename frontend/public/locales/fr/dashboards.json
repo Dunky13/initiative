@@ -254,7 +254,8 @@
     "card": "Carte",
     "column": "Colonne",
     "date": "Date",
-    "total": "Total"
+    "total": "Total",
+    "series": "Séparer par"
   },
   "builder": {
     "dataset": "Afficher les données de",
@@ -265,8 +266,9 @@
     "asItIs": "Valeur",
     "exactTime": "Heure exacte",
     "groupBy": "Regrouper par",
-    "everythingTogether": "Rien — un total",
-    "groupByHelp": "Les lignes de même valeur ne font plus qu'une ; nombres et totaux sont calculés pour chacune.",
+    "groupedBy": "Une ligne par {{columns}}",
+    "notGrouped": "Chaque ligne, telle quelle",
+    "groupByHelp": "Dès qu'une colonne est un nombre ou un total, elle est calculée pour chaque combinaison des autres colonnes.",
     "statement": "L'instruction ainsi construite",
     "tabBuild": "Créer",
     "tabSql": "SQL",

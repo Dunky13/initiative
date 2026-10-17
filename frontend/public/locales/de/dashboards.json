@@ -254,7 +254,8 @@
     "card": "Karte",
     "column": "Spalte",
     "date": "Datum",
-    "total": "Gesamt"
+    "total": "Gesamt",
+    "series": "Aufteilen nach"
   },
   "builder": {
     "dataset": "Daten aus",
@@ -265,8 +266,9 @@
     "asItIs": "Wert",
     "exactTime": "Genaue Zeit",
     "groupBy": "Gruppieren nach",
-    "everythingTogether": "Nichts — eine Summe",
-    "groupByHelp": "Zeilen mit gleichem Wert werden zu einer Zeile; Anzahl und Summen werden je Gruppe berechnet.",
+    "groupedBy": "Eine Zeile je {{columns}}",
+    "notGrouped": "Jede Zeile, wie sie ist",
+    "groupByHelp": "Sobald eine Spalte eine Anzahl oder Summe ist, wird sie für jede Kombination der anderen Spalten berechnet.",
     "statement": "Die erzeugte Anweisung",
     "tabBuild": "Erstellen",
     "tabSql": "SQL",
