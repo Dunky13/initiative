@@ -24,8 +24,11 @@ import {
   SearchEntityType,
   SmartChipKind,
   SmartChipTone,
+  TagTarget,
   TaskStatusCategory,
 } from "@/api/generated/initiativeAPI.schemas";
+import { setProperties } from "@/api/generated/properties/properties";
+import { bulkEditTags } from "@/api/generated/tags/tags";
 import { getListTaskStatusesQueryKey } from "@/api/generated/task-statuses/task-statuses";
 import {
   archiveDoneTasks,
@@ -58,6 +61,7 @@ import {
 import { chipKey } from "@/hooks/useSmartChips";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import type { GroupMove } from "@/lib/layouts/grouping";
 import { toast } from "@/lib/mascotToast";
 import { withZone } from "@/lib/recurrence";
 import { chipRef } from "@/lib/smartChips";
@@ -425,6 +429,29 @@ export const useUpdateTaskInCommunity = (
     onSettled,
   });
 };
+
+/**
+ * A task dropped from one group of a grouped list into another: the write the
+ * grouping names for it. A status is moved by the list itself, as a drag
+ * between the board's columns is.
+ */
+export const useMoveTaskToGroup = () =>
+  useCommunityMutation<unknown, { taskId: number; move: Exclude<GroupMove, { status: number }> }>({
+    mutationFn: (communityId, { taskId, move }) => {
+      if ("patch" in move) return updateTask(communityId, taskId, move.patch);
+      if ("tags" in move) {
+        return bulkEditTags(communityId, {
+          target_type: TagTarget.task,
+          target_ids: [taskId],
+          add_tag_ids: move.tags.add,
+          remove_tag_ids: move.tags.remove,
+        });
+      }
+      return setProperties(communityId, PropertyTarget.task, taskId, move.properties);
+    },
+    invalidate: (_data, { taskId }) => invalidate(q.allTasks(), q.task(taskId)),
+    errorKey: "projects:table.moveError",
+  });
 
 /** Which tasks of a repeating series a delete is for; `this` skips it. */
 type DeleteTaskVariables = { taskId: number; scope?: TaskUpdateScope };
