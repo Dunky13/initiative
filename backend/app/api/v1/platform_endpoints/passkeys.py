@@ -55,7 +55,7 @@ from app.core.messages import AuthMessages, NativeMessages
 from app.core.rate_limit import limiter
 from app.db.session import get_session
 from app.models.platform.account_change_hold import HeldChangeKind
-from app.models.platform.user import SIGN_IN_STATUSES, User
+from app.models.platform.user import User, may_sign_in
 from app.models.platform.user_passkey import UserPasskey
 from app.schemas.platform.passkey import (
     PasskeyAuthenticationOptions,
@@ -440,8 +440,9 @@ async def finish_passkey_sign_in(
         raise _sign_in_invalid()
 
     user = await system_session.get(User, presented.user_id)
-    # See SIGN_IN_STATUSES: a deletion is called off by its holder signing in.
-    if user is None or user.status not in SIGN_IN_STATUSES:
+    # See SIGN_IN_STATUSES: a deletion is called off by its holder signing in,
+    # unless the account's own age answer closed it (may_sign_in).
+    if user is None or not may_sign_in(user):
         # No session to open, so the spent challenge and the counter the
         # assertion moved go back with the transaction and the refusal is
         # recorded on its own. The account is read again because the rollback

@@ -161,6 +161,7 @@ from app.services.platform import user_avatars as user_avatars_service
 from app.services.platform import profile_decorations as profile_decorations_service
 from app.services.platform import users as users_service
 from app.services.platform import api_keys as api_keys_service
+from app.services.tenant.plugin_age import request_country
 from app.services.platform import csv_export
 from app.services.tenant import stats_service
 from app.models.platform.user_token import UserTokenPurpose
@@ -1101,6 +1102,7 @@ async def claim_my_username(
 
 @me_router.post("/age-confirmation", response_model=UserRead)
 async def confirm_my_age(
+    request: Request,
     payload: AgeConfirmation,
     session: UserSessionDep,
     system_session: SystemSessionDep,
@@ -1137,11 +1139,48 @@ async def confirm_my_age(
     re-answer until it comes out right is not one. Putting it right takes
     somebody with ``users.age_unblock``, which is a support ticket rather than
     an appeal to the same form.
+
+    **Under the minimum for an account where they are, there is no account.**
+    Sign-up refuses a date like that at the door, and an account that was made
+    without a date (a sign-in provider asked for none, or the field was left
+    empty) meets the same rule here, late: the minimum for the country the
+    request comes from (``users.ACCOUNT_MINIMUM_AGE``, 13 in the US, 16 in
+    Germany; the highest of them where the country is not known), applied
+    before the directory's. The answer stands, the date is not kept, and the
+    account is closed and scheduled for erasure
+    (:func:`~app.services.platform.users.refuse_account_for_age`) — not merely
+    kept out of the directory, which is the answer for sixteen.
     """
     if current_user.age_below_minimum_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=UserMessages.AGE_ANSWER_STANDS,
+        )
+
+    # A date nobody was born on is refused before anything is decided on it:
+    # a year in the future would otherwise read as an age below every minimum
+    # and close the account over a typo.
+    try:
+        users_service.check_birthdate(payload.birthdate)
+    except users_service.InvalidBirthdateError as exc:
+        # Refused separately from being too young, so the reply says which.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=UserMessages.AGE_INVALID_BIRTHDATE,
+        ) from exc
+
+    # Too young for an account at all, where they are. Only while the
+    # deployment checks age: with the check off nothing is asked, and nothing
+    # answered here may close an account.
+    if await app_settings_service.community_age_gate_enabled(
+        system_session
+    ) and users_service.below_account_minimum(
+        payload.birthdate, request_country(request)
+    ):
+        await users_service.refuse_account_for_age(session, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=UserMessages.AGE_BELOW_ACCOUNT_MINIMUM,
         )
 
     # The date is kept first, and only one answer per account is kept.

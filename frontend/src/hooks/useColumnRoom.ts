@@ -17,6 +17,9 @@ export type ColumnRoom = {
   countOf: (statusId: number) => number;
   /** Whether the column takes `entering` more tasks (one by default). */
   hasRoom: (statusId: number, entering?: number) => boolean;
+  /** The counts are in, where a column is limited: until then every column
+   *  reads as having room. */
+  ready: boolean;
 };
 
 /** Every column takes every task: a project whose board limits none. */
@@ -24,6 +27,7 @@ export const ROOM_EVERYWHERE: ColumnRoom = {
   limitOf: () => undefined,
   countOf: () => 0,
   hasRoom: () => true,
+  ready: true,
 };
 
 /**
@@ -48,6 +52,7 @@ export const useColumnRoom = (projectId: number | null): ColumnRoom => {
     const countOf = (statusId: number) => held.get(statusId) ?? 0;
     return {
       limitOf: (statusId) => limits.get(statusId),
+      ready: counts !== undefined,
       countOf,
       hasRoom: (statusId, entering = 1) => {
         const limit = limits.get(statusId);

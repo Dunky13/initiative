@@ -1083,7 +1083,9 @@ export const ProjectTasksSection = ({
 
       {canEditTaskDetails ? (
         <>
-          {canAddTasks && defaultStatus ? (
+          {/* Mounted once the columns' counts are in, so a new task starts in
+              a column with room. */}
+          {canAddTasks && defaultStatus && room.ready ? (
             <AddItemDialog
               open={isComposerOpen}
               onOpenChange={setIsComposerOpen}

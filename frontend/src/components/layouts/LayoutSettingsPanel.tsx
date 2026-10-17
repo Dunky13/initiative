@@ -115,6 +115,15 @@ export const ListLayoutSettings = ({
   );
 };
 
+/** A limit as typed, as the layout keeps it: a whole number the server takes,
+ *  or nothing for no limit; null for anything else, which puts back the
+ *  stored one. */
+const limitText = (text: string): string | null => {
+  if (text === "") return "";
+  const limit = Number(text);
+  return Number.isInteger(limit) && limit >= 1 && limit <= MAX_COLUMN_LIMIT ? String(limit) : null;
+};
+
 /** How many open tasks each of a board's columns takes from a person; one
  *  left empty takes any number. Saved with the layout. */
 const ColumnLimits = ({
@@ -132,13 +141,9 @@ const ColumnLimits = ({
     (layout.definition.limits ?? []).map((each) => [each.status_id, each.limit])
   );
   const change = (statusId: number, text: string) => {
-    const limit = Number(text);
-    if (text !== "" && !(Number.isInteger(limit) && limit >= 1 && limit <= MAX_COLUMN_LIMIT)) {
-      return;
-    }
     const next = new Map(limits);
     if (text === "") next.delete(statusId);
-    else next.set(statusId, limit);
+    else next.set(statusId, Number(text));
     edits.changeLimits(
       statuses.flatMap((status) => {
         const kept = next.get(status.id);
@@ -164,6 +169,7 @@ const ColumnLimits = ({
                 value={String(limits.get(status.id) ?? "")}
                 optional
                 numeric
+                normalize={limitText}
                 onCommit={(text) => change(status.id, text)}
               />
             </div>
@@ -480,6 +486,7 @@ const CommittedInput = ({
   value,
   optional = false,
   numeric = false,
+  normalize,
   selectOn,
   onCommit,
 }: {
@@ -488,6 +495,9 @@ const CommittedInput = ({
   optional?: boolean;
   /** It takes a whole number. */
   numeric?: boolean;
+  /** What is typed, as it is kept, or null where it can't be, which puts
+   *  back what it had. */
+  normalize?: (text: string) => string | null;
   /** Focused with its text selected whenever this changes, while set: the
    *  part it names, so a part newly selected is named by typing. */
   selectOn?: unknown;
@@ -507,9 +517,9 @@ const CommittedInput = ({
   }, [selectOn, text, value]);
 
   const commit = () => {
-    const trimmed = text.trim();
-    if (trimmed === value || (!trimmed && !optional)) setText(value);
-    else onCommit(trimmed);
+    const kept = normalize ? normalize(text.trim()) : text.trim();
+    if (kept === null || kept === value || (!kept && !optional)) setText(value);
+    else onCommit(kept);
   };
   return (
     <Input

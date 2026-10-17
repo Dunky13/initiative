@@ -2571,6 +2571,17 @@ export const useClaimMyUsername = <TError = ErrorType<HTTPValidationError>, TCon
  * re-answer until it comes out right is not one. Putting it right takes
  * somebody with ``users.age_unblock``, which is a support ticket rather than
  * an appeal to the same form.
+ *
+ * **Under the minimum for an account where they are, there is no account.**
+ * Sign-up refuses a date like that at the door, and an account that was made
+ * without a date (a sign-in provider asked for none, or the field was left
+ * empty) meets the same rule here, late: the minimum for the country the
+ * request comes from (``users.ACCOUNT_MINIMUM_AGE``, 13 in the US, 16 in
+ * Germany; the highest of them where the country is not known), applied
+ * before the directory's. The answer stands, the date is not kept, and the
+ * account is closed and scheduled for erasure
+ * (:func:`~app.services.platform.users.refuse_account_for_age`) — not merely
+ * kept out of the directory, which is the answer for sixteen.
  * @summary Confirm My Age
  */
 export const confirmMyAge = (

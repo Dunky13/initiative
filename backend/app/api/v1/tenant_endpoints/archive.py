@@ -193,9 +193,10 @@ async def unarchive_entity(
     live row."""
     row = await _load(session, entity_type.value, entity_id)
     _authorize(entity_type.value, row, current_user, guild_context)
+    was_archived = getattr(row, "archived_at", None) is not None
     await archive_service.unarchive_entity(session, row)
     # A task back out of the archive goes back into its column.
-    if isinstance(row, Task):
+    if isinstance(row, Task) and was_archived:
         await column_limits.require_room(session, guild_context, row.project_id, [row])
     await session.commit()
     return ArchiveResponse(

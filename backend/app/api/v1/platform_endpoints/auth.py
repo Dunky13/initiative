@@ -92,10 +92,10 @@ from app.models.platform.auth_provider_secret import AuthProviderSecret
 from app.models.platform.auth_session import AuthSession
 from app.models.platform.user import (
     LOGIN_STATUSES,
-    SIGN_IN_STATUSES,
     User,
     UserRole,
     UserStatus,
+    may_sign_in,
 )
 from app.models.platform.guild import Guild, CommunityRole
 from app.schemas.platform.token import Token
@@ -810,7 +810,7 @@ async def answer_second_factor(
     # Before the factor is read, not after: a code presented to an account that
     # cannot sign in anyway should not be spent on finding that out.
     user = await system_session.get(User, user_id)
-    if user is None or user.status not in SIGN_IN_STATUSES:
+    if user is None or not may_sign_in(user):
         await system_session.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=AuthMessages.INACTIVE_USER
@@ -1143,7 +1143,7 @@ async def redeem_native_sign_in(
     user = (
         await system_session.get(User, handoff.user_id) if handoff is not None else None
     )
-    if handoff is None or user is None or user.status not in SIGN_IN_STATUSES:
+    if handoff is None or user is None or not may_sign_in(user):
         await system_session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1555,8 +1555,9 @@ async def _complete_provider_login(
     #
     # An account waiting out its erasure window is the deliberate exception
     # (SIGN_IN_STATUSES): the holder coming back is exactly what calls the
-    # deletion off, and which way they came back is not the question.
-    if user.status not in SIGN_IN_STATUSES:
+    # deletion off, and which way they came back is not the question. Unless
+    # its own age answer closed it, which no sign-in calls off (may_sign_in).
+    if not may_sign_in(user):
         return _error_redirect(is_mobile, OidcMessages.ACCOUNT_INACTIVE)
 
     if resolution.outcome is ResolutionOutcome.EMAIL_UNVERIFIED:

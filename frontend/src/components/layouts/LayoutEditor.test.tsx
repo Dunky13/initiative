@@ -393,7 +393,7 @@ describe("LayoutEditor", () => {
     ]);
   });
 
-  it("limits a board's column, and takes the limit off when it is emptied", async () => {
+  it("limits a board's column, takes the limit off when emptied, and refuses one past the most", async () => {
     const { user } = editor("board");
     await outline();
     const [, doing, done] = STATUSES;
@@ -405,6 +405,10 @@ describe("LayoutEditor", () => {
     await user.tab();
     await user.clear(screen.getByRole("spinbutton", { name: done.name }));
     await user.tab();
+    // More than a column may take puts back what it had.
+    await user.type(screen.getByRole("spinbutton", { name: done.name }), "10001");
+    await user.tab();
+    expect(screen.getByRole("spinbutton", { name: done.name })).toHaveValue(null);
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => expect(saved("board")).toBeDefined());

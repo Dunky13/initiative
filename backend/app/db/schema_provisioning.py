@@ -527,8 +527,9 @@ async def strip_template_registry_objects(conn: AsyncConnection) -> int:
 #: the install, the scopes its pinned version requests and where it is
 #: placed, and for a member token the member's
 #: consent and what their initiative roles permit; the sharing gate reads the
-#: grant rows; a notification about what the install did names it. No route
-#: addresses any of them for a plug-in.
+#: grant rows; a notification about what the install did names it; a task
+#: written for a member is held to its board's column limits, which its
+#: project's board layout holds. No route addresses any of them for a plug-in.
 PLUGIN_ROLE_MACHINERY_READS: dict[str, tuple[str, ...]] = {
     "guild_plugins": (
         "id",
@@ -549,6 +550,7 @@ PLUGIN_ROLE_MACHINERY_READS: dict[str, tuple[str, ...]] = {
     ),
     "initiative_role_permissions": ("initiative_role_id", "permission_key", "enabled"),
     "resource_grants": (),
+    "tool_layouts": ("initiative_id", "tool", "tool_id", "kind", "definition"),
 }
 
 #: What ``guild_<id>_plugin`` writes outside ``PLUGIN_TABLE_ACCESS``: table -> the
