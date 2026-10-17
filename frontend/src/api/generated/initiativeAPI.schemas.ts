@@ -11056,10 +11056,19 @@ export interface WidgetSlot {
   repeatable: boolean;
 }
 
+export type WidgetOptionKind = (typeof WidgetOptionKind)[keyof typeof WidgetOptionKind];
+
+export const WidgetOptionKind = {
+  choice: "choice",
+  number: "number",
+  date: "date",
+} as const;
+
 export interface WidgetOption {
   key: string;
   values: string[];
   default: string;
+  kind: WidgetOptionKind;
 }
 
 export interface WidgetCatalogEntry {

@@ -85,6 +85,11 @@ const shapeSummary = (entry: WidgetCatalogEntry, t: TFunction<"dashboards">): st
     })
     .join(" · ");
 
+/** The options a widget is added with: the ones that are a choice. A value
+ *  of its own, such as a target, is set once the widget has data to aim. */
+const choices = (entry: WidgetCatalogEntry) =>
+  entry.options.filter((option) => option.kind !== "number" && option.kind !== "date");
+
 export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps) {
   const { t, i18n } = useTranslation("dashboards");
   const [open, setOpen] = useState(false);
@@ -103,7 +108,7 @@ export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps)
         const meta = metas[entry.type] ?? null;
         const name = widgetDisplayName(meta, entry.type, language);
         const description = localized(meta?.description, language) ?? "";
-        const optionLabels = entry.options.flatMap((option) => [
+        const optionLabels = choices(entry).flatMap((option) => [
           optionLabel(option, meta, language),
           ...option.values.map((value) => valueLabel(option.key, value, meta, language)),
         ]);
@@ -260,7 +265,7 @@ function WidgetDetail({
           </div>
         )}
 
-        {entry.options.map((option) => (
+        {choices(entry).map((option) => (
           <fieldset key={option.key} className="space-y-1.5">
             <legend className="font-medium text-sm">{optionLabel(option, meta, language)}</legend>
             <div className="flex flex-wrap gap-1.5">

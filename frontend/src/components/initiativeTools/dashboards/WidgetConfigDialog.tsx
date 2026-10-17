@@ -478,29 +478,46 @@ export function WidgetConfigDialog({
                     its own options without a locale edit here. */}
                 {(entry?.options ?? []).map((option) => (
                   <div key={option.key} className="space-y-2">
-                    <Label>
+                    <Label htmlFor={`widget-option-${option.key}`}>
                       {localized(meta?.options?.[option.key]?.label, i18n.language) ?? option.key}
                     </Label>
-                    <Select
-                      value={options[option.key] ?? option.default}
-                      onValueChange={(next) =>
-                        setOptions((current) => ({ ...current, [option.key]: next }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {option.values.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {localized(
-                              meta?.options?.[option.key]?.values?.[value],
-                              i18n.language
-                            ) ?? value}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {option.kind === "number" || option.kind === "date" ? (
+                      // A value of its own, such as a target or its day. Empty
+                      // means the widget draws without one.
+                      <Input
+                        id={`widget-option-${option.key}`}
+                        type={option.kind}
+                        value={options[option.key] ?? ""}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setOptions((current) => {
+                            const { [option.key]: _previous, ...rest } = current;
+                            return next ? { ...rest, [option.key]: next } : rest;
+                          });
+                        }}
+                      />
+                    ) : (
+                      <Select
+                        value={options[option.key] ?? option.default}
+                        onValueChange={(next) =>
+                          setOptions((current) => ({ ...current, [option.key]: next }))
+                        }
+                      >
+                        <SelectTrigger id={`widget-option-${option.key}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {option.values.map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {localized(
+                                meta?.options?.[option.key]?.values?.[value],
+                                i18n.language
+                              ) ?? value}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 ))}
               </section>

@@ -197,6 +197,17 @@ const meta = {
         },
       },
     },
+    target: {
+      label: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+    },
+    target_date: {
+      label: {
+        en: "Target date",
+        de: "Zieldatum",
+        es: "Fecha objetivo",
+        fr: "Date cible",
+      },
+    },
   },
 };
 
@@ -210,6 +221,13 @@ const meta = {
  * job — the sandbox has no locale data and no timezone.
  */
 const strings = {
+  target: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+  reached: { en: "Reached", de: "Erreicht", es: "Alcanzado", fr: "Atteint" },
+  missed: { en: "Missed", de: "Verfehlt", es: "No alcanzado", fr: "Manqué" },
+  onTrack: { en: "On track", de: "Im Plan", es: "En camino", fr: "En bonne voie" },
+  behind: { en: "Behind", de: "Im Rückstand", es: "Con retraso", fr: "En retard" },
+  // "{n}" is how far there is still to go.
+  toGo: { en: "{n} to go", de: "noch {n}", es: "faltan {n}", fr: "encore {n}" },
   noRows: {
     en: "Nothing to show",
     de: "Nichts anzuzeigen",
@@ -226,6 +244,75 @@ const strings = {
   series: { en: "Series", de: "Reihe", es: "Serie", fr: "Série" },
   blank: { en: "None", de: "Keine", es: "Ninguno", fr: "Aucun" },
 };
+
+/** One day, in milliseconds. */
+const DAY = 86400000;
+
+/**
+ * The target the options set, and the moment it is due: the end of its day.
+ * `null` without a target.
+ */
+function targetOf(config) {
+  const value = config.target === undefined || config.target === "" ? NaN : Number(config.target);
+  if (!Number.isFinite(value)) return null;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(config.target_date || "");
+  const due = day ? Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])) + DAY - 1 : null;
+  return { value: value, due: due };
+}
+
+/**
+ * Where a number stands against its target.
+ *
+ * Reached once it gets there, and missed once the day has passed without it.
+ * Before then, a straight line through the points drawn so far says whether it
+ * gets there by the day: on track, or behind. With no day, or too few points to
+ * draw a line through, it is only so far to go. `down` is a target to come down
+ * to rather than to climb to.
+ *
+ * @param {{t: number, y: number}[]} points earliest first, `t` in epoch ms
+ */
+function pace(points, current, target, due, down) {
+  if (down ? current <= target : current >= target) return "reached";
+  if (due !== null && due < Date.now()) return "missed";
+  if (due === null || points.length < 2) return "toGo";
+  // In days from the first point, which keeps the sums well inside a double.
+  const origin = points[0].t;
+  const days = points.map((point) => (point.t - origin) / DAY);
+  let meanT = 0;
+  let meanY = 0;
+  for (let index = 0; index < points.length; index++) {
+    meanT += days[index];
+    meanY += points[index].y;
+  }
+  meanT /= points.length;
+  meanY /= points.length;
+  let across = 0;
+  let spread = 0;
+  for (let index = 0; index < points.length; index++) {
+    across += (days[index] - meanT) * (points[index].y - meanY);
+    spread += (days[index] - meanT) * (days[index] - meanT);
+  }
+  if (spread === 0) return "toGo";
+  const lands = meanY + (across / spread) * ((due - origin) / DAY - meanT);
+  return (down ? lands <= target : lands >= target) ? "onTrack" : "behind";
+}
+
+/** The tone each standing is drawn in. "To go" keeps the widget's own. */
+const PACE_TONES = {
+  reached: "positive",
+  onTrack: "positive",
+  behind: "warning",
+  missed: "negative",
+};
+
+/** A number as plain text: whole, or to two places. */
+const plain = (value) => String(Number.isInteger(value) ? value : Math.round(value * 100) / 100);
+
+/** A standing in words: "On track", or how far there is still to go. */
+function standing(say, state, current, target) {
+  if (state !== "toGo") return say(state);
+  return say("toGo").replace("{n}", plain(Math.abs(target - current)));
+}
 
 /**
  * Built-in: chart — a series drawn as bars, lines, an area, or slices.
@@ -526,10 +613,48 @@ function render(data, config, context) {
           })),
         }));
 
-  return chart(
-    arrangeAll(series),
-    labelAt !== undefined && columns[labelAt] ? columns[labelAt].name : undefined,
-    undefined,
-    xTime
+  /**
+   * The target as a line across the chart, labelled with how the data is doing.
+   *
+   * The standing is read off one measure over time: the only series, or the
+   * stack's total. Side-by-side series, or categories rather than moments, have
+   * no one line to read it from, so there the target is only marked. A target
+   * below where the line starts is one to come down to.
+   */
+  const withTarget = (drawn, arranged) => {
+    const goal = targetOf(config);
+    if (!goal || mark === "pie") return drawn;
+    let label = `${say("target")} ${plain(goal.value)}`;
+    if (xTime && (arranged.length === 1 || stacked)) {
+      const totals = new Map();
+      for (const each of arranged) {
+        for (const point of each.points) {
+          // The folded "Other" is a name, not a moment.
+          if (typeof point.x !== "number") continue;
+          totals.set(point.x, (totals.get(point.x) || 0) + point.y);
+        }
+      }
+      const points = [...totals].map(([t, y]) => ({ t: t, y: y })).sort((a, b) => a.t - b.t);
+      if (points.length) {
+        const current = points[points.length - 1].y;
+        const down = goal.value < points[0].y;
+        const state = pace(points, current, goal.value, goal.due, down);
+        label += ` · ${standing(say, state, current, goal.value)}`;
+      }
+    }
+    drawn.scene.target = goal.value;
+    drawn.scene.targetLabel = label;
+    return drawn;
+  };
+
+  const arranged = arrangeAll(series);
+  return withTarget(
+    chart(
+      arranged,
+      labelAt !== undefined && columns[labelAt] ? columns[labelAt].name : undefined,
+      undefined,
+      xTime
+    ),
+    arranged
   );
 }

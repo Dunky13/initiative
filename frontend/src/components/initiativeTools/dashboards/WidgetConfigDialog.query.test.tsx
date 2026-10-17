@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
+import type { WidgetCatalog } from "@/api/generated/initiativeAPI.schemas";
 import type { WidgetBinding } from "@/hooks/useWidgetData";
 import type { DefinitionWidget } from "@/lib/widgets/definition";
 
@@ -431,5 +432,64 @@ describe("what a new statement leaves out", () => {
 
     await waitFor(() => expect(sqlBox()).toHaveValue(SHIPPED_SQL));
     expect(asked.build).toBe(0);
+  });
+});
+
+describe("a target", () => {
+  const saveButton = () => screen.getByRole("button", { name: /^save$/i });
+
+  /** A stat whose catalog entry takes a target and its day. */
+  const withTarget: WidgetCatalog = {
+    widgets: [
+      {
+        type: "stat",
+        min_w: 2,
+        min_h: 2,
+        default_w: 3,
+        default_h: 2,
+        shape: [],
+        options: [
+          { key: "target", values: [], default: "", kind: "number" },
+          { key: "target_date", values: [], default: "", kind: "date" },
+        ],
+      },
+    ],
+    presets: [],
+  };
+
+  it("is typed rather than chosen, and left out once it is cleared", async () => {
+    readWidgetMeta.mockResolvedValue({
+      name: { en: "Stat" },
+      options: {
+        target: { label: { en: "Target" } },
+        target_date: { label: { en: "Target date" } },
+      },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(
+      <WidgetConfigDialog
+        widget={widget({ source: "query", sql: SHIPPED_SQL })}
+        catalog={withTarget}
+        initiativeId={7}
+        open
+        onOpenChange={() => {}}
+        onSave={onSave}
+      />,
+      { communities: { activeCommunityId: 2 } }
+    );
+
+    const target = await screen.findByLabelText("Target");
+    await user.type(target, "50");
+    await user.type(screen.getByLabelText("Target date"), "2026-06-30");
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    await user.click(saveButton());
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ options: { target: "50", target_date: "2026-06-30" } })
+    );
+
+    await user.clear(target);
+    await user.clear(screen.getByLabelText("Target date"));
+    await user.click(saveButton());
+    expect(onSave.mock.lastCall?.[0].options).toBeUndefined();
   });
 });

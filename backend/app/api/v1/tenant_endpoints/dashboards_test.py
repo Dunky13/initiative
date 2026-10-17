@@ -381,6 +381,7 @@ async def test_widget_catalog_projects_the_registry(
             # whichever value happens to sort first.
             assert option["values"] == list(declared.values)
             assert option["default"] == declared.default
+            assert option["kind"] == declared.kind
 
 
 async def test_widget_catalog_presets_resolve_to_primitives(
