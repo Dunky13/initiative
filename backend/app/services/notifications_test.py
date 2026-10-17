@@ -55,6 +55,7 @@ from app.services.notifications import (
     reminder_scan,
 )
 from app.services.guild_sweeps import Scan, Scope, each_guild
+from app.services.platform import accounts as accounts_service
 from app.services.tenant import expiry
 from app.models.platform.guild import Guild, CommunityRole
 from app.testing import (
@@ -194,12 +195,22 @@ def test_format_event_when_falls_back_on_bad_timezone():
 
 
 async def test_event_reminder_fires_once_within_lead_window(
-    session: AsyncSession,
+    session: AsyncSession, monkeypatch
 ):
     creator = await create_user(session, email="organizer@example.com")
     attendee = await create_user(
         session, email="attendee@example.com", event_reminder_minutes_before=15
     )
+    # Reminded about nothing here, so their lead is never read.
+    bystander = await create_user(session, email="bystander@example.com")
+    asked: set[int] = set()
+    read_leads = accounts_service.load_event_reminder_leads
+
+    async def leads(user_ids):
+        asked.update(user_ids)
+        return await read_leads(user_ids)
+
+    monkeypatch.setattr(accounts_service, "load_event_reminder_leads", leads)
     guild, initiative, calendar = await _events_initiative(session, creator)
     # Starts in 10 min; with a 15-min lead the reminder is already due.
     start_at = datetime.now(timezone.utc) + timedelta(minutes=10)
@@ -215,6 +226,7 @@ async def test_event_reminder_fires_once_within_lead_window(
 
     await _dispatch(session)
     assert len(await _reminders_for(session, attendee.id)) == 1
+    assert attendee.id in asked and bystander.id not in asked
 
     # Dedup: a second pass must not create another reminder.
     await _dispatch(session)
@@ -618,7 +630,8 @@ async def test_overdue_digest_pushes_when_email_opted_out(
     monkeypatch.setattr(email_outbox, "enqueue", _fail_email)
     _push_on(monkeypatch)
 
-    now = datetime.now(timezone.utc)
+    # Midday, so the second pass falls on the same day.
+    now = datetime.now(timezone.utc).replace(hour=12, minute=0)
     await set_rls_context(session, Unattributed())
     await _sweep(overdue_scan(now=now))
     assert len(await _queued_pushes(session)) == 1
