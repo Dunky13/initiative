@@ -432,6 +432,7 @@
   "COMMUNITY_PLUGIN_MANDATORY": "Este complemento viene con la plataforma, así que no se puede quitar ni desactivar aquí.",
   "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED": "Hay que activar este complemento para tu comunidad antes de poder instalarlo.",
   "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY": "Solo los administradores de la comunidad pueden borrar los datos de un complemento.",
+  "COMMUNITY_PLUGIN_ERASE_PENDING": "Este complemento todavía está borrando lo que guardaba sobre tu comunidad. Podrás volver a añadirlo cuando termine.",
   "COMMUNITY_PLUGIN_SERVICE_NOT_REGISTERED": "Este complemento no está configurado en este servidor, así que todavía no hay nada que abrir.",
   "COMMUNITY_PLUGIN_SURFACE_NOT_FOUND": "Este complemento no tiene ninguna pantalla con ese nombre.",
   "COMMUNITY_PLUGIN_SURFACE_ADMIN_ONLY": "Solo los administradores de la comunidad pueden abrir esta parte del complemento.",

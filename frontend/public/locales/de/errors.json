@@ -432,6 +432,7 @@
   "COMMUNITY_PLUGIN_MANDATORY": "Dieses Plug-in gehört zur Plattform und kann hier weder entfernt noch ausgeschaltet werden.",
   "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED": "Dieses Plug-in muss für eure Community eingerichtet werden, bevor es installiert werden kann.",
   "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY": "Nur die Admins der Community können die Daten eines Plug-ins löschen.",
+  "COMMUNITY_PLUGIN_ERASE_PENDING": "Dieses Plug-in löscht noch, was es über eure Community gespeichert hat. Du kannst es wieder hinzufügen, sobald es damit fertig ist.",
   "COMMUNITY_PLUGIN_SERVICE_NOT_REGISTERED": "Dieses Plug-in ist auf diesem Server nicht eingerichtet, es gibt also noch nichts zu öffnen.",
   "COMMUNITY_PLUGIN_SURFACE_NOT_FOUND": "Dieses Plug-in hat keinen Bereich mit diesem Namen.",
   "COMMUNITY_PLUGIN_SURFACE_ADMIN_ONLY": "Nur die Community-Administration kann diesen Teil des Plug-ins öffnen.",

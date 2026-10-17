@@ -432,6 +432,7 @@
   "COMMUNITY_PLUGIN_MANDATORY": "This plug-in comes with the platform, so it can't be removed or turned off here.",
   "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED": "This plug-in needs to be set up for your community before it can be installed.",
   "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY": "Only the community's admins can erase a plug-in's data.",
+  "COMMUNITY_PLUGIN_ERASE_PENDING": "This plug-in is still erasing what it held about your community. You can add it again once it has finished.",
   "COMMUNITY_PLUGIN_SERVICE_NOT_REGISTERED": "This plug-in isn't set up on this server, so there's nothing to open yet.",
   "COMMUNITY_PLUGIN_SURFACE_NOT_FOUND": "This plug-in doesn't have a screen by that name.",
   "COMMUNITY_PLUGIN_SURFACE_ADMIN_ONLY": "Only community admins can open this part of the plug-in.",
