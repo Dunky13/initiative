@@ -26,8 +26,8 @@ full DML on a new table, are revoked; the seat and install floors take no
 default privileges and are granted nothing. Row security is enabled and
 forced. It is new and has nothing to carry, so it is created and then locked.
 
-Revision ID: 20261016_0514
-Revises: 20261016_0513
+Revision ID: 20261016_0515
+Revises: 20261016_0514
 Create Date: 2026-10-16
 """
 
@@ -37,8 +37,8 @@ from sqlalchemy.dialects import postgresql
 
 from app.core.config import settings
 
-revision = "20261016_0514"
-down_revision = "20261016_0513"
+revision = "20261016_0515"
+down_revision = "20261016_0514"
 branch_labels = None
 depends_on = None
 

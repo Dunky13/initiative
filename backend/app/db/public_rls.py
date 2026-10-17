@@ -1417,7 +1417,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                 # An installed plug-in's request reads what its plug-in calls people and
                 # its community, and mints what it has not been told yet — in its
                 # own sector only (plugin_refs.install_refs; migrations 20260924_0383,
-                # 20261016_0514).
+                # 20261016_0515).
                 Policy(
                     "install_reads_its_sector",
                     SELECT,
@@ -2068,7 +2068,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
     # uninstall and erase, and when a community's status moves, and sent,
     # retried and swept by the plugin_hooks sweep timer
     # (app.services.marketplace.community_hooks;
-    # migration 20261016_0514).
+    # migration 20261016_0515).
     "plugin_community_hooks": SharedTable(
         rls=TableRls(
             policies=(

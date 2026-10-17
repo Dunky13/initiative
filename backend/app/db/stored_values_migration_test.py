@@ -305,7 +305,7 @@ async def test_plug_in_values_are_respelled(session) -> None:
             {"d": json.dumps(_OLD_DEFINITION), "id": listing.id},
         )
         # The plug-in references 0457 respelled were named by install, a
-        # shape ``identity_refs`` no longer holds (20261016_0514, which also
+        # shape ``identity_refs`` no longer holds (20261016_0515, which also
         # deletes them), so they are not seeded here.
         write(
             "notifications",

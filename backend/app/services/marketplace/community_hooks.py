@@ -11,9 +11,9 @@ rather than to one of its connections:
   dropped, and a later install starts afresh.
 * ``community_status`` — the community's status changed. The body is
   ``{"status": <CommunityStatus value>}``.
-* ``entitlement`` — the statement this deployment's issuer made of what the
-  community holds of the plug-in, ``{version, values}``, written by
-  ``plugin_entitlements.deliver_entitlement``.
+* ``entitlement`` — the statement this deployment's issuer signed of what the
+  community holds of the plug-in, ``{"statement": "<jws>"}`` exactly as the
+  issuer sent it, written by ``plugin_entitlements.deliver_entitlement``.
 
 ``installed``, ``uninstalled`` and ``erase`` send ``{}``. Each is a
 ``lifecycle`` context token with ``hook=<name>``, posted to the plug-in's
@@ -342,8 +342,8 @@ async def _current_body(
     hook: str, guild_id: int, public_id: str, stored: Mapping[str, Any]
 ) -> Optional[dict[str, Any]]:
     """What a hook says when it is sent. A state hook says the state now: the
-    community's status, or the newest entitlement statement (``None`` when
-    there is none, and nothing to send). Every other hook says what it was
+    community's status, or the newest signed entitlement statement as stored
+    (``None`` when there is none, and nothing to send). Every other hook says what it was
     written with."""
     if hook == "community_status":
         from app.services.marketplace.community_status import community_status
@@ -360,7 +360,9 @@ async def _current_body(
         )
         if statement is None:
             return None
-        return {"version": statement.version, "values": statement.values}
+        # The signed statement exactly as the issuer sent it, never rebuilt:
+        # the plug-in verifies the issuer's signature over these bytes.
+        return {"statement": statement.jws}
     return dict(stored)
 
 
