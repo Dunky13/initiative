@@ -153,6 +153,10 @@
     "full": "Una tabla ofrece como máximo {{count}} agrupaciones. Desmarca una para ofrecer otra.",
     "hiddenFull": "Se pueden omitir como máximo {{count}} grupos de una agrupación. Muestra uno para omitir otro."
   },
+  "limits": {
+    "heading": "Límites de columna",
+    "help": "Cuántas tareas abiertas admite cada columna. Cuando una columna está llena, nadie puede añadir ni mover una tarea a ella hasta que salga una; lo que ya está ahí se queda. Déjalo vacío para no poner límite."
+  },
   "calendarListHelp": "Cómo el calendario de la iniciativa muestra sus eventos y tareas. Sus ajustes predefinidos son puntos de partida para todos.",
   "blocks": {
     "accordion": "Acordeón",

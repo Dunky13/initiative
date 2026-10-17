@@ -223,7 +223,11 @@
       "comments": "Commentaires",
       "blockers": "Bloqueurs",
       "tags": "Étiquettes"
-    }
+    },
+    "limitCount": "{{count}} / {{limit}}",
+    "limitTitle": "Accepte au plus {{limit}} tâches ouvertes",
+    "full": "Pleine",
+    "statusFull": "{{name}} est pleine"
   },
   "recurrence": {
     "repeat": "Répétition",

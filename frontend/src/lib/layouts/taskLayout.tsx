@@ -68,6 +68,8 @@ export interface TaskLayoutContext {
   readOnlyMessage: string | null;
   /** The project's statuses, which the task's own joins when the project dropped it. */
   statuses: TaskStatusRead[];
+  /** Whether a column takes one more task; left out where none is limited. */
+  hasRoom?: (taskStatusId: number) => boolean;
   initiativeId: number | null;
   currentUserId?: number;
   askScope: ReturnType<typeof useScopePrompt>["ask"];
@@ -140,8 +142,8 @@ const DescriptionEditor = ({ item: task, label }: EditorProps) => {
 };
 
 const StatusEditor = ({ task }: { task: TaskRead }) => {
-  const { t } = useTranslation("tasks");
-  const { readOnly, statuses, askScope } = useTaskLayout();
+  const { t } = useTranslation(["tasks", "projects"]);
+  const { readOnly, statuses, hasRoom, askScope } = useTaskLayout();
   const label = t("taskForm.statusLabel");
   const save = useTaskFieldSave(task, label, askScope);
   // A task keeps the status it was given after the project drops it, and the
@@ -173,11 +175,17 @@ const StatusEditor = ({ task }: { task: TaskRead }) => {
           <TaskStatusOption status={task.task_status} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((status) => (
-            <SelectItem key={status.id} value={String(status.id)}>
-              <TaskStatusOption status={status} />
-            </SelectItem>
-          ))}
+          {options.map((status) => {
+            const full = status.id !== task.task_status_id && hasRoom?.(status.id) === false;
+            return (
+              <SelectItem key={status.id} value={String(status.id)} disabled={full}>
+                <TaskStatusOption status={status} />
+                {full ? (
+                  <span className="text-muted-foreground text-xs">{t("projects:kanban.full")}</span>
+                ) : null}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </FieldFrame>

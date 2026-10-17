@@ -4,6 +4,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  ColumnLimit,
   DetailLayoutDefinitionInput,
   DetailLayoutRead,
   GetLayoutsParams,
@@ -113,6 +114,8 @@ export type LayoutEdits = {
   /** The open list offers `groupings`, in order, and starts grouped by
    *  `groupBy`, one of them, or not at all. */
   changeGroupings: (groupings: LayoutGrouping[], groupBy: string | null) => void;
+  /** The open board limits these columns. */
+  changeLimits: (limits: ColumnLimit[]) => void;
   /** The open layout goes back to the shipped one. */
   resetLayout: () => void;
 };
@@ -381,6 +384,9 @@ export const LayoutEditor = ({
     },
     changeGroupings: (groupings, groupBy) => {
       if (current) changeList({ ...current.definition, groupings, group_by: groupBy });
+    },
+    changeLimits: (limits) => {
+      if (current) changeList({ ...current.definition, limits });
     },
   };
 
@@ -666,6 +672,7 @@ export const LayoutEditor = ({
               opensFirst={draft.opensOn === current.kind}
               stored={draft.lists[current.kind] != null}
               fields={fields}
+              statuses={project?.statuses}
               selection={selection}
               edits={edits}
               locked={saving}

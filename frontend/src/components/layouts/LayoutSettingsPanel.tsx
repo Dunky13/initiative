@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type { TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
+import { TaskStatusOption } from "@/components/tasks/TaskStatusOption";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { MAX_COLUMN_LIMIT } from "@/hooks/useColumnRoom";
 import { LAYOUT_REGIONS } from "@/lib/layouts/detailLayout";
 import {
   cardOf,
@@ -46,12 +48,15 @@ export const ListLayoutSettings = ({
   opensFirst,
   stored,
   fields,
+  statuses,
   selection,
   edits,
   locked,
 }: {
   layout: ListLayout;
   presets: EditablePresets;
+  /** The project's statuses, whose board columns can be limited. */
+  statuses?: TaskStatusRead[];
   /** What the list is, as a key in `projects`. */
   help: string;
   /** Whether the target opens on it; left out where it has no other list. */
@@ -91,6 +96,9 @@ export const ListLayoutSettings = ({
           {layout.kind !== "calendar" ? (
             <LayoutGroupings layout={layout} fields={fields} edits={edits} />
           ) : null}
+          {layout.kind === "board" && statuses ? (
+            <ColumnLimits layout={layout} statuses={statuses} edits={edits} />
+          ) : null}
           <Shipped stored={stored} edits={edits} />
         </Panel>
       ) : selection.kind === "column" ? (
@@ -104,6 +112,65 @@ export const ListLayoutSettings = ({
         />
       )}
     </fieldset>
+  );
+};
+
+/** How many open tasks each of a board's columns takes from a person; one
+ *  left empty takes any number. Saved with the layout. */
+const ColumnLimits = ({
+  layout,
+  statuses,
+  edits,
+}: {
+  layout: ListLayout;
+  statuses: TaskStatusRead[];
+  edits: LayoutEdits;
+}) => {
+  const { t } = useTranslation(LAYOUT_NAMESPACES);
+  const translate = t as TranslateFn;
+  const limits = new Map(
+    (layout.definition.limits ?? []).map((each) => [each.status_id, each.limit])
+  );
+  const change = (statusId: number, text: string) => {
+    const limit = Number(text);
+    if (text !== "" && !(Number.isInteger(limit) && limit >= 1 && limit <= MAX_COLUMN_LIMIT)) {
+      return;
+    }
+    const next = new Map(limits);
+    if (text === "") next.delete(statusId);
+    else next.set(statusId, limit);
+    edits.changeLimits(
+      statuses.flatMap((status) => {
+        const kept = next.get(status.id);
+        return kept === undefined ? [] : [{ status_id: status.id, limit: kept }];
+      })
+    );
+  };
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <h3 className="font-medium text-sm">{translate("layouts:limits.heading")}</h3>
+        <p className="text-muted-foreground text-xs">{translate("layouts:limits.help")}</p>
+      </div>
+      <ul className="space-y-2">
+        {statuses.map((status) => (
+          <li key={status.id} className="flex items-center gap-2">
+            <Label htmlFor={`column-limit-${status.id}`} className="min-w-0 flex-1">
+              <TaskStatusOption status={status} />
+            </Label>
+            <div className="w-20">
+              <CommittedInput
+                id={`column-limit-${status.id}`}
+                value={String(limits.get(status.id) ?? "")}
+                optional
+                numeric
+                onCommit={(text) => change(status.id, text)}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 };
 
@@ -412,12 +479,15 @@ const CommittedInput = ({
   id,
   value,
   optional = false,
+  numeric = false,
   selectOn,
   onCommit,
 }: {
   id: string;
   value: string;
   optional?: boolean;
+  /** It takes a whole number. */
+  numeric?: boolean;
   /** Focused with its text selected whenever this changes, while set: the
    *  part it names, so a part newly selected is named by typing. */
   selectOn?: unknown;
@@ -447,6 +517,7 @@ const CommittedInput = ({
       value={text}
       ref={input}
       maxLength={MAX_TITLE_LENGTH}
+      {...(numeric ? { type: "number", min: 1, inputMode: "numeric" as const } : {})}
       onChange={(event) => setText(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {

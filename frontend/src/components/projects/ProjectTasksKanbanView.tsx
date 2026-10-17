@@ -23,7 +23,7 @@ import type {
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { KanbanBands } from "@/components/projects/KanbanBands";
-import { KanbanColumn } from "@/components/projects/KanbanColumn";
+import { type ColumnFill, KanbanColumn } from "@/components/projects/KanbanColumn";
 import { priorityVariant } from "@/components/projects/projectTasksConfig";
 import { resolveKanbanDropTarget } from "@/components/projects/taskOrdering";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MentionText } from "@/components/user/MentionText";
+import { type ColumnRoom, ROOM_EVERYWHERE } from "@/hooks/useColumnRoom";
 import { useProperties } from "@/hooks/useProperties";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { formatDateTime } from "@/lib/formatDate";
@@ -85,6 +86,8 @@ type ProjectTasksKanbanViewProps = {
   onGroupingChange?: (grouping: GroupingState) => void;
   /** The groupings the board offers, in order, where its layout names them. */
   viewGroupings?: LayoutGrouping[] | null;
+  /** How full its limited columns are. */
+  room?: ColumnRoom;
   /** While the view is edited: the path of each part of its card. */
   editing?: WeakMap<LayoutNode, string>;
 };
@@ -119,6 +122,7 @@ export const ProjectTasksKanbanView = ({
   grouping = NOT_GROUPED,
   onGroupingChange,
   viewGroupings,
+  room = ROOM_EVERYWHERE,
   editing,
 }: ProjectTasksKanbanViewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -153,10 +157,15 @@ export const ProjectTasksKanbanView = ({
         ? {
             statuses: taskStatuses,
             moveTo: (taskId, statusId) => moveRef.current?.(taskId, statusId),
+            hasRoom: room.hasRoom,
           }
         : null,
-    [canMove, taskStatuses]
+    [canMove, taskStatuses, room]
   );
+  const fillOf = (statusId: number): ColumnFill | undefined => {
+    const limit = room.limitOf(statusId);
+    return limit === undefined ? undefined : { count: room.countOf(statusId), limit };
+  };
   const { t, i18n } = useTranslation(["projects", "common"]);
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(
@@ -218,9 +227,14 @@ export const ProjectTasksKanbanView = ({
     const dragged = event.active.data.current;
     const from = dragged?.group;
     const to = target?.data?.group;
+    const intoFull =
+      target?.data?.statusId !== undefined &&
+      target.data.statusId !== dragged?.statusId &&
+      !room.hasRoom(target.data.statusId);
     const intoBand =
       active?.grouping.move !== undefined &&
       canEditTasks &&
+      !intoFull &&
       typeof from === "string" &&
       typeof to === "string" &&
       from !== to;
@@ -288,6 +302,7 @@ export const ProjectTasksKanbanView = ({
               grouping={active.grouping}
               statuses={taskStatuses}
               counts={counts}
+              fillOf={fillOf}
               collapsedStatusIds={collapsedStatusIds}
               onToggleCollapse={onToggleCollapse}
               canWrite={canReorderTasks}
@@ -310,6 +325,7 @@ export const ProjectTasksKanbanView = ({
                     collapsed={isCollapsed}
                     onToggleCollapse={onToggleCollapse}
                     taskCount={groupedTasks[status.id]?.length ?? 0}
+                    fill={fillOf(status.id)}
                     className={cn(
                       "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
                       isCollapsed ? "grow-0 basis-12" : columnBasis
