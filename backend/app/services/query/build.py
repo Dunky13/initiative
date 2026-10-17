@@ -499,16 +499,26 @@ def build(spec: QuerySpec) -> str:
 
     # By output position, because a grouped expression and its select-list
     # twin have to be the same expression and an ordinal says so outright.
-    # Every column a name matches: one date rounded two ways is two columns
-    # under one name, and grouping only the first leaves the other ungrouped.
+    # Every column a name matches that is not a count or a total: one date
+    # rounded two ways is two columns under one name, and grouping only the
+    # first leaves the other ungrouped, while an aggregate is never grouped. A
+    # name only an aggregate has is grouped as it always was, and Postgres
+    # refuses it.
     grouped: list[int] = []
     for name in spec.group_by:
         if name not in aliases:
             raise QueryError(QueryMessages.UNKNOWN_FIELD, name)
+        plain = [
+            position
+            for position, (alias, column) in enumerate(
+                zip(aliases, spec.columns), start=1
+            )
+            if alias == name and not column.aggregate
+        ]
         grouped += [
             position
-            for position, alias in enumerate(aliases, start=1)
-            if alias == name and position not in grouped
+            for position in plain or [aliases.index(name) + 1]
+            if position not in grouped
         ]
     if grouped:
         select.groupClause = tuple(

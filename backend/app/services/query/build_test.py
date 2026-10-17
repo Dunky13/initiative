@@ -108,6 +108,20 @@ def test_one_date_rounded_two_ways_is_grouped_both_ways():
     assert "GROUP BY 1, 2 ORDER BY 1 ASC NULLS LAST, 2 ASC NULLS LAST" in sql
 
 
+def test_a_count_sharing_a_columns_name_is_not_grouped():
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="priority", alias="bucket"),
+                Column(field="*", aggregate="count", alias="bucket"),
+            ),
+            group_by=("bucket",),
+        )
+    )
+    assert "GROUP BY 1 ORDER BY 1 ASC NULLS LAST" in sql
+
+
 @pytest.mark.parametrize(
     "value",
     [
