@@ -173,6 +173,11 @@ DONE_RETENTION = timedelta(days=7)
 #: can take, so a live sender settles before it lapses.
 LEASE = timedelta(minutes=2)
 
+#: The longest one attempt may take, start to finish, whatever the plug-in
+#: streams: half the lease, so an attempt is over before its claim can lapse
+#: and another sender can take the plug-in.
+SEND_DEADLINE = LEASE / 2
+
 #: How many plug-ins one visit sends to at once. Each send holds at most one
 #: database connection at a time, and none during its request.
 SENDS_AT_ONCE = 4
@@ -562,8 +567,22 @@ async def _settle(
 ) -> bool:
     """Record how one attempt ended and clear its claim, in a short
     transaction of its own, dropping the references an ``erase`` that is done
-    with let go in the same one. Returns whether the hook is done."""
+    with let go in the same one. Returns whether the hook is done.
+
+    Only the sender still holding the claim it was given may settle: a claim
+    that lapsed, or that another sender has since taken, records nothing and
+    drops nothing, and answers ``False`` so this sender stops."""
     now = datetime.now(timezone.utc)
+    lease = row.claimed_until
+    if lease is None or lease <= now:
+        logger.warning(
+            "community hooks: %s for %s in guild %s outlived its claim; "
+            "its outcome is not recorded",
+            row.hook,
+            row.public_id,
+            row.guild_id,
+        )
+        return False
     attempts = row.attempts + 1
     values: dict[str, Any] = {"attempts": attempts, "claimed_until": None}
     if outcome.outcome is not None:
@@ -590,13 +609,31 @@ async def _settle(
     dropped = 0
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
+        settled = await session.exec(
+            update(_TABLE)
+            .where(
+                _TABLE.c.id == row.id,
+                _TABLE.c.claimed_until == lease,
+                _TABLE.c.claimed_until > now,
+            )
+            .values(**values)
+        )
+        if not settled.rowcount:
+            await session.rollback()
+            logger.warning(
+                "community hooks: %s for %s in guild %s lost its claim before "
+                "it settled; its outcome is not recorded",
+                row.hook,
+                row.public_id,
+                row.guild_id,
+            )
+            return False
         if (
             row.hook == "community_status"
             and outcome.outcome is not None
             and sent is not None
         ):
             await _mark_status_told(session, row, str(sent["status"]))
-        await session.exec(update(_TABLE).where(_TABLE.c.id == row.id).values(**values))
         if erased:
             # Erasing is the community's request: a plug-in that never answers
             # it does not keep the names, it only loses the chance to say it
@@ -674,13 +711,14 @@ async def _claim_head(guild_id: int, public_id: str) -> Optional[PluginCommunity
             await session.commit()
             return None
         head = rest[0]
+        lease = now + LEASE
         await session.exec(
-            update(_TABLE)
-            .where(_TABLE.c.id == head.id)
-            .values(claimed_until=now + LEASE)
+            update(_TABLE).where(_TABLE.c.id == head.id).values(claimed_until=lease)
         )
         await session.commit()
         session.expunge(head)
+    # The claim this sender holds, which settling is checked against.
+    head.claimed_until = lease
     return head
 
 
@@ -694,18 +732,21 @@ async def _deliver_plugin(
         while (row := await _claim_head(guild_id, public_id)) is not None:
             sent: Optional[dict[str, Any]] = None
             try:
-                sent = await _current_body(row.hook, guild_id, row.public_id, row.body)
-                outcome = (
-                    _Outcome("superseded")
-                    if sent is None
-                    else await _send(
-                        hook=row.hook,
-                        guild_id=guild_id,
-                        public_id=row.public_id,
-                        install_id=row.install_id,
-                        body=sent,
+                async with asyncio.timeout(SEND_DEADLINE.total_seconds()):
+                    sent = await _current_body(
+                        row.hook, guild_id, row.public_id, row.body
                     )
-                )
+                    outcome = (
+                        _Outcome("superseded")
+                        if sent is None
+                        else await _send(
+                            hook=row.hook,
+                            guild_id=guild_id,
+                            public_id=row.public_id,
+                            install_id=row.install_id,
+                            body=sent,
+                        )
+                    )
             except Exception as exc:
                 logger.exception(
                     "community hooks: sending %s to %s in guild %s failed",
@@ -764,10 +805,11 @@ async def naming_closed(*, guild_id: int, public_id: str) -> bool:
 
 async def _claim_call(
     hook: str, *, guild_id: int, public_id: str, install_id: int
-) -> Optional[int]:
+) -> Optional[tuple[int, datetime]]:
     """Claim the plug-in for one hook sent at once, in a short transaction: a
-    row of its own, claimed. ``None`` while another sender holds the plug-in.
-    Raises ``HookNameRefused`` while an ``erase`` of it is waiting."""
+    row of its own, claimed, and the claim it holds. ``None`` while another
+    sender holds the plug-in. Raises ``HookNameRefused`` while an ``erase`` of
+    it is waiting."""
     from app.services.tenant import plugin_connection_flows as flows
 
     now = datetime.now(timezone.utc)
@@ -800,20 +842,27 @@ async def _claim_call(
             install_id=install_id,
             now=now,
         )
-        row["claimed_until"] = now + LEASE
+        lease = now + LEASE
+        row["claimed_until"] = lease
         claimed = (
             await session.exec(insert(_TABLE).values(row).returning(_TABLE.c.id))
         ).one()[0]
         await session.commit()
-    return int(claimed)
+    return int(claimed), lease
 
 
-async def _settle_call(row_id: int, error: Optional[str]) -> None:
+async def _settle_call(row_id: int, lease: datetime, error: Optional[str]) -> None:
+    """Record a hook sent at once, if its claim is still the one it was given:
+    one that lapsed is left for the next claimer to settle ``lapsed``."""
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
         await session.exec(
             update(_TABLE)
-            .where(_TABLE.c.id == row_id)
+            .where(
+                _TABLE.c.id == row_id,
+                _TABLE.c.claimed_until == lease,
+                _TABLE.c.claimed_until > datetime.now(timezone.utc),
+            )
             .values(
                 attempts=1,
                 claimed_until=None,
@@ -847,7 +896,7 @@ async def call_now(
         raise UnknownCommunityHookError(f"not a hook sent at once: {hook!r}")
     give_up_at = time.monotonic() + CALL_WAIT_SECONDS
     while (
-        row_id := await _claim_call(
+        claim := await _claim_call(
             hook, guild_id=guild_id, public_id=public_id, install_id=install_id
         )
     ) is None:
@@ -857,19 +906,21 @@ async def call_now(
                 "did not finish"
             )
         await asyncio.sleep(0.25)
+    row_id, lease = claim
     try:
-        answer = await flows.call_hook(
-            hook,
-            public_id=public_id,
-            base_url=base_url,
-            guild_id=guild_id,
-            install_id=install_id,
-            body=body,
-        )
+        async with asyncio.timeout(SEND_DEADLINE.total_seconds()):
+            answer = await flows.call_hook(
+                hook,
+                public_id=public_id,
+                base_url=base_url,
+                guild_id=guild_id,
+                install_id=install_id,
+                body=body,
+            )
     except BaseException as exc:
-        await _settle_call(row_id, type(exc).__name__)
+        await _settle_call(row_id, lease, type(exc).__name__)
         raise
-    await _settle_call(row_id, None)
+    await _settle_call(row_id, lease, None)
     return answer
 
 

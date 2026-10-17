@@ -13,6 +13,7 @@ its visit (:func:`community_hooks.visit`) sends what is due.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 from datetime import datetime, timedelta, timezone
@@ -357,6 +358,56 @@ class TestSending:
         await _visit(guild.id)
         (row,) = await _hooks(session, guild.id)
         assert (row.outcome, row.attempts) == ("delivered", 2)
+
+    async def test_an_attempt_is_cut_off_before_its_claim_can_lapse(
+        self, session, monkeypatch
+    ):
+        _user, guild, _install = await _setup(session)
+
+        async def trickling(**_kwargs):
+            await asyncio.sleep(5)
+
+        monkeypatch.setattr(community_hooks, "_send", trickling)
+        monkeypatch.setattr(community_hooks, "SEND_DEADLINE", timedelta(seconds=0.05))
+        assert community_hooks.LEASE / 2 == timedelta(minutes=1)
+
+        await _deliver(guild.id, hook="installed")
+        await _visit(guild.id)
+        (row,) = await _hooks(session, guild.id)
+        assert row.done_at is None and row.attempts == 1
+        assert row.last_error == "TimeoutError"
+        assert row.claimed_until is None
+
+    async def test_a_sender_whose_claim_was_taken_records_nothing(
+        self, session, monkeypatch
+    ):
+        _user, guild, _install = await _setup(session)
+        await _deliver(guild.id, hook="installed")
+        mine = await community_hooks._claim_head(guild.id, PUBLIC_ID)
+        assert mine is not None
+
+        # Its claim lapsed and another sender took the plug-in.
+        theirs = datetime.now(timezone.utc) + community_hooks.LEASE
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            update(PluginCommunityHook)
+            .where(PluginCommunityHook.id == mine.id)
+            .values(claimed_until=theirs)
+        )
+        await session.commit()
+        assert not await community_hooks._settle(
+            mine, community_hooks._Outcome("delivered")
+        )
+        (row,) = await _hooks(session, guild.id)
+        assert (row.done_at, row.attempts, row.claimed_until) == (None, 0, theirs)
+
+        # One whose claim ran out records nothing either.
+        mine.claimed_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+        assert not await community_hooks._settle(
+            mine, community_hooks._Outcome("delivered")
+        )
+        (row,) = await _hooks(session, guild.id)
+        assert row.done_at is None
 
     async def test_one_plugins_hooks_go_in_the_order_they_were_written(
         self, session, monkeypatch
