@@ -15,6 +15,12 @@ cascades from.
 
 A routed write appends rows for its own community; the system engine does the
 rest.
+
+``claimed_until`` is the lease that makes one sender per community and
+plug-in: a sender claims the plug-in's head row (or writes a row for a hook it
+sends at once) in a short transaction, sends with no connection held, and
+clears the claim as it settles. A claim that lapses, a sender that died, is
+simply claimed again.
 """
 
 from datetime import datetime, timezone
@@ -96,9 +102,16 @@ class PluginCommunityHook(SQLModel, table=True):
     done_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    #: Who is sending it, until when: while this is in the future no other
+    #: sender sends to the plug-in in the community.
+    claimed_until: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     #: How it ended: ``delivered`` (a 2xx), ``not_taken`` (a 404: the plug-in
     #: does not take this hook), ``superseded`` (a newer one of its kind was
-    #: waiting) or ``gave_up``.
+    #: waiting), ``gave_up``, ``unnamed`` (the plug-in may not be named here),
+    #: or, for a hook sent at once, ``answered``, ``failed`` or ``lapsed`` (its
+    #: sender died).
     outcome: Optional[str] = Field(
         default=None, sa_column=Column(String(16), nullable=True)
     )

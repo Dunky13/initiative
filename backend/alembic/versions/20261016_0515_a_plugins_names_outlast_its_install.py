@@ -17,7 +17,8 @@ plug-in was last told, set once a ``community_status`` hook is answered. An
 existing install starts with none, so it is told the current status once.
 
 ``plugin_community_hooks`` is new: the community hooks waiting to reach a
-plug-in, retried until it answers, by the ``plugin_hooks`` sweep timer. A
+plug-in, retried until it answers, by the ``plugin_hooks`` sweep timer, with
+``claimed_until`` as the lease that keeps one sender per community and plug-in. A
 routed write appends hooks for its own community (an install, an uninstall) in
 its own transaction, so the guild floor holds INSERT and one policy admits the
 routed community's rows; it reads nothing back. The system engine owns the
@@ -129,6 +130,7 @@ def upgrade() -> None:
         sa.Column("done_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("outcome", sa.String(length=16), nullable=True),
         sa.Column("last_error", sa.String(length=200), nullable=True),
+        sa.Column("claimed_until", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index(
         "ix_plugin_community_hooks_pending",

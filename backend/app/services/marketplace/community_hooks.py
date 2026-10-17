@@ -19,14 +19,18 @@ rather than to one of its connections:
 ``lifecycle`` context token with ``hook=<name>``, posted to the plug-in's
 ``/v1/hooks/<name>`` by ``plugin_connection_flows.call_hook``.
 
-**One sender.** This module is the only caller of ``call_hook``, and every
-hook to a plug-in about a community is sent under one lock, keyed by both
-(``LockNamespace.PLUGIN_HOOK_SEND``): the queue's delivery below, and
-:func:`call_now` for the three hooks whose caller is waiting on the answer
-(:data:`ANSWERED_HOOK_NAMES`). So nothing reaches a plug-in after its
-``erase``: :func:`call_now` refuses while one is waiting, and once it is
-finished the names it dropped are not minted again (``plugin_refs.mint_guard``).
-A test reads the code to hold this (``one_sender_test``).
+**One sender.** This module is the only caller of ``call_hook``, and at most
+one hook to a plug-in about a community is in flight at a time, held by a
+lease on the queue's rows (``claimed_until``) rather than by anything held
+open: a sender claims in a short transaction, sends with no database
+connection held, and settles and clears the claim in another. A claim that
+lapses, a sender that died, is simply claimed again. The queue's delivery
+claims a plug-in's head row; :func:`call_now`, for the three hooks whose caller
+waits on the answer (:data:`ANSWERED_HOOK_NAMES`), writes a claimed row of its
+own. So nothing reaches a plug-in after its ``erase``: :func:`call_now` refuses
+while one is waiting, and once it is finished the names it dropped are not
+minted again (``plugin_refs.mint_guard``). A test reads the code to hold this
+(``community_hooks_one_sender_test``).
 
 **How to send one.** :func:`queue_community_hooks` writes hooks in the caller's
 own transaction, so a rollback sends nothing; :func:`deliver_community_hook`
@@ -86,6 +90,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -164,6 +169,17 @@ MAX_ATTEMPTS = 20
 #: How long an answered hook is kept, for an operator reading the table.
 DONE_RETENTION = timedelta(days=7)
 
+#: How long a claim to send holds the plug-in: well past the longest a send
+#: can take, so a live sender settles before it lapses.
+LEASE = timedelta(minutes=2)
+
+#: How many plug-ins one visit sends to at once. Each send holds at most one
+#: database connection at a time, and none during its request.
+SENDS_AT_ONCE = 4
+
+#: How long :func:`call_now` waits for another send to the plug-in to finish.
+CALL_WAIT_SECONDS = 30.0
+
 _TABLE: Any = PluginCommunityHook.__table__  # type: ignore[attr-defined]
 
 
@@ -185,9 +201,10 @@ async def _container(public_id: str) -> Optional[RegistrationSnapshot]:
     return registration
 
 
-async def _hold_plugin(session: AsyncSession, guild_id: int, public_id: str) -> None:
-    """Take the lock every hook to ``public_id`` about the community is sent
-    under, for the rest of ``session``'s transaction."""
+async def _claiming(session: AsyncSession, guild_id: int, public_id: str) -> None:
+    """Serialize claims to send to ``public_id`` about the community, for the
+    rest of ``session``'s transaction, which is a short one: never held across
+    a send."""
     await advisory_lock(
         session, LockNamespace.PLUGIN_HOOK_SEND, f"{guild_id}:{public_id}"
     )
@@ -539,20 +556,18 @@ async def _mark_status_told(
 
 
 async def _settle(
-    session: AsyncSession,
     row: PluginCommunityHook,
     outcome: _Outcome,
     sent: Optional[Mapping[str, Any]] = None,
 ) -> bool:
-    """Record how one attempt ended, and drop the references an ``erase`` that
-    is done with let go. Returns whether the hook is done."""
+    """Record how one attempt ended and clear its claim, in a short
+    transaction of its own, dropping the references an ``erase`` that is done
+    with let go in the same one. Returns whether the hook is done."""
     now = datetime.now(timezone.utc)
     attempts = row.attempts + 1
-    values: dict[str, Any] = {"attempts": attempts}
+    values: dict[str, Any] = {"attempts": attempts, "claimed_until": None}
     if outcome.outcome is not None:
         values.update(done_at=now, outcome=outcome.outcome, last_error=None)
-        if row.hook == "community_status" and sent is not None:
-            await _mark_status_told(session, row, str(sent["status"]))
     else:
         values["last_error"] = (outcome.error or "")[:HOOK_ERROR_MAX_LENGTH] or None
         if attempts >= MAX_ATTEMPTS:
@@ -571,21 +586,29 @@ async def _settle(
     if row.hook == "revoke" and "done_at" in values:
         # A finished revocation keeps no tokens, sealed or not.
         values["body"] = {}
-    await session.exec(update(_TABLE).where(_TABLE.c.id == row.id).values(**values))
     erased = row.hook == "erase" and "done_at" in values
     dropped = 0
-    if erased:
-        # Erasing is the community's request: a plug-in that never answers it
-        # does not keep the names, it only loses the chance to say it erased.
-        # Dropped in the transaction that finishes the erase, so nothing can
-        # see it finished and still find the names.
-        dropped = await identity_refs.drop_sector_refs(
-            session,
-            sector_guild_id=row.guild_id,
-            sector_plugin=row.public_id,
-            purpose=IdentityPurpose.plugin,
-        )
-    await session.commit()
+    async with db_session.SystemSessionLocal() as session:
+        await db_session.set_rls_context(session, Unattributed())
+        if (
+            row.hook == "community_status"
+            and outcome.outcome is not None
+            and sent is not None
+        ):
+            await _mark_status_told(session, row, str(sent["status"]))
+        await session.exec(update(_TABLE).where(_TABLE.c.id == row.id).values(**values))
+        if erased:
+            # Erasing is the community's request: a plug-in that never answers
+            # it does not keep the names, it only loses the chance to say it
+            # erased. Dropped in the transaction that finishes the erase, so
+            # nothing can see it finished and still find the names.
+            dropped = await identity_refs.drop_sector_refs(
+                session,
+                sector_guild_id=row.guild_id,
+                sector_plugin=row.public_id,
+                purpose=IdentityPurpose.plugin,
+            )
+        await session.commit()
     if erased:
         logger.info(
             "community hooks: %s %s erase in guild %s; %d reference(s) dropped",
@@ -601,34 +624,74 @@ async def _settle(
     return "done_at" in values
 
 
-async def _deliver_plugin(
-    guild_id: int, rows: list[PluginCommunityHook], now: datetime
-) -> None:
-    """Send one plug-in's due hooks, oldest first, until one is not answered,
-    on a session of its own so plug-ins are sent to side by side, and one that
-    is down or waiting out a backoff holds back only its own.
+def _live(row: PluginCommunityHook, now: datetime) -> bool:
+    return row.claimed_until is not None and row.claimed_until > now
 
-    A state hook with a newer one of its kind waiting is settled ``superseded``
-    first, whether or not it is due, so a send that failed never holds the
-    current state back."""
+
+async def _claim_head(guild_id: int, public_id: str) -> Optional[PluginCommunityHook]:
+    """Claim the plug-in's next hook to send in the community, in a short
+    transaction, or answer ``None``: nothing is due, or another sender holds
+    the plug-in.
+
+    State hooks a newer one of their kind supersedes are settled first,
+    whether or not they are due, so a send that failed never holds the current
+    state back. A hook sent at once whose sender died is settled ``lapsed``."""
+    now = datetime.now(timezone.utc)
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
-        stale, _rest = _effective(rows)
-        if stale:
+        await _claiming(session, guild_id, public_id)
+        rows = list(
+            (
+                await session.exec(
+                    select(PluginCommunityHook)
+                    .where(
+                        PluginCommunityHook.guild_id == guild_id,
+                        PluginCommunityHook.public_id == public_id,
+                        col(PluginCommunityHook.done_at).is_(None),
+                    )
+                    .order_by(col(PluginCommunityHook.id))
+                )
+            ).all()
+        )
+        if any(_live(row, now) for row in rows):
+            await session.commit()
+            return None
+        stale, rest = _effective(rows)
+        lapsed = [int(row.id or 0) for row in rest if row.hook in ANSWERED_HOOK_NAMES]
+        if stale or lapsed:
             await session.exec(
                 update(_TABLE)
                 .where(_TABLE.c.id.in_(stale))
                 .values(done_at=now, outcome="superseded")
             )
+            await session.exec(
+                update(_TABLE)
+                .where(_TABLE.c.id.in_(lapsed))
+                .values(done_at=now, outcome="lapsed", claimed_until=None)
+            )
+        rest = [row for row in rest if row.id not in lapsed]
+        if not rest or rest[0].next_attempt_at > now:
             await session.commit()
-        for row in rows:
-            if row.id in stale:
-                continue
-            if row.next_attempt_at > now:
-                return
-            # Held from the send until _settle commits how it ended, so a hook
-            # sent at once never goes between an erase and its dropped names.
-            await _hold_plugin(session, guild_id, row.public_id)
+            return None
+        head = rest[0]
+        await session.exec(
+            update(_TABLE)
+            .where(_TABLE.c.id == head.id)
+            .values(claimed_until=now + LEASE)
+        )
+        await session.commit()
+        session.expunge(head)
+    return head
+
+
+async def _deliver_plugin(
+    guild_id: int, public_id: str, limit: asyncio.Semaphore
+) -> None:
+    """Send one plug-in's due hooks, oldest first, until one is not answered.
+    Each is claimed, sent and settled in turn, and no database connection is
+    held while it is sent, so a plug-in that is down holds back only its own."""
+    async with limit:
+        while (row := await _claim_head(guild_id, public_id)) is not None:
             sent: Optional[dict[str, Any]] = None
             try:
                 sent = await _current_body(row.hook, guild_id, row.public_id, row.body)
@@ -651,7 +714,7 @@ async def _deliver_plugin(
                     guild_id,
                 )
                 outcome = _Outcome(None, type(exc).__name__)
-            if not await _settle(session, row, outcome, sent):
+            if not await _settle(row, outcome, sent):
                 return
 
 
@@ -699,6 +762,69 @@ async def naming_closed(*, guild_id: int, public_id: str) -> bool:
         )
 
 
+async def _claim_call(
+    hook: str, *, guild_id: int, public_id: str, install_id: int
+) -> Optional[int]:
+    """Claim the plug-in for one hook sent at once, in a short transaction: a
+    row of its own, claimed. ``None`` while another sender holds the plug-in.
+    Raises ``HookNameRefused`` while an ``erase`` of it is waiting."""
+    from app.services.tenant import plugin_connection_flows as flows
+
+    now = datetime.now(timezone.utc)
+    async with db_session.SystemSessionLocal() as session:
+        await db_session.set_rls_context(session, Unattributed())
+        await _claiming(session, guild_id, public_id)
+        if (await session.exec(select(_erase_waiting(guild_id, public_id)))).one():
+            await session.commit()
+            raise flows.HookNameRefused(
+                f"hook {hook}: {public_id} is being erased in guild {guild_id}"
+            )
+        held = (
+            await session.exec(
+                select(PluginCommunityHook.id).where(
+                    PluginCommunityHook.guild_id == guild_id,
+                    PluginCommunityHook.public_id == public_id,
+                    col(PluginCommunityHook.done_at).is_(None),
+                    col(PluginCommunityHook.claimed_until) > now,
+                )
+            )
+        ).first()
+        if held is not None:
+            await session.commit()
+            return None
+        row = _row(
+            guild_id=guild_id,
+            public_id=public_id,
+            hook=hook,
+            body={},
+            install_id=install_id,
+            now=now,
+        )
+        row["claimed_until"] = now + LEASE
+        claimed = (
+            await session.exec(insert(_TABLE).values(row).returning(_TABLE.c.id))
+        ).one()[0]
+        await session.commit()
+    return int(claimed)
+
+
+async def _settle_call(row_id: int, error: Optional[str]) -> None:
+    async with db_session.SystemSessionLocal() as session:
+        await db_session.set_rls_context(session, Unattributed())
+        await session.exec(
+            update(_TABLE)
+            .where(_TABLE.c.id == row_id)
+            .values(
+                attempts=1,
+                claimed_until=None,
+                done_at=datetime.now(timezone.utc),
+                outcome="failed" if error else "answered",
+                last_error=(error or "")[:HOOK_ERROR_MAX_LENGTH] or None,
+            )
+        )
+        await session.commit()
+
+
 async def call_now(
     hook: str,
     *,
@@ -709,21 +835,30 @@ async def call_now(
     body: Mapping[str, Any],
 ) -> Optional[Any]:
     """Send one of :data:`ANSWERED_HOOK_NAMES` now and return the plug-in's
-    answer, under the lock the queue sends under. Raises what ``call_hook``
-    raises, and ``HookNameRefused`` without sending while an ``erase`` of the
-    plug-in is waiting in the community: nothing goes after it."""
+    answer, holding the same lease the queue sends under: it waits up to
+    :data:`CALL_WAIT_SECONDS` for a send in flight to finish, and raises
+    ``HookError`` if it does not. Raises what ``call_hook`` raises, and
+    ``HookNameRefused`` without sending while an ``erase`` of the plug-in is
+    waiting in the community: nothing goes after it. No database connection
+    is held while it is sent."""
     from app.services.tenant import plugin_connection_flows as flows
 
     if hook not in ANSWERED_HOOK_NAMES:
         raise UnknownCommunityHookError(f"not a hook sent at once: {hook!r}")
-    async with db_session.SystemSessionLocal() as session:
-        await db_session.set_rls_context(session, Unattributed())
-        await _hold_plugin(session, guild_id, public_id)
-        if (await session.exec(select(_erase_waiting(guild_id, public_id)))).one():
-            raise flows.HookNameRefused(
-                f"hook {hook}: {public_id} is being erased in guild {guild_id}"
+    give_up_at = time.monotonic() + CALL_WAIT_SECONDS
+    while (
+        row_id := await _claim_call(
+            hook, guild_id=guild_id, public_id=public_id, install_id=install_id
+        )
+    ) is None:
+        if time.monotonic() >= give_up_at:
+            raise flows.HookError(
+                f"hook {hook}: another send to {public_id} in guild {guild_id} "
+                "did not finish"
             )
-        return await flows.call_hook(
+        await asyncio.sleep(0.25)
+    try:
+        answer = await flows.call_hook(
             hook,
             public_id=public_id,
             base_url=base_url,
@@ -731,6 +866,11 @@ async def call_now(
             install_id=install_id,
             body=body,
         )
+    except BaseException as exc:
+        await _settle_call(row_id, type(exc).__name__)
+        raise
+    await _settle_call(row_id, None)
+    return answer
 
 
 def _effective(
@@ -769,7 +909,11 @@ async def _next_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
     now = datetime.now(timezone.utc)
     for queue in by_plugin.values():
         stale, rest = _effective(queue)
-        if stale:
+        held = [row.claimed_until for row in queue if _live(row, now)]
+        if held:
+            # Its sender settles it; asked again if the claim lapses first.
+            due.append(min(held))  # type: ignore[type-var]
+        elif stale:
             due.append(now)
         elif rest:
             due.append(rest[0].next_attempt_at)
@@ -786,21 +930,18 @@ async def _next_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
     return min(due) if due else None
 
 
-async def visit(routed: AsyncSession, guild_id: int) -> Optional[datetime]:
+async def visit(_routed: AsyncSession, guild_id: int) -> Optional[datetime]:
     """The ``plugin_hooks`` sweep's visit: tell installed plug-ins a status they
     have not been told, send the community's due hooks, delete answered ones
     past their keeping, and answer when there is next work.
 
     The rows are ``public``'s and kept by the system engine, so they are read
-    and written on system sessions of the visit's own; ``routed``, the
-    community's session, holds the community's lock for the visit, so two
-    visits never send one hook twice.
+    and written on short system sessions of the visit's own, and the
+    community's session is not touched, so it holds no connection while hooks
+    are sent. Two visits at once are safe: each send is claimed
+    (``claimed_until``), and at most :data:`SENDS_AT_ONCE` plug-ins are sent to
+    at once.
     """
-    if not await advisory_lock(
-        routed, LockNamespace.PLUGIN_HOOKS, guild_id, wait=False
-    ):
-        # Another visit is sending them, and answers the next time itself.
-        return None
     now = datetime.now(timezone.utc)
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
@@ -812,25 +953,21 @@ async def visit(routed: AsyncSession, guild_id: int) -> Optional[datetime]:
                 _TABLE.c.done_at <= now - DONE_RETENTION,
             )
         )
-        pending = (
+        plugins = (
             await session.exec(
-                select(PluginCommunityHook)
+                select(PluginCommunityHook.public_id)
                 .where(
                     PluginCommunityHook.guild_id == guild_id,
                     col(PluginCommunityHook.done_at).is_(None),
                 )
-                .order_by(
-                    col(PluginCommunityHook.public_id), col(PluginCommunityHook.id)
-                )
+                .distinct()
+                .order_by(col(PluginCommunityHook.public_id))
             )
         ).all()
         await session.commit()
-        session.expunge_all()
-    by_plugin: dict[str, list[PluginCommunityHook]] = {}
-    for row in pending:
-        by_plugin.setdefault(row.public_id, []).append(row)
+    limit = asyncio.Semaphore(SENDS_AT_ONCE)
     await asyncio.gather(
-        *(_deliver_plugin(guild_id, rows, now) for rows in by_plugin.values())
+        *(_deliver_plugin(guild_id, str(public_id), limit) for public_id in plugins)
     )
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())

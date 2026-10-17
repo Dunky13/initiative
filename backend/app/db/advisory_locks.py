@@ -124,10 +124,9 @@ class LockNamespace(IntEnum):
     ACCOUNT_ADDRESS = _tag(b"ADDR")
     #: Sign-ins from one app install, keyed by the account and the install.
     APP_INSTALL = _tag(b"INST")
-    #: Sending one community's hooks to its plug-ins, keyed by the community.
-    PLUGIN_HOOKS = _tag(b"PHOK")
-    #: Sending a hook to one plug-in about one community, keyed by both: the
-    #: one door every hook to a plug-in goes through (``community_hooks``).
+    #: Claiming the lease to send to one plug-in about one community, keyed by
+    #: both, for the short transaction that takes it (``community_hooks``).
+    #: Never held across a send.
     PLUGIN_HOOK_SEND = _tag(b"PHSN")
 
 

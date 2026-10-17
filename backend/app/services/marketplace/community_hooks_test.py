@@ -919,6 +919,37 @@ class TestPurging:
             )
         await session.rollback()
 
+    async def test_a_community_destroyed_at_once_is_closed_while_it_waits(
+        self, session, monkeypatch
+    ):
+        """A demo's pitch goes straight from live to destroyed: while its
+        plug-ins are asked to erase it, it is deleted, so nobody reads or
+        writes what the purge is about to remove."""
+        from app.services.platform import guild_purge
+
+        _user, guild, _install = await _setup(session)
+        guild_id = guild.id
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID
+        )
+        _answering(monkeypatch, hooked=[204])
+
+        await set_rls_context(session, Unattributed())
+        live = await _standing(session, guild_id)
+        assert live is not None and live.status == CommunityStatus.active.value
+        await set_rls_context(session, Unattributed())
+        assert not await guild_purge.destroy_now(session, live)
+
+        waiting = await _standing(session, guild_id)
+        assert waiting is not None
+        assert waiting.status == CommunityStatus.deleted.value
+        assert waiting.purge_started_at is not None
+
+        await _visit(guild_id)
+        session.expunge_all()
+        assert await guild_purge.finish_started_purges(session) == 1
+        assert await _standing(session, guild_id) is None
+
 
 class TestSendingAtOnce:
     async def test_a_hook_sent_at_once_goes_and_answers(self, session, monkeypatch):
@@ -974,3 +1005,77 @@ class TestSendingAtOnce:
                 install_id=install.id,
                 body={},
             )
+
+    async def test_it_waits_for_a_send_in_flight_and_takes_a_lapsed_claim(
+        self, session, monkeypatch
+    ):
+        """One sender per plug-in comes from a lease on the rows: a hook sent
+        at once waits while another send holds the plug-in, gives up past its
+        wait, and takes the plug-in once that claim has lapsed."""
+        _user, guild, install = await _setup(session)
+        guild_id = guild.id
+        plugins = _answering(monkeypatch, hooked=[204])
+        await _deliver(guild_id, hook="installed")
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            update(PluginCommunityHook)
+            .where(PluginCommunityHook.guild_id == guild_id)
+            .values(claimed_until=datetime.now(timezone.utc) + timedelta(minutes=1))
+        )
+        await session.commit()
+        monkeypatch.setattr(community_hooks, "CALL_WAIT_SECONDS", 0.3)
+
+        async def schedule():
+            return await community_hooks.call_now(
+                "schedule",
+                public_id=PUBLIC_ID,
+                base_url="https://hooked.example.test",
+                guild_id=guild_id,
+                install_id=install.id,
+                body={},
+            )
+
+        with pytest.raises(plugin_connection_flows.HookError, match="did not finish"):
+            await schedule()
+        # Nor does a visit send what another sender holds.
+        await _visit(guild_id)
+        assert plugins.calls == []
+
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            update(PluginCommunityHook)
+            .where(PluginCommunityHook.guild_id == guild_id)
+            .values(claimed_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+        )
+        await session.commit()
+        await schedule()
+        await _visit(guild_id)
+        assert plugins.paths() == ["/v1/hooks/schedule", "/v1/hooks/installed"]
+        rows = await _hooks(session, guild_id)
+        assert [(row.hook, row.outcome, row.claimed_until) for row in rows] == [
+            ("installed", "delivered", None),
+            ("schedule", "answered", None),
+        ]
+
+    async def test_a_send_holds_no_database_connection(self, session, monkeypatch):
+        """While a hook is in flight the plug-in's answer waits on nothing
+        here: the visit's own claims and settles are short transactions."""
+        from app.db import session as db_session
+
+        _user, guild, _install = await _setup(session)
+        open_during_send: list[int] = []
+        plugins = Plugins()
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            engine = db_session.SystemSessionLocal.kw["bind"]
+            open_during_send.append(engine.sync_engine.pool.checkedout())
+            return plugins.handle(request)
+
+        monkeypatch.setattr(
+            plugin_connection_flows, "http_transport", httpx.MockTransport(handle)
+        )
+        await _deliver(guild.id, hook="installed")
+        await _visit(guild.id)
+
+        assert plugins.paths() == ["/v1/hooks/installed"]
+        assert open_during_send == [0]

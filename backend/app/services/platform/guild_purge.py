@@ -46,7 +46,7 @@ from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.holds import refuse_while_held
 from app.db.schema_provisioning import deprovision_guild
 from app.db.session import SystemSessionLocal, set_rls_context
-from app.models.platform.guild import Guild
+from app.models.platform.guild import CommunityStatus, Guild
 from app.services import audit as audit_service
 from app.services.marketplace import community_hooks, plugin_refs
 from app.services.platform.retention import COMMUNITY_DELETION, COMMUNITY_HOLD
@@ -142,7 +142,8 @@ async def _remove(session: AsyncSession, guild_id: int, days: int | None) -> boo
     """One step of a purge, committed. Returns whether the community is gone.
 
     Its plug-ins are asked first, while the community still has its row and
-    the references to name it by: the purge is marked begun and an ``erase``
+    the references to name it by: the purge is marked begun, the community
+    marked deleted if it is not already, and an ``erase``
     queued for each plug-in holding references
     (``community_hooks.queue_purge_erases``). The row is deleted only on a pass
     that finds no hook to its plug-ins unfinished, recorded in the same
@@ -160,7 +161,14 @@ async def _remove(session: AsyncSession, guild_id: int, days: int | None) -> boo
         await session.commit()
         return True
     if guild.purge_started_at is None:
-        guild.purge_started_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        guild.purge_started_at = now
+        if guild.status != CommunityStatus.deleted.value:
+            # Closed to everybody while it waits on its plug-ins, as a deleted
+            # community is: a community destroyed straight away (a demo's)
+            # may come here still live.
+            guild.status = CommunityStatus.deleted.value
+            guild.status_changed_at = now
         session.add(guild)
         await session.flush()
     await community_hooks.queue_purge_erases(session, guild_id=guild_id)
