@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type {
   ChecklistProgress,
+  PropertyDefinitionRead,
   PropertySummary,
   TagSummary,
   TaskAssigneeSummary,
@@ -73,6 +74,8 @@ export type FieldDef = {
   hideable: boolean;
   /** A plug-in field's install and declaration. */
   plugin?: { install: number; field: PluginFieldDecl };
+  /** A property field's definition. */
+  property?: PropertyDefinitionRead;
   /** The sentence the value sits in, as an i18n key ("Due: {{date}}"). */
   phrase?: string;
   icon?: LucideIcon;

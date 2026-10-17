@@ -30,6 +30,7 @@ import type { TranslateFn } from "@/types/i18n";
 
 import type { EditableDetail } from "./details";
 import type { LayoutEdits } from "./LayoutEditor";
+import { LayoutGroupings } from "./LayoutGroupings";
 import { type EditablePresets, LayoutPresets } from "./LayoutPresets";
 
 /**
@@ -87,6 +88,9 @@ export const ListLayoutSettings = ({
             </div>
           ) : null}
           <LayoutPresets layout={layout} of={presets} fields={fields} edits={edits} />
+          {layout.kind === "table" ? (
+            <LayoutGroupings layout={layout} fields={fields} edits={edits} />
+          ) : null}
           <Shipped stored={stored} edits={edits} />
         </Panel>
       ) : selection.kind === "column" ? (

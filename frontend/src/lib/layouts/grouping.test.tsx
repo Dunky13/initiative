@@ -18,8 +18,12 @@ import {
   groupRowId,
   groupRows,
   NO_GROUP,
+  offeredGroupings,
+  SHIPPED_GROUPINGS,
   taskGroupings,
   uniqueTasksFromRows,
+  viewGrouping,
+  withGroupShown,
 } from "@/lib/layouts/grouping";
 import { taskFields } from "@/lib/layouts/tasks";
 import type { TranslateFn } from "@/types/i18n";
@@ -33,23 +37,22 @@ const sprint = buildPropertyDefinition({
 });
 const note = buildPropertyDefinition({ name: "Note", type: PropertyType.text });
 
-const groupingsOf = (tasks: TaskListRead[], statuses = buildDefaultTaskStatuses()) =>
+const allGroupings = (tasks: TaskListRead[], statuses = buildDefaultTaskStatuses()) =>
   taskGroupings({
     fields: taskFields([sprint, note]),
-    definitions: [sprint, note],
     statuses,
     tasks,
     t,
   });
 const groupingOf = (column: string, tasks: TaskListRead[] = [], statuses?: TaskStatusRead[]) => {
-  const grouping = groupingsOf(tasks, statuses).find((each) => each.column === column);
+  const grouping = allGroupings(tasks, statuses).find((each) => each.column === column);
   if (!grouping) throw new Error(`no grouping ${column}`);
   return grouping;
 };
 
 describe("taskGroupings", () => {
   it("offers a field whose values group, and not one whose values don't", () => {
-    const columns = groupingsOf([]).map((each) => each.column);
+    const columns = allGroupings([]).map((each) => each.column);
 
     expect(columns).toEqual(expect.arrayContaining(["priority group", "assignees group"]));
     expect(columns).toContain(`${propertyFieldId(sprint.id)} group`);
@@ -103,8 +106,11 @@ describe("taskGroupings", () => {
     });
   });
 
-  it("can't move a task between date windows", () => {
-    expect(groupingOf("date group").move).toBeUndefined();
+  it("has every date window, and can't move a task between them", () => {
+    const dates = groupingOf("date group");
+
+    expect(dates.values).toHaveLength(5);
+    expect(dates.move).toBeUndefined();
   });
 });
 
@@ -135,5 +141,52 @@ describe("groupRows", () => {
 
     expect(selected).toEqual([tagged]);
     expect(selected[0]).toBe(tagged);
+  });
+});
+
+describe("what a list offers", () => {
+  const sprintField = propertyFieldId(sprint.id);
+
+  it("offers the shipped groupings until its layout names its own, in their order", () => {
+    const all = allGroupings([]);
+
+    expect(offeredGroupings(all, null).map(({ grouping }) => grouping.id)).toEqual(
+      SHIPPED_GROUPINGS
+    );
+    expect(
+      offeredGroupings(all, [
+        { field: sprintField, hidden: ["s1"] },
+        { field: "status" },
+        // A property the project no longer has.
+        { field: "property:999" },
+      ]).map(({ grouping, hidden }) => [grouping.id, [...hidden]])
+    ).toEqual([
+      [sprintField, ["s1"]],
+      ["status", []],
+    ]);
+  });
+
+  it("hides a group of one grouping, and shows it again", () => {
+    const hidden = withGroupShown(null, "assignees", NO_GROUP, false);
+
+    expect(hidden.find((entry) => entry.field === "assignees")?.hidden).toEqual([NO_GROUP]);
+    expect(hidden.map((entry) => entry.field)).toEqual(SHIPPED_GROUPINGS);
+    expect(
+      withGroupShown(hidden, "assignees", NO_GROUP, true).find(
+        (entry) => entry.field === "assignees"
+      )?.hidden
+    ).toEqual([]);
+  });
+
+  it("starts on the layout's grouping until a person picks, and keeps their pick while offered", () => {
+    const layout = { groupings: [{ field: "status" }, { field: sprintField }], group_by: "status" };
+
+    expect(viewGrouping(layout, null)).toEqual(["status group"]);
+    expect(viewGrouping(layout, [])).toEqual([]);
+    expect(viewGrouping(layout, [`${sprintField} group`])).toEqual([`${sprintField} group`]);
+    // A pick the list no longer offers goes back to where it starts.
+    expect(viewGrouping(layout, ["priority group"])).toEqual(["status group"]);
+    // An older release's name for the tag grouping reads as today's.
+    expect(viewGrouping(undefined, ["tag group"])).toEqual(["tags group"]);
   });
 });

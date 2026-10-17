@@ -52,6 +52,9 @@ MAX_DEFINITION_BYTES = 64 * 1024
 MAX_PLUGIN_PARTS = contract.cap("partsPlacedPerItem")
 #: Presets on one list.
 MAX_PRESETS = 20
+#: Groupings one list offers, and the groups one leaves out.
+MAX_GROUPINGS = 50
+MAX_HIDDEN_GROUPS = 200
 
 # An assignee list holds user ids as strings beside two tokens that mean
 # something only when the list is read: "me" is whoever reads it, "none" a task
@@ -269,6 +272,31 @@ def _named_field(value: str) -> str:
 
 NamedFieldId = Annotated[str, AfterValidator(_named_field)]
 CardFieldId = Union[TaskFieldId, NamedFieldId]
+
+
+class TaskGroupingId(str, Enum):
+    """What a project's tasks are grouped by beside their properties: their
+    date window and status, which are not fields, and the built-in fields whose
+    values group. In the order a list offers them as shipped."""
+
+    date = "date"
+    status = "status"
+    priority = "priority"
+    assignees = "assignees"
+    tags = "tags"
+
+
+def _property_field(value: str) -> str:
+    if value.startswith(PROPERTY_FIELD_PREFIX) and _is_row_id(
+        value.removeprefix(PROPERTY_FIELD_PREFIX)
+    ):
+        return value
+    raise ValueError("a grouping is a built-in one or 'property:<id>'")
+
+
+#: A grouping: a built-in one, or a property's, which only a select,
+#: multi-select, person or checkbox property makes.
+GroupingId = Union[TaskGroupingId, Annotated[str, AfterValidator(_property_field)]]
 
 
 # The built-in fields each place draws, named for the generated client.
@@ -514,15 +542,47 @@ class LayoutPreset(_Strict):
     )
 
 
+class LayoutGrouping(_Strict):
+    """One way a list offers to group its tasks, and the groups it leaves out
+    while grouped by it."""
+
+    field: GroupingId
+    #: Each by its key: a status's, a person's or a tag's id, an option, or
+    #: "" for the tasks with none.
+    hidden: List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]] = Field(
+        default_factory=list, max_length=MAX_HIDDEN_GROUPS
+    )
+
+
 class ListLayoutDefinition(_Strict):
-    """How a list draws its items, and the presets it offers. What it leaves
-    out is drawn as shipped: a board with no ``card`` draws the shipped card, a
-    table with no ``columns`` the shipped columns, a list with no ``presets``
-    the shipped presets."""
+    """How a list draws its items, and the presets and groupings it offers.
+    What it leaves out is drawn as shipped: a board with no ``card`` draws the
+    shipped card, a table with no ``columns`` the shipped columns, a list with
+    no ``presets`` the shipped presets and none with no ``groupings`` the
+    built-in groupings."""
 
     card: Optional[CardPart] = None
     columns: Optional[List[ColumnFieldId]] = None
     presets: Optional[List[LayoutPreset]] = Field(default=None, max_length=MAX_PRESETS)
+    groupings: Optional[List[LayoutGrouping]] = Field(
+        default=None, max_length=MAX_GROUPINGS
+    )
+    #: What everyone starts grouped by, one of the groupings the list offers;
+    #: none starts ungrouped. A person's own choice is kept over it.
+    group_by: Optional[GroupingId] = None
+
+    @model_validator(mode="after")
+    def _offers_what_it_starts_on(self) -> "ListLayoutDefinition":
+        offered = (
+            [grouping.field for grouping in self.groupings]
+            if self.groupings is not None
+            else list(TaskGroupingId)
+        )
+        if len(set(offered)) != len(offered):
+            raise ValueError("each grouping is offered once")
+        if self.group_by is not None and self.group_by not in offered:
+            raise ValueError("a list starts grouped by a grouping it offers")
+        return self
 
     @field_validator("presets")
     @classmethod

@@ -6583,15 +6583,46 @@ export interface LayoutPreset {
 }
 
 /**
- * How a list draws its items, and the presets it offers. What it leaves
- * out is drawn as shipped: a board with no ``card`` draws the shipped card, a
- * table with no ``columns`` the shipped columns, a list with no ``presets``
- * the shipped presets.
+ * What a project's tasks are grouped by beside their properties: their
+ * date window and status, which are not fields, and the built-in fields whose
+ * values group. In the order a list offers them as shipped.
+ */
+export type TaskGroupingId = (typeof TaskGroupingId)[keyof typeof TaskGroupingId];
+
+export const TaskGroupingId = {
+  date: "date",
+  status: "status",
+  priority: "priority",
+  assignees: "assignees",
+  tags: "tags",
+} as const;
+
+/**
+ * One way a list offers to group its tasks, and the groups it leaves out
+ * while grouped by it.
+ */
+export interface LayoutGrouping {
+  field: TaskGroupingId | string;
+  /**
+   * @maxItems 200
+   * @items.maxLength 64
+   */
+  hidden?: string[];
+}
+
+/**
+ * How a list draws its items, and the presets and groupings it offers.
+ * What it leaves out is drawn as shipped: a board with no ``card`` draws the
+ * shipped card, a table with no ``columns`` the shipped columns, a list with
+ * no ``presets`` the shipped presets and none with no ``groupings`` the
+ * built-in groupings.
  */
 export interface ListLayoutDefinitionOutput {
   card?: CardPartOutput | null;
   columns?: (TaskColumnFieldId | string)[] | null;
   presets?: LayoutPreset[] | null;
+  groupings?: LayoutGrouping[] | null;
+  group_by?: TaskGroupingId | string | null;
 }
 
 /**
@@ -6786,15 +6817,18 @@ export interface LegalIndexRead {
 }
 
 /**
- * How a list draws its items, and the presets it offers. What it leaves
- * out is drawn as shipped: a board with no ``card`` draws the shipped card, a
- * table with no ``columns`` the shipped columns, a list with no ``presets``
- * the shipped presets.
+ * How a list draws its items, and the presets and groupings it offers.
+ * What it leaves out is drawn as shipped: a board with no ``card`` draws the
+ * shipped card, a table with no ``columns`` the shipped columns, a list with
+ * no ``presets`` the shipped presets and none with no ``groupings`` the
+ * built-in groupings.
  */
 export interface ListLayoutDefinitionInput {
   card?: CardPartInput | null;
   columns?: (TaskColumnFieldId | string)[] | null;
   presets?: LayoutPreset[] | null;
+  groupings?: LayoutGrouping[] | null;
+  group_by?: TaskGroupingId | string | null;
 }
 
 export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof ListLayoutWriteKind];

@@ -308,6 +308,9 @@ export function useListView<F>(
     /** A calendar's month, week, day or list, or null where they never chose. */
     mode: view.mode ?? null,
     ...current,
+    /** They picked a grouping on this part, none included, rather than seeing
+     *  the default. */
+    groupingKept: view.parts?.[part]?.grouping !== undefined,
     setFilters,
     setSorting,
     setGrouping,

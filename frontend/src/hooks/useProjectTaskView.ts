@@ -44,6 +44,7 @@ import {
   taskFiltersEqual,
   taskSortFields,
 } from "@/lib/filters/taskFilters";
+import { viewGrouping } from "@/lib/layouts/grouping";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
 
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
@@ -219,18 +220,18 @@ export function useProjectTaskView({
 
   const tag_ids = useKnownTagIds(spec_.tag_ids);
 
+  const { grouping: kept, groupingKept } = view;
+  const grouping = useMemo(
+    () => viewGrouping(layout?.definition, groupingKept ? kept : null),
+    [layout, kept, groupingKept]
+  );
+
   /**
    * The filters actually applied, with ids that no longer resolve dropped:
    * deleted tags (see {@link useKnownTagIds}) and removed statuses. Statuses
    * arrive as a prop, so an empty list means "not loaded yet" and nothing is
    * pruned.
    */
-  // Grouping by tag kept "tag group" before every field could group.
-  const grouping = useMemo(
-    () => view.grouping.map((column) => (column === "tag group" ? "tags group" : column)),
-    [view.grouping]
-  );
-
   const appliedSpec = useMemo(() => {
     const spec = spec_;
     const statusIds = new Set(taskStatuses.map((status) => status.id));
