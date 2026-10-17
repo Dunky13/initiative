@@ -167,6 +167,7 @@
   "/settings/platform/push",
   "/settings/platform/security",
   "/settings/platform/storage",
+  "/share",
   "/start",
   "/u/$handle",
   "/user-stats",

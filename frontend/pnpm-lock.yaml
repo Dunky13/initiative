@@ -83,6 +83,9 @@ importers:
       '@capawesome/capacitor-passkeys':
         specifier: ^0.1.2
         version: 0.1.2(@capacitor/core@8.5.3)
+      '@capgo/capacitor-share-target':
+        specifier: ^8.0.62
+        version: 8.0.62(@capacitor/core@8.5.3)
       '@capgo/capacitor-updater':
         specifier: ^8.51.3
         version: 8.51.15(@capacitor/core@8.5.3)
@@ -727,6 +730,11 @@ packages:
 
   '@capawesome/capacitor-passkeys@0.1.2':
     resolution: {integrity: sha512-egaDs8M1XjYKG0tmc2brmpnQTCdnlq9NxA6dOMtS4cJY9viYkGPSdt8heaswey5uv8bYo3cxKeQcCZknypG5Hw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capgo/capacitor-share-target@8.0.62':
+    resolution: {integrity: sha512-p2wtCdSZ9yMSFqxIKdByOx8xofi15WPITk34bTMmhj18o1p0vWUJtBW78BC9U3/eKC+4KRZ5HYyv6u+5Lh5T3w==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
@@ -7117,6 +7125,10 @@ snapshots:
       '@capacitor/core': 8.5.3
 
   '@capawesome/capacitor-passkeys@0.1.2(@capacitor/core@8.5.3)':
+    dependencies:
+      '@capacitor/core': 8.5.3
+
+  '@capgo/capacitor-share-target@8.0.62(@capacitor/core@8.5.3)':
     dependencies:
       '@capacitor/core': 8.5.3
 

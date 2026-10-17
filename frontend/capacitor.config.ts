@@ -52,6 +52,11 @@ const config: CapacitorConfig = {
     SystemBars: {
       insetsHandling: "disable",
     },
+    // iOS hands a share over through the App Group the app and its share
+    // extension (ios/App/ShareExtension) both belong to.
+    CapacitorShareTarget: {
+      appGroupId: "group.studio.beyonders.initiative",
+    },
     // SafeArea plugin config for edge-to-edge mode
     SafeArea: {
       // Disable viewport-fit detection to force native padding mode
