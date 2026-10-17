@@ -70,6 +70,8 @@ class ControlKind(str, Enum):
     #: reads and it compares, so a query may name it; there is simply no picker,
     #: which is why a field of this kind is never offered as a control.
     reference = "reference"
+    #: One of the initiative's custom properties, chosen by name.
+    property = "property"
     #: Values only a lookup can enumerate (a custom property's options).
     property_value = "property_value"
     date = "date"
@@ -113,6 +115,7 @@ CONTROLS: dict[ControlKind, tuple[FieldType, frozenset[FilterOp]]] = {
     ControlKind.calendar: (FieldType.reference, _IN),
     ControlKind.counter_group: (FieldType.reference, _IN),
     ControlKind.reference: (FieldType.reference, _IN),
+    ControlKind.property: (FieldType.reference, _IN),
     ControlKind.property_value: (FieldType.text, _EQ),
     ControlKind.date: (FieldType.date, _RANGE),
     ControlKind.boolean: (FieldType.boolean, _EQ),

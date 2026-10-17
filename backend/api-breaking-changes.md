@@ -82,6 +82,7 @@ matter and can be deleted.
 - PUT /api/v1/communities/{community_id}/icon added the new `guest` enum value to the `role` response property for the response status `200`
 - GET /api/v1/marketplace/local/mine added the new `home_layout` enum value to the `items/kind` response property for the response status `200`
 - GET /api/v1/marketplace/local/pending added the new `home_layout` enum value to the `items/kind` response property for the response status `200`
+- GET /api/v1/fields/{dataset} added the new `property` enum value to the `fields/items/kind` response property for the response status `200`
 - GET /api/v1/me added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `200`
 - GET /api/v1/me added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `200`
 - GET /api/v1/me added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `200`
