@@ -93,6 +93,9 @@ class LockNamespace(IntEnum):
     PLUGIN_METADATA = _tag(b"PMET")
     #: Changing one target's layouts, keyed by guild, tool and target.
     TOOL_LAYOUTS = _tag(b"LAYO")
+    #: Changing the options of one multi-select value, keyed by guild, item
+    #: and property.
+    PROPERTY_OPTIONS = _tag(b"POPT")
     #: Which of one install's values are shown, keyed by guild and install:
     #: shared by each write while it reads the pinned definition, exclusive
     #: while the values are reconciled to a new one.

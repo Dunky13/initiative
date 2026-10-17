@@ -317,6 +317,86 @@ async def test_merged_writes_of_different_properties_both_stand(
     assert _values(response.json()) == {note.id: "mine", owner.id: "theirs"}
 
 
+async def test_option_changes_apply_to_what_the_value_holds(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Two people each move a task between options of one multi-select. A
+    change names only the options it puts on and takes off, so the later one
+    keeps the earlier one's."""
+    a, parent = await _scene(TASKS, session, acting_user)
+    entity = await TASKS.make(session, a, parent, "E")
+    sprint = await create_property_definition(
+        session,
+        a.initiative,
+        name="Sprint",
+        type=PropertyType.multi_select,
+        options=[{"value": slug, "label": slug} for slug in ("a", "b", "c")],
+    )
+    await _write(client, a, TASKS, entity, [{"property_id": sprint.id, "value": ["a"]}])
+
+    await _write(
+        client,
+        a,
+        TASKS,
+        entity,
+        [],
+        merge=True,
+        options=[{"property_id": sprint.id, "add": ["b"]}],
+    )
+    response = await _write(
+        client,
+        a,
+        TASKS,
+        entity,
+        [],
+        merge=True,
+        options=[{"property_id": sprint.id, "add": ["c"], "remove": ["a"]}],
+    )
+
+    assert response.status_code == 200
+    assert _values(response.json()) == {sprint.id: ["b", "c"]}
+
+
+@pytest.mark.parametrize(
+    ("type_", "add", "detail"),
+    [
+        (PropertyType.select, ["a"], "PROPERTY_INVALID_VALUE_FOR_TYPE"),
+        (PropertyType.multi_select, ["ghost"], "PROPERTY_OPTION_NOT_IN_DEFINITION"),
+    ],
+    ids=["not-multi_select", "unknown-option"],
+)
+async def test_an_option_change_is_held_to_its_definition(
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    type_: PropertyType,
+    add: list[str],
+    detail: str,
+):
+    a, parent = await _scene(TASKS, session, acting_user)
+    entity = await TASKS.make(session, a, parent, "E")
+    defn = await create_property_definition(
+        session,
+        a.initiative,
+        name="Choice",
+        type=type_,
+        options=[{"value": "a", "label": "A"}],
+    )
+
+    response = await _write(
+        client,
+        a,
+        TASKS,
+        entity,
+        [],
+        merge=True,
+        options=[{"property_id": defn.id, "add": add}],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == detail
+
+
 # ---------------------------------------------------------------------------
 # Values are held to their definition
 # ---------------------------------------------------------------------------

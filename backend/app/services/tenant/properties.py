@@ -48,8 +48,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.identity_boundary import current_install_boundary
 from app.core.messages import PluginMessages, PropertyMessages, QueryMessages
 from app.core.tools import PROPERTY_TARGETS, Tool
+from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.base import MODELS_BY_TABLE
 from app.db.initiative_rls import entity_tables, governing_path
+from app.db.session import routed_guild_id
 from app.models.platform.identity_ref import IdentityEntity
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.property import (
@@ -60,6 +62,7 @@ from app.models.tenant.property import (
 )
 from app.schemas.tenant.property import (
     PropertyOption,
+    PropertyOptionsChange,
     PropertySummary,
     PropertyValueInput,
 )
@@ -366,11 +369,14 @@ async def write_values(
     *,
     initiative_id: Optional[int],
     removed: Optional[Sequence[int]] = None,
+    options: Sequence[PropertyOptionsChange] = (),
 ) -> None:
     """Replace every property value on ``row`` with ``values``. Given
     ``removed``, write only the properties ``values`` names and take off the
     ones ``removed`` names, leaving every other value as it is, so two writes
-    of different properties both stand.
+    of different properties both stand. ``options`` (with ``removed``)
+    changes options of multi-select values against what each holds when it
+    is written, so two changes of the same value both stand too.
 
     Each value's definition must belong to ``initiative_id`` — the row's own
     initiative — and a person a value names must be able to open the tool row
@@ -379,10 +385,15 @@ async def write_values(
     """
     spec = link_for(row)
     held = _of(spec.target, [row.id])
+    stored = await _locked_options(session, spec.target, row.id, options)
     if removed is None:
         await session.exec(delete(PropertyValue).where(held))
     else:
-        named_ids = [*removed, *(entry.property_id for entry in values)]
+        named_ids = [
+            *removed,
+            *(entry.property_id for entry in values),
+            *(change.property_id for change in options),
+        ]
         if named_ids:
             await session.exec(
                 delete(PropertyValue).where(
@@ -390,7 +401,7 @@ async def write_values(
                     PropertyValue.property_id.in_(named_ids),
                 )
             )
-    if not values:
+    if not values and not options:
         return
 
     requested_ids = [v.property_id for v in values]
@@ -400,16 +411,35 @@ async def write_values(
             detail=PropertyMessages.INVALID_VALUE_FOR_TYPE,
         )
 
-    definitions = await load_definitions_by_ids(session, requested_ids)
-    named: set[int] = set()
-    rows = []
-    for entry in values:
-        defn = definitions.get(entry.property_id)
+    definitions = await load_definitions_by_ids(
+        session, [*requested_ids, *(change.property_id for change in options)]
+    )
+
+    def definition(property_id: int) -> PropertyDefinition:
+        defn = definitions.get(property_id)
         if defn is None or initiative_id is None or defn.initiative_id != initiative_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=PropertyMessages.DEFINITION_NOT_FOUND,
             )
+        return defn
+
+    named: set[int] = set()
+    rows = [
+        PropertyValue(
+            entity_type=spec.target,
+            entity_id=row.id,
+            property_id=change.property_id,
+            **_options_changed(
+                definition(change.property_id),
+                stored.get(change.property_id, []),
+                change,
+            ),
+        )
+        for change in options
+    ]
+    for entry in values:
+        defn = definition(entry.property_id)
         cols = _validate_value_for_type(defn, entry.value)
         if cols["value_user_id"] is not None:
             named.add(cols["value_user_id"])
@@ -426,6 +456,55 @@ async def write_values(
     session.add_all(rows)
 
 
+async def _locked_options(
+    session: AsyncSession,
+    target: str,
+    entity_id: int,
+    options: Sequence[PropertyOptionsChange],
+) -> dict[int, list[str]]:
+    """The options each value ``options`` changes holds now, read once this
+    write has its turn at the value, so a change made meanwhile is the one it
+    is applied to."""
+    if not options:
+        return {}
+    for property_id in sorted(change.property_id for change in options):
+        await advisory_lock(
+            session,
+            LockNamespace.PROPERTY_OPTIONS,
+            f"{routed_guild_id(session)}:{target}:{entity_id}:{property_id}",
+        )
+    held = await session.exec(
+        select(PropertyValue.property_id, PropertyValue.value_json).where(
+            _of(target, [entity_id]),
+            PropertyValue.property_id.in_([c.property_id for c in options]),
+        )
+    )
+    return {property_id: list(slugs or []) for property_id, slugs in held.all()}
+
+
+def _options_changed(
+    defn: PropertyDefinition, stored: list[str], change: PropertyOptionsChange
+) -> Dict[str, Any]:
+    """The typed columns of a multi-select value once ``change`` is applied to
+    the options it holds. What it holds stays, in its order, an option the
+    definition has since dropped included; only what ``change`` adds is held
+    to the definition."""
+    if defn.type is not PropertyType.multi_select:
+        raise _bad_value()
+    valid = _option_slugs(defn)
+    if any(slug not in valid for slug in change.add):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=PropertyMessages.OPTION_NOT_IN_DEFINITION,
+        )
+    kept = [slug for slug in stored if slug not in change.remove]
+    slugs = kept + [slug for slug in dict.fromkeys(change.add) if slug not in kept]
+    cols = _empty_columns()
+    if slugs:
+        cols["value_json"] = slugs
+    return cols
+
+
 async def set_values(
     session: AsyncSession,
     row: Any,
@@ -433,6 +512,7 @@ async def set_values(
     *,
     initiative_id: Optional[int],
     removed: Optional[Sequence[int]] = None,
+    options: Sequence[PropertyOptionsChange] = (),
 ) -> None:
     """The whole write a person or a plug-in makes: resolve a plug-in's person
     references, write the values (all of them, or with ``removed`` only those
@@ -445,6 +525,7 @@ async def set_values(
         await property_values_by_row_id(session, values),
         initiative_id=initiative_id,
         removed=removed,
+        options=options,
     )
     if hasattr(row, "updated_at"):
         row.updated_at = datetime.now(timezone.utc)

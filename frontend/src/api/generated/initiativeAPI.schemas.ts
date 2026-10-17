@@ -9082,6 +9082,19 @@ export interface PropertyDefinitionUpdateResponse {
 }
 
 /**
+ * Options put on and taken off one multi-select value, against the value
+ * as it stands when the change is written rather than a list that replaces
+ * it, so two people changing different options of it both stand.
+ */
+export interface PropertyOptionsChange {
+  property_id: number;
+  /** @maxItems 100 */
+  add?: string[];
+  /** @maxItems 100 */
+  remove?: string[];
+}
+
+/**
  * What can carry custom property values: every tool and sub-tool.
  */
 export type PropertyTarget = (typeof PropertyTarget)[keyof typeof PropertyTarget];
@@ -9115,6 +9128,8 @@ export interface PropertyValuesSetRequest {
   merge?: boolean;
   /** @maxItems 100 */
   removed?: number[];
+  /** @maxItems 100 */
+  options?: PropertyOptionsChange[];
 }
 
 /**
