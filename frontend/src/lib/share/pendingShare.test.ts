@@ -7,6 +7,7 @@ import {
   receivedShare,
   setPendingShare,
 } from "@/lib/share/pendingShare";
+import { getItem, setItem } from "@/lib/storage";
 
 afterEach(() => setPendingShare(null));
 
@@ -102,7 +103,7 @@ describe("a share waiting through a restart", () => {
 
   it("is let go after a day, when its files are gone", async () => {
     const share = receivedShare({ texts: ["hello"] });
-    localStorage.setItem(
+    setItem(
       "initiative-pending-share",
       JSON.stringify({ share, savedAt: Date.now() - 25 * 60 * 60 * 1000 })
     );
@@ -110,7 +111,7 @@ describe("a share waiting through a restart", () => {
     const after = await restart();
 
     expect(after.getPendingShare()).toBeNull();
-    expect(localStorage.getItem("initiative-pending-share")).toBeNull();
+    expect(getItem("initiative-pending-share")).toBeNull();
   });
 
   it("is told apart from the next share", async () => {
