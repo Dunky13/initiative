@@ -1,15 +1,12 @@
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
-import { useTranslation } from "react-i18next";
 
-import type { TaskListRead, TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
+import type { TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
 import {
   ArchiveDoneButton,
   CollapsedHeader,
   ExpandedHeader,
-  KanbanTaskCard,
+  KanbanCards,
 } from "@/components/projects/KanbanColumn";
 import type { Band, TaskGrouping } from "@/lib/layouts/grouping";
 import type { LayoutContext } from "@/lib/layouts/tree";
@@ -114,15 +111,18 @@ export const KanbanBands = ({
           onToggle={() => toggle(band.key)}
         >
           {statuses.map((status) => (
-            <BandCell
+            <KanbanCards
               key={status.id}
-              status={status}
+              statusId={status.id}
               group={band.key}
               tasks={band.tasks.filter((task) => task.task_status_id === status.id)}
               collapsed={collapsedStatusIds.has(status.id)}
               canWrite={canWrite}
               view={view}
-              className={width(status)}
+              className={cn(
+                "scrollbar-thin max-h-[60vh] min-h-16 space-y-3 overflow-y-auto rounded-lg border border-dashed p-2 transition-colors",
+                width(status)
+              )}
             />
           ))}
         </BandRow>
@@ -165,60 +165,6 @@ const BandRow = ({
         <span className="text-muted-foreground text-sm tabular-nums">{band.tasks.length}</span>
       </div>
       {folded ? null : <div className="flex gap-4">{children}</div>}
-    </div>
-  );
-};
-
-/** One column of one band: where a card dropped there goes. */
-const BandCell = ({
-  status,
-  group,
-  tasks,
-  collapsed,
-  canWrite,
-  view,
-  className,
-}: {
-  status: TaskStatusRead;
-  group: string;
-  tasks: TaskListRead[];
-  collapsed: boolean;
-  canWrite: boolean;
-  view: LayoutContext;
-  className: string;
-}) => {
-  const { t } = useTranslation("projects");
-  const { setNodeRef, isOver } = useDroppable({
-    id: `cell-${status.id}-${group}`,
-    data: { type: "column", statusId: status.id, group },
-  });
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "min-h-16 space-y-3 rounded-lg border border-dashed p-2 transition-colors",
-        isOver && "bg-muted/40",
-        className
-      )}
-    >
-      {collapsed ? null : tasks.length === 0 ? (
-        <p className="sr-only">{t("kanban.noTasks")}</p>
-      ) : (
-        <SortableContext
-          items={tasks.map((task) => `${task.id}::${group}`)}
-          strategy={verticalListSortingStrategy}
-        >
-          {tasks.map((task) => (
-            <KanbanTaskCard
-              key={task.id}
-              task={task}
-              canWrite={canWrite}
-              view={view}
-              group={group}
-            />
-          ))}
-        </SortableContext>
-      )}
     </div>
   );
 };
