@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The iPhone and iPad app needs iOS 16 or later.**
 - **A plug-in your server provides follows your community's choices.** It is still installed in every community and placed in each initiative it has. From then on the community's admins decide where it appears and what it may do: it no longer adds itself to initiatives created later, and its permissions are not reset on restart.
 - **Breaking changes**
   - **Entitlement statements are signed by billing, and a plug-in gets them exactly as signed.** `POST /api/v1/billing/plugin-entitlement` takes `{"statement": "<jws>"}`: a compact JWS with header `alg` `EdDSA` and `typ` `initiative-entitlement+jwt`, whose claims (`iss` `initiative-billing`, `community_ref`, `listing_uid`, `version`, `values`, `iat`) carry what the old body did. A statement without that header, issuer or claims is refused (422 `BILLING_INVALID_STATEMENT`). The server keeps it unchanged and hands it on the same way: the `entitlement` hook's body and `GET /plugin-platform/installation/entitlement` are both `{"statement": "<jws>"}` instead of `{version, values}`, and the plug-in verifies billing's signature with billing's public key, which its deployment gives it. Statements held before are deleted on upgrade; billing sends the current ones again.
