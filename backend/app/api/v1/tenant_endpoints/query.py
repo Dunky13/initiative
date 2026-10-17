@@ -131,6 +131,7 @@ def _spec(payload: QueryBuildRequest) -> query_builder.QuerySpec:
                 aggregate=column.aggregate,
                 bucket=column.bucket,
                 alias=column.alias,
+                running=column.running,
             )
             for column in payload.columns
         ),

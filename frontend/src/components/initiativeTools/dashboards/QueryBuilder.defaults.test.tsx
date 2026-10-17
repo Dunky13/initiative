@@ -163,3 +163,42 @@ describe("grouping", () => {
     expect(screen.getByText("Every row, as it is")).toBeInTheDocument();
   });
 });
+
+describe("a running total", () => {
+  it("adds a count up along the column beside it", async () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <QueryBuilder
+        spec={{ ...spec("members"), columns: [{ field: "title" }, COUNT_ALL], group_by: ["title"] }}
+        onChange={onChange}
+        initiativeId={7}
+      />
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("combobox", { name: /show as/i })[1]);
+    await user.click(await screen.findByRole("option", { name: "Running count" }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        columns: [{ field: "title" }, { ...COUNT_ALL, alias: null, running: true }],
+        group_by: ["title"],
+      })
+    );
+  });
+
+  it("reads back as the running count it was built as", () => {
+    renderWithProviders(
+      <QueryBuilder
+        spec={{
+          ...spec("members"),
+          columns: [{ field: "title" }, { ...COUNT_ALL, running: true }],
+          group_by: ["title"],
+        }}
+        onChange={vi.fn()}
+        initiativeId={7}
+      />
+    );
+    expect(screen.getAllByRole("combobox", { name: /show as/i })[1]).toHaveTextContent(
+      "Running count"
+    );
+  });
+});

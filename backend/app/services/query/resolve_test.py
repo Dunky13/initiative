@@ -157,10 +157,43 @@ class TestNamesResolveThroughTheRegistry:
         assert resolve("SELECT count(*) AS n FROM tasks").sql
 
     def test_an_output_alias_is_a_name_where_the_output_exists(self):
-        """``ORDER BY n`` and ``GROUP BY n`` are resolved against the select
-        list, so the alias is not looked up as a column."""
+        """``ORDER BY n`` names the count, and is written as its position."""
         resolved = resolve("SELECT count(*) AS n FROM tasks GROUP BY title ORDER BY n")
-        assert "ORDER BY n" in resolved.sql
+        assert "ORDER BY 1" in resolved.sql
+
+    def test_a_grouping_names_an_output_only_where_no_field_has_the_name(self):
+        """Postgres reads a bare ``GROUP BY`` name as a column first."""
+        assert (
+            "GROUP BY 1"
+            in resolve(
+                "SELECT name AS label, count(*) AS n FROM files GROUP BY label"
+            ).sql
+        )
+        assert (
+            "GROUP BY priority, title"
+            in resolve(
+                "SELECT title AS priority, count(*) AS n FROM tasks GROUP BY priority, title"
+            ).sql
+        )
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # Inside an expression, and inside a window, the word is a column.
+            "SELECT name AS content FROM files ORDER BY lower(content)",
+            "SELECT name AS content, count(*) AS n FROM files GROUP BY lower(content)",
+            "SELECT count(*) AS n, sum(count(*)) OVER (ORDER BY n) AS t "
+            "FROM tasks GROUP BY title",
+        ],
+    )
+    def test_an_output_alias_inside_an_expression_is_a_column(self, sql):
+        assert refusal(sql) == QueryMessages.UNKNOWN_FIELD
+
+    def test_an_alias_two_outputs_share_orders_nothing(self):
+        assert (
+            refusal("SELECT title AS a, priority AS a FROM tasks ORDER BY a")
+            == QueryMessages.AMBIGUOUS_FIELD
+        )
 
     @pytest.mark.parametrize(
         "sql",
@@ -490,6 +523,45 @@ class TestSubqueriesAreNotAcceptedYet:
             QueryMessages.UNSUPPORTED_SYNTAX,
             QueryMessages.UNKNOWN_RELATION,
         }
+
+
+class TestWindows:
+    """``OVER (...)`` reads the rows the statement already reads."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT date_trunc('week', completed_at) AS week, "
+            "sum(count(*)) OVER (ORDER BY date_trunc('week', completed_at)) AS total "
+            "FROM tasks GROUP BY 1",
+            "SELECT title, row_number() OVER (PARTITION BY priority ORDER BY due_date) "
+            "AS r FROM tasks",
+            "SELECT title, lag(title, 1) OVER w AS prev FROM tasks "
+            "WINDOW w AS (ORDER BY due_date)",
+        ],
+    )
+    def test_it_resolves(self, sql):
+        assert resolve(sql).sql
+
+    def test_its_constants_are_written_as_they_were(self):
+        """A frame's offset is typed by the ordering it counts along, and an
+        ordering has to match its twin in ``GROUP BY``."""
+        resolved = resolve(
+            "SELECT priority = 'high' AS hot, "
+            "sum(count(*)) OVER (ORDER BY priority = 'high' "
+            "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS t "
+            "FROM tasks GROUP BY priority = 'high'"
+        )
+        assert resolved.parameters == ()
+        assert "OVER (ORDER BY priority = 'high'" in resolved.sql
+
+    def test_a_window_reads_only_declared_fields(self):
+        assert (
+            refusal(
+                "SELECT row_number() OVER (ORDER BY yjs_state) AS r FROM wiki_pages"
+            )
+            == QueryMessages.UNKNOWN_FIELD
+        )
 
 
 def test_an_output_that_is_a_field_carries_the_registrys_type():

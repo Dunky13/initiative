@@ -286,7 +286,9 @@
     "sum": "Total",
     "avg": "Moyenne",
     "min": "Minimum",
-    "max": "Maximum"
+    "max": "Maximum",
+    "running_count": "Nombre cumulé",
+    "running_sum": "Total cumulé"
   },
   "bucket": {
     "day": "Par jour",

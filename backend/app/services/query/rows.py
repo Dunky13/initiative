@@ -48,6 +48,7 @@ from app.core.messages import QueryMessages
 from app.services.fields.spec import FieldType
 from app.services.query.resolve import (
     VIEWER,
+    WINDOW_FUNCTIONS,
     QueryError,
     _check_nodes,
     _name_parts,
@@ -79,6 +80,22 @@ _FUNCTION_TYPES: dict[str, Optional[FieldType]] = {
     "extract": FieldType.number,
     "now": FieldType.date,
     "coalesce": None,
+}
+
+#: What each window function answers, for describing a statement over the
+#: community's datasets. ``None``: whatever its argument was.
+_WINDOW_TYPES: dict[str, Optional[FieldType]] = {
+    "row_number": FieldType.number,
+    "rank": FieldType.number,
+    "dense_rank": FieldType.number,
+    "percent_rank": FieldType.number,
+    "cume_dist": FieldType.number,
+    "ntile": FieldType.number,
+    "lag": None,
+    "lead": None,
+    "first_value": None,
+    "last_value": None,
+    "nth_value": None,
 }
 
 
@@ -118,6 +135,7 @@ def plan(sql: str, reads: Sequence[RowColumn]) -> RowPlan:
     """
     select = _parse(sql)
     _check_nodes(select)
+    _check_no_window(select)
     _check_relation(select)
     # ``DISTINCT`` is a list holding one ``None``; ``DISTINCT ON`` holds the
     # expressions it is distinct on, which picks a row per key by an ordering
@@ -142,6 +160,16 @@ def plan(sql: str, reads: Sequence[RowColumn]) -> RowPlan:
         reads=tuple(reads),
         columns=_output_columns(select, declared),
     )
+
+
+def _check_no_window(select: ast.SelectStmt) -> None:
+    """Fetched rows have no window to run a function over: a running total or
+    a rank is a question for a statement over the community's datasets."""
+    if select.windowClause:
+        raise QueryError(QueryMessages.UNSUPPORTED_SYNTAX, "WINDOW")
+    for call in _func_calls(select):
+        if call.over is not None or _function_name(call) in WINDOW_FUNCTIONS:
+            raise QueryError(QueryMessages.UNSUPPORTED_SYNTAX, "OVER")
 
 
 def _check_grouping(
@@ -364,12 +392,13 @@ def _type_of(node: Any, declared: Mapping[str, RowColumn]) -> FieldType:
                 return fixed
             arguments = node.args or ()
             return _type_of(arguments[0], declared) if arguments else FieldType.text
-        if name in _FUNCTION_TYPES:
-            fixed = _FUNCTION_TYPES[name]
-            if fixed is not None:
-                return fixed
-            arguments = node.args or ()
-            return _type_of(arguments[0], declared) if arguments else FieldType.text
+        for types in (_FUNCTION_TYPES, _WINDOW_TYPES):
+            if name in types:
+                fixed = types[name]
+                if fixed is not None:
+                    return fixed
+                arguments = node.args or ()
+                return _type_of(arguments[0], declared) if arguments else FieldType.text
         return FieldType.text
     if isinstance(node, ast.CoalesceExpr):
         arguments = node.args or ()
@@ -835,15 +864,20 @@ def _aggregate(
     name: str, node: ast.FuncCall, group: Iterable[Mapping[str, Any]]
 ) -> Any:
     rows = list(group)
-    if name == "count":
-        if node.agg_star:
-            return len(rows)
-        argument = (node.args or [None])[0]
-        return sum(1 for row in rows if _value(argument, row, None) is not None)
+    if node.agg_filter is not None:
+        # ``FILTER (WHERE …)`` keeps the rows its condition holds for, by the
+        # rule a ``WHERE`` keeps them by.
+        rows = [row for row in rows if _truthy(_value(node.agg_filter, row, None))]
+    if name == "count" and node.agg_star:
+        return len(rows)
 
     argument = (node.args or [None])[0]
     values = [_value(argument, row, None) for row in rows]
     present = [value for value in values if value is not None]
+    if node.agg_distinct:
+        present = _distinct(present)
+    if name == "count":
+        return len(present)
     if not present:
         return None
     if name == "min":
@@ -856,6 +890,20 @@ def _aggregate(
     if name == "sum":
         return sum(numbers)
     return sum(numbers) / len(numbers)
+
+
+def _distinct(values: list[Any]) -> list[Any]:
+    """Each value once, in the order first met. Equal as Postgres would have
+    them: ``1`` and ``1.0`` are one number."""
+    seen: set[Any] = set()
+    kept: list[Any] = []
+    for value in values:
+        key = value if not isinstance(value, (list, dict)) else repr(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(value)
+    return kept
 
 
 def _scalar(name: str, arguments: list[Any]) -> Any:

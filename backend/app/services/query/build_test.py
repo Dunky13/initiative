@@ -122,6 +122,67 @@ def test_a_count_sharing_a_columns_name_is_not_grouped():
     assert "GROUP BY 1 ORDER BY 1 ASC NULLS LAST" in sql
 
 
+def test_a_running_count_adds_up_along_the_grouping():
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="completed_at", bucket="week"),
+                Column(field="*", aggregate="count", running=True),
+            ),
+            group_by=("completed_at",),
+        )
+    )
+    assert (
+        "sum(count(*)) OVER (ORDER BY date_trunc('week', completed_at) ASC NULLS LAST)"
+        " AS running_count" in sql
+    )
+
+
+def test_a_running_total_restarts_for_each_series():
+    """The first grouped column is the axis and the rest split the series, so
+    each series climbs on its own."""
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="due_date", bucket="month"),
+                Column(field="priority"),
+                Column(field="*", aggregate="count", running=True),
+            ),
+            group_by=("due_date", "priority"),
+        )
+    )
+    assert "OVER (PARTITION BY priority ORDER BY date_trunc('month', due_date)" in sql
+
+
+@pytest.mark.parametrize(
+    ("columns", "code"),
+    [
+        # Nothing grouped: one row has nothing to add up along.
+        ((Column(field="*", aggregate="count", running=True),), "UNSUPPORTED_SYNTAX"),
+        # A running average is not a running total.
+        (
+            (
+                Column(field="priority"),
+                Column(field="*", aggregate="avg", running=True),
+            ),
+            "UNSUPPORTED_FUNCTION",
+        ),
+    ],
+)
+def test_a_running_total_needs_a_grouping_and_a_total(columns, code):
+    with pytest.raises(QueryError) as refused:
+        build(
+            QuerySpec(
+                dataset="tasks",
+                columns=columns,
+                group_by=tuple(c.field for c in columns if not c.aggregate),
+            )
+        )
+    assert refused.value.code == getattr(QueryMessages, code)
+
+
 @pytest.mark.parametrize(
     "value",
     [

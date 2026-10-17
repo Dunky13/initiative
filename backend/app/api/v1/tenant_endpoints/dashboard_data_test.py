@@ -89,6 +89,14 @@ async def test_the_canvas_answers_what_each_widget_answers(
         "SELECT status.name AS s, count(*) AS n FROM tasks GROUP BY status.name ORDER BY s",
         "SELECT t.id, p.id FROM tasks AS t JOIN projects AS p ON p.id = t.project_id ORDER BY t.id",
         "SELECT count(*) AS n FROM projects",
+        # A running total, as the builder writes one.
+        "SELECT date_trunc('day', due_date) AS day, "
+        "sum(count(*)) OVER (ORDER BY date_trunc('day', due_date)) AS total "
+        "FROM tasks GROUP BY 1 ORDER BY 1",
+        # A frame counted in days: its offset has to reach Postgres as written.
+        "SELECT title, count(*) OVER (ORDER BY due_date "
+        "RANGE BETWEEN '1 day' PRECEDING AND CURRENT ROW) AS near "
+        "FROM tasks ORDER BY due_date",
     )
     dashboard_id = await _canvas(client, author, *statements)
 
@@ -107,6 +115,8 @@ async def test_the_canvas_answers_what_each_widget_answers(
         assert entry["error"] is None, (sql, entry)
         assert entry["result"] == await _one(client, author, sql)
     assert canvas["w1"]["result"]["rows"] == [[3]]
+    assert [row[1] for row in canvas["w8"]["result"]["rows"]] == [1, 2, 3]
+    assert [row[1] for row in canvas["w9"]["result"]["rows"]] == [1, 2, 2]
 
 
 async def test_a_reader_sees_their_own_rows_or_the_initiatives(

@@ -150,6 +150,9 @@ _ALLOWED_NODES: frozenset[type] = frozenset(
         ast.TypeName,
         # calls, checked by name below
         ast.FuncCall,
+        # ``OVER (...)``: a running total, a rank. It reads the rows the
+        # statement already reads and adds no relation to resolve names in.
+        ast.WindowDef,
     }
 )
 
@@ -160,7 +163,26 @@ _ALLOWED_NODES: frozenset[type] = frozenset(
 #:
 #: Public, because a client helping somebody write a statement has to offer the
 #: same set this refuses everything outside of.
-ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
+#: Functions that only mean something over a window: a rank, the row before.
+#: Public, because a statement over a plug-in's rows has no window to run them
+#: in and refuses them by this list.
+WINDOW_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "row_number",
+        "rank",
+        "dense_rank",
+        "percent_rank",
+        "cume_dist",
+        "ntile",
+        "lag",
+        "lead",
+        "first_value",
+        "last_value",
+        "nth_value",
+    }
+)
+
+ALLOWED_FUNCTIONS: frozenset[str] = WINDOW_FUNCTIONS | frozenset(
     {
         "count",
         "sum",
@@ -514,31 +536,47 @@ def _check_nodes(select: ast.SelectStmt) -> None:
     Check()(select)
 
 
-def _output_aliases(select: ast.SelectStmt) -> frozenset[str]:
-    return frozenset(
-        target.name
-        for target in (select.targetList or ())
-        if isinstance(target, ast.ResTarget) and target.name
-    )
+def _alias_ordinals(select: ast.SelectStmt, scope: dict[str, str]) -> dict[int, int]:
+    """The names that are an output column, and the position of that column.
 
-
-def _alias_positions(select: ast.SelectStmt) -> set[int]:
-    """Where an output alias is a name a column reference may use.
-
-    Postgres resolves ``ORDER BY n`` and ``GROUP BY n`` against the select
-    list. ``WHERE`` and ``HAVING`` are evaluated before the output exists, so a
-    name there is a column and has to resolve as one.
+    Postgres reads a name as an output column in two places only: standing
+    alone as an ``ORDER BY`` entry, and standing alone as a ``GROUP BY`` entry
+    that no relation has a column for. Inside an expression or a window the
+    same word is a column, and is resolved as one. Each of these is written
+    out as the position it names, so what reaches the database is an ordinal
+    rather than a word.
     """
-    marked: set[int] = set()
+    positions: dict[str, list[int]] = {}
+    for position, target in enumerate(select.targetList or (), start=1):
+        if isinstance(target, ast.ResTarget) and target.name:
+            positions.setdefault(target.name, []).append(position)
 
-    class Mark(Visitor):
-        def visit_ColumnRef(self, ancestors: Any, node: ast.ColumnRef) -> None:
-            marked.add(id(node))
+    def output(node: Any) -> tuple[ast.ColumnRef, str] | None:
+        if not isinstance(node, ast.ColumnRef):
+            return None
+        names = _name_parts(node.fields)
+        if len(names) != 1 or names[0] not in positions:
+            return None
+        return node, names[0]
 
-    for clause in (select.sortClause or (), select.groupClause or ()):
-        for entry in clause:
-            Mark()(entry)
-    return marked
+    found: list[tuple[ast.ColumnRef, str]] = []
+    for entry in select.sortClause or ():
+        named = output(entry.node if isinstance(entry, ast.SortBy) else entry)
+        if named is not None:
+            found.append(named)
+    for entry in select.groupClause or ():
+        named = output(entry)
+        if named is not None and not any(
+            named[1] in dataset(name).by_name for name in scope.values()
+        ):
+            found.append(named)
+
+    ordinals: dict[int, int] = {}
+    for node, name in found:
+        if len(positions[name]) > 1:
+            raise QueryError(QueryMessages.AMBIGUOUS_FIELD, name)
+        ordinals[id(node)] = positions[name][0]
+    return ordinals
 
 
 def _holder(scope: dict[str, str], field_name: str) -> str | None:
@@ -620,11 +658,10 @@ def _target_spec(target: ast.ResTarget, scope: dict[str, str]) -> Any:
 
 
 def _resolve_columns(select: ast.SelectStmt, scope: dict[str, str]) -> None:
-    aliases = _output_aliases(select)
-    alias_positions = _alias_positions(select)
+    ordinals = _alias_ordinals(select, scope)
 
     class Resolve(Visitor):
-        def visit_ColumnRef(self, ancestors: Any, node: ast.ColumnRef) -> None:
+        def visit_ColumnRef(self, ancestors: Any, node: ast.ColumnRef) -> Any:
             names = _name_parts(node.fields)
             if not names:
                 raise QueryError(QueryMessages.UNSUPPORTED_SYNTAX, "ColumnRef")
@@ -641,10 +678,10 @@ def _resolve_columns(select: ast.SelectStmt, scope: dict[str, str]) -> None:
                 # Expanded once the literals are bound, so what it expands to
                 # is not read as something the reader wrote.
                 return
-            if names[0] in aliases and id(node) in alias_positions:
-                # An output alias: ``ORDER BY n`` names the count, and no table
-                # has a column for it.
-                return
+            if id(node) in ordinals:
+                # An output column, where Postgres reads the name as one:
+                # ``ORDER BY n`` names the count.
+                return ast.A_Const(val=ast.Integer(ival=ordinals[id(node)]))
             holder = _holder(scope, names[0])
             if holder is None:
                 # Nothing in scope has it, or more than one does. Which of
@@ -833,6 +870,25 @@ def _cast_arguments(node: Any) -> set[int]:
     return found
 
 
+def _window_constants(node: Any) -> set[int]:
+    """Constants inside a window's definition.
+
+    A frame's offset takes its type from the ordering it counts along, an
+    interval beside a date, which a parameter is not told. And an ordering
+    inside the window is the same expression as its twin in ``GROUP BY``,
+    whose constants stay as they were written.
+    """
+    found: set[int] = set()
+
+    class Collect(Visitor):
+        def visit_WindowDef(self, ancestors: Any, window: ast.WindowDef) -> None:
+            found.update(_constants_in(window))
+
+    if node is not None:
+        Collect()(node)
+    return found
+
+
 def _literal_positions(select: ast.SelectStmt) -> set[int]:
     """Constants that stay constants.
 
@@ -844,13 +900,15 @@ def _literal_positions(select: ast.SelectStmt) -> set[int]:
     against an enum. And a constant inside a grouped or ordered expression is
     part of how that expression is written, which is what the output column is
     found by. A constant filling a function's argument stays one, because not
-    every function can say what type it takes. And last, a constant a cast
-    names the type of stays one — the cast is the type, and a parameter there
-    is bound as the wrong thing.
+    every function can say what type it takes. A constant a cast names the
+    type of stays one — the cast is the type, and a parameter there is bound
+    as the wrong thing. And last, every constant inside a window's definition
+    (:func:`_window_constants`).
     """
     marked, grouped = _grouped_expressions(select)
     marked |= _function_arguments(select)
     marked |= _cast_arguments(select)
+    marked |= _window_constants(select)
     for entry in select.groupClause or ():
         if isinstance(entry, ast.A_Const):
             marked.add(id(entry))
