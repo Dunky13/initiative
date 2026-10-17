@@ -16,7 +16,7 @@ from app.core import config as config_module
 from app.core.audit_events import AuditEventType
 from app.core.messages import GuildMessages
 from app.core.moderation import HoldReason, HoldVia
-from app.db import cohorts
+from app.db import cohorts, post_commit
 from app.db.holds import HoldsInForce
 from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
@@ -77,6 +77,10 @@ async def _delete_via_danger_zone(
         },
     )
     assert response.status_code == 204, response.text
+    # The deletion arms the community's plug-in hook timer once it commits, on
+    # a task of its own that holds the guild row while it writes. A purge
+    # claims the row SKIP LOCKED, so it waits for that work to finish.
+    await post_commit.settle_all()
 
 
 # ── The status set itself ───────────────────────────────────────────────────
