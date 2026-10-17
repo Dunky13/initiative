@@ -1587,6 +1587,12 @@ export const useRevokeUserApiKeys = <TError = ErrorType<HTTPValidationError>, TC
  * the under-age record, the confirmation and the kept date, and nothing
  * else; the account answers again from scratch.
  *
+ * An account whose answer closed it (under the minimum for an account where
+ * it was, ``age_below_account_minimum_at``) is still scheduled for erasure
+ * after this. Clearing the marks is what lets its holder sign in, and that
+ * sign-in is what calls the erasure off and restores the account whole —
+ * or ``restore`` below does, for an operator doing both at once.
+ *
  * Gated on ``users.age_unblock``, which the support tier holds — the lowest
  * rung, because getting somebody back into their account after a typo is
  * support work rather than a moderation decision. Recorded either way: it is

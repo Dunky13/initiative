@@ -153,6 +153,10 @@
     "full": "A table offers at most {{count}} groupings. Untick one to offer another.",
     "hiddenFull": "At most {{count}} groups can be left out of one grouping. Show one to leave out another."
   },
+  "limits": {
+    "heading": "Column limits",
+    "help": "How many open tasks each column takes. Once a column is full, nobody can add a task to it or move one into it until one leaves; what is already there stays. Leave it empty for no limit."
+  },
   "calendarListHelp": "How the initiative's calendar lists its events and tasks. Its presets are where people can start from.",
   "blocks": {
     "accordion": "Accordion",

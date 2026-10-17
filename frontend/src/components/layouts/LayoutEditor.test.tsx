@@ -393,6 +393,28 @@ describe("LayoutEditor", () => {
     ]);
   });
 
+  it("limits a board's column, takes the limit off when emptied, and refuses one past the most", async () => {
+    const { user } = editor("board");
+    await outline();
+    const [, doing, done] = STATUSES;
+
+    const limit = await screen.findByRole("spinbutton", { name: doing.name });
+    await user.type(limit, "4");
+    await user.tab();
+    await user.type(screen.getByRole("spinbutton", { name: done.name }), "2");
+    await user.tab();
+    await user.clear(screen.getByRole("spinbutton", { name: done.name }));
+    await user.tab();
+    // More than a column may take puts back what it had.
+    await user.type(screen.getByRole("spinbutton", { name: done.name }), "10001");
+    await user.tab();
+    expect(screen.getByRole("spinbutton", { name: done.name })).toHaveValue(null);
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(saved("board")).toBeDefined());
+    expect(saved("board")?.limits).toEqual([{ status_id: doing.id, limit: 4 }]);
+  });
+
   it("offers presets on the calendar's list, with the calendar's own filters", async () => {
     const { user } = editor("calendar", vi.fn(), buildToolLayoutSet({ tool: "calendar" }), true);
 

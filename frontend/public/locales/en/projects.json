@@ -223,7 +223,11 @@
       "comments": "Comments",
       "blockers": "Blockers",
       "tags": "Tags"
-    }
+    },
+    "limitCount": "{{count}} / {{limit}}",
+    "limitTitle": "Takes at most {{limit}} open tasks",
+    "full": "Full",
+    "statusFull": "{{name}} is full"
   },
   "recurrence": {
     "repeat": "Repeat",

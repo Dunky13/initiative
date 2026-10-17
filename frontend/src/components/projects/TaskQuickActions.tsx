@@ -30,6 +30,8 @@ import { toast } from "@/lib/mascotToast";
 export type BoardActions = {
   statuses: TaskStatusRead[];
   moveTo: (taskId: number, taskStatusId: number) => void;
+  /** Whether the column takes one more task. */
+  hasRoom: (taskStatusId: number) => boolean;
 };
 
 export const BoardActionsContext = createContext<BoardActions | null>(null);
@@ -127,11 +129,17 @@ export const TaskCardActions = ({ item: task }: { item: TaskListRead }) => {
         if (statusId !== task.task_status_id) board.moveTo(task.id, statusId);
       }}
     >
-      {board.statuses.map((status) => (
-        <DropdownMenuRadioItem key={status.id} value={String(status.id)}>
-          <TaskStatusOption status={status} />
-        </DropdownMenuRadioItem>
-      ))}
+      {board.statuses.map((status) => {
+        const full = status.id !== task.task_status_id && !board.hasRoom(status.id);
+        return (
+          <DropdownMenuRadioItem key={status.id} value={String(status.id)} disabled={full}>
+            <TaskStatusOption status={status} />
+            {full ? (
+              <span className="ml-auto text-muted-foreground text-xs">{t("kanban.full")}</span>
+            ) : null}
+          </DropdownMenuRadioItem>
+        );
+      })}
     </DropdownMenuRadioGroup>
   ) : null;
 

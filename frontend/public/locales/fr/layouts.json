@@ -153,6 +153,10 @@
     "full": "Un tableau propose au plus {{count}} regroupements. Décochez-en un pour en proposer un autre.",
     "hiddenFull": "Au plus {{count}} groupes peuvent être masqués dans un regroupement. Affichez-en un pour en masquer un autre."
   },
+  "limits": {
+    "heading": "Limites de colonne",
+    "help": "Combien de tâches ouvertes chaque colonne accepte. Quand une colonne est pleine, personne ne peut y ajouter ou y déplacer une tâche tant qu'aucune n'en sort ; ce qui s'y trouve déjà reste. Laissez vide pour aucune limite."
+  },
   "calendarListHelp": "Comment le calendrier de l'initiative présente ses événements et ses tâches. Ses préréglages sont les points de départ proposés à chacun.",
   "blocks": {
     "accordion": "Accordéon",

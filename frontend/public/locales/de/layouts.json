@@ -153,6 +153,10 @@
     "full": "Eine Tabelle bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
     "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen."
   },
+  "limits": {
+    "heading": "Spaltenlimits",
+    "help": "Wie viele offene Aufgaben jede Spalte aufnimmt. Ist eine Spalte voll, kann niemand eine Aufgabe hinzufügen oder hineinschieben, bis eine sie verlässt; was schon darin ist, bleibt. Leer lassen für kein Limit."
+  },
   "calendarListHelp": "Wie der Kalender der Initiative seine Termine und Aufgaben zeigt. Seine Vorlagen sind Ausgangspunkte für alle.",
   "blocks": {
     "accordion": "Akkordeon",

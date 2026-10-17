@@ -1113,6 +1113,12 @@ async def clear_age_block(
     the under-age record, the confirmation and the kept date, and nothing
     else; the account answers again from scratch.
 
+    An account whose answer closed it (under the minimum for an account where
+    it was, ``age_below_account_minimum_at``) is still scheduled for erasure
+    after this. Clearing the marks is what lets its holder sign in, and that
+    sign-in is what calls the erasure off and restores the account whole —
+    or ``restore`` below does, for an operator doing both at once.
+
     Gated on ``users.age_unblock``, which the support tier holds — the lowest
     rung, because getting somebody back into their account after a typo is
     support work rather than a moderation decision. Recorded either way: it is
@@ -1130,6 +1136,7 @@ async def clear_age_block(
     await users_service.forget_birthdate(session, user_id=user_id)
     # The account answers from scratch, so every part of the earlier answer goes.
     user.age_below_minimum_at = None
+    user.age_below_account_minimum_at = None
     user.age_confirmed_at = None
     user.updated_at = datetime.now(timezone.utc)
     session.add(user)

@@ -25,6 +25,7 @@ import type {
   ArchiveDoneTasksParams,
   ChecklistItem,
   ChecklistItemToggle,
+  CountTasksByStatusParams,
   DeleteTaskParams,
   GenerateChecklistResponse,
   GenerateDescriptionResponse,
@@ -38,6 +39,7 @@ import type {
   TaskMoveRequest,
   TaskRead,
   TaskReorderRequest,
+  TaskStatusCount,
   TaskUpdate,
 } from "../initiativeAPI.schemas";
 
@@ -274,6 +276,142 @@ export const useCreateTask = <TError = ErrorType<HTTPValidationError>, TContext 
 > => {
   return useMutation(getCreateTaskMutationOptions(options), queryClient);
 };
+/**
+ * How many open tasks each of a project's columns holds, whatever the
+ * reader's filters show: what a column's limit is held to.
+ * @summary Count Tasks By Status
+ */
+export const countTasksByStatus = (
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<TaskStatusCount[]>(
+    { url: `/api/v1/c/${communityId}/tasks/status-counts`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getCountTasksByStatusQueryKey = (
+  communityId: number,
+  params?: CountTasksByStatusParams
+) => {
+  return [`/api/v1/c/${communityId}/tasks/status-counts`, ...(params ? [params] : [])] as const;
+};
+
+export const getCountTasksByStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getCountTasksByStatusQueryKey(communityId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof countTasksByStatus>>> = ({ signal }) =>
+    countTasksByStatus(communityId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: communityId !== null && communityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type CountTasksByStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof countTasksByStatus>>
+>;
+export type CountTasksByStatusQueryError = ErrorType<HTTPValidationError>;
+
+export function useCountTasksByStatus<
+  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof countTasksByStatus>>,
+          TError,
+          Awaited<ReturnType<typeof countTasksByStatus>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCountTasksByStatus<
+  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof countTasksByStatus>>,
+          TError,
+          Awaited<ReturnType<typeof countTasksByStatus>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCountTasksByStatus<
+  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Count Tasks By Status
+ */
+
+export function useCountTasksByStatus<
+  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: CountTasksByStatusParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCountTasksByStatusQueryOptions(communityId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 /**
  * @summary Read Task
  */

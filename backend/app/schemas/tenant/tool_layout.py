@@ -55,6 +55,9 @@ MAX_PRESETS = 20
 #: Groupings one list offers, and the groups one leaves out.
 MAX_GROUPINGS = 50
 MAX_HIDDEN_GROUPS = 200
+#: The most a board column may be limited to, and columns one board limits.
+MAX_COLUMN_LIMIT = 10_000
+MAX_LIMITED_COLUMNS = 100
 
 # An assignee list holds user ids as strings beside two tokens that mean
 # something only when the list is read: "me" is whoever reads it, "none" a task
@@ -554,6 +557,13 @@ class LayoutGrouping(_Strict):
     )
 
 
+class ColumnLimit(_Strict):
+    """How many open tasks one board column takes from a person."""
+
+    status_id: int
+    limit: int = Field(ge=1, le=MAX_COLUMN_LIMIT)
+
+
 class ListLayoutDefinition(_Strict):
     """How a list draws its items, and the presets and groupings it offers.
     What it leaves out is drawn as shipped: a board with no ``card`` draws the
@@ -570,6 +580,10 @@ class ListLayoutDefinition(_Strict):
     #: What everyone starts grouped by, one of the groupings the list offers;
     #: none starts ungrouped. A person's own choice is kept over it.
     group_by: Optional[GroupingId] = None
+    #: A board's columns that take at most so many open tasks.
+    limits: Optional[List[ColumnLimit]] = Field(
+        default=None, max_length=MAX_LIMITED_COLUMNS
+    )
 
     @model_validator(mode="after")
     def _offers_what_it_starts_on(self) -> "ListLayoutDefinition":
@@ -582,6 +596,9 @@ class ListLayoutDefinition(_Strict):
             raise ValueError("each grouping is offered once")
         if self.group_by is not None and self.group_by not in offered:
             raise ValueError("a list starts grouped by a grouping it offers")
+        limited = [entry.status_id for entry in self.limits or ()]
+        if len(set(limited)) != len(limited):
+            raise ValueError("each column is limited once")
         return self
 
     @field_validator("presets")

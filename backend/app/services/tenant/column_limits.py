@@ -1,0 +1,112 @@
+"""How many open tasks a project's board columns may hold, and the check that
+holds a person to it.
+
+A limit is the project's board layout's (``ListLayoutDefinition.limits``): a
+status and how many open tasks its column takes. A column at its limit takes
+no more from a person: the UI stops them first, and the routes a person puts a
+task into a status through refuse what it would not. MCP calls and plug-ins
+acting for a member are that member. A plug-in acting as itself, an
+automation, and the project's own machinery (repeating tasks, imports,
+copies) are not held to it, and nothing moves out of a column past its limit.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from typing import Sequence
+
+from fastapi import HTTPException, status
+from sqlalchemy import func
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.messages import TaskMessages
+from app.core.tools import Tool
+from app.db.advisory_locks import LockNamespace, advisory_lock
+from app.db.guild_standing import ActorContext, InstallContext
+from app.db.session import routed_guild_id
+from app.models.tenant.task import Task
+from app.models.tenant.tool_layout import ToolLayout
+
+
+async def limits_of(session: AsyncSession, project_id: int) -> dict[int, int]:
+    """Each limited column of the project's board, by its status."""
+    definition = (
+        await session.exec(
+            select(ToolLayout.definition).where(
+                ToolLayout.tool == Tool.project.value,
+                ToolLayout.tool_id == project_id,
+                ToolLayout.kind == "board",
+            )
+        )
+    ).first()
+    return {
+        int(entry["status_id"]): int(entry["limit"])
+        for entry in (definition or {}).get("limits") or ()
+    }
+
+
+async def open_counts(
+    session: AsyncSession,
+    project_id: int,
+    *,
+    statuses: Sequence[int] | None = None,
+    excluding: Sequence[int] = (),
+) -> dict[int, int]:
+    """How many open (not archived, not trashed) tasks each of the project's
+    columns holds, less ``excluding``."""
+    query = (
+        select(Task.task_status_id, func.count())
+        .where(Task.project_id == project_id, Task.archived_at.is_(None))
+        .group_by(Task.task_status_id)
+    )
+    if statuses is not None:
+        query = query.where(Task.task_status_id.in_(statuses))
+    if excluding:
+        query = query.where(Task.id.not_in(excluding))
+    return {status_id: count for status_id, count in (await session.exec(query)).all()}
+
+
+def _by_a_person(context: ActorContext) -> bool:
+    return not isinstance(context, InstallContext) or context.member_user_id is not None
+
+
+async def require_room(
+    session: AsyncSession,
+    context: ActorContext,
+    project_id: int,
+    entering: Sequence[Task],
+) -> None:
+    """Refuse a person's write that puts ``entering`` (each already in the
+    status it is going to) into a column of the project at its limit.
+
+    Called before the write commits. Changes to one column take turns, so two
+    people dropping into its last place at once cannot both get in. What a
+    column holds is its other open tasks, so a task already in it, or one
+    taken out of it, is never counted against a move."""
+    if not entering or not _by_a_person(context):
+        return
+    limits = await limits_of(session, project_id)
+    into = Counter(
+        task.task_status_id for task in entering if task.task_status_id in limits
+    )
+    if not into:
+        return
+    guild_id = routed_guild_id(session)
+    for status_id in sorted(into):
+        await advisory_lock(
+            session, LockNamespace.COLUMN_LIMIT, f"{guild_id}:{status_id}"
+        )
+    held = await open_counts(
+        session,
+        project_id,
+        statuses=list(into),
+        excluding=[task.id for task in entering if task.id is not None],
+    )
+    if any(
+        held.get(status_id, 0) + n > limits[status_id] for status_id, n in into.items()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=TaskMessages.STATUS_AT_LIMIT,
+        )

@@ -492,6 +492,16 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
+        (
+            _table(limits=[{"status_id": 1, "limit": 3}]),
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (
+            {"kind": "board", "definition": {"limits": [{"status_id": 1, "limit": 0}]}},
+            422,
+            None,
+        ),
         (_task({"type": "field", "props": {"field": "startDate"}}), 422, None),
         (_task({"type": "card"}), 422, None),
         ({"kind": "gallery", "definition": {}}, 422, None),
@@ -525,6 +535,8 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "starting on a grouping the list does not offer",
         "a grouped calendar",
         "a board in bands of the statuses its columns are",
+        "a column limit on a table, which has no columns of statuses",
+        "a column that takes no tasks at all",
         "a date alone on a task",
         "a card on a task",
         "a kind no tool draws",
@@ -597,6 +609,7 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
         "presets": [_preset(filters=filters)],
         "groupings": [{"field": "status", "hidden": ["1", "2"]}, sprint],
         "group_by": "property:9",
+        "limits": [{"status_id": 1, "limit": 3}, {"status_id": 2, "limit": 4}],
     }
 
     copied = tool_layouts_service.copied_definition(
@@ -617,6 +630,8 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
         *([sprint] if same_initiative else []),
     ]
     assert copied.get("group_by") == ("property:9" if same_initiative else None)
+    # And a column's limit is the copy's own column's.
+    assert copied["limits"] == [{"status_id": 11, "limit": 3}]
 
 
 async def test_a_layout_at_the_limits_is_kept(client: AsyncClient, acting_user):

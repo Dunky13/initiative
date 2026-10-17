@@ -59,6 +59,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
+import { useColumnRoom } from "@/hooks/useColumnRoom";
 import { useInitiative } from "@/hooks/useInitiatives";
 import {
   type ProjectViewSearch,
@@ -122,7 +123,7 @@ export const ProjectTasksSection = ({
   initialComposerOpen,
   onComposerOpenChange,
 }: ProjectTasksSectionProps) => {
-  const { t } = useTranslation(["projects", "common"]);
+  const { t } = useTranslation(["projects", "common", "errors"]);
   // Nothing is exported from an initiative that keeps its content in.
   const keepsContentIn = Boolean(useInitiative(initiativeId).data?.keep_content_in);
   const communityId = useActiveCommunityId();
@@ -355,8 +356,25 @@ export const ProjectTasksSection = ({
     },
   });
 
-  // A task is added to the project's default status unless another is picked.
-  const defaultStatus = sortedTaskStatuses.find((status) => status.id === defaultStatusId);
+  // How full the board's limited columns are, which every way a person puts
+  // a task into a column here holds to.
+  const room = useColumnRoom(projectId);
+  const refuseFull = useCallback(
+    (taskStatusId: number, entering = 1) => {
+      if (room.hasRoom(taskStatusId, entering)) return false;
+      toast.error(t("errors:TASK_STATUS_AT_LIMIT"));
+      return true;
+    },
+    [room, t]
+  );
+
+  // A task is added to the project's default status unless another is picked,
+  // or that column is full and another isn't.
+  const projectDefault = sortedTaskStatuses.find((status) => status.id === defaultStatusId);
+  const defaultStatus =
+    projectDefault && !room.hasRoom(projectDefault.id)
+      ? (sortedTaskStatuses.find((status) => room.hasRoom(status.id)) ?? projectDefault)
+      : projectDefault;
   const leaving = useRef(false);
   const neverAsks = useCallback(async () => null, []);
 
@@ -500,6 +518,7 @@ export const ProjectTasksSection = ({
     (taskId: number, taskStatusId: number) => {
       const status = statusLookup.get(taskStatusId);
       const current = tasks.find((task) => task.id === taskId);
+      if (current?.task_status_id !== taskStatusId && refuseFull(taskStatusId)) return;
       const vars: UpdateTaskVariables = {
         taskId,
         data: { task_status_id: taskStatusId },
@@ -513,7 +532,7 @@ export const ProjectTasksSection = ({
       }
       mutateTaskStatus(vars);
     },
-    [statusLookup, tasks, writePendingStatuses, mutateTaskStatus]
+    [statusLookup, tasks, writePendingStatuses, mutateTaskStatus, refuseFull]
   );
   const activeTask = useMemo(
     () => projectTasks.find((task) => task.id === activeTaskId) ?? null,
@@ -775,7 +794,11 @@ export const ProjectTasksSection = ({
     }
 
     // Released on itself: nothing to persist, but the overlay still has to go.
-    if (targetStatusId !== currentTask.task_status_id || overTaskId !== currentTask.id) {
+    const intoFull = targetStatusId !== currentTask.task_status_id && refuseFull(targetStatusId);
+    if (
+      !intoFull &&
+      (targetStatusId !== currentTask.task_status_id || overTaskId !== currentTask.id)
+    ) {
       moveTaskInOrder(activeId, targetStatusId, overTaskId, insertAfter);
     }
     setActiveTaskId(null);
@@ -958,6 +981,7 @@ export const ProjectTasksSection = ({
             }
             isArchivingDoneTasks={archiveDoneTasks.isPending}
             card={layout?.definition.card as LayoutNode | null | undefined}
+            room={room}
             grouping={grouping}
             onGroupingChange={setGrouping}
             viewGroupings={layout?.definition.groupings}
@@ -1017,6 +1041,7 @@ export const ProjectTasksSection = ({
                 tableState={tableState}
                 viewColumns={layout?.definition.columns}
                 viewGroupings={layout?.definition.groupings}
+                room={room}
               />
             ) : null}
             {canEditTaskDetails && (
@@ -1058,7 +1083,9 @@ export const ProjectTasksSection = ({
 
       {canEditTaskDetails ? (
         <>
-          {canAddTasks && defaultStatus ? (
+          {/* Mounted once the columns' counts are in, so a new task starts in
+              a column with room. */}
+          {canAddTasks && defaultStatus && room.ready ? (
             <AddItemDialog
               open={isComposerOpen}
               onOpenChange={setIsComposerOpen}
@@ -1068,6 +1095,7 @@ export const ProjectTasksSection = ({
                 readOnly: false,
                 readOnlyMessage: null,
                 statuses: sortedTaskStatuses,
+                hasRoom: room.hasRoom,
                 initiativeId,
                 currentUserId: user?.id,
                 askScope: neverAsks,
@@ -1093,6 +1121,12 @@ export const ProjectTasksSection = ({
             <TaskBulkEditDialog
               selectedTasks={selectedTasks}
               taskStatuses={sortedTaskStatuses}
+              hasRoom={(statusId) =>
+                room.hasRoom(
+                  statusId,
+                  selectedTasks.filter((task) => task.task_status_id !== statusId).length
+                )
+              }
               projectId={projectId}
               isSubmitting={bulkUpdateTasks.isPending}
               onApply={(changes) => {

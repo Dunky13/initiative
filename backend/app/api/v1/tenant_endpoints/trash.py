@@ -36,6 +36,7 @@ from app.db.base import MODELS_BY_TABLE
 from app.db.query import build_paginated_response
 from app.db.soft_delete_filter import SOFT_DELETE_MODELS, select_including_deleted
 from app.models.tenant.comment import Comment
+from app.models.tenant.task import Task
 from app.models.platform.guild import CommunityRole
 from app.models.platform.user import User, UserStatus
 from app.models.platform.user_profile_view import MemberProfile
@@ -50,6 +51,7 @@ from app.services.platform import guilds as guilds_service
 from app.services.tenant import ownership as ownership_service
 from app.core.user_display import display_name
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import column_limits
 from app.services.tenant import content_references
 from app.services.tenant.lifecycle_tree import CASCADE_PARENTS
 from app.services.tenant.soft_delete import (
@@ -302,6 +304,11 @@ async def restore_trash_entity(
         )
 
     await restore_entity(session, entity)
+    # A task back out of the trash goes back into its column, unless archived.
+    if isinstance(entity, Task) and entity.archived_at is None:
+        await column_limits.require_room(
+            session, guild_context, entity.project_id, [entity]
+        )
 
     # A comment back in the conversation puts back what it alone pointed at.
     if isinstance(entity, Comment):

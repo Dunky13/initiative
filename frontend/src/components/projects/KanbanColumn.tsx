@@ -18,6 +18,9 @@ const VIRTUALIZE_THRESHOLD = 20;
 const CARD_ESTIMATE_HEIGHT = 140;
 const VIRTUALIZER_OVERSCAN = 3;
 
+/** A limited column's open tasks, counted by the server, and its limit. */
+export type ColumnFill = { count: number; limit: number };
+
 interface KanbanColumnProps {
   status: TaskStatusRead;
   tasks: TaskListRead[];
@@ -27,6 +30,8 @@ interface KanbanColumnProps {
   collapsed: boolean;
   onToggleCollapse: (statusId: number) => void;
   taskCount: number;
+  /** Where the column is limited. */
+  fill?: ColumnFill;
   className?: string;
   onArchiveDoneTasks?: (statusId: number) => void;
   isArchiving?: boolean;
@@ -40,6 +45,7 @@ export const KanbanColumn = ({
   collapsed,
   onToggleCollapse,
   taskCount,
+  fill,
   className,
   onArchiveDoneTasks,
   isArchiving,
@@ -61,10 +67,16 @@ export const KanbanColumn = ({
         <CollapsedHeader
           status={status}
           taskCount={taskCount}
+          fill={fill}
           onToggleCollapse={onToggleCollapse}
         />
       ) : (
-        <ExpandedHeader status={status} taskCount={taskCount} onToggleCollapse={onToggleCollapse} />
+        <ExpandedHeader
+          status={status}
+          taskCount={taskCount}
+          fill={fill}
+          onToggleCollapse={onToggleCollapse}
+        />
       )}
       <KanbanCards
         statusId={status.id}
@@ -233,13 +245,46 @@ export const ArchiveDoneButton = ({
   );
 };
 
+/** How many tasks a column header counts: a limited column's open tasks
+ *  against its limit, marked once it is full; else what the board shows. */
+const ColumnCount = ({
+  taskCount,
+  fill,
+  compact = false,
+}: {
+  taskCount: number;
+  fill?: ColumnFill;
+  /** A folded column's, which has room for the numbers alone. */
+  compact?: boolean;
+}) => {
+  const { t } = useTranslation("projects");
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 text-muted-foreground text-xs",
+        fill && fill.count >= fill.limit && "font-medium text-warning"
+      )}
+      title={fill ? t("kanban.limitTitle", { limit: fill.limit }) : undefined}
+    >
+      <SquareCheckBig className="h-3 w-3" />{" "}
+      {fill
+        ? t("kanban.limitCount", { count: fill.count, limit: fill.limit })
+        : compact
+          ? taskCount
+          : t("kanban.taskCount", { count: taskCount })}
+    </span>
+  );
+};
+
 export const ExpandedHeader = ({
   status,
   taskCount,
+  fill,
   onToggleCollapse,
 }: {
   status: TaskStatusRead;
   taskCount: number;
+  fill?: ColumnFill;
   onToggleCollapse: (statusId: number) => void;
 }) => {
   const { t } = useTranslation("projects");
@@ -256,9 +301,7 @@ export const ExpandedHeader = ({
         />
         <div className="min-w-0">
           <p className="truncate font-semibold text-lg leading-none">{status.name}</p>
-          <p className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-            <SquareCheckBig className="h-3 w-3" /> {t("kanban.taskCount", { count: taskCount })}
-          </p>
+          <ColumnCount taskCount={taskCount} fill={fill} />
         </div>
       </div>
       <Button
@@ -278,10 +321,12 @@ export const ExpandedHeader = ({
 export const CollapsedHeader = ({
   status,
   taskCount,
+  fill,
   onToggleCollapse,
 }: {
   status: TaskStatusRead;
   taskCount: number;
+  fill?: ColumnFill;
   onToggleCollapse: (statusId: number) => void;
 }) => {
   const { t } = useTranslation("projects");
@@ -303,9 +348,7 @@ export const CollapsedHeader = ({
           {status.name}
         </span>
       </div>
-      <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
-        <SquareCheckBig className="h-3 w-3" /> {taskCount}
-      </span>
+      <ColumnCount taskCount={taskCount} fill={fill} compact />
     </div>
   );
 };

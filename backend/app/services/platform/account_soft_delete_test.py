@@ -7,6 +7,7 @@ used to run immediately actually runs.
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -19,6 +20,7 @@ from app.models.platform.user import (
     SIGN_IN_STATUSES,
     User,
     UserStatus,
+    may_sign_in,
 )
 from app.services.platform import account_purge
 from app.testing.factories import (
@@ -423,3 +425,61 @@ async def test_deactivating_still_drops_memberships(
         )
     ).all()
     assert roster == []
+
+
+# ── A deletion the age answer made ───────────────────────────────────────────
+
+
+async def test_a_sign_in_cannot_call_off_a_deletion_the_age_answer_made(
+    session: AsyncSession,
+):
+    """Every way in refuses such an account before it gets this far
+    (``may_sign_in``); the service raises rather than returns so that a door
+    which forgot to cannot open a session on it. An operator still can."""
+    from app.services.platform import users as users_service
+
+    user = await create_user(session, age_confirmed_at=None)
+    await users_service.refuse_account_for_age(session, user)
+    session.expunge_all()
+    row = (await session.exec(select(User).where(User.id == user.id))).one()
+    assert row.status == UserStatus.deleted
+    assert row.age_below_minimum_at is not None
+    assert row.age_below_account_minimum_at is not None
+    assert not may_sign_in(row)
+
+    with pytest.raises(users_service.DeletionStands):
+        await users_service.cancel_account_deletion(
+            session, user.id, actor_user_id=user.id, via="sign_in"
+        )
+    session.expunge_all()
+    row = (await session.exec(select(User).where(User.id == user.id))).one()
+    assert row.status == UserStatus.deleted
+
+    assert await users_service.cancel_account_deletion(
+        session, user.id, actor_user_id=None, via="operator"
+    )
+    await session.commit()
+    session.expunge_all()
+    row = (await session.exec(select(User).where(User.id == user.id))).one()
+    assert row.status == UserStatus.active
+    # Restored, but still marked: nobody signs in until the mark is cleared.
+    assert not may_sign_in(row)
+
+
+async def test_the_purge_erases_an_account_the_age_answer_closed(
+    session: AsyncSession,
+):
+    """It waits out the same window as any deletion, and is erased the same way."""
+    from app.services.platform import users as users_service
+
+    user = await create_user(session, age_confirmed_at=None)
+    await users_service.refuse_account_for_age(session, user)
+    later = datetime.now(timezone.utc) + timedelta(
+        days=DEFAULT_ACCOUNT_RETENTION_DAYS + 1
+    )
+
+    assert await account_purge.purge_due_accounts(session, now=later) == 1
+
+    session.expunge_all()
+    row = (await session.exec(select(User).where(User.id == user.id))).one()
+    assert row.status == UserStatus.anonymized

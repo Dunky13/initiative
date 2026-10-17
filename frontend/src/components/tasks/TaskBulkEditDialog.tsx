@@ -54,6 +54,8 @@ export type TaskBulkUpdate = {
 interface TaskBulkEditDialogProps {
   selectedTasks: TaskListRead[];
   taskStatuses: TaskStatusRead[];
+  /** Whether a column takes every selected task not already in it. */
+  hasRoom?: (taskStatusId: number) => boolean;
   projectId: number;
   isSubmitting: boolean;
   onApply: (changes: Partial<TaskBulkUpdate>) => void;
@@ -63,12 +65,13 @@ interface TaskBulkEditDialogProps {
 export const TaskBulkEditDialog = ({
   selectedTasks,
   taskStatuses,
+  hasRoom,
   projectId,
   isSubmitting,
   onApply,
   onCancel,
 }: TaskBulkEditDialogProps) => {
-  const { t } = useTranslation(["tasks", "common"]);
+  const { t } = useTranslation(["tasks", "common", "projects"]);
   const { user: currentUser } = useAuth();
   const [startDate, setStartDate] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>("");
@@ -175,11 +178,16 @@ export const TaskBulkEditDialog = ({
                     <SelectValue placeholder={t("bulkEdit.selectStatus")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {taskStatuses.map((status) => (
-                      <SelectItem key={status.id} value={String(status.id)}>
-                        {status.name}
-                      </SelectItem>
-                    ))}
+                    {taskStatuses.map((status) => {
+                      const full = hasRoom?.(status.id) === false;
+                      return (
+                        <SelectItem key={status.id} value={String(status.id)} disabled={full}>
+                          {full
+                            ? t("projects:kanban.statusFull", { name: status.name })
+                            : status.name}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

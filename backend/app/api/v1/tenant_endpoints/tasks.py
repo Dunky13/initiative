@@ -48,6 +48,7 @@ from app.schemas.tenant.task import (
     TaskMoveRequest,
     TaskRead,
     TaskReorderRequest,
+    TaskStatusCount,
     TaskUpdate,
 )
 from app.schemas.platform.user import UserPublic
@@ -57,6 +58,7 @@ from app.services import notifications as notifications_service
 from app.services.ai_settings import resolve_ai_settings
 from app.services.tenant import archive as archive_service
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import column_limits
 from app.services.tenant import overwrites
 from app.services.tenant import cases as cases_service
 from app.services.tenant import properties as properties_service
@@ -328,6 +330,7 @@ async def create_task(
         created_by=guild_context.user_id,
         checklist=checklist_service.normalize(task_in.checklist),
     )
+    await column_limits.require_room(session, guild_context, project.id, [task])
     await task_creation_service.set_task_assignees(
         session, task, task_in.assignee_ids, project=project
     )
@@ -372,6 +375,25 @@ async def create_task(
     await properties_service.write_on_create(session, task, task_in.properties)
     await session.commit()
     return await _response(session, task.id)
+
+
+@router.get("/status-counts", response_model=List[TaskStatusCount])
+async def count_tasks_by_status(
+    project_id: int,
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsRead,
+) -> List[TaskStatusCount]:
+    """How many open tasks each of a project's columns holds, whatever the
+    reader's filters show: what a column's limit is held to."""
+    await resource_access.load_authorized(
+        session, _GOVERNING, project_id, current_user, guild_context, access="read"
+    )
+    counts = await column_limits.open_counts(session, project_id)
+    return [
+        TaskStatusCount(task_status_id=status_id, count=count)
+        for status_id, count in sorted(counts.items())
+    ]
 
 
 @router.get("/{task_id}", response_model=TaskRead)
@@ -575,6 +597,9 @@ async def update_task(
             )
         task.task_status_id = selected_status.id  # ty: ignore[invalid-assignment] — persisted row, id is set
         task.task_status = selected_status
+        await column_limits.require_room(
+            session, guild_context, task.project_id, [task]
+        )
 
     for field, value in update_data.items():
         if field == "recurrence":
@@ -773,6 +798,7 @@ async def move_task(
     task.updated_at = now
     sync_completed_at(task, default_status.category, now=now)
     session.add(task)
+    await column_limits.require_room(session, guild_context, target_project.id, [task])
 
     # If the move crosses initiative boundaries, drop property values —
     # their definitions belong to the old initiative and can't resolve in
@@ -823,6 +849,7 @@ async def duplicate_task(
     (copy,) = await task_creation_service.copy_tasks(
         session, [task], task.project, assignees=keep
     )
+    await column_limits.require_room(session, guild_context, task.project_id, [copy])
     _touch_project(task.project, datetime.now(timezone.utc))
     await session.commit()
     return await _response(session, copy.id)
@@ -933,6 +960,11 @@ async def reorder_tasks(
 
     now = datetime.now(timezone.utc)
     status_cache: dict[int, TaskStatus] = {}
+    entering = [
+        task_map[item.id]
+        for item in reorder_in.items
+        if item.task_status_id != task_map[item.id].task_status_id
+    ]
     for item in reorder_in.items:
         task = task_map[item.id]
         previous_status_category = (
@@ -974,6 +1006,10 @@ async def reorder_tasks(
             now=now,
             user_timezone=current_user.timezone,
         )
+
+    await column_limits.require_room(
+        session, guild_context, reorder_in.project_id, entering
+    )
 
     # Renumber the project's tasks if any moved task collided with a neighbor;
     # collects ids the rebalance touched so they're returned to the client

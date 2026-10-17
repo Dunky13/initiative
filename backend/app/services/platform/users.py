@@ -395,7 +395,11 @@ async def deactivate_user(
 
 
 async def request_account_deletion(
-    session: AsyncSession, user_id: int, *, actor_user_id: int | None = None
+    session: AsyncSession,
+    user_id: int,
+    *,
+    actor_user_id: int | None = None,
+    reason: str | None = None,
 ) -> User:
     """Mark an account for erasure and keep it until the window runs out.
 
@@ -414,7 +418,8 @@ async def request_account_deletion(
     the window ends, which is the erasure this used to do immediately.
 
     ``actor_user_id`` is who asked — the account holder, or somebody acting on
-    the account.
+    the account. ``reason`` is why, when it was not simply asked for: ``age``
+    when the account's own age answer closed it (:func:`refuse_account_for_age`).
     """
     user = await session.get(User, user_id)
     if user is None:
@@ -438,10 +443,56 @@ async def request_account_deletion(
         target_user_id=user_id,
         target_type="user",
         target_id=user_id,
-        detail={"self": actor_user_id == user_id},
+        detail={"self": actor_user_id == user_id}
+        | ({"reason": reason} if reason is not None else {}),
     )
     await session.commit()
     return user
+
+
+class DeletionStands(PermissionError):
+    """A sign-in tried to call off a deletion that is not its holder's to call
+    off: the account's age answer closed it (``age_below_account_minimum_at``).
+    """
+
+
+async def refuse_account_for_age(session: AsyncSession, user: User) -> None:
+    """Close an account whose date of birth says it may not exist where it is.
+
+    The answer sign-up gives at the door — under the minimum for an account
+    in this country, so no account — given late, by an account that was made
+    without a date (a sign-in provider asked for none, or the field was left
+    empty) and has now answered. What sign-up refuses to make, this takes away:
+
+    * The answer stands, as every under-age answer does. Both marks are set —
+      under the directory's minimum, since anyone under the account's is, and
+      under the account's, which is the one that closes the account.
+    * The date is not kept. It said the person may not be here, and keeping a
+      child's date of birth is the opposite of what that answer asks for.
+    * The account is scheduled for erasure, exactly as if its holder had asked
+      (:func:`request_account_deletion`): absent from everybody else at once,
+      its sessions ended, everything it holds kept for the deployment's window,
+      and erased by ``account_purge`` when that runs out. Unlike a holder's own
+      deletion, signing in does not call it off (:func:`cancel_account_deletion`
+      refuses while the mark stands, and every way in refuses before that,
+      ``users.may_sign_in``). The way back is the support ticket every
+      under-age answer has: ``users.age_unblock`` clears the marks, and the
+      next sign-in restores the account whole and asks again.
+
+    The window is kept rather than erasing on the spot because the answer is
+    one keystroke from a mistyped year, and an account with years of work in
+    it should survive that long enough for a ticket. Commits.
+    """
+    now = datetime.now(timezone.utc)
+    user.age_below_minimum_at = now
+    user.age_below_account_minimum_at = now
+    # One question, one answer (``ck_users_age_answer``).
+    user.age_confirmed_at = None
+    user.updated_at = now
+    session.add(user)
+    await request_account_deletion(
+        session, user.id, actor_user_id=user.id, reason="age"
+    )
 
 
 async def cancel_account_deletion(
@@ -458,10 +509,18 @@ async def cancel_account_deletion(
 
     Does not commit: a sign-in cancelling a deletion is part of opening that
     session, and the two land together or not at all.
+
+    A deletion the account's own age answer scheduled is not its holder's to
+    call off (:func:`refuse_account_for_age`). Every way in refuses such an
+    account before it gets here (``users.may_sign_in``), so for ``sign_in`` this
+    raises :class:`DeletionStands` rather than returning: a door that forgot
+    the check must not open a session on an account that may not have one.
     """
     user = await session.get(User, user_id)
     if user is None or user.status != UserStatus.deleted:
         return False
+    if via == "sign_in" and user.age_below_account_minimum_at is not None:
+        raise DeletionStands(user_id)
     user.status = UserStatus.active
     user.status_changed_at = datetime.now(timezone.utc)
     user.updated_at = datetime.now(timezone.utc)

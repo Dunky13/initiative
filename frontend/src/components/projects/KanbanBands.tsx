@@ -5,6 +5,7 @@ import type { TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
 import {
   ArchiveDoneButton,
   CollapsedHeader,
+  type ColumnFill,
   ExpandedHeader,
   KanbanCards,
 } from "@/components/projects/KanbanColumn";
@@ -18,6 +19,8 @@ interface KanbanBandsProps {
   statuses: TaskStatusRead[];
   /** How many tasks each column holds, once each, whatever bands they are in. */
   counts: Record<number, number>;
+  /** A limited column's open tasks against its limit. */
+  fillOf: (statusId: number) => ColumnFill | undefined;
   collapsedStatusIds: Set<number>;
   onToggleCollapse: (statusId: number) => void;
   canWrite: boolean;
@@ -39,6 +42,7 @@ export const KanbanBands = ({
   grouping,
   statuses,
   counts,
+  fillOf,
   collapsedStatusIds,
   onToggleCollapse,
   canWrite,
@@ -82,12 +86,14 @@ export const KanbanBands = ({
                 <CollapsedHeader
                   status={status}
                   taskCount={count}
+                  fill={fillOf(status.id)}
                   onToggleCollapse={onToggleCollapse}
                 />
               ) : (
                 <ExpandedHeader
                   status={status}
                   taskCount={count}
+                  fill={fillOf(status.id)}
                   onToggleCollapse={onToggleCollapse}
                 />
               )}

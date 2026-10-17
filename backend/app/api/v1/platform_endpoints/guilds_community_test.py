@@ -19,7 +19,7 @@ from app.models.platform.guild import (
     CommunityRole,
     CommunityStatus,
 )
-from app.models.platform.user import UserRole
+from app.models.platform.user import User, UserRole, UserStatus
 from app.models.tenant.initiative import InitiativeMember
 from app.services.platform import app_settings as app_settings_service
 from app.services.platform import guilds as guilds_service
@@ -925,14 +925,19 @@ async def test_the_age_a_birthdate_states_is_what_the_answer_turns_on(
     """The boundary belongs to the person on it: sixteen today is sixteen, and
     a birthday that has not come round is a year that has not happened. A date
     nobody could have been born on is refused separately, so the reply says
-    which it was."""
+    which it was.
+
+    Answered from the US, where thirteen is old enough for an account: under
+    sixteen is then an account without a directory, which is what these
+    assert. Where the country is not known the highest minimum applies and
+    the same answers close the account instead — the tests at the end."""
     a = await acting_user("member", age_confirmed_at=None)
     birthdate = make_birthdate()
 
     response = await client.post(
         "/api/v1/me/age-confirmation",
         json={"birthdate": birthdate},
-        headers=a.headers,
+        headers={**a.headers, "CF-IPCountry": "US"},
     )
 
     assert response.status_code == expected_status, response.text
@@ -968,15 +973,19 @@ async def test_join_refuses_an_account_that_has_not_confirmed_its_age(
     One of them can be fixed by answering and the other cannot, and the reply
     is the only thing that knows which — so an account whose answer stands is
     not sent back to a form that has nothing for it.
+
+    The under-age answer is fifteen from the US: old enough for an account
+    there, so the account survives to be refused by the directory.
     """
     a = await acting_user("member", age_confirmed_at=None)
     guild = await _a_listed_guild(session, name="Open Table")
     if prior_answer == "answered under age":
-        await client.post(
+        answered = await client.post(
             "/api/v1/me/age-confirmation",
-            json={"birthdate": _birthdate_for_age(9)},
-            headers=a.headers,
+            json={"birthdate": _birthdate_for_age(15)},
+            headers={**a.headers, "CF-IPCountry": "US"},
         )
+        assert answered.status_code == 422, answered.text
 
     response = await client.post(
         f"/api/v1/communities/directory/{guild.id}/join", headers=a.headers
@@ -1075,7 +1084,9 @@ async def test_an_account_that_answered_under_age_keeps_its_communities(
 
     A community somebody was invited to is that community's to answer for, so
     an under-age answer leaves the membership standing and everything in it
-    reachable — the refusal is only ever the next directory join.
+    reachable — the refusal is only ever the next directory join. (Fifteen in
+    the US: old enough for an account there. Under the minimum for an account
+    is a different answer, and closes it — the tests at the end.)
     """
     invited = await create_guild(session, name="Just Us")
     a = await acting_user(
@@ -1083,8 +1094,8 @@ async def test_an_account_that_answered_under_age_keeps_its_communities(
     )
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=a.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**a.headers, "CF-IPCountry": "US"},
     )
 
     still_theirs = await client.get("/api/v1/communities/", headers=a.headers)
@@ -1152,8 +1163,8 @@ async def test_an_answered_under_age_account_cannot_be_put_in_a_listed_guild(
     a = await acting_user("member", age_confirmed_at=None)
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=a.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**a.headers, "CF-IPCountry": "US"},
     )
     guild = await _a_listed_guild(session, name="Open Table")
     await session.refresh(a.user)
@@ -1175,8 +1186,8 @@ async def test_a_guild_holding_an_under_age_member_cannot_be_listed(
     )
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=member.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**member.headers, "CF-IPCountry": "US"},
     )
 
     response = await client.patch(
@@ -1239,8 +1250,8 @@ async def test_an_already_listed_guild_is_not_re_checked_on_an_unrelated_edit(
     )
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=member.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**member.headers, "CF-IPCountry": "US"},
     )
 
     response = await client.patch(
@@ -1304,10 +1315,10 @@ async def test_a_listed_community_asks_its_own_members_before_letting_them_in(
             "/api/v1/me/age-confirmation",
             json={
                 "birthdate": (
-                    ADULT_BIRTHDATE if answer == "confirmed" else _birthdate_for_age(9)
+                    ADULT_BIRTHDATE if answer == "confirmed" else _birthdate_for_age(15)
                 )
             },
-            headers=a.headers,
+            headers={**a.headers, "CF-IPCountry": "US"},
         )
 
     response = await client.get(a.g("/initiatives/"), headers=a.headers)
@@ -1376,8 +1387,8 @@ async def test_the_answer_stands_against_a_second_try(
 
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=a.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**a.headers, "CF-IPCountry": "US"},
     )
     second = await client.post(
         "/api/v1/me/age-confirmation",
@@ -1395,7 +1406,7 @@ async def test_the_answer_stands_against_a_second_try(
     "years,expected_status",
     [
         pytest.param(30, 200, id="an answer that passes"),
-        pytest.param(9, 422, id="an answer that does not"),
+        pytest.param(15, 422, id="an answer that does not"),
     ],
 )
 async def test_the_date_is_kept_only_encrypted(
@@ -1418,7 +1429,7 @@ async def test_the_date_is_kept_only_encrypted(
     response = await client.post(
         "/api/v1/me/age-confirmation",
         json={"birthdate": birthdate},
-        headers=a.headers,
+        headers={**a.headers, "CF-IPCountry": "US"},
     )
     assert response.status_code == expected_status, response.text
 
@@ -1459,8 +1470,8 @@ async def test_lifting_the_block_forgets_the_kept_date(
     support = await acting_user(UserRole.support)
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=subject.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**subject.headers, "CF-IPCountry": "US"},
     )
 
     lifted = await client.delete(
@@ -1500,8 +1511,8 @@ async def test_lifting_an_age_block_is_a_platform_capability(
     subject = await acting_user("member", age_confirmed_at=None)
     await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=subject.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**subject.headers, "CF-IPCountry": "US"},
     )
     await session.refresh(subject.user)
     assert subject.user.age_below_minimum_at is not None
@@ -1556,8 +1567,8 @@ async def test_a_reset_adult_answering_under_age_is_not_still_confirmed(
     )
     under = await client.post(
         "/api/v1/me/age-confirmation",
-        json={"birthdate": _birthdate_for_age(9)},
-        headers=subject.headers,
+        json={"birthdate": _birthdate_for_age(15)},
+        headers={**subject.headers, "CF-IPCountry": "US"},
     )
 
     assert lifted.status_code == 200, lifted.text
@@ -1598,3 +1609,186 @@ async def test_an_answer_that_failed_to_save_does_not_block_a_retry(
 
     assert retry.status_code == 200, retry.text
     assert retry.json()["birthdate_on_file"] is True
+
+
+# ── Under the minimum for an account, answered late ─────────────────────────
+#
+# Sign-up refuses a date of birth under the minimum age for an account in the
+# country the request comes from, and makes no account. An account made without
+# a date (a sign-in provider asked for none, or the field was left empty)
+# answers the same question here, and the same rule has to hold: what sign-up
+# would not have made, this takes away.
+
+
+@pytest.fixture(autouse=True)
+def country_header(monkeypatch):
+    """Run this module behind a proxy that names the visitor's country, as the
+    cloud does behind Cloudflare: a request carrying ``CF-IPCountry`` is from
+    there, and one without it is from nowhere known, where the highest
+    minimum applies. The under-age answers above are fifteen from the US —
+    old enough for an account there, so what they test is the directory."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "CLIENT_COUNTRY_HEADER", "CF-IPCountry")
+
+
+def _from(headers: dict[str, str], country: str | None) -> dict[str, str]:
+    return {**headers, **({"CF-IPCountry": country} if country else {})}
+
+
+async def _row(session: AsyncSession, user_id: int) -> User:
+    session.expunge_all()
+    return (await session.exec(select(User).where(User.id == user_id))).one()
+
+
+@pytest.mark.parametrize(
+    ("years", "country"),
+    [(12, "US"), (15, "DE"), (15, None), (15, "XX")],
+    ids=["under the US minimum", "under the German minimum", "no header", "unknown"],
+)
+async def test_an_answer_under_the_account_minimum_closes_the_account(
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    years: int,
+    country: str | None,
+):
+    """The answer stands, the date is not kept, the account is scheduled for
+    erasure with its sessions ended, and where the country is not known the
+    highest minimum applies — exactly what sign-up does, one step later."""
+    from app.services.platform import users as users_service
+
+    a = await acting_user("member", age_confirmed_at=None)
+
+    response = await client.post(
+        "/api/v1/me/age-confirmation",
+        json={"birthdate": _birthdate_for_age(years)},
+        headers=_from(a.headers, country),
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == "USER_AGE_BELOW_ACCOUNT_MINIMUM"
+    row = await _row(session, a.user.id)
+    assert row.status == UserStatus.deleted
+    assert row.age_below_minimum_at is not None
+    assert row.age_below_account_minimum_at is not None
+    assert row.age_confirmed_at is None
+    assert await users_service.birthdate_of(session, user_id=a.user.id) is None
+    # Every session the account held ended with it.
+    assert (await client.get("/api/v1/me", headers=a.headers)).status_code == 401
+
+
+async def test_old_enough_for_an_account_but_not_the_directory_keeps_the_account(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Fifteen in the US is an account without a directory, as before: the
+    country's minimum for an account is the only thing this adds."""
+    a = await acting_user("member", age_confirmed_at=None)
+
+    response = await client.post(
+        "/api/v1/me/age-confirmation",
+        json={"birthdate": _birthdate_for_age(15)},
+        headers=_from(a.headers, "US"),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "USER_AGE_BELOW_MINIMUM"
+    row = await _row(session, a.user.id)
+    assert row.status == UserStatus.active
+    assert row.age_below_minimum_at is not None
+    assert row.age_below_account_minimum_at is None
+
+
+async def test_a_date_nobody_was_born_on_closes_nothing(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A year still to come reads as an age below every minimum. It is refused
+    as a typo before it is read as an age, so it cannot close an account."""
+    a = await acting_user("member", age_confirmed_at=None)
+
+    response = await client.post(
+        "/api/v1/me/age-confirmation",
+        json={"birthdate": _tomorrow()},
+        headers=_from(a.headers, "US"),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "USER_AGE_INVALID_BIRTHDATE"
+    row = await _row(session, a.user.id)
+    assert row.status == UserStatus.active
+    assert row.age_below_minimum_at is None
+    assert row.age_below_account_minimum_at is None
+
+
+async def test_a_deployment_that_does_not_check_age_closes_nothing(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """With the check off nothing is asked, and nothing answered may close an
+    account."""
+    await app_settings_service.update_community_settings(
+        session, community_directory_enabled=False, community_age_gate_enabled=False
+    )
+    a = await acting_user("member", age_confirmed_at=None)
+
+    response = await client.post(
+        "/api/v1/me/age-confirmation",
+        json={"birthdate": _birthdate_for_age(12)},
+        headers=_from(a.headers, "US"),
+    )
+
+    assert response.status_code != 403, response.text
+    row = await _row(session, a.user.id)
+    assert row.status == UserStatus.active
+    assert row.age_below_account_minimum_at is None
+
+
+async def test_signing_in_does_not_call_the_closure_off_but_the_ticket_does(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A holder's own deletion is called off by signing in. This one is not:
+    the answer stands until support clears it, and only then does the next
+    sign-in restore the account whole and ask again."""
+    from app.testing.factories import get_auth_headers
+
+    support = await acting_user("owner")
+    user = await create_user(session, age_confirmed_at=None)
+    refused = await client.post(
+        "/api/v1/me/age-confirmation",
+        json={"birthdate": _birthdate_for_age(12)},
+        headers=_from(get_auth_headers(user), "US"),
+    )
+    assert refused.status_code == 403, refused.text
+
+    def sign_in():
+        return client.post(
+            "/api/v1/auth/token",
+            data={"username": user.seeded_address, "password": "testpassword123"},
+        )
+
+    # Coming back is refused, and the account stays where it was: closed.
+    back = await sign_in()
+    assert back.status_code == 400, back.text
+    assert back.json()["detail"] == "INACTIVE_USER"
+    row = await _row(session, user.id)
+    assert row.status == UserStatus.deleted
+    assert row.age_below_account_minimum_at is not None
+
+    # The ticket: the marks go, and the next sign-in calls the erasure off.
+    cleared = await client.delete(
+        f"/api/v1/operator/users/{user.id}/age-block", headers=support.headers
+    )
+    assert cleared.status_code == 200, cleared.text
+    row = await _row(session, user.id)
+    assert row.age_below_minimum_at is None
+    assert row.age_below_account_minimum_at is None
+    assert row.status == UserStatus.deleted
+
+    back = await sign_in()
+    assert back.status_code == 200, back.text
+    row = await _row(session, user.id)
+    assert row.status == UserStatus.active
+    me = await client.get(
+        "/api/v1/me", headers={"Authorization": f"Bearer {back.json()['access_token']}"}
+    )
+    assert me.status_code == 200, me.text
+    assert me.json()["birthdate_required"] is True

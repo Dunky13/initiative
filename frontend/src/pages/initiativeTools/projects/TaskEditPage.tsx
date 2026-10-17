@@ -37,6 +37,7 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useArchiveEntity, useUnarchiveEntity } from "@/hooks/useArchive";
 import { useAuth } from "@/hooks/useAuth";
 import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
+import { useColumnRoom } from "@/hooks/useColumnRoom";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
@@ -98,6 +99,7 @@ export const TaskEditPage = () => {
   // and leaves the latter behind.
   const lastProjectIdRef = useRef<number | null>(null);
   const taskProjectId = taskQuery.data?.project_id;
+  const room = useColumnRoom(taskProjectId ?? null);
   useEffect(() => {
     const owner = typeof taskProjectId === "number" ? taskProjectId : projectId;
     if (typeof owner === "number" && Number.isFinite(owner)) {
@@ -431,6 +433,7 @@ export const TaskEditPage = () => {
           readOnly: isReadOnly,
           readOnlyMessage,
           statuses: taskStatusesQuery.data ?? [],
+          hasRoom: room.hasRoom,
           initiativeId: project?.initiative_id ?? null,
           currentUserId: currentUser?.id,
           askScope: scopePrompt.ask,

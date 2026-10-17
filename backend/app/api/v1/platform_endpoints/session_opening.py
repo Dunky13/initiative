@@ -56,7 +56,7 @@ from app.core.security import (
     verify_sign_in_password,
 )
 from app.models.platform.auth_session import AuthSession
-from app.models.platform.user import SIGN_IN_STATUSES, User
+from app.models.platform.user import User, may_sign_in
 from app.schemas.platform.token import Token
 from app.services import audit as audit_service
 from app.services import email as email_service
@@ -354,8 +354,9 @@ async def prove_password(
 
     # Refused even though the password matched. SIGN_IN_STATUSES rather than
     # active: an account waiting out its erasure window signs in precisely so
-    # that signing in can call the deletion off.
-    if user.status not in SIGN_IN_STATUSES:
+    # that signing in can call the deletion off — unless its own age answer
+    # closed it, which no sign-in calls off (may_sign_in).
+    if not may_sign_in(user):
         await record_sign_in_failure(
             system_session, user, method="password", reason="inactive"
         )

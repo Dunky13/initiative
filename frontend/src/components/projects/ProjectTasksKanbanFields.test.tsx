@@ -207,3 +207,32 @@ describe("a grouped board", () => {
     expect(screen.getByRole("combobox", { name: /group by/i })).toHaveTextContent(/priority/i);
   });
 });
+
+describe("a limited column", () => {
+  it("counts its open tasks against its limit, whatever the board shows", async () => {
+    const [todo] = STATUSES;
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { limits: [{ status_id: todo.id, limit: 3 }] },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      ),
+      communityHttp.get("/tasks/status-counts", () =>
+        HttpResponse.json([{ task_status_id: todo.id, count: 3 }])
+      )
+    );
+    board();
+
+    const fill = await screen.findByText("3 / 3");
+    expect(fill).toHaveAttribute("title", "Takes at most 3 open tasks");
+  });
+});

@@ -301,6 +301,13 @@ class TaskListRead(TaskBase):
     plugin_values: List[PluginValueSummary] = []
 
 
+class TaskStatusCount(SanitizedBaseModel):
+    """How many open tasks one of a project's columns holds."""
+
+    task_status_id: int
+    count: int
+
+
 class TaskListResponse(PageMeta):
     items: List[TaskListRead]
     sorting: Optional[str] = None

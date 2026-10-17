@@ -30,6 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable, type DataTableRowWrapperProps } from "@/components/ui/data-table";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
+import { type ColumnRoom, ROOM_EVERYWHERE } from "@/hooks/useColumnRoom";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
@@ -79,6 +80,8 @@ type ProjectTasksListViewProps = {
   viewColumns?: string[] | null;
   /** The groupings the view offers, in order, where it names them. */
   viewGroupings?: LayoutGrouping[] | null;
+  /** How full the board's limited columns are. */
+  room?: ColumnRoom;
   /** The view is being edited. */
   editing?: boolean;
 };
@@ -292,6 +295,7 @@ const ProjectTasksTableViewComponent = ({
   tableState: [tableState, { setGrouping, setSorting }],
   viewColumns,
   viewGroupings,
+  room = ROOM_EVERYWHERE,
   editing = false,
 }: ProjectTasksListViewProps) => {
   const { t, i18n } = useTranslation(["projects", "comments", "tasks"]);
@@ -394,6 +398,11 @@ const ProjectTasksTableViewComponent = ({
         cell: ({ row }) => {
           const task = row.original;
           const isDone = task.task_status.category === "done";
+          // Done, a task moves into the done column, which may be full.
+          const doneFull =
+            !isDone &&
+            statusLookup.doneStatus !== undefined &&
+            !room.hasRoom(statusLookup.doneStatus.id);
           return (
             <Checkbox
               checked={isDone}
@@ -409,7 +418,12 @@ const ProjectTasksTableViewComponent = ({
                 }
               }}
               className="h-6 w-6"
-              disabled={statusDisabled}
+              disabled={statusDisabled || doneFull}
+              title={
+                doneFull
+                  ? t("kanban.statusFull", { name: statusLookup.doneStatus?.name })
+                  : undefined
+              }
               aria-label={isDone ? t("table.markInProgress") : t("table.markDone")}
             />
           );
@@ -471,11 +485,17 @@ const ProjectTasksTableViewComponent = ({
                 <TaskStatusOption status={activeStatus} />
               </SelectTrigger>
               <SelectContent>
-                {taskStatuses.map((status) => (
-                  <SelectItem key={status.id} value={String(status.id)}>
-                    <TaskStatusOption status={status} />
-                  </SelectItem>
-                ))}
+                {taskStatuses.map((status) => {
+                  const full = status.id !== task.task_status_id && !room.hasRoom(status.id);
+                  return (
+                    <SelectItem key={status.id} value={String(status.id)} disabled={full}>
+                      <TaskStatusOption status={status} />
+                      {full ? (
+                        <span className="text-muted-foreground text-xs">{t("kanban.full")}</span>
+                      ) : null}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           );
@@ -490,6 +510,7 @@ const ProjectTasksTableViewComponent = ({
     env,
     onStatusChange,
     statusDisabled,
+    room,
     groupings,
     grouped,
     taskStatuses,
@@ -676,6 +697,7 @@ export const ProjectTasksTableView = memo(
       prevProps.tableState[0] === nextProps.tableState[0] &&
       prevProps.viewColumns === nextProps.viewColumns &&
       prevProps.viewGroupings === nextProps.viewGroupings &&
+      prevProps.room === nextProps.room &&
       prevProps.editing === nextProps.editing
       // Note: Intentionally ignoring callback prop changes as they're functionally the same
     );
