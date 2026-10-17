@@ -2460,6 +2460,9 @@ async def reminder_scan(*, now: datetime) -> Scan:
         upcoming: list[datetime] = []
         unread = {row[0] for row in rows} - asked
         if unread:
+            # The read ends first, so the lookup never waits on this visit's
+            # own connection.
+            await routed.commit()
             lead.update(await accounts_service.load_event_reminder_leads(unread))
             asked.update(unread)
         rows = [row for row in rows if row[0] in lead]
