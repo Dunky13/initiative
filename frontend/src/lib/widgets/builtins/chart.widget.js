@@ -224,6 +224,7 @@ const strings = {
   },
   other: { en: "Other", de: "Sonstige", es: "Otros", fr: "Autres" },
   series: { en: "Series", de: "Reihe", es: "Serie", fr: "Série" },
+  blank: { en: "None", de: "Keine", es: "Ninguno", fr: "Aucun" },
 };
 
 /**
@@ -419,13 +420,88 @@ function render(data, config, context) {
     return String(row[labelAt]);
   };
 
-  const series = valueColumns.slice(0, 12).map((index) => ({
-    name: nameOf(index),
-    points: rows.map((row, rowIndex) => ({
-      x: labelOf(row, rowIndex),
-      y: typeof row[index] === "number" ? row[index] : 0,
-    })),
-  }));
+  /** The most series a chart draws. A split past it keeps its largest and
+   *  folds the rest into "Other", as the category ceiling does. */
+  const MAX_SERIES = 12;
+
+  /**
+   * One series per value of the split column, and per measure when there are
+   * several. Rows that share a label and a split value add up.
+   *
+   * Every series carries every category, at zero where it has no rows: a
+   * count of nothing is zero, and the categories are ordered by the first
+   * series that has them, so a gap would move a category that only a later
+   * series has to the end.
+   */
+  const splitSeries = (seriesAt) => {
+    const categories = new Map();
+    rows.forEach((row, rowIndex) => {
+      const x = labelOf(row, rowIndex);
+      if (!categories.has(String(x))) categories.set(String(x), x);
+    });
+    const order = [];
+    const byName = new Map();
+    const entryFor = (name) => {
+      let entry = byName.get(name);
+      if (!entry) {
+        entry = { name: name, total: 0, points: new Map() };
+        byName.set(name, entry);
+        order.push(entry);
+      }
+      return entry;
+    };
+    const add = (entry, x, y) => {
+      const key = String(x);
+      const point = entry.points.get(key);
+      if (point) point.y += y;
+      else entry.points.set(key, { x: x, y: y });
+      entry.total += y;
+    };
+    rows.forEach((row, rowIndex) => {
+      const value = row[seriesAt];
+      const key = value === null || value === undefined ? say("blank") : String(value);
+      for (const index of valueColumns) {
+        const name = valueColumns.length > 1 ? `${key} · ${nameOf(index)}` : key;
+        add(
+          entryFor(name),
+          labelOf(row, rowIndex),
+          typeof row[index] === "number" ? row[index] : 0
+        );
+      }
+    });
+
+    let kept = order;
+    if (order.length > MAX_SERIES) {
+      const largest = new Set(
+        order
+          .slice()
+          .sort((a, b) => b.total - a.total)
+          .slice(0, MAX_SERIES - 1)
+      );
+      const other = { name: OTHER_LABEL, total: 0, points: new Map() };
+      for (const entry of order) {
+        if (largest.has(entry)) continue;
+        for (const point of entry.points.values()) add(other, point.x, point.y);
+      }
+      kept = order.filter((entry) => largest.has(entry)).concat([other]);
+    }
+    return kept.map((entry) => ({
+      name: entry.name,
+      points: [...categories].map(([key, x]) => entry.points.get(key) || { x: x, y: 0 }),
+    }));
+  };
+
+  const seriesAt = (slots.series || [])[0];
+  const series =
+    seriesAt !== undefined
+      ? splitSeries(seriesAt)
+      : valueColumns.slice(0, MAX_SERIES).map((index) => ({
+          name: nameOf(index),
+          points: rows.map((row, rowIndex) => ({
+            x: labelOf(row, rowIndex),
+            y: typeof row[index] === "number" ? row[index] : 0,
+          })),
+        }));
 
   return chart(
     arrangeAll(series),

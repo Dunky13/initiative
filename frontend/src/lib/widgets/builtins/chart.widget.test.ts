@@ -284,3 +284,52 @@ describe("a chart over dates", () => {
     expect(scene.xTime).toBeUndefined();
   });
 });
+
+describe("a split", () => {
+  const split = { label: [0], value: [2], series: [1] };
+
+  it("draws one series per value of the third column, in the rows' order", async () => {
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        [
+          ["S1", "Doing", 2],
+          ["S2", "Done", 5],
+          ["S3", "Doing", 3],
+          ["S3", null, 1],
+        ]
+      ),
+      {},
+      undefined,
+      split
+    );
+    expect(scene.series.map((series) => series.name)).toEqual(["Doing", "Done", "None"]);
+    // S2 is only Done's, and still sits between S1 and S3; a series with no
+    // rows for a sprint counts zero there.
+    expect(scene.series[0].points).toEqual([
+      { x: "S1", y: 2 },
+      { x: "S2", y: 0 },
+      { x: "S3", y: 3 },
+    ]);
+    expect(scene.series[1].points.map((point) => point.y)).toEqual([0, 5, 0]);
+    expect(scene.showLegend).toBe(true);
+  });
+
+  it("keeps the largest series and folds the rest into Other", async () => {
+    const statuses = Array.from({ length: 14 }, (_, index) => [`s${index}`, index + 1]);
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        statuses.map(([status, points]) => ["S1", status, points])
+      ),
+      {},
+      undefined,
+      split
+    );
+    expect(scene.series).toHaveLength(12);
+    expect(scene.series.some((series) => series.name === "s0")).toBe(false);
+    expect(scene.series.at(-1)).toEqual({ name: "Other", points: [{ x: "S1", y: 1 + 2 + 3 }] });
+  });
+});

@@ -209,6 +209,9 @@ WIDGET_SPECS: dict[str, WidgetSpec] = {
         shape=(
             Slot("label", LABEL_TYPES | DATE_TYPES),
             Slot("value", NUMBER_TYPES, repeatable=True),
+            # A second grouping: one series per value it holds, so points per
+            # sprint can be split by status.
+            Slot("series", LABEL_TYPES, required=False),
         ),
         options={
             "mark": _option("bar", "line", "area", "pie"),
