@@ -4,9 +4,10 @@
  * The confirmation says what removing any plug-in does, and for one the
  * community's provider has a say about, what that provider says too: its own
  * sentence when it answered, a neutral one when it did not. Nothing extra for
- * any other plug-in.
+ * any other plug-in. An admin may also have the plug-in erase what it holds
+ * about the community.
  */
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +19,12 @@ import { SettingsCommunityPluginsPage } from "./SettingsCommunityPluginsPage";
 
 let notice: CommunityPluginUninstallNotice | undefined;
 const openAddress = vi.fn();
+const uninstall = vi.hoisted(() => vi.fn());
+
+vi.mock(import("@/api/generated/plugins/plugins"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  uninstallCommunityPlugin: uninstall,
+}));
 
 vi.mock("@/hooks/useCommunities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useCommunities")>()),
@@ -43,6 +50,8 @@ vi.mock("@/hooks/useCommunityPlugins", async (importOriginal) => ({
 beforeEach(() => {
   notice = undefined;
   openAddress.mockReset();
+  uninstall.mockReset();
+  uninstall.mockResolvedValue(undefined);
 });
 
 async function openRemoval() {
@@ -80,5 +89,22 @@ describe("the removal dialog", () => {
     await openRemoval();
 
     expect(screen.queryByText(/managed by your provider/)).toBeNull();
+  });
+});
+
+describe("erasing its data", () => {
+  it("keeps it unless the admin asks for it to be erased", async () => {
+    await openRemoval();
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(uninstall).toHaveBeenCalledWith(1, 4, undefined));
+  });
+
+  it("erases it when the admin ticks the box", async () => {
+    await openRemoval();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Also erase its data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove and erase" }));
+
+    await waitFor(() => expect(uninstall).toHaveBeenCalledWith(1, 4, { erase: true }));
   });
 });

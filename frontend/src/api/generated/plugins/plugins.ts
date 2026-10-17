@@ -49,6 +49,7 @@ import type {
   ReadPluginDataParams,
   ReadPluginParamOptionsParams,
   ReadUninstallNoticeParams,
+  UninstallCommunityPluginParams,
 } from "../initiativeAPI.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -1469,18 +1470,26 @@ export const useUpdateCommunityPlugin = <
  * Remove a plug-in, ending its access and trashing what it created
  * (:func:`~app.services.tenant.guild_plugins.uninstall_plugin`).
  *
- * A plug-in the deployment provides to every guild is not removable here (§7.7):
- * the operator's registration decides whether it exists at all.
+ * What the plug-in calls the community and its members is kept, so installing
+ * it again picks up where it left off. ``erase`` also asks the plug-in to
+ * delete everything it holds about the community, and forgets those names
+ * once it has: the community's admins' choice alone (403
+ * ``COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY`` for anyone else).
+ *
+ * A plug-in the deployment provides to every guild is not removable here, and
+ * so not erasable either (§7.7): the operator's registration decides whether
+ * it exists at all.
  * @summary Uninstall Community Plugin
  */
 export const uninstallCommunityPlugin = (
   communityId: number,
   pluginId: number,
+  params?: UninstallCommunityPluginParams,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
   return apiMutator<void>(
-    { url: `/api/v1/c/${communityId}/plugins/${pluginId}`, method: "DELETE", signal },
+    { url: `/api/v1/c/${communityId}/plugins/${pluginId}`, method: "DELETE", params, signal },
     options
   );
 };
@@ -1515,9 +1524,9 @@ export const getUninstallCommunityPluginMutationOptions = <
     Awaited<ReturnType<typeof uninstallCommunityPlugin>>,
     UninstallCommunityPluginMutationVariables
   > = (props) => {
-    const { communityId, pluginId } = props ?? {};
+    const { communityId, pluginId, params } = props ?? {};
 
-    return uninstallCommunityPlugin(communityId, pluginId, requestOptions);
+    return uninstallCommunityPlugin(communityId, pluginId, params, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1528,7 +1537,11 @@ export type UninstallCommunityPluginMutationResult = NonNullable<
 >;
 
 export type UninstallCommunityPluginMutationError = ErrorType<HTTPValidationError>;
-export type UninstallCommunityPluginMutationVariables = { communityId: number; pluginId: number };
+export type UninstallCommunityPluginMutationVariables = {
+  communityId: number;
+  pluginId: number;
+  params?: UninstallCommunityPluginParams;
+};
 
 /**
  * @summary Uninstall Community Plugin

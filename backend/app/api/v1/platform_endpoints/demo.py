@@ -241,7 +241,11 @@ async def sales_install(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=PluginMessages.SCOPE_REQUIRED,
         )
-    return sales.SalesInstall(installation.guild_id, installation.install_id)
+    return sales.SalesInstall(
+        installation.guild_id,
+        installation.install_id,
+        installation.registration.public_id,
+    )
 
 
 SalesInstallDep = Annotated[sales.SalesInstall, Depends(sales_install)]

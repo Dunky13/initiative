@@ -276,7 +276,9 @@ async def test_a_person_named_any_other_way_is_a_422(
     )
     # The seat, as another install knows them.
     foreign = await plugin_refs.ensure_plugin_ref(
-        guild_id=guild_id, plugin_install_id=other.id, user_id=installed.seat.user.id
+        guild_id=guild_id,
+        public_id=other.definition["service"]["public_id"],
+        user_id=installed.seat.user.id,
     )
 
     for named in (foreign, installed.seat.user.id, "uplu_" + "x" * 32):

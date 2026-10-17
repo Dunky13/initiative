@@ -40,7 +40,7 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.services.marketplace import plugin_data
 from app.services.marketplace.plugin_data import PluginDataError
-from app.services.marketplace.plugin_refs import ensure_plugin_ref
+from app.services.marketplace.plugin_refs import PluginNameRefused, ensure_plugin_ref
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.tenant import guild_plugins, plugin_config
@@ -192,9 +192,12 @@ async def run_action(
     refs, fields = await plugin_data._resolve_connections(
         session, plugin=plugin, endpoint=write, user_id=None, actor="installation"
     )
-    viewer = await ensure_plugin_ref(
-        guild_id=context.guild_id, plugin_install_id=install_id, user_id=user_id
-    )
+    try:
+        viewer = await ensure_plugin_ref(
+            guild_id=context.guild_id, public_id=registration.public_id, user_id=user_id
+        )
+    except PluginNameRefused as exc:
+        raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409) from exc
     # Nothing is held open while the plug-in works, and what was read stays
     # readable; the next statement routes the session again.
     session.expunge_all()

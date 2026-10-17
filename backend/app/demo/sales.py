@@ -1,8 +1,8 @@
 """What the sales plug-in reaches on the demo, and the addresses visitors leave.
 
 The plug-in is an install in the operations community whose token holds the
-community-admin standing there (``InstallLevel.community_admin``). It names pitches and links by the references its install
-holds for them (``identity_refs``, purpose ``plugin``, the install as sector):
+community-admin standing there (``InstallLevel.community_admin``). It names pitches and links by the references the plug-in
+holds for them (``identity_refs``, purpose ``plugin``, the plug-in as sector):
 a pitch is its community's reference, a link a ``demo_link`` one. Nothing here
 names a person.
 
@@ -54,8 +54,10 @@ LEAD_LIFETIME = timedelta(days=30)
 
 #: The installs in the routed community whose grant issues ``:scope``.
 _SCOPED_INSTALLS_SQL_TEXT = (
-    f"SELECT a.id FROM guild_plugins a "
-    f"WHERE a.enabled AND :scope = ANY ({ISSUABLE_SCOPES_SQL}) ORDER BY a.id"
+    f"SELECT a.id, a.definition -> 'service' ->> 'public_id' AS public_id "
+    f"FROM guild_plugins a "
+    f"WHERE a.enabled AND :scope = ANY ({ISSUABLE_SCOPES_SQL}) "
+    f"AND a.definition -> 'service' ->> 'public_id' IS NOT NULL ORDER BY a.id"
 )
 _SCOPED_INSTALLS_SQL = text(_SCOPED_INSTALLS_SQL_TEXT)
 #: The community-admin standing, which the demo's events need.
@@ -68,12 +70,15 @@ class SalesInstall:
 
     guild_id: int
     install_id: int
+    #: The plug-in, whose sector the install's references are in.
+    public_id: str
 
     async def name(self, entity: IdentityEntity, entity_id: int) -> str:
-        """What this install calls the entity, minting it on first use."""
-        return await plugin_refs.ensure_install_ref(
+        """What this install's plug-in calls the entity, minting it on first
+        use."""
+        return await plugin_refs.ensure_plugin_entity_ref(
             guild_id=self.guild_id,
-            plugin_install_id=self.install_id,
+            public_id=self.public_id,
             entity=entity,
             entity_id=entity_id,
         )
@@ -90,7 +95,7 @@ class SalesInstall:
             if row.purpose == IdentityPurpose.plugin
             and row.entity_type == entity
             and row.sector_guild_id == self.guild_id
-            and row.sector_id == self.install_id
+            and row.sector_plugin == self.public_id
         }
 
 
@@ -111,16 +116,18 @@ class LinkReport:
     leads: list[LeadRead]
 
 
-async def admin_installs(guild_id: int) -> list[int]:
+async def admin_installs(guild_id: int) -> list[tuple[int, str]]:
     """The installs in the community whose grant issues the community-admin
-    standing now, read on the system engine routed into it."""
+    standing now, each with its plug-in's ``public_id``, read on the system
+    engine routed into it."""
     async with cohorts.system_session(guild_id) as session:
         await set_rls_context(session, SystemGuild(guild_id, read_only=True))
-        return list(
-            (
-                await session.exec(_SCOPED_INSTALLS_SQL, params={"scope": _ADMIN_SCOPE})
-            ).scalars()
-        )
+        return [
+            (int(row.id), str(row.public_id))
+            for row in await session.exec(
+                _SCOPED_INSTALLS_SQL, params={"scope": _ADMIN_SCOPE}
+            )
+        ]
 
 
 async def keep_lead(session: AsyncSession, invite_id: int, email: str) -> bool:
@@ -201,8 +208,8 @@ async def announce(event_type: str, invite_id: int) -> None:
         installs = await admin_installs(guild_id)
         async with cohorts.system_session(guild_id) as session:
             await set_rls_context(session, SystemGuild(guild_id))
-            for install_id in installs:
-                ref = await SalesInstall(guild_id, install_id).name(
+            for install_id, public_id in installs:
+                ref = await SalesInstall(guild_id, install_id, public_id).name(
                     IdentityEntity.demo_link, invite_id
                 )
                 await plugin_channels.stage_event(

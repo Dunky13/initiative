@@ -215,12 +215,6 @@ async def _plug_in_values(session, schema: str, ids: dict[str, int]) -> dict:
         "SELECT scope_ceiling FROM public.plugin_service_registrations WHERE id = :id",
         id=ids["registration"],
     )
-    ref = await one(
-        "SELECT purpose, ref FROM public.identity_refs WHERE entity_id = :id "
-        "AND entity_type = 'user' AND sector_id = :sector",
-        id=ids["user"],
-        sector=ids["install"],
-    )
     notification = await one("SELECT type, data FROM public.notifications")
     return {
         "installed": install.definition,
@@ -229,7 +223,6 @@ async def _plug_in_values(session, schema: str, ids: dict[str, int]) -> dict:
         "events": hook.event_types,
         "listing": (listing.kind, listing.definition),
         "ceiling": ceiling.scope_ceiling,
-        "ref": (ref.purpose, ref.ref),
         "notification": (notification.type, notification.data),
     }
 
@@ -311,13 +304,9 @@ async def test_plug_in_values_are_respelled(session) -> None:
             "SET definition = CAST(:d AS jsonb) WHERE listing_id = :id",
             {"d": json.dumps(_OLD_DEFINITION), "id": listing.id},
         )
-        write(
-            "identity_refs",
-            "INSERT INTO public.identity_refs (ref, entity_type, entity_id, purpose, "
-            "sector_guild_id, sector_id, created_at) "
-            "VALUES ('uapp_abc', 'user', :u, 'app', :g, :i, now())",
-            {"u": user.id, "g": guild.id, "i": install.id},
-        )
+        # The plug-in references 0457 respelled were named by install, a
+        # shape ``identity_refs`` no longer holds (20261016_0515, which also
+        # deletes them), so they are not seeded here.
         write(
             "notifications",
             "UPDATE public.notifications SET type = 'app_consent_requested', "
@@ -357,7 +346,6 @@ async def test_plug_in_values_are_respelled(session) -> None:
         ],
         "listing": ("plugin", _NEW_DEFINITION),
         "ceiling": ["documents:read", "plugins:tests.other"],
-        "ref": ("plugin", "uplu_abc"),
         "notification": (
             "plugin_consent_requested",
             {"plugin_id": install.id, "target_path": f"/?plugin={install.id}"},

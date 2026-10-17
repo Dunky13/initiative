@@ -106,7 +106,7 @@ class TestMintingAndResolving:
             entity_id=1,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=3,
-            sector_id=7,
+            sector_plugin="acme.app7",
         )
         assert billing != at_plugin
 
@@ -181,7 +181,7 @@ class TestReissuingOne:
             entity_id=1,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=3,
-            sector_id=7,
+            sector_plugin="acme.app7",
         )
         await reissue_ref(
             session, entity_type=IdentityEntity.guild, entity_id=1, purpose=BILLING
@@ -200,7 +200,7 @@ class TestReissuingOne:
                 entity_id=1,
                 purpose=IdentityPurpose.plugin,
                 sector_guild_id=3,
-                sector_id=7,
+                sector_plugin="acme.app7",
             )
             == other_purpose
         )
@@ -247,7 +247,7 @@ class TestReissuingEvery:
             entity_id=1,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=3,
-            sector_id=7,
+            sector_plugin="acme.app7",
         )
         a_guild = await ensure_ref(
             session, entity_type=IdentityEntity.guild, entity_id=1, purpose=BILLING
@@ -267,7 +267,7 @@ class TestReissuingEvery:
                 entity_id=1,
                 purpose=IdentityPurpose.plugin,
                 sector_guild_id=3,
-                sector_id=7,
+                sector_plugin="acme.app7",
             )
             == at_plugin
         )
@@ -313,7 +313,7 @@ class TestRemoval:
             entity_id=1,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=3,
-            sector_id=7,
+            sector_plugin="acme.app7",
         )
 
         dropped = await drop_entity_refs(
@@ -340,7 +340,7 @@ class TestRemoval:
             entity_id=9,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=5,
-            sector_id=2,
+            sector_plugin="acme.app2",
         )
         elsewhere = await ensure_ref(
             session, entity_type=IdentityEntity.guild, entity_id=6, purpose=BILLING
@@ -452,7 +452,7 @@ class TestTheSweep:
                 entity_id=active.id,
                 purpose=IdentityPurpose.plugin,
                 sector_guild_id=guild_id,
-                sector_id=1,
+                sector_plugin="acme.app1",
             )
 
         kept = [
@@ -461,12 +461,13 @@ class TestTheSweep:
             await guild_ref(live_guild.id),
             await guild_ref(retained_guild.id),
             await plugin_ref(live_guild.id),
+            # A deleted guild's plug-ins are told to erase at its purge.
+            await plugin_ref(retained_guild.id),
         ]
         swept = [
             await user_ref(erased.id),
             await user_ref(gone_id),
             await guild_ref(gone_id),
-            await plugin_ref(retained_guild.id),
             await plugin_ref(gone_id),
         ]
         await session.commit()

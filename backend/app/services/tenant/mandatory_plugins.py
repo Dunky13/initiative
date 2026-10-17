@@ -212,20 +212,30 @@ async def install_mandatory_plugins(
             )
             continue
 
-        plugin = await guild_plugins_service.install_plugin(
-            session,
-            listing_uid=listing.uid,
-            listing_version=version.version,
-            definition=definition,
-            guild_id=guild_id,
-            created_by=installer_id,
-            name=(definition.get("default_name") or listing.name).strip(),
-            actor_user_id=created_by,
-            via="mandatory",
-            granted_scopes=mandatory_grant(definition, registration, present),
-            # The registration stands in for the seat here too.
-            allowed_callers=None,
-        )
+        try:
+            plugin = await guild_plugins_service.install_plugin(
+                session,
+                listing_uid=listing.uid,
+                listing_version=version.version,
+                definition=definition,
+                guild_id=guild_id,
+                created_by=installer_id,
+                name=(definition.get("default_name") or listing.name).strip(),
+                actor_user_id=created_by,
+                via="mandatory",
+                granted_scopes=mandatory_grant(definition, registration, present),
+                # The registration stands in for the seat here too.
+                allowed_callers=None,
+            )
+        except guild_plugins_service.ErasePendingError:
+            # The community asked it to erase its data and that is not
+            # finished. Left for a later pass, which finds it still missing.
+            logger.info(
+                "mandatory plug-ins: %s waits for its erase in guild %s",
+                registration.public_id,
+                guild_id,
+            )
+            continue
         present.add(registration.public_id)
         await session.flush()
         await guild_plugins_service.place_in_every_initiative(session, plugin)

@@ -250,7 +250,7 @@ async def apply_version(
     config, secrets, dropped = plugin_config_service.prune_to_definition(
         definition, plugin.config, stored_secrets
     )
-    revocation_service.queue_install_revocations(
+    await revocation_service.queue_install_revocations(
         session, plugin, dropped, secrets=stored_secrets, reason="upgraded"
     )
     plugin.config = config

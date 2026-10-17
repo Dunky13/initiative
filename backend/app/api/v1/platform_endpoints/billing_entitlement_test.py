@@ -33,6 +33,7 @@ from app.core import config as config_module
 from app.core.messages import BillingMessages
 from app.db import post_commit
 from app.models.platform.plugin_entitlement import PluginEntitlement
+from app.services import sweep_timers
 from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.tenant import plugin_connection_flows as flows
 from app.testing import (
@@ -82,11 +83,13 @@ def shipped_root(monkeypatch):
 
 @pytest.fixture
 def hooks(monkeypatch) -> list[tuple[str, int, dict]]:
-    """Every hook delivered, as (name, install id, body)."""
+    """Every entitlement hook delivered, as (name, install id, body), once the
+    community-hook queue has been drained (:func:`_drained`)."""
     delivered: list[tuple[str, int, dict]] = []
 
-    async def call_hook(name, *, public_id, base_url, guild_id, install_id, body):
-        delivered.append((name, install_id, dict(body)))
+    async def call_hook(name, *, install_id, body, **_kwargs):
+        if name == plugin_entitlements.ENTITLEMENT_HOOK:
+            delivered.append((name, install_id, dict(body)))
         return None
 
     monkeypatch.setattr(flows, "call_hook", call_hook)
@@ -123,8 +126,14 @@ async def _send(client: AsyncClient, payload: dict):
         "Content-Type": "application/json",
     }
     response = await client.post(path, content=body, headers=headers)
-    await post_commit.settle_all()
+    await _drained()
     return response
+
+
+async def _drained() -> None:
+    """Every step a commit started, and every hook it queued, sent."""
+    await post_commit.settle_all()
+    await sweep_timers.process_due_timers(outward=True)
 
 
 async def _jws(guild_id: int, **changes) -> str:
@@ -280,6 +289,7 @@ async def test_a_plugin_installed_later_is_handed_the_statement(
     assert await plugin_entitlements.deliver_entitlement(guild.id, PAID_UID) is True
     # The same version is not handed to the same install twice.
     assert await plugin_entitlements.deliver_entitlement(guild.id, PAID_UID) is False
+    await _drained()
 
     assert hooks == [("entitlement", plugin.id, {"statement": statement})]
 

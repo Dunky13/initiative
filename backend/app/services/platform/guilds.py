@@ -51,6 +51,7 @@ from app.schemas.platform.guild import CommunityInviteGrant
 from app.models.tenant.guild_setting import GuildSetting
 from app.models.platform.user import User, UserStatus
 from app.services import audit as audit_service
+from app.services.marketplace import community_hooks
 from app.services.auth import addresses
 from app.services.platform import billing as billing_service
 from app.services.platform import billing_ping
@@ -1470,9 +1471,14 @@ async def set_guild_status(
     reaches it — a guild's own admins must never flip their guild's status. On a
     real transition it stamps ``status_changed_at``; a no-op change is left
     untouched. Enforcement of the status lives in the request path
-    (``_load_guild_context`` + session routing), not here.
+    (``_load_guild_context`` + session routing), not here. Raises
+    ``ValueError(COMMUNITY_PURGE_STARTED)`` for a community whose purge has
+    begun.
     """
     guild = await get_guild(session, guild_id=guild_id)
+    if guild.status != status.value and guild.purge_started_at is not None:
+        # Its plug-ins have been asked to erase it: it can only finish going.
+        raise ValueError(GuildMessages.COMMUNITY_PURGE_STARTED)
     if guild.status != status.value:
         # A suspension remembers where it began, so lifting it can go back;
         # any other move leaves nothing to go back to.
@@ -1483,6 +1489,7 @@ async def set_guild_status(
         guild.status_changed_at = datetime.now(timezone.utc)
         session.add(guild)
         await session.flush()
+        community_hooks.status_changed(session, guild_id)
     return guild
 
 
@@ -2208,6 +2215,7 @@ async def soft_delete_guild(
     guild.status_changed_at = datetime.now(timezone.utc)
     session.add(guild)
     await session.flush()
+    community_hooks.status_changed(session, guild_id)
     return CommunityDeletionNotice(
         community_name=guild.name,
         recipients=recipients,
@@ -2261,6 +2269,9 @@ async def restore_guild(
     guild = await get_guild(session, guild_id=guild_id)
     if guild.status != CommunityStatus.deleted.value:
         raise ValueError(GuildMessages.COMMUNITY_NOT_DELETED)
+    if guild.purge_started_at is not None:
+        # Its plug-ins have been asked to erase it: it can only finish going.
+        raise ValueError(GuildMessages.COMMUNITY_PURGE_STARTED)
     if status == CommunityStatus.deleted:
         raise ValueError(GuildMessages.COMMUNITY_RESTORE_STATUS_INVALID)
     if billing_service.billing_managed():
@@ -2293,6 +2304,7 @@ async def restore_guild(
     guild.status = status.value
     guild.status_changed_at = datetime.now(timezone.utc)
     session.add(guild)
+    community_hooks.status_changed(session, guild_id)
     await audit_service.record(
         session,
         event_type=AuditEventType.GUILD_RESTORED,

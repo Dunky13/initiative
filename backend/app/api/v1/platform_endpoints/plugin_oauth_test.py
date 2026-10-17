@@ -79,7 +79,7 @@ async def _limit_to_operations(session: AsyncSession) -> None:
 
 async def _installation(installed: InstalledPlugin) -> str:
     return await ensure_plugin_guild_ref(
-        guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+        guild_id=installed.guild.id, public_id=installed.public_id
     )
 
 

@@ -118,6 +118,11 @@ class Sweep:
     calls_out: bool = False
     #: The writes that give the sweep work.
     sources: tuple[TimerSource, ...] = ()
+    #: ``(community, now)``: the sweep's next due time read outside the
+    #: community's schema, for a sweep whose work is kept in ``public`` (where
+    #: the community's role reads nothing). The reconcile asks this in place of
+    #: ``next_due``, which such a sweep, answering its own, never has run.
+    due_outside: Callable[[int, datetime], Awaitable[datetime | None]] | None = None
 
 
 @cache
@@ -143,6 +148,7 @@ def sweeps() -> tuple[Sweep, ...]:
     from app.services import notifications
     from app.services.export import worker as export_worker
     from app.services.import_engine import worker as import_worker
+    from app.services.marketplace import community_hooks
     from app.services.platform import evidence, holds
     from app.services.tenant import plugin_updates
     from app.services.tenant import (
@@ -683,6 +689,19 @@ def sweeps() -> tuple[Sweep, ...]:
             ),
         ),
         Sweep(
+            kind=community_hooks.KIND,
+            # A deleted or suspended community's plug-ins are still told.
+            scope=Scope.PROVISIONED,
+            every=timedelta(seconds=community_hooks.BACKOFF_SECONDS[0]),
+            calls_out=True,
+            # Armed for now by each hook written, and by a change of the
+            # community's status (community_hooks.status_changed).
+            visit=community_hooks.visit,
+            answers=True,
+            next_due=lambda _now: select(literal(None)),
+            due_outside=community_hooks.due_outside,
+        ),
+        Sweep(
             kind=RECONCILE,
             scope=Scope.PROVISIONED,
             every=RECONCILE_EVERY,
@@ -799,6 +818,27 @@ async def _finish(
         done.update(ids)
 
 
+async def arm_now(
+    session: AsyncSession, kind: str, community_ids: Iterable[int]
+) -> None:
+    """Arm ``kind`` now in each of ``community_ids`` on ``session``, a system
+    session, in its transaction: for work it writes in ``public`` for them. A
+    community already due for it is left alone, and one that is gone (purged
+    since it was named) is skipped."""
+    ids = sorted(set(community_ids))
+    if not ids:
+        return
+    await session.exec(
+        text(
+            "INSERT INTO public.community_timers (community_id, kind, due_at)"
+            " SELECT c, :kind, now() FROM unnest(CAST(:ids AS integer[])) c"
+            " WHERE EXISTS (SELECT 1 FROM public.guilds g WHERE g.id = c)"
+            " AND NOT EXISTS (SELECT 1 FROM public.community_timers t"
+            " WHERE t.community_id = c AND t.kind = :kind AND t.due_at <= now())"
+        ).bindparams(kind=kind, ids=ids)  # type: ignore[call-overload]
+    )
+
+
 async def arm_in(kind: str, community_ids: Iterable[int]) -> None:
     """Arm ``kind`` now in each of ``community_ids``, from outside them: for
     work a change in ``public`` gives them (a catalog release, a person's
@@ -808,14 +848,7 @@ async def arm_in(kind: str, community_ids: Iterable[int]) -> None:
         return
     async with cohorts.system_session(None) as session:
         await set_rls_context(session, Unattributed())
-        await session.exec(
-            text(
-                "INSERT INTO community_timers (community_id, kind, due_at)"
-                " SELECT c, :kind, now() FROM unnest(CAST(:ids AS integer[])) c"
-                " WHERE NOT EXISTS (SELECT 1 FROM community_timers t"
-                " WHERE t.community_id = c AND t.kind = :kind AND t.due_at <= now())"
-            ).bindparams(kind=kind, ids=ids)  # type: ignore[call-overload]
-        )
+        await arm_now(session, kind, ids)
         await session.commit()
 
 
@@ -992,11 +1025,20 @@ async def reconcile(session: AsyncSession, guild_id: int) -> datetime:
     count each one: a write no source covered. Returns the next reconcile."""
     now = datetime.now(timezone.utc)
     pending = await _pending_kinds(guild_id)
-    checked = [sweep for sweep in sweeps() if sweep.kind != RECONCILE]
+    checked = [
+        sweep
+        for sweep in sweeps()
+        if sweep.kind != RECONCILE and sweep.due_outside is None
+    ]
     probe = select(
         *(sweep.next_due(now).scalar_subquery().label(sweep.kind) for sweep in checked)
     ).execution_options(include_deleted=True)
-    row = (await session.exec(probe)).one()
+    row = list((await session.exec(probe)).one())
+    # The sweeps whose work the community's own role cannot read.
+    for sweep in sweeps():
+        if sweep.due_outside is not None:
+            checked.append(sweep)
+            row.append(await sweep.due_outside(guild_id, now))
     for sweep, due in zip(checked, row):
         if due is None or sweep.kind in pending:
             continue

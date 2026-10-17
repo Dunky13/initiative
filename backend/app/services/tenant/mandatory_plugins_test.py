@@ -192,6 +192,49 @@ class TestBackfill:
         # one they are responsible for.
         assert plugins[0].created_by == creator.id
 
+    async def test_a_guild_still_erasing_it_waits_for_the_erase(
+        self, session: AsyncSession, mandatory_registration
+    ):
+        """The preprod case: an admin removed the plug-in and asked it to erase
+        its data, and the sweep comes round before the plug-in has answered. An
+        install now would be handed the names the erase is about to drop, so
+        the guild is skipped and gets it on a pass after the erase is done."""
+        from datetime import datetime, timezone
+
+        from sqlalchemy import update
+
+        from app.db.request_context import Unattributed
+        from app.db.session import set_rls_context
+        from app.models.platform.plugin_community_hook import PluginCommunityHook
+        from app.services.marketplace import community_hooks
+
+        creator = await create_user(session, email="erasing@example.com")
+        guild = await create_guild(session, creator=creator, name="Erasing guild")
+        await create_guild_membership(
+            session, user=creator, guild=guild, role=CommunityRole.admin
+        )
+        guild_id = guild.id
+        await community_hooks.deliver_community_hook(
+            guild_id=guild_id, public_id=PROVIDED_ID, hook="erase"
+        )
+
+        result = await backfill_mandatory_plugins()
+        assert (result.installed, result.failed) == (0, 0)
+        assert await _installed_plugins(session, guild_id) == []
+
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            update(PluginCommunityHook)
+            .where(PluginCommunityHook.guild_id == guild_id)
+            .values(done_at=datetime.now(timezone.utc), outcome="delivered")
+        )
+        await session.commit()
+
+        result = await backfill_mandatory_plugins()
+        assert result.installed == 1
+        plugins = await _installed_plugins(session, guild_id)
+        assert [plugin.listing_uid for plugin in plugins] == [PROVIDED_UID]
+
     async def test_several_guilds_each_get_their_own(
         self, session: AsyncSession, mandatory_registration
     ):

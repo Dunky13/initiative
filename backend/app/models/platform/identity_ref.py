@@ -15,9 +15,10 @@ key is, and this deployment rotates ``SECRET_KEY``
 (``app.db.secret_key_rotation``). A reference has to outlast that.
 
 This is the pairwise pseudonymous identifier of OpenID Connect Core §8.1,
-generalised: ``purpose`` is the sector. A sector that lives inside one guild —
-an installed plug-in — also carries ``sector_guild_id`` + ``sector_id``; see
-``services.marketplace.plugin_refs``.
+generalised: ``purpose`` is the sector. A sector that lives inside one guild
+also carries ``sector_guild_id``, and says which thing in that guild it is: a
+plug-in by its ``public_id`` in ``sector_plugin``, a webhook subscription by its
+row id in ``sector_id``. See ``services.marketplace.plugin_refs``.
 
 Minted on the system engine, and read there for every sector but one: the
 request path holds ``SELECT`` and a policy admitting ``client``, the sector an
@@ -29,6 +30,7 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     DateTime,
     Index,
@@ -66,9 +68,12 @@ class IdentityPurpose(str, Enum):
     per purpose, and the purposes are unrelated to each other.
 
     ``billing``'s sector is the deployment's billing service, one for the whole
-    platform. ``plugin``'s sector is a single **install**, so its rows carry one
-    in ``sector_guild_id`` + ``sector_id``: a plug-in installed in two guilds
-    sees an unrelated reference for the same person in each.
+    platform. ``plugin``'s sector is one **plug-in in one guild**, so its rows
+    carry the guild in ``sector_guild_id`` and the plug-in's ``public_id`` in
+    ``sector_plugin``: a plug-in installed in two guilds sees an unrelated
+    reference for the same person in each, and the same reference again when a
+    guild uninstalls it and installs it back. Only erasing the plug-in's data,
+    or purging the guild, drops them.
 
     ``webhook``'s sector is one subscription, for a target nothing else here
     knows: a member's own URL rather than an installed plug-in. A subscription
@@ -118,12 +123,24 @@ REF_MAX_LENGTH = 64
 REF_GRACE_PERIOD = timedelta(days=30)
 
 
+#: The widest ``sector_plugin`` held: a registration's ``public_id``
+#: (``plugin_service_registration.MAX_PLUGIN_ID_LENGTH``).
+SECTOR_PLUGIN_MAX_LENGTH = 120
+
+
 class IdentityRef(SQLModel, table=True):
     """One reference: what one purpose calls one entity."""
 
     __tablename__ = "identity_refs"
     __table_args__ = (
         UniqueConstraint("ref", name="identity_refs_unique_ref"),
+        # A ``plugin`` reference names its plug-in and no row id; nothing else
+        # names a plug-in.
+        CheckConstraint(
+            "(purpose = 'plugin') = (sector_plugin IS NOT NULL)"
+            " AND (purpose <> 'plugin' OR sector_id IS NULL)",
+            name="identity_refs_plugin_sector",
+        ),
         # One live reference per entity per sector. Retired rows are excluded
         # so a re-issue can sit beside the value it replaces for its grace
         # window.
@@ -139,14 +156,18 @@ class IdentityRef(SQLModel, table=True):
             "purpose",
             "sector_guild_id",
             "sector_id",
+            "sector_plugin",
             unique=True,
             postgresql_where=text("retired_at IS NULL"),
             postgresql_nulls_not_distinct=True,
         ),
-        # Removing an install's references, and a guild's. Neither can be a
-        # foreign key: ``guild_plugins`` lives in a guild schema and this table
-        # does not, so both are deleted explicitly.
+        # Removing a subscription's references, and a guild's. Neither can be a
+        # foreign key: ``webhook_subscriptions`` lives in a guild schema and this
+        # table does not, so both are deleted explicitly.
         Index("ix_identity_refs_sector", "sector_guild_id", "sector_id"),
+        # Removing what one plug-in calls everyone in a guild, when the guild
+        # erases its data.
+        Index("ix_identity_refs_sector_plugin", "sector_guild_id", "sector_plugin"),
         # Sweeping the rows a re-issue left behind.
         Index("ix_identity_refs_retired_at", "retired_at"),
     )
@@ -172,11 +193,19 @@ class IdentityRef(SQLModel, table=True):
     sector_guild_id: Optional[int] = Field(
         default=None, sa_column=Column(Integer, nullable=True)
     )
-    #: Which thing inside that guild is the sector — an install, for ``plugin``.
-    #: Paired with ``sector_guild_id`` because these ids are per-guild-schema
-    #: and so are not unique on their own.
+    #: Which row inside that guild is the sector — a subscription, for
+    #: ``webhook``. Paired with ``sector_guild_id`` because these ids are
+    #: per-guild-schema and so are not unique on their own.
     sector_id: Optional[int] = Field(
         default=None, sa_column=Column(Integer, nullable=True)
+    )
+    #: Which plug-in inside that guild is the sector, by its registration's
+    #: ``public_id``, for ``plugin``. A name rather than a row id: an install
+    #: row goes at uninstall and a registration row can be deleted and made
+    #: again, and the reference has to outlast both.
+    sector_plugin: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(SECTOR_PLUGIN_MAX_LENGTH), nullable=True),
     )
 
     created_at: datetime = Field(

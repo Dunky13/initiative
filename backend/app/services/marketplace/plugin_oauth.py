@@ -461,10 +461,10 @@ def _issuable(row: Any, client: RegistrationSnapshot) -> frozenset[str]:
 
 
 _INSTALL_SQL_TEXT = (
-    f"SELECT a.listing_uid, a.enabled, {ISSUABLE_SCOPES_SQL} AS issuable, "
+    f"SELECT a.id, a.listing_uid, a.enabled, {ISSUABLE_SCOPES_SQL} AS issuable, "
     "ARRAY(SELECT p.initiative_id FROM plugin_placements p "
     "WHERE p.install_id = a.id ORDER BY p.initiative_id) AS placed "
-    "FROM guild_plugins a WHERE a.id = :install_id"
+    "FROM guild_plugins a WHERE a.listing_uid = :listing_uid"
 )
 _INSTALL_SQL = text(_INSTALL_SQL_TEXT)
 
@@ -493,20 +493,21 @@ async def _installation_token(
 ) -> IssuedToken:
     wanted_level = _requested_level(level)
     resolved = await plugin_refs.resolve_plugin_guild_ref(ref=installation)
-    if resolved is None:
+    # The reference names the community in the client's own sector, and the
+    # install is the one the community has of the client's listing now.
+    if resolved is None or resolved[1] != client.public_id:
         raise OAuthError("invalid_grant", "unknown installation")
-    guild_id, install_id = resolved
+    guild_id = resolved[0]
+    if client.listing_uid is None:
+        raise OAuthError("invalid_grant", "unknown installation")
 
-    rows = await _read_in_community(guild_id, _INSTALL_SQL, {"install_id": install_id})
+    rows = await _read_in_community(
+        guild_id, _INSTALL_SQL, {"listing_uid": client.listing_uid}
+    )
     row = rows[0] if rows else None
-    if (
-        row is None
-        or client.listing_uid is None
-        or row.listing_uid != client.listing_uid
-        or not row.enabled
-        or not client.serves(guild_id)
-    ):
+    if row is None or not row.enabled or not client.serves(guild_id):
         raise OAuthError("invalid_grant", "unknown installation")
+    install_id = int(row.id)
 
     granted = _issuable(row, client)
     requested = _requested_scopes(scope)
@@ -541,7 +542,7 @@ async def _installation_token(
 #: initiatives the member is in and their live consent. Read on the system
 #: engine routed into the community.
 _MEMBER_INSTALL_SQL_TEXT = (
-    f"SELECT a.listing_uid, a.enabled, {ISSUABLE_SCOPES_SQL} AS issuable, "
+    f"SELECT a.id, a.listing_uid, a.enabled, {ISSUABLE_SCOPES_SQL} AS issuable, "
     "ARRAY(SELECT p.initiative_id FROM plugin_placements p "
     "WHERE p.install_id = a.id ORDER BY p.initiative_id) AS placed, "
     "ARRAY(SELECT im.initiative_id FROM initiative_members im "
@@ -552,7 +553,7 @@ _MEMBER_INSTALL_SQL_TEXT = (
     "AND c.user_id = :user_id "
     "AND c.purpose IS NOT DISTINCT FROM CAST(:purpose AS varchar) "
     "AND c.granted_access IS NOT NULL AND c.revoked_at IS NULL "
-    "WHERE a.id = :install_id"
+    "WHERE a.listing_uid = :listing_uid"
 )
 _MEMBER_INSTALL_SQL = text(_MEMBER_INSTALL_SQL_TEXT)
 
@@ -599,15 +600,17 @@ async def _member_token(
         raise _invalid_grant("sub must name the member")
 
     resolved = await plugin_refs.resolve_plugin_guild_ref(ref=installation)
-    if resolved is None:
+    if resolved is None or resolved[1] != client.public_id:
         raise _invalid_grant("unknown installation")
-    guild_id, install_id = resolved
+    guild_id = resolved[0]
+    if client.listing_uid is None:
+        raise _invalid_grant("unknown installation")
 
-    # The member, by the reference this install holds for them.
+    # The member, by the reference this plug-in holds for them in the community.
     member_ref = await plugin_refs.resolve_plugin_ref(
         session, ref=subject, guild_id=guild_id
     )
-    if member_ref is None or member_ref.sector_id != install_id:
+    if member_ref is None or member_ref.sector_plugin != client.public_id:
         raise _invalid_grant("unknown member")
     user_id = int(member_ref.entity_id)
     belongs = (
@@ -624,20 +627,18 @@ async def _member_token(
     ).first()
     await session.rollback()
 
+    # The install the community has of the client's listing now: the member's
+    # reference outlives an uninstall, and a token is issued only while there is
+    # one again.
     rows = await _read_in_community(
         guild_id,
         _MEMBER_INSTALL_SQL,
-        {"install_id": install_id, "user_id": user_id, "purpose": purpose},
+        {"listing_uid": client.listing_uid, "user_id": user_id, "purpose": purpose},
     )
     row = rows[0] if rows else None
-    if (
-        row is None
-        or client.listing_uid is None
-        or row.listing_uid != client.listing_uid
-        or not row.enabled
-        or not client.serves(guild_id)
-    ):
+    if row is None or not row.enabled or not client.serves(guild_id):
         raise _invalid_grant("unknown installation")
+    install_id = int(row.id)
     if belongs is None or row.granted_access is None:
         raise _consent_required("the member has not consented to this")
 
@@ -781,12 +782,15 @@ async def list_installations(
         client.listing_uid, cursor=cursor, limit=limit
     )
     refs = await plugin_refs.ensure_plugin_guild_refs(
-        (entry.guild_id, entry.install_id) for entry in entries
+        (entry.guild_id, client.public_id) for entry in entries
     )
+    # An install the plug-in may not be named in (one whose erase is not
+    # finished) is not listed.
     return [
         InstallationListing(
-            installation=refs[(entry.guild_id, entry.install_id)],
+            installation=refs[(entry.guild_id, client.public_id)],
             active=entry.active and client.serves(entry.guild_id),
         )
         for entry in entries
+        if (entry.guild_id, client.public_id) in refs
     ], next_cursor

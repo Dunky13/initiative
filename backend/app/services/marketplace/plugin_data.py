@@ -85,7 +85,11 @@ from app.schemas.tenant.plugin_data import (
     PluginSummaryReturn,
 )
 from app.services.fields.spec import FieldType
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
@@ -908,16 +912,23 @@ async def _call_plugin(
                     )
                 )
             )
-        # What this install calls the guild, which the token carries.
-        guild_ref = await ensure_plugin_guild_ref(
-            guild_id=guild_id, plugin_install_id=plugin.id
-        )
+        # What this plug-in calls the guild, and where the guild stands, which
+        # the token carries.
+        community = int(guild_id or 0)
+        try:
+            guild_ref = await ensure_plugin_guild_ref(
+                guild_id=community, public_id=public_id
+            )
+        except PluginNameRefused as exc:
+            raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409) from exc
+        status = await community_status(community)
         try:
             token, _ = mint_context_token(
                 public_id=public_id,
                 guild_ref=guild_ref,
                 plugin_install_id=plugin.id,
                 scope="endpoint",
+                community_status=status,
                 endpoint_id=endpoint_id,
                 connection_refs=refs,
                 caller=caller.public_id if caller is not None else None,

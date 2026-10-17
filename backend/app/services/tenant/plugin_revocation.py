@@ -14,15 +14,23 @@ it too, the way the connection's manifest says (``flow.revoke``):
   revocation the plug-in knows how to ask for;
 * absent — the tokens are deleted and nothing is sent.
 
-Two properties this module keeps:
+Three properties this module keeps:
 
-* **Captured during the transaction, sent after it.** An intent carries the
-  sealed tokens of the row it ends, read before the row is deleted, and is
-  queued on the session's commit (:func:`app.db.post_commit.after_commit`), so
-  a rolled-back delete, or one in a rolled-back savepoint, never ends a grant.
-* **Never able to fail a teardown.** Each intent is tried three times and a
-  failure is logged. A member who left a community has left it whether or not
-  the vendor answered.
+* **A revocation to the plug-in rides its hook queue.** One whose flow says
+  ``hook`` is written as a ``revoke`` row on the community-hook queue
+  (``community_hooks``) in the caller's own transaction, so it is sent by the
+  one sender every hook to a plug-in goes through, in order: an uninstall's go
+  ahead of its ``uninstalled`` and ``erase``. The tokens stay sealed in the
+  row and are opened only to be sent; a rollback writes nothing.
+* **A revocation to a vendor is captured during the transaction and sent after
+  it.** ``rfc7009`` and ``github_grant`` go to the vendor, never to the plug-in,
+  and name nobody to it. An intent carries the sealed tokens of the row it
+  ends, read before the row is deleted, and is queued on the session's commit
+  (:func:`app.db.post_commit.after_commit`), so a rolled-back delete, or one in
+  a rolled-back savepoint, never ends a grant.
+* **Never able to fail a teardown.** Each vendor intent is tried three times
+  and a failure is logged. A member who left a community has left it whether
+  or not the vendor answered.
 
 A transaction's intents are sent together once it commits, several at a
 time, since each is its own vendor round trip with its own tries. They run as a
@@ -158,12 +166,41 @@ class _Revocations(list[RevocationIntent]):
         return dispatch_revocations(self)
 
 
-def _queue(session: Any, intent: RevocationIntent) -> None:
-    """Record one intent, to be sent once the caller commits."""
+def _to_the_plugin(intent: RevocationIntent) -> bool:
+    """Whether an intent goes to the plug-in itself (its revoke hook), and so
+    rides the community-hook queue, rather than to a vendor after the
+    commit."""
+    return (
+        (intent.flow or {}).get("revoke") == "hook"
+        and bool(intent.sealed_tokens)
+        and not intent.declarative
+        and bool(intent.public_id)
+    )
+
+
+async def _queue(session: Any, intent: RevocationIntent) -> None:
+    """Record one intent, logged once it commits. One to the plug-in is also
+    written to its hook queue now, in ``session``'s transaction; one to a
+    vendor is sent once the caller commits."""
     post_commit.after_commit(session, _Revocations(), key=_STEP_KEY).append(intent)
+    if not _to_the_plugin(intent):
+        return
+    from app.services.marketplace import community_hooks
+
+    await community_hooks.queue_community_hooks(
+        session,
+        guild_id=intent.guild_id,
+        public_id=str(intent.public_id),
+        hooks=("revoke",),
+        install_id=intent.plugin_id,
+        body={
+            "connection": intent.connection_id,
+            "sealed_tokens": dict(intent.sealed_tokens),
+        },
+    )
 
 
-def queue_install_revocations(
+async def queue_install_revocations(
     session: Any,
     plugin: GuildPlugin,
     connection_ids: Iterable[str],
@@ -179,7 +216,7 @@ def queue_install_revocations(
     """
     guild_id = routed_guild_id(session)
     for connection_id in sorted(connection_ids):
-        _queue(
+        await _queue(
             session,
             _intent_for(
                 guild_id=guild_id,
@@ -212,7 +249,7 @@ async def queue_revocations_for_rows(
     guild_id = routed_guild_id(session)
     for row in rows:
         listing_uid, definition = installs.get(row.plugin_id, ("", None))
-        _queue(
+        await _queue(
             session,
             _intent_for(
                 guild_id=guild_id,
@@ -263,9 +300,10 @@ async def _dispatch_one(intent: RevocationIntent) -> None:
 
 
 async def _deliver(intent: RevocationIntent) -> None:
-    """End one grant the way its flow says, with three tries."""
+    """End one grant at its vendor the way its flow says, with three tries. A
+    ``hook`` intent is already on the plug-in's hook queue (:func:`_queue`)."""
     method = (intent.flow or {}).get("revoke")
-    if method not in ("rfc7009", "github_grant", "hook") or not intent.sealed_tokens:
+    if method not in ("rfc7009", "github_grant") or not intent.sealed_tokens:
         return
     if intent.public_id is None and intent.declarative:
         # A declarative plug-in is its listing's: the registration that listing

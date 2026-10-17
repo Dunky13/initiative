@@ -249,8 +249,11 @@ LIVE_WINDOW = (
 )
 CLIENT_SECTOR = "purpose = 'client' AND entity_type = 'user'"
 #: A reference in the routed install's own sector: what an installed plug-in's
-#: request calls somebody, and nothing any other install or purpose holds.
-INSTALL_SECTOR = f"purpose = 'plugin' AND sector_guild_id = {gucs.GUILD_ID} AND sector_id = {gucs.INSTALL_ID}"
+#: request calls somebody, and nothing any other plug-in or purpose holds. The
+#: sector is the plug-in in the routed community, named by the client its token
+#: was issued to, which the install standing holds to the install's
+#: registration.
+INSTALL_SECTOR = f"purpose = 'plugin' AND sector_guild_id = {gucs.GUILD_ID} AND sector_plugin = {gucs.TOKEN_CLIENT_ID}"
 #: A reference an installed plug-in's request mints: in its own sector, live, and
 #: naming a person or its own community.
 INSTALL_SECTOR_MINT = (
@@ -1411,9 +1414,10 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("app_user",),
                     using=CLIENT_SECTOR,
                 ),
-                # An installed plug-in's request reads what its install calls people and
+                # An installed plug-in's request reads what its plug-in calls people and
                 # its community, and mints what it has not been told yet — in its
-                # own sector only (plugin_refs.install_refs; migration 20260924_0383).
+                # own sector only (plugin_refs.install_refs; migrations 20260924_0383,
+                # 20261016_0515).
                 Policy(
                     "install_reads_its_sector",
                     SELECT,
@@ -2058,6 +2062,31 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # The install index: kept in step with each community's installs, read to
             # list a plug-in's installs and to route its vendor webhooks.
             app_admin=DML,
+        ),
+    ),
+    # The community hooks waiting to reach a plug-in: written at install,
+    # uninstall and erase, and when a community's status moves, and sent,
+    # retried and swept by the plugin_hooks sweep timer
+    # (app.services.marketplace.community_hooks;
+    # migration 20261016_0515).
+    "plugin_community_hooks": SharedTable(
+        rls=TableRls(
+            policies=(
+                # An install or an uninstall appends its hooks in its own
+                # transaction, for the routed community only.
+                Policy(
+                    "plugin_community_hooks_append_routed",
+                    INSERT,
+                    ("app_guild_base",),
+                    check=routed_or_pam("guild_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The plugin_hooks sweep sends, retries, settles and sweeps them.
+            app_admin=DML,
+            # A routed write appends hooks and never reads one back.
+            app_guild_base=frozenset({INSERT}),
         ),
     ),
     # The settings' stored credentials.

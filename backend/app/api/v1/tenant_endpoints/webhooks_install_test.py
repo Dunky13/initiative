@@ -111,7 +111,7 @@ async def test_an_install_subscribes_to_what_its_scopes_read(
     assert_names_nobody(response.text, [installed.seat.user.id, installed.guild.id])
     # The same name every other response to this install gives its community.
     assert body["community_ref"] == await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+        guild_id=installed.guild.id, public_id=installed.public_id
     )
 
     row = await _row(session, installed.guild.id, body["id"])
@@ -259,6 +259,66 @@ async def test_listing_and_rewriting_stay_with_people(
         json={"active": False},
     )
     assert patched.status_code == 401, patched.text
+
+
+async def test_a_subscription_keeps_its_names_while_the_registration_is_redone(
+    client, session, acting_user, role_session
+):
+    """A subscription a plug-in registered is named in that plug-in's sector,
+    by the public id its install pinned, so deleting the registration and
+    making it again changes nothing a person reading it sees."""
+    from app.models.platform.plugin_service_registration import (
+        PluginServiceRegistration,
+    )
+    from app.db.request_context import Unattributed
+    from app.db.session import set_rls_context
+    from app.services.marketplace.registration_lookup import invalidate_registrations
+    from app.testing import create_plugin_service_registration
+    from app.testing.plugin_clients import LISTING, client_jwks
+
+    installed = await install_plugin(
+        session, acting_user, role_session, granted=["files:read"]
+    )
+    created = await _subscribe(
+        client,
+        installed,
+        install_headers(installed, ["files:read"]),
+        initiative_id=installed.placed.id,
+    )
+    assert created.status_code == 201, created.text
+    seat = installed.seat
+
+    async def names():
+        listed = await client.get(_url(installed.guild.id), headers=seat.headers)
+        assert listed.status_code == 200, listed.text
+        return [row["community_ref"] for row in listed.json()]
+
+    before = await names()
+    assert before == [
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=installed.guild.id, public_id=installed.public_id
+        )
+    ]
+
+    await set_rls_context(session, Unattributed())
+    registration = (
+        await session.exec(
+            select(PluginServiceRegistration).where(
+                PluginServiceRegistration.public_id == CLIENT
+            )
+        )
+    ).one()
+    await session.delete(registration)
+    await session.commit()
+    invalidate_registrations()
+    assert await names() == before
+
+    await create_plugin_service_registration(
+        session, public_id=CLIENT, listing_uid=LISTING, jwks=client_jwks()
+    )
+    await session.commit()
+    invalidate_registrations()
+    assert await names() == before
 
 
 # ---------------------------------------------------------------------------

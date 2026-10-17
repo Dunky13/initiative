@@ -29,7 +29,6 @@ grant, and every caller has authenticated whoever it acts for first.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -68,6 +67,7 @@ __all__ = [
     "after_install",
     "after_uninstall",
     "deliver_entitlement",
+    "erased",
     "entitlement_satisfied",
     "listing_terms",
     "read_statement",
@@ -80,12 +80,9 @@ __all__ = [
 
 #: The hook a statement is delivered to.
 ENTITLEMENT_HOOK = "entitlement"
-#: How long a delivered statement's version is remembered for the install, so
-#: the same one is not delivered to it twice.
+#: How long a queued statement's version is remembered for the install, so
+#: the same one is not queued for it twice.
 DELIVERY_TTL = timedelta(hours=24)
-#: Seconds between delivery attempts. The plug-in can always pull the
-#: statement, so a few attempts close to the change are enough.
-DELIVERY_BACKOFF: tuple[float, ...] = (2.0, 10.0)
 
 
 @dataclass(frozen=True)
@@ -434,52 +431,35 @@ async def deliver_entitlement(guild_id: int, listing_uid: str) -> bool:
     ``guild_id``, as its ``entitlement`` hook with ``{"statement": "<jws>"}``,
     the signed statement exactly as the issuer sent it.
 
-    Nothing is sent when there is no statement, no live install, or the
-    install already took this version. A plug-in that does not accept it is
-    asked again a few times; it can also pull the statement whenever it likes.
-    Returns whether the plug-in accepted it. Never raises.
-
-    The single delivery point for this hook, so it can move onto a shared
-    community-hook delivery without its callers changing.
+    Written to the community-hook queue
+    (:func:`app.services.marketplace.community_hooks.deliver_community_hook`),
+    which delivers it with retries and backoff, replaces a statement still
+    waiting with a newer one, and records a 404 as a plug-in that does not take
+    the hook. Nothing is queued when there is no statement, no live install,
+    or the install was already handed this version. The plug-in can also pull
+    the statement whenever it likes. Returns whether it was queued. Never
+    raises.
     """
-    from app.services.tenant import plugin_connection_flows as flows
+    from app.services.marketplace import community_hooks
 
     try:
         statement = await read_statement(guild_id, listing_uid)
         if statement is None:
             return False
-        for attempt in range(len(DELIVERY_BACKOFF) + 1):
-            owed = await _install_owed(guild_id, listing_uid, statement.version)
-            if owed is None:
-                return False
-            plugin, registration = owed
-            try:
-                await flows.call_hook(
-                    ENTITLEMENT_HOOK,
-                    public_id=registration.public_id,
-                    base_url=registration.base_url,
-                    guild_id=guild_id,
-                    install_id=plugin.id,
-                    body={"statement": statement.jws},
-                )
-            except flows.HookError as exc:
-                logger.warning(
-                    "plug-in entitlements: %s did not take statement %s for guild %s (%s)",
-                    registration.public_id,
-                    statement.version,
-                    guild_id,
-                    exc,
-                )
-                if attempt < len(DELIVERY_BACKOFF):
-                    await asyncio.sleep(DELIVERY_BACKOFF[attempt])
-                    latest = await read_statement(guild_id, listing_uid)
-                    if latest is None or latest.version != statement.version:
-                        # A newer statement has its own delivery.
-                        return False
-                continue
-            await _remember(guild_id, plugin.id, statement.version)
-            return True
-        return False
+        owed = await _install_owed(guild_id, listing_uid, statement.version)
+        if owed is None:
+            return False
+        plugin, registration = owed
+        queued = await community_hooks.deliver_community_hook(
+            guild_id=guild_id,
+            public_id=registration.public_id,
+            hook=ENTITLEMENT_HOOK,
+            body={"statement": statement.jws},
+            install_id=plugin.id,
+        )
+        if queued:
+            await _remember(guild_id, int(plugin.id), statement.version)
+        return queued
     except Exception:
         logger.exception("plug-in entitlements: delivery for guild %s failed", guild_id)
         return False
@@ -502,6 +482,17 @@ async def _uninstalled(guild_id: int, listing_uid: str) -> None:
         return
     billing_ping.notify_plugin_install(
         guild_id, listing_uid=listing_uid, event="uninstalled"
+    )
+
+
+async def erased(guild_id: int, listing_uid: str) -> None:
+    """The community erased the plug-in's data and the plug-in answered: tell
+    the issuer, for a listing with terms. Called by the community-hook worker
+    once the ``erase`` hook is settled."""
+    if await listing_terms(listing_uid) is None:
+        return
+    billing_ping.notify_plugin_install(
+        guild_id, listing_uid=listing_uid, event="erased"
     )
 
 

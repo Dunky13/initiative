@@ -1196,6 +1196,11 @@ async def update_platform_community_storage(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=GuildMessages.COMMUNITY_NOT_FOUND,
             ) from exc
+        if str(exc) == GuildMessages.COMMUNITY_PURGE_STARTED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=GuildMessages.COMMUNITY_PURGE_STARTED,
+            ) from exc
         raise
     administration = await guilds_service.get_administration(session, guild_id=guild_id)
     changed = audit_service.changed_fields(
@@ -1304,9 +1309,16 @@ async def set_platform_community_suspension(
     grant = await access_grants_service.get_live_grant(
         session, user_id=moderator.id, guild_id=guild_id
     )
-    guild = await guilds_service.set_guild_status(
-        session, guild_id=guild_id, status=target
-    )
+    try:
+        guild = await guilds_service.set_guild_status(
+            session, guild_id=guild_id, status=target
+        )
+    except ValueError as exc:
+        if str(exc) != GuildMessages.COMMUNITY_PURGE_STARTED:
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     await audit_service.record(
         session,
         event_type=AuditEventType.GUILD_STATUS_CHANGED,
@@ -1486,6 +1498,7 @@ async def restore_platform_community(
             ) from exc
         if code in (
             GuildMessages.COMMUNITY_NOT_DELETED,
+            GuildMessages.COMMUNITY_PURGE_STARTED,
             GuildMessages.COMMUNITY_RESTORE_STATUS_SET_BY_BILLING,
         ):
             raise HTTPException(

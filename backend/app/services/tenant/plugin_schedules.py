@@ -45,7 +45,7 @@ from app.db import cohorts
 from app.db.session import set_rls_context
 from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import declarative
+from app.services.marketplace import community_hooks, declarative
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
     is_declarative,
@@ -290,7 +290,7 @@ async def run_due(session: AsyncSession, guild_id: int) -> datetime | None:
             )
             continue
         try:
-            await flows.call_hook(
+            await community_hooks.call_now(
                 "schedule",
                 public_id=registration.public_id,
                 base_url=registration.base_url,

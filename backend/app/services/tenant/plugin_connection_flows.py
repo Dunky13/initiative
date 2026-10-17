@@ -27,7 +27,11 @@ Three things happen here and nowhere else:
   renews one; :func:`mint_jwt_bearer` mints a token for a connection that
   declares a ``jwt_bearer`` token, and caches it.
 * **Hooks.** :func:`call_hook` calls the plug-in at ``POST {base}/v1/hooks/{name}``
-  with a ``lifecycle`` context token naming the install and the hook.
+  with a ``lifecycle`` context token naming the install and the hook. Only
+  :mod:`app.services.marketplace.community_hooks` calls it, under one lock per
+  community and plug-in: the hooks about the community, queued and retried, and
+  ``after_connect``, ``webhook`` and ``schedule``, sent at once by its
+  ``call_now``. A ``revoke`` rides that queue too (``plugin_revocation``).
 
 Every call to a vendor goes through the pinned egress helper, https only, with
 a timeout and a size cap. A call to the plug-in goes to its registration's
@@ -79,7 +83,11 @@ from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
     REQUEST_TIMEOUT_SECONDS,
 )
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.vendor_values import load_vendor_values
 from app.services.safe_http import ResponseTooLargeError, request_public_target
@@ -162,6 +170,9 @@ VENDOR_MAX_RESPONSE_BYTES = 512 * 1024
 HOOKS_PATH = "/v1/hooks"
 HOOK_NAMES: frozenset[str] = frozenset(
     {"after_connect", "revoke", "webhook", "schedule", "entitlement"}
+    # The hooks about the community's install, delivered by
+    # ``app.services.marketplace.community_hooks``.
+    | {"installed", "uninstalled", "erase", "community_status"}
 )
 #: The widest account label kept, matching what the members view shows.
 MAX_ACCOUNT_LABEL_LENGTH = 200
@@ -181,15 +192,27 @@ class VendorRefusedError(Exception):
 
 
 class HookError(Exception):
-    """The plug-in's hook could not be reached, or answered with something else."""
+    """The plug-in's hook could not be reached, or answered with something else.
+
+    ``status`` is the HTTP status the plug-in answered with, when it answered.
+    """
+
+    def __init__(self, message: str, *, status: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class HookNameRefused(HookError):
+    """The plug-in may not be given a name for the community (no live install,
+    or an erase is pending), so it has none to be told under and nothing is
+    sent."""
 
 
 class RevocationAnsweredError(HookError):
     """The vendor answered a revocation with something other than success."""
 
     def __init__(self, status: int) -> None:
-        super().__init__(f"revocation answered {status}")
-        self.status = status
+        super().__init__(f"revocation answered {status}", status=status)
 
 
 @dataclass(frozen=True)
@@ -678,14 +701,26 @@ async def call_hook(
     guild_id: int,
     install_id: int,
     body: Mapping[str, Any],
+    guild_ref: Optional[str] = None,
 ) -> Optional[Any]:
     """Call one of the plug-in's hooks and return its JSON answer (``None`` for an
-    empty one). Raises :class:`HookError` for anything but a 2xx answer."""
+    empty one). Raises :class:`HookError` for anything but a 2xx answer, with
+    the status the plug-in answered with when it answered.
+
+    The token names the community by what the plug-in calls it, minted on first
+    use; ``guild_ref`` hands one in instead, for a hook that must not mint a
+    name (``erase``). ``install_id`` is the install the hook is about, or ``0``
+    when the community has none to name."""
     if name not in HOOK_NAMES:
         raise HookError(f"unknown hook {name!r}")
-    guild_ref = await ensure_plugin_guild_ref(
-        guild_id=guild_id, plugin_install_id=install_id
-    )
+    if guild_ref is None:
+        try:
+            guild_ref = await ensure_plugin_guild_ref(
+                guild_id=guild_id, public_id=public_id
+            )
+        except PluginNameRefused as exc:
+            raise HookNameRefused(f"hook {name}: no name for the community") from exc
+    standing = await community_status(guild_id)
     try:
         token, _ = mint_context_token(
             public_id=public_id,
@@ -693,6 +728,7 @@ async def call_hook(
             plugin_install_id=install_id,
             scope="lifecycle",
             hook=name,
+            community_status=standing,
         )
     except PluginPlatformSigningNotConfiguredError as exc:
         raise HookError("signing is not configured") from exc
@@ -723,13 +759,17 @@ async def call_hook(
     ) as exc:
         raise HookError(f"hook {name} could not be reached: {exc}") from exc
     if not 200 <= response.status_code < 300:
-        raise HookError(f"hook {name} answered {response.status_code}")
+        raise HookError(
+            f"hook {name} answered {response.status_code}", status=response.status_code
+        )
     if not response.content:
         return None
     try:
         return response.json()
     except ValueError as exc:
-        raise HookError(f"hook {name} did not answer with JSON") from exc
+        raise HookError(
+            f"hook {name} did not answer with JSON", status=response.status_code
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -762,7 +802,10 @@ async def after_connect(
     access_token: str,
     params: Mapping[str, str],
 ) -> AfterConnect:
-    answer = await call_hook(
+    # Sent through the one door every hook goes through (community_hooks).
+    from app.services.marketplace import community_hooks
+
+    answer = await community_hooks.call_now(
         "after_connect",
         public_id=public_id,
         base_url=base_url,
@@ -1580,29 +1623,6 @@ async def revocation_sender(
 
         return send_grant_deletion
 
-    if method != "hook":
-        return None
-    registration = (await registration_lookup.load_registrations()).get(public_id)
-    if registration is None or not registration.base_url:
-        logger.info(
-            "plug-in credential revocation: %s is not registered here; dropped",
-            public_id,
-        )
-        return None
-    base_url = registration.base_url
-
-    async def send_hook() -> None:
-        await call_hook(
-            "revoke",
-            public_id=public_id,
-            base_url=base_url,
-            guild_id=guild_id,
-            install_id=install_id,
-            body={
-                "connection": connection_id,
-                "access_token": tokens.get("access_token"),
-                "refresh_token": tokens.get("refresh_token"),
-            },
-        )
-
-    return send_hook
+    # ``hook`` rides the community-hook queue (``plugin_revocation``), and
+    # every other method sends nothing.
+    return None

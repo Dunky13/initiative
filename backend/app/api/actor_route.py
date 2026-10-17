@@ -14,7 +14,7 @@ plug-in it carries the request through the three phases of
 3. After FastAPI has rendered the response, it resolves the markers the
    serialization left: from this process's cache, and what the cache does not
    hold in one statement on the request's own session
-   (``plugin_refs.install_refs``), which mints what the install has never been
+   (``plugin_refs.install_refs``), which mints what the plug-in has never been
    told. The references are written into the body in place of the markers.
 
 A route that admits an installed plug-in returns its payload for FastAPI to

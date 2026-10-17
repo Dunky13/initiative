@@ -556,6 +556,22 @@ def _reset_presence_roll():
     presence.online = presence.OnlineRoll()
 
 
+@pytest.fixture(autouse=True)
+def _reset_timer_wakes():
+    """Start and end every test with no community waiting to be woken.
+
+    ``sweep_timers.wake`` notes a community in a process-global set that the
+    next ``process_due_timers`` arms timers for. Test databases RESTART
+    IDENTITY per test, so a wake one test left behind would arm a timer in the
+    next for a community that test never made, or for whoever has its id now.
+    """
+    from app.services import sweep_timers
+
+    sweep_timers._woken.clear()
+    yield
+    sweep_timers._woken.clear()
+
+
 @functools.cache
 def _handoff_keypair() -> tuple[str, str]:
     """One Ed25519 keypair per process, built the first time a test asks for it."""

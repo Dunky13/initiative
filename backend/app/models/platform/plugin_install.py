@@ -5,6 +5,9 @@ the index of them across communities: the listing an install came from, the
 community and install, whether the install is switched on, and the value a
 vendor webhook is routed to it by. It holds no content.
 
+It also holds the community status each install's plug-in was last told
+(``community_status_sent``), which is how a change of status reaches it.
+
 It answers two questions without visiting a guild schema: which installs an
 plug-in has (``GET /plugin-platform/installations``), and which installs a vendor
 delivery belongs to (``POST /plugin-hooks/{public_id}``). ``hook_route`` is the
@@ -48,4 +51,11 @@ class PluginInstall(SQLModel, table=True):
     hook_route: Optional[str] = Field(
         default=None,
         sa_column=Column(String(length=HOOK_ROUTE_MAX_LENGTH), nullable=True),
+    )
+    #: The community's status as its plug-in was last told it, by the
+    #: ``community_status`` hook. The community-hook worker compares it with
+    #: ``guilds.status`` and tells the plug-in when the two differ, so a status
+    #: is told however it was changed.
+    community_status_sent: Optional[str] = Field(
+        default=None, sa_column=Column(String(length=16), nullable=True)
     )

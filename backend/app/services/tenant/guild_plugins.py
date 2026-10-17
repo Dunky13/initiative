@@ -59,7 +59,11 @@ from app.core.messages import GuildPluginMessages
 from app.db.session import routed_guild_id
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services import audit as audit_service
-from app.services.marketplace import plugin_entitlements, registration_lookup
+from app.services.marketplace import (
+    community_hooks,
+    plugin_entitlements,
+    registration_lookup,
+)
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.platform import guilds as guilds_service
 from app.schemas.tenant.resource_grant import initiative_readable
@@ -90,6 +94,7 @@ __all__ = [
     "has_initiative_surfaces",
     "initiative_surface_ids",
     "install_plugin",
+    "definition_public_id",
     "install_public_id",
     "installed_plugin_ids",
     "is_placed",
@@ -341,6 +346,24 @@ async def create_plugin_artifacts(
     await handler.create(session, plugin=plugin, name=plugin.name, guild_id=guild_id)
 
 
+class ErasePendingError(Exception):
+    """The community asked this plug-in to erase its data, and the erase is not
+    finished: installing it now would hand it the names the erase is about to
+    drop."""
+
+
+async def _refuse_while_erasing(
+    guild_id: int, definition: dict, listing_uid: str
+) -> None:
+    """Raise :class:`ErasePendingError` while an erase of this plug-in in the
+    community is unfinished."""
+    public_id = await definition_public_id(definition, listing_uid)
+    if public_id is not None and await community_hooks.erase_pending(
+        guild_id=guild_id, public_id=public_id
+    ):
+        raise ErasePendingError(public_id)
+
+
 async def install_plugin(
     session: AsyncSession,
     *,
@@ -372,7 +395,11 @@ async def install_plugin(
     written with the row, so the install never exists without its consent.
     ``allowed_callers`` is the rest of that answer: the installs here let use
     this plug-in (:func:`set_plugin_callers`; ``None`` lets every one).
+
+    Raises :class:`ErasePendingError`, having written nothing, while the
+    community's request that this plug-in erase its data is unfinished.
     """
+    await _refuse_while_erasing(guild_id, definition, listing_uid)
     plugin = GuildPlugin(
         listing_uid=listing_uid,
         listing_version=listing_version,
@@ -412,14 +439,32 @@ async def install_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+        # Written with the install, so it is told once the install commits, by
+        # either route, first time or again, and never for one rolled back.
+        await community_hooks.queue_community_hooks(
+            session,
+            guild_id=guild_id,
+            public_id=public_id,
+            hooks=("installed",),
+            install_id=plugin.id,
+        )
     plugin_entitlements.after_install(session, guild_id, listing_uid)
     return plugin
 
 
 async def uninstall_plugin(
-    session: AsyncSession, plugin: GuildPlugin, *, actor_user_id: int
+    session: AsyncSession,
+    plugin: GuildPlugin,
+    *,
+    actor_user_id: int,
+    erase: bool = False,
 ) -> None:
     """Remove an install, ending its access and trashing what it created.
+
+    What the plug-in calls the community and its members is kept, so a later
+    install brings the same names back. It is told ``uninstalled`` once the
+    removal commits; with ``erase``, it is then told ``erase``, and the names
+    are dropped once it answers (``community_hooks``).
 
     The two halves are deliberately different. **Credentials are deleted**, both
     the guild's and every member's, and each plug-in is told to let go at the vendor
@@ -449,7 +494,9 @@ async def uninstall_plugin(
         session, guild_id=guild_id, plugin_install_id=plugin.id
     )
     secrets = await load_secrets(session, plugin)
-    queue_install_revocations(
+    # The revocations to the plug-in itself are written to its hook queue
+    # here, ahead of the uninstalled and erase below.
+    await queue_install_revocations(
         session,
         plugin,
         {*(plugin.config or {}), *secrets},
@@ -474,6 +521,17 @@ async def uninstall_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+
+    # Told with the removal, in its transaction, under the public id its
+    # references key on, registration or not, so an erase still reaches them.
+    if public_id is not None:
+        await community_hooks.queue_community_hooks(
+            session,
+            guild_id=guild_id,
+            public_id=public_id,
+            hooks=("uninstalled", "erase") if erase else ("uninstalled",),
+            install_id=plugin.id,
+        )
     install_id, listing_uid = plugin.id, plugin.listing_uid
     await session.delete(plugin)
     # Staged before the commit that removes the row, and reading the counts the
@@ -489,6 +547,7 @@ async def uninstall_plugin(
             "listing_uid": listing_uid,
             "connections": connections,
             "consents": consents,
+            "erase": erase,
         },
     )
     if listing_uid:
@@ -506,7 +565,7 @@ async def clear_static_connection(
     """
     secrets = await load_secrets(session, plugin)
     if (plugin.config or {}).get(connection_id) or secrets.get(connection_id):
-        queue_install_revocations(
+        await queue_install_revocations(
             session, plugin, [connection_id], secrets=secrets, reason="disconnected"
         )
     plugin.config = {
@@ -1055,18 +1114,42 @@ def grantable_scopes(
     ]
 
 
+async def definition_public_id(
+    definition: dict, listing_uid: Optional[str]
+) -> Optional[str]:
+    """The public id of the plug-in a pinned definition is, for one that is
+    installed or about to be: the registration's when this deployment has
+    one, else the ``service.public_id`` the definition pinned, which is what
+    the plug-in's references key on. ``None`` for a plug-in with no service
+    behind it, and for a declarative one with no registration."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
+    if registration is not None:
+        return registration.public_id
+    return registration_lookup.service_public_id(definition)
+
+
 async def install_public_id(plugin: GuildPlugin) -> Optional[str]:
-    """The public id of the plug-in ``plugin`` is an install of, read the way the
-    hub reads its target: the registration speaks for this install's listing,
-    and the install names that plug-in. ``None`` for one with no registration."""
+    """The public id of the plug-in an existing install is of: what names it,
+    acts for it and keys its references, whether or not its registration still
+    stands. The registration's when it speaks for this install (its listing,
+    and the plug-in the install names), else the one the install pinned;
+    ``None`` when a registration stands that is not this install's, or for a
+    plug-in with no service behind it.
+
+    Reaching the plug-in's container is another question, which only a live
+    registration answers (``registration_lookup.registration_for_definition``)."""
     from app.services.tenant.plugin_channels import owns_install
 
     registration = await registration_lookup.registration_for_definition(
         plugin.definition, listing_uid=plugin.listing_uid
     )
-    if registration is None or not owns_install(plugin, registration):
+    if registration is not None:
+        return registration.public_id if owns_install(plugin, registration) else None
+    if plugin.plugin_kind != "service":
         return None
-    return registration.public_id
+    return registration_lookup.service_public_id(plugin.definition)
 
 
 async def installed_plugin_ids(session: AsyncSession) -> frozenset[str]:

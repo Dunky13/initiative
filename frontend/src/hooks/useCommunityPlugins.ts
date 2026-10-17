@@ -96,10 +96,17 @@ export const useUpdateCommunityPlugin = (
   );
 };
 
-export const useUninstallCommunityPlugin = (options?: MutationOpts<void, number>) => {
-  return useCommunityMutation<void, number>(
+export interface UninstallPlugin {
+  pluginId: number;
+  /** Also ask the plug-in to delete what it holds about the community. */
+  erase?: boolean;
+}
+
+export const useUninstallCommunityPlugin = (options?: MutationOpts<void, UninstallPlugin>) => {
+  return useCommunityMutation<void, UninstallPlugin>(
     {
-      mutationFn: (communityId, pluginId) => uninstallCommunityPlugin(communityId, pluginId),
+      mutationFn: (communityId, { pluginId, erase }) =>
+        uninstallCommunityPlugin(communityId, pluginId, erase ? { erase: true } : undefined),
       invalidate: () => invalidate(q.plugins()),
       errorKey: "plugins:error",
     },

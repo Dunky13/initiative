@@ -41,6 +41,7 @@ from app.schemas.platform.billing import (
 )
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
+from app.services.marketplace import community_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +424,7 @@ async def apply_guild_tier(
             else:
                 guild_values["status"] = payload.status.value
                 guild_values["status_changed_at"] = now
+                community_hooks.status_changed(session, guild_id)
                 logger.info(
                     "billing: guild %s status %s -> %s (source=%s actor=%s event=%s)",
                     guild_id,

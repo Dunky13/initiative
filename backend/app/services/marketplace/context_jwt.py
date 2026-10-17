@@ -1,7 +1,8 @@
 """The credential Initiative presents when it calls a plug-in service.
 
 A context token is deliberately the smallest thing that can work. It names
-**one guild**, **one install**, **one scope**, and lives about a minute, so what
+**one guild**, **one install**, **one scope**, and the community's status
+(``community_status``, read when it is minted), and lives about a minute, so what
 a plug-in holds at any moment is an answer to the call in front of it rather than a
 standing key to a deployment. Three properties are worth stating because they
 are what the shape buys:
@@ -23,9 +24,11 @@ are what the shape buys:
   token minted for one plug-in is not accepted by another even if it is somehow
   handed over.
 
-A ``lifecycle`` token is Initiative calling one of the plug-in's hooks while it
-runs a connection's flow or ends one; its ``hook`` claim names which, so a token
-minted for one hook is not spent on another.
+A ``lifecycle`` token is Initiative calling one of the plug-in's hooks: while it
+runs a connection's flow or ends one, or to tell it what happened to the
+community (``installed``, ``uninstalled``, ``erase``, ``community_status``). Its
+``hook`` claim names which, so a token minted for one hook is not spent on
+another.
 
 Verification is public: :func:`context_jwks` publishes the public half as a JWKS
 document, stamped with the same ``kid`` the token header carries, so a plug-in can
@@ -51,6 +54,7 @@ from typing import Any, Mapping, Optional
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from app.models.platform.guild import CommunityStatus
 from app.core.security import (
     PLUGIN_CONTEXT_TOKEN_TYPE,
     PUBLIC_KEY_JWT_ALGORITHM,
@@ -80,6 +84,12 @@ __all__ = [
 #: issue count cannot be spent closing an issue. The endpoint's own ``direction``
 #: says which it was, and the plug-in knows it without being told.
 CONTEXT_SCOPES: frozenset[str] = frozenset({"endpoint", "lifecycle"})
+
+#: What ``community_status`` may say: the community statuses, which a plug-in's
+#: kit refuses a token for not carrying one of.
+_COMMUNITY_STATUSES: frozenset[str] = frozenset(
+    status.value for status in CommunityStatus
+)
 
 #: About a minute. Long enough to survive a slow round trip and a little clock
 #: skew, short enough that a captured token is spent before it is useful.
@@ -164,6 +174,7 @@ def mint_context_token(
     guild_ref: str,
     plugin_install_id: int,
     scope: str,
+    community_status: str,
     endpoint_id: Optional[str] = None,
     hook: Optional[str] = None,
     connection_refs: Optional[Mapping[str, str]] = None,
@@ -177,9 +188,15 @@ def mint_context_token(
 ) -> tuple[str, int]:
     """Sign one context token and return it with its lifetime in seconds.
 
-    ``guild_ref`` is what this install calls the guild — the same sector the
-    member references use, so a plug-in installed twice holds two unrelated values
-    for one guild. No row id of ours is a parameter here.
+    ``guild_ref`` is what this plug-in calls the guild — the same sector the
+    member references use, so one plug-in in two guilds holds two unrelated
+    values, and one guild uninstalling and reinstalling a plug-in hands it the
+    same value again. ``plugin_install_id`` names the install itself, which a
+    reinstall changes. No row id of ours is otherwise a parameter here.
+
+    ``community_status`` is the community's status now
+    (:func:`app.services.marketplace.community_status.community_status`), one of
+    ``CommunityStatus``'s values; every token carries it.
 
     ``connection_refs`` maps a connection id to the opaque handle the plug-in knows
     that member's credential by. It is present only where the call genuinely
@@ -198,6 +215,8 @@ def mint_context_token(
     """
     if scope not in CONTEXT_SCOPES:
         raise ContextTokenError(f"unknown context scope {scope!r}")
+    if community_status not in _COMMUNITY_STATUSES:
+        raise ContextTokenError(f"unknown community status {community_status!r}")
     refs = dict(connection_refs or {})
     if len(refs) > _MAX_CONNECTION_REFS:
         raise ContextTokenError("too many connection references for one call")
@@ -211,6 +230,7 @@ def mint_context_token(
         "exp": now + lifetime,
         "community_ref": guild_ref,
         "plugin_install_id": plugin_install_id,
+        "community_status": community_status,
         "scope": scope,
     }
     # Each optional claim appears only when it means something, so a plug-in can

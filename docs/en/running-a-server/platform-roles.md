@@ -157,7 +157,7 @@ Operators and owners set a community's status from its row as before, and a susp
 
 ### Deleted communities
 
-Deleted communities are in that list too, marked with the date everything in them is destroyed. **Restore** brings one back as it was — and where nobody is left who could run it, asks you who takes it over. See [How long deleted things are kept](configuration.md#how-long-deleted-things-are-kept).
+Deleted communities are in that list too, marked with the date everything in them is destroyed. **Restore** brings one back as it was, until its plug-ins have been asked to erase it at the end of the window, — and where nobody is left who could run it, asks you who takes it over. See [How long deleted things are kept](configuration.md#how-long-deleted-things-are-kept).
 
 ## Where operations work lands
 

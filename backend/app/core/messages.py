@@ -223,6 +223,9 @@ class GuildMessages:
     COMMUNITY_PROVISION_FAILED = "COMMUNITY_PROVISION_FAILED"
     #: Restore was asked for a guild that has not been deleted.
     COMMUNITY_NOT_DELETED = "COMMUNITY_NOT_DELETED"
+    #: The community's purge has begun: it cannot be restored or have its
+    #: status changed, and is deleted once its plug-ins have answered.
+    COMMUNITY_PURGE_STARTED = "COMMUNITY_PURGE_STARTED"
     #: A guild cannot be restored *to* deleted.
     COMMUNITY_RESTORE_STATUS_INVALID = "COMMUNITY_RESTORE_STATUS_INVALID"
     #: The guild's roster no longer holds the seat that configures it, so the
@@ -1363,6 +1366,12 @@ class GuildPluginMessages:
     #: The listing installs only in a community holding an active entitlement
     #: for it, and this one holds none.
     ENTITLEMENT_REQUIRED = "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED"
+    #: Erasing a plug-in's data with its removal is the community's admins'
+    #: choice, and this caller is not one.
+    ERASE_ADMIN_ONLY = "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY"
+    #: The community asked this plug-in to erase its data and it has not
+    #: finished; it can be installed again once it has.
+    ERASE_PENDING = "COMMUNITY_PLUGIN_ERASE_PENDING"
 
     # --- service plug-ins ---
     #: This install's plug-in service is not wired up here — never registered, or

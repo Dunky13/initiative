@@ -62,6 +62,7 @@ def _mint(**overrides) -> str:
             "guild_ref": "gplu_testguild7",
             "plugin_install_id": 3,
             "scope": "endpoint",
+            "community_status": "active",
             **overrides,
         }
     )
@@ -124,6 +125,7 @@ class TestClaims:
             "exp",
             "community_ref",
             "plugin_install_id",
+            "community_status",
             "scope",
             "endpoint_id",
             "connection_refs",
@@ -157,6 +159,16 @@ class TestClaims:
     @pytest.mark.parametrize("scope", ["endpoint", "lifecycle"])
     def test_the_scope_vocabulary_is_what_it_declares(self, scope):
         assert _claims(_mint(scope=scope))["scope"] == scope
+
+    @pytest.mark.parametrize(
+        "standing", ["active", "read_only", "suspended", "on_hold", "deleted"]
+    )
+    def test_it_says_where_the_community_stands(self, standing):
+        assert _claims(_mint(community_status=standing))["community_status"] == standing
+
+    def test_a_status_outside_the_five_is_refused(self):
+        with pytest.raises(context_jwt.ContextTokenError):
+            _mint(community_status="paused")
 
     def test_an_unknown_scope_is_refused(self):
         with pytest.raises(context_jwt.ContextTokenError):
