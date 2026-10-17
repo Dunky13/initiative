@@ -244,16 +244,17 @@ async def install_refs(
 
 class PluginNameRefused(Exception):
     """A plug-in may not be given a new name in this community: it has no live
-    install here, or the community's request that it erase its data is not
-    finished. A name that already exists is still answered."""
+    install here, the community's request that it erase its data is not
+    finished, or the community is being purged. A name that already exists is
+    still answered."""
 
 
 def mint_guard(guild_id: int, public_id: str) -> Callable[[], Awaitable[None]]:
     """What ``identity_refs.ensure_ref`` runs before it mints a name in
     ``public_id``'s sector in the community: raises :class:`PluginNameRefused`
-    unless the community has a live install of the plug-in and no erase of it
-    is pending. Asked once however many names are minted with it, and only
-    when one is."""
+    unless the community has a live install of the plug-in, no erase of it is
+    pending, and no purge of the community has begun. Asked once however many
+    names are minted with it, and only when one is."""
     allowed: list[bool] = []
 
     async def check() -> None:
@@ -263,7 +264,7 @@ def mint_guard(guild_id: int, public_id: str) -> Callable[[], Awaitable[None]]:
             allowed.append(
                 await current_install_id(guild_id=guild_id, public_id=public_id)
                 is not None
-                and not await community_hooks.erase_pending(
+                and not await community_hooks.naming_closed(
                     guild_id=guild_id, public_id=public_id
                 )
             )

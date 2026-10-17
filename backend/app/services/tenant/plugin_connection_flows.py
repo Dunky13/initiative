@@ -27,9 +27,11 @@ Three things happen here and nowhere else:
   renews one; :func:`mint_jwt_bearer` mints a token for a connection that
   declares a ``jwt_bearer`` token, and caches it.
 * **Hooks.** :func:`call_hook` calls the plug-in at ``POST {base}/v1/hooks/{name}``
-  with a ``lifecycle`` context token naming the install and the hook. The hooks
-  about the community itself go through it too, queued and retried by
-  :mod:`app.services.marketplace.community_hooks`.
+  with a ``lifecycle`` context token naming the install and the hook. Only
+  :mod:`app.services.marketplace.community_hooks` calls it, under one lock per
+  community and plug-in: the hooks about the community, queued and retried, and
+  ``after_connect``, ``webhook`` and ``schedule``, sent at once by its
+  ``call_now``. A ``revoke`` rides that queue too (``plugin_revocation``).
 
 Every call to a vendor goes through the pinned egress helper, https only, with
 a timeout and a size cap. A call to the plug-in goes to its registration's
@@ -800,7 +802,10 @@ async def after_connect(
     access_token: str,
     params: Mapping[str, str],
 ) -> AfterConnect:
-    answer = await call_hook(
+    # Sent through the one door every hook goes through (community_hooks).
+    from app.services.marketplace import community_hooks
+
+    answer = await community_hooks.call_now(
         "after_connect",
         public_id=public_id,
         base_url=base_url,
@@ -1618,41 +1623,6 @@ async def revocation_sender(
 
         return send_grant_deletion
 
-    if method != "hook":
-        return None
-    registration = (await registration_lookup.load_registrations()).get(public_id)
-    if registration is None or not registration.base_url:
-        logger.info(
-            "plug-in credential revocation: %s is not registered here; dropped",
-            public_id,
-        )
-        return None
-    base_url = registration.base_url
-
-    async def send_hook() -> None:
-        try:
-            await _revoke_hook()
-        except HookNameRefused:
-            # The plug-in has no name for the community any more, so it holds
-            # nothing to let go under one.
-            logger.info(
-                "plug-in credential revocation: %s has no name in guild %s; dropped",
-                public_id,
-                guild_id,
-            )
-
-    async def _revoke_hook() -> None:
-        await call_hook(
-            "revoke",
-            public_id=public_id,
-            base_url=base_url,
-            guild_id=guild_id,
-            install_id=install_id,
-            body={
-                "connection": connection_id,
-                "access_token": tokens.get("access_token"),
-                "refresh_token": tokens.get("refresh_token"),
-            },
-        )
-
-    return send_hook
+    # ``hook`` rides the community-hook queue (``plugin_revocation``), and
+    # every other method sends nothing.
+    return None

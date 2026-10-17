@@ -692,6 +692,7 @@
   "EMAIL_OTP_CANNOT_SEND": "This server can't send email, so it can't send a code.",
   "EMAIL_OTP_NO_PROVED_ADDRESS": "Your account has no confirmed email address to send a code to.",
   "COMMUNITY_NOT_DELETED": "That community has not been deleted, so there is nothing to restore.",
+  "COMMUNITY_PURGE_STARTED": "That community is being purged. Its plug-ins have been asked to erase what they hold, so it can no longer be restored or changed.",
   "COMMUNITY_RESTORE_STATUS_INVALID": "Choose the state the community comes back in.",
   "COMMUNITY_RESTORE_SEAT_REQUIRED": "Choose who will run the community before restoring it.",
   "COMMUNITY_STATUS_NOT_SETTABLE": "A community is deleted from its own settings, not from here.",

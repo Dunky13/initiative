@@ -713,38 +713,264 @@ class TestErasing:
             not in plugin_refs._install_ref_cache
         )
 
-    async def test_a_purge_erase_that_is_answered_tells_the_issuer(
+
+async def _deleted(session: AsyncSession, guild_id: int) -> datetime:
+    """Delete the community, and answer a moment past its retention window."""
+    from app.models.platform.app_setting import DEFAULT_GUILD_RETENTION_DAYS
+    from app.models.platform.guild import Guild
+
+    await set_rls_context(session, Unattributed())
+    now = datetime.now(timezone.utc)
+    await session.exec(
+        update(Guild)
+        .where(Guild.id == guild_id)
+        .values(status=CommunityStatus.deleted.value, status_changed_at=now)
+    )
+    await session.commit()
+    return now + timedelta(days=DEFAULT_GUILD_RETENTION_DAYS, minutes=1)
+
+
+async def _purge(session: AsyncSession, when: datetime) -> int:
+    from app.services.platform import guild_purge
+
+    session.expunge_all()
+    return await guild_purge.purge_due_guilds(session, now=when)
+
+
+async def _standing(session: AsyncSession, guild_id: int):
+    """The community's row, or None once it is purged."""
+    from app.models.platform.guild import Guild
+
+    await set_rls_context(session, Unattributed())
+    row = (
+        await session.exec(
+            select(Guild)
+            .where(Guild.id == guild_id)
+            .execution_options(populate_existing=True)
+        )
+    ).first()
+    await session.commit()
+    return row
+
+
+async def _queue_revoke(guild_id: int, install_id: int) -> None:
+    from app.core.encryption import SALT_PLUGIN_CONFIG, encrypt_field
+
+    async with cohorts.system_session(guild_id) as routed:
+        await set_rls_context(routed, SystemGuild(guild_id))
+        await community_hooks.queue_community_hooks(
+            routed,
+            guild_id=guild_id,
+            public_id=PUBLIC_ID,
+            hooks=("revoke",),
+            install_id=install_id,
+            body={
+                "connection": "github",
+                "sealed_tokens": {
+                    "access_token": encrypt_field("gho_kept", SALT_PLUGIN_CONFIG)
+                },
+            },
+        )
+        await routed.commit()
+
+
+class TestPurging:
+    async def test_a_queued_revoke_goes_before_the_erase_and_the_row_after_both(
+        self, session, monkeypatch
+    ):
+        """A purge queues its erase behind what is waiting and keeps the
+        community until it is answered; the sweep, which still visits a
+        deleted community, sends them in order."""
+        _user, guild, install = await _setup(session)
+        guild_id = guild.id
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID
+        )
+        await _queue_revoke(guild_id, install.id)
+        plugins = _answering(monkeypatch, hooked=[204])
+        when = await _deleted(session, guild_id)
+
+        assert await _purge(session, when) == 0
+        standing = await _standing(session, guild_id)
+        assert standing is not None and standing.purge_started_at is not None
+        assert [row.hook for row in await _hooks(session, guild_id)] == [
+            "revoke",
+            "erase",
+        ]
+        assert plugins.calls == []
+
+        await sweep_timers.process_due_timers(outward=True)
+        assert plugins.paths() == ["/v1/hooks/revoke", "/v1/hooks/erase"]
+        assert plugins.calls[0][3]["access_token"] == "gho_kept"
+        assert await _standing(session, guild_id) is not None
+
+        assert await _purge(session, when) == 1
+        assert await _standing(session, guild_id) is None
+
+    async def test_a_plugin_that_is_down_keeps_the_community_until_it_is_given_up_on(
+        self, session, monkeypatch, capfd
+    ):
+        user, guild, _install = await _setup(session)
+        guild_id = guild.id
+        member = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID, user_id=user.id
+        )
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID
+        )
+        _answering(monkeypatch, hooked=[503])
+        monkeypatch.setattr(community_hooks, "MAX_ATTEMPTS", 2)
+        when = await _deleted(session, guild_id)
+
+        assert await _purge(session, when) == 0
+        await _visit(guild_id)
+        assert await _purge(session, when) == 0
+        assert await _standing(session, guild_id) is not None
+        assert await plugin_refs.resolve_plugin_ref(
+            session, ref=member, guild_id=guild_id
+        )
+
+        await _come_due(session, guild_id)
+        await _visit(guild_id)
+        (erase,) = await _hooks(session, guild_id)
+        assert erase.outcome == "gave_up"
+        assert (
+            await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild_id)
+            is None
+        )
+        (record,) = emitted(capfd, AuditEventType.PLUGIN_ERASE_ABANDONED)
+        assert record["guild_id"] == guild_id
+
+        assert await _purge(session, when) == 1
+        assert await _standing(session, guild_id) is None
+
+    async def test_an_answered_purge_erase_tells_the_issuer_while_the_row_stands(
         self, session, monkeypatch
     ):
         from app.services.marketplace import plugin_entitlements
 
         _user, guild, _install = await _setup(session)
+        guild_id = guild.id
         await plugin_refs.ensure_plugin_guild_ref(
-            guild_id=guild.id, public_id=PUBLIC_ID
+            guild_id=guild_id, public_id=PUBLIC_ID
         )
-        told: list[tuple[int, str]] = []
+        told: list[tuple[int, str, bool]] = []
 
         async def erased(guild_id: int, listing_uid: str) -> None:
-            told.append((guild_id, listing_uid))
+            standing = await _standing(session, guild_id)
+            told.append((guild_id, listing_uid, standing is not None))
 
         monkeypatch.setattr(plugin_entitlements, "erased", erased)
-        _answering(monkeypatch, hooked=[404])
+        _answering(monkeypatch, hooked=[204])
+        when = await _deleted(session, guild_id)
 
-        await community_hooks.erase_for_purge(guild.id)
+        await _purge(session, when)
+        await _visit(guild_id)
 
-        assert told == [(guild.id, LISTING_UID)]
+        assert told == [(guild_id, LISTING_UID, True)]
+        assert await _purge(session, when) == 1
 
-    async def test_a_purge_tells_every_plugin_holding_a_name_within_bounds(
+    async def test_a_community_being_purged_names_nobody_new_and_stays_gone(
+        self, session, client, acting_user, monkeypatch
+    ):
+        """Once its plug-ins are asked to erase it, nothing mints a name there,
+        nothing reaches the plug-in at once, and it cannot be restored."""
+        from app.core.messages import GuildMessages
+
+        operator = await acting_user("owner")
+        user, guild, install = await _setup(session)
+        guild_id = guild.id
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID
+        )
+        newcomer = await create_user(session)
+        plugins = _answering(monkeypatch, hooked=[503])
+        when = await _deleted(session, guild_id)
+        assert await _purge(session, when) == 0
+
+        with pytest.raises(plugin_refs.PluginNameRefused):
+            await plugin_refs.ensure_plugin_ref(
+                guild_id=guild_id, public_id=PUBLIC_ID, user_id=newcomer.id
+            )
+        with pytest.raises(plugin_connection_flows.HookNameRefused):
+            await community_hooks.call_now(
+                "webhook",
+                public_id=PUBLIC_ID,
+                base_url="https://hooked.example.test",
+                guild_id=guild_id,
+                install_id=install.id,
+                body={},
+            )
+        assert plugins.calls == []
+
+        response = await client.post(
+            f"/api/v1/settings/communities/{guild_id}/restore",
+            headers=operator.headers,
+            json={"status": "active"},
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == GuildMessages.COMMUNITY_PURGE_STARTED
+        from app.services.platform import guilds as guilds_service
+
+        await set_rls_context(session, Unattributed())
+        with pytest.raises(ValueError, match=GuildMessages.COMMUNITY_PURGE_STARTED):
+            await guilds_service.set_guild_status(
+                session, guild_id=guild_id, status=CommunityStatus.suspended
+            )
+        await session.rollback()
+
+
+class TestSendingAtOnce:
+    async def test_a_hook_sent_at_once_goes_and_answers(self, session, monkeypatch):
+        _user, guild, install = await _setup(session)
+        plugins = _answering(monkeypatch, hooked=[204])
+
+        await community_hooks.call_now(
+            "schedule",
+            public_id=PUBLIC_ID,
+            base_url="https://hooked.example.test",
+            guild_id=guild.id,
+            install_id=install.id,
+            body={"schedule": "nightly"},
+        )
+
+        ((_, path, claims, body),) = plugins.calls
+        assert (path, claims["hook"], body) == (
+            "/v1/hooks/schedule",
+            "schedule",
+            {"schedule": "nightly"},
+        )
+
+    async def test_nothing_goes_at_once_while_an_erase_waits(
         self, session, monkeypatch
     ):
-        _user, guild, _install = await _setup(session)
+        _user, guild, install = await _setup(session)
         await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        plugins = _answering(monkeypatch, hooked=[500])
+        plugins = _answering(monkeypatch, hooked=[204])
+        await _deliver(guild.id, hook="erase")
 
-        await community_hooks.erase_for_purge(guild.id)
+        with pytest.raises(plugin_connection_flows.HookNameRefused):
+            await community_hooks.call_now(
+                "webhook",
+                public_id=PUBLIC_ID,
+                base_url="https://hooked.example.test",
+                guild_id=guild.id,
+                install_id=install.id,
+                body={},
+            )
+        assert plugins.calls == []
 
-        assert plugins.paths() == ["/v1/hooks/erase"] * (
-            community_hooks.PURGE_ERASE_ATTEMPTS
-        )
+    async def test_only_an_answered_hook_is_sent_at_once(self, session):
+        _user, guild, install = await _setup(session)
+
+        with pytest.raises(community_hooks.UnknownCommunityHookError):
+            await community_hooks.call_now(
+                "erase",
+                public_id=PUBLIC_ID,
+                base_url="https://hooked.example.test",
+                guild_id=guild.id,
+                install_id=install.id,
+                body={},
+            )

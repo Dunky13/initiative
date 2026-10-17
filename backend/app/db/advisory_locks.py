@@ -126,6 +126,9 @@ class LockNamespace(IntEnum):
     APP_INSTALL = _tag(b"INST")
     #: Sending one community's hooks to its plug-ins, keyed by the community.
     PLUGIN_HOOKS = _tag(b"PHOK")
+    #: Sending a hook to one plug-in about one community, keyed by both: the
+    #: one door every hook to a plug-in goes through (``community_hooks``).
+    PLUGIN_HOOK_SEND = _tag(b"PHSN")
 
 
 def _text_key(text: str) -> int:

@@ -692,6 +692,7 @@
   "EMAIL_OTP_CANNOT_SEND": "Dieser Server kann keine E-Mails senden und daher auch keinen Code.",
   "EMAIL_OTP_NO_PROVED_ADDRESS": "Dein Konto hat keine bestätigte E-Mail-Adresse, an die ein Code gehen könnte.",
   "COMMUNITY_NOT_DELETED": "Diese Community wurde nicht gelöscht, es gibt also nichts wiederherzustellen.",
+  "COMMUNITY_PURGE_STARTED": "Diese Community wird endgültig entfernt. Ihre Plug-ins wurden gebeten, ihre Daten zu löschen, daher kann sie nicht mehr wiederhergestellt oder geändert werden.",
   "COMMUNITY_RESTORE_STATUS_INVALID": "Wählen Sie den Zustand, in dem die Community zurückkommt.",
   "COMMUNITY_RESTORE_SEAT_REQUIRED": "Wählen Sie vor dem Wiederherstellen, wer die Community leiten wird.",
   "COMMUNITY_STATUS_NOT_SETTABLE": "Eine Community wird in ihren eigenen Einstellungen gelöscht, nicht hier.",

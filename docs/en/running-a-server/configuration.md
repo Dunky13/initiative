@@ -130,6 +130,8 @@ Deleting an account or a community hides it immediately and erases it later. How
 
 Leave any of them blank and **nothing happens on a timer** — the right answer for a deployment required to keep records rather than shed them. Each is counted from the moment each thing was deleted or put on hold, so changing the number moves the date for things already in the queue.
 
+When a community's window ends, its plug-ins are asked to erase what they hold about it first, and it's destroyed once each has answered. A plug-in that doesn't answer is asked again for a few days and then given up on, so a purge can take up to about four days past the window. From the moment they're asked, the community can't be restored or have its status changed.
+
 A restored community reconnects its installed plug-ins itself. It authorised those connections in the first place, so it authorises them again.
 
 ## Running behind a reverse proxy

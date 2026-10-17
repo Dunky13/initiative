@@ -1471,9 +1471,14 @@ async def set_guild_status(
     reaches it — a guild's own admins must never flip their guild's status. On a
     real transition it stamps ``status_changed_at``; a no-op change is left
     untouched. Enforcement of the status lives in the request path
-    (``_load_guild_context`` + session routing), not here.
+    (``_load_guild_context`` + session routing), not here. Raises
+    ``ValueError(COMMUNITY_PURGE_STARTED)`` for a community whose purge has
+    begun.
     """
     guild = await get_guild(session, guild_id=guild_id)
+    if guild.status != status.value and guild.purge_started_at is not None:
+        # Its plug-ins have been asked to erase it: it can only finish going.
+        raise ValueError(GuildMessages.COMMUNITY_PURGE_STARTED)
     if guild.status != status.value:
         # A suspension remembers where it began, so lifting it can go back;
         # any other move leaves nothing to go back to.
@@ -2264,6 +2269,9 @@ async def restore_guild(
     guild = await get_guild(session, guild_id=guild_id)
     if guild.status != CommunityStatus.deleted.value:
         raise ValueError(GuildMessages.COMMUNITY_NOT_DELETED)
+    if guild.purge_started_at is not None:
+        # Its plug-ins have been asked to erase it: it can only finish going.
+        raise ValueError(GuildMessages.COMMUNITY_PURGE_STARTED)
     if status == CommunityStatus.deleted:
         raise ValueError(GuildMessages.COMMUNITY_RESTORE_STATUS_INVALID)
     if billing_service.billing_managed():

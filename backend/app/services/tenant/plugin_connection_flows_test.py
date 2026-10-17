@@ -1299,10 +1299,14 @@ class TestRevocation:
             a.g(f"/plugins/{plugin.id}/connections/hooked"), headers=a.headers
         )
         await post_commit.settle_all()
-
         assert response.status_code == 204
-        name, body, authorization = vendor.hooks[-1]
-        assert name == "revoke"
+        from app.services import sweep_timers
+
+        # Written to the plug-in's hook queue with the delete, and sent by it.
+        assert [hook for hook in vendor.hooks if hook[0] == "revoke"] == []
+        await sweep_timers.process_due_timers(outward=True)
+
+        name, body, authorization = next(h for h in vendor.hooks if h[0] == "revoke")
         assert body == {
             "connection": "hooked",
             "access_token": "gho_stored",
@@ -1373,11 +1377,12 @@ class TestRevocation:
         revoke = (await rows())[0]
         assert revoke.done_at is not None and revoke.body == {}
 
-    async def test_a_revocation_after_the_erase_names_nobody(
+    async def test_a_hook_after_the_install_has_gone_names_nobody(
         self, acting_user, session, vendor, registration
     ):
-        """Once the plug-in's names are erased and its install is gone, a late
-        revocation finds no name for the community and mints none."""
+        """Once the plug-in's install is gone, a hook finds no name for the
+        community and mints none, so a revocation still queued behind an erase
+        is settled without bringing one back."""
         from app.models.platform.identity_ref import IdentityRef
         from app.db.request_context import Unattributed
 

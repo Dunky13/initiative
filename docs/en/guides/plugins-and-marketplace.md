@@ -139,7 +139,7 @@ Each connection shows which service it uses and what it's allowed to do there, s
     - The plug-in is told it was removed, and what it keeps about your community stays with it. It never learns your members' names or accounts, only a name of its own for each of them, and those names stay the same: add it back later and it recognises your community and its members, and picks up where it left off.
 - **Remove and erase its data** does all of that and also asks the plug-in to delete everything it holds about your community. Once it has, its names for your community and its members are forgotten, and adding it back starts afresh. Until then it can't be added back. A plug-in that never answers is given a few days, and then its names are forgotten anyway. Only the community's admins can erase, and a plug-in that comes with your server can't be removed or erased.
 
-A plug-in is also told when your community's standing changes, for instance when it is put on hold, and pauses its own work until the community is back. When a community is deleted for good, every plug-in that knew it is asked to erase what it holds first.
+A plug-in is also told when your community's standing changes, for instance when it is put on hold, and pauses its own work until the community is back. When a community is deleted for good, every plug-in that knew it is asked to erase what it holds first, and the community is destroyed once each has answered or been given up on.
 
 ## Your own marketplace
 

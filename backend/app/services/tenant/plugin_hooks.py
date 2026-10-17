@@ -58,7 +58,12 @@ from app.models.tenant.plugin_hook_delivery import (
     PluginHookDelivery,
 )
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import plugin_installs, declarative, registration_lookup
+from app.services.marketplace import (
+    community_hooks,
+    declarative,
+    plugin_installs,
+    registration_lookup,
+)
 from app.services.marketplace.expressions import ExpressionError
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
@@ -291,7 +296,7 @@ async def _forward(
     """A container's install: the delivery goes to its ``webhook`` hook, as
     its pinned ``webhooks`` describe it."""
     try:
-        await flows.call_hook(
+        await community_hooks.call_now(
             "webhook",
             public_id=registration.public_id,
             base_url=registration.base_url,

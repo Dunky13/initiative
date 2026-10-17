@@ -19,6 +19,15 @@ rather than to one of its connections:
 ``lifecycle`` context token with ``hook=<name>``, posted to the plug-in's
 ``/v1/hooks/<name>`` by ``plugin_connection_flows.call_hook``.
 
+**One sender.** This module is the only caller of ``call_hook``, and every
+hook to a plug-in about a community is sent under one lock, keyed by both
+(``LockNamespace.PLUGIN_HOOK_SEND``): the queue's delivery below, and
+:func:`call_now` for the three hooks whose caller is waiting on the answer
+(:data:`ANSWERED_HOOK_NAMES`). So nothing reaches a plug-in after its
+``erase``: :func:`call_now` refuses while one is waiting, and once it is
+finished the names it dropped are not minted again (``plugin_refs.mint_guard``).
+A test reads the code to hold this (``one_sender_test``).
+
 **How to send one.** :func:`queue_community_hooks` writes hooks in the caller's
 own transaction, so a rollback sends nothing; :func:`deliver_community_hook`
 writes one from outside any, in a transaction of its own. Each hook is a row in
@@ -55,9 +64,14 @@ One given up on drops them all the same, since erasing is the community's
 request, and goes on the audit stream (``plugin.erase_abandoned``). While an
 erase is unfinished the plug-in cannot be installed again (:func:`erase_pending`).
 The row names no install by foreign key, so an ``uninstalled`` or ``erase`` is
-retried after the install row is gone. A purged community's rows go with its
-``guilds`` row; the purge sends its own ``erase`` first
-(:func:`erase_for_purge`), with a bounded number of tries.
+retried after the install row is gone.
+
+**A purge.** A purge queues ``erase`` for every plug-in holding references in
+the community, behind whatever each already has waiting
+(:func:`queue_purge_erases`), and deletes the community only once it has no
+hook unfinished (:func:`hooks_unfinished`); its rows then go with its
+``guilds`` row. An erase answered then is reported to the entitlement issuer
+like any other, while billing's name for the community still stands.
 
 **Statuses.** A change of a community's status arms its ``plugin_hooks`` timer
 (:func:`status_changed`). The visit compares each enabled install's
@@ -72,7 +86,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -104,11 +118,15 @@ __all__ = [
     "KIND",
     "LATEST_WINS",
     "MAX_ATTEMPTS",
+    "ANSWERED_HOOK_NAMES",
+    "call_now",
     "deliver_community_hook",
     "due_outside",
-    "erase_for_purge",
     "erase_pending",
+    "hooks_unfinished",
+    "naming_closed",
     "queue_community_hooks",
+    "queue_purge_erases",
     "status_changed",
     "visit",
 ]
@@ -126,6 +144,13 @@ COMMUNITY_HOOK_NAMES: frozenset[str] = frozenset(
     | {"revoke"}
 )
 
+#: Hooks whose caller waits on the plug-in's answer, so they are sent at once
+#: (:func:`call_now`) rather than queued: a connection being made, a vendor's
+#: delivery, and a schedule's run.
+ANSWERED_HOOK_NAMES: frozenset[str] = frozenset(
+    {"after_connect", "webhook", "schedule"}
+)
+
 #: Hooks that state where something stands now, so a newer one replaces one
 #: still waiting rather than following it.
 LATEST_WINS: frozenset[str] = frozenset({"community_status", "entitlement"})
@@ -138,9 +163,6 @@ MAX_ATTEMPTS = 20
 
 #: How long an answered hook is kept, for an operator reading the table.
 DONE_RETENTION = timedelta(days=7)
-
-#: Tries a purge gives each plug-in's ``erase`` before it carries on.
-PURGE_ERASE_ATTEMPTS = 2
 
 _TABLE: Any = PluginCommunityHook.__table__  # type: ignore[attr-defined]
 
@@ -161,6 +183,14 @@ async def _container(public_id: str) -> Optional[RegistrationSnapshot]:
     if registration is None or registration.declarative:
         return None
     return registration
+
+
+async def _hold_plugin(session: AsyncSession, guild_id: int, public_id: str) -> None:
+    """Take the lock every hook to ``public_id`` about the community is sent
+    under, for the rest of ``session``'s transaction."""
+    await advisory_lock(
+        session, LockNamespace.PLUGIN_HOOK_SEND, f"{guild_id}:{public_id}"
+    )
 
 
 def _row(
@@ -302,6 +332,7 @@ JOIN public.guilds g ON g.id = i.guild_id
 WHERE i.guild_id = :guild
   AND i.enabled
   AND i.community_status_sent IS DISTINCT FROM g.status
+  AND g.purge_started_at IS NULL
 """
 )
 
@@ -595,6 +626,9 @@ async def _deliver_plugin(
                 continue
             if row.next_attempt_at > now:
                 return
+            # Held from the send until _settle commits how it ended, so a hook
+            # sent at once never goes between an erase and its dropped names.
+            await _hold_plugin(session, guild_id, row.public_id)
             sent: Optional[dict[str, Any]] = None
             try:
                 sent = await _current_body(row.hook, guild_id, row.public_id, row.body)
@@ -621,21 +655,82 @@ async def _deliver_plugin(
                 return
 
 
+def _erase_waiting(guild_id: int, public_id: str) -> Any:
+    return (
+        select(PluginCommunityHook.id)
+        .where(
+            PluginCommunityHook.guild_id == guild_id,
+            PluginCommunityHook.public_id == public_id,
+            PluginCommunityHook.hook == "erase",
+            col(PluginCommunityHook.done_at).is_(None),
+        )
+        .exists()
+    )
+
+
 async def erase_pending(*, guild_id: int, public_id: str) -> bool:
     """Whether the community asked ``public_id`` to erase its data and that
     erase is not finished: neither answered nor given up on."""
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
-        return (
-            await session.exec(
-                select(PluginCommunityHook.id).where(
-                    PluginCommunityHook.guild_id == guild_id,
-                    PluginCommunityHook.public_id == public_id,
-                    PluginCommunityHook.hook == "erase",
-                    col(PluginCommunityHook.done_at).is_(None),
+        return bool(
+            (await session.exec(select(_erase_waiting(guild_id, public_id)))).one()
+        )
+
+
+async def naming_closed(*, guild_id: int, public_id: str) -> bool:
+    """Whether ``public_id`` may not be given a new name in the community: an
+    erase of it is waiting, or the community's purge has begun."""
+    from app.models.platform.guild import Guild
+
+    purging = (
+        select(Guild.id)
+        .where(Guild.id == guild_id, col(Guild.purge_started_at).is_not(None))
+        .exists()
+    )
+    async with db_session.SystemSessionLocal() as session:
+        await db_session.set_rls_context(session, Unattributed())
+        return bool(
+            (
+                await session.exec(
+                    select(_erase_waiting(guild_id, public_id) | purging)
                 )
+            ).one()
+        )
+
+
+async def call_now(
+    hook: str,
+    *,
+    public_id: str,
+    base_url: str,
+    guild_id: int,
+    install_id: int,
+    body: Mapping[str, Any],
+) -> Optional[Any]:
+    """Send one of :data:`ANSWERED_HOOK_NAMES` now and return the plug-in's
+    answer, under the lock the queue sends under. Raises what ``call_hook``
+    raises, and ``HookNameRefused`` without sending while an ``erase`` of the
+    plug-in is waiting in the community: nothing goes after it."""
+    from app.services.tenant import plugin_connection_flows as flows
+
+    if hook not in ANSWERED_HOOK_NAMES:
+        raise UnknownCommunityHookError(f"not a hook sent at once: {hook!r}")
+    async with db_session.SystemSessionLocal() as session:
+        await db_session.set_rls_context(session, Unattributed())
+        await _hold_plugin(session, guild_id, public_id)
+        if (await session.exec(select(_erase_waiting(guild_id, public_id)))).one():
+            raise flows.HookNameRefused(
+                f"hook {hook}: {public_id} is being erased in guild {guild_id}"
             )
-        ).first() is not None
+        return await flows.call_hook(
+            hook,
+            public_id=public_id,
+            base_url=base_url,
+            guild_id=guild_id,
+            install_id=install_id,
+            body=body,
+        )
 
 
 def _effective(
@@ -767,72 +862,39 @@ async def due_outside(guild_id: int, now: datetime) -> Optional[datetime]:
 # --- a purge -------------------------------------------------------------------
 
 
-async def _indexed_installs(guild_id: int) -> dict[str, int]:
-    """The community's installs, by listing, from the install index."""
-    async with db_session.SystemSessionLocal() as session:
-        await db_session.set_rls_context(session, Unattributed())
-        rows = (
+async def queue_purge_erases(session: AsyncSession, *, guild_id: int) -> int:
+    """A purge's first step, on its own transaction: queue ``erase`` for each
+    plug-in holding references in the community with none waiting, behind
+    whatever that plug-in already has queued. Returns how many were queued.
+
+    Asked again on every pass until the community is deleted, so a name minted
+    before the purge was marked is erased too."""
+    holding = await plugin_refs.plugins_with_refs(guild_id=guild_id)
+    queued = 0
+    for public_id in holding:
+        if (await session.exec(select(_erase_waiting(guild_id, public_id)))).one():
+            continue
+        if await queue_community_hooks(
+            session, guild_id=guild_id, public_id=public_id, hooks=("erase",)
+        ):
+            queued += 1
+    return queued
+
+
+async def hooks_unfinished(session: AsyncSession, *, guild_id: int) -> bool:
+    """Whether the community has a hook neither answered nor given up on,
+    which keeps a purge from deleting it."""
+    return bool(
+        (
             await session.exec(
-                select(PluginInstall.listing_uid, PluginInstall.install_id).where(
-                    PluginInstall.guild_id == guild_id
+                select(
+                    select(PluginCommunityHook.id)
+                    .where(
+                        PluginCommunityHook.guild_id == guild_id,
+                        col(PluginCommunityHook.done_at).is_(None),
+                    )
+                    .exists()
                 )
             )
-        ).all()
-    return {str(listing): int(install) for listing, install in rows}
-
-
-async def erase_for_purge(guild_id: int, *, public_ids: Iterable[str] = ()) -> None:
-    """Tell every plug-in holding references in a community about to be purged
-    to erase what it holds, before they are dropped.
-
-    Best-effort and bounded: each plug-in is tried :data:`PURGE_ERASE_ATTEMPTS`
-    times, all of them at once, and the purge goes ahead whatever they answer.
-    ``public_ids`` adds plug-ins to tell beside those holding references.
-    Never raises.
-    """
-    try:
-        holding = set(await plugin_refs.plugins_with_refs(guild_id=guild_id))
-        holding.update(public_ids)
-        if not holding:
-            return
-        installs = await _indexed_installs(guild_id)
-        registrations = await registration_lookup.load_registrations()
-    except Exception:
-        logger.exception("community hooks: purge of guild %s told nobody", guild_id)
-        return
-
-    async def tell(public_id: str) -> None:
-        registration = registrations.get(public_id)
-        install_id = (
-            installs.get(registration.listing_uid or "")
-            if registration is not None
-            else None
-        )
-        for _ in range(PURGE_ERASE_ATTEMPTS):
-            try:
-                outcome = await _send(
-                    hook="erase",
-                    guild_id=guild_id,
-                    public_id=public_id,
-                    install_id=install_id or 0,
-                    body={},
-                )
-            except Exception:
-                logger.exception(
-                    "community hooks: erase for %s in purged guild %s failed",
-                    public_id,
-                    guild_id,
-                )
-                continue
-            if outcome.outcome is not None:
-                # Told while the community's row, and billing's name for it,
-                # still stand.
-                await _report_erased(guild_id, public_id)
-                return
-        logger.warning(
-            "community hooks: %s did not answer erase for purged guild %s",
-            public_id,
-            guild_id,
-        )
-
-    await asyncio.gather(*(tell(public_id) for public_id in sorted(holding)))
+        ).one()
+    )

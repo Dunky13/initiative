@@ -1,6 +1,6 @@
 """a plug-in's names outlast its install
 
-Three changes, one for each half of a plug-in's place in a community.
+Four changes, for a plug-in's place in a community and how it leaves one.
 
 ``identity_refs`` names a ``plugin`` sector by the plug-in rather than by the
 install: ``sector_plugin`` holds the registration's ``public_id`` beside
@@ -25,6 +25,11 @@ rest. The login role and the platform floor, which the schema default grants
 full DML on a new table, are revoked; the seat and install floors take no
 default privileges and are granted nothing. Row security is enabled and
 forced. It is new and has nothing to carry, so it is created and then locked.
+
+``guilds`` gains ``purge_started_at``: set when a purge has asked the
+community's plug-ins to erase what they hold, and the row is deleted once each
+has answered or been given up on. NULL for every community today, since no
+purge has started under this rule.
 
 Revision ID: 20261016_0515
 Revises: 20261016_0514
@@ -95,6 +100,10 @@ def upgrade() -> None:
         "plugin_installs",
         sa.Column("community_status_sent", sa.String(length=16), nullable=True),
     )
+    op.add_column(
+        "guilds",
+        sa.Column("purge_started_at", sa.DateTime(timezone=True), nullable=True),
+    )
 
     op.create_table(
         HOOKS,
@@ -147,6 +156,7 @@ def downgrade() -> None:
     op.drop_index("ix_plugin_community_hooks_pending", table_name=HOOKS)
     op.drop_table(HOOKS)
 
+    op.drop_column("guilds", "purge_started_at")
     op.drop_column("plugin_installs", "community_status_sent")
 
     # The plug-in rows name no install, so they cannot go back into the old

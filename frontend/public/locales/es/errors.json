@@ -692,6 +692,7 @@
   "EMAIL_OTP_CANNOT_SEND": "Este servidor no puede enviar correo, así que no puede enviar un código.",
   "EMAIL_OTP_NO_PROVED_ADDRESS": "Tu cuenta no tiene ninguna dirección de correo confirmada a la que enviar un código.",
   "COMMUNITY_NOT_DELETED": "Esa comunidad no se ha eliminado, así que no hay nada que restaurar.",
+  "COMMUNITY_PURGE_STARTED": "Esa comunidad se está purgando. Se ha pedido a sus complementos que borren lo que guardan, así que ya no se puede restaurar ni cambiar.",
   "COMMUNITY_RESTORE_STATUS_INVALID": "Elige el estado en el que vuelve la comunidad.",
   "COMMUNITY_RESTORE_SEAT_REQUIRED": "Elige quién dirigirá la comunidad antes de restaurarla.",
   "COMMUNITY_STATUS_NOT_SETTABLE": "Una comunidad se elimina desde sus propios ajustes, no desde aquí.",

@@ -73,7 +73,6 @@ from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant import webhook_subscriptions as webhook_subscriptions_service
-from app.services.tenant import plugin_revocation
 from app.services.tenant.plugin_revocation import queue_install_revocations
 from app.services.tenant.soft_delete import soft_delete_entity
 
@@ -495,16 +494,14 @@ async def uninstall_plugin(
         session, guild_id=guild_id, plugin_install_id=plugin.id
     )
     secrets = await load_secrets(session, plugin)
-    queue_install_revocations(
+    # The revocations to the plug-in itself are written to its hook queue
+    # here, ahead of the uninstalled and erase below.
+    await queue_install_revocations(
         session,
         plugin,
         {*(plugin.config or {}), *secrets},
         secrets=secrets,
         reason="uninstalled",
-    )
-    # The revocations to the plug-in itself go first on its hook queue.
-    await plugin_revocation.queue_hook_revocations(
-        session, guild_id=guild_id, plugin_id=plugin.id
     )
     for artifact in await plugin_artifacts(session, plugin):
         await ARTIFACT_HANDLERS[artifact["type"]].remove(
@@ -568,7 +565,7 @@ async def clear_static_connection(
     """
     secrets = await load_secrets(session, plugin)
     if (plugin.config or {}).get(connection_id) or secrets.get(connection_id):
-        queue_install_revocations(
+        await queue_install_revocations(
             session, plugin, [connection_id], secrets=secrets, reason="disconnected"
         )
     plugin.config = {

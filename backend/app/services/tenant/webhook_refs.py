@@ -25,7 +25,9 @@ guild role and a request handler doing the same.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
+
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import session as db_session
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
@@ -107,14 +109,14 @@ async def names_for_subscribers(
 
 
 async def _named_in(
-    session,
+    session: AsyncSession,
     *,
     guild_id: int,
     purpose: IdentityPurpose,
     actor_ids: Collection[int],
     sector_id: int | None = None,
     sector_plugin: str | None = None,
-    before_mint=None,
+    before_mint: Callable[[], Awaitable[None]] | None = None,
 ) -> tuple[str, dict[int, str]]:
     """The guild's and each actor's names in one sector, minted on first use."""
     guild_ref = await identity_refs.ensure_ref(
