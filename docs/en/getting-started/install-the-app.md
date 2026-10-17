@@ -47,6 +47,21 @@ The apps only talk to servers on a secure `https://` address. A server on plain 
 
 Either way Android will check that you meant to install something from outside the Play Store. You did. Allow it for whichever app is doing the installing.
 
+### Share things into it
+
+Found the venue's address in a message, a photo of the broken urn, the PDF of last year's minutes, a link to the cheapest bunting in the county? Share it from that app and pick **Initiative** in the share sheet. It asks what the thing should become:
+
+| Pick | And it becomes |
+|---|---|
+| **Task** | A task in whichever project you choose, with the text in its description and the pictures below it |
+| **Document** | A new document, links clickable, pictures in place |
+| **File** | The files themselves, uploaded as they are, each under a name you can change |
+| **Post** | A post on an initiative's board |
+
+Then where it goes, then one last look at what it'll be called before it's made. The place you shared to last time sits at the top of the list, so the next one is quicker.
+
+Not signed in yet? Sign in and the share is waiting on the other side.
+
 ### It keeps itself current
 
 When your community's server moves to a new version, the app fetches the matching update in the background and offers to reload. Most of the time, that's the whole story.

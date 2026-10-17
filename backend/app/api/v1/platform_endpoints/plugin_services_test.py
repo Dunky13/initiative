@@ -14,8 +14,8 @@ from typing import Any
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
-from jwt.algorithms import OKPAlgorithm
 from httpx import AsyncClient
+from jwt.algorithms import OKPAlgorithm
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.audit_events import AuditEventType
@@ -37,18 +37,6 @@ from app.testing.factories import (
     create_user,
     get_auth_headers,
 )
-
-
-#: A plug-in's keys are Ed25519, the only kind its registration takes.
-IDP_KEY = ed25519.Ed25519PrivateKey.generate()
-OTHER_KEY = ed25519.Ed25519PrivateKey.generate()
-
-
-def jwks_doc(priv=IDP_KEY, kid: str = "k1") -> dict:
-    """A plug-in's published key set: one Ed25519 key under ``kid``."""
-    entry = json.loads(OKPAlgorithm.to_jwk(priv.public_key()))
-    entry.update({"kid": kid, "alg": "EdDSA", "use": "sig"})
-    return {"keys": [entry]}
 
 
 BASE = "/api/v1/plugin-services/"
@@ -239,12 +227,25 @@ async def test_the_key_set_address_round_trips(
     assert elsewhere.json()["detail"] == PluginServiceMessages.INVALID_JWKS_URI
 
 
+#: The plug-in's signing key, and the one it moves to: Ed25519, the one kind a
+#: plug-in may sign with.
+_PLUGIN_KEY = ed25519.Ed25519PrivateKey.generate()
+_MOVED_KEY = ed25519.Ed25519PrivateKey.generate()
+
+
+def _key_set(key: ed25519.Ed25519PrivateKey, kid: str) -> dict:
+    """A key set publishing ``key`` under ``kid``."""
+    entry = json.loads(OKPAlgorithm.to_jwk(key.public_key()))
+    entry["kid"] = kid
+    return {"keys": [entry]}
+
+
 async def test_connect_pins_the_key_set_the_operator_confirmed(
     client: AsyncClient, session: AsyncSession, acting_user, monkeypatch, capfd
 ):
     owner = await acting_user()
     row = await _seed(session, jwks={})
-    served = [jwks_doc(IDP_KEY, kid="acme.widgets-1")]
+    served = [_key_set(_PLUGIN_KEY, kid="acme.widgets-1")]
     fetched: list[str] = []
 
     def answer(request: httpx.Request) -> httpx.Response:
@@ -281,7 +282,7 @@ async def test_connect_pins_the_key_set_the_operator_confirmed(
     assert record["detail"]["changed"] == ["jwks"]
 
     # The plug-in's set moves: nothing follows it until the operator connects again.
-    served[0] = jwks_doc(OTHER_KEY, kid="acme.widgets-1")
+    served[0] = _key_set(_MOVED_KEY, kid="acme.widgets-1")
     stale = await client.post(
         f"{BASE}{row.id}/connect",
         headers=owner.headers,
@@ -290,7 +291,7 @@ async def test_connect_pins_the_key_set_the_operator_confirmed(
     assert stale.status_code == 409
     assert stale.json()["detail"] == PluginServiceMessages.KEYS_CHANGED
     listed = await _listed(client, owner.headers, row.id)
-    assert listed["jwks"] == jwks_doc(IDP_KEY, kid="acme.widgets-1")
+    assert listed["jwks"] == _key_set(_PLUGIN_KEY, kid="acme.widgets-1")
 
 
 # --- operator-conferred fields ------------------------------------------------

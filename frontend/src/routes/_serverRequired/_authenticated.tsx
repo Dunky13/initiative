@@ -51,6 +51,7 @@ import {
   useClearRecentViews,
   useRecents,
 } from "@/hooks/useRecents";
+import { useResumePendingShare } from "@/hooks/useShareTarget";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { isJustSignedIn } from "@/lib/authTransition";
 import { chooseNoCommunityLayout } from "@/lib/noCommunityLayout";
@@ -134,6 +135,8 @@ function AppLayout() {
   usePushNotifications();
   useDesktopApp();
   useBackButton();
+  // A share that arrived signed out is waiting at the end of signing in.
+  useResumePendingShare();
   // Mail is fetched wherever you are, so a message that arrives while you are
   // on another page is noticed rather than waiting to be discovered. Only for a
   // browser that has already been set up for messages — this never sets one up.

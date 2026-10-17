@@ -1,0 +1,56 @@
+{
+  "title": "Mit Initiative teilen",
+  "chooseKind": "Was soll daraus werden?",
+  "cancel": "Abbrechen",
+  "fallbackTitle": "Geteiltes Bild",
+  "fallbackFileTitle": "Geteilte Datei",
+  "pictures_one": "{{count}} Bild",
+  "pictures_other": "{{count}} Bilder",
+  "files_one": "{{count}} Datei",
+  "files_other": "{{count}} Dateien",
+  "kinds": {
+    "task": {
+      "label": "Aufgabe",
+      "description": "Zu einem Projekt hinzufügen"
+    },
+    "file": {
+      "label": "Dokument",
+      "description": "Ein Dokument darum schreiben"
+    },
+    "upload": {
+      "label": "Datei",
+      "description": "So hochladen, wie es ist"
+    },
+    "post": {
+      "label": "Beitrag",
+      "description": "An die Pinnwand einer Initiative heften"
+    }
+  },
+  "createWizard": {
+    "title": "Mit Initiative teilen",
+    "selectCommunity": "Community auswählen",
+    "selectInitiative": "Initiative auswählen",
+    "selectProject": "Projekt auswählen",
+    "noInitiatives": "Hier gibt es keine Initiativen, zu denen du das hinzufügen kannst.",
+    "lastUsed": "Zuletzt verwendet",
+    "back": "Zurück"
+  },
+  "compose": {
+    "title": "Titel",
+    "note": "Notiz",
+    "notePlaceholder": "Notiz hinzufügen (optional)",
+    "fileName": "Name für {{name}}",
+    "remove": "{{name}} entfernen",
+    "filesLeftOut_one": "{{count}} Datei ist kein Bild und bleibt draußen. Wähle Datei, um sie hochzuladen.",
+    "filesLeftOut_other": "{{count}} Dateien sind keine Bilder und bleiben draußen. Wähle Datei, um sie hochzuladen.",
+    "creating": "Wird geteilt…",
+    "upload_one": "Datei hochladen",
+    "upload_other": "{{count}} Dateien hochladen",
+    "create": {
+      "task": "Aufgabe erstellen",
+      "file": "Dokument erstellen",
+      "post": "Veröffentlichen"
+    }
+  },
+  "createError": "Das konnte nicht geteilt werden. Versuche es erneut."
+}

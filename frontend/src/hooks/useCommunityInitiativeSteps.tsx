@@ -35,7 +35,7 @@ interface Options<Next extends string> {
   authors: Tool | null;
   /** The place last used, offered above the community list. */
   shortcut: { title: string; subtitle: string; onClick: () => void } | null;
-  onInitiative: (community: Choice, initiative: Choice) => void;
+  onInitiative?: (community: Choice, initiative: Choice) => void;
   /** The wizard's own step after these two, if it has one. */
   next?: { step: Next; description: string };
   /** Drawn at the end of each initiative's row. */
@@ -99,7 +99,7 @@ export function useCommunityInitiativeSteps<Next extends string = never>({
     (choice: Choice) => {
       if (!community) return;
       setInitiative(choice);
-      onInitiative(community, choice);
+      onInitiative?.(community, choice);
       if (nextStep) go(nextStep);
     },
     [community, onInitiative, nextStep, go]

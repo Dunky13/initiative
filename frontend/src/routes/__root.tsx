@@ -13,6 +13,7 @@ import { useDeepLinks } from "@/hooks/useDeepLinks";
 import { useDesktopTray } from "@/hooks/useDesktopApp";
 import { useInterfaceColors } from "@/hooks/useInterfaceColors";
 import { useSafeArea } from "@/hooks/useSafeArea";
+import { useShareTarget } from "@/hooks/useShareTarget";
 import { useTimeFormatSync } from "@/hooks/useTimeFormat";
 import type { RouterContext } from "@/router";
 
@@ -36,6 +37,7 @@ const RootComponent = () => {
   useAnalytics();
   useSafeArea();
   useDeepLinks();
+  useShareTarget();
   useDesktopTray();
   useTimeFormatSync();
 

@@ -4,7 +4,7 @@ import PackageDescription
 // DO NOT MODIFY THIS FILE - managed by Capacitor CLI commands
 let package = Package(
     name: "CapApp-SPM",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(
             name: "CapApp-SPM",
@@ -24,6 +24,7 @@ let package = Package(
         .package(name: "CapacitorPushNotifications", path: "../../../node_modules/.pnpm/@capacitor+push-notifications@8.1.3_@capacitor+core@8.5.3/node_modules/@capacitor/push-notifications"),
         .package(name: "CapacitorSplashScreen", path: "../../../node_modules/.pnpm/@capacitor+splash-screen@8.0.2_@capacitor+core@8.5.3/node_modules/@capacitor/splash-screen"),
         .package(name: "CapawesomeCapacitorPasskeys", path: "../../../node_modules/.pnpm/@capawesome+capacitor-passkeys@0.1.2_@capacitor+core@8.5.3/node_modules/@capawesome/capacitor-passkeys"),
+        .package(name: "CapgoCapacitorShareTarget", path: "../../../node_modules/.pnpm/@capgo+capacitor-share-target@8.0.62_@capacitor+core@8.5.3/node_modules/@capgo/capacitor-share-target"),
         .package(name: "CapgoCapacitorUpdater", path: "../../../node_modules/.pnpm/@capgo+capacitor-updater@8.51.15_@capacitor+core@8.5.3/node_modules/@capgo/capacitor-updater")
     ],
     targets: [
@@ -44,6 +45,7 @@ let package = Package(
                 .product(name: "CapacitorPushNotifications", package: "CapacitorPushNotifications"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapawesomeCapacitorPasskeys", package: "CapawesomeCapacitorPasskeys"),
+                .product(name: "CapgoCapacitorShareTarget", package: "CapgoCapacitorShareTarget"),
                 .product(name: "CapgoCapacitorUpdater", package: "CapgoCapacitorUpdater")
             ]
         )

@@ -39,6 +39,7 @@ import type queues from "../../public/locales/en/queues.json";
 import type relations from "../../public/locales/en/relations.json";
 import type search from "../../public/locales/en/search.json";
 import type settings from "../../public/locales/en/settings.json";
+import type share from "../../public/locales/en/share.json";
 import type stats from "../../public/locales/en/stats.json";
 import type tags from "../../public/locales/en/tags.json";
 import type tasks from "../../public/locales/en/tasks.json";
@@ -92,6 +93,7 @@ declare module "i18next" {
       relations: typeof relations;
       search: typeof search;
       settings: typeof settings;
+      share: typeof share;
       stats: typeof stats;
       tags: typeof tags;
       tasks: typeof tasks;

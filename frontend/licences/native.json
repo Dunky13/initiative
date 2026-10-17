@@ -66,6 +66,10 @@
       "ios": [],
       "android": ["androidx", "google-play-services"]
     },
+    "@capgo/capacitor-share-target": {
+      "ios": [],
+      "android": ["androidx"]
+    },
     "@capgo/capacitor-updater": {
       "ios": ["alamofire", "zipfoundation", "version", "bigint"],
       "android": [

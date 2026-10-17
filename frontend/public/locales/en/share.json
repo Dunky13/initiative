@@ -1,0 +1,56 @@
+{
+  "title": "Share to Initiative",
+  "chooseKind": "What should this become?",
+  "cancel": "Cancel",
+  "fallbackTitle": "Shared picture",
+  "fallbackFileTitle": "Shared file",
+  "pictures_one": "{{count}} picture",
+  "pictures_other": "{{count}} pictures",
+  "files_one": "{{count}} file",
+  "files_other": "{{count}} files",
+  "kinds": {
+    "task": {
+      "label": "Task",
+      "description": "Add it to a project"
+    },
+    "file": {
+      "label": "Document",
+      "description": "Write a document around it"
+    },
+    "upload": {
+      "label": "File",
+      "description": "Upload it as it is"
+    },
+    "post": {
+      "label": "Post",
+      "description": "Put it on an initiative's board"
+    }
+  },
+  "createWizard": {
+    "title": "Share to Initiative",
+    "selectCommunity": "Select a community",
+    "selectInitiative": "Select an initiative",
+    "selectProject": "Select a project",
+    "noInitiatives": "No initiatives here you can add this to.",
+    "lastUsed": "Last used",
+    "back": "Back"
+  },
+  "compose": {
+    "title": "Title",
+    "note": "Note",
+    "notePlaceholder": "Add a note (optional)",
+    "fileName": "Name for {{name}}",
+    "remove": "Remove {{name}}",
+    "filesLeftOut_one": "{{count}} file isn't a picture, so it stays out. Choose File to upload it.",
+    "filesLeftOut_other": "{{count}} files aren't pictures, so they stay out. Choose File to upload them.",
+    "creating": "Sharing…",
+    "upload_one": "Upload file",
+    "upload_other": "Upload {{count}} files",
+    "create": {
+      "task": "Create task",
+      "file": "Create document",
+      "post": "Post"
+    }
+  },
+  "createError": "Couldn't share that. Try again."
+}
