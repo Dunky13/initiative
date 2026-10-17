@@ -149,7 +149,9 @@
     "moveDown": "Bajar {{name}}",
     "startsOn": "Empieza agrupada por",
     "notGrouped": "Sin agrupar",
-    "shown": "Grupos visibles:"
+    "shown": "Grupos visibles:",
+    "full": "Una tabla ofrece como máximo {{count}} agrupaciones. Desmarca una para ofrecer otra.",
+    "hiddenFull": "Se pueden omitir como máximo {{count}} grupos de una agrupación. Muestra uno para omitir otro."
   },
   "calendarListHelp": "Cómo el calendario de la iniciativa muestra sus eventos y tareas. Sus ajustes predefinidos son puntos de partida para todos.",
   "blocks": {

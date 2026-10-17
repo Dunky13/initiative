@@ -30,7 +30,11 @@ import { Badge } from "@/components/ui/badge";
 import { collator } from "@/lib/intl";
 import type { FieldDef } from "@/lib/layouts/fields";
 import { PRIORITY_ORDER, priorityRank } from "@/lib/sorting";
-import { getTaskDateStatus, getTaskDateStatusLabel } from "@/lib/taskDateStatus";
+import {
+  getTaskDateStatus,
+  getTaskDateStatusLabel,
+  TASK_DATE_STATUSES,
+} from "@/lib/taskDateStatus";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -79,6 +83,11 @@ const label = (content: ReactNode) => <span className="font-medium text-base">{c
 
 /** A grouping's table column, as a person's view keeps it. */
 export const groupColumn = (id: string) => `${id} group`;
+
+/** The most groupings a layout offers, and groups one leaves out, as the
+ *  server holds a layout to. */
+export const MAX_GROUPINGS = 50;
+export const MAX_HIDDEN_GROUPS = 200;
 
 /** What a list offers where its layout names no groupings of its own. */
 export const SHIPPED_GROUPINGS: string[] = Object.values(TaskGroupingId);
@@ -272,6 +281,7 @@ export const taskGroupings = ({
       column: groupColumn(TaskGroupingId.date),
       label: t("tasks:columns.dateWindow"),
       keys: (task) => [getTaskDateStatus(task.start_date, task.due_date)],
+      values: TASK_DATE_STATUSES,
       // The windows' keys are numbered in their order.
       compare: (a, b) => text.compare(a, b),
       header: (key) => label(getTaskDateStatusLabel(key, t)),

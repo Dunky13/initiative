@@ -267,6 +267,8 @@ const GroupDropRowWrapper = ({
   );
 };
 
+const NOT_GROUPED: string[] = [];
+
 const groupDropRow = (props: DataTableRowWrapperProps<TaskGroupRow>) => (
   <GroupDropRowWrapper {...props} />
 );
@@ -317,6 +319,12 @@ const ProjectTasksTableViewComponent = ({
   const { grouping, sorting } = tableState;
   const active = offered.find((each) => grouping.includes(each.grouping.column));
   const grouped = active?.grouping;
+  // What the table's headers group by: the grouping its rows are shaped for.
+  const groupedColumn = grouped?.column;
+  const tableGrouping = useMemo(
+    () => (groupedColumn ? [groupedColumn] : NOT_GROUPED),
+    [groupedColumn]
+  );
   // The columns the view shows, in its order: its own, or the shipped ones.
   // What the view leaves out is hidden, as are the columns that only group.
   const shown = useMemo(
@@ -605,6 +613,7 @@ const ProjectTasksTableViewComponent = ({
           groupingOptions={groupingOptions}
           columnVisibility={columnVisibility}
           onSortingChange={setSorting}
+          grouping={tableGrouping}
           onGroupingChange={setGrouping}
           helpText={(table) => {
             const sorting = table.atoms.sorting?.get() ?? [];
@@ -632,10 +641,7 @@ const ProjectTasksTableViewComponent = ({
             ) : null;
           }}
           initialSorting={sorting}
-          initialState={{
-            grouping,
-            expanded: true,
-          }}
+          initialState={{ expanded: true }}
           rowWrapper={rowWrapper}
           groupRowWrapper={moveEnabled ? groupDropRow : undefined}
           enableFilterInput

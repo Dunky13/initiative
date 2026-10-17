@@ -229,6 +229,27 @@ describe("DataTable grouping", () => {
     expect(screen.getAllByText("Bravo")).toHaveLength(1);
   });
 
+  it("follows a grouping it is handed after it mounts", () => {
+    const table = (grouping: string[]) => (
+      <DataTable
+        columns={fannedColumns}
+        data={grouping.length > 0 ? fannedRows : plainRows}
+        groupingOptions={[{ id: "group", label: "Group" }]}
+        columnVisibility={{ group: false }}
+        grouping={grouping}
+      />
+    );
+    const groupHeaders = () =>
+      screen.getAllByRole("row").filter((row) => row.getAttribute("data-state") === "grouped");
+    const { rerender } = render(table(["group"]));
+    expect(groupHeaders()).toHaveLength(3);
+
+    rerender(table([]));
+
+    expect(groupHeaders()).toHaveLength(0);
+    expect(screen.getAllByText("Alpha")).toHaveLength(1);
+  });
+
   it("re-reports the selection when the data is re-shaped under it", async () => {
     const { user, getCheckboxes } = await selecting(<GroupedHarness />);
 

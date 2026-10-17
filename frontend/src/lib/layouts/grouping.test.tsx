@@ -106,8 +106,11 @@ describe("taskGroupings", () => {
     });
   });
 
-  it("can't move a task between date windows", () => {
-    expect(groupingOf("date group").move).toBeUndefined();
+  it("has every date window, and can't move a task between them", () => {
+    const dates = groupingOf("date group");
+
+    expect(dates.values).toHaveLength(5);
+    expect(dates.move).toBeUndefined();
   });
 });
 

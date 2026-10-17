@@ -149,7 +149,9 @@
     "moveDown": "Move {{name}} down",
     "startsOn": "Starts grouped by",
     "notGrouped": "Not grouped",
-    "shown": "Groups shown:"
+    "shown": "Groups shown:",
+    "full": "A table offers at most {{count}} groupings. Untick one to offer another.",
+    "hiddenFull": "At most {{count}} groups can be left out of one grouping. Show one to leave out another."
   },
   "calendarListHelp": "How the initiative's calendar lists its events and tasks. Its presets are where people can start from.",
   "blocks": {

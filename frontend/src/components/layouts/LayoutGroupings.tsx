@@ -16,7 +16,14 @@ import {
 } from "@/components/ui/select";
 import type { ListLayout } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
-import { groupingsOf, NO_GROUP, type OfferedGrouping, taskGroupings } from "@/lib/layouts/grouping";
+import {
+  groupingsOf,
+  MAX_GROUPINGS,
+  MAX_HIDDEN_GROUPS,
+  NO_GROUP,
+  type OfferedGrouping,
+  taskGroupings,
+} from "@/lib/layouts/grouping";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -49,6 +56,7 @@ export const LayoutGroupings = ({
   const byId = new Map(all.map((each) => [each.id, each]));
   const ticked = entries.flatMap((entry) => byId.get(entry.field) ?? []);
   const unticked = all.filter((each) => !entries.some((entry) => entry.field === each.id));
+  const full = entries.length >= MAX_GROUPINGS;
 
   const change = (next: LayoutGrouping[], startsOn: string | null = groupBy) =>
     edits.changeGroupings(
@@ -110,6 +118,7 @@ export const LayoutGroupings = ({
             <Checkbox
               id={`grouping-${grouping.id}`}
               checked={false}
+              disabled={full}
               onCheckedChange={() => change([...entries, { field: grouping.id }])}
             />
             <Label htmlFor={`grouping-${grouping.id}`} className="min-w-0 flex-1 truncate">
@@ -118,6 +127,11 @@ export const LayoutGroupings = ({
           </li>
         ))}
       </ul>
+      {full && unticked.length > 0 ? (
+        <p className="text-muted-foreground text-xs">
+          {translate("layouts:groupings.full", { count: MAX_GROUPINGS })}
+        </p>
+      ) : null}
       <div className="space-y-1">
         <Label htmlFor="layout-group-by">{translate("layouts:groupings.startsOn")}</Label>
         <Select
@@ -164,6 +178,7 @@ export const CanvasGrouping = ({
 }) => {
   const { t } = useTranslation(LAYOUT_NAMESPACES);
   const active = offered.find((each) => picked.includes(each.grouping.column));
+  const hiddenFull = (active?.hidden.size ?? 0) >= MAX_HIDDEN_GROUPS;
   const keys = useMemo(() => {
     if (!active) return [];
     const { grouping, hidden } = active;
@@ -206,7 +221,7 @@ export const CanvasGrouping = ({
                 key={key}
                 type="button"
                 aria-pressed={shown}
-                disabled={disabled}
+                disabled={disabled || (shown && hiddenFull)}
                 onClick={() => onToggle(active.grouping.id, key, !shown)}
                 className={cn(
                   "inline-flex items-center rounded-md border px-2 py-1",
@@ -217,6 +232,11 @@ export const CanvasGrouping = ({
               </button>
             );
           })}
+          {hiddenFull ? (
+            <p className="w-full text-muted-foreground text-xs">
+              {t("layouts:groupings.hiddenFull", { count: MAX_HIDDEN_GROUPS })}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>

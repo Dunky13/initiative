@@ -12,6 +12,9 @@ const STATUS_KEY_MAP: Record<TaskDateStatusKey, string> = {
   "4_later": "later",
 };
 
+/** Every date window, in order. */
+export const TASK_DATE_STATUSES = Object.keys(STATUS_KEY_MAP) as TaskDateStatusKey[];
+
 const parseDate = (value?: string | null) => {
   if (!value) {
     return null;

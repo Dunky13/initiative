@@ -37,9 +37,9 @@ import {
 } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
 import {
-  groupColumn,
   offeredGroupings,
   taskGroupings,
+  viewGrouping,
   withGroupShown,
 } from "@/lib/layouts/grouping";
 import { cn } from "@/lib/utils";
@@ -536,11 +536,10 @@ export const LayoutCanvas = ({
     for (const task of tasks) (groups[task.task_status_id] ??= []).push(task);
     return groups;
   }, [tasks, statuses]);
-  // The canvas is grouped as the list starts until it is grouped otherwise,
-  // so the groups of what it is grouped by can be hidden here.
-  const [grouping, setGrouping] = useState<GroupingState>(() =>
-    definition.group_by ? [groupColumn(definition.group_by)] : []
-  );
+  // The preview is grouped as the list starts until a grouping is picked
+  // here, as a person's list is, so the groups of it can be hidden.
+  const [picked, setGrouping] = useState<GroupingState | null>(null);
+  const grouping = useMemo(() => viewGrouping(definition, picked), [definition, picked]);
   const tableState = useMemo<ProjectTaskTableState>(
     () => [
       { grouping, sorting: [] },
@@ -600,8 +599,6 @@ export const LayoutCanvas = ({
       ) : null}
       {layout === "table" ? (
         <ProjectTasksTableView
-          // The table takes its grouping as it mounts.
-          key={grouping.join()}
           projectId={projectId}
           initiativeId={initiativeId}
           tasks={tasks}

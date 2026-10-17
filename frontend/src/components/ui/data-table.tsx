@@ -139,6 +139,14 @@ interface DataTableProps<TData extends RowData> {
    */
   sorting?: SortingState;
   onSortingChange?: (sorting: SortingState) => void;
+  /**
+   * Controlled grouping, for a caller that works the grouping out itself (a
+   * layout's default where a person never picked) and hands it back. Without
+   * it the table owns the grouping from ``initialState.grouping`` on, and one
+   * changed from outside would leave the headers on the old grouping while
+   * the caller's rows are shaped for the new one.
+   */
+  grouping?: GroupingState;
   onGroupingChange?: (grouping: GroupingState) => void;
   enableVirtualization?: boolean;
   virtualRowHeight?: number;
@@ -195,6 +203,7 @@ export function DataTable<TData extends RowData>({
   manualSorting = false,
   sorting: controlledSorting,
   onSortingChange: externalOnSortingChange,
+  grouping: controlledGrouping,
   onGroupingChange: externalOnGroupingChange,
   enableVirtualization = false,
   virtualRowHeight = 48,
@@ -245,9 +254,10 @@ export function DataTable<TData extends RowData>({
     },
     [externalOnColumnVisibilityChange, isColumnVisibilityControlled]
   );
-  const [grouping, setGrouping] = useState<GroupingState>(() =>
+  const [internalGrouping, setGrouping] = useState<GroupingState>(() =>
     groupingEnabled ? initialGroupingRef.current : []
   );
+  const grouping = controlledGrouping ?? internalGrouping;
   const [pagination, setPagination] = useState<PaginationState>(() => initialPaginationRef.current);
 
   // Sync external pageIndex into the table's internal pagination state when
@@ -364,13 +374,12 @@ export function DataTable<TData extends RowData>({
   // never rebuilt. Every grouping control routes through here.
   const handleGroupingChange = useCallback(
     (updater: GroupingState | ((old: GroupingState) => GroupingState)) => {
-      setGrouping((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        externalOnGroupingChange?.(next);
-        return next;
-      });
+      const next = typeof updater === "function" ? updater(grouping) : updater;
+      // A controlled caller answers with a new `grouping` prop.
+      if (controlledGrouping === undefined) setGrouping(next);
+      externalOnGroupingChange?.(next);
     },
-    [externalOnGroupingChange]
+    [externalOnGroupingChange, grouping, controlledGrouping]
   );
 
   const table = useTable({
@@ -451,10 +460,10 @@ export function DataTable<TData extends RowData>({
   );
   const groupingSelectValue = grouping.length > 0 ? grouping[0] : GROUPING_NONE_VALUE;
   useEffect(() => {
-    if (!groupingEnabled && grouping.length > 0) {
+    if (!groupingEnabled && internalGrouping.length > 0) {
       setGrouping([]);
     }
-  }, [groupingEnabled, grouping, groupingColumnIdSet]);
+  }, [groupingEnabled, internalGrouping]);
   useEffect(() => {
     if (!groupingEnabled || grouping.length > 0) {
       return;

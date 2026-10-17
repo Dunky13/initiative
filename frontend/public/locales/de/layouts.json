@@ -149,7 +149,9 @@
     "moveDown": "{{name}} nach unten",
     "startsOn": "Beginnt gruppiert nach",
     "notGrouped": "Nicht gruppiert",
-    "shown": "Angezeigte Gruppen:"
+    "shown": "Angezeigte Gruppen:",
+    "full": "Eine Tabelle bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
+    "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen."
   },
   "calendarListHelp": "Wie der Kalender der Initiative seine Termine und Aufgaben zeigt. Seine Vorlagen sind Ausgangspunkte für alle.",
   "blocks": {
