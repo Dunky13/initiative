@@ -385,22 +385,21 @@ async def write_values(
     """
     spec = link_for(row)
     held = _of(spec.target, [row.id])
-    stored = await _locked_options(session, spec.target, row.id, options)
+    named_ids = [
+        *(removed or ()),
+        *(entry.property_id for entry in values),
+        *(change.property_id for change in options),
+    ]
+    stored = await _in_turn(session, spec.target, row.id, named_ids, options)
     if removed is None:
         await session.exec(delete(PropertyValue).where(held))
-    else:
-        named_ids = [
-            *removed,
-            *(entry.property_id for entry in values),
-            *(change.property_id for change in options),
-        ]
-        if named_ids:
-            await session.exec(
-                delete(PropertyValue).where(
-                    held,
-                    PropertyValue.property_id.in_(named_ids),
-                )
+    elif named_ids:
+        await session.exec(
+            delete(PropertyValue).where(
+                held,
+                PropertyValue.property_id.in_(named_ids),
             )
+        )
     if not values and not options:
         return
 
@@ -456,23 +455,25 @@ async def write_values(
     session.add_all(rows)
 
 
-async def _locked_options(
+async def _in_turn(
     session: AsyncSession,
     target: str,
     entity_id: int,
+    named: Sequence[int],
     options: Sequence[PropertyOptionsChange],
 ) -> dict[int, list[str]]:
-    """The options each value ``options`` changes holds now, read once this
-    write has its turn at the value, so a change made meanwhile is the one it
-    is applied to."""
-    if not options:
-        return {}
-    for property_id in sorted(change.property_id for change in options):
+    """Take this write's turn at every value it names, then read the options
+    each value ``options`` changes holds: a write of the same value made
+    meanwhile is the one a change is applied to, and none lands between the
+    read and this write's own."""
+    for property_id in sorted(set(named)):
         await advisory_lock(
             session,
-            LockNamespace.PROPERTY_OPTIONS,
+            LockNamespace.PROPERTY_VALUE,
             f"{routed_guild_id(session)}:{target}:{entity_id}:{property_id}",
         )
+    if not options:
+        return {}
     held = await session.exec(
         select(PropertyValue.property_id, PropertyValue.value_json).where(
             _of(target, [entity_id]),
