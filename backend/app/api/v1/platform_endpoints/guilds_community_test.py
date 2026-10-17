@@ -1078,7 +1078,7 @@ async def test_belonging_somewhere_never_holds_an_unanswered_account_up(
 
 
 async def test_an_account_that_answered_under_age_keeps_its_communities(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """The answer closes one door. It does not take away what is already theirs.
 
@@ -1550,7 +1550,7 @@ async def test_lifting_a_block_that_is_not_there_says_so(
 
 
 async def test_a_reset_adult_answering_under_age_is_not_still_confirmed(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """The reset starts the question over: an old confirmation left standing
     would admit somebody whose new answer is under the minimum."""
@@ -1679,7 +1679,7 @@ async def test_an_answer_under_the_account_minimum_closes_the_account(
 
 
 async def test_old_enough_for_an_account_but_not_the_directory_keeps_the_account(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """Fifteen in the US is an account without a directory, as before: the
     country's minimum for an account is the only thing this adds."""
@@ -1700,7 +1700,7 @@ async def test_old_enough_for_an_account_but_not_the_directory_keeps_the_account
 
 
 async def test_a_date_nobody_was_born_on_closes_nothing(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """A year still to come reads as an age below every minimum. It is refused
     as a typo before it is read as an age, so it cannot close an account."""
@@ -1721,7 +1721,7 @@ async def test_a_date_nobody_was_born_on_closes_nothing(
 
 
 async def test_a_deployment_that_does_not_check_age_closes_nothing(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """With the check off nothing is asked, and nothing answered may close an
     account."""
@@ -1743,7 +1743,7 @@ async def test_a_deployment_that_does_not_check_age_closes_nothing(
 
 
 async def test_signing_in_does_not_call_the_closure_off_but_the_ticket_does(
-    client: AsyncClient, session: AsyncSession, acting_user, country_header
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """A holder's own deletion is called off by signing in. This one is not:
     the answer stands until support clears it, and only then does the next
