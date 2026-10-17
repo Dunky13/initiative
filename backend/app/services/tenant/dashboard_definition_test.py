@@ -61,6 +61,10 @@ def test_every_option_defaults_to_a_value_it_allows():
     the editor and the render out of step."""
     for widget_type, spec in WIDGET_SPECS.items():
         for key, option in spec.options.items():
+            if option.kind != "choice":
+                # A number or a day of its own: nothing to offer, unset by default.
+                assert (option.values, option.default) == ((), ""), widget_type
+                continue
             assert option.values, f"{widget_type}.{key} allows nothing"
             assert option.default in option.values, f"{widget_type}.{key} bad default"
             assert len(set(option.values)) == len(option.values), (
@@ -107,6 +111,61 @@ def test_rejects_unknown_option_value():
                 {
                     "type": "chart",
                     "options": {"mark": "hologram"},
+                    "binding": {"source": "query", "sql": "SELECT title FROM tasks"},
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("given", "stored"),
+    [
+        (
+            {"target": 50, "target_date": "2026-06-30"},
+            {"target": "50", "target_date": "2026-06-30"},
+        ),
+        ({"target": "2.5"}, {"target": "2.5"}),
+        # Past exact whole numbers, the shortest form that reads back the same.
+        ({"target": "1e32"}, {"target": "1e+32"}),
+        ({"target": 123456789012345678}, {"target": "1.2345678901234568e+17"}),
+        # Left empty, there is no target.
+        ({"target": "", "target_date": ""}, {}),
+    ],
+)
+def test_a_target_is_stored_as_a_plain_number_and_day(given, stored):
+    result = normalize_dashboard_definition(
+        _definition(
+            {
+                "type": "chart",
+                "options": given,
+                "binding": {"source": "query", "sql": "SELECT title FROM tasks"},
+            }
+        )
+    )
+    assert result["widgets"][0].get("options", {}) == stored
+    # What was stored saves again unchanged.
+    again = normalize_dashboard_definition(result)
+    assert again["widgets"][0].get("options", {}) == stored
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        {"target": True},
+        {"target": "nan"},
+        {"target": "1e400"},
+        {"target": "fifty"},
+        {"target_date": "20260630"},
+        {"target_date": "2026-02-30"},
+    ],
+)
+def test_a_target_that_is_not_a_number_or_a_day_is_refused(given):
+    with pytest.raises(DashboardDefinitionError, match="WIDGET_OPTION_INVALID"):
+        normalize_dashboard_definition(
+            _definition(
+                {
+                    "type": "chart",
+                    "options": given,
                     "binding": {"source": "query", "sql": "SELECT title FROM tasks"},
                 }
             )

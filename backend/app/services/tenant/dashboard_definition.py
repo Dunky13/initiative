@@ -31,8 +31,10 @@ dropped rather than preserved, so a stored definition always has canonical shape
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Optional, Sequence
+from datetime import date
+from typing import Any, Callable, Literal, Mapping, Optional, Sequence
 
 from app.core.errors import CodedError
 from app.core.messages import DashboardMessages, QueryMessages
@@ -87,6 +89,10 @@ def _fail(code: str) -> None:
 # marketplace can name resolves to one of these (see PRESETS below).
 
 
+#: What an option takes: one of its listed values, a number, or a day.
+OptionKind = Literal["choice", "number", "date"]
+
+
 @dataclass(frozen=True)
 class WidgetOptionSpec:
     """One display option: the values it may take, in the order the palette
@@ -102,6 +108,10 @@ class WidgetOptionSpec:
 
     values: tuple[str, ...]
     default: str
+    #: ``choice`` takes one of ``values``. ``number`` and ``date`` take a value
+    #: of that kind instead, such as a target and the day it is due, and have
+    #: no values to offer and no default: unset, the widget draws without one.
+    kind: OptionKind = "choice"
 
     def __contains__(self, value: object) -> bool:
         return value in self.values
@@ -109,6 +119,15 @@ class WidgetOptionSpec:
 
 def _option(*values: str, default: str | None = None) -> WidgetOptionSpec:
     return WidgetOptionSpec(values=values, default=default if default else values[0])
+
+
+def _free(kind: OptionKind) -> WidgetOptionSpec:
+    return WidgetOptionSpec(values=(), default="", kind=kind)
+
+
+#: A goal for the widget's number, and the day it should be reached by. The
+#: widget marks it and says whether the number is on its way there.
+_TARGET_OPTIONS = {"target": _free("number"), "target_date": _free("date")}
 
 
 #: What may fill a slot, by what the slot is for. Named sets rather than a set
@@ -198,6 +217,7 @@ WIDGET_SPECS: dict[str, WidgetSpec] = {
             # is told rather than guessing.
             "trend": _option("off", "on"),
             "direction": _option("up_good", "down_good"),
+            **_TARGET_OPTIONS,
         },
     ),
     # A series drawn as bars/lines/area/slices.
@@ -229,6 +249,7 @@ WIDGET_SPECS: dict[str, WidgetSpec] = {
             # One series in color and the rest in gray — the honest form when
             # the story is a single series and the others are context.
             "emphasis": _option("none", "largest", "last"),
+            **_TARGET_OPTIONS,
         },
     ),
     # Staged counts, widest bucket first.
@@ -262,6 +283,7 @@ WIDGET_SPECS: dict[str, WidgetSpec] = {
             # One bar for the whole binding, or one per project/bucket.
             "breakdown": _option("total", "each"),
             "format": _option("percent", "plain"),
+            **_TARGET_OPTIONS,
         },
     ),
     # Density over a calendar grid. Task counts bucketed by day is what it draws
@@ -593,7 +615,7 @@ if WIDGET_SPECS.keys() & WIDGET_PRESETS.keys():
     raise RuntimeError("a preset may not shadow a primitive name")
 for _name, _spec in WIDGET_SPECS.items():
     for _key, _declared in _spec.options.items():
-        if _declared.default not in _declared.values:
+        if _declared.kind == "choice" and _declared.default not in _declared.values:
             raise RuntimeError(f"{_name}.{_key} defaults to a value it does not allow")
 
 
@@ -778,6 +800,11 @@ def _normalize_options(raw: Any, spec: WidgetSpec, preset: WidgetPreset | None) 
         allowed = spec.options.get(key)
         if allowed is None:
             continue
+        if allowed.kind != "choice":
+            written = _free_value(allowed.kind, value)
+            if written is not None:
+                options[key] = written
+            continue
         # Booleans are accepted for flag-shaped options and stored as strings so
         # the option vocabulary stays a flat set of literals.
         candidate = str(value).lower() if isinstance(value, bool) else value
@@ -787,6 +814,49 @@ def _normalize_options(raw: Any, spec: WidgetSpec, preset: WidgetPreset | None) 
     if preset is not None:
         options.update(preset.options)
     return options
+
+
+#: Longer than any number or day an author types.
+_MAX_FREE_VALUE = 32
+
+#: Below this a whole number is exact in a float, and short.
+_EXACT_WHOLE = 10**15
+
+
+def _free_value(kind: OptionKind, value: Any) -> str | None:
+    """A number or a day, as it is stored: ``None`` when it is left empty.
+
+    A number is written plainly (``50``, ``2.5``). A day is ``YYYY-MM-DD``,
+    the form a date input gives.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if kind == "number":
+        if isinstance(value, bool):
+            _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+        if isinstance(value, str) and len(value) > _MAX_FREE_VALUE:
+            _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+            raise AssertionError  # unreachable; _fail raises
+        if not math.isfinite(number):
+            _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+        # A whole number short enough to be exact is written as one; anything
+        # else in the shortest form that reads back the same (``1e+32``), so a
+        # stored value is always one that saves again.
+        if number.is_integer() and abs(number) < _EXACT_WHOLE:
+            return str(int(number))
+        return repr(number)
+    if not isinstance(value, str) or len(value) != len("2026-06-30"):
+        _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+        raise AssertionError  # unreachable; _fail raises
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        _fail(DashboardMessages.WIDGET_OPTION_INVALID)
+        raise AssertionError  # unreachable; _fail raises
 
 
 def _normalize_widget(

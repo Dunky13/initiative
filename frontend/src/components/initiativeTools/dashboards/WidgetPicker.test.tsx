@@ -35,8 +35,8 @@ const catalog = {
         { name: "value", types: ["number"], required: true, repeatable: true },
       ],
       options: [
-        { key: "mark", values: ["area", "bar", "line", "pie"] },
-        { key: "stacked", values: ["false", "true"] },
+        { key: "mark", values: ["area", "bar", "line", "pie"], kind: "choice" },
+        { key: "stacked", values: ["false", "true"], kind: "choice" },
       ],
     },
     {
@@ -49,7 +49,9 @@ const catalog = {
         { name: "value", types: ["number"], required: true, repeatable: false },
         { name: "label", types: ["text", "enum", "reference"], required: false, repeatable: false },
       ],
-      options: [{ key: "format", values: ["currency", "duration", "percent", "plain"] }],
+      options: [
+        { key: "format", values: ["currency", "duration", "percent", "plain"], kind: "choice" },
+      ],
     },
   ],
   presets: [{ name: "bar_chart", primitive: "chart", options: { mark: "bar" } }],
