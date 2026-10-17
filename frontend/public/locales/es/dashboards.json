@@ -254,7 +254,8 @@
     "card": "Tarjeta",
     "column": "Columna",
     "date": "Fecha",
-    "total": "Total"
+    "total": "Total",
+    "series": "Dividir por"
   },
   "builder": {
     "dataset": "Mostrar datos de",
@@ -265,8 +266,9 @@
     "asItIs": "Valor",
     "exactTime": "Hora exacta",
     "groupBy": "Agrupar por",
-    "everythingTogether": "Nada — un total",
-    "groupByHelp": "Las filas con el mismo valor se unen en una; los recuentos y totales se calculan para cada una.",
+    "groupedBy": "Una fila por cada {{columns}}",
+    "notGrouped": "Cada fila, tal cual",
+    "groupByHelp": "Cuando una columna es un recuento o un total, se calcula para cada combinación de las demás columnas.",
     "statement": "La sentencia que esto construye",
     "tabBuild": "Crear",
     "tabSql": "SQL",

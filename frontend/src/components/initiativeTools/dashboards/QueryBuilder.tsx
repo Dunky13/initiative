@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useFieldCatalogs } from "@/hooks/useQueryVocabulary";
+import { listFormat } from "@/lib/intl";
 import type { FilterNode } from "@/lib/widgets/conditions";
 
 /** The datasets a query may name. Read from the generated enum, which is the
@@ -47,6 +48,16 @@ const BUCKETS = ["day", "week", "month", "quarter", "year"] as const;
 /** The one column that is not a field: how many rows there are. */
 const COUNT_ALL: QueryColumnSpec = { field: "*", aggregate: "count", alias: "count" };
 
+/** What a statement is grouped by: once any column is a count or a total,
+ *  every column shown as it is — the only grouping Postgres accepts, so it is
+ *  worked out rather than asked for. With no count or total, every row shows. */
+const groupingFor = (columns: QueryColumnSpec[]): string[] =>
+  columns.some((column) => column.aggregate)
+    ? columns
+        .filter((column) => !column.aggregate && column.field !== "*")
+        .map((column) => column.alias || column.field)
+    : [];
+
 export interface QueryBuilderProps {
   spec: QueryBuildRequest;
   onChange: (spec: QueryBuildRequest) => void;
@@ -55,7 +66,7 @@ export interface QueryBuilderProps {
 }
 
 export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps) {
-  const { t } = useTranslation(["dashboards", "common"]);
+  const { t, i18n } = useTranslation(["dashboards", "common"]);
   const { fields, relations, defaultFilters } = useFieldCatalog(spec.dataset as DatasetName);
   // What each related dataset holds. A relation says only its name and where
   // it arrives; what may be named there is that dataset's own description, so
@@ -96,7 +107,11 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
     [selectable, reachable]
   );
 
-  const patch = (next: Partial<QueryBuildRequest>) => onChange({ ...spec, ...next });
+  const patch = (next: Partial<QueryBuildRequest>) => {
+    const merged = { ...spec, ...next };
+    onChange({ ...merged, group_by: groupingFor(merged.columns) });
+  };
+  const grouping = groupingFor(spec.columns);
 
   /**
    * A new statement starts without archived work or templates.
@@ -276,28 +291,17 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
         />
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-1">
         <Label>{t("dashboards:builder.groupBy")}</Label>
-        <Select
-          value={spec.group_by?.[0] ?? "none"}
-          onValueChange={(name) => patch({ group_by: name === "none" ? [] : [name] })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">{t("dashboards:builder.everythingTogether")}</SelectItem>
-            {spec.columns
-              .filter((column) => !column.aggregate)
-              .map((column) => column.alias || column.field)
-              .filter((name) => name !== "*")
-              .map((name) => (
-                <SelectItem key={name} value={name}>
-                  {fieldLabel(name, t)}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <p className="text-sm">
+          {grouping.length
+            ? t("dashboards:builder.groupedBy", {
+                columns: listFormat(i18n.resolvedLanguage ?? i18n.language, {
+                  type: "conjunction",
+                }).format(grouping.map((name) => fieldLabel(name, t))),
+              })
+            : t("dashboards:builder.notGrouped")}
+        </p>
         <p className="text-muted-foreground text-xs">{t("dashboards:builder.groupByHelp")}</p>
       </section>
     </div>
