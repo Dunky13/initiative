@@ -305,8 +305,13 @@ const PACE_TONES = {
   missed: "negative",
 };
 
-/** A number as plain text: whole, or to two places. */
-const plain = (value) => String(Number.isInteger(value) ? value : Math.round(value * 100) / 100);
+/** A number as plain text: whole, or to two places, or to two significant
+ *  digits where two places would read a small number as nothing. */
+function plain(value) {
+  if (Number.isInteger(value)) return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded !== 0 ? rounded : Number(value.toPrecision(2)));
+}
 
 /** A standing in words: "On track", or how far there is still to go. */
 function standing(say, state, current, target) {
@@ -620,16 +625,18 @@ function render(data, config, context) {
    * stack's total. Side-by-side series, or categories rather than moments, have
    * no one line to read it from, so there the target is only marked. A target
    * below where the line starts is one to come down to.
+   *
+   * It is read from every point, before the category ceiling folds any of them
+   * into "Other": the latest moment is the one a target is measured at.
    */
-  const withTarget = (drawn, arranged) => {
+  const withTarget = (drawn, measured) => {
     const goal = targetOf(config);
     if (!goal || mark === "pie") return drawn;
     let label = `${say("target")} ${plain(goal.value)}`;
-    if (xTime && (arranged.length === 1 || stacked)) {
+    if (xTime && (measured.length === 1 || stacked)) {
       const totals = new Map();
-      for (const each of arranged) {
+      for (const each of measured) {
         for (const point of each.points) {
-          // The folded "Other" is a name, not a moment.
           if (typeof point.x !== "number") continue;
           totals.set(point.x, (totals.get(point.x) || 0) + point.y);
         }
@@ -647,14 +654,13 @@ function render(data, config, context) {
     return drawn;
   };
 
-  const arranged = arrangeAll(series);
   return withTarget(
     chart(
-      arranged,
+      arrangeAll(series),
       labelAt !== undefined && columns[labelAt] ? columns[labelAt].name : undefined,
       undefined,
       xTime
     ),
-    arranged
+    series
   );
 }

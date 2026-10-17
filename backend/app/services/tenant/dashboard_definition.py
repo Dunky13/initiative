@@ -819,6 +819,9 @@ def _normalize_options(raw: Any, spec: WidgetSpec, preset: WidgetPreset | None) 
 #: Longer than any number or day an author types.
 _MAX_FREE_VALUE = 32
 
+#: Below this a whole number is exact in a float, and short.
+_EXACT_WHOLE = 10**15
+
 
 def _free_value(kind: OptionKind, value: Any) -> str | None:
     """A number or a day, as it is stored: ``None`` when it is left empty.
@@ -840,7 +843,12 @@ def _free_value(kind: OptionKind, value: Any) -> str | None:
             raise AssertionError  # unreachable; _fail raises
         if not math.isfinite(number):
             _fail(DashboardMessages.WIDGET_OPTION_INVALID)
-        return str(int(number)) if number.is_integer() else repr(number)
+        # A whole number short enough to be exact is written as one; anything
+        # else in the shortest form that reads back the same (``1e+32``), so a
+        # stored value is always one that saves again.
+        if number.is_integer() and abs(number) < _EXACT_WHOLE:
+            return str(int(number))
+        return repr(number)
     if not isinstance(value, str) or len(value) != len("2026-06-30"):
         _fail(DashboardMessages.WIDGET_OPTION_INVALID)
         raise AssertionError  # unreachable; _fail raises

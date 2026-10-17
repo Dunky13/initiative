@@ -148,6 +148,25 @@ describe("the chart", () => {
     expect((await chart(categories, { target: "5" })).targetLabel).toBe("Target 5");
   });
 
+  it("reads the latest moment even where the category ceiling folds it", async () => {
+    // Six weeks against a ceiling of five: the smallest, which is the latest,
+    // is drawn inside "Other" but is still where the line stands.
+    const sixWeeks = rows(
+      [
+        ["week", "date"],
+        ["open", "number"],
+      ],
+      [60, 50, 40, 30, 20, 10].map((value, index) => [
+        at("2026-01-05") + index * 7 * 86400000,
+        value,
+      ]),
+      "week"
+    );
+    expect((await chart(sixWeeks, { target: "0", limit: "5" })).targetLabel).toBe(
+      "Target 0 · 10 to go"
+    );
+  });
+
   it("draws no target on a pie", async () => {
     const scene = await chart(burnUp([10, 20, 30, 40]), { target: "30", mark: "pie" });
     expect(scene.target).toBeUndefined();
@@ -178,6 +197,12 @@ describe("the stat", () => {
     const scene = await stat(one, { target: "50" }, { value: [0] });
     expect(scene.caption).toBe("Target 50 · 20 to go");
     expect(scene.tone).toBeUndefined();
+  });
+
+  it("does not read a small target as nothing", async () => {
+    const none = rows([["n", "number"]], [[0]]);
+    const scene = await stat(none, { target: "0.001" }, { value: [0] });
+    expect(scene.caption).toBe("Target 0.001 · 0.001 to go");
   });
 
   it("aims down when falling is good", async () => {

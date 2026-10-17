@@ -125,6 +125,9 @@ def test_rejects_unknown_option_value():
             {"target": "50", "target_date": "2026-06-30"},
         ),
         ({"target": "2.5"}, {"target": "2.5"}),
+        # Past exact whole numbers, the shortest form that reads back the same.
+        ({"target": "1e32"}, {"target": "1e+32"}),
+        ({"target": 123456789012345678}, {"target": "1.2345678901234568e+17"}),
         # Left empty, there is no target.
         ({"target": "", "target_date": ""}, {}),
     ],
@@ -140,6 +143,9 @@ def test_a_target_is_stored_as_a_plain_number_and_day(given, stored):
         )
     )
     assert result["widgets"][0].get("options", {}) == stored
+    # What was stored saves again unchanged.
+    again = normalize_dashboard_definition(result)
+    assert again["widgets"][0].get("options", {}) == stored
 
 
 @pytest.mark.parametrize(

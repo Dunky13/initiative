@@ -234,8 +234,13 @@ const PACE_TONES = {
   missed: "negative",
 };
 
-/** A number as plain text: whole, or to two places. */
-const plain = (value) => String(Number.isInteger(value) ? value : Math.round(value * 100) / 100);
+/** A number as plain text: whole, or to two places, or to two significant
+ *  digits where two places would read a small number as nothing. */
+function plain(value) {
+  if (Number.isInteger(value)) return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded !== 0 ? rounded : Number(value.toPrecision(2)));
+}
 
 /** A standing in words: "On track", or how far there is still to go. */
 function standing(say, state, current, target) {
