@@ -4331,6 +4331,8 @@ export const DatasetName = {
   task_statuses: "task_statuses",
   task_assignees: "task_assignees",
   members: "members",
+  property_definitions: "property_definitions",
+  property_values: "property_values",
   files: "files",
   file_versions: "file_versions",
   queues: "queues",
