@@ -9285,7 +9285,7 @@ export interface QueryBuildRequest {
   columns: QueryColumnSpec[];
   /** @maxItems 20 */
   where?: (QueryFilterGroupSpec | QueryConditionSpec)[];
-  /** @maxItems 10 */
+  /** @maxItems 20 */
   group_by?: string[];
   order_by?: QuerySortSpec | null;
   limit?: number | null;

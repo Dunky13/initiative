@@ -497,26 +497,34 @@ def build(spec: QuerySpec) -> str:
         op=0,
     )
 
-    if spec.group_by:
-        # By output position, because a grouped expression and its select-list
-        # twin have to be the same expression and an ordinal says so outright.
-        positions = []
-        for name in spec.group_by:
-            if name not in aliases:
-                raise QueryError(QueryMessages.UNKNOWN_FIELD, name)
-            positions.append(ast.A_Const(val=ast.Integer(ival=aliases.index(name) + 1)))
-        select.groupClause = tuple(positions)
+    # By output position, because a grouped expression and its select-list
+    # twin have to be the same expression and an ordinal says so outright.
+    # Every column a name matches: one date rounded two ways is two columns
+    # under one name, and grouping only the first leaves the other ungrouped.
+    grouped: list[int] = []
+    for name in spec.group_by:
+        if name not in aliases:
+            raise QueryError(QueryMessages.UNKNOWN_FIELD, name)
+        grouped += [
+            position
+            for position, alias in enumerate(aliases, start=1)
+            if alias == name and position not in grouped
+        ]
+    if grouped:
+        select.groupClause = tuple(
+            ast.A_Const(val=ast.Integer(ival=position)) for position in grouped
+        )
 
-    if spec.order_by is None and spec.group_by:
+    if spec.order_by is None and grouped:
         # Rows in the order of what they are grouped by, so a time series
         # reads left to right instead of in whatever order the groups were
         # gathered. Ordinal for the same reason as the grouping.
         select.sortClause = tuple(
             ast.SortBy(
-                node=ast.A_Const(val=ast.Integer(ival=aliases.index(name) + 1)),
+                node=ast.A_Const(val=ast.Integer(ival=position)),
                 sortby_dir=SortByDir.SORTBY_ASC,
             )
-            for name in spec.group_by
+            for position in grouped
         )
 
     if spec.order_by is not None:

@@ -120,7 +120,9 @@ class QueryBuildRequest(SanitizedBaseModel):
     dataset: str = Field(min_length=1, max_length=100)
     columns: List[QueryColumnSpec] = Field(min_length=1, max_length=20)
     where: List[QueryFilterNode] = Field(default_factory=list, max_length=20)
-    group_by: List[str] = Field(default_factory=list, max_length=10)
+    # As many as there are columns: what a statement is grouped by is drawn
+    # from what it shows.
+    group_by: List[str] = Field(default_factory=list, max_length=20)
     order_by: Optional[QuerySortSpec] = None
     limit: Optional[int] = Field(default=None, gt=0, le=10_000)
     #: Which initiative the answer is about. A statement names datasets, not a

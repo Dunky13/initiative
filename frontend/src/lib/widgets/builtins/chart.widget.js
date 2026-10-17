@@ -420,81 +420,104 @@ function render(data, config, context) {
     return String(row[labelAt]);
   };
 
-  /** The most series a chart draws. A split past it keeps its largest and
-   *  folds the rest into "Other", as the category ceiling does. */
+  /** The most series a chart draws. */
   const MAX_SERIES = 12;
 
+  /** Where a split's folded groups collect: a key of its own, so it is never
+   *  mistaken for a split value that reads "Other". */
+  const FOLDED = {};
+
   /**
-   * One series per value of the split column, and per measure when there are
-   * several. Rows that share a label and a split value add up.
+   * One series per value of the split column, for each measure: points per
+   * sprint, one series per status. Rows that share a label and a split value
+   * add up.
+   *
+   * A group is keyed by the split value itself, so a blank and a value that
+   * reads like the blank's label stay two series; the name is only what the
+   * legend says.
+   *
+   * Past the ceiling, the groups kept are the largest by the first measure,
+   * the same ones for every measure, and each measure folds the rest into an
+   * "Other" of its own, so a count and a sum of hours are never added up.
    *
    * Every series carries every category, at zero where it has no rows: a
    * count of nothing is zero, and the categories are ordered by the first
    * series that has them, so a gap would move a category that only a later
    * series has to the end.
+   *
+   * With no split column every row is in one group, which is how a pie adds
+   * up the rows that share a label.
    */
-  const splitSeries = (seriesAt) => {
+  const groupedSeries = (splitAt) => {
+    const measures = valueColumns.slice(0, MAX_SERIES);
     const categories = new Map();
+    const groups = new Map();
+    const add = (points, x, y) => {
+      const key = String(x);
+      const point = points.get(key);
+      if (point) point.y += y;
+      else points.set(key, { x: x, y: y });
+    };
+    const group = (value) => ({ value: value, total: 0, points: measures.map(() => new Map()) });
+
     rows.forEach((row, rowIndex) => {
       const x = labelOf(row, rowIndex);
       if (!categories.has(String(x))) categories.set(String(x), x);
-    });
-    const order = [];
-    const byName = new Map();
-    const entryFor = (name) => {
-      let entry = byName.get(name);
-      if (!entry) {
-        entry = { name: name, total: 0, points: new Map() };
-        byName.set(name, entry);
-        order.push(entry);
-      }
-      return entry;
-    };
-    const add = (entry, x, y) => {
-      const key = String(x);
-      const point = entry.points.get(key);
-      if (point) point.y += y;
-      else entry.points.set(key, { x: x, y: y });
-      entry.total += y;
-    };
-    rows.forEach((row, rowIndex) => {
-      const value = row[seriesAt];
-      const key = value === null || value === undefined ? say("blank") : String(value);
-      for (const index of valueColumns) {
-        const name = valueColumns.length > 1 ? `${key} · ${nameOf(index)}` : key;
-        add(
-          entryFor(name),
-          labelOf(row, rowIndex),
-          typeof row[index] === "number" ? row[index] : 0
-        );
-      }
+      const value = splitAt === undefined ? undefined : (row[splitAt] ?? null);
+      if (!groups.has(value)) groups.set(value, group(value));
+      const into = groups.get(value);
+      measures.forEach((index, at) => {
+        const y = typeof row[index] === "number" ? row[index] : 0;
+        add(into.points[at], x, y);
+        if (at === 0) into.total += y;
+      });
     });
 
-    let kept = order;
-    if (order.length > MAX_SERIES) {
+    let kept = [...groups.values()];
+    const perMeasure = Math.max(1, Math.floor(MAX_SERIES / measures.length));
+    if (kept.length > perMeasure) {
       const largest = new Set(
-        order
+        kept
           .slice()
           .sort((a, b) => b.total - a.total)
-          .slice(0, MAX_SERIES - 1)
+          .slice(0, perMeasure - 1)
       );
-      const other = { name: OTHER_LABEL, total: 0, points: new Map() };
-      for (const entry of order) {
-        if (largest.has(entry)) continue;
-        for (const point of entry.points.values()) add(other, point.x, point.y);
+      const folded = group(FOLDED);
+      for (const held of kept) {
+        if (largest.has(held)) continue;
+        held.points.forEach((points, at) => {
+          for (const point of points.values()) add(folded.points[at], point.x, point.y);
+        });
       }
-      kept = order.filter((entry) => largest.has(entry)).concat([other]);
+      kept = kept.filter((held) => largest.has(held)).concat([folded]);
     }
-    return kept.map((entry) => ({
-      name: entry.name,
-      points: [...categories].map(([key, x]) => entry.points.get(key) || { x: x, y: 0 }),
-    }));
+
+    const groupName = (value) =>
+      value === FOLDED ? OTHER_LABEL : value === null ? say("blank") : String(value);
+    const nameFor = (value, index) => {
+      if (splitAt === undefined) return nameOf(index);
+      if (measures.length === 1) return groupName(value);
+      return `${groupName(value)} · ${nameOf(index)}`;
+    };
+    const series = [];
+    for (const held of kept) {
+      measures.forEach((index, at) => {
+        series.push({
+          name: nameFor(held.value, index),
+          points: [...categories].map(([key, x]) => held.points[at].get(key) || { x: x, y: 0 }),
+        });
+      });
+    }
+    return series;
   };
 
-  const seriesAt = (slots.series || [])[0];
+  // A pie is one series, parts of a whole, and draws only that one: split, it
+  // would show one group's numbers as the whole. So it does not split, and the
+  // rows that share a label add up into one slice.
+  const splitAt = (slots.series || [])[0];
   const series =
-    seriesAt !== undefined
-      ? splitSeries(seriesAt)
+    splitAt !== undefined
+      ? groupedSeries(mark === "pie" ? undefined : splitAt)
       : valueColumns.slice(0, MAX_SERIES).map((index) => ({
           name: nameOf(index),
           points: rows.map((row, rowIndex) => ({

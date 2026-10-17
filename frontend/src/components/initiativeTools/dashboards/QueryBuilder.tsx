@@ -50,12 +50,18 @@ const COUNT_ALL: QueryColumnSpec = { field: "*", aggregate: "count", alias: "cou
 
 /** What a statement is grouped by: once any column is a count or a total,
  *  every column shown as it is — the only grouping Postgres accepts, so it is
- *  worked out rather than asked for. With no count or total, every row shows. */
+ *  worked out rather than asked for. With no count or total, every row shows.
+ *  A name is listed once: the server groups every column that has it, such as
+ *  one date rounded two ways. */
 const groupingFor = (columns: QueryColumnSpec[]): string[] =>
   columns.some((column) => column.aggregate)
-    ? columns
-        .filter((column) => !column.aggregate && column.field !== "*")
-        .map((column) => column.alias || column.field)
+    ? [
+        ...new Set(
+          columns
+            .filter((column) => !column.aggregate && column.field !== "*")
+            .map((column) => column.alias || column.field)
+        ),
+      ]
     : [];
 
 export interface QueryBuilderProps {
@@ -111,7 +117,10 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
     const merged = { ...spec, ...next };
     onChange({ ...merged, group_by: groupingFor(merged.columns) });
   };
-  const grouping = groupingFor(spec.columns);
+  // What the statement is grouped by now. A saved widget keeps the grouping it
+  // was built with until it is edited, because opening one must not rewrite
+  // it, so this reads the spec rather than working it out again.
+  const grouping = spec.group_by ?? [];
 
   /**
    * A new statement starts without archived work or templates.

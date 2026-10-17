@@ -124,6 +124,7 @@ describe("grouping", () => {
         spec={{
           ...spec("members"),
           columns: [COUNT_ALL, { field: "title" }, { field: "priority" }],
+          group_by: ["title", "priority"],
         }}
         onChange={onChange}
         initiativeId={7}
@@ -136,6 +137,19 @@ describe("grouping", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ columns: [COUNT_ALL, { field: "title" }], group_by: ["title"] })
     );
+  });
+
+  it("says what a saved widget is grouped by until it is edited", () => {
+    // Built before the grouping was worked out: a plain column, grouped. The
+    // statement it builds is grouped, so that is what the line says.
+    renderWithProviders(
+      <QueryBuilder
+        spec={{ ...spec("members"), columns: [{ field: "title" }], group_by: ["title"] }}
+        onChange={vi.fn()}
+        initiativeId={7}
+      />
+    );
+    expect(screen.getByText("One row for each Title")).toBeInTheDocument();
   });
 
   it("groups nothing without a count or a total", () => {
