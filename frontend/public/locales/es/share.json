@@ -1,0 +1,56 @@
+{
+  "title": "Compartir en Initiative",
+  "chooseKind": "¿Qué quieres crear con esto?",
+  "cancel": "Cancelar",
+  "fallbackTitle": "Imagen compartida",
+  "fallbackFileTitle": "Archivo compartido",
+  "pictures_one": "{{count}} imagen",
+  "pictures_other": "{{count}} imágenes",
+  "files_one": "{{count}} archivo",
+  "files_other": "{{count}} archivos",
+  "kinds": {
+    "task": {
+      "label": "Tarea",
+      "description": "Añadirla a un proyecto"
+    },
+    "file": {
+      "label": "Documento",
+      "description": "Escribir un documento a partir de esto"
+    },
+    "upload": {
+      "label": "Archivo",
+      "description": "Subirlo tal cual"
+    },
+    "post": {
+      "label": "Publicación",
+      "description": "Ponerlo en el tablón de una iniciativa"
+    }
+  },
+  "createWizard": {
+    "title": "Compartir en Initiative",
+    "selectCommunity": "Selecciona una comunidad",
+    "selectInitiative": "Selecciona una iniciativa",
+    "selectProject": "Selecciona un proyecto",
+    "noInitiatives": "Aquí no hay iniciativas a las que puedas añadir esto.",
+    "lastUsed": "Usado por última vez",
+    "back": "Atrás"
+  },
+  "compose": {
+    "title": "Título",
+    "note": "Nota",
+    "notePlaceholder": "Añade una nota (opcional)",
+    "fileName": "Nombre para {{name}}",
+    "remove": "Quitar {{name}}",
+    "filesLeftOut_one": "{{count}} archivo no es una imagen, así que se queda fuera. Elige Archivo para subirlo.",
+    "filesLeftOut_other": "{{count}} archivos no son imágenes, así que se quedan fuera. Elige Archivo para subirlos.",
+    "creating": "Compartiendo…",
+    "upload_one": "Subir archivo",
+    "upload_other": "Subir {{count}} archivos",
+    "create": {
+      "task": "Crear tarea",
+      "file": "Crear documento",
+      "post": "Publicar"
+    }
+  },
+  "createError": "No se pudo compartir. Inténtalo de nuevo."
+}

@@ -33,6 +33,7 @@ import { Route as ServerRequiredAuthenticatedMyToolsRouteImport } from './routes
 import { Route as ServerRequiredAuthenticatedNavigateRouteImport } from './routes/_serverRequired/_authenticated/navigate'
 import { Route as ServerRequiredAuthenticatedNotificationsRouteImport } from './routes/_serverRequired/_authenticated/notifications'
 import { Route as ServerRequiredAuthenticatedProfileRouteImport } from './routes/_serverRequired/_authenticated/profile'
+import { Route as ServerRequiredAuthenticatedShareRouteImport } from './routes/_serverRequired/_authenticated/share'
 import { Route as ServerRequiredAuthenticatedUserStatsRouteImport } from './routes/_serverRequired/_authenticated/user-stats'
 import { Route as ServerRequiredAccountNotMeRouteImport } from './routes/_serverRequired/account.not-me'
 import { Route as ServerRequiredInviteCodeRouteImport } from './routes/_serverRequired/invite.$code'
@@ -318,6 +319,12 @@ const ServerRequiredAuthenticatedProfileRoute =
   ServerRequiredAuthenticatedProfileRouteImport.update({
     id: '/profile',
     path: '/profile',
+    getParentRoute: () => ServerRequiredAuthenticatedRoute,
+  } as any)
+const ServerRequiredAuthenticatedShareRoute =
+  ServerRequiredAuthenticatedShareRouteImport.update({
+    id: '/share',
+    path: '/share',
     getParentRoute: () => ServerRequiredAuthenticatedRoute,
   } as any)
 const ServerRequiredAuthenticatedUserStatsRoute =
@@ -1528,6 +1535,7 @@ export interface FileRoutesByFullPath {
   '/navigate': typeof ServerRequiredAuthenticatedNavigateRoute
   '/notifications': typeof ServerRequiredAuthenticatedNotificationsRoute
   '/profile': typeof ServerRequiredAuthenticatedProfileRouteWithChildren
+  '/share': typeof ServerRequiredAuthenticatedShareRoute
   '/user-stats': typeof ServerRequiredAuthenticatedUserStatsRoute
   '/account/not-me': typeof ServerRequiredAccountNotMeRoute
   '/invite/$code': typeof ServerRequiredInviteCodeRoute
@@ -1704,6 +1712,7 @@ export interface FileRoutesByTo {
   '/my-tools': typeof ServerRequiredAuthenticatedMyToolsRoute
   '/navigate': typeof ServerRequiredAuthenticatedNavigateRoute
   '/notifications': typeof ServerRequiredAuthenticatedNotificationsRoute
+  '/share': typeof ServerRequiredAuthenticatedShareRoute
   '/user-stats': typeof ServerRequiredAuthenticatedUserStatsRoute
   '/account/not-me': typeof ServerRequiredAccountNotMeRoute
   '/invite/$code': typeof ServerRequiredInviteCodeRoute
@@ -1867,6 +1876,7 @@ export interface FileRoutesById {
   '/_serverRequired/_authenticated/navigate': typeof ServerRequiredAuthenticatedNavigateRoute
   '/_serverRequired/_authenticated/notifications': typeof ServerRequiredAuthenticatedNotificationsRoute
   '/_serverRequired/_authenticated/profile': typeof ServerRequiredAuthenticatedProfileRouteWithChildren
+  '/_serverRequired/_authenticated/share': typeof ServerRequiredAuthenticatedShareRoute
   '/_serverRequired/_authenticated/user-stats': typeof ServerRequiredAuthenticatedUserStatsRoute
   '/_serverRequired/account/not-me': typeof ServerRequiredAccountNotMeRoute
   '/_serverRequired/invite/$code': typeof ServerRequiredInviteCodeRoute
@@ -2047,6 +2057,7 @@ export interface FileRouteTypes {
     | '/navigate'
     | '/notifications'
     | '/profile'
+    | '/share'
     | '/user-stats'
     | '/account/not-me'
     | '/invite/$code'
@@ -2223,6 +2234,7 @@ export interface FileRouteTypes {
     | '/my-tools'
     | '/navigate'
     | '/notifications'
+    | '/share'
     | '/user-stats'
     | '/account/not-me'
     | '/invite/$code'
@@ -2385,6 +2397,7 @@ export interface FileRouteTypes {
     | '/_serverRequired/_authenticated/navigate'
     | '/_serverRequired/_authenticated/notifications'
     | '/_serverRequired/_authenticated/profile'
+    | '/_serverRequired/_authenticated/share'
     | '/_serverRequired/_authenticated/user-stats'
     | '/_serverRequired/account/not-me'
     | '/_serverRequired/invite/$code'
@@ -2714,6 +2727,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ServerRequiredAuthenticatedProfileRouteImport
+      parentRoute: typeof ServerRequiredAuthenticatedRoute
+    }
+    '/_serverRequired/_authenticated/share': {
+      id: '/_serverRequired/_authenticated/share'
+      path: '/share'
+      fullPath: '/share'
+      preLoaderRoute: typeof ServerRequiredAuthenticatedShareRouteImport
       parentRoute: typeof ServerRequiredAuthenticatedRoute
     }
     '/_serverRequired/_authenticated/user-stats': {
@@ -4419,6 +4439,7 @@ interface ServerRequiredAuthenticatedRouteChildren {
   ServerRequiredAuthenticatedNavigateRoute: typeof ServerRequiredAuthenticatedNavigateRoute
   ServerRequiredAuthenticatedNotificationsRoute: typeof ServerRequiredAuthenticatedNotificationsRoute
   ServerRequiredAuthenticatedProfileRoute: typeof ServerRequiredAuthenticatedProfileRouteWithChildren
+  ServerRequiredAuthenticatedShareRoute: typeof ServerRequiredAuthenticatedShareRoute
   ServerRequiredAuthenticatedUserStatsRoute: typeof ServerRequiredAuthenticatedUserStatsRoute
   ServerRequiredAuthenticatedIndexRoute: typeof ServerRequiredAuthenticatedIndexRoute
   ServerRequiredAuthenticatedCCommunityIdRoute: typeof ServerRequiredAuthenticatedCCommunityIdRouteWithChildren
@@ -4452,6 +4473,8 @@ const ServerRequiredAuthenticatedRouteChildren: ServerRequiredAuthenticatedRoute
       ServerRequiredAuthenticatedNotificationsRoute,
     ServerRequiredAuthenticatedProfileRoute:
       ServerRequiredAuthenticatedProfileRouteWithChildren,
+    ServerRequiredAuthenticatedShareRoute:
+      ServerRequiredAuthenticatedShareRoute,
     ServerRequiredAuthenticatedUserStatsRoute:
       ServerRequiredAuthenticatedUserStatsRoute,
     ServerRequiredAuthenticatedIndexRoute:
