@@ -147,7 +147,7 @@ async def _settle() -> None:
     for _ in range(3):
         await post_commit.settle_all()
     # And every hook the commits wrote, sent by the timers they armed.
-    await sweep_timers.process_due_timers()
+    await sweep_timers.process_due_timers(outward=True)
 
 
 async def _install(client: AsyncClient, actor):

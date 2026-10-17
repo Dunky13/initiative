@@ -223,7 +223,8 @@ class TestWritingArmsTheTimer:
 
         assert await _deliver(guild.id, hook="installed")
         assert await _timers(session, guild.id) == 1
-        await sweep_timers.process_due_timers()
+        # The sweep calls plug-ins, so it runs in the outward lane.
+        await sweep_timers.process_due_timers(outward=True)
 
         ((_, path, claims, body),) = plugins.calls
         assert path == "/v1/hooks/installed"
@@ -260,15 +261,63 @@ class TestWritingArmsTheTimer:
         assert [row.hook for row in await _hooks(session, guild.id)] == ["erase"]
         assert await _timers(session, guild.id) == 1
 
-    async def test_only_a_community_hook_and_only_a_container_plugin(self, session):
+    async def test_only_a_community_hook_is_written(self, session):
         _user, guild, _install = await _setup(session)
 
         with pytest.raises(community_hooks.UnknownCommunityHookError):
             await _deliver(guild.id, hook="revoke")
-        assert not await _deliver(
-            guild.id, public_id="not.registered", hook="installed"
-        )
         assert await _hooks(session, guild.id) == []
+
+    async def test_an_erase_reaches_names_whose_registration_is_gone(
+        self, session, monkeypatch
+    ):
+        """Uninstalling with erase after the registration was deleted still
+        writes the erase, under the public id the install pinned, which is what
+        the references key on. It cannot be sent, and once it is given up on
+        the names are dropped, so a registration made again finds none."""
+        from app.models.platform.plugin_service_registration import (
+            PluginServiceRegistration,
+        )
+        from app.models.tenant.guild_plugin import GuildPlugin
+        from app.services.tenant import guild_plugins as guild_plugins_service
+
+        user, guild, install = await _setup(session)
+        guild_id, install_id, user_id = guild.id, install.id, user.id
+        member = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild_id, public_id=PUBLIC_ID, user_id=user_id
+        )
+        await set_rls_context(session, Unattributed())
+        registration = (
+            await session.exec(
+                select(PluginServiceRegistration).where(
+                    PluginServiceRegistration.public_id == PUBLIC_ID
+                )
+            )
+        ).one()
+        await session.delete(registration)
+        await session.commit()
+        invalidate_registrations()
+
+        await set_rls_context(session, SystemGuild(guild_id))
+        plugin = await session.get(GuildPlugin, install_id)
+        await guild_plugins_service.uninstall_plugin(
+            session, plugin, actor_user_id=user_id, erase=True
+        )
+        await session.commit()
+        written = [(row.public_id, row.hook) for row in await _hooks(session, guild_id)]
+        assert written == [(PUBLIC_ID, "uninstalled"), (PUBLIC_ID, "erase")]
+
+        monkeypatch.setattr(community_hooks, "MAX_ATTEMPTS", 1)
+        await _visit(guild_id)
+        uninstalled, erase = await _hooks(session, guild_id)
+        assert uninstalled.last_error == "the plug-in is not reachable here"
+        await _visit(guild_id)
+        _uninstalled, erase = await _hooks(session, guild_id)
+        assert erase.outcome == "gave_up"
+        assert (
+            await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild_id)
+            is None
+        )
 
 
 class TestSending:
@@ -345,6 +394,36 @@ class TestSending:
             "/v1/hooks/installed",
             "/v1/hooks/uninstalled",
         ]
+
+    async def test_the_next_visit_is_due_at_the_heads_retry(self, session, monkeypatch):
+        """A hook queued behind one waiting out a retry goes when that one does,
+        so it does not bring the community's next visit forward."""
+        _user, guild, _install = await _setup(session)
+        _answering(monkeypatch, hooked=[503])
+
+        await _deliver(guild.id, hook="installed")
+        due = await _visit(guild.id)
+        await _deliver(guild.id, hook="uninstalled")
+        head, _behind = await _hooks(session, guild.id)
+
+        assert due == head.next_attempt_at
+        outside = await community_hooks.due_outside(
+            guild.id, datetime.now(timezone.utc)
+        )
+        assert outside == head.next_attempt_at
+
+    async def test_a_state_waiting_to_be_superseded_is_due_now(
+        self, session, monkeypatch
+    ):
+        _user, guild, _install = await _setup(session)
+        _answering(monkeypatch, hooked=[503])
+
+        await _deliver(guild.id, hook="community_status")
+        await _visit(guild.id)
+        await _deliver(guild.id, hook="community_status")
+
+        due = await community_hooks.due_outside(guild.id, datetime.now(timezone.utc))
+        assert due is not None and due <= datetime.now(timezone.utc)
 
     async def test_it_is_given_up_on_in_the_end(self, session, monkeypatch):
         _user, guild, _install = await _setup(session)
@@ -494,6 +573,42 @@ class TestErasing:
         assert told == [(guild.id, LISTING_UID)]
         assert emitted(capfd, AuditEventType.PLUGIN_ERASE_ABANDONED) == []
 
+    async def test_an_erase_is_finished_and_its_names_dropped_together(
+        self, session, monkeypatch
+    ):
+        """Nothing can find the erase finished and still find the names: an
+        install checking while the names are being dropped is still refused."""
+        from app.services.platform import identity_refs
+
+        user, guild, _install = await _setup(session)
+        await plugin_refs.ensure_plugin_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID, user_id=user.id
+        )
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+        _answering(monkeypatch, hooked=[204])
+        seen: list[bool] = []
+        drop = identity_refs.drop_sector_refs
+
+        async def dropping(*args, **kwargs):
+            # Another session asks as an install would, mid-drop.
+            seen.append(
+                await community_hooks.erase_pending(
+                    guild_id=guild.id, public_id=PUBLIC_ID
+                )
+            )
+            return await drop(*args, **kwargs)
+
+        monkeypatch.setattr(identity_refs, "drop_sector_refs", dropping)
+        await _deliver(guild.id, hook="erase")
+        await _visit(guild.id)
+
+        assert seen == [True]
+        assert not await community_hooks.erase_pending(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+
     async def test_a_plugin_that_takes_no_erase_hook_is_forgotten_too(
         self, session, monkeypatch
     ):
@@ -597,6 +712,27 @@ class TestErasing:
             plugin_refs._cache_key(guild.id, first.id + 1, IdentityEntity.user, user.id)
             not in plugin_refs._install_ref_cache
         )
+
+    async def test_a_purge_erase_that_is_answered_tells_the_issuer(
+        self, session, monkeypatch
+    ):
+        from app.services.marketplace import plugin_entitlements
+
+        _user, guild, _install = await _setup(session)
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+        told: list[tuple[int, str]] = []
+
+        async def erased(guild_id: int, listing_uid: str) -> None:
+            told.append((guild_id, listing_uid))
+
+        monkeypatch.setattr(plugin_entitlements, "erased", erased)
+        _answering(monkeypatch, hooked=[404])
+
+        await community_hooks.erase_for_purge(guild.id)
+
+        assert told == [(guild.id, LISTING_UID)]
 
     async def test_a_purge_tells_every_plugin_holding_a_name_within_bounds(
         self, session, monkeypatch

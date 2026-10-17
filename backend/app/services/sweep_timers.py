@@ -693,6 +693,7 @@ def sweeps() -> tuple[Sweep, ...]:
             # A deleted or suspended community's plug-ins are still told.
             scope=Scope.PROVISIONED,
             every=timedelta(seconds=community_hooks.BACKOFF_SECONDS[0]),
+            calls_out=True,
             # Armed for now by each hook written, and by a change of the
             # community's status (community_hooks.status_changed).
             visit=community_hooks.visit,

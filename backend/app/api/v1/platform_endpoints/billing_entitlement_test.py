@@ -133,7 +133,7 @@ async def _send(client: AsyncClient, payload: dict):
 async def _drained() -> None:
     """Every step a commit started, and every hook it queued, sent."""
     await post_commit.settle_all()
-    await sweep_timers.process_due_timers()
+    await sweep_timers.process_due_timers(outward=True)
 
 
 async def _jws(guild_id: int, **changes) -> str:

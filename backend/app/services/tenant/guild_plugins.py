@@ -345,6 +345,31 @@ async def create_plugin_artifacts(
     await handler.create(session, plugin=plugin, name=plugin.name, guild_id=guild_id)
 
 
+class ErasePendingError(Exception):
+    """The community asked this plug-in to erase its data, and the erase is not
+    finished: installing it now would hand it the names the erase is about to
+    drop."""
+
+
+async def _refuse_while_erasing(
+    guild_id: int, definition: dict, listing_uid: str
+) -> None:
+    """Raise :class:`ErasePendingError` while an erase of this plug-in in the
+    community is unfinished."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
+    public_id = (
+        registration.public_id
+        if registration is not None
+        else registration_lookup.service_public_id(definition)
+    )
+    if public_id is not None and await community_hooks.erase_pending(
+        guild_id=guild_id, public_id=public_id
+    ):
+        raise ErasePendingError(public_id)
+
+
 async def install_plugin(
     session: AsyncSession,
     *,
@@ -376,7 +401,11 @@ async def install_plugin(
     written with the row, so the install never exists without its consent.
     ``allowed_callers`` is the rest of that answer: the installs here let use
     this plug-in (:func:`set_plugin_callers`; ``None`` lets every one).
+
+    Raises :class:`ErasePendingError`, having written nothing, while the
+    community's request that this plug-in erase its data is unfinished.
     """
+    await _refuse_while_erasing(guild_id, definition, listing_uid)
     plugin = GuildPlugin(
         listing_uid=listing_uid,
         listing_version=listing_version,
@@ -496,10 +525,16 @@ async def uninstall_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
+
+    # Told with the removal, in its transaction. The plug-in is named as its
+    # references are: by the registration, or with none left, by the public id
+    # the install pinned, so an erase still reaches its names.
+    named = public_id or registration_lookup.service_public_id(plugin.definition)
+    if named is not None:
         await community_hooks.queue_community_hooks(
             session,
             guild_id=guild_id,
-            public_id=public_id,
+            public_id=named,
             hooks=("uninstalled", "erase") if erase else ("uninstalled",),
             install_id=plugin.id,
         )

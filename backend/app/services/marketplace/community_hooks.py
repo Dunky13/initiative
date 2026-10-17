@@ -25,8 +25,8 @@ writes one from outside any, in a transaction of its own. Each hook is a row in
 ``public.plugin_community_hooks`` (``app.models.platform.plugin_community_hook``)
 and arms the community's ``plugin_hooks`` sweep timer for now
 (``app.services.sweep_timers``) in the same transaction. Both refuse a name
-outside :data:`COMMUNITY_HOOK_NAMES` and write nothing for a plug-in this
-deployment has no container registration for.
+outside :data:`COMMUNITY_HOOK_NAMES` and write nothing for a declarative
+plug-in, which Initiative calls on itself.
 
 **How it is delivered.** The sweep's visit (:func:`visit`) sends the
 community's due hooks, one plug-in at a time and in the order they were
@@ -49,7 +49,7 @@ The visit answers its own next due time: the soonest retry still waiting, or
 the soonest answered row past :data:`DONE_RETENTION`, which the visit deletes.
 
 An ``erase`` that is ``delivered`` or ``not_taken`` drops the plug-in's
-references in the community (``plugin_refs.drop_plugin_refs``) and tells the
+references in the community, in the transaction that finishes it, and tells the
 entitlement issuer; one that is not answered keeps them, and is asked again.
 One given up on drops them all the same, since erasing is the community's
 request, and goes on the audit stream (``plugin.erase_abandoned``). While an
@@ -90,7 +90,9 @@ from app.models.platform.plugin_community_hook import (
     PluginCommunityHook,
 )
 from app.models.platform.plugin_install import PluginInstall
+from app.models.platform.identity_ref import IdentityPurpose
 from app.services.marketplace import plugin_refs, registration_lookup
+from app.services.platform import identity_refs
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 
 logger = logging.getLogger(__name__)
@@ -208,11 +210,17 @@ async def queue_community_hooks(
     engine's. ``install_id`` is the install the hooks are about, as the token's
     ``plugin_install_id``; left out, the community's install of the plug-in
     when each is sent, or ``0`` when it has none. Returns whether anything was
-    written: nothing is for a plug-in with no container registration here.
+    written: nothing is for a declarative plug-in. One with no registration
+    here is written all the same (an ``erase`` has to outlive a deleted
+    registration), and is reported unreachable until it is given up on.
     """
     for hook in hooks:
         _check_name(hook)
-    if not hooks or await _container(public_id) is None:
+    if not hooks:
+        return False
+    registration = (await registration_lookup.load_registrations()).get(public_id)
+    if registration is not None and registration.declarative:
+        # Initiative makes a declarative plug-in's calls itself: nobody to tell.
         return False
     now = datetime.now(timezone.utc)
     await session.exec(
@@ -508,15 +516,21 @@ async def _settle(
         else:
             values["next_attempt_at"] = now + _backoff(attempts)
     await session.exec(update(_TABLE).where(_TABLE.c.id == row.id).values(**values))
-    await session.commit()
-    if row.hook == "erase" and "done_at" in values:
+    erased = row.hook == "erase" and "done_at" in values
+    dropped = 0
+    if erased:
         # Erasing is the community's request: a plug-in that never answers it
         # does not keep the names, it only loses the chance to say it erased.
-        if values["outcome"] == "gave_up":
-            await _record_abandoned_erase(row, attempts)
-        dropped = await plugin_refs.drop_plugin_refs(
-            guild_id=row.guild_id, public_id=row.public_id
+        # Dropped in the transaction that finishes the erase, so nothing can
+        # see it finished and still find the names.
+        dropped = await identity_refs.drop_sector_refs(
+            session,
+            sector_guild_id=row.guild_id,
+            sector_plugin=row.public_id,
+            purpose=IdentityPurpose.plugin,
         )
+    await session.commit()
+    if erased:
         logger.info(
             "community hooks: %s %s erase in guild %s; %d reference(s) dropped",
             row.public_id,
@@ -524,7 +538,9 @@ async def _settle(
             row.guild_id,
             dropped,
         )
-        if values["outcome"] != "gave_up":
+        if values["outcome"] == "gave_up":
+            await _record_abandoned_erase(row, attempts)
+        else:
             await _report_erased(row.guild_id, row.public_id)
     return "done_at" in values
 
@@ -541,12 +557,7 @@ async def _deliver_plugin(
     current state back."""
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
-        newest = {row.hook: row.id for row in rows if row.hook in LATEST_WINS}
-        stale = [
-            row.id
-            for row in rows
-            if row.hook in LATEST_WINS and row.id != newest[row.hook]
-        ]
+        stale, _rest = _effective(rows)
         if stale:
             await session.exec(
                 update(_TABLE)
@@ -602,25 +613,57 @@ async def erase_pending(*, guild_id: int, public_id: str) -> bool:
         ).first() is not None
 
 
-def _next_due_query(guild_id: int) -> Any:
-    """When the community next has hook work: a retry coming due, or an
-    answered row coming past its keeping."""
-    return select(
-        func.least(
-            select(func.min(PluginCommunityHook.next_attempt_at))
+def _effective(
+    rows: list[PluginCommunityHook],
+) -> tuple[list[int], list[PluginCommunityHook]]:
+    """One plug-in's unfinished hooks, oldest first, split into the state
+    hooks a newer one of their kind supersedes and the rest, in order."""
+    newest = {row.hook: row.id for row in rows if row.hook in LATEST_WINS}
+    stale = [
+        int(row.id or 0)
+        for row in rows
+        if row.hook in LATEST_WINS and row.id != newest[row.hook]
+    ]
+    return stale, [row for row in rows if row.id not in stale]
+
+
+async def _next_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
+    """When the community next has hook work: each plug-in's first hook still
+    to send (now, if one of its state hooks is waiting to be superseded), or an
+    answered row coming past its keeping. A hook queued behind one waiting
+    out a retry is not counted: it goes once that one does."""
+    rows = (
+        await session.exec(
+            select(PluginCommunityHook)
             .where(
                 PluginCommunityHook.guild_id == guild_id,
                 col(PluginCommunityHook.done_at).is_(None),
             )
-            .scalar_subquery(),
-            select(func.min(PluginCommunityHook.done_at) + DONE_RETENTION)
-            .where(
+            .order_by(col(PluginCommunityHook.public_id), col(PluginCommunityHook.id))
+        )
+    ).all()
+    by_plugin: dict[str, list[PluginCommunityHook]] = {}
+    for row in rows:
+        by_plugin.setdefault(row.public_id, []).append(row)
+    due: list[datetime] = []
+    now = datetime.now(timezone.utc)
+    for queue in by_plugin.values():
+        stale, rest = _effective(queue)
+        if stale:
+            due.append(now)
+        elif rest:
+            due.append(rest[0].next_attempt_at)
+    kept = (
+        await session.exec(
+            select(func.min(PluginCommunityHook.done_at)).where(
                 PluginCommunityHook.guild_id == guild_id,
                 col(PluginCommunityHook.done_at).is_not(None),
             )
-            .scalar_subquery(),
         )
-    )
+    ).first()
+    if kept is not None:
+        due.append(kept + DONE_RETENTION)
+    return min(due) if due else None
 
 
 async def visit(routed: AsyncSession, guild_id: int) -> Optional[datetime]:
@@ -671,7 +714,7 @@ async def visit(routed: AsyncSession, guild_id: int) -> Optional[datetime]:
     )
     async with db_session.SystemSessionLocal() as session:
         await db_session.set_rls_context(session, Unattributed())
-        return (await session.exec(_next_due_query(guild_id))).first()
+        return await _next_due(session, guild_id)
 
 
 async def due_outside(guild_id: int, now: datetime) -> Optional[datetime]:
@@ -693,7 +736,7 @@ async def due_outside(guild_id: int, now: datetime) -> Optional[datetime]:
         }
         if any(row.listing_uid in registered for row in untold):
             return now
-        return (await session.exec(_next_due_query(guild_id))).first()
+        return await _next_due(session, guild_id)
 
 
 # --- a purge -------------------------------------------------------------------
@@ -757,6 +800,9 @@ async def erase_for_purge(guild_id: int, *, public_ids: Iterable[str] = ()) -> N
                 )
                 continue
             if outcome.outcome is not None:
+                # Told while the community's row, and billing's name for it,
+                # still stand.
+                await _report_erased(guild_id, public_id)
                 return
         logger.warning(
             "community hooks: %s did not answer erase for purged guild %s",
