@@ -11,13 +11,16 @@ deployment provides; it tells the plug-in ``erase``, after ``uninstalled``.
 from __future__ import annotations
 
 import pytest
+from datetime import datetime, timezone
+
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.messages import GuildPluginMessages
 from app.db import post_commit
-from app.db.request_context import Unattributed
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityRole
 from app.models.platform.plugin_community_hook import PluginCommunityHook
@@ -168,6 +171,62 @@ class TestErasing:
             )
             == community
         )
+
+    @pytest.mark.parametrize("settled", ["delivered", "gave_up"])
+    async def test_it_cannot_come_back_until_the_erase_is_done(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session: AsyncSession,
+        registration,
+        settled,
+    ):
+        """An install while the erase is unfinished would be handed the names
+        it is about to drop. Answered or given up on, the erase is done."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin_id = await _install(client, a)
+        await _uninstall(client, a, plugin_id, erase="true")
+
+        refused = await client.post(
+            a.g("/plugins/"), headers=a.headers, json={"listing_uid": SERVICE_UID}
+        )
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"] == GuildPluginMessages.ERASE_PENDING
+
+        await set_rls_context(session, Unattributed())
+        await session.exec(
+            update(PluginCommunityHook)
+            .where(
+                PluginCommunityHook.guild_id == a.guild.id,
+                PluginCommunityHook.hook == "erase",
+            )
+            .values(done_at=datetime.now(timezone.utc), outcome=settled)
+        )
+        await session.commit()
+        assert await _install(client, a)
+
+    async def test_the_removal_and_its_hooks_land_together(
+        self, client: AsyncClient, acting_user, session: AsyncSession, registration
+    ):
+        """Removing the install and writing ``uninstalled`` and ``erase`` are one
+        transaction: rolled back, the install stays and nothing is told."""
+        from app.models.tenant.guild_plugin import GuildPlugin
+        from app.services.tenant import guild_plugins as guild_plugins_service
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id, user_id = a.guild.id, a.user.id
+        plugin_id = await _install(client, a)
+
+        await set_rls_context(session, SystemGuild(guild_id))
+        plugin = await session.get(GuildPlugin, plugin_id)
+        await guild_plugins_service.uninstall_plugin(
+            session, plugin, actor_user_id=user_id, erase=True
+        )
+        await session.rollback()
+
+        assert await _told(session, guild_id) == [("installed", plugin_id)]
+        await set_rls_context(session, SystemGuild(guild_id))
+        assert await session.get(GuildPlugin, plugin_id) is not None
 
     async def test_a_plugin_the_deployment_provides_is_never_erased(
         self, client: AsyncClient, acting_user, session: AsyncSession, registration

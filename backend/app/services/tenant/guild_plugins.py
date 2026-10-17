@@ -416,8 +416,9 @@ async def install_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
-        # Told once the install commits, by either route, first time or again.
-        community_hooks.queue_community_hooks(
+        # Written with the install, so it is told once the install commits, by
+        # either route, first time or again, and never for one rolled back.
+        await community_hooks.queue_community_hooks(
             session,
             guild_id=guild_id,
             public_id=public_id,
@@ -495,7 +496,7 @@ async def uninstall_plugin(
             actor_user_id=actor_user_id,
             guild_id=guild_id,
         )
-        community_hooks.queue_community_hooks(
+        await community_hooks.queue_community_hooks(
             session,
             guild_id=guild_id,
             public_id=public_id,

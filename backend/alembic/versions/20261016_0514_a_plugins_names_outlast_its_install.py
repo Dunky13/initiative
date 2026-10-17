@@ -13,19 +13,21 @@ next time it is told about somebody. The table is FORCEd, so the delete runs
 with FORCE lifted and restored around it.
 
 ``plugin_installs`` gains ``community_status_sent``, the status each install's
-plug-in was last told. An existing install starts with none, so it is told the
-current status once.
+plug-in was last told, set once a ``community_status`` hook is answered. An
+existing install starts with none, so it is told the current status once.
 
 ``plugin_community_hooks`` is new: the community hooks waiting to reach a
-plug-in, retried until it answers. It is the system engine's alone: the login
-role and the guild and platform floors, which the schema default grants full
-DML on a new table, are revoked; the seat and install floors take no default
-privileges and are granted nothing. RLS is enabled and forced with no policies
-(``FORCED_NO_POLICY`` in ``app.db.public_rls``). It is new and has nothing to
-carry, so it is created and then locked.
+plug-in, retried until it answers, by the ``plugin_hooks`` sweep timer. A
+routed write appends hooks for its own community (an install, an uninstall) in
+its own transaction, so the guild floor holds INSERT and one policy admits the
+routed community's rows; it reads nothing back. The system engine owns the
+rest. The login role and the platform floor, which the schema default grants
+full DML on a new table, are revoked; the seat and install floors take no
+default privileges and are granted nothing. Row security is enabled and
+forced. It is new and has nothing to carry, so it is created and then locked.
 
-Revision ID: 20261016_0513
-Revises: 20261016_0512
+Revision ID: 20261016_0514
+Revises: 20261016_0513
 Create Date: 2026-10-16
 """
 
@@ -35,8 +37,8 @@ from sqlalchemy.dialects import postgresql
 
 from app.core.config import settings
 
-revision = "20261016_0513"
-down_revision = "20261016_0512"
+revision = "20261016_0514"
+down_revision = "20261016_0513"
 branch_labels = None
 depends_on = None
 
@@ -114,7 +116,6 @@ def upgrade() -> None:
         ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("done_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("outcome", sa.String(length=16), nullable=True),
@@ -131,6 +132,8 @@ def upgrade() -> None:
         f"ALTER TABLE public.{HOOKS} ENABLE ROW LEVEL SECURITY",
         f"ALTER TABLE public.{HOOKS} FORCE ROW LEVEL SECURITY",
         f'REVOKE ALL ON TABLE public.{HOOKS} FROM app_user, app_guild_base, "{_platform_base()}"',
+        f"GRANT INSERT ON TABLE public.{HOOKS} TO app_guild_base",
+        f"GRANT USAGE, SELECT ON SEQUENCE public.{HOOKS}_id_seq TO app_guild_base",
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.{HOOKS} TO app_admin",
         f"GRANT USAGE, SELECT ON SEQUENCE public.{HOOKS}_id_seq TO app_admin",
     ):

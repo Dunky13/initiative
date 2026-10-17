@@ -94,17 +94,7 @@ async def record(guild_id: int, plugin: GuildPlugin) -> None:
     }
     statement = (
         pg_insert(PluginInstall)
-        .values(
-            guild_id=guild_id,
-            install_id=plugin.id,
-            # A new install's plug-in is told the status by its ``installed``
-            # hook's token, so it starts as told; a change from here on is
-            # sent as ``community_status``.
-            community_status_sent=select(Guild.status)
-            .where(Guild.id == guild_id)
-            .scalar_subquery(),
-            **values,
-        )
+        .values(guild_id=guild_id, install_id=plugin.id, **values)
         .on_conflict_do_update(
             index_elements=[PluginInstall.guild_id, PluginInstall.install_id],
             set_=values,

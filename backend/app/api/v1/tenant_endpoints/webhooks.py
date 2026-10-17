@@ -50,6 +50,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -115,7 +116,9 @@ async def _validate_target_url(url: str) -> None:
         ) from exc
 
 
-async def _subscriber_plugins(session, install_ids: set[int]) -> dict[int, str]:
+async def _subscriber_plugins(
+    session: AsyncSession, install_ids: set[int]
+) -> dict[int, str]:
     """The ``public_id`` of the plug-in behind each install in ``install_ids``,
     for those that have one: the sector a subscription it registered is named
     in."""
@@ -133,7 +136,7 @@ async def _subscriber_plugins(session, install_ids: set[int]) -> dict[int, str]:
 
 
 async def _named(
-    session,
+    session: AsyncSession,
     rows: list[WebhookSubscription],
     *,
     guild_id: int,

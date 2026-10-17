@@ -51,6 +51,7 @@ from app.schemas.platform.guild import CommunityInviteGrant
 from app.models.tenant.guild_setting import GuildSetting
 from app.models.platform.user import User, UserStatus
 from app.services import audit as audit_service
+from app.services.marketplace import community_hooks
 from app.services.auth import addresses
 from app.services.platform import billing as billing_service
 from app.services.platform import billing_ping
@@ -1483,6 +1484,7 @@ async def set_guild_status(
         guild.status_changed_at = datetime.now(timezone.utc)
         session.add(guild)
         await session.flush()
+        community_hooks.status_changed(session, guild_id)
     return guild
 
 
@@ -2208,6 +2210,7 @@ async def soft_delete_guild(
     guild.status_changed_at = datetime.now(timezone.utc)
     session.add(guild)
     await session.flush()
+    community_hooks.status_changed(session, guild_id)
     return CommunityDeletionNotice(
         community_name=guild.name,
         recipients=recipients,
@@ -2293,6 +2296,7 @@ async def restore_guild(
     guild.status = status.value
     guild.status_changed_at = datetime.now(timezone.utc)
     session.add(guild)
+    community_hooks.status_changed(session, guild_id)
     await audit_service.record(
         session,
         event_type=AuditEventType.GUILD_RESTORED,

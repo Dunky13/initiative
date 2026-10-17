@@ -112,7 +112,7 @@ async def _translate(boundary: InstallBoundary, response: Response) -> Response:
     refs, minted = await plugin_refs.install_refs(
         boundary.session,
         guild_id=boundary.guild_id,
-        public_id=boundary.public_id,
+        install_id=boundary.install_id,
         wanted=boundary.wanted,
     )
     if minted:

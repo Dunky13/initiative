@@ -29,8 +29,7 @@ every read rather than the schema the query runs in. ``resolve_plugin_ref``
 therefore takes the guild and will not answer without it.
 
 Most of it is reachable only on the system engine, and every function here
-that writes on it opens a session of its own (the ``ensure_`` ones only when
-this process has not seen the reference in the last minute);
+that writes on it opens a session of its own;
 ``resolve_plugin_ref`` takes one, because its caller composes it with a
 guild-routed read in the same transaction. The exception is :func:`install_refs`, which an installed plug-in's
 own request runs on its routed session: ``guild_<id>_plugin`` may read and mint
@@ -84,14 +83,21 @@ logger = logging.getLogger(__name__)
 
 _PURPOSE = IdentityPurpose.plugin
 
-#: How long a process remembers what a plug-in calls somebody. A reference is
-#: stable, and one that has been replaced keeps resolving for its grace window.
+#: How long a process remembers what an install's plug-in calls somebody, for
+#: the install's own requests (:func:`install_refs`). A reference is stable,
+#: and one that has been replaced keeps resolving for its grace window.
+#:
+#: Keyed by the install as well as the plug-in. An erase drops a plug-in's
+#: references only once it is uninstalled, when no request of that install is
+#: served any more, and a later install is another key: so no process hands
+#: out a reference an erase dropped, whatever it remembers. The system-engine
+#: lookups (``ensure_*``) have no install to key on and remember nothing.
 INSTALL_REF_TTL_SECONDS = 60.0
 #: Entries the process keeps before it sheds the expired ones.
 _INSTALL_REF_CACHE_LIMIT = 100_000
 
-#: ``(guild, plug-in, entity, row id) -> (reference, expiry)``.
-_install_ref_cache: dict[tuple[int, str, str, int], tuple[str, float]] = {}
+#: ``(guild, install, entity, row id) -> (reference, expiry)``.
+_install_ref_cache: dict[tuple[int, int, str, int], tuple[str, float]] = {}
 
 #: The routed install's sector: its community, and the plug-in its token was
 #: issued to (the same predicate as ``public_rls.INSTALL_SECTOR``).
@@ -148,29 +154,18 @@ WHERE {_IN_SECTOR} AND r.retired_at IS NULL
 
 
 def _cache_key(
-    guild_id: int, public_id: str, entity: IdentityEntity, entity_id: int
-) -> tuple[int, str, str, int]:
-    return (guild_id, public_id, entity.value, entity_id)
+    guild_id: int, install_id: int, entity: IdentityEntity, entity_id: int
+) -> tuple[int, int, str, int]:
+    return (guild_id, install_id, entity.value, entity_id)
 
 
-def _remember(key: tuple[int, str, str, int], ref: str, now: float) -> None:
+def _remember(key: tuple[int, int, str, int], ref: str, now: float) -> None:
     if len(_install_ref_cache) >= _INSTALL_REF_CACHE_LIMIT:
         for stale in [k for k, (_, exp) in _install_ref_cache.items() if exp <= now]:
             del _install_ref_cache[stale]
         if len(_install_ref_cache) >= _INSTALL_REF_CACHE_LIMIT:
             _install_ref_cache.clear()
     _install_ref_cache[key] = (ref, now + INSTALL_REF_TTL_SECONDS)
-
-
-def _forget_sector(guild_id: int, public_id: str | None = None) -> None:
-    """Drop what this process remembers one plug-in (or, with none named,
-    every plug-in) calling anybody in one guild."""
-    for key in [
-        k
-        for k in _install_ref_cache
-        if k[0] == guild_id and (public_id is None or k[1] == public_id)
-    ]:
-        del _install_ref_cache[key]
 
 
 def forget_cached_install_refs() -> None:
@@ -182,24 +177,25 @@ async def install_refs(
     session: AsyncSession,
     *,
     guild_id: int,
-    public_id: str,
+    install_id: int,
     wanted: Iterable[tuple[IdentityEntity, int]],
 ) -> tuple[dict[tuple[IdentityEntity, int], str], bool]:
     """What the routed install's plug-in calls each of ``wanted``, minting what
     it lacks.
 
     ``session`` is the install's own request session, routed as
-    ``guild_<id>_plugin``; ``guild_id`` and ``public_id`` are that routing's
-    community and token client, and key this process's cache. Cached answers
-    cost nothing; everything else is one statement. Returns the references and
-    whether any was minted, which the caller commits.
+    ``guild_<id>_plugin``, whose token names the plug-in (the sector);
+    ``guild_id`` and ``install_id`` are that routing's community and install,
+    and key this process's cache. Cached answers cost nothing; everything else
+    is one statement. Returns the references and whether any was minted, which
+    the caller commits.
     """
     now = time.monotonic()
     found: dict[tuple[IdentityEntity, int], str] = {}
     missing: list[tuple[IdentityEntity, int]] = []
     for entity, entity_id in sorted(set(wanted), key=lambda w: (w[0].value, w[1])):
         cached = _install_ref_cache.get(
-            _cache_key(guild_id, public_id, entity, entity_id)
+            _cache_key(guild_id, install_id, entity, entity_id)
         )
         if cached is not None and cached[1] > now:
             found[(entity, entity_id)] = cached[0]
@@ -240,20 +236,16 @@ async def install_refs(
     for entity, entity_id in missing:
         ref = found.get((entity, entity_id))
         if ref is not None:
-            _remember(_cache_key(guild_id, public_id, entity, entity_id), ref, now)
+            _remember(_cache_key(guild_id, install_id, entity, entity_id), ref, now)
     return found, minted
 
 
 async def ensure_plugin_entity_ref(
     *, guild_id: int, public_id: str, entity: IdentityEntity, entity_id: int
 ) -> str:
-    """What one plug-in calls one entity in one guild, from this process's
-    cache or, on a miss, a system-engine session of its own from the guild's
-    cohort."""
-    key = _cache_key(guild_id, public_id, entity, entity_id)
-    cached = _install_ref_cache.get(key)
-    if cached is not None and cached[1] > time.monotonic():
-        return cached[0]
+    """What one plug-in calls one entity in one guild, minting it on first use,
+    on a system-engine session of its own from the guild's cohort. Read every
+    time: an erase that has committed is never answered from memory."""
     async with cohorts.system_session(guild_id) as session:
         ref = await identity_refs.ensure_ref(
             session,
@@ -264,7 +256,6 @@ async def ensure_plugin_entity_ref(
             sector_plugin=public_id,
         )
         await session.commit()
-    _remember(key, ref, time.monotonic())
     return ref
 
 
@@ -428,9 +419,6 @@ async def reissue_plugin_ref(
     The old value keeps resolving for the grace window, so a call already in
     flight lands.
     """
-    _install_ref_cache.pop(
-        _cache_key(guild_id, public_id, IdentityEntity.user, user_id), None
-    )
     return await identity_refs.reissue_ref(
         session,
         entity_type=IdentityEntity.user,
@@ -446,7 +434,6 @@ async def reissue_plugin_refs(
 ) -> int:
     """Replace what one plug-in calls every member in one guild. Returns the
     count."""
-    _forget_sector(guild_id, public_id)
     return await identity_refs.reissue_all_refs(
         session,
         entity_type=IdentityEntity.user,
@@ -502,7 +489,6 @@ async def drop_plugin_refs(*, guild_id: int, public_id: str) -> int:
     ``erase`` hook: a later install starts afresh, under new names. Opens its
     own session, like ``ensure_plugin_ref``.
     """
-    _forget_sector(guild_id, public_id)
     async with cohorts.system_session(guild_id) as session:
         dropped = await identity_refs.drop_sector_refs(
             session,
@@ -525,7 +511,6 @@ async def drop_guild_plugin_refs(*, guild_id: int) -> int:
     reaches this from call sites holding different sessions, one of them
     routed into the guild role being removed.
     """
-    _forget_sector(guild_id)
     async with cohorts.system_session(guild_id) as session:
         dropped = await identity_refs.drop_guild_refs(session, guild_id=guild_id)
         await session.commit()

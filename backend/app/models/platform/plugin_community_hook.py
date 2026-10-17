@@ -1,8 +1,9 @@
 """A hook about a community's install, waiting to reach its plug-in.
 
 The community hooks (``installed``, ``uninstalled``, ``erase``,
-``community_status``) tell a plug-in what happened to the community it is
-installed in. Each is written here and delivered by a worker
+``community_status``, ``entitlement``) tell a plug-in what happened to the
+community it is installed in. Each is written here, in the transaction that
+caused it, and delivered by the ``plugin_hooks`` sweep timer
 (:mod:`app.services.marketplace.community_hooks`), which retries it until the
 plug-in answers.
 
@@ -12,7 +13,8 @@ is about an install that is already gone, and has to be retried after it has
 gone. It lives in ``public`` for the same reason, beside the guild row it
 cascades from.
 
-Reached by the system engine alone.
+A routed write appends rows for its own community; the system engine does the
+rest.
 """
 
 from datetime import datetime, timezone
@@ -87,11 +89,6 @@ class PluginCommunityHook(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
-    #: Held by the pass sending it. Older than the lease means that pass never
-    #: finished, and another may take it.
-    claimed_at: Optional[datetime] = Field(
-        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
-    )
     attempts: int = Field(
         default=0, sa_column=Column(Integer, nullable=False, server_default="0")
     )
@@ -100,7 +97,8 @@ class PluginCommunityHook(SQLModel, table=True):
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     #: How it ended: ``delivered`` (a 2xx), ``not_taken`` (a 404: the plug-in
-    #: does not take this hook) or ``gave_up``.
+    #: does not take this hook), ``superseded`` (a newer one of its kind was
+    #: waiting) or ``gave_up``.
     outcome: Optional[str] = Field(
         default=None, sa_column=Column(String(16), nullable=True)
     )

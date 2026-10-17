@@ -119,8 +119,7 @@ class InstallBoundary:
 
     Built by the scope dependency from the install's completed standing:
     ``guild_id`` and ``install_id`` are the routed community and install,
-    ``public_id`` the plug-in the token was issued to, whose sector names
-    things, ``guild_ref`` what the plug-in calls that community, and ``named`` the
+    ``guild_ref`` what the install calls that community, and ``named`` the
     references the request named that resolve in the install's sector, and
     ``members`` the people among them who are members of the community.
     ``reads_names`` is whether the install holds ``members:read``, which is
@@ -130,7 +129,6 @@ class InstallBoundary:
 
     guild_id: int
     install_id: int
-    public_id: str
     guild_ref: Optional[str]
     named: Mapping[str, tuple[IdentityEntity, int]]
     members: frozenset[int] = frozenset()

@@ -111,7 +111,11 @@ from app.services import audit as audit_service
 from app.services.platform import billing_ping
 from app.services.marketplace import plugin_installs as plugin_installs_service
 from app.services.marketplace import catalog as catalog_service
-from app.services.marketplace import plugin_entitlements, registration_lookup
+from app.services.marketplace import (
+    community_hooks,
+    plugin_entitlements,
+    registration_lookup,
+)
 from app.services.marketplace.definitions import (
     PLUGIN_KINDS,
     GUILD_INSTALLABLE_PLUGIN_KINDS,
@@ -311,6 +315,24 @@ def _require_installable_kind(definition: dict) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=GuildPluginMessages.KIND_NOT_INSTALLABLE,
+        )
+
+
+async def _require_not_erasing(
+    guild_id: int, definition: dict, listing_uid: str
+) -> None:
+    """Refuse to install a plug-in the community asked to erase its data,
+    while that erase is unfinished: an install now would hand it the names the
+    erase is about to drop."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
+    if registration is not None and await community_hooks.erase_pending(
+        guild_id=guild_id, public_id=registration.public_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ERASE_PENDING,
         )
 
 
@@ -556,6 +578,7 @@ async def install_community_plugin(
 
     definition = dict(version.definition)
     _require_installable_kind(definition)
+    await _require_not_erasing(guild_context.guild_id, definition, listing.uid)
     granted = set(payload.granted_scopes)
     await _require_grantable(session, granted, definition)
 

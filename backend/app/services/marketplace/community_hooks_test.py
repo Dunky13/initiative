@@ -3,8 +3,12 @@
 Each is held to what a plug-in's kit relies on: a lifecycle token naming the
 hook, the community by the plug-in's own reference and where it stands; a 2xx
 or a 404 settles it for good and anything else is asked again later; an
-``erase`` drops the plug-in's references only once it has been answered; and a
-status change reaches every enabled install however it was made.
+``erase`` drops the plug-in's references once it is done with; a state hook
+says the state when it is sent; and a hook is written, and its timer armed, in
+the transaction that caused it, so a rollback sends nothing.
+
+The ``plugin_hooks`` sweep timer drives delivery: a hook written arms it, and
+its visit (:func:`community_hooks.visit`) sends what is due.
 """
 
 from __future__ import annotations
@@ -18,15 +22,20 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from sqlalchemy import text, update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.audit_events import AuditEventType
 from app.core.config import settings
-from app.db.request_context import Unattributed
+from app.db import cohorts, post_commit
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityStatus
+from app.models.platform.identity_ref import IdentityEntity
 from app.models.platform.plugin_community_hook import PluginCommunityHook
-from app.services import safe_http
+from app.models.platform.plugin_install import PluginInstall
+from app.services import safe_http, sweep_timers
 from app.services.marketplace import community_hooks, plugin_installs, plugin_refs
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import plugin_connection_flows
@@ -36,11 +45,13 @@ from app.testing import (
     create_guild_plugin,
     create_plugin_service_registration,
     create_user,
+    emitted,
 )
 
 PUBLIC_ID = "tests.hooked"
 LISTING_UID = "TESTAPP0000071"
-BASE_URL = "https://hooked.example.test"
+OTHER_ID = "tests.other"
+OTHER_UID = "TESTAPP0000072"
 
 _KEY = ed25519.Ed25519PrivateKey.generate()
 _PEM = _KEY.private_bytes(
@@ -50,27 +61,35 @@ _PEM = _KEY.private_bytes(
 ).decode()
 
 
-class Plugin:
-    """The plug-in's hook route: answers each call with the next status in
-    ``answers`` (the last repeating), and keeps what it was sent."""
+class Plugins:
+    """Every plug-in's hook route: answers each call to a host with the next
+    status in that host's list (the last repeating), and keeps what it was
+    sent."""
 
-    def __init__(self, *answers: int) -> None:
-        self.answers = list(answers) or [204]
-        self.calls: list[tuple[str, dict, dict]] = []
+    def __init__(self, **answers: list[int]) -> None:
+        self.answers = {host: list(statuses) for host, statuses in answers.items()}
+        self.calls: list[tuple[str, str, dict, dict]] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        # The request is sent to the address the name resolved to; the name
+        # rides in the Host header.
+        host = request.headers["host"].split(".")[0]
         token = request.headers["authorization"].removeprefix("Bearer ")
         claims = jwt.decode(
             token,
             _KEY.public_key(),
             algorithms=["EdDSA"],
-            audience=f"initiative-plugin:{PUBLIC_ID}",
+            options={"verify_aud": False},
         )
         self.calls.append(
-            (request.url.path, claims, json.loads(request.content or b"{}"))
+            (host, request.url.path, claims, json.loads(request.content or b"{}"))
         )
-        status = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        statuses = self.answers.get(host, [204])
+        status = statuses.pop(0) if len(statuses) > 1 else statuses[0]
         return httpx.Response(status)
+
+    def paths(self, host: str = "hooked") -> list[str]:
+        return [path for called, path, _, _ in self.calls if called == host]
 
 
 @pytest.fixture(autouse=True)
@@ -87,29 +106,67 @@ def _signing(monkeypatch):
     monkeypatch.setattr(safe_http, "resolve_validated_target_async", resolve)
 
 
-def _answering(monkeypatch, plugin: Plugin) -> Plugin:
+def _answering(monkeypatch, **answers: list[int]) -> Plugins:
+    plugins = Plugins(**answers)
     monkeypatch.setattr(
-        plugin_connection_flows, "http_transport", httpx.MockTransport(plugin.handle)
+        plugin_connection_flows, "http_transport", httpx.MockTransport(plugins.handle)
     )
-    return plugin
+    return plugins
 
 
-async def _setup(session: AsyncSession):
-    user = await create_user(session)
-    guild = await create_guild(session, creator=user)
-    install = await create_guild_plugin(
+async def _register(session: AsyncSession, public_id: str, listing_uid: str, host: str):
+    await create_plugin_service_registration(
+        session,
+        public_id=public_id,
+        listing_uid=listing_uid,
+        base_url=f"https://{host}.example.test",
+    )
+
+
+async def _install(session, guild, user, public_id: str, listing_uid: str):
+    return await create_guild_plugin(
         session,
         guild,
         user,
-        definition={"plugin_kind": "service", "service": {"public_id": PUBLIC_ID}},
-        listing_uid=LISTING_UID,
+        definition={"plugin_kind": "service", "service": {"public_id": public_id}},
+        listing_uid=listing_uid,
     )
-    await create_plugin_service_registration(
-        session, public_id=PUBLIC_ID, listing_uid=LISTING_UID, base_url=BASE_URL
-    )
+
+
+async def _setup(session: AsyncSession, *, other: bool = False):
+    user = await create_user(session)
+    guild = await create_guild(session, creator=user)
+    install = await _install(session, guild, user, PUBLIC_ID, LISTING_UID)
+    await _register(session, PUBLIC_ID, LISTING_UID, "hooked")
+    if other:
+        await _install(session, guild, user, OTHER_ID, OTHER_UID)
+        await _register(session, OTHER_ID, OTHER_UID, "other")
     await session.commit()
     invalidate_registrations()
+    await _all_told(session, guild.id)
     return user, guild, install
+
+
+async def _all_told(session: AsyncSession, guild_id: int) -> None:
+    """Mark every install of the community as told its status, so a visit
+    sends only the hooks a test writes."""
+    await set_rls_context(session, Unattributed())
+    await session.exec(
+        update(PluginInstall)
+        .where(PluginInstall.guild_id == guild_id)
+        .values(community_status_sent=CommunityStatus.active.value)
+    )
+    await session.commit()
+
+
+async def _visit(guild_id: int):
+    """One visit of the community's ``plugin_hooks`` sweep, as the timer
+    worker makes it."""
+    async with cohorts.system_session(guild_id) as session:
+        await set_rls_context(session, SystemGuild(guild_id))
+        due = await community_hooks.visit(session, guild_id)
+        await session.commit()
+    return due
 
 
 async def _hooks(session: AsyncSession, guild_id: int) -> list[PluginCommunityHook]:
@@ -126,25 +183,52 @@ async def _hooks(session: AsyncSession, guild_id: int) -> list[PluginCommunityHo
     return list(rows)
 
 
-def _later(minutes: int) -> datetime:
-    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
+async def _timers(session: AsyncSession, guild_id: int) -> int:
+    await set_rls_context(session, Unattributed())
+    count = (
+        await session.exec(
+            text(
+                "SELECT count(*) FROM community_timers"
+                " WHERE community_id = :g AND kind = :k"
+            ).bindparams(g=guild_id, k=community_hooks.KIND)
+        )
+    ).one()[0]
+    await session.commit()
+    return count
 
 
-class TestSending:
-    async def test_a_hook_is_a_lifecycle_call_naming_the_community(
+async def _come_due(session: AsyncSession, guild_id: int) -> None:
+    """As if every retry's wait had passed."""
+    await set_rls_context(session, Unattributed())
+    await session.exec(
+        update(PluginCommunityHook)
+        .where(PluginCommunityHook.guild_id == guild_id)
+        .values(next_attempt_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    )
+    await session.commit()
+
+
+async def _deliver(guild_id: int, public_id: str = PUBLIC_ID, **kwargs) -> bool:
+    return await community_hooks.deliver_community_hook(
+        guild_id=guild_id, public_id=public_id, **kwargs
+    )
+
+
+class TestWritingArmsTheTimer:
+    async def test_a_hook_written_arms_the_sweep_and_its_visit_sends_it(
         self, session, monkeypatch
     ):
         _user, guild, install = await _setup(session)
-        plugin = _answering(monkeypatch, Plugin(204))
+        plugins = _answering(monkeypatch)
 
-        assert await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="installed"
-        )
-        assert await community_hooks.run_pass() == 1
+        assert await _deliver(guild.id, hook="installed")
+        assert await _timers(session, guild.id) == 1
+        await sweep_timers.process_due_timers()
 
-        ((path, claims, body),) = plugin.calls
+        ((_, path, claims, body),) = plugins.calls
         assert path == "/v1/hooks/installed"
         assert body == {}
+        assert claims["aud"] == f"initiative-plugin:{PUBLIC_ID}"
         assert claims["scope"] == "lifecycle"
         assert claims["hook"] == "installed"
         assert claims["community_status"] == "active"
@@ -154,21 +238,52 @@ class TestSending:
         )
         (row,) = await _hooks(session, guild.id)
         assert (row.outcome, row.attempts) == ("delivered", 1)
-        assert row.done_at is not None
 
+    async def test_a_rollback_writes_and_arms_nothing(self, session):
+        _user, guild, _install = await _setup(session)
+
+        async with cohorts.system_session(guild.id) as routed:
+            await set_rls_context(routed, SystemGuild(guild.id))
+            assert await community_hooks.queue_community_hooks(
+                routed, guild_id=guild.id, public_id=PUBLIC_ID, hooks=("erase",)
+            )
+            await routed.rollback()
+        assert await _hooks(session, guild.id) == []
+        assert await _timers(session, guild.id) == 0
+
+        async with cohorts.system_session(guild.id) as routed:
+            await set_rls_context(routed, SystemGuild(guild.id))
+            await community_hooks.queue_community_hooks(
+                routed, guild_id=guild.id, public_id=PUBLIC_ID, hooks=("erase",)
+            )
+            await routed.commit()
+        assert [row.hook for row in await _hooks(session, guild.id)] == ["erase"]
+        assert await _timers(session, guild.id) == 1
+
+    async def test_only_a_community_hook_and_only_a_container_plugin(self, session):
+        _user, guild, _install = await _setup(session)
+
+        with pytest.raises(community_hooks.UnknownCommunityHookError):
+            await _deliver(guild.id, hook="revoke")
+        assert not await _deliver(
+            guild.id, public_id="not.registered", hook="installed"
+        )
+        assert await _hooks(session, guild.id) == []
+
+
+class TestSending:
     async def test_a_404_means_the_hook_is_not_taken_and_is_not_asked_again(
         self, session, monkeypatch
     ):
         _user, guild, _install = await _setup(session)
-        plugin = _answering(monkeypatch, Plugin(404))
+        plugins = _answering(monkeypatch, hooked=[404])
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="uninstalled"
-        )
-        await community_hooks.run_pass()
-        await community_hooks.run_pass(now=_later(60 * 24))
+        await _deliver(guild.id, hook="uninstalled")
+        await _visit(guild.id)
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
 
-        assert len(plugin.calls) == 1
+        assert len(plugins.calls) == 1
         (row,) = await _hooks(session, guild.id)
         assert row.outcome == "not_taken"
 
@@ -176,23 +291,21 @@ class TestSending:
         self, session, monkeypatch
     ):
         _user, guild, _install = await _setup(session)
-        plugin = _answering(monkeypatch, Plugin(500, 204))
+        plugins = _answering(monkeypatch, hooked=[500, 204])
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="installed"
-        )
-        await community_hooks.run_pass()
+        await _deliver(guild.id, hook="installed")
+        due = await _visit(guild.id)
         (row,) = await _hooks(session, guild.id)
         assert row.done_at is None and row.attempts == 1
-        assert row.next_attempt_at > datetime.now(timezone.utc)
         assert "500" in (row.last_error or "")
+        # The visit answers the retry as its next due time.
+        assert due == row.next_attempt_at > datetime.now(timezone.utc)
 
-        # Not due yet: nothing is sent.
-        await community_hooks.run_pass()
-        assert len(plugin.calls) == 1
+        await _visit(guild.id)
+        assert len(plugins.calls) == 1
 
-        await community_hooks.run_pass(now=_later(5))
-        assert len(plugin.calls) == 2
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
         (row,) = await _hooks(session, guild.id)
         assert (row.outcome, row.attempts) == ("delivered", 2)
 
@@ -200,66 +313,146 @@ class TestSending:
         self, session, monkeypatch
     ):
         _user, guild, _install = await _setup(session)
-        plugin = _answering(monkeypatch, Plugin(500, 204))
+        plugins = _answering(monkeypatch, hooked=[500, 204])
 
         for hook in ("uninstalled", "installed"):
-            await community_hooks.deliver_community_hook(
-                guild_id=guild.id, public_id=PUBLIC_ID, hook=hook
-            )
-        await community_hooks.run_pass()
+            await _deliver(guild.id, hook=hook)
+        await _visit(guild.id)
         # The second waits behind the first.
-        assert [path for path, _, _ in plugin.calls] == ["/v1/hooks/uninstalled"]
+        assert plugins.paths() == ["/v1/hooks/uninstalled"]
 
-        await community_hooks.run_pass(now=_later(5))
-        await community_hooks.run_pass(now=_later(5))
-        assert [path for path, _, _ in plugin.calls] == [
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
+        assert plugins.paths() == [
             "/v1/hooks/uninstalled",
             "/v1/hooks/uninstalled",
             "/v1/hooks/installed",
         ]
 
+    async def test_a_plugin_that_is_down_holds_back_only_its_own(
+        self, session, monkeypatch
+    ):
+        _user, guild, _install = await _setup(session, other=True)
+        plugins = _answering(monkeypatch, hooked=[503])
+
+        for public_id in (PUBLIC_ID, OTHER_ID):
+            await _deliver(guild.id, public_id=public_id, hook="installed")
+            await _deliver(guild.id, public_id=public_id, hook="uninstalled")
+        await _visit(guild.id)
+
+        assert plugins.paths("hooked") == ["/v1/hooks/installed"]
+        assert plugins.paths("other") == [
+            "/v1/hooks/installed",
+            "/v1/hooks/uninstalled",
+        ]
+
     async def test_it_is_given_up_on_in_the_end(self, session, monkeypatch):
         _user, guild, _install = await _setup(session)
-        _answering(monkeypatch, Plugin(503))
+        _answering(monkeypatch, hooked=[503])
         monkeypatch.setattr(community_hooks, "MAX_ATTEMPTS", 2)
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="installed"
-        )
-        await community_hooks.run_pass()
-        await community_hooks.run_pass(now=_later(5))
+        await _deliver(guild.id, hook="installed")
+        await _visit(guild.id)
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
         (row,) = await _hooks(session, guild.id)
         assert (row.outcome, row.attempts) == ("gave_up", 2)
 
-    async def test_only_a_community_hook_and_only_a_container_plugin(self, session):
-        _user, guild, _install = await _setup(session)
 
-        with pytest.raises(community_hooks.UnknownCommunityHookError):
-            await community_hooks.deliver_community_hook(
-                guild_id=guild.id, public_id=PUBLIC_ID, hook="revoke"
-            )
-        assert not await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id="not.registered", hook="installed"
+class TestState:
+    async def test_the_current_status_goes_and_an_old_failure_never_holds_it(
+        self, session, monkeypatch
+    ):
+        """An older ``community_status`` that failed and waits out its backoff
+        is overtaken by a newer one, which says the status as it is when it is
+        sent."""
+        _user, guild, _install = await _setup(session)
+        plugins = _answering(monkeypatch, hooked=[500, 204])
+
+        await _deliver(guild.id, hook="community_status")
+        await _visit(guild.id)
+        guild.status = CommunityStatus.on_hold.value
+        session.add(guild)
+        await session.commit()
+        await _deliver(guild.id, hook="community_status")
+        await _visit(guild.id)
+
+        assert [body for _, _, _, body in plugins.calls] == [
+            {"status": "active"},
+            {"status": "on_hold"},
+        ]
+        older, newer = await _hooks(session, guild.id)
+        assert (older.outcome, newer.outcome) == ("superseded", "delivered")
+
+    async def test_a_status_counts_as_told_only_once_it_is_answered(
+        self, session, monkeypatch
+    ):
+        """An install whose plug-in has no registration here is not told, and
+        is not marked as told, so a registration made later gets the status."""
+        user = await create_user(session)
+        guild = await create_guild(session, creator=user)
+        install = await _install(session, guild, user, PUBLIC_ID, LISTING_UID)
+        await session.commit()
+        await plugin_installs.record(guild.id, install)
+        plugins = _answering(monkeypatch)
+
+        assert (
+            await community_hooks.due_outside(guild.id, datetime.now(timezone.utc))
+            is None
         )
+        await _visit(guild.id)
         assert await _hooks(session, guild.id) == []
+        assert await _sent(session, guild.id) is None
 
-    async def test_a_newer_status_replaces_one_still_waiting(self, session):
+        await _register(session, PUBLIC_ID, LISTING_UID, "hooked")
+        await session.commit()
+        invalidate_registrations()
+        # The daily reconcile sees an install not told, now that it can be.
+        assert await community_hooks.due_outside(guild.id, datetime.now(timezone.utc))
+        await _visit(guild.id)
+
+        assert [body for _, _, _, body in plugins.calls] == [{"status": "active"}]
+        assert await _sent(session, guild.id) == "active"
+        await _visit(guild.id)
+        assert len(plugins.calls) == 1
+
+    async def test_a_status_change_arms_the_sweep_once_it_commits(self, session):
+        from app.services.platform import guilds as guilds_service
+
         _user, guild, _install = await _setup(session)
+        guild_id = guild.id
 
-        for status in ("read_only", "on_hold"):
-            await community_hooks.deliver_community_hook(
-                guild_id=guild.id,
-                public_id=PUBLIC_ID,
-                hook="community_status",
-                body={"status": status},
+        await guilds_service.set_guild_status(
+            session, guild_id=guild_id, status=CommunityStatus.read_only
+        )
+        await session.rollback()
+        await post_commit.settle_all()
+        assert await _timers(session, guild_id) == 0
+
+        await guilds_service.set_guild_status(
+            session, guild_id=guild_id, status=CommunityStatus.read_only
+        )
+        await session.commit()
+        await post_commit.settle_all()
+        assert await _timers(session, guild_id) == 1
+
+
+async def _sent(session: AsyncSession, guild_id: int):
+    await set_rls_context(session, Unattributed())
+    value = (
+        await session.exec(
+            select(PluginInstall.community_status_sent).where(
+                PluginInstall.guild_id == guild_id
             )
-        (row,) = await _hooks(session, guild.id)
-        assert row.body == {"status": "on_hold"}
+        )
+    ).first()
+    await session.commit()
+    return value
 
 
 class TestErasing:
     async def test_the_references_go_only_once_it_has_answered(
-        self, session, monkeypatch
+        self, session, monkeypatch, capfd
     ):
         user, guild, _install = await _setup(session)
         member = await plugin_refs.ensure_plugin_ref(
@@ -268,54 +461,38 @@ class TestErasing:
         community = await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        plugin = _answering(monkeypatch, Plugin(502, 204))
-
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="erase"
-        )
-        await community_hooks.run_pass()
-        # Not answered: everything it holds a name for still has one.
-        assert await plugin_refs.resolve_plugin_ref(
-            session, ref=member, guild_id=guild.id
-        )
-        assert plugin.calls[0][1]["community_ref"] == community
-
-        await community_hooks.run_pass(now=_later(5))
-        assert (
-            await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
-            is None
-        )
-        assert (
-            await plugin_refs.existing_plugin_guild_ref(
-                guild_id=guild.id, public_id=PUBLIC_ID
-            )
-            is None
-        )
-
-    async def test_the_issuer_hears_of_an_erase_once_it_is_answered(
-        self, session, monkeypatch
-    ):
-        from app.services.marketplace import plugin_entitlements
-
-        _user, guild, _install = await _setup(session)
-        await plugin_refs.ensure_plugin_guild_ref(
-            guild_id=guild.id, public_id=PUBLIC_ID
-        )
         told: list[tuple[int, str]] = []
 
         async def erased(guild_id: int, listing_uid: str) -> None:
             told.append((guild_id, listing_uid))
 
-        monkeypatch.setattr(plugin_entitlements, "erased", erased)
-        _answering(monkeypatch, Plugin(500, 204))
+        from app.services.marketplace import plugin_entitlements
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="erase"
+        monkeypatch.setattr(plugin_entitlements, "erased", erased)
+        plugins = _answering(monkeypatch, hooked=[502, 204])
+
+        await _deliver(guild.id, hook="erase")
+        await _visit(guild.id)
+        assert await community_hooks.erase_pending(
+            guild_id=guild.id, public_id=PUBLIC_ID
         )
-        await community_hooks.run_pass()
+        assert await plugin_refs.resolve_plugin_ref(
+            session, ref=member, guild_id=guild.id
+        )
+        assert plugins.calls[0][2]["community_ref"] == community
         assert told == []
-        await community_hooks.run_pass(now=_later(5))
+
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
+        assert (
+            await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
+            is None
+        )
+        assert not await community_hooks.erase_pending(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
         assert told == [(guild.id, LISTING_UID)]
+        assert emitted(capfd, AuditEventType.PLUGIN_ERASE_ABANDONED) == []
 
     async def test_a_plugin_that_takes_no_erase_hook_is_forgotten_too(
         self, session, monkeypatch
@@ -327,44 +504,99 @@ class TestErasing:
         await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        _answering(monkeypatch, Plugin(404))
+        _answering(monkeypatch, hooked=[404])
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id, public_id=PUBLIC_ID, hook="erase"
-        )
-        await community_hooks.run_pass()
+        await _deliver(guild.id, hook="erase")
+        await _visit(guild.id)
         assert (
             await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
             is None
         )
 
+    async def test_an_erase_never_answered_drops_the_names_and_says_so(
+        self, session, monkeypatch, capfd
+    ):
+        user, guild, _install = await _setup(session)
+        member = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID, user_id=user.id
+        )
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+        _answering(monkeypatch, hooked=[503])
+        monkeypatch.setattr(community_hooks, "MAX_ATTEMPTS", 2)
+
+        await _deliver(guild.id, hook="erase")
+        await _visit(guild.id)
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
+
+        (row,) = await _hooks(session, guild.id)
+        assert row.outcome == "gave_up"
+        assert (
+            await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild.id)
+            is None
+        )
+        assert not await community_hooks.erase_pending(
+            guild_id=guild.id, public_id=PUBLIC_ID
+        )
+        (record,) = emitted(capfd, AuditEventType.PLUGIN_ERASE_ABANDONED)
+        assert record["guild_id"] == guild.id
+
     async def test_an_erase_is_retried_after_the_install_has_gone(
         self, session, monkeypatch
     ):
-        user, guild, install = await _setup(session)
+        _user, guild, install = await _setup(session)
         await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
         install_id = install.id
         await session.delete(install)
         await session.commit()
-        plugin = _answering(monkeypatch, Plugin(500, 204))
+        plugins = _answering(monkeypatch, hooked=[500, 204])
 
-        await community_hooks.deliver_community_hook(
-            guild_id=guild.id,
-            public_id=PUBLIC_ID,
-            hook="erase",
-            install_id=install_id,
-        )
-        await community_hooks.run_pass()
-        await community_hooks.run_pass(now=_later(5))
+        await _deliver(guild.id, hook="erase", install_id=install_id)
+        await _visit(guild.id)
+        await _come_due(session, guild.id)
+        await _visit(guild.id)
 
-        assert [claims["plugin_install_id"] for _, claims, _ in plugin.calls] == [
+        assert [claims["plugin_install_id"] for _, _, claims, _ in plugins.calls] == [
             install_id,
             install_id,
         ]
         (row,) = await _hooks(session, guild.id)
         assert row.outcome == "delivered"
+
+    async def test_no_process_hands_out_a_name_once_it_is_erased(self, session):
+        """An install's own requests remember names per install, and an erase
+        comes only once that install is gone; the system-engine lookups
+        remember nothing. So neither hands out a dropped name."""
+        user, guild, first = await _setup(session)
+        async with cohorts.system_session(guild.id) as routed:
+            await set_rls_context(routed, SystemGuild(guild.id))
+            await routed.exec(
+                text("SELECT set_config('app.token_client_id', :c, true)").bindparams(
+                    c=PUBLIC_ID
+                )
+            )
+        before = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID, user_id=user.id
+        )
+        # This process remembers what the first install was told.
+        plugin_refs._install_ref_cache[
+            plugin_refs._cache_key(guild.id, first.id, IdentityEntity.user, user.id)
+        ] = (before, float("inf"))
+
+        await plugin_refs.drop_plugin_refs(guild_id=guild.id, public_id=PUBLIC_ID)
+        after = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild.id, public_id=PUBLIC_ID, user_id=user.id
+        )
+        assert after != before
+        # A later install is another key: nothing remembered for it.
+        assert (
+            plugin_refs._cache_key(guild.id, first.id + 1, IdentityEntity.user, user.id)
+            not in plugin_refs._install_ref_cache
+        )
 
     async def test_a_purge_tells_every_plugin_holding_a_name_within_bounds(
         self, session, monkeypatch
@@ -373,41 +605,10 @@ class TestErasing:
         await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        plugin = _answering(monkeypatch, Plugin(500))
+        plugins = _answering(monkeypatch, hooked=[500])
 
         await community_hooks.erase_for_purge(guild.id)
 
-        assert [path for path, _, _ in plugin.calls] == ["/v1/hooks/erase"] * (
+        assert plugins.paths() == ["/v1/hooks/erase"] * (
             community_hooks.PURGE_ERASE_ATTEMPTS
         )
-
-
-class TestStatus:
-    async def test_a_status_change_is_told_to_every_enabled_install(
-        self, session, monkeypatch
-    ):
-        _user, guild, install = await _setup(session)
-        await plugin_installs.record(guild.id, install)
-        # Recorded as already told: a fresh install learns it from its tokens.
-        assert await community_hooks.reconcile_community_status(session) == 0
-
-        guild.status = CommunityStatus.read_only.value
-        session.add(guild)
-        await session.commit()
-
-        assert await community_hooks.reconcile_community_status(session) == 1
-        (row,) = await _hooks(session, guild.id)
-        assert (row.hook, row.body, row.install_id) == (
-            "community_status",
-            {"status": "read_only"},
-            install.id,
-        )
-        # Told once.
-        assert await community_hooks.reconcile_community_status(session) == 0
-
-        plugin = _answering(monkeypatch, Plugin(204))
-        await community_hooks.run_pass()
-        ((path, claims, body),) = plugin.calls
-        assert path == "/v1/hooks/community_status"
-        assert body == {"status": "read_only"}
-        assert claims["community_status"] == "read_only"

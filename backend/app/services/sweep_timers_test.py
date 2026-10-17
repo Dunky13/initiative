@@ -334,6 +334,44 @@ async def test_reconcile_arms_what_no_write_did_and_counts_it(session: AsyncSess
     assert metrics.sweep_timer_repairs.labels("posts")._value.get() == repairs + 1
 
 
+async def test_reconcile_arms_the_hooks_for_a_status_no_plugin_was_told(
+    session: AsyncSession,
+):
+    """A community's plug-in hooks are kept in ``public``, which its own role
+    cannot read: the reconcile asks the sweep's ``due_outside``. An enabled
+    install whose plug-in was never told the community's status arms
+    ``plugin_hooks``, whatever path changed the status."""
+    from app.services.marketplace import plugin_installs
+    from app.services.marketplace.registration_lookup import invalidate_registrations
+    from app.testing import create_plugin_service_registration
+
+    author, _initiative, community_id = await _community(session)
+    install = await create_guild_plugin(
+        session,
+        await session.get(Guild, community_id),
+        author,
+        definition={"plugin_kind": "service", "service": {"public_id": "tests.told"}},
+        listing_uid="TESTAPP0000081",
+    )
+    await create_plugin_service_registration(
+        session, public_id="tests.told", listing_uid="TESTAPP0000081"
+    )
+    await session.commit()
+    invalidate_registrations()
+    await plugin_installs.record(community_id, install)
+    await _due_now(session, community_id, sweep_timers.RECONCILE)
+    repairs = metrics.sweep_timer_repairs.labels("plugin_hooks")._value.get()
+
+    await sweep_timers.process_due_timers()
+
+    assert [kind for _c, kind, _d in await _timers(session, "plugin_hooks")] == [
+        "plugin_hooks"
+    ]
+    assert metrics.sweep_timer_repairs.labels("plugin_hooks")._value.get() == (
+        repairs + 1
+    )
+
+
 async def test_a_community_arms_its_own_timers_and_reads_none(session: AsyncSession):
     _author, _initiative, community_id = await _community(session)
     _other_author, _other, other_id = await _community(session)

@@ -1366,6 +1366,9 @@ class GuildPluginMessages:
     #: Erasing a plug-in's data with its removal is the community's admins'
     #: choice, and this caller is not one.
     ERASE_ADMIN_ONLY = "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY"
+    #: The community asked this plug-in to erase its data and it has not
+    #: finished; it can be installed again once it has.
+    ERASE_PENDING = "COMMUNITY_PLUGIN_ERASE_PENDING"
 
     # --- service plug-ins ---
     #: This install's plug-in service is not wired up here — never registered, or

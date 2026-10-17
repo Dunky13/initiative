@@ -124,6 +124,8 @@ class LockNamespace(IntEnum):
     ACCOUNT_ADDRESS = _tag(b"ADDR")
     #: Sign-ins from one app install, keyed by the account and the install.
     APP_INSTALL = _tag(b"INST")
+    #: Sending one community's hooks to its plug-ins, keyed by the community.
+    PLUGIN_HOOKS = _tag(b"PHOK")
 
 
 def _text_key(text: str) -> int:

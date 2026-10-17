@@ -1599,7 +1599,6 @@ async def _establish_install_request(
         InstallBoundary(
             guild_id=context.guild_id,
             install_id=context.install_id,
-            public_id=context.client_id,
             guild_ref=context.guild_ref,
             named={
                 ref: (IdentityEntity(entity_type), entity_id)

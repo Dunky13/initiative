@@ -33,7 +33,8 @@ from app.core import config as config_module
 from app.core.messages import BillingMessages
 from app.db import post_commit
 from app.models.platform.plugin_entitlement import PluginEntitlement
-from app.services.marketplace import community_hooks, plugin_entitlements, tuf_registry
+from app.services import sweep_timers
+from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.tenant import plugin_connection_flows as flows
 from app.testing import (
     billing_guild_ref,
@@ -132,8 +133,7 @@ async def _send(client: AsyncClient, payload: dict):
 async def _drained() -> None:
     """Every step a commit started, and every hook it queued, sent."""
     await post_commit.settle_all()
-    while await community_hooks.run_pass():
-        pass
+    await sweep_timers.process_due_timers()
 
 
 async def _jws(guild_id: int, **changes) -> str:

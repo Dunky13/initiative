@@ -1417,7 +1417,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                 # An installed plug-in's request reads what its plug-in calls people and
                 # its community, and mints what it has not been told yet — in its
                 # own sector only (plugin_refs.install_refs; migrations 20260924_0383,
-                # 20261016_0513).
+                # 20261016_0514).
                 Policy(
                     "install_reads_its_sector",
                     SELECT,
@@ -2065,12 +2065,29 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
         ),
     ),
     # The community hooks waiting to reach a plug-in: written at install,
-    # uninstall and erase and when a community's status moves, and sent, retried
-    # and swept by their worker (app.services.marketplace.community_hooks;
-    # migration 20261016_0513).
+    # uninstall and erase, and when a community's status moves, and sent,
+    # retried and swept by the plugin_hooks sweep timer
+    # (app.services.marketplace.community_hooks;
+    # migration 20261016_0514).
     "plugin_community_hooks": SharedTable(
-        rls=FORCED_NO_POLICY,
-        grants=Grants(app_admin=DML),
+        rls=TableRls(
+            policies=(
+                # An install or an uninstall appends its hooks in its own
+                # transaction, for the routed community only.
+                Policy(
+                    "plugin_community_hooks_append_routed",
+                    INSERT,
+                    ("app_guild_base",),
+                    check=routed_or_pam("guild_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The plugin_hooks sweep sends, retries, settles and sweeps them.
+            app_admin=DML,
+            # A routed write appends hooks and never reads one back.
+            app_guild_base=frozenset({INSERT}),
+        ),
     ),
     # The settings' stored credentials.
     "app_setting_secrets": SharedTable(
