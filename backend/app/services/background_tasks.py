@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
@@ -141,6 +142,12 @@ def start_background_tasks() -> list[asyncio.Task]:
         # Every sweep that works community by community, in only the
         # communities whose timers have come due.
         asyncio.create_task(sweep_timers.loop.run(sweep_timers.process_due_timers)),
+        # The sweeps that call another server, so none of the above waits on one.
+        asyncio.create_task(
+            sweep_timers.outward_loop.run(
+                partial(sweep_timers.process_due_timers, outward=True)
+            )
+        ),
         # A catalog change arms the communities with an install of it.
         asyncio.create_task(sweep_timers.catalog_loop.run(sweep_timers.watch_catalog)),
         asyncio.create_task(

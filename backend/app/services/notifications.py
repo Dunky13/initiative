@@ -2399,9 +2399,9 @@ async def process_hold_summaries() -> None:
         await _run_hold_summary_pass(session, now=datetime.now(timezone.utc))
 
 
-async def reminder_scan(*, now: datetime) -> Scan | None:
+async def reminder_scan(*, now: datetime) -> Scan:
     """Dispatch lead-time reminders for upcoming calendar events, as of
-    ``now``; ``None`` when nobody has asked for reminders.
+    ``now``.
 
     Considers events starting within the next day (the widest lead preset)
     whose attendees opted into reminders, and fires once per (event, user,
@@ -2409,8 +2409,9 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
     each occurrence of a repeating event has its own.
     Attendees who RSVP'd ``declined`` are skipped.
 
-    Starts from what is due: each live community is asked once which opted-in
-    attendees have a reminder due and unsent. Only those accounts are then
+    Starts from what is due: each community visited is asked once which
+    attendees have a reminder due and unsent, and only those attendees' leads
+    are read. Only those accounts are then
     routed into only those communities, with their own membership context, to
     dispatch reminders for the events they attend there.
     """
@@ -2420,16 +2421,10 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
     # Allow events that started within the grace window so a 0-minute
     # ("at the time of the event") reminder still fires on the next poll.
     lower = now - EVENT_REMINDER_GRACE
-    # Asked of the system engine before any community is visited: a routed
-    # session cannot read an account's preferences.
-    users = await accounts_service.load_event_reminder_optins()
-    lead = {
-        account.id: timedelta(minutes=account.event_reminder_minutes_before)
-        for account in users
-        if account.id is not None and account.event_reminder_minutes_before is not None
-    }
-    if not lead:
-        return None
+    # Each attendee's lead, read as the visits find them; absent for one who
+    # asked not to be reminded.
+    lead: dict[int, timedelta] = {}
+    asked: set[int] = set()
     # Each community is asked once which of those accounts have a reminder due
     # and not yet sent; only they are routed into it below.
     due_in: dict[int, set[int]] = {}
@@ -2438,7 +2433,6 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
     # reminder that comes due before the next look falls inside it.
     ahead = horizon + timedelta(days=1)
     attending = (
-        CalendarEventAttendee.user_id.in_(list(lead)),
         ~calendar_occurrences.answered(
             CalendarEventAttendee.user_id, RSVPStatus.declined
         ),
@@ -2464,6 +2458,11 @@ async def reminder_scan(*, now: datetime) -> Scan | None:
             )
         ).all()
         upcoming: list[datetime] = []
+        unread = {row[0] for row in rows} - asked
+        if unread:
+            lead.update(await accounts_service.load_event_reminder_leads(unread))
+            asked.update(unread)
+        rows = [row for row in rows if row[0] in lead]
         if rows:
             sent = set(
                 (

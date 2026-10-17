@@ -27,6 +27,11 @@ Work a process learns of outside a write (a webhook hint, a retry, a freed
 job slot) goes through :func:`wake`, which arms the community and runs the
 worker.
 
+A sweep whose visit calls a server outside the database (``calls_out``: a
+webhook target, a plug-in's hook) runs in a lane of its own, a few visits at
+once, so a slow or dead server never holds up the sweeps that only touch the
+database.
+
 Once a day each community's ``reconcile`` timer arms any sweep that has work
 but no timer: a write no source covered, or a session that could not arm (a
 filer, a migration). Each one it arms is counted
@@ -35,6 +40,7 @@ filer, a migration). Each one it arms is counted
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
@@ -67,6 +73,10 @@ BATCH = 500
 
 #: How often the worker looks for due timers.
 TICK_SECONDS = 60
+
+#: Outward visits run at once. Each holds a system connection while it waits
+#: on the server it calls.
+OUTWARD_AT_ONCE = 4
 
 #: How long a woken worker lets further wakes gather before it looks.
 WAKE_SETTLE_SECONDS = 1.0
@@ -103,6 +113,9 @@ class Sweep:
     #: The visit returns the sweep's next due time itself (or ``None`` for no
     #: work), in place of ``next_due``.
     answers: bool = False
+    #: The visit calls a server outside the database, so it runs in the
+    #: outward lane.
+    calls_out: bool = False
     #: The writes that give the sweep work.
     sources: tuple[TimerSource, ...] = ()
 
@@ -202,6 +215,7 @@ def sweeps() -> tuple[Sweep, ...]:
             kind="webhooks",
             scope=Scope.ACTIVE,
             every=minute,
+            calls_out=True,
             visit=outbox_poller.drain_guild,
             # A subscribed community's new events wake it at once
             # (outbox_poller.hint); the outbox sources are the backstop should
@@ -223,6 +237,7 @@ def sweeps() -> tuple[Sweep, ...]:
             kind="plugin_schedules",
             scope=Scope.ACTIVE,
             every=minute,
+            calls_out=True,
             visit=plugin_schedules.run_due,
             answers=True,
             next_due=lambda _now: plugin_schedules.next_due(),
@@ -687,7 +702,7 @@ async def _digest(spec: Any) -> Scan:
     return notifications.digest_scan(spec, now=datetime.now(timezone.utc))
 
 
-async def _reminders() -> Scan | None:
+async def _reminders() -> Scan:
     from app.services import notifications
 
     return await notifications.reminder_scan(now=datetime.now(timezone.utc))
@@ -804,8 +819,13 @@ async def arm_in(kind: str, community_ids: Iterable[int]) -> None:
         await session.commit()
 
 
-async def _claim(now: datetime) -> list[Any]:
-    """Claim up to :data:`BATCH` due timers, moving each a lease ahead."""
+def _outward() -> list[str]:
+    return [sweep.kind for sweep in sweeps() if sweep.calls_out]
+
+
+async def _claim(now: datetime, *, outward: bool) -> list[Any]:
+    """Claim up to :data:`BATCH` due timers of the lane, moving each a lease
+    ahead."""
     async with cohorts.system_session(None) as session:
         await set_rls_context(session, Unattributed())
         rows = (
@@ -815,6 +835,7 @@ async def _claim(now: datetime) -> list[Any]:
                     WITH due AS (
                         SELECT id, due_at FROM community_timers
                         WHERE due_at <= :now AND community_id IS NOT NULL
+                          AND (kind = ANY(:outward_kinds)) = :outward
                         ORDER BY due_at
                         LIMIT :batch
                         FOR UPDATE SKIP LOCKED
@@ -823,7 +844,13 @@ async def _claim(now: datetime) -> list[Any]:
                     FROM due WHERE t.id = due.id
                     RETURNING t.id, t.community_id, t.kind, due.due_at
                     """
-                ).bindparams(now=now, batch=BATCH, lease=now + LEASE)  # type: ignore[call-overload]
+                ).bindparams(  # type: ignore[call-overload]
+                    now=now,
+                    batch=BATCH,
+                    lease=now + LEASE,
+                    outward_kinds=_outward(),
+                    outward=outward,
+                )
             )
         ).all()
         await session.commit()
@@ -843,7 +870,7 @@ async def _delete(ids: set[int]) -> None:
         await session.commit()
 
 
-async def _run(claimed: list[Any], now: datetime) -> None:
+async def _run(claimed: list[Any], now: datetime, *, outward: bool) -> None:
     """Visit each claimed timer's community for its sweep."""
     registry = _by_kind()
     taken: dict[int, dict[str, list[int]]] = {}
@@ -884,7 +911,20 @@ async def _run(claimed: list[Any], now: datetime) -> None:
             )
     # A community the pass did not visit for a sweep (its status does not
     # admit it now) keeps that timer on its lease.
-    await each_guild([], name="timers", planned=plan)
+    if outward:
+        limit = asyncio.Semaphore(OUTWARD_AT_ONCE)
+
+        async def visit(community_id: int) -> None:
+            async with limit:
+                await each_guild(
+                    [],
+                    name="timers-outward",
+                    planned={community_id: plan[community_id]},
+                )
+
+        await asyncio.gather(*(visit(community_id) for community_id in plan))
+    else:
+        await each_guild([], name="timers", planned=plan)
     for kind, (scan, finishing) in scans.items():
         sweep = registry[kind]
         if sweep.answers:
@@ -909,26 +949,25 @@ _woken: dict[str, set[int]] = {}
 def wake(kind: str, guild_id: int) -> None:
     """Run ``kind`` in the community soon, from this process. Returns at once."""
     _woken.setdefault(kind, set()).add(guild_id)
-    loop.wake()
+    (outward_loop if kind in _outward() else loop).wake()
 
 
 async def hint(_payload: str) -> None:
     """A timer was armed to run at once. Registered on
     :data:`~app.db.timers.WAKE_CHANNEL`."""
     loop.wake()
+    outward_loop.wake()
 
 
-async def process_due_timers() -> None:
-    """Run every timer that has come due, a batch at a time."""
-    woken = dict(_woken)
-    _woken.clear()
-    for kind, community_ids in woken.items():
-        await arm_in(kind, community_ids)
+async def process_due_timers(*, outward: bool = False) -> None:
+    """Run every timer of the lane that has come due, a batch at a time."""
+    for kind in [kind for kind in _woken if (kind in _outward()) == outward]:
+        await arm_in(kind, _woken.pop(kind))
     while True:
         now = datetime.now(timezone.utc)
-        claimed = await _claim(now)
+        claimed = await _claim(now, outward=outward)
         if claimed:
-            await _run(claimed, now)
+            await _run(claimed, now, outward=outward)
         if len(claimed) < BATCH:
             return
 
@@ -1007,5 +1046,7 @@ async def watch_catalog() -> None:
 
 #: The worker's loop.
 loop = Loop("timers", interval=TICK_SECONDS, settle=WAKE_SETTLE_SECONDS)
+#: The outward lane's loop.
+outward_loop = Loop("timers-outward", interval=TICK_SECONDS, settle=WAKE_SETTLE_SECONDS)
 #: The catalog watch's loop.
 catalog_loop = Loop("catalog-watch", interval=CATALOG_WATCH_SECONDS)

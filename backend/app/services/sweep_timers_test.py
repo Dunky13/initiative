@@ -230,6 +230,32 @@ async def test_a_community_that_cannot_take_the_sweep_keeps_its_timer(
     assert (await session.get(Post, post_id)).published_at is None  # type: ignore[union-attr]
 
 
+async def test_a_sweep_that_calls_out_runs_in_its_own_lane(
+    session: AsyncSession, monkeypatch
+):
+    """The database-only lane leaves a webhook timer alone, so a slow target
+    never holds it up; the outward lane runs it."""
+    _author, _initiative, community_id = await _community(session)
+    await _due_now(session, community_id, "webhooks")
+    drained: list[int] = []
+
+    async def drain(_session, guild_id, **_kwargs):
+        drained.append(guild_id)
+
+    monkeypatch.setattr(outbox_poller, "drain_guild", drain)
+    sweep_timers.sweeps.cache_clear()
+    try:
+        await sweep_timers.process_due_timers()
+        assert drained == []
+        [(_c, _k, due)] = await _timers(session, "webhooks")
+        assert due <= datetime.now(timezone.utc)
+
+        await sweep_timers.process_due_timers(outward=True)
+        assert drained == [community_id]
+    finally:
+        sweep_timers.sweeps.cache_clear()
+
+
 async def test_a_failed_visit_keeps_its_timer(session: AsyncSession, monkeypatch):
     author, initiative, community_id = await _community(session)
     await _scheduled(session, initiative, author, due_in=-timedelta(minutes=1))
