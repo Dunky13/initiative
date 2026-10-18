@@ -23,11 +23,11 @@ If you only ever learn one part of Initiative, make it this one. It's where basi
 
 The top of the project shows how far along it is and its dates, beside its status, tags and properties — the same [header every tool has](tools.md#the-top-of-every-tool-page).
 
-### Favourites, pinning and your own order
+### Bookmarks, pinning and your own order
 
 Both live on each project's card.
 
-- **Add to favorites** (the star) puts it in your **Favorites** in the sidebar and on Home. Just for you: starring something doesn't inflict it on anybody else. Every other tool has the same star; see [Favourites](your-space.md#favourites).
+- **Bookmark** puts it in your **Bookmarks** in the sidebar and on Home. Just for you: bookmarking something doesn't inflict it on anybody else. Every other tool has the same bookmark; see [Bookmarks](your-space.md#bookmarks).
 - **Pin project** marks it as pinned for everyone in the initiative. That one takes a project manager.
 
 Drag projects on the first page of the list to put them in your own order.

@@ -1,6 +1,6 @@
-"""What a member keeps about items: opens (the tabs bar), stars and follows.
+"""What a member keeps about items: opens (the tabs bar), bookmarks and follows.
 
-Covers ``GET /api/v1/me/personal-items`` (every community's tabs or stars),
+Covers ``GET /api/v1/me/personal-items`` (every community's tabs or bookmarks),
 a community's own list, one item's state, and the guild-addressed routes that
 set and clear each mark. Opening and following are proved over the whole
 ``Tool`` enum and over every kind inside one, so a new kind is exercised here
@@ -44,8 +44,8 @@ from app.testing import (
 )
 
 TABS = "/api/v1/me/personal-items?mark=view"
-MY_STARS = "/api/v1/me/personal-items?mark=star"
-STARS = "/personal-items?mark=star"
+MY_BOOKMARKS = "/api/v1/me/personal-items?mark=bookmark"
+BOOKMARKS = "/personal-items?mark=bookmark"
 
 #: Every tool, as its own test case.
 TOOLS = pytest.mark.parametrize("tool", list(Tool), ids=[t.value for t in Tool])
@@ -155,7 +155,7 @@ async def test_a_recent_view_is_its_owners_row(
                 user_id=a.user.id,
                 entity_type="project",
                 entity_id=project.id,
-                starred_at=datetime.now(timezone.utc),
+                bookmarked_at=datetime.now(timezone.utc),
             )
         )
         with pytest.raises(DBAPIError, match="row-level security"):
@@ -259,11 +259,11 @@ async def test_recent_tabs_limit_caps_list_and_prune(
     c.user.recent_tabs_limit = 3
     session.add(c.user)
     await session.commit()
-    # A star keeps its row when the open it shared the row with goes.
-    starred = await client.put(
-        a.g(f"/personal-items/star/project/{projects[0].id}"), headers=a.headers
+    # A bookmark keeps its row when the open it shared the row with goes.
+    bookmarked = await client.put(
+        a.g(f"/personal-items/bookmark/project/{projects[0].id}"), headers=a.headers
     )
-    assert starred.status_code == 200, starred.text
+    assert bookmarked.status_code == 200, bookmarked.text
     await expire()
     assert await kept(a) == sorted([projects[3].id, projects[2].id])
     assert await kept(b) == newest[:DEFAULT_RECENT_VIEWS]
@@ -277,7 +277,7 @@ async def test_recent_tabs_limit_caps_list_and_prune(
             )
         )
     ).one()
-    assert (left.viewed_at, left.view_source, left.starred_at is not None) == (
+    assert (left.viewed_at, left.view_source, left.bookmarked_at is not None) == (
         None,
         None,
         True,
@@ -448,14 +448,14 @@ async def test_opening_something_inside_a_tool_is_recorded_and_never_a_tab(
         headers=outsider.headers,
     )
     assert refused.status_code == 404, refused.text
-    # Only a tool is starred.
-    star = await client.put(
-        a.g(f"/personal-items/star/{kind}/{entity.id}"), headers=a.headers
+    # Only a tool is bookmarked.
+    bookmark = await client.put(
+        a.g(f"/personal-items/bookmark/{kind}/{entity.id}"), headers=a.headers
     )
-    assert star.status_code == 422
+    assert bookmark.status_code == 422
 
 
-async def test_any_tool_can_be_starred_and_listed_newest_first(
+async def test_any_tool_can_be_bookmarked_and_listed_newest_first(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
@@ -465,21 +465,21 @@ async def test_any_tool_can_be_starred_and_listed_newest_first(
     queue = await create_queue(session, a.initiative, a.user, name="Rota")
 
     first = await client.put(
-        a.g(f"/personal-items/star/project/{project.id}"), headers=a.headers
+        a.g(f"/personal-items/bookmark/project/{project.id}"), headers=a.headers
     )
     assert first.status_code == 200, first.text
     await asyncio.sleep(0.02)
     second = await client.put(
-        a.g(f"/personal-items/star/queue/{queue.id}"), headers=a.headers
+        a.g(f"/personal-items/bookmark/queue/{queue.id}"), headers=a.headers
     )
     assert second.status_code == 200, second.text
-    # Starring again keeps the star, and its time.
+    # Bookmarking again keeps the bookmark, and its time.
     again = await client.put(
-        a.g(f"/personal-items/star/project/{project.id}"), headers=a.headers
+        a.g(f"/personal-items/bookmark/project/{project.id}"), headers=a.headers
     )
-    assert again.json()["starred_at"] == first.json()["starred_at"]
+    assert again.json()["bookmarked_at"] == first.json()["bookmarked_at"]
 
-    listed = await client.get(a.g(STARS), headers=a.headers)
+    listed = await client.get(a.g(BOOKMARKS), headers=a.headers)
     assert listed.status_code == 200, listed.text
     items = listed.json()
     assert [(i["entity_type"], i["entity_id"], i["name"]) for i in items] == [
@@ -491,7 +491,7 @@ async def test_any_tool_can_be_starred_and_listed_newest_first(
     assert items[1]["community_id"] == a.guild.id
 
 
-async def test_a_star_and_a_follow_come_off(
+async def test_a_bookmark_and_a_follow_come_off(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """One item's state says what the reader keeps; each mark comes off on its
@@ -500,25 +500,24 @@ async def test_a_star_and_a_follow_come_off(
     project = await create_project(session, a.initiative, a.user)
     state_path = a.g(f"/personal-items/project/{project.id}")
 
-    for mark in ("star", "follow"):
+    for mark in ("bookmark", "follow"):
         response = await client.put(
             a.g(f"/personal-items/{mark}/project/{project.id}"), headers=a.headers
         )
         assert response.status_code == 200, response.text
     state = (await client.get(state_path, headers=a.headers)).json()
-    assert state["starred_at"] and state["followed_at"] and state["viewed_at"] is None
-    # The project says so too, as the plug-in API publishes it.
-    read = await client.get(a.g(f"/projects/{project.id}"), headers=a.headers)
-    assert read.json()["is_favorited"] is True
+    assert (
+        state["bookmarked_at"] and state["followed_at"] and state["viewed_at"] is None
+    )
 
     for _ in range(2):
         removed = await client.delete(
-            a.g(f"/personal-items/star/project/{project.id}"), headers=a.headers
+            a.g(f"/personal-items/bookmark/project/{project.id}"), headers=a.headers
         )
         assert removed.status_code == 204
-    assert (await client.get(a.g(STARS), headers=a.headers)).json() == []
+    assert (await client.get(a.g(BOOKMARKS), headers=a.headers)).json() == []
     state = (await client.get(state_path, headers=a.headers)).json()
-    assert state["starred_at"] is None and state["followed_at"]
+    assert state["bookmarked_at"] is None and state["followed_at"]
 
     await client.delete(
         a.g(f"/personal-items/follow/project/{project.id}"), headers=a.headers
@@ -527,7 +526,7 @@ async def test_a_star_and_a_follow_come_off(
     assert (await session.exec(select(PersonalItem))).all() == []
 
 
-async def test_a_tool_the_reader_cannot_open_cannot_be_starred_or_followed(
+async def test_a_tool_the_reader_cannot_open_cannot_be_bookmarked_or_followed(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """Both take read access, as the tool's own page does: a queue in an
@@ -537,15 +536,15 @@ async def test_a_tool_the_reader_cannot_open_cannot_be_starred_or_followed(
     elsewhere = await create_initiative(session, a.guild, owner)
     hidden = await create_queue(session, elsewhere, owner)
 
-    for mark in ("star", "follow"):
+    for mark in ("bookmark", "follow"):
         response = await client.put(
             a.g(f"/personal-items/{mark}/queue/{hidden.id}"), headers=a.headers
         )
         assert response.status_code == 404
-    assert (await client.get(a.g(STARS), headers=a.headers)).json() == []
+    assert (await client.get(a.g(BOOKMARKS), headers=a.headers)).json() == []
 
 
-async def test_my_stars_gather_every_community(
+async def test_my_bookmarks_gather_every_community(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
@@ -553,19 +552,19 @@ async def test_my_stars_gather_every_community(
     second = await acting_user(guild_role=CommunityRole.member, initiative=True)
     first_project = await create_project(session, a.initiative, a.user, name="Here")
     await client.put(
-        a.g(f"/personal-items/star/project/{first_project.id}"), headers=a.headers
+        a.g(f"/personal-items/bookmark/project/{first_project.id}"), headers=a.headers
     )
 
     await create_guild_membership(session, user=a.user, guild=second.guild)
     await create_initiative_member(session, second.initiative, a.user)
     there = await create_queue(session, second.initiative, a.user, name="There")
-    starred = await client.put(
-        f"/api/v1/c/{second.guild.id}/personal-items/star/queue/{there.id}",
+    bookmarked = await client.put(
+        f"/api/v1/c/{second.guild.id}/personal-items/bookmark/queue/{there.id}",
         headers=a.headers,
     )
-    assert starred.status_code == 200, starred.text
+    assert bookmarked.status_code == 200, bookmarked.text
 
-    mine = await client.get(MY_STARS, headers=a.headers)
+    mine = await client.get(MY_BOOKMARKS, headers=a.headers)
     assert mine.status_code == 200, mine.text
     assert [(i["community_id"], i["name"]) for i in mine.json()] == [
         (second.guild.id, "There"),
@@ -578,7 +577,7 @@ async def test_leaving_a_community_takes_what_they_kept(
 ):
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
     project = await create_project(session, a.initiative, a.user)
-    for mark in ("star", "follow", "view"):
+    for mark in ("bookmark", "follow", "view"):
         await client.put(
             a.g(f"/personal-items/{mark}/project/{project.id}"), headers=a.headers
         )
@@ -594,7 +593,7 @@ async def test_leaving_a_community_takes_what_they_kept(
     state = await client.get(
         a.g(f"/personal-items/project/{project.id}"), headers=a.headers
     )
-    assert [state.json()[k] for k in ("viewed_at", "starred_at", "followed_at")] == [
+    assert [state.json()[k] for k in ("viewed_at", "bookmarked_at", "followed_at")] == [
         None,
         None,
         None,
@@ -604,7 +603,7 @@ async def test_leaving_a_community_takes_what_they_kept(
 async def test_marks_come_off_a_tool_the_reader_has_lost(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    """Out of the initiative, a star and a follow still come off rather than
+    """Out of the initiative, a bookmark and a follow still come off rather than
     waiting for them to be let back in."""
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
     b = await acting_user(
@@ -614,7 +613,7 @@ async def test_marks_come_off_a_tool_the_reader_has_lost(
         initiative_role="member",
     )
     project = await create_project(session, a.initiative, b.user)
-    for mark in ("star", "follow"):
+    for mark in ("bookmark", "follow"):
         response = await client.put(
             b.g(f"/personal-items/{mark}/project/{project.id}"), headers=b.headers
         )
@@ -632,7 +631,7 @@ async def test_marks_come_off_a_tool_the_reader_has_lost(
     gone = await client.get(b.g(f"/projects/{project.id}"), headers=b.headers)
     assert gone.status_code == 404, gone.text
 
-    for mark in ("star", "follow"):
+    for mark in ("bookmark", "follow"):
         removed = await client.delete(
             b.g(f"/personal-items/{mark}/project/{project.id}"), headers=b.headers
         )

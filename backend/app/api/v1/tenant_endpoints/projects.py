@@ -183,9 +183,7 @@ async def _project_reads(
     user_id: int | None,
     projects: List[Project],
 ) -> List[ProjectRead]:
-    """``ProjectRead`` for each project, in the order given, with whether the
-    reader starred it and when they last opened it. An installed plug-in
-    (``user_id`` ``None``) keeps neither."""
+    """``ProjectRead`` for each project, in the order given."""
     if not projects:
         return []
 
@@ -193,31 +191,11 @@ async def _project_reads(
     await tags_service.annotate_tags(session, projects)
     await properties_service.annotate_properties(session, projects)
     await ownership_service.annotate_owner_plugins(session, projects)
-    kept = (
-        await personal_items_service.rows_for(
-            session,
-            user_id=user_id,
-            kind=Tool.project.value,
-            ids=(project.id for project in projects if project.id is not None),
-        )
-        if user_id is not None
-        else {}
-    )
     context = require_actor_context(session)
-    reads = []
-    for project in projects:
-        mine = kept.get(project.id or 0)
-        reads.append(
-            serialize_tool(
-                ProjectRead,
-                project,
-                context=context,
-                user_id=user_id,
-                is_favorited=bool(mine and mine.starred_at),
-                last_viewed_at=mine.viewed_at if mine else None,
-            )
-        )
-    return reads
+    return [
+        serialize_tool(ProjectRead, project, context=context, user_id=user_id)
+        for project in projects
+    ]
 
 
 def _slim_project_reads(

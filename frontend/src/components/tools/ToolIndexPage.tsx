@@ -40,7 +40,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { BulkAccessSection } from "@/components/access/BulkAccessSection";
 import type { BulkAccessItem } from "@/components/access/BulkEditAccessDialog";
 import { SelectableGridItem } from "@/components/access/SelectableGridItem";
-import { FavoriteButton } from "@/components/FavoriteButton";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { FileCard } from "@/components/files/FileCard";
 import { useFileColumns } from "@/components/files/fileColumns";
@@ -195,9 +195,9 @@ export type ToolIndexEntry = {
     emptyTitle: string;
     emptyBody: string;
   };
-  /** The tool's card draws its star among controls of its own, so the list
+  /** The tool's card draws its bookmark among controls of its own, so the list
    *  puts none on its corner. */
-  cardHasStar?: true;
+  cardHasBookmark?: true;
   /** The layout a reader starts on, before they pick one. Cards otherwise. */
   defaultLayout?: ToolIndexLayout;
   /** Cards are small tiles, several to a row, rather than three across. */
@@ -336,7 +336,7 @@ const TOOL_INDEX: Record<Tool, ToolIndexEntry | ToolIndexOwnPage> = {
     table: { useColumns: useProjectColumns as unknown as () => AppColumnDef<ToolIndexRow>[] },
     reorder: { useReorder: useReorderProjects },
     // Beside its pin and its drag handle.
-    cardHasStar: true,
+    cardHasBookmark: true,
   },
 
   [Tool.file]: {
@@ -747,13 +747,13 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
       : "grid grid-cols-fill-36/5 gap-4"
     : "grid grid-cols-fill-60/3 gap-4";
   // The list's own marks on a card's top corner, outside the card's link: the
-  // star (unless the card draws its own), and the unread dot in the corner
+  // bookmark (unless the card draws its own), and the unread dot in the corner
   // itself.
   const cardOf = (row: ToolIndexRow) => (
     <div className="relative">
       {row.card}
-      {entry.cardHasStar ? null : (
-        <FavoriteButton
+      {entry.cardHasBookmark ? null : (
+        <BookmarkButton
           tool={tool}
           entityId={row.id}
           name={row.name}
@@ -937,7 +937,7 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
                         ) : null}
                       </Link>
                       {/* Beside the row's link rather than in it. */}
-                      <FavoriteButton
+                      <BookmarkButton
                         tool={tool}
                         entityId={row.id}
                         name={row.name}

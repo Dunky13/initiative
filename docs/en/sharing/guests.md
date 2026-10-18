@@ -38,7 +38,7 @@ Guest links are listed on the Guests tab, under the form, with what each one giv
 | An initiative | What its Member role allows there, as any member would. They show in its member list marked **Guest**. |
 | An item | That item, at the level you picked. Its initiative shows up for them, but not who else is in it. |
 
-Comments, reactions, stars, mentions and notifications all work on those things. Anything a guest makes stays with the community after they've gone.
+Comments, reactions, bookmarks, mentions and notifications all work on those things. Anything a guest makes stays with the community after they've gone.
 
 Everything else isn't there for them: other initiatives, the community's member list, its initiative directory, plug-ins and settings. Like anything else they can't reach, it comes back "not found". See [Sharing & access](index.md#why-a-missing-thing-says-not-found-rather-than-denied).
 

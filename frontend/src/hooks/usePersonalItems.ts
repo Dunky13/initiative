@@ -1,11 +1,11 @@
 /**
  * What the reader keeps about items, one seam for all of it: their opens (the
- * header's tabs), their stars and what they follow.
+ * header's tabs), their bookmarks and what they follow.
  *
- * Tabs and stars are lists of tools: `/me/personal-items?mark=…` across every
- * community, `/c/{id}/personal-items?mark=star` for one community's sidebar and
- * the stars on its pages (a few dozen rows at most, so one read lights every
- * star on screen). One item's follow is read on its own,
+ * Tabs and bookmarks are lists of tools: `/me/personal-items?mark=…` across every
+ * community, `/c/{id}/personal-items?mark=bookmark` for one community's sidebar and
+ * the bookmarks on its pages (a few dozen rows at most, so one read lights every
+ * bookmark on screen). One item's follow is read on its own,
  * `/c/{id}/personal-items/{kind}/{id}`, since a follow can be on anything.
  */
 
@@ -22,6 +22,7 @@ import {
   type ViewSource,
 } from "@/api/generated/initiativeAPI.schemas";
 import {
+  bookmarkItem,
   clearView,
   followItem,
   getListMyPersonalItemsQueryKey,
@@ -31,9 +32,8 @@ import {
   listPersonalItems,
   readPersonalItem,
   recordView,
-  starItem,
+  unbookmarkItem,
   unfollowItem,
-  unstarItem,
 } from "@/api/generated/personal-items/personal-items";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -41,7 +41,7 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 type QueryOpts<TData> = Omit<UseQueryOptions<TData>, "queryKey" | "queryFn">;
 
 const TABS = { mark: ListedMark.view };
-const STARS = { mark: ListedMark.star };
+const BOOKMARKS = { mark: ListedMark.bookmark };
 
 /**
  * The header's tabs: the tools the reader opened, across every community, as
@@ -217,45 +217,45 @@ export const useClearRecentViews = () => {
   });
 };
 
-/** The reader's stars in one community (the active one unless named), newest first. */
-export const useCommunityFavorites = (
+/** The reader's bookmarks in one community (the active one unless named), newest first. */
+export const useCommunityBookmarks = (
   communityId?: number | null,
   options?: QueryOpts<PersonalItemRead[]>
 ) => {
   const active = useActiveCommunityId();
   const id = communityId ?? active;
   return useQuery<PersonalItemRead[]>({
-    queryKey: getListPersonalItemsQueryKey(id, STARS),
-    queryFn: () => listPersonalItems(id, STARS),
+    queryKey: getListPersonalItemsQueryKey(id, BOOKMARKS),
+    queryFn: () => listPersonalItems(id, BOOKMARKS),
     staleTime: 30 * 1000,
     ...options,
     enabled: Boolean(id) && (options?.enabled ?? true),
   });
 };
 
-/** The reader's stars in every community they are in, newest first. */
-export const useMyFavorites = (options?: QueryOpts<PersonalItemRead[]>) =>
+/** The reader's bookmarks in every community they are in, newest first. */
+export const useMyBookmarks = (options?: QueryOpts<PersonalItemRead[]>) =>
   useQuery<PersonalItemRead[]>({
-    queryKey: getListMyPersonalItemsQueryKey(STARS),
-    queryFn: () => listMyPersonalItems(STARS),
+    queryKey: getListMyPersonalItemsQueryKey(BOOKMARKS),
+    queryFn: () => listMyPersonalItems(BOOKMARKS),
     staleTime: 30 * 1000,
     ...options,
   });
 
-/** Whether the reader starred this tool, in its community (the active one
+/** Whether the reader bookmarked this tool, in its community (the active one
  *  unless named). */
-export const useIsFavorite = (tool: Tool, entityId: number, communityId?: number): boolean => {
-  const { data } = useCommunityFavorites(communityId);
+export const useIsBookmarked = (tool: Tool, entityId: number, communityId?: number): boolean => {
+  const { data } = useCommunityBookmarks(communityId);
   return useMemo(
     () => Boolean(data?.some((item) => item.entity_type === tool && item.entity_id === entityId)),
     [data, tool, entityId]
   );
 };
 
-export interface ToggleFavoriteArgs {
+export interface ToggleBookmarkArgs {
   tool: Tool;
   entityId: number;
-  /** Star it (true) or take the star off (false). */
+  /** Star it (true) or take the bookmark off (false). */
   next: boolean;
   /** The tool's own community; the active one when left out. */
   communityId?: number;
@@ -268,23 +268,26 @@ const sameItem = (item: PersonalItemRead, tool: Tool, entityId: number, communit
   item.entity_type === tool && item.entity_id === entityId && item.community_id === communityId;
 
 /**
- * Star or unstar a tool. The star changes at once — the community's list and
+ * Star or unbookmark a tool. The bookmark changes at once — the community's list and
  * every community's are rewritten in the cache, and put back if the write
  * fails — and both are read again once it lands.
  */
-export const useToggleFavorite = () => {
+export const useToggleBookmark = () => {
   const active = useActiveCommunityId();
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ tool, entityId, next, communityId }: ToggleFavoriteArgs) => {
+    mutationFn: async ({ tool, entityId, next, communityId }: ToggleBookmarkArgs) => {
       const id = communityId ?? active;
-      if (next) await starItem(id, tool, entityId);
-      else await unstarItem(id, tool, entityId);
+      if (next) await bookmarkItem(id, tool, entityId);
+      else await unbookmarkItem(id, tool, entityId);
     },
     onMutate: async ({ tool, entityId, next, communityId, name, initiativeId }) => {
       const id = communityId ?? active;
-      const keys = [getListPersonalItemsQueryKey(id, STARS), getListMyPersonalItemsQueryKey(STARS)];
+      const keys = [
+        getListPersonalItemsQueryKey(id, BOOKMARKS),
+        getListMyPersonalItemsQueryKey(BOOKMARKS),
+      ];
       await Promise.all(keys.map((queryKey) => qc.cancelQueries({ queryKey })));
       const before = keys.map((queryKey) => [queryKey, qc.getQueryData(queryKey)] as const);
       const placeholder: PersonalItemRead = {
@@ -294,7 +297,7 @@ export const useToggleFavorite = () => {
         initiative_id: initiativeId ?? null,
         name: name ?? "",
         viewed_at: null,
-        starred_at: new Date().toISOString(),
+        bookmarked_at: new Date().toISOString(),
         icon: null,
         file_type: null,
         mime_type: null,

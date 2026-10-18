@@ -86,8 +86,6 @@ export function buildProject(overrides: Partial<ProjectRead> = {}): ProjectRead 
     initiative: null,
     grants: [],
     can: { ...ownerCan(), configure: false },
-    is_favorited: false,
-    last_viewed_at: null,
     task_summary: { total: 0, completed: 0 },
     task_statuses: [],
     tags: [],

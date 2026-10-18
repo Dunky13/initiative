@@ -53,7 +53,7 @@ export const CounterGroupCard = ({ group, className }: CounterGroupCardProps) =>
     >
       {group.preview?.length ? <CounterGroupPreview counters={group.preview} /> : null}
       <Card className="border-0 shadow-none">
-        {/* With nothing above it, the header stops short of the star the list
+        {/* With nothing above it, the header stops short of the bookmark the list
             puts on the card's corner. */}
         <CardHeader className={cn("pb-2", !group.preview?.length && "pr-14")}>
           <div className="flex items-start justify-between gap-2">

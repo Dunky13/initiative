@@ -406,7 +406,7 @@ class User(SQLModel, table=True):
 
     # An account has no standing view of guild content. What refers to a person
     # from inside a guild schema — an assignment, a membership, an ordering, a
-    # favourite — is reached from that content, through ``MemberProfile``, on a
+    # bookmark — is reached from that content, through ``MemberProfile``, on a
     # session routed into the guild that holds it. ``hard_delete_user`` clears
     # those rows itself, guild by guild.
     #

@@ -334,9 +334,9 @@
     "desktopReady": "Initiative ha descargado su actualización. Reinicia para terminar.",
     "restart": "Reiniciar"
   },
-  "favorite": {
-    "add": "Agregar a favoritos",
-    "remove": "Quitar de favoritos"
+  "bookmark": {
+    "add": "Agregar a marcadores",
+    "remove": "Quitar de marcadores"
   },
   "follow": {
     "add": "Seguir",

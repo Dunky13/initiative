@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tool, type WikiRead } from "@/api/generated/initiativeAPI.schemas";
-import { FavoriteButton } from "@/components/FavoriteButton";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { FollowButton } from "@/components/FollowButton";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
@@ -145,8 +145,8 @@ export const WikiChrome = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* The wiki's star, on every page of it: what is starred is the wiki. */}
-        <FavoriteButton
+        {/* The wiki's bookmark, on every page of it: what is bookmarked is the wiki. */}
+        <BookmarkButton
           tool={Tool.wiki}
           entityId={wiki.id}
           name={wiki.name}

@@ -20,7 +20,7 @@ export function buildRecentItem(overrides: Partial<PersonalItemRead> = {}): Pers
     initiative_id: 5,
     name: `Recent Item ${counter}`,
     viewed_at: new Date().toISOString(),
-    starred_at: null,
+    bookmarked_at: null,
     icon: null,
     file_type: null,
     mime_type: null,

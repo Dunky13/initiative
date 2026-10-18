@@ -2,7 +2,7 @@
 
 ``personal_items``, in every guild schema: what one member keeps about one
 item, one row per ``(user_id, entity_type, entity_id)``. Their last open and
-where it came from, a star, a follow, and where they put a project in their own
+where it came from, a bookmark, a follow, and where they put a project in their own
 list. It takes every row of ``recent_views``, ``favorites`` and
 ``project_orders``, merged on that key, and those three go. Its registry CHECKs
 and its policies are rendered from the model and the registries at boot.
@@ -54,7 +54,7 @@ def _apply_upgrade(bind) -> None:
         sa.Column("entity_id", sa.Integer(), nullable=False),
         sa.Column("viewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("view_source", sa.Text(), nullable=True),
-        sa.Column("starred_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("bookmarked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("followed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("sort_order", sa.Float(), nullable=True),
         sa.PrimaryKeyConstraint("user_id", "entity_type", "entity_id"),
@@ -63,7 +63,7 @@ def _apply_upgrade(bind) -> None:
             name="ck_personal_items_view_source_with_view",
         ),
         sa.CheckConstraint(
-            "num_nonnulls(viewed_at, starred_at, followed_at, sort_order) > 0",
+            "num_nonnulls(viewed_at, bookmarked_at, followed_at, sort_order) > 0",
             name="ck_personal_items_holds_something",
         ),
     )
@@ -77,13 +77,13 @@ def _apply_upgrade(bind) -> None:
     op.execute(
         """
         INSERT INTO personal_items (user_id, entity_type, entity_id, viewed_at,
-                                    view_source, starred_at, sort_order)
+                                    view_source, bookmarked_at, sort_order)
         SELECT user_id, entity_type, entity_id, max(viewed_at), max(view_source),
-               max(starred_at), max(sort_order)
+               max(bookmarked_at), max(sort_order)
           FROM (
                 SELECT user_id, entity_type, entity_id,
                        last_viewed_at AS viewed_at, source AS view_source,
-                       NULL::timestamptz AS starred_at,
+                       NULL::timestamptz AS bookmarked_at,
                        NULL::double precision AS sort_order
                   FROM recent_views
                 UNION ALL
@@ -143,8 +143,8 @@ def _apply_downgrade(bind) -> None:
     )
     op.execute(
         "INSERT INTO favorites (user_id, entity_type, entity_id, created_at)"
-        " SELECT user_id, entity_type, entity_id, starred_at FROM personal_items"
-        " WHERE starred_at IS NOT NULL"
+        " SELECT user_id, entity_type, entity_id, bookmarked_at FROM personal_items"
+        " WHERE bookmarked_at IS NOT NULL"
     )
     # Only orders of projects that are still there: the old table's key holds
     # its rows to a project. Follows have nowhere to go.

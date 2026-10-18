@@ -1166,9 +1166,9 @@ async def test_reordering_puts_the_named_projects_first_and_keeps_the_rest(
         response = await client.get(user.g("/projects/"), headers=user.headers)
         return [p["id"] for p in response.json()["items"]]
 
-    # A place is kept on the reader's row for the project, beside a star.
+    # A place is kept on the reader's row for the project, beside a bookmark.
     await client.put(
-        user.g(f"/personal-items/star/project/{third.id}"), headers=user.headers
+        user.g(f"/personal-items/bookmark/project/{third.id}"), headers=user.headers
     )
     moved = await client.post(
         url, headers=user.headers, json={"project_ids": [third.id]}
@@ -1178,7 +1178,7 @@ async def test_reordering_puts_the_named_projects_first_and_keeps_the_rest(
     state = await client.get(
         user.g(f"/personal-items/project/{third.id}"), headers=user.headers
     )
-    assert state.json()["starred_at"]
+    assert state.json()["bookmarked_at"]
 
     # The order it already holds changes nothing.
     kept = await client.post(

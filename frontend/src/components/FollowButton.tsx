@@ -1,4 +1,4 @@
-import { Eye } from "lucide-react";
+import { Star } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ContentKind } from "@/api/generated/initiativeAPI.schemas";
@@ -14,7 +14,7 @@ interface FollowButtonProps {
 }
 
 /** Follow any tool or anything inside one: what changes in it ranks higher in
- *  the reader's activity feed. Beside the star on a tool's page, and in the
+ *  the reader's activity feed. Beside the bookmark on a tool's page, and in the
  *  actions of a page for something inside a tool. */
 export const FollowButton = ({ kind, entityId, communityId, className }: FollowButtonProps) => {
   const { t } = useTranslation("common");
@@ -25,8 +25,7 @@ export const FollowButton = ({ kind, entityId, communityId, className }: FollowB
     <button
       type="button"
       className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
-        following && "text-primary",
+        "inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
         className
       )}
       aria-pressed={following}
@@ -35,7 +34,11 @@ export const FollowButton = ({ kind, entityId, communityId, className }: FollowB
       disabled={!ready}
       onClick={toggle}
     >
-      <Eye className="size-4" aria-hidden />
+      <Star
+        className={cn("size-4", following && "text-amber-500")}
+        fill={following ? "currentColor" : "none"}
+        aria-hidden
+      />
     </button>
   );
 };

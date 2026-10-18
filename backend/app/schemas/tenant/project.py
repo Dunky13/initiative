@@ -97,8 +97,6 @@ class ProjectRead(ProjectBase, ToolSummaryBase):
     )
     initiative: Optional[InitiativeSummary] = None
     can: ProjectCan = Field(default_factory=ProjectCan)
-    is_favorited: bool = False
-    last_viewed_at: Optional[datetime] = None
     task_summary: ProjectTaskSummary = Field(default_factory=ProjectTaskSummary)
     # The project's task statuses (ordered by position), on a read that loaded
     # them — the detail read and a write's answer — so a caller has the status

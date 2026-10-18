@@ -64,7 +64,7 @@ def _scoped(resource: str) -> PluginTableAccess:
 #: Tables a tool governs that are not a plug-in's to touch.
 _NOT_PLUGIN_SURFACE: frozenset[str] = frozenset(
     {
-        # One person's own state: their ordering, favourites, read markers and
+        # One person's own state: their ordering, bookmarks, read markers and
         # ballots.
         "post_reads",
         "post_poll_votes",
@@ -164,7 +164,7 @@ SEARCH_ENTRY_READ_SCOPE: dict[SearchEntityType, PluginScopeResource] = (
 
 #: Tables no plug-in reaches, whose policies refuse an installed plug-in outright
 #: beside the grant it does not hold: a reaction and the line queued about it
-#: are one person's gesture, a recent view one person's history, a star one
+#: are one person's gesture, a recent view one person's history, a bookmark one
 #: person's pick, and an engagement level what many people's history adds up to.
 PLUGIN_REFUSED_TABLES: frozenset[str] = frozenset(
     {

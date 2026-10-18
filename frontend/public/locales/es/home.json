@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Al mando",
-      "description": "Lo que se mueve en tu comunidad, lo que marcaste con una estrella y lo que cambió en proyectos y paneles, y tu propia lista."
+      "description": "Lo que se mueve en tu comunidad, lo que guardaste en marcadores y lo que cambió en proyectos y paneles, y tu propia lista."
     }
   },
   "settingsDialog": {
@@ -171,13 +171,13 @@
       "loadError": "No se pudo cargar lo reciente.",
       "openTools": "Abrir Mis herramientas"
     },
-    "favorites": {
-      "title": "Favoritos",
-      "titleIn": "{{tool}} favoritos",
-      "description": "Todo lo que marcaste con una estrella, de cada comunidad, a un clic.",
+    "bookmarks": {
+      "title": "Marcadores",
+      "titleIn": "{{tool}} en marcadores",
+      "description": "Todo lo que guardaste en marcadores, de cada comunidad, a un clic.",
       "toolsHint": "Muestra solo estos tipos de herramienta. Déjalo vacío para verlos todos.",
-      "empty": "Aún no has marcado nada. Marca con una estrella un proyecto, un archivo o lo que sea desde su página y te esperará aquí.",
-      "loadError": "No se pudieron cargar tus favoritos."
+      "empty": "Aún no tienes marcadores. Guarda en marcadores un proyecto, un archivo o lo que sea desde su página y te esperará aquí.",
+      "loadError": "No se pudieron cargar tus marcadores."
     },
     "activity": {
       "title": "Actividad",

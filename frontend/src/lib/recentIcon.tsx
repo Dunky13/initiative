@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Render the entity-specific icon for a tool in a list of them: a recent tab,
- * a starred tool.
+ * a bookmarked tool.
  *
  * - Projects show the emoji icon set on the project itself.
  * - Files resolve to the same icon + color used in file lists

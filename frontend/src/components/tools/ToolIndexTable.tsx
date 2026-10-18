@@ -11,7 +11,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { FavoriteButton } from "@/components/FavoriteButton";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { buildPropertyColumns, propertyColumnIds } from "@/components/properties/propertyColumns";
 import { SortHeader } from "@/components/SortIcon";
@@ -138,7 +138,7 @@ export const ToolIndexTable = ({
               {row.original.name}
             </Link>
             {unread.hasResource(communityId, tool, row.original.id) ? <UnreadDot /> : null}
-            <FavoriteButton
+            <BookmarkButton
               tool={tool}
               entityId={row.original.id}
               name={row.original.name}

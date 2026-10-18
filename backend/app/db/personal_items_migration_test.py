@@ -36,7 +36,7 @@ def _load(name: str):
 
 
 async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
-    """A view, a star and an order on one project become one row; each alone
+    """A view, a bookmark and an order on one project become one row; each alone
     becomes its own. The downgrade splits them back, leaving follows behind and
     an order on a project that is gone."""
     user = await create_user(session)
@@ -102,7 +102,7 @@ async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
     rows = (
         await sql(
             "SELECT user_id, entity_type, entity_id, viewed_at, view_source,"
-            f" starred_at, followed_at, sort_order FROM {schema}.personal_items"
+            f" bookmarked_at, followed_at, sort_order FROM {schema}.personal_items"
             " ORDER BY user_id, entity_type, entity_id"
         )
     ).all()
@@ -143,10 +143,10 @@ async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
         (other.id, "task", task.id, "direct"),
         (user.id, "project", project.id, "search"),
     ]
-    stars = (
+    bookmarks = (
         await sql(f"SELECT entity_type FROM {schema}.favorites ORDER BY created_at")
     ).all()
-    assert [r.entity_type for r in stars] == ["project", "queue"]
+    assert [r.entity_type for r in bookmarks] == ["project", "queue"]
     orders = (
         await sql(f"SELECT project_id FROM {schema}.project_orders ORDER BY sort_order")
     ).all()

@@ -118,7 +118,7 @@ HOME_WIDGET_SPECS: dict[str, HomeWidgetSpec] = {
     "recent": HomeWidgetSpec(
         3, 3, options={"mode": _one_of("viewed", "changed"), "tools": _tools}
     ),
-    "favorites": HomeWidgetSpec(3, 3, options={"tools": _tools}),
+    "bookmarks": HomeWidgetSpec(3, 3, options={"tools": _tools}),
     "activity": HomeWidgetSpec(3, 4, options={"view": _one_of("all", "yours")}),
     "communities": HomeWidgetSpec(4, 5, single=True),
     "progress": HomeWidgetSpec(4, 2, single=True),

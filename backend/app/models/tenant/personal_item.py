@@ -1,4 +1,4 @@
-"""What one member keeps about one item: their last open, a star, a follow and
+"""What one member keeps about one item: their last open, a bookmark, a follow and
 where they put a project in their own list.
 
 One row per ``(user_id, entity_type, entity_id)``, in the item's community's
@@ -30,7 +30,7 @@ class ViewSource(str, Enum):
     feed = "feed"
 
 
-#: The kinds whose opens become tabs, and which can be starred: every tool.
+#: The kinds whose opens become tabs, and which can be bookmarked: every tool.
 TOOL_KINDS: tuple[str, ...] = tuple(t.value for t in Tool)
 
 _KINDS = ", ".join(f"'{kind}'" for kind in CONTENT_KINDS)
@@ -42,7 +42,7 @@ class PersonalItem(SQLModel, table=True):
     """One member's own state about one tool, or one thing inside a tool.
 
     Only that member reaches the row (``PRIVATE_ROW_TABLES``). Opening any
-    content kind records a view; only a tool is starred, and only a project is
+    content kind records a view; only a tool is bookmarked, and only a project is
     ordered, since only projects have a list of the reader's own to order.
     """
 
@@ -59,8 +59,8 @@ class PersonalItem(SQLModel, table=True):
             info={FROM_REGISTRY: True},
         ),
         CheckConstraint(
-            f"starred_at IS NULL OR entity_type IN ({_TOOLS})",
-            name="ck_personal_items_starred_tool",
+            f"bookmarked_at IS NULL OR entity_type IN ({_TOOLS})",
+            name="ck_personal_items_bookmarked_tool",
             info={FROM_REGISTRY: True},
         ),
         CheckConstraint(
@@ -73,7 +73,7 @@ class PersonalItem(SQLModel, table=True):
             name="ck_personal_items_view_source_with_view",
         ),
         CheckConstraint(
-            "num_nonnulls(viewed_at, starred_at, followed_at, sort_order) > 0",
+            "num_nonnulls(viewed_at, bookmarked_at, followed_at, sort_order) > 0",
             name="ck_personal_items_holds_something",
         ),
         # A purge drops everyone's rows on an item.
@@ -92,7 +92,7 @@ class PersonalItem(SQLModel, table=True):
     view_source: Optional[str] = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
-    starred_at: Optional[datetime] = Field(
+    bookmarked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     followed_at: Optional[datetime] = Field(

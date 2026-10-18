@@ -1580,8 +1580,6 @@ export interface ProjectRead {
   owner: UserPublic | null;
   owner_plugin: OwnerPluginSummary | null;
   initiative: InitiativeSummary | null;
-  is_favorited: boolean;
-  last_viewed_at: string | null;
   task_summary: ProjectTaskSummary;
   task_statuses: TaskStatusRead[];
 }
@@ -6874,13 +6872,13 @@ export interface ListLayoutWrite {
 }
 
 /**
- * The marks a list of tools is read by: the tabs, and the stars.
+ * The marks a list of tools is read by: the tabs, and the bookmarks.
  */
 export type ListedMark = (typeof ListedMark)[keyof typeof ListedMark];
 
 export const ListedMark = {
   view: "view",
-  star: "star",
+  bookmark: "bookmark",
 } as const;
 
 /**
@@ -8204,7 +8202,7 @@ export interface PasswordResetSubmit {
 }
 
 /**
- * One tool in the reader's tabs or stars: enough to draw its icon and link
+ * One tool in the reader's tabs or bookmarks: enough to draw its icon and link
  * to it without a fetch per kind, and nothing of its content.
  */
 export interface PersonalItemRead {
@@ -8214,7 +8212,7 @@ export interface PersonalItemRead {
   initiative_id: number | null;
   name: string;
   viewed_at: string | null;
-  starred_at: string | null;
+  bookmarked_at: string | null;
   icon: string | null;
   file_type: string | null;
   mime_type: string | null;
@@ -8240,7 +8238,7 @@ export interface PersonalItemState {
   entity_id: number;
   viewed_at: string | null;
   view_source: ViewSource | null;
-  starred_at: string | null;
+  bookmarked_at: string | null;
   followed_at: string | null;
 }
 

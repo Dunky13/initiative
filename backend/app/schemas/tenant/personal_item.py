@@ -1,4 +1,4 @@
-"""Schemas for what a member keeps about items: opens, stars, follows."""
+"""Schemas for what a member keeps about items: opens, bookmarks, follows."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ ContentKind = Enum("ContentKind", [(k, k) for k in CONTENT_KINDS], type=str)
 
 
 class ListedMark(str, Enum):
-    """The marks a list of tools is read by: the tabs, and the stars."""
+    """The marks a list of tools is read by: the tabs, and the bookmarks."""
 
     view = "view"
-    star = "star"
+    bookmark = "bookmark"
 
 
 class PersonalItemState(SanitizedBaseModel):
@@ -33,12 +33,12 @@ class PersonalItemState(SanitizedBaseModel):
     entity_id: int
     viewed_at: Optional[datetime] = None
     view_source: Optional[ViewSource] = None
-    starred_at: Optional[datetime] = None
+    bookmarked_at: Optional[datetime] = None
     followed_at: Optional[datetime] = None
 
 
 class PersonalItemRead(SanitizedBaseModel):
-    """One tool in the reader's tabs or stars: enough to draw its icon and link
+    """One tool in the reader's tabs or bookmarks: enough to draw its icon and link
     to it without a fetch per kind, and nothing of its content."""
 
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
@@ -51,7 +51,7 @@ class PersonalItemRead(SanitizedBaseModel):
     initiative_id: Optional[int] = None
     name: str
     viewed_at: Optional[datetime] = None
-    starred_at: Optional[datetime] = None
+    bookmarked_at: Optional[datetime] = None
     # Projects: the emoji on the project itself.
     icon: Optional[str] = None
     # Files: what picks the file's own icon and colour.

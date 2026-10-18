@@ -2,12 +2,12 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ChevronLeft,
   ChevronRight,
-  Eye,
   Minus,
   MoreVertical,
   Pencil,
   Plus,
   RotateCcw,
+  Star,
   X,
 } from "lucide-react";
 import { type TouchEvent, useMemo, useState } from "react";
@@ -187,7 +187,7 @@ export function CounterDetailPage() {
         >
           {counter.name}
         </h1>
-        {/* On the counter's own colours, so on and off read as full and faded. */}
+        {/* On the counter's own colours: filled when followed. */}
         <Button
           variant="ghost"
           size="icon"
@@ -197,9 +197,9 @@ export function CounterDetailPage() {
           disabled={!follow.ready}
           onClick={follow.toggle}
           className={cn("h-10 w-10", chromeButtonClass)}
-          style={{ color: fg, opacity: follow.following ? 1 : 0.6 }}
+          style={{ color: fg }}
         >
-          <Eye className="h-5 w-5" />
+          <Star className="h-5 w-5" fill={follow.following ? "currentColor" : "none"} />
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

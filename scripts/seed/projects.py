@@ -1,4 +1,4 @@
-"""Projects and their tasks, favourites and recent views — and archiving, which
+"""Projects and their tasks, bookmarks and recent views — and archiving, which
 waits until everything a project holds exists.
 
 Every community seeds template and archived projects beside its active ones,
@@ -1349,8 +1349,8 @@ PROJECTS: dict[str, list[dict]] = {
     ],
 }
 
-#: ``(person, project)`` — each person's starred projects.
-FAVORITES: dict[str, list[tuple[str, str]]] = {
+#: ``(person, project)`` — each person's bookmarked projects.
+BOOKMARKS: dict[str, list[tuple[str, str]]] = {
     "primary": [
         ("Dungeon Master", "Barovia Arc"),
         ("Dungeon Master", "Castle Ravenloft"),
@@ -1469,7 +1469,7 @@ def resolve_status(
 async def seed(c: Community) -> None:
     for d in PROJECTS[c.key]:
         await create_project(c, d)
-    # A star and an open on one project are one row.
+    # A bookmark and an open on one project are one row.
     kept: dict[tuple[int | None, int | None], PersonalItem] = {}
 
     def row(name: str, project: str) -> PersonalItem:
@@ -1481,9 +1481,9 @@ async def seed(c: Community) -> None:
         return kept[key]
 
     now = datetime.now(timezone.utc)
-    for name, project in FAVORITES[c.key]:
-        row(name, project).starred_at = now
-        c.ids["favorites"].append(c.projects[project].id)
+    for name, project in BOOKMARKS[c.key]:
+        row(name, project).bookmarked_at = now
+        c.ids["bookmarks"].append(c.projects[project].id)
     for name, project in RECENT_VIEWS[c.key]:
         item = row(name, project)
         item.viewed_at, item.view_source = now, ViewSource.direct.value
@@ -1574,7 +1574,7 @@ async def apply_archives(c: Community) -> None:
     """Archive the rows that asked for it, now that they have contents.
 
     Archived content takes no writes, so statuses, tasks, tags, comments and
-    favourites all have to be in place first — the order a real archive
+    bookmarks all have to be in place first — the order a real archive
     happens in. Archiving stamps one moment across everything it touched; the
     whole set is then moved to the date the def asked for, so the tasks inside
     still read as archived with their project and unarchiving still puts back

@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Running the show",
-      "description": "What's moving in your community, what you starred and what changed in projects and dashboards, and your own list."
+      "description": "What's moving in your community, what you bookmarked and what changed in projects and dashboards, and your own list."
     }
   },
   "settingsDialog": {
@@ -171,13 +171,13 @@
       "loadError": "Couldn't load what's recent.",
       "openTools": "Open My Tools"
     },
-    "favorites": {
-      "title": "Favorites",
-      "titleIn": "Favorite {{tool}}",
-      "description": "Everything you starred, from every community, a click away.",
+    "bookmarks": {
+      "title": "Bookmarks",
+      "titleIn": "Bookmarked {{tool}}",
+      "description": "Everything you bookmarked, from every community, a click away.",
       "toolsHint": "Show only these kinds of tool. Leave it empty for all of them.",
-      "empty": "Nothing starred yet. Star a project, a file or anything else from its page, and it waits for you here.",
-      "loadError": "Couldn't load your favorites."
+      "empty": "Nothing bookmarked yet. Bookmark a project, a file or anything else from its page, and it waits for you here.",
+      "loadError": "Couldn't load your bookmarks."
     },
     "activity": {
       "title": "Activity",

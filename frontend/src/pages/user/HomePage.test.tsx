@@ -538,37 +538,37 @@ describe("HomePage", () => {
     );
   });
 
-  it("lists what the reader starred in every community, and takes a star off", async () => {
+  it("lists what the reader bookmarked in every community, and takes a bookmark off", async () => {
     const user = userEvent.setup();
-    const starred = (
+    const bookmarked = (
       over: Pick<PersonalItemRead, "entity_type" | "entity_id" | "name"> & Partial<PersonalItemRead>
     ): PersonalItemRead => ({
       community_id: 3,
       initiative_id: 2,
       viewed_at: null,
-      starred_at: "2026-10-10T00:00:00Z",
+      bookmarked_at: "2026-10-10T00:00:00Z",
       icon: null,
       file_type: null,
       mime_type: null,
       original_filename: null,
       ...over,
     });
-    let favorites = [
-      starred({ entity_type: "queue", entity_id: 7, name: "Tea rota" }),
-      starred({ entity_type: "project", entity_id: 5, name: "Fete stalls", icon: "🎪" }),
+    let bookmarks = [
+      bookmarked({ entity_type: "queue", entity_id: 7, name: "Tea rota" }),
+      bookmarked({ entity_type: "project", entity_id: 5, name: "Fete stalls", icon: "🎪" }),
     ];
     const removed: string[] = [];
     server.use(
-      http.get("/api/v1/me/personal-items", () => HttpResponse.json(favorites)),
-      http.delete("/api/v1/c/:communityId/personal-items/star/:tool/:id", ({ params }) => {
+      http.get("/api/v1/me/personal-items", () => HttpResponse.json(bookmarks)),
+      http.delete("/api/v1/c/:communityId/personal-items/bookmark/:tool/:id", ({ params }) => {
         removed.push(`${params.communityId}/${params.tool}/${params.id}`);
-        favorites = favorites.filter((item) => item.entity_type !== params.tool);
+        bookmarks = bookmarks.filter((item) => item.entity_type !== params.tool);
         return new HttpResponse(null, { status: 204 });
       })
     );
     const kept = keepLayout({
       version: 1,
-      widgets: [{ id: "favorites", type: "favorites", grid: { x: 0, y: 0, w: 4, h: 6 } }],
+      widgets: [{ id: "bookmarks", type: "bookmarks", grid: { x: 0, y: 0, w: 4, h: 6 } }],
     });
     renderHome();
 
@@ -581,7 +581,7 @@ describe("HomePage", () => {
       "/c/3/i/2/queues/7"
     );
 
-    const [first] = screen.getAllByRole("button", { name: "Remove from favorites" });
+    const [first] = screen.getAllByRole("button", { name: "Remove bookmark" });
     await user.click(first);
     await waitFor(() => expect(removed).toEqual(["3/queue/7"]));
     await waitFor(() =>
@@ -589,14 +589,14 @@ describe("HomePage", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Customize" }));
-    await user.click(screen.getByRole("button", { name: "Favorites settings" }));
+    await user.click(screen.getByRole("button", { name: "Bookmarks settings" }));
     await user.click(await screen.findByRole("combobox", { name: "Tools" }));
     await user.click(await screen.findByRole("option", { name: "Queues" }));
     await waitFor(() => expect(keptLayout(kept).widgets[0].options).toEqual({ tools: ["queue"] }));
     await user.keyboard("{Escape}");
     await user.keyboard("{Escape}");
-    expect(await screen.findByRole("heading", { name: "Favorite Queues" })).toBeInTheDocument();
-    expect(await screen.findByText(/nothing starred yet/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Bookmarked Queues" })).toBeInTheDocument();
+    expect(await screen.findByText(/nothing bookmarked yet/i)).toBeInTheDocument();
   });
 
   it("says the recent list could not load when a list it asked for failed", async () => {

@@ -13,7 +13,7 @@ const state = (followed_at: string | null) => ({
   entity_id: 7,
   viewed_at: null,
   view_source: null,
-  starred_at: null,
+  bookmarked_at: null,
   followed_at,
 });
 

@@ -1,12 +1,12 @@
-"""What a member keeps about items: opens, stars and follows.
+"""What a member keeps about items: opens, bookmarks and follows.
 
 Setting and clearing one is community-addressed
 (``/c/{community_id}/personal-items/{mark}/{kind}/{id}``): per-schema ids are
 only unique within a community. Opening and following take read on the item,
-the same its own page takes; starring takes it on a tool. Clearing asks
+the same its own page takes; bookmarking takes it on a tool. Clearing asks
 nothing of the item, so a mark on something the reader has lost still comes
-off. A community's stars serve its sidebar and the stars on its pages;
-``/me/personal-items`` gathers every community's tabs or stars, names and
+off. A community's bookmarks serve its sidebar and the bookmarks on its pages;
+``/me/personal-items`` gathers every community's tabs or bookmarks, names and
 icons only, each community's read inside that community's routed session.
 """
 
@@ -69,7 +69,7 @@ async def _community_items(
                 initiative_id=item.initiative_id,
                 name=item.name,
                 viewed_at=row.viewed_at,
-                starred_at=row.starred_at,
+                bookmarked_at=row.bookmarked_at,
                 **item.extra,
             )
         )
@@ -85,7 +85,7 @@ async def _state(session, user_id: int, kind: str, entity_id: int) -> PersonalIt
         entity_id=entity_id,
         viewed_at=row.viewed_at if row else None,
         view_source=ViewSource(row.view_source) if row and row.view_source else None,
-        starred_at=row.starred_at if row else None,
+        bookmarked_at=row.bookmarked_at if row else None,
         followed_at=row.followed_at if row else None,
     )
 
@@ -98,7 +98,7 @@ async def _set(
     current_user,
     guild_context,
 ) -> PersonalItemState:
-    """Star or follow, after loading the item as its page does. A platform
+    """Bookmark or follow, after loading the item as its page does. A platform
     grantee is not a member, so nothing is kept for them."""
     row = await resource_access.load_kind(
         session, kind, entity_id, current_user, guild_context
@@ -117,7 +117,7 @@ async def list_personal_items(
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> List[PersonalItemRead]:
-    """The tools the reader opened or starred in this community, newest first."""
+    """The tools the reader opened or bookmarked in this community, newest first."""
     del guild_context  # validation + routing happen in the dependency
     return await _community_items(session, current_user.id, mark)
 
@@ -162,17 +162,17 @@ async def record_view(
     return state.model_copy(update={"viewed_at": viewed_at, "view_source": source})
 
 
-@guild_router.put("/star/{tool}/{entity_id}", response_model=PersonalItemState)
-async def star_item(
+@guild_router.put("/bookmark/{tool}/{entity_id}", response_model=PersonalItemState)
+async def bookmark_item(
     tool: Tool,
     entity_id: int,
     session: RLSSessionDep,
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> PersonalItemState:
-    """Star a tool. Starring one already starred keeps the first star's time."""
+    """Bookmark a tool. Bookmarking one already bookmarked keeps the first time."""
     return await _set(
-        Mark.star, tool.value, entity_id, session, current_user, guild_context
+        Mark.bookmark, tool.value, entity_id, session, current_user, guild_context
     )
 
 
@@ -210,17 +210,19 @@ async def clear_view(
     await _clear(Mark.view, kind.value, entity_id, session, current_user.id)
 
 
-@guild_router.delete("/star/{tool}/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def unstar_item(
+@guild_router.delete(
+    "/bookmark/{tool}/{entity_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def unbookmark_item(
     tool: Tool,
     entity_id: int,
     session: RLSSessionDep,
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> None:
-    """Take a star off. Idempotent."""
+    """Remove a bookmark. Idempotent."""
     del guild_context
-    await _clear(Mark.star, tool.value, entity_id, session, current_user.id)
+    await _clear(Mark.bookmark, tool.value, entity_id, session, current_user.id)
 
 
 @guild_router.delete(
@@ -244,7 +246,7 @@ async def list_my_personal_items(
     session: UserSessionDep,
     current_user: CurrentUser,
 ) -> List[PersonalItemRead]:
-    """The tools the reader opened or starred in every community they are in,
+    """The tools the reader opened or bookmarked in every community they are in,
     newest first. Opens are the tabs: as many as the reader keeps."""
     member_guilds = list(
         (
@@ -266,6 +268,6 @@ async def list_my_personal_items(
         return await _community_items(guild_session, current_user.id, mark, limit)
 
     items = await gather_across_guilds(session, current_user.id, member_guilds, _fetch)
-    field = "viewed_at" if mark is ListedMark.view else "starred_at"
+    field = "viewed_at" if mark is ListedMark.view else "bookmarked_at"
     items.sort(key=lambda item: getattr(item, field), reverse=True)
     return items[:limit] if limit is not None else items

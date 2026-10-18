@@ -262,7 +262,7 @@ async def test_the_preference_beside_it_goes(session: AsyncSession, role_session
 
 
 async def test_what_they_kept_goes(session: AsyncSession, role_session):
-    """Opens, stars, follows and orders are one person's own: theirs go, and
+    """Opens, bookmarks, follows and orders are one person's own: theirs go, and
     someone else's stay."""
     s = await _seed(session)
     await route_session_to_guild(session, s.guild_id)
@@ -272,7 +272,7 @@ async def test_what_they_kept_goes(session: AsyncSession, role_session):
                 user_id=person,
                 entity_type="project",
                 entity_id=1,
-                starred_at=datetime.now(timezone.utc),
+                bookmarked_at=datetime.now(timezone.utc),
             )
         )
     await session.commit()

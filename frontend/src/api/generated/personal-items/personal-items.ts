@@ -52,7 +52,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * The tools the reader opened or starred in this community, newest first.
+ * The tools the reader opened or bookmarked in this community, newest first.
  * @summary List Personal Items
  */
 export const listPersonalItems = (
@@ -515,10 +515,10 @@ export const useClearView = <TError = ErrorType<HTTPValidationError>, TContext =
   return useMutation(getClearViewMutationOptions(options), queryClient);
 };
 /**
- * Star a tool. Starring one already starred keeps the first star's time.
- * @summary Star Item
+ * Bookmark a tool. Bookmarking one already bookmarked keeps the first time.
+ * @summary Bookmark Item
  */
-export const starItem = (
+export const bookmarkItem = (
   communityId: number,
   tool: Tool,
   entityId: number,
@@ -527,7 +527,7 @@ export const starItem = (
 ) => {
   return apiMutator<PersonalItemState>(
     {
-      url: `/api/v1/c/${communityId}/personal-items/star/${tool}/${entityId}`,
+      url: `/api/v1/c/${communityId}/personal-items/bookmark/${tool}/${entityId}`,
       method: "PUT",
       signal,
     },
@@ -535,26 +535,26 @@ export const starItem = (
   );
 };
 
-export const getStarItemMutationKey = () => ["starItem"] as const;
+export const getBookmarkItemMutationKey = () => ["bookmarkItem"] as const;
 
-export const getStarItemMutationOptions = <
+export const getBookmarkItemMutationOptions = <
   TError = ErrorType<HTTPValidationError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof starItem>>,
+    Awaited<ReturnType<typeof bookmarkItem>>,
     TError,
-    StarItemMutationVariables,
+    BookmarkItemMutationVariables,
     TContext
   >;
   request?: SecondParameter<typeof apiMutator>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof starItem>>,
+  Awaited<ReturnType<typeof bookmarkItem>>,
   TError,
-  StarItemMutationVariables,
+  BookmarkItemMutationVariables,
   TContext
 > => {
-  const mutationKey = getStarItemMutationKey();
+  const mutationKey = getBookmarkItemMutationKey();
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -562,49 +562,49 @@ export const getStarItemMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof starItem>>,
-    StarItemMutationVariables
+    Awaited<ReturnType<typeof bookmarkItem>>,
+    BookmarkItemMutationVariables
   > = (props) => {
     const { communityId, tool, entityId } = props ?? {};
 
-    return starItem(communityId, tool, entityId, requestOptions);
+    return bookmarkItem(communityId, tool, entityId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type StarItemMutationResult = NonNullable<Awaited<ReturnType<typeof starItem>>>;
+export type BookmarkItemMutationResult = NonNullable<Awaited<ReturnType<typeof bookmarkItem>>>;
 
-export type StarItemMutationError = ErrorType<HTTPValidationError>;
-export type StarItemMutationVariables = { communityId: number; tool: Tool; entityId: number };
+export type BookmarkItemMutationError = ErrorType<HTTPValidationError>;
+export type BookmarkItemMutationVariables = { communityId: number; tool: Tool; entityId: number };
 
 /**
- * @summary Star Item
+ * @summary Bookmark Item
  */
-export const useStarItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+export const useBookmarkItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof starItem>>,
+      Awaited<ReturnType<typeof bookmarkItem>>,
       TError,
-      StarItemMutationVariables,
+      BookmarkItemMutationVariables,
       TContext
     >;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseMutationResult<
-  Awaited<ReturnType<typeof starItem>>,
+  Awaited<ReturnType<typeof bookmarkItem>>,
   TError,
-  StarItemMutationVariables,
+  BookmarkItemMutationVariables,
   TContext
 > => {
-  return useMutation(getStarItemMutationOptions(options), queryClient);
+  return useMutation(getBookmarkItemMutationOptions(options), queryClient);
 };
 /**
- * Take a star off. Idempotent.
- * @summary Unstar Item
+ * Remove a bookmark. Idempotent.
+ * @summary Unbookmark Item
  */
-export const unstarItem = (
+export const unbookmarkItem = (
   communityId: number,
   tool: Tool,
   entityId: number,
@@ -613,7 +613,7 @@ export const unstarItem = (
 ) => {
   return apiMutator<void>(
     {
-      url: `/api/v1/c/${communityId}/personal-items/star/${tool}/${entityId}`,
+      url: `/api/v1/c/${communityId}/personal-items/bookmark/${tool}/${entityId}`,
       method: "DELETE",
       signal,
     },
@@ -621,26 +621,26 @@ export const unstarItem = (
   );
 };
 
-export const getUnstarItemMutationKey = () => ["unstarItem"] as const;
+export const getUnbookmarkItemMutationKey = () => ["unbookmarkItem"] as const;
 
-export const getUnstarItemMutationOptions = <
+export const getUnbookmarkItemMutationOptions = <
   TError = ErrorType<HTTPValidationError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unstarItem>>,
+    Awaited<ReturnType<typeof unbookmarkItem>>,
     TError,
-    UnstarItemMutationVariables,
+    UnbookmarkItemMutationVariables,
     TContext
   >;
   request?: SecondParameter<typeof apiMutator>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof unstarItem>>,
+  Awaited<ReturnType<typeof unbookmarkItem>>,
   TError,
-  UnstarItemMutationVariables,
+  UnbookmarkItemMutationVariables,
   TContext
 > => {
-  const mutationKey = getUnstarItemMutationKey();
+  const mutationKey = getUnbookmarkItemMutationKey();
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -648,43 +648,43 @@ export const getUnstarItemMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof unstarItem>>,
-    UnstarItemMutationVariables
+    Awaited<ReturnType<typeof unbookmarkItem>>,
+    UnbookmarkItemMutationVariables
   > = (props) => {
     const { communityId, tool, entityId } = props ?? {};
 
-    return unstarItem(communityId, tool, entityId, requestOptions);
+    return unbookmarkItem(communityId, tool, entityId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type UnstarItemMutationResult = NonNullable<Awaited<ReturnType<typeof unstarItem>>>;
+export type UnbookmarkItemMutationResult = NonNullable<Awaited<ReturnType<typeof unbookmarkItem>>>;
 
-export type UnstarItemMutationError = ErrorType<HTTPValidationError>;
-export type UnstarItemMutationVariables = { communityId: number; tool: Tool; entityId: number };
+export type UnbookmarkItemMutationError = ErrorType<HTTPValidationError>;
+export type UnbookmarkItemMutationVariables = { communityId: number; tool: Tool; entityId: number };
 
 /**
- * @summary Unstar Item
+ * @summary Unbookmark Item
  */
-export const useUnstarItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+export const useUnbookmarkItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof unstarItem>>,
+      Awaited<ReturnType<typeof unbookmarkItem>>,
       TError,
-      UnstarItemMutationVariables,
+      UnbookmarkItemMutationVariables,
       TContext
     >;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseMutationResult<
-  Awaited<ReturnType<typeof unstarItem>>,
+  Awaited<ReturnType<typeof unbookmarkItem>>,
   TError,
-  UnstarItemMutationVariables,
+  UnbookmarkItemMutationVariables,
   TContext
 > => {
-  return useMutation(getUnstarItemMutationOptions(options), queryClient);
+  return useMutation(getUnbookmarkItemMutationOptions(options), queryClient);
 };
 /**
  * Follow a tool or anything inside one: its changes, and those of what is
@@ -868,7 +868,7 @@ export const useUnfollowItem = <TError = ErrorType<HTTPValidationError>, TContex
   return useMutation(getUnfollowItemMutationOptions(options), queryClient);
 };
 /**
- * The tools the reader opened or starred in every community they are in,
+ * The tools the reader opened or bookmarked in every community they are in,
  * newest first. Opens are the tabs: as many as the reader keeps.
  * @summary List My Personal Items
  */

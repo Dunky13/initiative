@@ -9,7 +9,7 @@ entry is readable too, which is also where its title comes from.
 
 An entry is ordered by how recent its latest change is, the item's engagement
 level, and how involved the reader is with it: made it or named on it,
-changed it, following it or its tool, opened it, starred its tool.
+changed it, following it or its tool, opened it, bookmarked its tool.
 
     2^(−age / HALF_LIFE) × boosted(1, level) × relevance
 
@@ -69,8 +69,8 @@ CHANGED_WEIGHT = 1.0
 #: Following it, or the tool it is in: the reader asked to see it.
 FOLLOWING_WEIGHT = 2.0
 OPENED_WEIGHT = 0.5
-#: Starred the tool it is in.
-STARRED_WEIGHT = 0.5
+#: Bookmarked the tool it is in.
+BOOKMARKED_WEIGHT = 0.5
 
 
 class FeedView(str, Enum):
@@ -226,7 +226,7 @@ def _statement(tools: list[str]) -> Any:
                     WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
                AS changed,
            coalesce(mine.viewed_at > :since, false) AS opened,
-           mine_tool.starred_at IS NOT NULL AS starred,
+           mine_tool.bookmarked_at IS NOT NULL AS bookmarked,
            (mine.followed_at IS NOT NULL OR mine_tool.followed_at IS NOT NULL)
                AS following,
            coalesce(l.level, 0) AS level,
@@ -340,7 +340,7 @@ def _score(row: Any, now: datetime, involved: bool) -> float:
         + (CHANGED_WEIGHT if row["changed"] else 0)
         + (FOLLOWING_WEIGHT if row["following"] else 0)
         + (OPENED_WEIGHT if row["opened"] else 0)
-        + (STARRED_WEIGHT if row["starred"] else 0)
+        + (BOOKMARKED_WEIGHT if row["bookmarked"] else 0)
     )
     return (
         2 ** (-age / HALF_LIFE.total_seconds()) * boosted(1, row["level"]) * relevance
