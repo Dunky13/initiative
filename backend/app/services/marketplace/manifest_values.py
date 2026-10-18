@@ -51,6 +51,7 @@ __all__ = [
     "check_url",
     "clean_text",
     "fail",
+    "is_identifier",
     "is_metadata_key",
     "require_list",
     "require_mapping",
@@ -186,6 +187,15 @@ def check_identifier(value: Any, *, what: str) -> str:
         if character not in IDENTIFIER_CHARS:
             fail(f"{what} contains {character!r}, which is not allowed")
     return value
+
+
+def is_identifier(value: Any) -> bool:
+    """Whether ``value`` is an id a manifest names something by."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_IDENTIFIER_LENGTH
+        and all(character in IDENTIFIER_CHARS for character in value)
+    )
 
 
 def is_metadata_key(value: Any) -> bool:

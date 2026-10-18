@@ -7,8 +7,12 @@ There is no foreign key to the item: the purge removes an item's values
 explicitly, as it does its property values. The install is a foreign key, so
 uninstalling removes everything it kept.
 
+A list field's value is a row per element, each named by its ``ref``; a value
+that is not a list's has the ``ref`` ``''``.
+
 ``lookup`` is the value as text when the value is a JSON string, number or
-boolean short enough to look up by, and ``NULL`` otherwise.
+boolean short enough to look up by, an element's ``ref``, and ``NULL``
+otherwise.
 
 ``text_form`` and ``number_form`` are what a filter compares a value by: the
 words a reader sees of it (a string, a badge's text, a link's text or else its
@@ -84,6 +88,14 @@ class PluginMetadata(SQLModel, table=True):
     entity_type: str = Field(sa_column=Column(String(32), primary_key=True))
     entity_id: int = Field(sa_column=Column(Integer, primary_key=True))
     key: str = Field(sa_column=Column(String(64), primary_key=True))
+    #: Which element of a list field's value the row holds; ``''`` for a value
+    #: that is not a list's.
+    ref: str = Field(
+        default="",
+        sa_column=Column(
+            String(LOOKUP_LENGTH), primary_key=True, server_default=text("''")
+        ),
+    )
     value: Any = Field(sa_column=Column(JSONB, nullable=False))
     lookup: Optional[str] = Field(
         default=None, sa_column=Column(String(LOOKUP_LENGTH), nullable=True)

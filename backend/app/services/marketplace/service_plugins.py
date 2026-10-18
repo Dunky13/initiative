@@ -361,9 +361,18 @@ MAX_PAGES = contract.cap("pages")
 MAX_FIELDS = contract.cap("fields")
 MAX_PARTS = contract.cap("parts")
 MAX_ACTIONS = contract.cap("actions")
+#: How many facets a field's states may have, and how many keys each.
+MAX_FACETS = contract.cap("facetsPerField")
+MAX_FACET_VALUES = contract.cap("valuesPerFacet")
 #: How large one part's tree may be: its nodes, and how deep they nest.
 MAX_PART_NODES = contract.cap("partNodes")
 MAX_PART_DEPTH = contract.cap("partDepth")
+#: How many settings a plug-in may declare, what each holds and how its value
+#: is given, and how long its help may be in each language.
+MAX_SETTINGS = contract.cap("settings")
+SETTING_TYPES: frozenset[str] = contract.enum("settingType")
+SETTING_ASSIGNMENTS: frozenset[str] = contract.enum("settingAssignment")
+MAX_HELP_LENGTH = contract.cap("helpLength")
 #: How many countries a minimum age may name, and the oldest it may ask for.
 MAX_MINIMUM_AGE_REGIONS = contract.cap("minimumAgeRegions")
 MAX_MINIMUM_AGE_YEARS = contract.cap("minimumAgeYears")
@@ -787,6 +796,15 @@ def _template(
     check_single_line(text, what=what)
     if https and not text.startswith("https://"):
         fail(f"{what} must be an https address")
+    _check_placeholders(text, what=what, vendor_keys=vendor_keys, field_keys=field_keys)
+    return text
+
+
+def _check_placeholders(
+    text: str, *, what: str, vendor_keys: set[str], field_keys: set[str]
+) -> None:
+    """Every ``{vendor.<key>}`` and ``{<key>}`` ``text`` names is declared: a
+    vendor field, or one of the connection's own fields."""
     position = 0
     while True:
         start = text.find("{", position)
@@ -804,7 +822,29 @@ def _template(
         elif name not in field_keys:
             fail(f"{what} names {{{name}}}, which is not a field of this connection")
         position = end + 1
-    return text
+
+
+def _exchange_body(
+    raw: Any, *, what: str, vendor_keys: set[str], field_keys: set[str]
+) -> dict[str, Any]:
+    """The JSON object a minted token's assertion is posted with. A string in
+    it, at any depth, may name a vendor value and the connection's own fields,
+    as the token's other values do."""
+    body = require_mapping(raw, what)
+    pending: list[tuple[Any, str]] = [(body, what)]
+    while pending:
+        value, at = pending.pop()
+        if isinstance(value, str):
+            _check_placeholders(
+                value, what=at, vendor_keys=vendor_keys, field_keys=field_keys
+            )
+        elif isinstance(value, dict):
+            pending.extend((child, f"{at}.{key}") for key, child in value.items())
+        elif isinstance(value, list):
+            pending.extend(
+                (child, f"{at}.{index}") for index, child in enumerate(value)
+            )
+    return body
 
 
 def _flow(
@@ -940,7 +980,7 @@ def _token(
         or not 1 <= lifetime <= MAX_TOKEN_LIFETIME_SECONDS
     ):
         fail(f"{what} token.lifetime must be 1..{MAX_TOKEN_LIFETIME_SECONDS} seconds")
-    return {
+    cleaned: dict[str, Any] = {
         "type": token_type,
         "exchange_url": template("exchange_url", https=True),
         "iss": template("iss"),
@@ -948,6 +988,14 @@ def _token(
         "alg": alg,
         "lifetime": lifetime,
     }
+    if token.get("exchange_body") is not None:
+        cleaned["exchange_body"] = _exchange_body(
+            token["exchange_body"],
+            what=f"{what} token.exchange_body",
+            vendor_keys=vendor_keys,
+            field_keys=field_keys,
+        )
+    return cleaned
 
 
 def _connection(
@@ -2532,7 +2580,13 @@ def _flag(raw: Any, *, what: str) -> bool:
     return raw
 
 
-def _item_field(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
+def _item_field(
+    raw: Any,
+    *,
+    connection_ids: set[str],
+    action_kinds: dict[str, list[str]],
+    declarative: bool,
+) -> dict[str, Any]:
     field = require_mapping(raw, "field")
     key = check_metadata_key(field.get("key"), what="field key")
     what = f"field {key!r}"
@@ -2545,16 +2599,104 @@ def _item_field(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
         "kind": kind,
         "on": _item_kinds(field.get("on"), what=what),
     }
+    # Stored only when it is, as admin_only is.
+    if field.get("list") is not None and _flag(field["list"], what=f"{what} list"):
+        cleaned["list"] = True
     description = localized_text(field.get("description"), MAX_TEXT_LENGTH)
     if description is not None:
         cleaned["description"] = description
     if field.get("tone") is not None:
         cleaned["tone"] = _choice(field["tone"], TONES, what=f"{what} tone")
+    if field.get("states") is not None:
+        cleaned["states"] = _states(field["states"], what=what)
+    if field.get("actions") is not None:
+        cleaned["actions"] = _element_actions(
+            field["actions"],
+            on=cleaned["on"],
+            listed="list" in cleaned,
+            action_kinds=action_kinds,
+            declarative=declarative,
+            what=what,
+        )
     requires = _requires(
         field.get("requires"), connection_ids=connection_ids, what=what
     )
     if requires is not None:
         cleaned["requires"] = requires
+    return cleaned
+
+
+def _states(raw: Any, *, what: str) -> dict[str, Any]:
+    """A field's states: at most :data:`MAX_FACETS` facets by id, each named,
+    with at most :data:`MAX_FACET_VALUES` keys, each with its badge's words and
+    tone."""
+    facets = require_mapping(raw, f"{what} states")
+    if not facets:
+        fail(f"{what}: states names no facet")
+    if len(facets) > MAX_FACETS:
+        fail(f"{what}: states holds more than {MAX_FACETS} facets")
+    cleaned: dict[str, Any] = {}
+    for facet_id, raw_facet in facets.items():
+        check_identifier(facet_id, what=f"{what} state")
+        at = f"{what} state {facet_id!r}"
+        facet = require_mapping(raw_facet, at)
+        values = require_mapping(facet.get("values"), f"{at} values")
+        if not values:
+            fail(f"{at}: values names no key")
+        if len(values) > MAX_FACET_VALUES:
+            fail(f"{at}: values holds more than {MAX_FACET_VALUES} keys")
+        kept: dict[str, Any] = {}
+        for value_key, raw_value in values.items():
+            check_identifier(value_key, what=f"{at} value")
+            named = f"{at} value {value_key!r}"
+            value = require_mapping(raw_value, named)
+            kept[value_key] = {"label": _label(value.get("label"), what=named)}
+            if value.get("tone") is not None:
+                kept[value_key]["tone"] = _choice(
+                    value["tone"], TONES, what=f"{named} tone"
+                )
+        cleaned[facet_id] = {"name": _label(facet.get("name"), what=at), "values": kept}
+    return cleaned
+
+
+def _element_actions(
+    raw: Any,
+    *,
+    on: list[str],
+    listed: bool,
+    action_kinds: dict[str, list[str]],
+    declarative: bool,
+    what: str,
+) -> list[str]:
+    """The actions a list field offers on each of its elements: a declarative
+    plug-in's, each declared and offered on every item kind the field is."""
+    if not declarative:
+        fail(
+            f"{what}: a container plug-in's action is not told which element it "
+            "was run from: its handler is handed the item alone"
+        )
+    if not listed:
+        fail(
+            f"{what}: actions are offered on a list's elements, and this field "
+            "is not a list"
+        )
+    cleaned: list[str] = []
+    for entry in require_list(raw, f"{what} actions", MAX_ACTIONS):
+        action_id = check_identifier(entry, what=f"{what} action")
+        kinds = action_kinds.get(action_id)
+        if kinds is None:
+            fail(f"{what}: {action_id!r} is not declared by this manifest")
+        missing = [kind for kind in on if kind not in kinds]
+        if missing:
+            fail(
+                f"{what}: {action_id!r} is not offered on {', '.join(missing)}, "
+                "where this field is"
+            )
+        if action_id in cleaned:
+            fail(f"{what}: actions names {action_id!r} twice")
+        cleaned.append(action_id)
+    if not cleaned:
+        fail(f"{what}: actions names no action")
     return cleaned
 
 
@@ -2617,6 +2759,27 @@ def _action(
                 f"{what}: names {endpoint!r}, which needs params an action cannot send"
             )
         cleaned["endpoint"] = endpoint
+        if action.get("params") is not None:
+            # The endpoint's params the reader is asked for, each once.
+            takes = {param["key"] for param in declared.get("params") or ()}
+            asked: list[str] = []
+            for entry in require_list(
+                action["params"], f"{what} params", MAX_PARAMS_PER_ENDPOINT
+            ):
+                key = check_identifier(entry, what=f"{what} param")
+                if key not in takes:
+                    fail(f"{what}: {key!r} is not a parameter of {endpoint!r}")
+                if key in asked:
+                    fail(f"{what}: params names {key!r} twice")
+                asked.append(key)
+            if not asked:
+                fail(f"{what}: params names no parameter")
+            cleaned["params"] = asked
+    elif action.get("params") is not None:
+        fail(
+            f"{what}: an action asks for its endpoint's parameters, and names no "
+            "endpoint"
+        )
     if action.get("write") is not None:
         cleaned["write"] = _checked(action["write"], what=f"{what} write")
     cleaned["on"] = _item_kinds(action.get("on"), what=what)
@@ -2803,7 +2966,52 @@ def _service_block(raw: Any) -> dict[str, Any]:
     scopes = _requested_scopes(service.get("scopes"), where="service.scopes")
     if scopes:
         cleaned["scopes"] = scopes
+    if service.get("calls_plugins") is not None and _flag(
+        service["calls_plugins"], what="service plug-in: service.calls_plugins"
+    ):
+        cleaned["calls_plugins"] = True
     return cleaned
+
+
+def _setting(raw: Any) -> dict[str, Any]:
+    """A value the community's admins set on the install."""
+    setting = require_mapping(raw, "setting")
+    key = check_identifier(setting.get("key"), what="setting key")
+    what = f"setting {key!r}"
+    cleaned: dict[str, Any] = {
+        "key": key,
+        "type": _choice(setting.get("type"), SETTING_TYPES, what=f"{what} type"),
+        "label": _label(setting.get("label"), what=what),
+    }
+    description = localized_text(setting.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    if setting.get("unique") is not None and _flag(
+        setting["unique"], what=f"{what} unique"
+    ):
+        cleaned["unique"] = True
+    if setting.get("assigned") is not None:
+        if "unique" not in cleaned:
+            fail(f"{what}: only a unique setting's value is assigned")
+        cleaned["assigned"] = _choice(
+            setting["assigned"], SETTING_ASSIGNMENTS, what=f"{what} assigned"
+        )
+    return cleaned
+
+
+def _help(raw: Any) -> dict[str, str]:
+    """Help with the plug-in, in markdown, by language: at most
+    :data:`MAX_HELP_LENGTH` characters in each."""
+    for language, text in require_mapping(raw, "service plug-in: help").items():
+        if isinstance(text, str) and len(text.strip()) > MAX_HELP_LENGTH:
+            fail(
+                f"service plug-in: help in {language!r} is longer than "
+                f"{MAX_HELP_LENGTH} characters"
+            )
+    text = localized_text(raw, MAX_HELP_LENGTH)
+    if text is None:
+        fail("service plug-in: help says nothing in any language")
+    return text
 
 
 def _requested_scopes(raw: Any, *, where: str) -> list[str]:
@@ -3101,18 +3309,6 @@ def normalize_service_plugin_definition(
             fail(f"service plug-in: two pages share the id {page['id']!r}")
         page_ids.add(page["id"])
 
-    fields = [
-        _item_field(entry, connection_ids=connection_ids)
-        for entry in require_list(
-            body.get("fields"), "service plug-in: fields", MAX_FIELDS
-        )
-    ]
-    field_kinds: dict[str, list[str]] = {}
-    for field in fields:
-        if field["key"] in field_kinds:
-            fail(f"service plug-in: two fields share the key {field['key']!r}")
-        field_kinds[field["key"]] = field["on"]
-
     actions = [
         _action(
             entry,
@@ -3130,6 +3326,36 @@ def normalize_service_plugin_definition(
         if action["id"] in action_kinds:
             fail(f"service plug-in: two actions share the id {action['id']!r}")
         action_kinds[action["id"]] = action["on"]
+
+    # After the actions, because a list field's elements offer them.
+    fields = [
+        _item_field(
+            entry,
+            connection_ids=connection_ids,
+            action_kinds=action_kinds,
+            declarative=declarative,
+        )
+        for entry in require_list(
+            body.get("fields"), "service plug-in: fields", MAX_FIELDS
+        )
+    ]
+    field_kinds: dict[str, list[str]] = {}
+    for field in fields:
+        if field["key"] in field_kinds:
+            fail(f"service plug-in: two fields share the key {field['key']!r}")
+        field_kinds[field["key"]] = field["on"]
+
+    settings = [
+        _setting(entry)
+        for entry in require_list(
+            body.get("settings"), "service plug-in: settings", MAX_SETTINGS
+        )
+    ]
+    setting_keys: set[str] = set()
+    for setting in settings:
+        if setting["key"] in setting_keys:
+            fail(f"service plug-in: two settings share the key {setting['key']!r}")
+        setting_keys.add(setting["key"])
 
     # After the fields and actions, because a part's nodes name them.
     parts = [
@@ -3183,6 +3409,10 @@ def normalize_service_plugin_definition(
         cleaned["parts"] = parts
     if actions:
         cleaned["actions"] = actions
+    if settings:
+        cleaned["settings"] = settings
+    if body.get("help") is not None:
+        cleaned["help"] = _help(body["help"])
 
     # After the widgets and endpoints it can name, because every tile is checked
     # against them — the whole point of bundling rather than publishing

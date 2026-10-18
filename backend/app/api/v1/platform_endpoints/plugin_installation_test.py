@@ -631,14 +631,41 @@ class TestEvents:
 
 PROJECTS = ["projects:read", "projects:write"]
 
+#: A list field on tasks, whose elements are in two facets of state.
+PULLS = "github.pulls"
+PULLS_FIELD = {
+    "key": PULLS,
+    "name": {"en": "Pull requests"},
+    "kind": "link",
+    "list": True,
+    "on": ["task"],
+    "states": {
+        "status": {
+            "name": {"en": "Status"},
+            "values": {
+                "open": {"label": {"en": "Open"}},
+                "merged": {"label": {"en": "Merged"}},
+            },
+        },
+        "review": {
+            "name": {"en": "Review"},
+            "values": {"required": {"label": {"en": "Review required"}}},
+        },
+    },
+}
+
 
 async def _with_task(
     client: AsyncClient, session: AsyncSession, acting_user, role_session
 ):
-    """An install placed in one initiative, holding the projects scopes, and a
-    task it made there."""
+    """An install placed in one initiative, holding the projects scopes and
+    declaring :data:`PULLS_FIELD`, and a task it made there."""
     installed = await install_plugin(
-        session, acting_user, role_session, granted=PROJECTS
+        session,
+        acting_user,
+        role_session,
+        granted=PROJECTS,
+        declares={"fields": [PULLS_FIELD]},
     )
     headers = install_headers(installed, PROJECTS)
     project = await client.post(
@@ -750,21 +777,140 @@ class TestMetadata:
         assert [i["entity_id"] for i in await find("repo", "acme/web")] == [task_id]
         assert await find("github.issue", "124") == []
 
+    async def test_a_list_field_keeps_its_elements_by_ref(
+        self, client: AsyncClient, session: AsyncSession, acting_user, role_session
+    ):
+        """An upsert adds an element for a ref the list does not hold, and
+        merges into the one it does, property by property and its state facet
+        by facet; a remove takes the refs it holds and passes over the rest; a
+        set replaces the whole list, and a null clears it. Every answer, read
+        and look-up gives the list as an array, newest first, and an element
+        is a shown row of its own, found by its ref."""
+        installed, task_id = await _with_task(
+            client, session, acting_user, role_session
+        )
+        headers = install_headers(installed, ["projects:read"])
+
+        async def change(**body) -> list:
+            response = await client.put(
+                f"{BASE}/metadata",
+                headers=headers,
+                json={"entity_type": "task", "entity_id": task_id, **body},
+            )
+            assert response.status_code == 200, response.text
+            return response.json()["values"].get(PULLS, [])
+
+        opened = {
+            "ref": "812",
+            "url": "https://github.test/pull/812",
+            "state": {"status": "open", "review": "required"},
+        }
+        draft = {"ref": "813", "url": "https://github.test/pull/813"}
+        # Written together, so in ref order.
+        assert await change(upsert={PULLS: [draft, opened]}) == [opened, draft]
+        named = {**draft, "text": "#813"}
+        assert await change(upsert={PULLS: [{"ref": "813", "text": "#813"}]}) == [
+            named,
+            opened,
+        ]
+        merged = {**opened, "state": {"status": "merged", "review": "required"}}
+        assert await change(
+            upsert={PULLS: [{"ref": "812", "state": {"status": "merged"}}]}
+        ) == [merged, named]
+        assert await change(remove={PULLS: ["813", "999"]}) == [merged]
+
+        read = await client.get(
+            f"{BASE}/metadata",
+            headers=headers,
+            params={"entity_type": "task", "entity_ids": [task_id]},
+        )
+        found = await client.get(
+            f"{BASE}/metadata/lookup",
+            headers=headers,
+            params={"key": PULLS, "value": "812"},
+        )
+        assert (
+            read.json()["items"]
+            == found.json()["items"]
+            == [
+                {
+                    "entity_type": "task",
+                    "entity_id": task_id,
+                    "values": {PULLS: [merged]},
+                }
+            ]
+        )
+
+        assert await change(values={PULLS: [draft]}) == [draft]
+        assert [
+            (row.ref, row.lookup, row.text_form, row.shown)
+            for row in await _stored(session, installed.guild.id)
+        ] == [("813", "813", "https://github.test/pull/813", True)]
+        assert await change(values={PULLS: None}) == []
+        assert await _stored(session, installed.guild.id) == []
+
     @pytest.mark.parametrize(
-        ("values", "status", "detail"),
+        ("body", "status", "detail"),
         [
-            ({"Github": 1}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
-            ({"1st": 1}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
-            ({"a-b": 1}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
-            ({"a" * 65: 1}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
-            ({"note": "x" * 8200}, 413, PluginChannelMessages.METADATA_VALUE_TOO_LARGE),
             (
-                {f"k{i}": i for i in range(33)},
+                {"values": {"Github": 1}},
+                400,
+                PluginChannelMessages.METADATA_KEY_INVALID,
+            ),
+            ({"values": {"1st": 1}}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
+            ({"values": {"a-b": 1}}, 400, PluginChannelMessages.METADATA_KEY_INVALID),
+            (
+                {"values": {"a" * 65: 1}},
+                400,
+                PluginChannelMessages.METADATA_KEY_INVALID,
+            ),
+            (
+                {"values": {"note": "x" * 8200}},
+                413,
+                PluginChannelMessages.METADATA_VALUE_TOO_LARGE,
+            ),
+            (
+                {"values": {f"k{i}": i for i in range(33)}},
                 409,
                 PluginChannelMessages.METADATA_LIMIT_REACHED,
             ),
             (
-                {f"k{i}": "x" * 8000 for i in range(9)},
+                {"values": {f"k{i}": "x" * 8000 for i in range(9)}},
+                409,
+                PluginChannelMessages.METADATA_LIMIT_REACHED,
+            ),
+            ({}, 400, PluginChannelMessages.INVALID_PAYLOAD),
+            (
+                {"values": {PULLS: None}, "remove": {PULLS: ["812"]}},
+                400,
+                PluginChannelMessages.INVALID_PAYLOAD,
+            ),
+            (
+                {"upsert": {"state": [{"ref": "812"}]}},
+                400,
+                PluginChannelMessages.METADATA_LIST_MISMATCH,
+            ),
+            (
+                {"values": {PULLS: {"ref": "812"}}},
+                400,
+                PluginChannelMessages.METADATA_LIST_MISMATCH,
+            ),
+            (
+                {"upsert": {PULLS: [{"url": "https://github.test/pull/812"}]}},
+                400,
+                PluginChannelMessages.INVALID_PAYLOAD,
+            ),
+            (
+                {"upsert": {PULLS: [{"ref": "812", "text": "x" * 8200}]}},
+                413,
+                PluginChannelMessages.METADATA_VALUE_TOO_LARGE,
+            ),
+            (
+                {
+                    "values": {
+                        PULLS: [{"ref": f"{i}", "text": "x" * 8000} for i in range(9)]
+                    }
+                },
                 409,
                 PluginChannelMessages.METADATA_LIMIT_REACHED,
             ),
@@ -777,6 +923,13 @@ class TestMetadata:
             "large-value",
             "too-many-keys",
             "too-many-bytes",
+            "no-change",
+            "a-key-changed-twice",
+            "elements-of-a-key-not-a-list",
+            "a-list-set-to-one-value",
+            "an-element-without-a-ref",
+            "a-large-element",
+            "a-list-past-the-item",
         ],
     )
     async def test_a_write_past_the_caps_is_refused(
@@ -785,10 +938,12 @@ class TestMetadata:
         session: AsyncSession,
         acting_user,
         role_session,
-        values: dict,
+        body: dict,
         status: int,
         detail: str,
     ):
+        """Each value, and each element of a list, is measured alone; a list
+        counts as one key, and its elements' bytes add up."""
         installed, task_id = await _with_task(
             client, session, acting_user, role_session
         )
@@ -796,7 +951,7 @@ class TestMetadata:
         response = await client.put(
             f"{BASE}/metadata",
             headers=install_headers(installed, ["projects:read"]),
-            json={"entity_type": "task", "entity_id": task_id, "values": values},
+            json={"entity_type": "task", "entity_id": task_id, **body},
         )
 
         assert response.status_code == status, response.text
@@ -984,7 +1139,7 @@ class TestMetadata:
         assert await _stored(session, installed.guild.id) == []
 
 
-#: A field on tasks, and one on queue items only.
+#: A field on tasks, one on queue items only, and a list on tasks.
 _FIELDS = {
     "fields": [
         {
@@ -994,6 +1149,7 @@ _FIELDS = {
             "on": ["task"],
         },
         {"key": "lane", "name": {"en": "Lane"}, "kind": "text", "on": ["queue_item"]},
+        PULLS_FIELD,
     ]
 }
 
@@ -1238,11 +1394,37 @@ class TestShownValues:
     async def test_a_task_list_filters_by_a_field_where_it_is_drawn(
         self, client: AsyncClient, session: AsyncSession, acting_user, role_session
     ):
-        """By the value's number, and by whether there is one; for a reader
-        not drawn the field, the filter narrows nothing."""
+        """By the value's number, and by whether there is one; by any element
+        of a list, and by the key an element names for a facet of the field's
+        states. For a reader not drawn the field, and by a facet the field does
+        not declare, the filter narrows nothing."""
         installed, member, task = await _shown_board(
             client, session, acting_user, role_session
         )
+        pulls = [
+            {"ref": "812", "url": "https://github.test/pull/812"},
+            {
+                "ref": "813",
+                "url": "https://github.test/pull/813",
+                "state": {"status": "merged"},
+            },
+        ]
+        written = await client.put(
+            f"{BASE}/metadata",
+            headers=install_headers(installed, ["projects:read"]),
+            json={
+                "entity_type": "task",
+                "entity_id": task.id,
+                "upsert": {PULLS: pulls},
+            },
+        )
+        assert written.status_code == 200, written.text
+        read = await client.get(member.g(f"/tasks/{task.id}"), headers=member.headers)
+        assert {
+            "plugin_id": installed.plugin.id,
+            "key": PULLS,
+            "value": pulls,
+        } in read.json()["plugin_values"]
         await route_session_to_guild(session, installed.guild.id)
         project = await session.get(Project, task.project_id)
         assert project is not None
@@ -1253,16 +1435,19 @@ class TestShownValues:
             initiative=installed.placed,
             initiative_role="project_manager",
         )
-        field = f"plugin:{installed.plugin.id}:github.issue"
+        issue = f"plugin:{installed.plugin.id}:github.issue"
+        listing = f"plugin:{installed.plugin.id}:{PULLS}"
 
-        async def listed(op: str, value, actor=member) -> set[int]:
+        async def listed(
+            op: str, value, actor=member, field: str = issue, **facet
+        ) -> set[int]:
             conditions = json.dumps(
                 [
                     {"field": "project_id", "op": "eq", "value": task.project_id},
                     {
                         "field": "plugin_values",
                         "op": op,
-                        "value": {"field": field, "value": value},
+                        "value": {"field": field, "value": value, **facet},
                     },
                 ]
             )
@@ -1277,6 +1462,16 @@ class TestShownValues:
         assert await listed("is_null", True) == {other.id}
         assert await listed("is_null", False) == {task.id}
         assert await listed("eq", 123, manager) == {task.id, other.id}
+        assert await listed("eq", pulls[0]["url"], field=listing) == {task.id}
+        assert await listed("eq", "merged", field=listing, facet="status") == {task.id}
+        assert await listed("in_", ["open"], field=listing, facet="status") == set()
+        assert await listed("is_null", True, field=listing, facet="status") == {
+            other.id
+        }
+        assert await listed("eq", "merged", field=listing, facet="colour") == {
+            task.id,
+            other.id,
+        }
 
     def test_a_value_is_compared_by_its_words_and_its_number(self):
         assert metadata_service.forms("2026-10-11") == ("2026-10-11", 1791676800.0)
@@ -1290,6 +1485,10 @@ class TestShownValues:
             None,
         )
         assert metadata_service.forms({"value": 3, "max": 4}) == (None, 0.75)
+        # A list's element, or a value beside its state, by its own value.
+        assert metadata_service.forms(
+            {"ref": "7", "value": "2026-10-11", "state": {"status": "open"}}
+        ) == ("2026-10-11", 1791676800.0)
         # Too large to be a float, so kept with no number.
         assert metadata_service.forms(10**400) == (None, None)
 

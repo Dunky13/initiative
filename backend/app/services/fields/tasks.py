@@ -127,9 +127,11 @@ def _property_values(op: FilterOp, value: Any, ctx: FieldContext) -> Any:
 def _plugin_values(op: FilterOp, value: Any, ctx: FieldContext) -> Any:
     """Filter tasks by a plug-in field's value.
 
-    ``value`` is a dict of ``{"field": "plugin:<install>:<key>", "value": <any>}``.
-    A field the person is not drawn contributes nothing, as an unknown
-    property does."""
+    ``value`` is a dict of ``{"field": "plugin:<install>:<key>", "value": <any>}``,
+    with ``"facet"`` naming one of the facets of the field's states to compare
+    by the key a value names for it. A field the person is not drawn, or a
+    facet it does not declare, contributes nothing, as an unknown property
+    does."""
     # Local: the plug-in values service reads schemas that read this registry.
     from app.services.tenant import plugin_metadata  # noqa: WPS433
 
@@ -138,7 +140,9 @@ def _plugin_values(op: FilterOp, value: Any, ctx: FieldContext) -> Any:
     field = ctx.plugin_fields.get(str(value.get("field")))
     if field is None:
         return None
-    return plugin_metadata.filter_clause(field, op, value.get("value"))
+    return plugin_metadata.filter_clause(
+        field, op, value.get("value"), value.get("facet")
+    )
 
 
 def _date_group(ctx: SortContext) -> Any:

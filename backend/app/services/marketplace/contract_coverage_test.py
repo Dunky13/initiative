@@ -27,6 +27,7 @@ import pytest
 
 from app.services.marketplace import contract, service_plugins
 from app.services.marketplace.definitions import normalize_listing_definition
+from app.services.tenant import plugin_metadata
 
 pytestmark = pytest.mark.always
 
@@ -50,6 +51,7 @@ def maximal_manifest() -> dict:
             "public_id": "acme.tracker",
             "protocol": 1,
             "scopes": ["projects:write", "comments:read", "plugins:acme.github"],
+            "calls_plugins": True,
         },
         "features": [
             "endpoints",
@@ -62,6 +64,17 @@ def maximal_manifest() -> dict:
         ],
         "default_name": "Acme Tracker",
         "minimum_age": {"default": 16, "US": 13},
+        "help": {"en": "Link the tracker's issues to tasks."},
+        "settings": [
+            {
+                "key": "prefix",
+                "type": "string",
+                "label": {"en": "Prefix"},
+                "description": {"en": "What references start with"},
+                "unique": True,
+                "assigned": "community_name",
+            }
+        ],
         "min_plugin_api": "4.2",
         "vendor": {
             "label": {"en": "Acme client"},
@@ -122,6 +135,10 @@ def maximal_manifest() -> dict:
                     "key": "{vendor.private_key}",
                     "alg": "RS256",
                     "lifetime": 300,
+                    "exchange_body": {
+                        "repositories": ["{choice}"],
+                        "permissions": {"issues": "read"},
+                    },
                 },
                 "access_hint": {"api": "Acme API", "scopes": ["read"]},
             },
@@ -205,6 +222,7 @@ def maximal_manifest() -> dict:
                 "id": "plugin.acme.tracker.written",
                 "direction": "write",
                 "label": {"en": "Written"},
+                "params": [{"key": "note", "type": "string", "label": {"en": "Note"}}],
                 "returns": [{"key": "number", "type": "int"}],
                 # The same kind and key the emission about it declares, so a
                 # consumer resolves both to one address.
@@ -247,9 +265,18 @@ def maximal_manifest() -> dict:
                 "key": "demo.link",
                 "name": {"en": "Demo"},
                 "kind": "badge",
+                "list": True,
                 "on": ["task", "queue_item"],
                 "description": {"en": "The item's demo"},
                 "tone": "accent",
+                "states": {
+                    "status": {
+                        "name": {"en": "Status"},
+                        "values": {
+                            "open": {"label": {"en": "Open"}, "tone": "positive"}
+                        },
+                    }
+                },
                 "requires": {"all_of": ["vendor"]},
             }
         ],
@@ -258,6 +285,7 @@ def maximal_manifest() -> dict:
                 "id": "new-link",
                 "name": {"en": "New link"},
                 "endpoint": "plugin.acme.tracker.written",
+                "params": ["note"],
                 "on": ["task"],
                 "confirm": {"en": "Make a new link?"},
                 "menu": True,
@@ -565,7 +593,14 @@ def maximal_declarative_manifest() -> dict:
             },
         ],
         "fields": [
-            {"key": "issue", "name": {"en": "Issue"}, "kind": "number", "on": ["task"]}
+            {
+                "key": "issue",
+                "name": {"en": "Issue"},
+                "kind": "number",
+                "list": True,
+                "on": ["task"],
+                "actions": ["refresh"],
+            }
         ],
         "actions": [
             {
@@ -690,7 +725,11 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
         ("healthState", workspace["health"]["states"][0]),
         ("webhookEvent", hooks["events"][0]),
         ("webhookStatus", hooks["status"][0]),
-        ("field", published["fields"][0]),
+        # Only a declarative plug-in's list field offers its elements actions.
+        ("field", {**published["fields"][0], **declarative["fields"][0]}),
+        ("stateFacet", published["fields"][0]["states"]["status"]),
+        ("stateValue", published["fields"][0]["states"]["status"]["values"]["open"]),
+        ("setting", published["settings"][0]),
         # Only a declarative plug-in's action carries a write.
         ("action", {**published["actions"][0], **declarative["actions"][0]}),
         ("part", part),
@@ -755,12 +794,14 @@ def test_every_node_prop_survives_a_publish(published):
 def test_the_maximal_manifests_really_are_maximal(nodes):
     """The two tests above pass trivially if the fixtures stopped covering
     something, so the fixtures themselves are checked: every object the
-    contract defines with fields is one these manifests reach. A change is
-    what a ``write`` answers rather than a term a manifest stores, and the
-    changes engine holds an answer to it (``plugin_metadata.apply_changes``)."""
+    contract defines with fields is one these manifests reach. A change, and
+    a list's element, is what a ``write`` answers rather than a term a
+    manifest stores, and the changes engine holds an answer to it
+    (``plugin_metadata.apply_changes``), an element's every term."""
     reached = {owner for owner, _ in nodes} - {"other"}
     with_fields = {name for name in contract.objects() if contract.fields(name)}
-    assert with_fields - reached == {"change", "targetedChange"}
+    assert with_fields - reached == {"change", "targetedChange", "listElement"}
+    assert set(plugin_metadata._ELEMENT_TERMS) == set(contract.fields("listElement"))
 
 
 def test_an_emitting_endpoint_keeps_what_describes_it(published):
@@ -1078,6 +1119,23 @@ def _with(build, change):
             maximal_declarative_manifest, lambda b: b["endpoints"][0].update(retries=3)
         ),
         _with(maximal_declarative_manifest, _member_request_not_required),
+        _with(maximal_manifest, lambda b: b["fields"][0].update(actions=["new-link"])),
+        _with(maximal_declarative_manifest, lambda b: b["fields"][0].pop("list")),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["fields"][0].update(actions=["gone"]),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["fields"][0].update(on=["post", "task"]),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: (
+                b["actions"][0].pop("endpoint"),
+                b["actions"][0].update(params=["number"]),
+            ),
+        ),
     ],
     ids=[
         "container-hosts",
@@ -1115,6 +1173,11 @@ def _with(build, change):
         "declarative-sets-the-credential",
         "unknown-endpoint-term",
         "member-connection-not-in-requires",
+        "container-element-actions",
+        "element-actions-on-a-field-not-a-list",
+        "element-action-not-declared",
+        "element-action-not-where-the-field-is",
+        "action-params-without-an-endpoint",
     ],
 )
 def test_one_plugin_is_one_kind_and_says_only_what_its_kind_says(body):
@@ -1122,8 +1185,11 @@ def test_one_plugin_is_one_kind_and_says_only_what_its_kind_says(body):
     plug-in's expressions parse and read only the steps before them. A
     declarative plug-in asks only for read scopes and has no pages; its actions
     name a write, a change, or both; its schedules make a read as the
-    installation; and an event row emits, writes, or both. An endpoint is
-    closed: a misspelt term is refused, not dropped."""
+    installation; and an event row emits, writes, or both. Only a declarative
+    plug-in's list field offers actions on its elements, each declared and
+    offered wherever the field is, and an action asks for the params of an
+    endpoint it names. An endpoint is closed: a misspelt term is refused, not
+    dropped."""
     from app.services.marketplace.manifest_values import ListingDefinitionError
 
     with pytest.raises(ListingDefinitionError):
