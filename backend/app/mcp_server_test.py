@@ -122,6 +122,9 @@ async def test_mcp_tools_are_curated():
         "task",
         # A task's checklist, ticked one item at a time.
         "checklist",
+        # How full each of a project's status columns is, where a move into a
+        # full one is refused.
+        "column_limits",
         "counter",
         "backlink",
         # The edges between them, which belong to no one tool.

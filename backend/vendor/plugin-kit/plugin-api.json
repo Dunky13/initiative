@@ -5,7 +5,7 @@
     "version": "7.2.0",
     "x-initiative-source": {
       "version": "0.75.3",
-      "commit": "b7992004243ed01bf3e971481b11561e1fb7ab58"
+      "commit": "c086f914fe4649bd171d8efe5db7bbaa03a8f777"
     }
   },
   "servers": [
@@ -3003,6 +3003,80 @@
         },
         "x-plugin-scope": "projects:write",
         "parameters": [
+          {
+            "name": "session_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Token"
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/column-limits": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Column Limits",
+        "description": "Each limited board column of the named projects the reader can open:\nits limit, and how many open tasks it holds. A project with no limits, or\none the reader can't open, has none.",
+        "operationId": "list_column_limits",
+        "security": [
+          {
+            "PluginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ColumnFillRead"
+                  },
+                  "title": "Response List Column Limits"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-plugin-scope": "projects:read",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "maxItems": 100,
+              "title": "Project Id"
+            }
+          },
           {
             "name": "session_token",
             "in": "cookie",
@@ -10384,7 +10458,7 @@
           "properties"
         ],
         "summary": "Set Properties",
-        "description": "Replace the custom property values on one tool or sub-tool.\n\nRequires write on the tool that governs it: a tool itself, or the tool a\nsub-tool sits in (a task's project, an event's calendar). Each value's\ndefinition must belong to the same initiative, so a row that belongs to no\ninitiative carries none. Values are validated against each definition's\ntype and options. An installed plug-in names the person a person-valued\nproperty holds by its reference for them. An empty list clears them all.",
+        "description": "Replace the custom property values on one tool or sub-tool, or with\n``merge`` write only the ones named and leave the rest, and change options\nof multi-select values against what each holds.\n\nRequires write on the tool that governs it: a tool itself, or the tool a\nsub-tool sits in (a task's project, an event's calendar). Each value's\ndefinition must belong to the same initiative, so a row that belongs to no\ninitiative carries none. Values are validated against each definition's\ntype and options. An installed plug-in names the person a person-valued\nproperty holds by its reference for them. An empty list clears them all.",
         "operationId": "set_properties",
         "security": [
           {
@@ -11353,6 +11427,13 @@
             },
             "type": "array",
             "title": "Extra Starts"
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values"
           }
         },
         "type": "object",
@@ -11381,7 +11462,8 @@
           "attendees",
           "overridden_fields",
           "skipped_starts",
-          "extra_starts"
+          "extra_starts",
+          "plugin_values"
         ],
         "title": "CalendarEventRead"
       },
@@ -11426,6 +11508,19 @@
               }
             ],
             "title": "Description"
+          },
+          "description_base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-mentions": "markdown",
+                "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Base"
           },
           "location": {
             "anyOf": [
@@ -12014,6 +12109,35 @@
         ],
         "title": "ChecklistProgress"
       },
+      "ColumnFillRead": {
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "title": "Project Id"
+          },
+          "status_id": {
+            "type": "integer",
+            "title": "Status Id"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "status_id",
+          "limit",
+          "count"
+        ],
+        "title": "ColumnFillRead",
+        "description": "One limited column of a project's board: its limit, and how many open\ntasks it holds."
+      },
       "CommentAudience": {
         "type": "string",
         "enum": [
@@ -12205,12 +12329,24 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked",
+            "default": false
+          },
+          "can_moderate": {
+            "type": "boolean",
+            "title": "Can Moderate",
+            "default": false
           }
         },
         "type": "object",
         "required": [
           "comments",
-          "next_cursor"
+          "next_cursor",
+          "locked",
+          "can_moderate"
         ],
         "title": "CommentListResponse",
         "description": "One page of a thread: ``limit`` conversations, newest first, each with\nevery reply under it."
@@ -12421,6 +12557,16 @@
             "title": "Can Remove",
             "default": false
           },
+          "removed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentRemoval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "audience": {
             "$ref": "#/components/schemas/CommentAudience",
             "default": "members"
@@ -12460,11 +12606,36 @@
           "imported_author_name",
           "reactions",
           "can_remove",
+          "removed",
           "audience",
           "system_kind"
         ],
         "title": "CommentRead",
         "description": "One comment. ``project_id`` is its own for a comment on a project and\nthe task's for a task comment (filled by the service's serializer)."
+      },
+      "CommentRemoval": {
+        "properties": {
+          "by": {
+            "$ref": "#/components/schemas/RemovedBy"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemovalReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "by",
+          "reason"
+        ],
+        "title": "CommentRemoval",
+        "description": "What a tombstone says in place of a comment: who took it out, and,\nfor a moderator, why. Never what it said, or who wrote it."
       },
       "ContentCan": {
         "properties": {
@@ -13107,6 +13278,13 @@
             "type": "array",
             "title": "Properties"
           },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -13133,6 +13311,7 @@
           "view_mode",
           "position",
           "properties",
+          "plugin_values",
           "created_at",
           "updated_at"
         ],
@@ -14420,6 +14599,13 @@
             },
             "type": "array",
             "title": "Properties"
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values"
           }
         },
         "type": "object",
@@ -14442,7 +14628,8 @@
           "updated_at",
           "version_count",
           "tags",
-          "properties"
+          "properties",
+          "plugin_values"
         ],
         "title": "GalleryImageRead"
       },
@@ -14501,6 +14688,19 @@
               }
             ],
             "title": "Tag Ids"
+          },
+          "caption_base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-mentions": "markdown",
+                "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Base"
           }
         },
         "type": "object",
@@ -15052,6 +15252,11 @@
             "title": "Moderate",
             "default": false
           },
+          "roster": {
+            "type": "boolean",
+            "title": "Roster",
+            "default": false
+          },
           "view": {
             "items": {
               "$ref": "#/components/schemas/Tool"
@@ -15071,6 +15276,7 @@
         "required": [
           "manage",
           "moderate",
+          "roster",
           "view",
           "create"
         ],
@@ -15450,6 +15656,29 @@
         ],
         "title": "PluginPerson",
         "type": "object"
+      },
+      "PluginValueSummary": {
+        "properties": {
+          "plugin_id": {
+            "type": "integer",
+            "title": "Plugin Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "key",
+          "value"
+        ],
+        "title": "PluginValueSummary",
+        "description": "One value an installed plug-in shows on an item: a key its pinned\nversion declares as a field there."
       },
       "PollOptionRead": {
         "properties": {
@@ -15994,6 +16223,18 @@
             "title": "Reactions Enabled",
             "default": true
           },
+          "comments_locked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments Locked At"
+          },
           "comment_count": {
             "type": "integer",
             "title": "Comment Count",
@@ -16022,6 +16263,13 @@
                 "type": "null"
               }
             ]
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values"
           }
         },
         "type": "object",
@@ -16051,10 +16299,12 @@
           "is_read",
           "read_count",
           "reactions_enabled",
+          "comments_locked_at",
           "comment_count",
           "reactions",
           "body",
-          "poll"
+          "poll",
+          "plugin_values"
         ],
         "title": "PostRead"
       },
@@ -16486,23 +16736,6 @@
               }
             ]
           },
-          "is_favorited": {
-            "type": "boolean",
-            "title": "Is Favorited",
-            "default": false
-          },
-          "last_viewed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Viewed At"
-          },
           "task_summary": {
             "$ref": "#/components/schemas/ProjectTaskSummary"
           },
@@ -16539,8 +16772,6 @@
           "owner",
           "owner_plugin",
           "initiative",
-          "is_favorited",
-          "last_viewed_at",
           "task_summary",
           "task_statuses"
         ],
@@ -16896,6 +17127,36 @@
         "title": "PropertyOption",
         "description": "One option entry for select / multi_select property definitions."
       },
+      "PropertyOptionsChange": {
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "title": "Property Id"
+          },
+          "add": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Add"
+          },
+          "remove": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Remove"
+          }
+        },
+        "type": "object",
+        "required": [
+          "property_id"
+        ],
+        "title": "PropertyOptionsChange",
+        "description": "Options put on and taken off one multi-select value, against the value\nas it stands when the change is written rather than a list that replaces\nit, so two people changing different options of it both stand."
+      },
       "PropertySummary": {
         "properties": {
           "property_id": {
@@ -17002,11 +17263,32 @@
             },
             "type": "array",
             "title": "Values"
+          },
+          "merge": {
+            "type": "boolean",
+            "title": "Merge",
+            "default": false
+          },
+          "removed": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Removed"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/PropertyOptionsChange"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Options"
           }
         },
         "type": "object",
         "title": "PropertyValuesSetRequest",
-        "description": "Replace-all payload for ``PUT /properties/{target}/{entity_id}``.\n\nAn empty list clears every property value on the entity."
+        "description": "Payload for ``PUT /properties/{target}/{entity_id}``: replace-all, or\nwith ``merge`` only the properties it names.\n\nReplacing, an empty list clears every property value on the entity."
       },
       "QueueCreate": {
         "properties": {
@@ -17253,10 +17535,29 @@
             ],
             "title": "Held At Round"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-identity": "person"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values"
           }
         },
         "type": "object",
@@ -17274,7 +17575,9 @@
           "properties",
           "attachment_count",
           "held_at_round",
-          "created_at"
+          "created_by",
+          "created_at",
+          "plugin_values"
         ],
         "title": "QueueItemRead"
       },
@@ -17379,6 +17682,19 @@
               }
             ],
             "title": "Tag Ids"
+          },
+          "notes_base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-mentions": "markdown",
+                "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes Base"
           }
         },
         "type": "object",
@@ -17853,6 +18169,33 @@
         "title": "ReactionGroup",
         "description": "One emoji on one target, and who chose it."
       },
+      "RemovalReason": {
+        "type": "string",
+        "enum": [
+          "spam",
+          "harassment",
+          "hate",
+          "violence",
+          "sexual_content",
+          "self_harm",
+          "illegal",
+          "misinformation",
+          "other",
+          "off_topic",
+          "community_rule"
+        ],
+        "title": "RemovalReason",
+        "description": "Why a moderator took something down. Every reason a report can give,\nand two that only a community's own rules give."
+      },
+      "RemovedBy": {
+        "type": "string",
+        "enum": [
+          "moderator",
+          "author"
+        ],
+        "title": "RemovedBy",
+        "description": "Who took a comment out of the conversation."
+      },
       "ResourceAccessLevel": {
         "type": "string",
         "enum": [
@@ -18022,12 +18365,12 @@
         "description": "A jump-to target for the command palette: enough to render and route."
       },
       "SortDir": {
+        "type": "string",
         "enum": [
           "asc",
           "desc"
         ],
-        "title": "SortDir",
-        "type": "string"
+        "title": "SortDir"
       },
       "SortField": {
         "properties": {
@@ -18591,6 +18934,14 @@
             "type": "array",
             "title": "Properties",
             "default": []
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values",
+            "default": []
           }
         },
         "type": "object",
@@ -18627,7 +18978,8 @@
           "initiative_color",
           "checklist_progress",
           "tags",
-          "properties"
+          "properties",
+          "plugin_values"
         ],
         "title": "TaskListRead",
         "description": "Lightweight schema for task list endpoints - excludes heavy nested data"
@@ -19028,6 +19380,14 @@
             "type": "array",
             "title": "Properties",
             "default": []
+          },
+          "plugin_values": {
+            "items": {
+              "$ref": "#/components/schemas/PluginValueSummary"
+            },
+            "type": "array",
+            "title": "Plugin Values",
+            "default": []
           }
         },
         "type": "object",
@@ -19062,7 +19422,8 @@
           "checklist",
           "checklist_progress",
           "tags",
-          "properties"
+          "properties",
+          "plugin_values"
         ],
         "title": "TaskRead"
       },
@@ -19172,6 +19533,19 @@
             ],
             "title": "Description"
           },
+          "description_base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-mentions": "markdown",
+                "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Base"
+          },
           "task_status_id": {
             "anyOf": [
               {
@@ -19182,6 +19556,16 @@
               }
             ],
             "title": "Task Status Id"
+          },
+          "status_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatusCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "priority": {
             "anyOf": [
@@ -19207,6 +19591,38 @@
               }
             ],
             "title": "Assignee Ids"
+          },
+          "add_assignee_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "x-identity": "person"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Assignee Ids"
+          },
+          "remove_assignee_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "x-identity": "person"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove Assignee Ids"
           },
           "start_date": {
             "anyOf": [
@@ -20081,6 +20497,18 @@
               }
             ],
             "title": "Content Version"
+          },
+          "comments_locked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments Locked At"
           }
         },
         "type": "object",
@@ -20105,7 +20533,8 @@
           "original_filename",
           "smart_link_url",
           "content",
-          "content_version"
+          "content_version",
+          "comments_locked_at"
         ],
         "title": "WikiPageRead",
         "description": "One page, opened."
