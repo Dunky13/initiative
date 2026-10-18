@@ -341,8 +341,11 @@ async def _map(
     A mapping that may answer if asked again records nothing and answers 503,
     so the vendor sends it again; one that cannot, and changes that are
     refused, are logged, and the delivery is recorded beside whatever did
-    map. The changes are made once the delivery is recorded, on the install's
-    own sessions, so a delivery that is not new changes nothing."""
+    map. The changes are made first, on the install's own sessions, and the
+    delivery is recorded after them, so a delivery whose changes did not finish
+    is still owed. A recorded delivery is not mapped again (:func:`_pending`);
+    two copies arriving together make the same changes, which set and merge
+    values and so repeat harmlessly, and one of them records it."""
     try:
         payload: Any = json.loads(body)
     except ValueError:
@@ -371,6 +374,19 @@ async def _map(
             delivery_id,
             install.guild_id,
             failure,
+        )
+    try:
+        await plugin_metadata.apply_changes(
+            plugin, registration, delivered.writes, guild_id=install.guild_id
+        )
+    except PluginChannelError as exc:
+        logger.warning(
+            "plug-in hooks: %s could not make the changes of delivery %s for "
+            "guild %s (%s)",
+            registration.public_id,
+            delivery_id,
+            install.guild_id,
+            exc.code,
         )
     async with cohorts.system_session(install.guild_id) as session:
         await set_rls_context(session, SystemGuild(install.guild_id))
@@ -405,19 +421,6 @@ async def _map(
             if locked is not None and set_connection_state(locked, *delivered.status):
                 session.add(locked)
         await session.commit()
-    try:
-        await plugin_metadata.apply_changes(
-            plugin, registration, delivered.writes, guild_id=install.guild_id
-        )
-    except PluginChannelError as exc:
-        logger.warning(
-            "plug-in hooks: %s could not make the changes of delivery %s for "
-            "guild %s (%s)",
-            registration.public_id,
-            delivery_id,
-            install.guild_id,
-            exc.code,
-        )
     return 202
 
 

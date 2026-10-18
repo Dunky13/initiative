@@ -255,7 +255,9 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
     """The initiatives whose placements admit the viewer; the fields and parts
     whose connections hold a value; and every action there but one that is
     admin-only or whose write endpoint is, which only an admin runs, one whose
-    connections hold nothing, and any while the community is frozen."""
+    connections hold nothing, and any while the community is frozen. A
+    declarative plug-in's fields and parts are offered as a container's are,
+    and its actions once Initiative runs them."""
     definition = {
         **DEFINITION,
         "endpoints": [
@@ -341,5 +343,12 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
         [],
         [],
         [],
+        [],
+    )
+    del definition["service"]
+    assert access(context(guild_admin=True)) == (
+        [2, 5],
+        every_field,
+        ["builds"],
         [],
     )

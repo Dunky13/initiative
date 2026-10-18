@@ -1479,8 +1479,9 @@ def item_openability(
             f["key"] for f in _declared(definition, "fields", "key") if met(f)
         ),
         parts=tuple(p["id"] for p in _declared(definition, "parts", "id") if met(p)),
+        # A declarative plug-in's actions are offered once Initiative runs them.
         actions=()
-        if frozen
+        if frozen or registration_lookup.is_declarative(definition)
         else tuple(
             action["id"]
             for action in _declared(definition, "actions", "id")
