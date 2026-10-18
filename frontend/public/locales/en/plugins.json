@@ -103,6 +103,14 @@
     },
     "expired": "This connection has run out. Connect again to keep using it."
   },
+  "installSettings": {
+    "title": "Settings",
+    "description": "What this plug-in reads in this community.",
+    "notSet": "Not set",
+    "unique": "No other community on this server can use it. Use a lowercase letter, then lowercase letters and digits.",
+    "earlier": "Earlier values, which still work: {{values}}",
+    "saved": "Setting saved."
+  },
   "members": {
     "title": "Members",
     "noPersonal": "This plug-in has nothing members connect to individually.",

@@ -404,6 +404,10 @@ async def _update_guild(
     is seen, so the caller can tell the seat once it has committed. A version
     the seat declined, or one already pending, is passed over quietly.
     Returns how many installs were moved.
+
+    A version that declares an assigned setting the install holds no value for
+    gives it one (:func:`guild_plugins.assign_settings`), which commits what
+    the pass has done so far.
     """
     candidates = (
         await session.exec(
@@ -443,6 +447,9 @@ async def _update_guild(
                 add_scopes=offer.asks.added_scopes,
             )
             await reconcile_repinned(guild_id, plugin, session=session)
+            await guild_plugins_service.assign_settings(
+                session, plugin, guild_id=guild_id
+            )
             applied += 1
             logger.info(
                 "plug-in auto-update: guild=%s plug-in=%s listing=%s required, %s -> %s",
@@ -477,6 +484,7 @@ async def _update_guild(
         from_version = plugin.listing_version
         await apply_version(session, plugin, pending, guild_id=guild_id)
         await reconcile_repinned(guild_id, plugin, session=session)
+        await guild_plugins_service.assign_settings(session, plugin, guild_id=guild_id)
         applied += 1
         logger.info(
             "plug-in auto-update: guild=%s plug-in=%s listing=%s %s -> %s",

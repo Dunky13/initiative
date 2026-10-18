@@ -235,8 +235,12 @@ async def _act(
     if not action.get("write"):
         return
 
+    installed = plugin_config.install_settings(plugin)
+
     async def made(held: dict[str, Any]) -> Optional[dict[str, Any]]:
-        return await action_change(action["write"], item=item, held=held, result=result)
+        return await action_change(
+            action["write"], item=item, held=held, installed=installed, result=result
+        )
 
     try:
         await plugin_metadata.change_item(

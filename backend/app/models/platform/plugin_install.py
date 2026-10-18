@@ -16,24 +16,52 @@ connect stores it and cleared when it is removed. While ``exclusive``, the
 negation of the registration's ``shared_routes``, one community holds each route
 of a listing's installs.
 
+Beside it, ``plugin_install_claims`` holds the values each install has claimed
+for its plug-in's unique settings, current and earlier, in one index over every
+community, so no two communities hold the same one. They go with the install's
+row.
+
 Kept in step by :mod:`app.services.marketplace.plugin_installs`. Reached only by
 the system engine.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlmodel import Field, SQLModel
 
-__all__ = ["EXCLUSIVE_ROUTE_INDEX", "PluginInstall", "HOOK_ROUTE_MAX_LENGTH"]
+__all__ = [
+    "EXCLUSIVE_ROUTE_INDEX",
+    "PluginInstall",
+    "PluginInstallClaim",
+    "HOOK_ROUTE_MAX_LENGTH",
+    "SETTING_KEY_LENGTH",
+    "SETTING_VALUE_LENGTH",
+]
 
 #: The widest route value kept.
 HOOK_ROUTE_MAX_LENGTH = 200
 
 #: The index holding each route of an exclusive install to one community.
 EXCLUSIVE_ROUTE_INDEX = "uq_plugin_installs_exclusive_route"
+
+#: A setting's key and a unique setting's value at their widest: the contract's
+#: ``identifierLength`` and ``uniqueSettingValueLength``, as column widths.
+SETTING_KEY_LENGTH = 64
+SETTING_VALUE_LENGTH = 16
 
 
 class PluginInstall(SQLModel, table=True):
@@ -76,4 +104,44 @@ class PluginInstall(SQLModel, table=True):
     #: is told however it was changed.
     community_status_sent: Optional[str] = Field(
         default=None, sa_column=Column(String(length=16), nullable=True)
+    )
+
+
+class PluginInstallClaim(SQLModel, table=True):
+    """A value one install holds for one of its plug-in's unique settings: the
+    one it holds now, or one it was renamed from. The unique index keeps two
+    installs of a plug-in from holding the same value, compared without case."""
+
+    __tablename__ = "plugin_install_claims"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["guild_id", "install_id"],
+            ["plugin_installs.guild_id", "plugin_installs.install_id"],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_plugin_install_claims_value",
+            "listing_uid",
+            "key",
+            text("lower(value)"),
+            unique=True,
+        ),
+    )
+
+    guild_id: int = Field(sa_column=Column(Integer, primary_key=True))
+    install_id: int = Field(sa_column=Column(Integer, primary_key=True))
+    #: The setting's key in the install's pinned definition.
+    key: str = Field(
+        sa_column=Column(String(length=SETTING_KEY_LENGTH), primary_key=True)
+    )
+    value: str = Field(
+        sa_column=Column(String(length=SETTING_VALUE_LENGTH), primary_key=True)
+    )
+    #: The install's listing, so one index holds every community's values for
+    #: a plug-in.
+    listing_uid: str = Field(sa_column=Column(String(length=14), nullable=False))
+    #: The value the install holds now, rather than an earlier one.
+    current: bool = Field(sa_column=Column(Boolean, nullable=False))
+    claimed_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False)
     )

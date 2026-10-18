@@ -849,8 +849,13 @@ def test_the_uid_shape_matches_the_contract():
 def test_the_metadata_columns_match_the_contract():
     """A plug-in's metadata key and look-up text are column widths, and the
     items it keeps values on are the table's CHECK, so each is checked against
-    the contract rather than read from it, as the uid is."""
+    the contract rather than read from it, as the uid is. So are a setting's
+    key and a unique setting's value, which an install claims."""
     from app.core.tools import ITEM_KINDS
+    from app.models.platform.plugin_install import (
+        SETTING_KEY_LENGTH,
+        SETTING_VALUE_LENGTH,
+    )
     from app.models.tenant.plugin_metadata import LOOKUP_LENGTH, PluginMetadata
 
     assert PluginMetadata.__table__.c.key.type.length == contract.cap(
@@ -858,6 +863,8 @@ def test_the_metadata_columns_match_the_contract():
     )
     assert LOOKUP_LENGTH == contract.cap("metadataLookupLength")
     assert frozenset(ITEM_KINDS) == contract.enum("itemKind")
+    assert SETTING_KEY_LENGTH == contract.cap("identifierLength")
+    assert SETTING_VALUE_LENGTH == contract.cap("uniqueSettingValueLength")
 
 
 # --- what the registrar reports -------------------------------------------

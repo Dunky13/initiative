@@ -1333,6 +1333,15 @@ class GuildPluginMessages:
     #: settings form is not where it is set.
     CONFIG_MANAGED_FIELD = "COMMUNITY_PLUGIN_CONFIG_MANAGED_FIELD"
 
+    # --- settings ---
+    #: The pinned definition declares no setting by that key.
+    SETTING_NOT_FOUND = "COMMUNITY_PLUGIN_SETTING_NOT_FOUND"
+    #: A unique setting's value that is not a lowercase letter, then lowercase
+    #: letters and digits, 2 to 16 characters in all.
+    SETTING_INVALID = "COMMUNITY_PLUGIN_SETTING_INVALID"
+    #: A unique setting's value this install cannot take.
+    SETTING_UNAVAILABLE = "COMMUNITY_PLUGIN_SETTING_UNAVAILABLE"
+
     # --- connections ---
     #: No such connection on this install, or no such member connection.
     CONNECTION_NOT_FOUND = "COMMUNITY_PLUGIN_CONNECTION_NOT_FOUND"

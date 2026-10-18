@@ -32,6 +32,11 @@ Satisfaction is computed from presence alone — which fields have values. This
 build never inspects a credential, calls a vendor, or learns a scope; whether a
 credential carries the permissions it needs is the plug-in's to report, and arrives
 separately as ``config_state``.
+
+A plug-in may also declare *settings*: values the seat sees and changes on the
+install, which every expression of a declarative plug-in reads
+(:func:`install_settings`). They are checked against the pinned definition the
+same way (:func:`setting_value`).
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ from typing import Any, Optional
 from app.core.errors import CodedError
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
 from app.core.messages import GuildPluginMessages
+from app.services.marketplace.manifest_values import is_unique_setting_value
 
 __all__ = [
     "REMOVED_AT",
@@ -59,13 +65,16 @@ __all__ = [
     "connection_id_for_ref",
     "decrypt_connection_secrets",
     "definition_connections",
+    "definition_settings",
     "guild_connection_ref",
     "has_value_map",
+    "install_settings",
     "is_satisfied",
     "mint_connection_ref",
     "needs_configuration",
     "prune_to_definition",
     "runs_vendor_flow",
+    "setting_value",
     "token_of",
     "without_tokens",
 ]
@@ -142,6 +151,24 @@ def connection_by_id(
         if connection.get("id") == connection_id:
             return connection
     return None
+
+
+def definition_settings(definition: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The settings a pinned definition declares, in manifest order."""
+    declared = (definition or {}).get("settings")
+    if not isinstance(declared, list):
+        return []
+    return [entry for entry in declared if isinstance(entry, dict)]
+
+
+def install_settings(plugin: Any) -> dict[str, Any]:
+    """What every expression of a declarative plug-in reads of its install:
+    ``settings``, each setting's value by key, and ``aliases``, each unique
+    setting's earlier values by key, newest first."""
+    return {
+        "settings": dict(plugin.settings or {}),
+        "aliases": dict(plugin.setting_aliases or {}),
+    }
 
 
 def token_of(connection: Mapping[str, Any] | None) -> Optional[dict[str, Any]]:
@@ -261,6 +288,32 @@ def _coerce(field: dict[str, Any], value: Any) -> Any:
             raise PluginConfigError(GuildPluginMessages.CONFIG_INVALID_VALUE)
         return text
 
+    return text
+
+
+def setting_value(setting: Mapping[str, Any], value: Any) -> Optional[str]:
+    """A value submitted for ``setting``, as it is kept: one line of text, or
+    ``None`` to clear a setting that is not unique.
+
+    A unique setting always holds a value, in lowercase: a lowercase letter,
+    then lowercase letters and digits (``SETTING_INVALID`` otherwise).
+    """
+    text = value.strip() if isinstance(value, str) else value
+    if setting.get("unique") is True:
+        text = text.lower() if isinstance(text, str) else text
+        if not is_unique_setting_value(text):
+            raise PluginConfigError(GuildPluginMessages.SETTING_INVALID)
+        return text
+    if text is None:
+        return None
+    if (
+        not isinstance(text, str)
+        or not text
+        or any(ord(character) < 32 or ord(character) == 127 for character in text)
+    ):
+        raise PluginConfigError(GuildPluginMessages.CONFIG_INVALID_VALUE)
+    if len(text) > MAX_CONFIG_VALUE_LENGTH:
+        raise PluginConfigError(GuildPluginMessages.CONFIG_VALUE_TOO_LONG)
     return text
 
 

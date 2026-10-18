@@ -31,8 +31,9 @@ row behind.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Iterable, Optional
@@ -65,6 +66,7 @@ from app.services.marketplace import (
     plugin_installs,
     registration_lookup,
 )
+from app.services.marketplace.manifest_values import is_unique_setting_value
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.platform import guilds as guilds_service
 from app.schemas.tenant.resource_grant import initiative_readable
@@ -77,6 +79,8 @@ from app.services.tenant import webhook_subscriptions as webhook_subscriptions_s
 from app.services.tenant.plugin_revocation import queue_install_revocations
 from app.services.tenant.soft_delete import soft_delete_entity
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "ARTIFACT_HANDLERS",
     "BUILTIN_ROLE_NAMES",
@@ -88,6 +92,7 @@ __all__ = [
     "plugin_artifacts",
     "apply_static_config",
     "artifacts_by_install",
+    "assign_settings",
     "clear_static_connection",
     "declared_surfaces",
     "create_plugin_artifacts",
@@ -113,6 +118,7 @@ __all__ = [
     "set_placed_initiatives",
     "set_placement_roles",
     "set_plugin_callers",
+    "set_setting",
     "store_secrets",
     "surface_access",
     "surface_openability",
@@ -695,6 +701,202 @@ def _unverified(plugin: GuildPlugin) -> None:
 
 def touch(plugin: GuildPlugin) -> None:
     plugin.updated_at = datetime.now(timezone.utc)
+
+
+# --- settings ---------------------------------------------------------------
+#
+# A unique setting's value is claimed across communities first
+# (``plugin_installs``, on the system engine), then stored on the install, and
+# given back when it could not be stored.
+
+
+def _unassigned(plugin: GuildPlugin) -> list[str]:
+    """The keys of the assigned settings the install holds no value for."""
+    held = plugin.settings or {}
+    return [
+        setting["key"]
+        for setting in plugin_config_service.definition_settings(plugin.definition)
+        if setting.get("assigned") and not held.get(setting["key"])
+    ]
+
+
+def _unique_held(plugin: GuildPlugin) -> dict[str, Any]:
+    """The values the install holds for the unique settings its pinned
+    definition declares, by key."""
+    held = plugin.settings or {}
+    return {
+        setting["key"]: held[setting["key"]]
+        for setting in plugin_config_service.definition_settings(plugin.definition)
+        if setting.get("unique") is True and held.get(setting["key"])
+    }
+
+
+async def _give_back(
+    session: AsyncSession,
+    guild_id: int,
+    install_id: int,
+    claims: Sequence[plugin_installs.SettingClaim],
+) -> None:
+    """Give back the claims a save that failed made, holding the install's row
+    so a save made meanwhile keeps the value it stored."""
+    await session.rollback()
+    locked = await lock_install(session, install_id)
+    settings = (locked.settings or {}) if locked is not None else {}
+    aliases = (locked.setting_aliases or {}) if locked is not None else {}
+    for one in claims:
+        stored = one.value == settings.get(one.key) or one.value in (
+            aliases.get(one.key) or []
+        )
+        await plugin_installs.release_setting(
+            guild_id,
+            install_id,
+            replace(one, held=one.held or stored),
+            current=settings.get(one.key),
+        )
+    await session.commit()
+
+
+async def assign_settings(
+    session: AsyncSession, plugin: GuildPlugin, *, guild_id: int
+) -> None:
+    """Claim the value the install holds for each unique setting its pinned
+    definition declares, and give each assigned setting it holds no value for
+    a value of its own
+    (:func:`~app.services.marketplace.plugin_installs.claim_assigned`).
+
+    A held value that a unique setting cannot keep, because it is not a value
+    a unique setting may hold or another install of the plug-in holds it, is
+    dropped: an assigned setting then gets a value of its own, and any other
+    is left for the seat to set.
+
+    Called once the install, or the version that declares the setting, is in
+    and indexed. Only when there is a unique or unassigned setting does it
+    take the install's row and commit ``session``.
+    """
+    if not _unassigned(plugin) and not _unique_held(plugin):
+        return
+    await session.flush()
+    locked = await lock_install(session, plugin.id)
+    if locked is None:
+        await session.commit()
+        return
+    install_id = locked.id
+    held = _unique_held(locked)
+    valid = {
+        key: value for key, value in held.items() if is_unique_setting_value(value)
+    }
+    claimed = await plugin_installs.claim_held(guild_id, locked, valid)
+    dropped = set(held) - {one.key for one in claimed}
+    settings = {
+        key: value
+        for key, value in (locked.settings or {}).items()
+        if key not in dropped
+    }
+    keys = [
+        setting["key"]
+        for setting in plugin_config_service.definition_settings(locked.definition)
+        if setting.get("assigned") and not settings.get(setting["key"])
+    ]
+    if keys:
+        claimed += await plugin_installs.claim_assigned(guild_id, locked, keys)
+    if dropped:
+        logger.info(
+            "plug-in settings: install %s in guild %s could not keep %s",
+            install_id,
+            guild_id,
+            sorted(dropped),
+        )
+    try:
+        new = {**settings, **{one.key: one.value for one in claimed}}
+        if new != (locked.settings or {}):
+            locked.settings = new
+            touch(locked)
+            session.add(locked)
+        await session.commit()
+    except Exception:
+        await _give_back(session, guild_id, install_id, claimed)
+        raise
+
+
+async def set_setting(
+    session: AsyncSession,
+    plugin: GuildPlugin,
+    key: str,
+    value: Any,
+    *,
+    guild_id: int,
+    actor_user_id: int,
+) -> None:
+    """Set one of the install's settings to ``value``, and commit.
+
+    Checked against the *pinned* definition
+    (:func:`~app.services.tenant.plugin_config.setting_value`). A unique
+    setting's value is claimed first; one another install of the plug-in holds,
+    now or as an earlier value, is refused with ``SETTING_UNAVAILABLE``. The
+    value it replaces becomes the newest earlier one and stays the install's,
+    and renaming back to an earlier one makes it current again. Raises
+    :class:`~app.services.tenant.plugin_config.PluginConfigError` for anything
+    refused. The caller holds the install row.
+    """
+    setting = next(
+        (
+            one
+            for one in plugin_config_service.definition_settings(plugin.definition)
+            if one.get("key") == key
+        ),
+        None,
+    )
+    if setting is None:
+        raise plugin_config_service.PluginConfigError(
+            GuildPluginMessages.SETTING_NOT_FOUND, 404
+        )
+    new = plugin_config_service.setting_value(setting, value)
+    settings = dict(plugin.settings or {})
+    old = settings.get(key)
+    if new == old:
+        return
+    install_id = plugin.id
+    aliases = dict(plugin.setting_aliases or {})
+    claimed = None
+    if setting.get("unique") is True:
+        claimed = await plugin_installs.claim_setting(guild_id, plugin, key, new)
+        if claimed is None:
+            raise plugin_config_service.PluginConfigError(
+                GuildPluginMessages.SETTING_UNAVAILABLE, 409
+            )
+        earlier = [one for one in aliases.pop(key, []) if one != new]
+        if old:
+            earlier.insert(0, old)
+        if earlier:
+            aliases[key] = earlier
+    try:
+        if new is None:
+            settings.pop(key, None)
+        else:
+            settings[key] = new
+        plugin.settings = settings
+        plugin.setting_aliases = aliases
+        touch(plugin)
+        session.add(plugin)
+        name = f"settings.{key}"
+        await audit_service.record(
+            session,
+            event_type=AuditEventType.PLUGIN_UPDATED,
+            actor_user_id=actor_user_id,
+            guild_id=guild_id,
+            target_type="plugin",
+            target_id=install_id,
+            detail={
+                "area": "settings",
+                **audit_service.changed_fields({name: old}, {name: new}),
+            },
+        )
+        await session.commit()
+    except Exception:
+        await _give_back(
+            session, guild_id, install_id, [claimed] if claimed is not None else []
+        )
+        raise
 
 
 # --- placement --------------------------------------------------------------

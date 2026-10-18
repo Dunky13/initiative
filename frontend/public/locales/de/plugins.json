@@ -103,6 +103,14 @@
     },
     "expired": "Diese Verbindung ist abgelaufen. Verbinde dich erneut, um sie weiter zu nutzen."
   },
+  "installSettings": {
+    "title": "Einstellungen",
+    "description": "Was dieses Plug-in in dieser Community liest.",
+    "notSet": "Nicht festgelegt",
+    "unique": "Diesen Wert kann keine andere Community auf diesem Server verwenden. Verwende einen Kleinbuchstaben, dann Kleinbuchstaben und Ziffern.",
+    "earlier": "Frühere Werte, die weiterhin funktionieren: {{values}}",
+    "saved": "Einstellung gespeichert."
+  },
   "members": {
     "title": "Mitglieder",
     "noPersonal": "Bei diesem Plug-in gibt es nichts, womit sich Mitglieder einzeln verbinden.",

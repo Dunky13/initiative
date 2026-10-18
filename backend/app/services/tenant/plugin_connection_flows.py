@@ -95,6 +95,7 @@ from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant.plugin_config import (
+    install_settings,
     mint_connection_ref,
     token_of,
     without_tokens,
@@ -1031,6 +1032,7 @@ async def complete_callback(
         fields = without_tokens((loaded.plugin.config or {}).get(state.connection_id))
         install_id = loaded.plugin.id
         definition = loaded.plugin.definition
+        installed = install_settings(loaded.plugin)
 
     # The vendor and the plug-in are asked with no transaction open. What they
     # answer is stored against the install as it stands once they have.
@@ -1067,6 +1069,7 @@ async def complete_callback(
                     declared,
                     params=params,
                     access_token=tokens.access_token,
+                    installed=installed,
                 )
             else:
                 answer = await after_connect(

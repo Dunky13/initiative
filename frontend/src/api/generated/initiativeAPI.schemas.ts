@@ -3197,6 +3197,23 @@ export interface PluginSurfaceAccessRead {
   openable_initiatives: number[];
 }
 
+export type CommunityPluginSettingReadLabel = { [key: string]: string };
+
+export type CommunityPluginSettingReadDescription = { [key: string]: string };
+
+/**
+ * One setting the pinned definition declares, and what the install holds
+ * for it.
+ */
+export interface CommunityPluginSettingRead {
+  key: string;
+  label: CommunityPluginSettingReadLabel;
+  description: CommunityPluginSettingReadDescription;
+  unique: boolean;
+  value: string | null;
+  aliases: string[];
+}
+
 export type PluginSurfaceSummaryName = { [key: string]: string };
 
 /**
@@ -3283,6 +3300,7 @@ export interface CommunityPluginDetail {
   created_at: string;
   updated_at: string;
   connections: CommunityPluginConnectionRead[];
+  settings: CommunityPluginSettingRead[];
   consents: CommunityPluginConsentRead[];
   update_version: string | null;
   requested_scopes: string[];
@@ -3430,6 +3448,17 @@ export interface CommunityPluginMembersResponse {
 export interface CommunityPluginScopesUpdate {
   /** @maxItems 64 */
   granted?: string[];
+}
+
+/**
+ * A value for one of the install's settings.
+ *
+ * ``null`` clears a setting that is not unique. A unique one always holds a
+ * value: a lowercase letter, then lowercase letters and digits, which no other
+ * community on this server holds.
+ */
+export interface CommunityPluginSettingUpdate {
+  value?: string | null;
 }
 
 /**

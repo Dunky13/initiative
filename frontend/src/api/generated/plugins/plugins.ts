@@ -33,6 +33,7 @@ import type {
   CommunityPluginMembersResponse,
   CommunityPluginRead,
   CommunityPluginScopesUpdate,
+  CommunityPluginSettingUpdate,
   CommunityPluginUninstallNotice,
   CommunityPluginUpdate,
   CommunityPluginUpgrade,
@@ -2064,6 +2065,114 @@ export const useUpdateCommunityPluginConfig = <
   TContext
 > => {
   return useMutation(getUpdateCommunityPluginConfigMutationOptions(options), queryClient);
+};
+/**
+ * Set one of the values the plug-in's settings declare.
+ *
+ * Validated against the *pinned* definition. A unique setting holds a
+ * lowercase letter, then lowercase letters and digits, 2 to 16 in all
+ * (``COMMUNITY_PLUGIN_SETTING_INVALID`` otherwise), that no other community
+ * on this server holds, now or as an earlier value
+ * (``COMMUNITY_PLUGIN_SETTING_UNAVAILABLE`` otherwise). The value it replaces
+ * stays this community's, and the plug-in still reads it; setting it again
+ * makes it current.
+ * @summary Update Community Plugin Setting
+ */
+export const updateCommunityPluginSetting = (
+  communityId: number,
+  pluginId: number,
+  key: string,
+  communityPluginSettingUpdate: BodyType<CommunityPluginSettingUpdate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<CommunityPluginDetail>(
+    {
+      url: `/api/v1/c/${communityId}/plugins/${pluginId}/settings/${key}`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: communityPluginSettingUpdate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateCommunityPluginSettingMutationKey = () =>
+  ["updateCommunityPluginSetting"] as const;
+
+export const getUpdateCommunityPluginSettingMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCommunityPluginSetting>>,
+    TError,
+    UpdateCommunityPluginSettingMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCommunityPluginSetting>>,
+  TError,
+  UpdateCommunityPluginSettingMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateCommunityPluginSettingMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCommunityPluginSetting>>,
+    UpdateCommunityPluginSettingMutationVariables
+  > = (props) => {
+    const { communityId, pluginId, key, data } = props ?? {};
+
+    return updateCommunityPluginSetting(communityId, pluginId, key, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCommunityPluginSettingMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCommunityPluginSetting>>
+>;
+export type UpdateCommunityPluginSettingMutationBody = BodyType<CommunityPluginSettingUpdate>;
+export type UpdateCommunityPluginSettingMutationError = ErrorType<HTTPValidationError>;
+export type UpdateCommunityPluginSettingMutationVariables = {
+  communityId: number;
+  pluginId: number;
+  key: string;
+  data: BodyType<CommunityPluginSettingUpdate>;
+};
+
+/**
+ * @summary Update Community Plugin Setting
+ */
+export const useUpdateCommunityPluginSetting = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateCommunityPluginSetting>>,
+      TError,
+      UpdateCommunityPluginSettingMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateCommunityPluginSetting>>,
+  TError,
+  UpdateCommunityPluginSettingMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateCommunityPluginSettingMutationOptions(options), queryClient);
 };
 /**
  * Place the plug-in in one initiative with exactly these roles.

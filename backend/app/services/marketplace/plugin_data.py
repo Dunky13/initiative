@@ -714,8 +714,9 @@ def _cache_key(
     }
     if is_declarative(plugin.definition):
         # What a declarative endpoint's expressions read, a member's own
-        # connection's fields among them.
+        # connection's fields and the install's settings among them.
         depends["fields"] = fields
+        depends["installed"] = plugin_config_service.install_settings(plugin)
     fingerprint = hashlib.sha256(
         json.dumps(
             depends,

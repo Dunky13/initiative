@@ -38,14 +38,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.encryption import SALT_PLUGIN_CONFIG, encrypt_field
 from app.core.messages import GuildPluginMessages, GuildMessages, MarketplaceMessages
 from app.models.platform.guild import CommunityRole
+from app.models.platform.plugin_install import PluginInstallClaim
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
+from app.services.marketplace import plugin_installs
 from app.services.marketplace.registration_lookup import invalidate_registrations
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_revocation
 from app.services.tenant.plugin_connection_flows import callback_url
 from app.services.tenant.plugin_connections import load_connection_secrets
 from app.testing import (
     create_plugin_user_connection,
     create_plugin_service_registration,
+    create_guild,
     create_guild_plugin,
     create_guild_membership,
     create_marketplace_listing,
@@ -468,6 +472,383 @@ class TestConfig:
             await client.get(a.g(f"/plugins/{plugin.id}"), headers=a.headers)
         ).json()
         assert body["needs_config"] is True
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+#: A unique setting Initiative assigns from the community's name.
+PREFIX_SETTING = {
+    "key": "task_prefix",
+    "type": "string",
+    "label": {"en": "Task prefix"},
+    "unique": True,
+    "assigned": "community_name",
+}
+
+SETTINGS_DEFINITION = {
+    **MEMBER_ONLY_DEFINITION,
+    "settings": [
+        PREFIX_SETTING,
+        {"key": "team", "type": "string", "label": {"en": "Team"}},
+    ],
+}
+
+SETTINGS_UID = marketplace_uid("prefixed")
+
+
+async def _seat(acting_user, session: AsyncSession, name: str):
+    """The seat of a community called ``name``."""
+    return await acting_user(
+        guild_role=CommunityRole.superadmin,
+        guild=await create_guild(session, name=name),
+    )
+
+
+def _setting(body: dict, key: str) -> tuple:
+    """A setting's value and earlier values, as the detail reports them."""
+    setting = next(one for one in body["settings"] if one["key"] == key)
+    return setting["value"], setting["aliases"]
+
+
+async def _claims(session: AsyncSession) -> set[tuple]:
+    """Every claimed value, read past RLS by the setup session."""
+    rows = (await session.exec(select(PluginInstallClaim))).all()
+    return {(row.guild_id, row.install_id, row.value, row.current) for row in rows}
+
+
+@pytest.fixture
+def drawn(monkeypatch):
+    """Random letters and digits, drawn the same every time: ``zqzq…``."""
+    monkeypatch.setattr(
+        plugin_installs, "_random", lambda alphabet, length: ("zq" * 8)[:length]
+    )
+
+
+class TestSettings:
+    @pytest.mark.parametrize(
+        ("name", "assigned"),
+        [
+            ("Acme Studio", "acmestudio"),
+            ("3M Café Society International", "mcafesocietyinte"),
+            ("42", "zqzq"),
+        ],
+    )
+    async def test_installing_assigns_a_value_from_the_communitys_name(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session: AsyncSession,
+        drawn,
+        name,
+        assigned,
+    ):
+        """Its letters and digits, without accents, in lowercase, from its
+        first letter, cut to 16; random letters for a name that gives fewer
+        than two. The value is claimed for the install."""
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            definition=SETTINGS_DEFINITION,
+        )
+        seat = await _seat(acting_user, session, name)
+
+        response = await client.post(
+            seat.g("/plugins/"),
+            headers=seat.headers,
+            json={"listing_uid": SETTINGS_UID},
+        )
+        assert response.status_code == 201, response.text
+        plugin_id = response.json()["id"]
+
+        body = (
+            await client.get(seat.g(f"/plugins/{plugin_id}"), headers=seat.headers)
+        ).json()
+        assert body["settings"] == [
+            {
+                "key": "task_prefix",
+                "label": {"en": "Task prefix"},
+                "description": {},
+                "unique": True,
+                "value": assigned,
+                "aliases": [],
+            },
+            {
+                "key": "team",
+                "label": {"en": "Team"},
+                "description": {},
+                "unique": False,
+                "value": None,
+                "aliases": [],
+            },
+        ]
+        assert await _claims(session) == {(seat.guild.id, plugin_id, assigned, True)}
+
+    async def test_a_value_another_community_holds_gets_a_random_suffix(
+        self, acting_user, session: AsyncSession, drawn
+    ):
+        """Never the next number."""
+        first = await _seat(acting_user, session, "Acme")
+        second = await _seat(acting_user, session, "ACME!")
+
+        held = await create_guild_plugin(
+            session, first.guild, first.user, definition=SETTINGS_DEFINITION
+        )
+        suffixed = await create_guild_plugin(
+            session, second.guild, second.user, definition=SETTINGS_DEFINITION
+        )
+
+        assert suffixed.settings == {"task_prefix": "acmezq"}
+        assert await _claims(session) == {
+            (first.guild.id, held.id, "acme", True),
+            (second.guild.id, suffixed.id, "acmezq", True),
+        }
+
+    async def test_an_update_that_declares_an_assigned_setting_assigns_it(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.0.0",
+            definition=MEMBER_ONLY_DEFINITION,
+        )
+        seat = await _seat(acting_user, session, "Acme")
+        installed = await client.post(
+            seat.g("/plugins/"),
+            headers=seat.headers,
+            json={"listing_uid": SETTINGS_UID},
+        )
+        plugin_id = installed.json()["id"]
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.1.0",
+            definition=SETTINGS_DEFINITION,
+        )
+
+        response = await client.post(
+            seat.g(f"/plugins/{plugin_id}/upgrade"), headers=seat.headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert _setting(response.json(), "task_prefix") == ("acme", [])
+
+    async def test_a_rename_keeps_the_value_it_replaces_as_an_earlier_one(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """It stays the community's, and renaming back to it makes it current
+        again. A unique value is kept in lowercase."""
+        seat = await _seat(acting_user, session, "Acme")
+        plugin = await create_guild_plugin(
+            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
+        )
+        url = seat.g(f"/plugins/{plugin.id}/settings/task_prefix")
+
+        renamed = await client.put(url, headers=seat.headers, json={"value": "AcmeCo"})
+        assert renamed.status_code == 200, renamed.text
+        assert _setting(renamed.json(), "task_prefix") == ("acmeco", ["acme"])
+
+        back = await client.put(url, headers=seat.headers, json={"value": "acme"})
+        assert back.status_code == 200, back.text
+        assert _setting(back.json(), "task_prefix") == ("acme", ["acmeco"])
+        assert await _claims(session) == {
+            (seat.guild.id, plugin.id, "acme", True),
+            (seat.guild.id, plugin.id, "acmeco", False),
+        }
+
+    async def test_a_setting_that_is_not_unique_holds_a_line_and_clears(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        seat = await _seat(acting_user, session, "Acme")
+        plugin = await create_guild_plugin(
+            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
+        )
+        url = seat.g(f"/plugins/{plugin.id}/settings/team")
+
+        typed = await client.put(url, headers=seat.headers, json={"value": " Web "})
+        assert _setting(typed.json(), "team") == ("Web", [])
+        cleared = await client.put(url, headers=seat.headers, json={"value": None})
+        assert _setting(cleared.json(), "team") == (None, [])
+
+    @pytest.mark.parametrize(
+        ("key", "value", "status", "code"),
+        [
+            ("task_prefix", "acmenew", 409, GuildPluginMessages.SETTING_UNAVAILABLE),
+            ("task_prefix", "ACME", 409, GuildPluginMessages.SETTING_UNAVAILABLE),
+            ("task_prefix", "acme-1", 400, GuildPluginMessages.SETTING_INVALID),
+            ("task_prefix", None, 400, GuildPluginMessages.SETTING_INVALID),
+            ("nope", "x", 404, GuildPluginMessages.SETTING_NOT_FOUND),
+        ],
+    )
+    async def test_a_value_it_cannot_take_is_refused(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session: AsyncSession,
+        key,
+        value,
+        status,
+        code,
+    ):
+        """One another community holds, now or as an earlier value, whatever
+        its case, is refused with one code that says nothing more; a unique
+        value not of its form, or none, with another. The install keeps its
+        own."""
+        other = await _seat(acting_user, session, "Acme")
+        held = await create_guild_plugin(
+            session, other.guild, other.user, definition=SETTINGS_DEFINITION
+        )
+        moved = await client.put(
+            other.g(f"/plugins/{held.id}/settings/task_prefix"),
+            headers=other.headers,
+            json={"value": "acmenew"},
+        )
+        assert moved.status_code == 200, moved.text
+        seat = await _seat(acting_user, session, "Beta")
+        plugin = await create_guild_plugin(
+            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
+        )
+
+        response = await client.put(
+            seat.g(f"/plugins/{plugin.id}/settings/{key}"),
+            headers=seat.headers,
+            json={"value": value},
+        )
+
+        assert response.status_code == status
+        assert response.json()["detail"] == code
+        body = (
+            await client.get(seat.g(f"/plugins/{plugin.id}"), headers=seat.headers)
+        ).json()
+        assert _setting(body, "task_prefix") == ("beta", [])
+
+    async def test_an_update_that_makes_a_setting_unique_claims_what_it_holds(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """The first community to update keeps its value and claims it; one
+        whose value another community claimed first is given a value of its
+        own."""
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.0.0",
+            definition={
+                **MEMBER_ONLY_DEFINITION,
+                "settings": [
+                    {"key": "task_prefix", "type": "string", "label": {"en": "P"}}
+                ],
+            },
+        )
+        installs = []
+        for name in ("Acme", "Beta"):
+            seat = await _seat(acting_user, session, name)
+            installed = await client.post(
+                seat.g("/plugins/"),
+                headers=seat.headers,
+                json={"listing_uid": SETTINGS_UID},
+            )
+            plugin_id = installed.json()["id"]
+            typed = await client.put(
+                seat.g(f"/plugins/{plugin_id}/settings/task_prefix"),
+                headers=seat.headers,
+                json={"value": "acme"},
+            )
+            assert typed.status_code == 200, typed.text
+            installs.append((seat, plugin_id))
+        assert await _claims(session) == set()
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.1.0",
+            definition=SETTINGS_DEFINITION,
+        )
+
+        upgraded = [
+            await client.post(
+                seat.g(f"/plugins/{plugin_id}/upgrade"), headers=seat.headers
+            )
+            for seat, plugin_id in installs
+        ]
+
+        assert [_setting(one.json(), "task_prefix") for one in upgraded] == [
+            ("acme", []),
+            ("beta", []),
+        ]
+        (first, first_id), (second, second_id) = installs
+        assert await _claims(session) == {
+            (first.guild.id, first_id, "acme", True),
+            (second.guild.id, second_id, "beta", True),
+        }
+
+    async def test_a_failed_save_gives_back_only_what_the_install_does_not_hold(
+        self, acting_user, session: AsyncSession
+    ):
+        """Its claims are given back under the install's row: one a save made
+        meanwhile stored is kept, as current or earlier, and the rest go."""
+        seat = await _seat(acting_user, session, "Acme")
+        plugin = await create_guild_plugin(
+            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
+        )
+        stored = await plugin_installs.claim_setting(
+            seat.guild.id, plugin, "task_prefix", "acmeco"
+        )
+        lost = await plugin_installs.claim_setting(
+            seat.guild.id, plugin, "task_prefix", "acmezz"
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        plugin.settings = {"task_prefix": "acmeco"}
+        plugin.setting_aliases = {"task_prefix": ["acme"]}
+        session.add(plugin)
+        await session.commit()
+
+        await guild_plugins_service._give_back(
+            session, seat.guild.id, plugin.id, [stored, lost]
+        )
+
+        assert await _claims(session) == {
+            (seat.guild.id, plugin.id, "acme", False),
+            (seat.guild.id, plugin.id, "acmeco", True),
+        }
+
+    async def test_removing_the_plugin_gives_its_values_back(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """Every value it held, the earlier ones too, goes with it, and another
+        community may take one."""
+        first = await _seat(acting_user, session, "Acme")
+        plugin = await create_guild_plugin(
+            session, first.guild, first.user, definition=SETTINGS_DEFINITION
+        )
+        renamed = await client.put(
+            first.g(f"/plugins/{plugin.id}/settings/task_prefix"),
+            headers=first.headers,
+            json={"value": "acmeco"},
+        )
+        assert renamed.status_code == 200, renamed.text
+
+        removed = await client.delete(
+            first.g(f"/plugins/{plugin.id}"), headers=first.headers
+        )
+        assert removed.status_code == 204, removed.text
+        assert await _claims(session) == set()
+
+        second = await _seat(acting_user, session, "Acme")
+        again = await create_guild_plugin(
+            session, second.guild, second.user, definition=SETTINGS_DEFINITION
+        )
+        assert again.settings == {"task_prefix": "acme"}
 
 
 # ---------------------------------------------------------------------------

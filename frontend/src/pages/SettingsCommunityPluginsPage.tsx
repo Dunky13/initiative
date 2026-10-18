@@ -35,6 +35,7 @@ import { PluginConnectionsPanel } from "@/components/plugins/PluginConnectionsPa
 import { PluginMembersPanel } from "@/components/plugins/PluginMembersPanel";
 import { PluginPlacementPanel } from "@/components/plugins/PluginPlacementPanel";
 import { PluginScopesPanel } from "@/components/plugins/PluginScopesPanel";
+import { PluginSettingsPanel } from "@/components/plugins/PluginSettingsPanel";
 import { PluginUpdatesPanel } from "@/components/plugins/PluginUpdatesPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -328,9 +329,9 @@ function RemovalNotice({ pluginId, locale }: { pluginId: number; locale: string 
 }
 
 /**
- * The plug-in's connections, and — for the seat — where it appears and who opens
- * it there, what it can reach, who has connected to it and how it takes new
- * versions.
+ * The plug-in's connections, and — for the seat — its settings, where it appears
+ * and who opens it there, what it can reach, who has connected to it and how it
+ * takes new versions.
  */
 function PluginDetailPanels({ pluginId, canManage }: { pluginId: number; canManage: boolean }) {
   const { t } = useTranslation(["plugins", "common"]);
@@ -349,6 +350,8 @@ function PluginDetailPanels({ pluginId, canManage }: { pluginId: number; canMana
 
       {canManage && (
         <>
+          <PluginSettingsPanel pluginId={pluginId} settings={detail.data.settings ?? []} />
+
           {/* Only a plug-in with an initiative surface has somewhere to place. */}
           {declaredPages(detail.data.definition, "initiative").length > 0 && (
             <PluginPlacementPanel plugin={detail.data} />

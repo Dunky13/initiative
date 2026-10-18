@@ -1991,7 +1991,8 @@ class TestDeclarativePlugins:
         its ref, and on the install itself, beside the event the row emits. A
         task in an initiative the install is not placed in is passed over. A
         value is shown where the plug-in declares its key as a field, and an
-        upserted element merges into the one with its ref."""
+        upserted element merges into the one with its ref. The write reads the
+        install's settings, and a unique setting's earlier values."""
         writing = declarative_github(DECLARATIVE_ID)
         writing.update(
             scopes=["projects:read"],
@@ -2024,7 +2025,8 @@ class TestDeclarativePlugins:
             ' "upsert": {"github.pulls": [{"ref": "812",'
             ' "state": {"status": "merged"}}]}},'
             ' {"target": {"install": true},'
-            ' "set": {"github.delivery": headers."x-github-delivery"}}]'
+            ' "set": {"github.delivery": headers."x-github-delivery",'
+            ' "github.prefixes": $append(settings.task_prefix, aliases.task_prefix)}}]'
         )
         await _declarative_listing(session, writing)
         seat = await acting_user(
@@ -2043,6 +2045,8 @@ class TestDeclarativePlugins:
             definition=writing,
             config=_connected("42"),
             granted_scopes=["projects:read"],
+            settings={"task_prefix": "acme"},
+            setting_aliases={"task_prefix": ["acmeold"]},
         )
         pull = {"ref": "812", "url": "https://github.test/acme/web/pull/812"}
         await route_session_to_guild(session, seat.guild.id)
@@ -2092,6 +2096,7 @@ class TestDeclarativePlugins:
                 True,
             ),
             ("plugin", plugin.id, "github.delivery", ""): ("delivery-1", False),
+            ("plugin", plugin.id, "github.prefixes", ""): (["acme", "acmeold"], False),
         }
 
     async def test_a_pull_request_is_not_an_opened_issue(

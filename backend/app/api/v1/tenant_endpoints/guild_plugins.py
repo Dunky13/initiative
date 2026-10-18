@@ -97,6 +97,7 @@ from app.schemas.tenant.guild_plugin import (
     CommunityPluginListResponse,
     CommunityPluginMembersResponse,
     CommunityPluginRead,
+    CommunityPluginSettingUpdate,
     CommunityPluginUninstallNotice,
     CommunityPluginUpdate,
     CommunityPluginUpgrade,
@@ -617,6 +618,9 @@ async def install_community_plugin(
         ) from exc
     await session.refresh(plugin)
     await plugin_installs_service.record(guild_context.guild_id, plugin)
+    await guild_plugins_service.assign_settings(
+        session, plugin, guild_id=guild_context.guild_id
+    )
     await plugin_schedules_service.reconcile(
         guild_context.guild_id, plugin.id, plugin.definition
     )
@@ -741,6 +745,9 @@ async def upgrade_community_plugin(
     )
     await session.commit()
     await session.refresh(plugin)
+    await guild_plugins_service.assign_settings(
+        session, plugin, guild_id=guild_context.guild_id
+    )
     await plugin_updates_service.reconcile_repinned(guild_context.guild_id, plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
@@ -979,6 +986,39 @@ async def update_community_plugin_config(
     await session.commit()
     await session.refresh(plugin)
     await plugin_installs_service.record(guild_context.guild_id, plugin)
+    return await _detail(session, plugin, guild_context, current_user.id, viewer)
+
+
+@router.put("/{plugin_id}/settings/{key}", response_model=CommunityPluginDetail)
+async def update_community_plugin_setting(
+    plugin_id: int,
+    key: str,
+    payload: CommunityPluginSettingUpdate,
+    session: SeatWriteSessionDep,
+    current_user: CurrentUser,
+    guild_context: SeatWriteContextDep,
+    viewer: AgeViewerDep,
+) -> CommunityPluginDetail:
+    """Set one of the values the plug-in's settings declare.
+
+    Validated against the *pinned* definition. A unique setting holds a
+    lowercase letter, then lowercase letters and digits, 2 to 16 in all
+    (``COMMUNITY_PLUGIN_SETTING_INVALID`` otherwise), that no other community
+    on this server holds, now or as an earlier value
+    (``COMMUNITY_PLUGIN_SETTING_UNAVAILABLE`` otherwise). The value it replaces
+    stays this community's, and the plug-in still reads it; setting it again
+    makes it current.
+    """
+    plugin = await _load(session, plugin_id, for_update=True)
+    await guild_plugins_service.set_setting(
+        session,
+        plugin,
+        key,
+        payload.value,
+        guild_id=guild_context.guild_id,
+        actor_user_id=current_user.id,
+    )
+    await session.refresh(plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
 

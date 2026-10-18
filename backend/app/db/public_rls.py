@@ -2023,6 +2023,18 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             app_admin=DML,
         ),
     ),
+    # The values each install holds for its plug-in's unique settings, current and
+    # earlier, in one index over every community. Goes with its plugin_installs
+    # row.
+    "plugin_install_claims": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(
+            # Claimed when a value is assigned or renamed to, given back when one
+            # could not be stored, and read to tell whose a value is: on the
+            # system engine alone.
+            app_admin=DML,
+        ),
+    ),
     # The community hooks waiting to reach a plug-in: written at install,
     # uninstall and erase, and when a community's status moves, and sent,
     # retried and swept by the plugin_hooks sweep timer
