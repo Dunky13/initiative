@@ -40,7 +40,10 @@ __all__ = [
     "MAX_NAME_LENGTH",
     "MAX_PATH_LENGTH",
     "MAX_PUBLIC_ID_LENGTH",
+    "MAX_UNIQUE_SETTING_VALUE_LENGTH",
     "MAX_URL_LENGTH",
+    "MIN_UNIQUE_SETTING_VALUE_LENGTH",
+    "UNIQUE_SETTING_VALUE_CHARS",
     "check_identifier",
     "check_json_size",
     "check_metadata_key",
@@ -53,6 +56,7 @@ __all__ = [
     "fail",
     "is_identifier",
     "is_metadata_key",
+    "is_unique_setting_value",
     "require_list",
     "require_mapping",
     "utf8_bytes",
@@ -98,6 +102,14 @@ IDENTIFIER_CHARS = contract.charset("identifier")
 #: holds a manifest's field and a value the install writes.
 METADATA_KEY_CHARS = contract.charset("metadataKey")
 MAX_METADATA_KEY_LENGTH = contract.cap("metadataKeyLength")
+
+#: A unique setting's value: a lowercase letter, then lowercase letters and
+#: digits, two to ``uniqueSettingValueLength`` characters. It holds no ``-``, so
+#: a reference such as ``<value>-<number>`` reads one way. The lower bound is
+#: the contract's, which it states literally.
+UNIQUE_SETTING_VALUE_CHARS = contract.charset("uniqueSettingValue")
+MIN_UNIQUE_SETTING_VALUE_LENGTH = 2
+MAX_UNIQUE_SETTING_VALUE_LENGTH = contract.cap("uniqueSettingValueLength")
 
 #: What a `<publisher>.<slug>` id may use. Matches the catalog's own rule.
 PUBLIC_ID_CHARS = contract.charset("publicId")
@@ -205,6 +217,18 @@ def is_metadata_key(value: Any) -> bool:
         and 0 < len(value) <= MAX_METADATA_KEY_LENGTH
         and value[0] in string.ascii_lowercase
         and all(character in METADATA_KEY_CHARS for character in value)
+    )
+
+
+def is_unique_setting_value(value: Any) -> bool:
+    """Whether ``value`` is a value a unique setting may hold."""
+    return (
+        isinstance(value, str)
+        and MIN_UNIQUE_SETTING_VALUE_LENGTH
+        <= len(value)
+        <= MAX_UNIQUE_SETTING_VALUE_LENGTH
+        and value[0] in string.ascii_lowercase
+        and all(character in UNIQUE_SETTING_VALUE_CHARS for character in value)
     )
 
 

@@ -6,8 +6,9 @@ nature (a club's own events calendar), and a tool that lives in one initiative
 cannot be that.
 
 The row is *installation state*, not content. It records which listing was
-installed, at which version, and how the guild configured it (``config`` /
-``secret_fields``). The content itself is an ordinary row in an ordinary table
+installed, at which version, how the guild configured it (``config`` /
+``secret_fields``) and what its settings hold (``settings`` /
+``setting_aliases``). The content itself is an ordinary row in an ordinary table
 — a guild-level ``calendars`` row, for instance — owned by the install and
 governed by its own grants like anything else. That split is
 deliberate: plug-ins mount existing tools at guild scope rather than introducing a
@@ -125,6 +126,21 @@ class GuildPlugin(CreatedByMixin, table=True):
     # accepted for the connection its handle names, and only for a handle this
     # map holds.
     connection_refs: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default="{}"),
+    )
+
+    # The value of each setting the pinned definition declares, by key, as the
+    # seat set it or Initiative assigned it: ``{"task_prefix": "acme"}``.
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default="{}"),
+    )
+    # Each unique setting's earlier values, newest first, by key:
+    # ``{"task_prefix": ["acmeold"]}``. They stay this install's
+    # (``public.plugin_install_claims``) until it is removed. A setting never
+    # renamed has no entry.
+    setting_aliases: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB, nullable=False, server_default="{}"),
     )

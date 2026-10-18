@@ -103,6 +103,14 @@
     },
     "expired": "Cette connexion a expiré. Connectez-vous à nouveau pour continuer à l'utiliser."
   },
+  "installSettings": {
+    "title": "Paramètres",
+    "description": "Ce que ce plug-in lit dans cette communauté.",
+    "notSet": "Non défini",
+    "unique": "Aucune autre communauté de ce serveur ne peut utiliser cette valeur. Utilisez une lettre minuscule, puis des lettres minuscules et des chiffres.",
+    "earlier": "Valeurs précédentes, qui fonctionnent toujours : {{values}}",
+    "saved": "Paramètre enregistré."
+  },
   "members": {
     "title": "Membres",
     "noPersonal": "Ce plug-in n'a rien à quoi les membres se connectent individuellement.",

@@ -68,6 +68,7 @@ from app.services.marketplace import plugin_installs
 from app.services.marketplace import catalog as marketplace_catalog
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import file_versions
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_schedules
 from app.services.tenant.plugin_config import mint_connection_ref
 from app.services.tenant.dashboard_definition import (
@@ -1217,7 +1218,8 @@ async def create_guild_plugin(
     """An installed plug-in, written straight into the guild's schema.
 
     ``secrets`` is its secret values, ``{connection_id: {key: ciphertext}}``,
-    stored in ``guild_plugin_secrets``.
+    stored in ``guild_plugin_secrets``. An assigned setting it holds no value
+    for is given one, as an install's is.
 
     Deliberately not routed through the install endpoint. A ``service`` plug-in's
     definition is publishable and storable today but the install path does not
@@ -1246,6 +1248,7 @@ async def create_guild_plugin(
         await session.commit()
     await session.refresh(plugin)
     await plugin_installs.record(guild.id, plugin)
+    await guild_plugins_service.assign_settings(session, plugin, guild_id=guild.id)
     await plugin_schedules.reconcile(guild.id, plugin.id, plugin.definition)
     return plugin
 

@@ -34,6 +34,7 @@ import {
   revokeMyConsent,
   unblockMemberConnection,
   updateCommunityPluginConfig,
+  updateCommunityPluginSetting,
   upgradeCommunityPlugin,
 } from "@/api/generated/plugins/plugins";
 import { invalidate, q } from "@/api/query-keys";
@@ -76,6 +77,22 @@ export const useUpdatePluginConfig = (pluginId: number) => {
   const communityId = useActiveCommunityId();
   return useMutation<CommunityPluginDetail, unknown, CommunityPluginConfigUpdateValues>({
     mutationFn: (values) => updateCommunityPluginConfig(communityId, pluginId, { values }),
+    onSuccess: () => invalidate(q.plugins()),
+  });
+};
+
+export interface PluginSettingValue {
+  key: string;
+  /** `null` clears a setting that is not unique. */
+  value: string | null;
+}
+
+/** One of the install's settings. */
+export const useUpdatePluginSetting = (pluginId: number) => {
+  const communityId = useActiveCommunityId();
+  return useMutation<CommunityPluginDetail, unknown, PluginSettingValue>({
+    mutationFn: ({ key, value }) =>
+      updateCommunityPluginSetting(communityId, pluginId, key, { value }),
     onSuccess: () => invalidate(q.plugins()),
   });
 };

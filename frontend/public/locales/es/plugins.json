@@ -103,6 +103,14 @@
     },
     "expired": "Esta conexión ha caducado. Vuelve a conectar para seguir usándola."
   },
+  "installSettings": {
+    "title": "Ajustes",
+    "description": "Lo que este complemento lee en esta comunidad.",
+    "notSet": "Sin definir",
+    "unique": "Ninguna otra comunidad de este servidor puede usar este valor. Usa una letra minúscula y después letras minúsculas y dígitos.",
+    "earlier": "Valores anteriores, que siguen funcionando: {{values}}",
+    "saved": "Ajuste guardado."
+  },
   "members": {
     "title": "Miembros",
     "noPersonal": "Este complemento no tiene nada a lo que los miembros se conecten por separado.",

@@ -13,8 +13,8 @@
  * - **Everyone** gets the two answers that are theirs — whether the plug-in may act
  *   as them, and their own half of any connection. Nobody else's appears.
  * - **The seat** additionally gets what the community owns: the community-wide
- *   credential, where the plug-in appears, and the governance view of what every
- *   member has given it.
+ *   credential, the plug-in's settings, where it appears, and the governance
+ *   view of what every member has given it.
  *
  * This is deliberately not the community-settings page. That one is about the
  * install — adding, renaming, turning off, removing — and belongs to admins.
@@ -29,6 +29,7 @@ import { PluginConnectionsPanel } from "@/components/plugins/PluginConnectionsPa
 import { PluginConsentRequests } from "@/components/plugins/PluginConsentRequests";
 import { PluginMembersPanel } from "@/components/plugins/PluginMembersPanel";
 import { PluginPlacementPanel } from "@/components/plugins/PluginPlacementPanel";
+import { PluginSettingsPanel } from "@/components/plugins/PluginSettingsPanel";
 import {
   Dialog,
   DialogContent,
@@ -115,6 +116,7 @@ export function PluginSettingsDialog({
                     {t("plugins:settings.adminDescription")}
                   </p>
                 </div>
+                <PluginSettingsPanel pluginId={plugin.id} settings={plugin.settings ?? []} />
                 {/* Where the plug-in goes is the community's call, and only for a plug-in
                     that has somewhere to go. */}
                 {showsPlacement && <PluginPlacementPanel plugin={plugin} />}

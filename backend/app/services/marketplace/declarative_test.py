@@ -27,6 +27,8 @@ NOW = datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
 API = "https://api.tracker.example"
 CREDENTIALS = {"workspace": "tok-workspace", "account": "tok-account"}
 WORKSPACE = {"workspace": {"owner": "acme"}}
+#: An install whose settings hold nothing, as every expression reads it.
+INSTALLED = {"settings": {}, "aliases": {}}
 
 
 def _api(path: str) -> str:
@@ -176,7 +178,13 @@ def vendor(monkeypatch) -> FakeVendor:
 
 
 async def _run(
-    name: str, *, params=None, definition=None, connections=WORKSPACE, actor=None
+    name: str,
+    *,
+    params=None,
+    definition=None,
+    connections=WORKSPACE,
+    installed=INSTALLED,
+    actor=None,
 ) -> dict:
     definition = definition or issues_plugin()
     endpoint = next(
@@ -189,6 +197,7 @@ async def _run(
         connections=connections,
         credentials=CREDENTIALS,
         now=NOW,
+        installed=installed,
         actor=actor,
     )
 
@@ -287,6 +296,7 @@ async def _after_connect(after: dict = STEPPED_AFTER_CONNECT):
         after,
         params={"installation_id": "2"},
         access_token="tok-person",
+        installed=INSTALLED,
         now=NOW,
     )
 
@@ -452,6 +462,36 @@ def test_a_call_made_as_no_actor_carries_no_connection_named_per_actor():
         None,
         None,
     ]
+
+
+async def test_the_request_and_map_read_the_installs_settings(vendor):
+    """Every expression reads the install's ``settings``, and each unique
+    setting's earlier values as ``aliases``."""
+    definition = issues_plugin(
+        linked={
+            "direction": "read",
+            "returns": [{"key": "prefixes", "type": "string", "list": True}],
+            "request": {
+                "method": "GET",
+                "url": _api("/search"),
+                "query": {"q": 'settings.task_prefix & "-"'},
+                "connection": "workspace",
+            },
+            "map": '{"prefixes": $append(settings.task_prefix, aliases.task_prefix)}',
+        }
+    )
+    vendor.api_answers = [{"body": {}}]
+    result = await _run(
+        "linked",
+        definition=definition,
+        installed={
+            "settings": {"task_prefix": "acme"},
+            "aliases": {"task_prefix": ["acmeold"]},
+        },
+    )
+
+    assert vendor.api_requests[0]["url"] == f"{API}/search?q=acme-"
+    assert result == {"prefixes": ["acme", "acmeold"]}
 
 
 async def test_a_graphql_cursor_is_sent_in_its_variable_from_the_second_page(vendor):

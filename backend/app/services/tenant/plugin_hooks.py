@@ -83,7 +83,7 @@ from app.services.tenant.plugin_channels import (
     owns_install,
     set_connection_state,
 )
-from app.services.tenant.plugin_config import without_tokens
+from app.services.tenant.plugin_config import install_settings, without_tokens
 from app.db.request_context import SystemGuild
 
 if TYPE_CHECKING:
@@ -357,6 +357,7 @@ async def _map(
             headers=_vendor_headers(headers, str(webhooks["verify"]["header"])),
             payload=payload,
             connection=without_tokens((plugin.config or {}).get(route["connection"])),
+            installed=install_settings(plugin),
         )
     except ExpressionError as exc:
         logger.warning(

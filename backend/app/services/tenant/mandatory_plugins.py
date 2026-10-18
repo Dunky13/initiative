@@ -251,7 +251,8 @@ async def index_installs(
     session: AsyncSession, guild_id: int, listing_uids: Collection[str]
 ) -> None:
     """Record the community's installs of ``listing_uids`` in the install
-    index, once the transaction that made them has committed."""
+    index, once the transaction that made them has committed, and give their
+    assigned settings their values."""
     if not listing_uids:
         return
     for plugin in (
@@ -260,6 +261,7 @@ async def index_installs(
         )
     ).all():
         await plugin_installs.record(guild_id, plugin)
+        await guild_plugins_service.assign_settings(session, plugin, guild_id=guild_id)
 
 
 async def _missing(

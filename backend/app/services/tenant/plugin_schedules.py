@@ -75,7 +75,11 @@ from app.services.tenant.plugin_channels import (
     owns_install,
     set_connection_state,
 )
-from app.services.tenant.plugin_config import REMOVED_AT, without_tokens
+from app.services.tenant.plugin_config import (
+    REMOVED_AT,
+    install_settings,
+    without_tokens,
+)
 from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
@@ -450,6 +454,7 @@ async def _check_health(
             health,
             fields=without_tokens(stored),
             access_token=token.access_token,
+            installed=install_settings(plugin),
         )
     if state == "ok" or run.failures >= 1:
         locked = await guild_plugins_service.lock_install(session, plugin.id)

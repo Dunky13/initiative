@@ -107,6 +107,17 @@ class CommunityPluginConfigUpdate(SanitizedBaseModel):
     values: Dict[str, Dict[str, Any]] = {}
 
 
+class CommunityPluginSettingUpdate(SanitizedBaseModel):
+    """A value for one of the install's settings.
+
+    ``null`` clears a setting that is not unique. A unique one always holds a
+    value: a lowercase letter, then lowercase letters and digits, which no other
+    community on this server holds.
+    """
+
+    value: Optional[str] = None
+
+
 class CommunityPluginArtifact(SanitizedBaseModel):
     """One thing an install produced."""
 
@@ -154,6 +165,24 @@ class CommunityPluginConnectionRead(SanitizedBaseModel):
     status: Optional[str] = None
     account_label: Optional[str] = None
     blocked: bool = False
+
+
+class CommunityPluginSettingRead(SanitizedBaseModel):
+    """One setting the pinned definition declares, and what the install holds
+    for it."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    key: str
+    label: Dict[str, str] = {}
+    description: Dict[str, str] = {}
+    #: No two communities on this server hold the same value, and the values it
+    #: held before stay this community's.
+    unique: bool = False
+    value: Optional[str] = None
+    #: A unique setting's earlier values, newest first, which the plug-in still
+    #: reads.
+    aliases: List[str] = []
 
 
 class PluginPlacementRead(SanitizedBaseModel):
@@ -412,6 +441,8 @@ class CommunityPluginDetail(CommunityPluginRead):
     """
 
     connections: List[CommunityPluginConnectionRead] = []
+    #: Each setting the pinned definition declares, with its value.
+    settings: List[CommunityPluginSettingRead] = []
     #: The viewer's own answers to this plug-in's requests to act as them, one per
     #: purpose, the plug-in-wide one first. Nobody else's.
     consents: List[CommunityPluginConsentRead] = []
@@ -735,9 +766,22 @@ def serialize_guild_plugin_detail(
             plugin.definition
         )
     ]
+    held = plugin.settings or {}
+    aliases = plugin.setting_aliases or {}
     return CommunityPluginDetail(
         **base.model_dump(),
         connections=connections,
+        settings=[
+            CommunityPluginSettingRead(
+                key=setting["key"],
+                label=setting.get("label") or {},
+                description=setting.get("description") or {},
+                unique=setting.get("unique") is True,
+                value=held.get(setting["key"]),
+                aliases=list(aliases.get(setting["key"]) or []),
+            )
+            for setting in plugin_config_service.definition_settings(plugin.definition)
+        ],
         consents=[serialize_consent(row) for row in consent_rows],
         update_version=update_offer.version if update_offer is not None else None,
         pending_update=serialize_upgrade_asks(plugin, update_offer),

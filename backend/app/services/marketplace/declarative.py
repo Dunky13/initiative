@@ -20,7 +20,9 @@ makes to the plug-in's values on its item (``runAction``).
   of each connection the endpoint's ``requires`` names that this call holds
   as ``connections.<id>``, ``now``,
   for an action's call its item as ``item``, each earlier step's answer as
-  ``steps.<name>`` and, once a call is answered, ``response``. A credential
+  ``steps.<name>`` and, once a call is answered, ``response``. Every
+  expression also reads the install's ``settings`` and ``aliases``
+  (:func:`~app.services.tenant.plugin_config.install_settings`). A credential
   never enters one: it is added to the request as the plug-in's ``auth`` says.
 * **Where a request may go**: https, on one of the plug-in's ``hosts``, to a public
   address, following no redirect.
@@ -73,6 +75,7 @@ from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant.plugin_channels import PluginChannelError, load_install
 from app.services.tenant.plugin_config import (
     connection_by_id,
+    install_settings,
     installation_meets,
     without_tokens,
 )
@@ -561,6 +564,7 @@ async def run_endpoint(
     connections: Mapping[str, Mapping[str, Any]],
     credentials: Credentials,
     now: datetime,
+    installed: Mapping[str, Any],
     item: Optional[Mapping[str, Any]] = None,
     actor: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -572,9 +576,10 @@ async def run_endpoint(
     ``actor``: a request carries the connection it names, or, naming one per
     actor, the one it names for ``actor``. Expressions read a request's own
     connection as ``connection``, every connection the endpoint's
-    ``requires`` names as ``connections.<id>``, and the ``item`` an action's
-    call is made on. A passing failure raises :class:`PluginDataError` as the
-    plug-in being unavailable.
+    ``requires`` names as ``connections.<id>``, the install's ``settings`` and
+    ``aliases`` (``installed``), and the ``item`` an action's call is made on.
+    A passing failure raises :class:`PluginDataError` as the plug-in being
+    unavailable.
     """
     run = _Run(
         definition,
@@ -592,6 +597,7 @@ async def run_endpoint(
             if connection_id in connections
         },
         "now": run.now,
+        **installed,
         **({} if item is None else {"item": dict(item)}),
     }
     steps = endpoint.get("steps") or [{"name": "", "request": endpoint["request"]}]
@@ -654,6 +660,7 @@ async def after_connect(
     *,
     params: Mapping[str, str],
     access_token: str,
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> flows.AfterConnect:
     """A declarative ``after_connect``: its request or steps made with the
@@ -661,10 +668,10 @@ async def after_connect(
     refusal with the declared code when ``refuse_when`` holds over the map's
     answer.
 
-    Its expressions read the flow's ``params`` and ``now``, each earlier
-    step's answer as ``steps.<name>`` and, once a call is answered,
-    ``response``. An answer the defaults refuse, a passing failure or an
-    expression that fails raises
+    Its expressions read the flow's ``params``, ``now``, the install's
+    ``settings`` and ``aliases`` (``installed``), each earlier step's answer as
+    ``steps.<name>`` and, once a call is answered, ``response``. An answer the
+    defaults refuse, a passing failure or an expression that fails raises
     :class:`~app.services.tenant.plugin_connection_flows.HookError`, as a hook
     that fails does.
     """
@@ -674,7 +681,7 @@ async def after_connect(
         credentials={"": access_token},
         now=now or datetime.now(timezone.utc),
     )
-    base: dict[str, Any] = {"params": dict(params), "now": run.now}
+    base: dict[str, Any] = {"params": dict(params), "now": run.now, **installed}
     steps = after.get("steps") or [{"name": "", "request": after["request"]}]
     named = "steps" in after
     answers: dict[str, Any] = {}
@@ -723,13 +730,15 @@ async def health_state(
     *,
     fields: Mapping[str, Any],
     access_token: str,
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> str:
     """A connection's health check: its request made with the connection's
     credential, and the state its ``states`` read from the answer.
 
     Its expressions read the connection's non-secret ``fields`` as
-    ``connection``. An answer no row matches is ``ok`` when it is 2xx and
+    ``connection``, and the install's ``settings`` and ``aliases``
+    (``installed``). An answer no row matches is ``ok`` when it is 2xx and
     ``unavailable`` otherwise; a request that could not be made or read is
     ``unavailable``.
     """
@@ -743,6 +752,7 @@ async def health_state(
         "params": {},
         "connection": dict(fields),
         "now": run.now,
+        **installed,
     }
     try:
         answer = await run.perform(health["request"], document, "health/request")
@@ -772,6 +782,7 @@ async def action_change(
     *,
     item: Mapping[str, Any],
     held: Mapping[str, Any],
+    installed: Mapping[str, Any],
     result: Any = UNDEFINED,
     now: Optional[datetime] = None,
 ) -> Optional[dict[str, Any]]:
@@ -781,7 +792,8 @@ async def action_change(
 
     ``write`` reads ``item`` (its ``kind``, ``id`` and ``title``), ``held``
     (the install's values on it, by key), ``result`` (the endpoint's mapped
-    answer, absent when the action names no endpoint) and ``now``. A change
+    answer, absent when the action names no endpoint), the install's
+    ``settings`` and ``aliases`` (``installed``) and ``now``. A change
     names no target: its item is the action's. The rest of the contract's
     ``change`` is held where the change is made
     (``plugin_metadata.apply_changes``). An expression that fails, or an
@@ -789,7 +801,12 @@ async def action_change(
     plug-in being unavailable.
     """
     millis, at = _clock(now or datetime.now(timezone.utc))
-    document: dict[str, Any] = {"item": dict(item), "held": dict(held), "now": at}
+    document: dict[str, Any] = {
+        "item": dict(item),
+        "held": dict(held),
+        **installed,
+        "now": at,
+    }
     if result is not UNDEFINED:
         document["result"] = result
     try:
@@ -837,6 +854,7 @@ async def map_delivery(
     headers: Mapping[str, str],
     payload: Any,
     connection: Mapping[str, Any],
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> Delivered:
     """One webhook delivery, as a declarative plug-in's ``webhooks`` map it: the
@@ -846,9 +864,10 @@ async def map_delivery(
     delivery nothing matches answers none of them.
 
     The expressions read ``headers`` (names in lowercase), ``payload``, the
-    routed connection's non-secret fields as ``connection``, and ``now``. The
-    event, the changes and the state are read apart: one failing leaves the
-    others' answers, and where it failed is in ``failures``. An evaluation that
+    routed connection's non-secret fields as ``connection``, ``now``, and the
+    install's ``settings`` and ``aliases`` (``installed``). The event, the
+    changes and the state are read apart: one failing leaves the others'
+    answers, and where it failed is in ``failures``. An evaluation that
     may answer if asked again raises :class:`ExpressionError` with
     ``transient`` set.
     """
@@ -858,6 +877,7 @@ async def map_delivery(
         "payload": payload,
         "connection": dict(connection),
         "now": at,
+        **installed,
     }
     webhooks = definition.get("webhooks") or {}
     returns = {
@@ -938,10 +958,11 @@ async def run_schedule(
     :data:`UNDEFINED` for nothing.
 
     ``params`` reads ``since`` (when the schedule last succeeded in the
-    community, ISO 8601, or null), ``now`` and ``connection``, the non-secret
-    fields of the connection the read's first request names, and answers an
-    object or nothing. ``write`` reads the read's mapped answer as ``result``,
-    ``since`` and ``now``. The read is held to the envelope's time, as
+    community, ISO 8601, or null), ``now``, ``connection``, the non-secret
+    fields of the connection the read's first request names, and the install's
+    ``settings`` and ``aliases``, and answers an object or nothing. ``write``
+    reads the read's mapped answer as ``result``, ``since``, ``now``,
+    ``settings`` and ``aliases``. The read is held to the envelope's time, as
     :func:`call_endpoint`'s is.
 
     The read's expressions read each community connection its ``requires``
@@ -983,11 +1004,17 @@ async def run_schedule(
     connection = without_tokens(
         stored.get(_request_connection(steps[0]["request"], "installation") or "")
     )
+    installed = install_settings(plugin)
     try:
         params = (
             await run.value(
                 schedule["params"],
-                {"since": since, "now": run.now, "connection": connection},
+                {
+                    "since": since,
+                    "now": run.now,
+                    "connection": connection,
+                    **installed,
+                },
                 "params",
             )
             if "params" in schedule
@@ -1011,13 +1038,14 @@ async def run_schedule(
                 connections={**fields, **required},
                 credentials=tokens,
                 now=now,
+                installed=installed,
                 actor="installation",
             )
         if set(result) == {"unavailable"}:
             raise PluginDataError(result["unavailable"], _STATE_REFUSED)
         return await run.value(
             schedule["write"],
-            {"result": result, "since": since, "now": run.now},
+            {"result": result, "since": since, "now": run.now, **installed},
             "write",
         )
     except TimeoutError as exc:
@@ -1225,6 +1253,7 @@ async def call_endpoint(
                 connections={**used, **fields},
                 credentials=tokens,
                 now=datetime.now(timezone.utc),
+                installed=install_settings(plugin),
                 item=item,
                 actor=actor,
             )
