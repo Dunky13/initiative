@@ -472,6 +472,50 @@ class TestConnections:
             )
 
     @pytest.mark.parametrize(
+        ("body", "problem"),
+        [
+            ({"permissions": {"issues": "write"}, "repositories": ["{owner}"]}, None),
+            ('{"permissions": connection.owner = "acme" ? {"members": "read"}}', None),
+            ({"repositories": ["{repo}"]}, "not a field of this connection"),
+            ({"app": "{vendor.nope}"}, "vendor block does not declare"),
+            ('{"permissions": {"issues": "write"}', "does not parse"),
+            (["{owner}"], "must be an object"),
+        ],
+        ids=[
+            "an object",
+            "an expression",
+            "an undeclared field",
+            "an undeclared vendor value",
+            "an expression that does not parse",
+            "a list",
+        ],
+    )
+    def test_a_token_s_exchange_body_is_an_object_or_an_expression(self, body, problem):
+        token = {
+            "type": "jwt_bearer",
+            "exchange_url": "https://vendor.test/{owner}/token",
+            "exchange_body": body,
+            "iss": "{vendor.client_id}",
+            "key": "{vendor.client_secret}",
+        }
+        connections = [
+            {
+                "id": "workspace",
+                "scope": "static",
+                "label": _label(),
+                "flow": FLOW,
+                "fields": [_managed()],
+                "token": token,
+            }
+        ]
+        if problem is not None:
+            with pytest.raises(ListingDefinitionError, match=problem):
+                _normalize(vendor=VENDOR, connections=connections)
+            return
+        [connection] = _normalize(vendor=VENDOR, connections=connections)["connections"]
+        assert connection["token"]["exchange_body"] == body
+
+    @pytest.mark.parametrize(
         ("verify", "route", "problem"),
         [
             ({"secret": "{vendor.nope}"}, {}, "verify.secret"),

@@ -34,6 +34,7 @@ from app.core.security import SESSION_COOKIE_NAME
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
 from app.core.messages import (
     AccessGrantMessages,
+    GuildPluginMessages,
     PluginChannelMessages,
     PluginDataMessages,
 )
@@ -178,6 +179,18 @@ WORKSPACE = {
     },
 }
 
+
+def _minting(exchange_body: dict | str) -> dict:
+    """:data:`DEFINITION` with the workspace's token minted with
+    ``exchange_body``."""
+    workspace = {
+        **WORKSPACE,
+        "fields": [*WORKSPACE["fields"], _field("owner_type")],
+        "token": {**WORKSPACE["token"], "exchange_body": exchange_body},
+    }
+    return {**DEFINITION, "connections": [ACCOUNT, HOOKED, workspace]}
+
+
 #: A community connection whose tokens Initiative holds and refreshes.
 ORG = {
     "id": "org",
@@ -247,12 +260,14 @@ async def registration(session: AsyncSession):
     )
 
 
-async def _install(session: AsyncSession, actor, **overrides) -> GuildPlugin:
+async def _install(
+    session: AsyncSession, actor, definition: dict = DEFINITION, **overrides
+) -> GuildPlugin:
     return await create_guild_plugin(
         session,
         actor.guild,
         actor.user,
-        definition=DEFINITION,
+        definition=definition,
         listing_uid=LISTING_UID,
         **overrides,
     )
@@ -1017,14 +1032,132 @@ class TestTokens:
         assert first.status_code == 200, first.text
         assert first.json()["access_token"].startswith("ghs_installation_")
         assert second.json() == first.json()
-        assert len(vendor.exchanges) == 1
+        [(authorization, body)] = vendor.exchanges
         claims = jwt.decode(
-            vendor.exchanges[0].removeprefix("Bearer "),
+            authorization.removeprefix("Bearer "),
             PUBLIC_KEY_PEM,
             algorithms=["RS256"],
         )
         assert claims["iss"] == "4242"
         assert claims["exp"] - claims["iat"] == 540
+        assert body is None
+
+    async def test_a_minted_token_asks_for_what_its_body_names(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An ``exchange_body`` object is posted with the JWT, each name in its
+        strings filled from the vendor values and the connection's fields; a
+        name with no value sends nothing."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting(
+                {
+                    "permissions": {"issues": "write"},
+                    "repositories": ["{owner}"],
+                    "app": "{vendor.app_slug}",
+                    "limit": 5,
+                }
+            ),
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        headers = _install_headers(a.guild, plugin)
+
+        response = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert [body for _, body in vendor.exchanges] == [
+            {
+                "permissions": {"issues": "write"},
+                "repositories": ["acme"],
+                "app": "initiative-test",
+                "limit": 5,
+            }
+        ]
+
+        plugin = await _reload(session, a.guild.id, plugin.id)
+        plugin.config = {"workspace": {"installation_id": "42"}}
+        session.add(plugin)
+        await session.commit()
+        unnamed = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert unnamed.status_code == 409
+        assert (
+            unnamed.json()["detail"]
+            == GuildPluginMessages.CONNECTION_VENDOR_NOT_CONFIGURED
+        )
+        assert len(vendor.exchanges) == 1
+
+    async def test_a_minted_token_asks_for_what_its_expression_answers(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An ``exchange_body`` expression answers the body from the
+        connection's fields, and a token is minted again when they change."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting(
+                '{"permissions": $merge([{"issues": "write"},'
+                ' connection.owner_type = "Organization" ? {"members": "read"} : {}])}'
+            ),
+            config={
+                "workspace": {
+                    "owner": "acme",
+                    "installation_id": "42",
+                    "owner_type": "Organization",
+                }
+            },
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        headers = _install_headers(a.guild, plugin)
+
+        first = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+        plugin = await _reload(session, a.guild.id, plugin.id)
+        plugin.config = {
+            "workspace": {"owner": "ada", "installation_id": "42", "owner_type": "User"}
+        }
+        session.add(plugin)
+        await session.commit()
+        second = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert first.status_code == second.status_code == 200, second.text
+        assert second.json() != first.json()
+        assert [body for _, body in vendor.exchanges] == [
+            {"permissions": {"issues": "write", "members": "read"}},
+            {"permissions": {"issues": "write"}},
+        ]
+
+    async def test_an_expression_answering_no_object_mints_nothing(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting("connection.owner"),
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+
+        response = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"),
+            headers=_install_headers(a.guild, plugin),
+        )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == PluginChannelMessages.TOKEN_UNAVAILABLE
+        assert vendor.exchanges == []
 
     async def test_a_ref_of_another_install_is_not_found(
         self, client: AsyncClient, acting_user, session, vendor, registration
