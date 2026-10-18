@@ -77,6 +77,8 @@ export const messageKeys = {
   // Keyed on the conversations it counts, so a new one is a new question
   // rather than a stale answer waiting for something to invalidate it.
   unread: (conversationIds: string[]) => ["dm", "unread", conversationIds.join(",")] as const,
+  /** When each conversation's newest message on this device was written. */
+  latest: (conversationIds: string[]) => ["dm", "latest", conversationIds.join(",")] as const,
   /** A new device of this account's waiting to be confirmed, read out of the local store. */
   ownDevice: ["dm", "own-device"] as const,
   /** This device's own outstanding ask for its history. */
@@ -145,6 +147,7 @@ export function useSendMessage(conversationId: string, memberIds: number[]) {
       void queryClient.invalidateQueries({
         queryKey: messageKeys.thread(conversationId),
       });
+      void queryClient.invalidateQueries({ queryKey: ["dm", "latest"] });
     },
     // Settled, not success: reading the directory happens before the send, so
     // a send that fails afterwards can still have found something to say.
@@ -237,6 +240,7 @@ export function useCollectMessages(enabled: boolean) {
       if (touched.length > 0) {
         void queryClient.invalidateQueries({ queryKey: messageKeys.conversations });
         void queryClient.invalidateQueries({ queryKey: ["dm", "unread"] });
+        void queryClient.invalidateQueries({ queryKey: ["dm", "latest"] });
       }
       return touched;
     },
@@ -435,6 +439,27 @@ export function useMessagesWaiting(): number {
  * deletes a message once it has been collected and could not answer this even
  * if it were asked.
  */
+/**
+ * When the newest message in each conversation was written, on this device, by
+ * the sender's clock: what the conversation list is ordered by. Absent for a
+ * thread this device holds nothing of.
+ */
+export function useLatestMessages(conversationIds: string[]) {
+  return useQuery({
+    queryKey: messageKeys.latest(conversationIds),
+    queryFn: async () => {
+      const latest = new Map<string, string>();
+      for (const id of conversationIds) {
+        const log = await messageLog.get(id);
+        if (log.length > 0) latest.set(id, log[log.length - 1].at);
+      }
+      return latest;
+    },
+    enabled: conversationIds.length > 0,
+    staleTime: 0,
+  });
+}
+
 export function useUnreadMessages(conversationIds: string[]) {
   return useQuery({
     queryKey: messageKeys.unread(conversationIds),

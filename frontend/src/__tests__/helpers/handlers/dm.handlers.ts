@@ -35,12 +35,10 @@ export const dmHandlers = [
   // The same two answers for a page of people at once, which is what a list
   // asks rather than one question per row.
   http.post("/api/v1/me/dm-permissions", () => HttpResponse.json({ permissions: {} })),
-  // The contact rosters: the walk of the reader's communities, and the starred
-  // list that is not a slice of it.
+  // The contact rosters: the walk of the reader's communities.
   http.get("/api/v1/me/contacts", () =>
     HttpResponse.json({ sections: [], page: 1, page_size: 20 })
   ),
-  http.get("/api/v1/me/contacts/favorites", () => HttpResponse.json({ items: [], total: 0 })),
   // Read by the sidebar's unread badge, so every suite that draws the sidebar
   // asks it — including ones that are not about messages at all.
   http.get("/api/v1/me/dm/conversations", () => HttpResponse.json({ conversations: [] })),

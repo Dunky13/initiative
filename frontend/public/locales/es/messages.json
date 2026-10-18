@@ -17,12 +17,6 @@
     "wantsToConnect": "Quieren conectar.",
     "youAskedToConnect": "Pediste conectar. Nada cambia hasta que acepten."
   },
-  "groups": {
-    "unread": "Sin leer",
-    "favorites": "Favoritos",
-    "connections": "Conexiones",
-    "messages": "Mensajes"
-  },
   "search": {
     "placeholder": "Buscar",
     "label": "Buscar conversaciones",
@@ -40,7 +34,6 @@
     "noCommunities": "Nadie que mostrar. Todavía no compartes comunidad con nadie.",
     "unreachable": "No disponible",
     "showMore": "Mostrar más",
-    "favorites": "Favoritos",
     "addToGroup": "Añadir a {{name}} a un grupo",
     "removeFromGroup": "Quitar a {{name}}",
     "groupHint": "A todas las personas aquí se les preguntará antes de unirse.",
@@ -193,7 +186,6 @@
     "pin": "Chincheta"
   },
   "groupThreads": {
-    "heading": "Conversaciones de grupo",
     "invited": "Invitación"
   },
   "invitation": {

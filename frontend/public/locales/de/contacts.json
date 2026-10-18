@@ -1,6 +1,4 @@
 {
-  "favorite": "{{name}} zu Favoriten hinzufügen",
-  "unfavorite": "{{name}} aus Favoriten entfernen",
   "unreachable": {
     "age": {
       "title": "Direktnachrichten sind für dieses Konto deaktiviert"
@@ -26,8 +24,6 @@
     "removeConnectionBody": "Ihr seid dann nicht mehr verbunden. Wenn euch sonst nichts erlaubt, einander zu schreiben – eine gemeinsame Community oder dass ihr beide für Nachrichten offen seid –, endet auch das.",
     "message": "Nachricht",
     "viewProfile": "Profil ansehen",
-    "favorite": "Zu Favoriten hinzufügen",
-    "unfavorite": "Aus Favoriten entfernen",
     "copyHandle": "Handle kopieren",
     "handleCopied": "Handle kopiert."
   }

@@ -990,7 +990,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
     from app.models.platform.dm_device import DmDevice
     from app.models.platform.email_outbox import EmailOutboxItem
     from app.models.platform.notification import Notification
-    from app.models.platform.profile_favorite import ProfileFavorite
     from app.models.platform.user_birthdate import UserBirthdate
     from app.models.platform.user_cookie_consent import UserCookieConsent
     from app.models.platform.user_decoration import UserDecoration
@@ -1036,8 +1035,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
             DmConversationMember(conversation_id=conversation.id, user_id=user.id),
             DmConversationMember(conversation_id=conversation.id, user_id=other.id),
             UserDmGuildOptout(user_id=user.id, guild_id=guild.id),
-            ProfileFavorite(user_id=user.id, favorite_user_id=other.id),
-            ProfileFavorite(user_id=other.id, favorite_user_id=user.id),
             UserIgnore(user_id=user.id, ignored_user_id=other.id),
             UserIgnore(user_id=other.id, ignored_user_id=user.id),
             ContactGrant(
@@ -1069,8 +1066,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
         (DmConversationMember, DmConversationMember.user_id),
         (UserDmSettings, UserDmSettings.user_id),
         (UserDmGuildOptout, UserDmGuildOptout.user_id),
-        (ProfileFavorite, ProfileFavorite.user_id),
-        (ProfileFavorite, ProfileFavorite.favorite_user_id),
         (UserIgnore, UserIgnore.user_id),
         (UserIgnore, UserIgnore.ignored_user_id),
         (ContactGrant, ContactGrant.user_id_low),

@@ -5414,17 +5414,6 @@ export interface FCMConfigResponse {
 }
 
 /**
- * The starred section.
- *
- * Not part of the guild aggregate: a favorite may be someone the reader
- * shares no guild with, so it cannot come from a walk of their guilds.
- */
-export interface FavoriteContactsResponse {
-  items: ContactRead[];
-  total_count: number;
-}
-
-/**
  * What an entry has to be, to be in a view.
  */
 export type FeedView = (typeof FeedView)[keyof typeof FeedView];
@@ -13649,13 +13638,6 @@ export type ListContactSectionsParams = {
    * @maximum 100
    */
   page_size?: number;
-};
-
-export type ListFavoriteContactsParams = {
-  /**
-   * Narrows every section. Matches the handle, plus the real name in a guild that shows names; type a whole handle (`foobar#1234`) to pin one person.
-   */
-  search?: string | null;
 };
 
 export type ListIgnoredAccountsParams = {

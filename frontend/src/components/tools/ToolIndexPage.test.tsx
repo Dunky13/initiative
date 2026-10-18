@@ -72,7 +72,6 @@ const CARD_FIELDS: Partial<Record<Tool, Record<string, unknown>>> = {
     icon: null,
     is_template: false,
     pinned_at: null,
-    is_favorited: false,
     task_summary: { total: 0, completed: 0 },
   },
   queue: { current_round: 1, is_active: true },

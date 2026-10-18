@@ -9,7 +9,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.app_setting import AppSetting
 from app.models.platform.guild import Guild, CommunityRole
-from app.models.platform.profile_favorite import ProfileFavorite
 from app.models.platform.user import User, UserStatus
 from app.models.platform.user_dm_settings import DmPolicy
 from app.services.platform.app_settings import GLOBAL_SETTINGS_ID
@@ -17,11 +16,9 @@ from app.testing.factories import (
     create_guild,
     create_guild_membership,
     create_user,
-    get_auth_headers,
 )
 
 SECTIONS = "/api/v1/me/contacts"
-FAVORITES = "/api/v1/me/contacts/favorites"
 
 
 @pytest.fixture(autouse=True)
@@ -85,16 +82,12 @@ async def _rail(session: AsyncSession, user: User, *guilds: Guild) -> None:
 async def test_an_account_on_its_own_has_nothing_to_list(
     client: AsyncClient, acting_user
 ):
-    """No communities and nobody starred: both lists answer, both empty."""
+    """No communities: the list answers, empty."""
     a = await acting_user()
 
     sections = await client.get(SECTIONS, headers=a.headers)
     assert sections.status_code == 200
     assert sections.json()["sections"] == []
-
-    favorites = await client.get(FAVORITES, headers=a.headers)
-    assert favorites.status_code == 200
-    assert favorites.json() == {"items": [], "total_count": 0}
 
 
 async def test_sections_follow_rail_order(
@@ -205,25 +198,17 @@ async def test_guild_ids_narrows_to_one_section(
 # --- how a person is drawn ---------------------------------------------------
 
 
-async def test_both_ways_of_listing_someone_draw_them_the_same(
+async def test_a_row_draws_somebody_as_every_surface_does(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    """A row draws somebody the way every other surface does — and favorites
-    come from the profile view rather than the roster walk, so they are their
-    own path to the same answer."""
+    """A row draws somebody the way every other surface does."""
     a = await acting_user(guild_role=CommunityRole.member)
-    other = await _join(
+    await _join(
         session, a.guild, profile_decorations={"frame": "core.gold", "trophies": []}
     )
-    session.add(ProfileFavorite(user_id=a.user.id, favorite_user_id=other.id))
-    await session.commit()
-
     roster = await client.get(SECTIONS, headers=a.headers)
     row = _section(roster.json(), a.guild.id)["items"][0]
     assert row["profile_decorations"]["frame"] == "core.gold"
-
-    starred = await client.get(FAVORITES, headers=a.headers)
-    assert starred.json()["items"][0]["profile_decorations"]["frame"] == "core.gold"
 
 
 # --- names, per guild -------------------------------------------------------
@@ -354,154 +339,3 @@ async def test_search_hides_sections_with_no_match(
 
     response = await client.get(f"{SECTIONS}?search=findme", headers=a.headers)
     assert [s["community_id"] for s in response.json()["sections"]] == [hit.id]
-
-
-# --- favorites --------------------------------------------------------------
-
-
-async def test_favorite_roundtrip_and_idempotence(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    a = await acting_user()
-    other = await create_user(session)
-
-    assert (
-        await client.put(f"{FAVORITES}/{other.id}", headers=a.headers)
-    ).status_code == 204
-    # Starring twice is a no-op, not a conflict.
-    assert (
-        await client.put(f"{FAVORITES}/{other.id}", headers=a.headers)
-    ).status_code == 204
-
-    listed = (await client.get(FAVORITES, headers=a.headers)).json()
-    assert [item["id"] for item in listed["items"]] == [other.id]
-    assert listed["total_count"] == 1
-
-    assert (
-        await client.delete(f"{FAVORITES}/{other.id}", headers=a.headers)
-    ).status_code == 204
-    assert (await client.get(FAVORITES, headers=a.headers)).json()["items"] == []
-    # Unstarring what is not starred is a no-op too.
-    assert (
-        await client.delete(f"{FAVORITES}/{other.id}", headers=a.headers)
-    ).status_code == 204
-
-
-async def test_favorite_survives_the_row_appearing_underneath_it(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """Two stars of the same person arriving together both find nothing.
-
-    The pair is the primary key and the insert defers to it, so the second one
-    settles as a no-op rather than as a server error.
-    """
-    a = await acting_user()
-    other = await create_user(session)
-
-    session.add(ProfileFavorite(user_id=a.user.id, favorite_user_id=other.id))
-    await session.commit()
-
-    response = await client.put(f"{FAVORITES}/{other.id}", headers=a.headers)
-    assert response.status_code == 204
-
-    rows = (
-        await session.exec(
-            select(ProfileFavorite).where(ProfileFavorite.user_id == a.user.id)
-        )
-    ).all()
-    assert len(rows) == 1
-
-
-async def test_favorite_someone_sharing_no_guild(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """Any profile may be starred — the list is not a subset of the rosters."""
-    a = await acting_user()
-    stranger = await create_user(session)
-
-    assert (
-        await client.put(f"{FAVORITES}/{stranger.id}", headers=a.headers)
-    ).status_code == 204
-    listed = (await client.get(FAVORITES, headers=a.headers)).json()
-    assert [item["id"] for item in listed["items"]] == [stranger.id]
-    # ...and they are in no section, because the caller is in no guild with them.
-    assert (await client.get(SECTIONS, headers=a.headers)).json()["sections"] == []
-
-
-@pytest.mark.parametrize(
-    "target,expected,detail",
-    [
-        pytest.param("self", 400, "CONTACT_CANNOT_FAVORITE_SELF", id="themselves"),
-        pytest.param("missing", 404, "USER_NOT_FOUND", id="nobody"),
-    ],
-)
-async def test_who_cannot_be_starred(
-    client: AsyncClient, acting_user, target, expected, detail
-):
-    a = await acting_user()
-    user_id = a.user.id if target == "self" else 98765432
-
-    response = await client.put(f"{FAVORITES}/{user_id}", headers=a.headers)
-
-    assert response.status_code == expected
-    assert response.json()["detail"] == detail
-
-
-async def test_suspended_favorite_drops_out_and_returns(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    a = await acting_user()
-    other = await create_user(session)
-    await client.put(f"{FAVORITES}/{other.id}", headers=a.headers)
-
-    other.status = UserStatus.suspended
-    session.add(other)
-    await session.commit()
-    assert (await client.get(FAVORITES, headers=a.headers)).json()["items"] == []
-
-    other.status = UserStatus.active
-    session.add(other)
-    await session.commit()
-    listed = (await client.get(FAVORITES, headers=a.headers)).json()
-    assert [item["id"] for item in listed["items"]] == [other.id]
-
-
-async def test_favorites_search_matches_the_handle(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """A profile carries no name, so the handle is all there is to match."""
-    a = await acting_user()
-    hit = await create_user(session, username="findable")
-    miss = await create_user(session, username="otherperson")
-    await client.put(f"{FAVORITES}/{hit.id}", headers=a.headers)
-    await client.put(f"{FAVORITES}/{miss.id}", headers=a.headers)
-
-    by_handle = (
-        await client.get(f"{FAVORITES}?search=findable", headers=a.headers)
-    ).json()
-    assert [item["id"] for item in by_handle["items"]] == [hit.id]
-
-
-async def test_a_favorites_list_is_private(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """One starred person and three other readers — the person starred, a
-    bystander, and the admin of a guild the starrer is in. It is the starrer's
-    list, and a guild admin runs the guild rather than anyone's contacts.
-    """
-    admin = await acting_user(guild_role=CommunityRole.admin)
-    starrer = await acting_user(guild_role=CommunityRole.member, guild=admin.guild)
-    onlooker = await acting_user()
-    subject = await create_user(session)
-
-    await client.put(f"{FAVORITES}/{subject.id}", headers=starrer.headers)
-
-    starred = (await client.get(FAVORITES, headers=starrer.headers)).json()
-    assert [item["id"] for item in starred["items"]] == [subject.id]
-    for reader in (admin, onlooker):
-        assert (await client.get(FAVORITES, headers=reader.headers)).json()[
-            "items"
-        ] == []
-    assert (await client.get(FAVORITES, headers=get_auth_headers(subject))).json()[
-        "items"
-    ] == []

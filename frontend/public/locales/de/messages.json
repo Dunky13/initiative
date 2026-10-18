@@ -17,12 +17,6 @@
     "wantsToConnect": "Sie möchten sich verbinden.",
     "youAskedToConnect": "Du hast um eine Verbindung gebeten. Es ändert sich nichts, bis sie annehmen."
   },
-  "groups": {
-    "unread": "Ungelesen",
-    "favorites": "Favoriten",
-    "connections": "Verbindungen",
-    "messages": "Nachrichten"
-  },
   "search": {
     "placeholder": "Suchen",
     "label": "Unterhaltungen durchsuchen",
@@ -40,7 +34,6 @@
     "noCommunities": "Niemand zum Anzeigen. Du teilst noch keine Community mit jemandem.",
     "unreachable": "Nicht erreichbar",
     "showMore": "Mehr anzeigen",
-    "favorites": "Favoriten",
     "addToGroup": "{{name}} zu einer Gruppe hinzufügen",
     "removeFromGroup": "{{name}} entfernen",
     "groupHint": "Alle hier werden gefragt, bevor sie beitreten.",
@@ -193,7 +186,6 @@
     "pin": "Stecknadel"
   },
   "groupThreads": {
-    "heading": "Gruppenunterhaltungen",
     "invited": "Eingeladen"
   },
   "invitation": {

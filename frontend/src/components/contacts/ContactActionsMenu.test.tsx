@@ -22,13 +22,6 @@ const mocks = vi.hoisted(() => ({
   removeConnection: vi.fn(),
   ignore: vi.fn(),
   stopIgnoring: vi.fn(),
-  favorites: vi.fn(),
-  setFavorite: vi.fn(),
-}));
-
-vi.mock("@/hooks/useContacts", () => ({
-  useFavoriteContacts: () => mocks.favorites(),
-  useToggleFavoriteContact: () => mocks.setFavorite,
 }));
 
 vi.mock("@/hooks/useDirectMessages", () => ({
@@ -58,7 +51,6 @@ beforeEach(() => {
   mocks.permission.mockReturnValue({ data: { permission: "denied", may_connect: true } });
   mocks.connections.mockReturnValue({ data: { accepted: [], incoming: [], outgoing: [] } });
   mocks.ignored.mockReturnValue({ data: { items: [], total: 0 } });
-  mocks.favorites.mockReturnValue({ data: { items: [] } });
 });
 
 describe("ContactActionsMenu", () => {
@@ -103,29 +95,20 @@ describe("ContactActionsMenu", () => {
     mocks.permission.mockReturnValue({ data: { permission: "open", may_connect: true } });
     await open();
 
-    for (const name of [
-      /view profile/i,
-      /^message$/i,
-      /^connect$/i,
-      /copy handle/i,
-      /favorites/i,
-      /^ignore$/i,
-    ]) {
+    for (const name of [/view profile/i, /^message$/i, /^connect$/i, /copy handle/i, /^ignore$/i]) {
       expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
     }
   });
 
   it("leaves out only what the surface around it already offers", async () => {
-    // The buttons and this menu sit together on a profile and on a roster, and
-    // a roster row carries its own star. Offering either in both places is the
-    // same action twice, a click apart.
+    // The buttons and this menu sit together on a profile and on a roster.
+    // Offering either in both places is the same action twice, a click apart.
     mocks.permission.mockReturnValue({ data: { permission: "open", may_connect: true } });
-    await open({ omit: ["profile", "message", "connect", "ask", "favorite"] });
+    await open({ omit: ["profile", "message", "connect", "ask"] });
 
     expect(screen.queryByRole("menuitem", { name: /view profile/i })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Message" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /^connect$/i })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /favorites/i })).toBeNull();
     // What is only here stays here.
     expect(screen.getByRole("menuitem", { name: /^ignore$/i })).toBeInTheDocument();
   });
@@ -139,20 +122,6 @@ describe("ContactActionsMenu", () => {
 
     // Not "ada": a bare name is refused by every field that takes one.
     expect(writeText).toHaveBeenCalledWith("ada#1234");
-  });
-
-  it("stars somebody from the menu, and says so once they are starred", async () => {
-    await open();
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Add to favorites" }));
-
-    expect(mocks.setFavorite).toHaveBeenCalledWith(7, false);
-  });
-
-  it("offers to unstar somebody already on the list", async () => {
-    mocks.favorites.mockReturnValue({ data: { items: [{ id: 7 }] } });
-    await open();
-
-    expect(await screen.findByRole("menuitem", { name: "Remove from favorites" })).toBeVisible();
   });
 
   it("offers nothing to open where the channel is not", async () => {

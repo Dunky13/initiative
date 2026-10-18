@@ -15,8 +15,6 @@ import type { ContactRead } from "@/api/generated/initiativeAPI.schemas";
 
 const mocks = vi.hoisted(() => ({
   sections: vi.fn(),
-  favorites: vi.fn(),
-  setFavorite: vi.fn(),
   more: vi.fn(),
   permissions: vi.fn(),
   requestConnection: vi.fn(),
@@ -26,8 +24,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useContacts", () => ({
   useContactSections: (search: string) => mocks.sections(search),
-  useFavoriteContacts: (search: string) => mocks.favorites(search),
-  useToggleFavoriteContact: () => mocks.setFavorite,
   useMoreCommunityContacts: (communityId: number, search: string, enabled: boolean) =>
     mocks.more(communityId, search, enabled),
 }));
@@ -86,7 +82,6 @@ beforeEach(() => {
     data: { sections: [section([person(1, "ada")])], page: 1, page_size: 20 },
     isLoading: false,
   });
-  mocks.favorites.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false });
   mocks.more.mockReturnValue({
     data: undefined,
     isSuccess: false,
@@ -109,35 +104,11 @@ describe("NewConversationDialog", () => {
     expect(screen.getByText("Ask to message")).toBeVisible();
   });
 
-  it("offers a favourite no roster of yours would ever list", async () => {
-    // Starring is the one list that is not a slice of anything: leave the
-    // community you met in and no roster holds them, so without this they are
-    // reachable only by typing a handle from memory.
-    mocks.sections.mockReturnValue({
-      data: { sections: [], page: 1, page_size: 20 },
-      isLoading: false,
-    });
-    mocks.favorites.mockReturnValue({
-      data: { items: [person(9, "hedy")], total: 1 },
-      isLoading: false,
-    });
-    await open();
-
-    expect(await screen.findByRole("heading", { name: /Favorites/ })).toBeVisible();
-    expect(screen.getByText("hedy")).toBeVisible();
-    expect(screen.queryByText(/Nobody to show/)).toBeNull();
-  });
-
   it("keeps acting on somebody possible when the way in is shut", async () => {
-    // Refused *and* starred *and* in none of your communities: this dialog is
-    // the only place they appear at all. Losing the row would lose unstarring
-    // them, looking at them, and ignoring them with it.
+    // Refused: the row is no way in, and looking at them or ignoring them
+    // still has to be possible.
     mocks.sections.mockReturnValue({
-      data: { sections: [], page: 1, page_size: 20 },
-      isLoading: false,
-    });
-    mocks.favorites.mockReturnValue({
-      data: { items: [person(9, "hedy")], total: 1 },
+      data: { sections: [section([person(9, "hedy")])], page: 1, page_size: 20 },
       isLoading: false,
     });
     mocks.permissions.mockReturnValue({
@@ -146,12 +117,7 @@ describe("NewConversationDialog", () => {
     await open();
 
     expect(screen.getByText("hedy").closest("button")).toBeDisabled();
-    // The star and the menu sit outside that button, and outside its disabling.
-    const unstar = screen.getByRole("button", { name: /Remove .* from favorites/i });
-    expect(unstar).toBeEnabled();
-    await userEvent.click(unstar);
-    expect(mocks.setFavorite).toHaveBeenCalledWith(9, true);
-
+    // The menu sits outside that button, and outside its disabling.
     expect(screen.getByRole("button", { name: /Actions for hedy/i })).toBeEnabled();
   });
 
@@ -164,7 +130,6 @@ describe("NewConversationDialog", () => {
   });
 
   it("offers no way in for somebody the server refuses, and no reason why", async () => {
-    mocks.favorites.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false });
     mocks.more.mockReturnValue({
       data: undefined,
       isSuccess: false,
@@ -225,7 +190,6 @@ describe("NewConversationDialog", () => {
       },
       isLoading: false,
     });
-    mocks.favorites.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false });
     mocks.more.mockReturnValue({
       data: { pages: [{ sections: [{ items: [person(2, "grace")] }] }] },
       isSuccess: true,

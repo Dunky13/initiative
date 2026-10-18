@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **My Messages lists conversations newest first.** One list, ordered by the latest message on your device, with a dot on anything unread. The Favorites and Connections sections are gone, and so is starring people: search finds anybody, from the list or with **+**.
 - **Ready-made dashboards use the new charts.** Team activity shows workload: open work by person split by priority, and what each person has due week by week, with overdue work in the current week. Delivery timeline adds a **Finished so far** burn-up, Project health splits open work by person by project, and Event planner adds **Coming up, week by week**, stacked by calendar. Dashboards installed from them offer the update.
 - **The iPhone and iPad app needs iOS 16 or later.**
 - **A plug-in your server provides follows your community's choices.** It is still installed in every community and placed in each initiative it has. From then on the community's admins decide where it appears and what it may do: it no longer adds itself to initiatives created later, and its permissions are not reset on restart.
@@ -54,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Only moderators remove other people's comments.** Project managers can no longer delete them, and `DELETE /comments/{id}` is the author's alone.
   - **Invite links are shown once**, when made. Copy it then; links handed out before still work.
   - `GET /projects/{id}/activity` is removed. Use `GET /activity/`, which narrows to a project.
+  - **Starred people are gone (API).** `GET /me/contacts/favorites` and `PUT`/`DELETE /me/contacts/favorites/{user_id}` are removed, with the `CONTACT_CANNOT_FAVORITE_SELF` error.
   - **Opens, bookmarks and follows are one API (`/personal-items`).** `PUT` or `DELETE /c/{id}/personal-items/{view|bookmark|follow}/{kind}/{id}` records or closes an open, bookmarks or removes a bookmark, follows or unfollows; `GET /me/personal-items?mark=view|bookmark` lists the tabs or the bookmarks across communities, and `GET /c/{id}/personal-items/{kind}/{id}` says what you keep about one item. `GET /recents/`, `/c/{id}/recents/…`, `GET /projects/favorites` and `POST`/`DELETE /projects/{id}/favorite` are removed, and so is the MCP `favorite_projects` tool. Projects no longer carry `is_favorited` or `last_viewed_at`.
   - `AccessGrantRead.user_email` and `approved_by_email` are replaced by `user` and `approved_by`, which name people by handle.
   - `POST /api/v1/me/tickets` and `POST /api/v1/me/tickets/{task_id}/replies` take `multipart/form-data`: the ticket as JSON in `payload`, or the answer in `body`, beside any `files`.

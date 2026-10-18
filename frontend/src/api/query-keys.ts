@@ -266,7 +266,7 @@ const contactGrants = (): Spec => ({
 /** The accounts this person has chosen not to hear from. */
 const ignoredAccounts = (): Spec => ({ personalPrefix: ["/api/v1/me/ignored"] });
 
-/** Everyone the reader may reach: the community sections and the starred list. */
+/** Everyone the reader may reach: the community sections. */
 const contacts = (): Spec => ({ personalPrefix: ["/api/v1/me/contacts"] });
 
 /**

@@ -626,7 +626,6 @@
   "OWNER_MUST_BE_COMMUNITY_ADMIN": "Le nouveau propriétaire doit être administrateur de cette communauté.",
   "OWNER_ALREADY_HOLDS_CONTENT": "Cette personne possède déjà ce contenu.",
   "OWNER_PLUGIN_NOT_ELIGIBLE": "Un plug-in ne peut posséder ce contenu que s'il est activé, placé dans l'initiative du contenu et autorisé à modifier cet outil.",
-  "CONTACT_CANNOT_FAVORITE_SELF": "Vous ne pouvez pas vous ajouter à vos propres contacts.",
   "ICAL_PARSE_FAILED": "Ce n'est pas un fichier de calendrier que nous pouvons lire.",
   "RECURRENCE_INVALID": "Nous ne pouvons pas utiliser cette répétition.",
   "CALENDAR_EVENT_OCCURRENCE_REQUIRED": "Choisissez à quelle occurrence de l'événement récurrent cela s'applique.",

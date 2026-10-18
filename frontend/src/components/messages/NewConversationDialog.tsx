@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { MessageSquarePlus, Plus, Star, X } from "lucide-react";
+import { MessageSquarePlus, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -9,7 +9,6 @@ import type {
   DirectMessagePermissionRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { ContactActionsMenu } from "@/components/contacts/ContactActionsMenu";
-import { FavoriteToggle } from "@/components/contacts/FavoriteToggle";
 import { UserHandle } from "@/components/UserHandle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -24,12 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
-import {
-  useContactSections,
-  useFavoriteContacts,
-  useMoreCommunityContacts,
-  useToggleFavoriteContact,
-} from "@/hooks/useContacts";
+import { useContactSections, useMoreCommunityContacts } from "@/hooks/useContacts";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { parseHandle, useDmPermissions, useRequestConnection } from "@/hooks/useDirectMessages";
 import { useRosterCheck, useStartGroup } from "@/hooks/useMyMessages";
@@ -48,7 +42,7 @@ const SEARCH_SETTLES_MS = 250;
  * The conversation list can only offer people it already has — the ones who
  * agreed to hear from you. Everybody else is reached from here, and there are
  * exactly two ways to name them, which is why they share one field. Typing
- * narrows the people you starred and the communities you are in. Typing a
+ * narrows the communities you are in. Typing a
  * whole handle, number included, also offers a connection: that is the one
  * shape that reaches an account no roster of yours will ever list.
  *
@@ -165,18 +159,8 @@ export const NewConversationDialog = () => {
     );
   };
 
-  // Whether there is anybody at all to offer -- favourites included, since a
-  // reader who shares no community with anyone may still have starred people.
-  const starred = useFavoriteContacts(settled, { enabled: open });
-  const starredPeople = useMemo(() => starred.data?.items ?? [], [starred.data]);
-  const starredIds = useMemo(
-    () => new Set(starredPeople.map((person) => person.id)),
-    [starredPeople]
-  );
-  const anybody = groups.some((group) => group.items.length > 0) || starredPeople.length > 0;
-
-  const setFavorite = useToggleFavoriteContact();
-  const toggleFavorite = (person: ContactRead) => setFavorite(person.id, starredIds.has(person.id));
+  // Whether there is anybody at all to offer.
+  const anybody = groups.some((group) => group.items.length > 0);
 
   return (
     <Dialog
@@ -310,7 +294,7 @@ export const NewConversationDialog = () => {
         ) : null}
 
         <div className="-mx-2 max-h-80 overflow-y-auto px-2">
-          {sections.isLoading || starred.isLoading ? (
+          {sections.isLoading ? (
             <p className="py-2 text-muted-foreground text-sm">{t("messages:loading")}</p>
           ) : !anybody ? (
             /* A section arrives for every community that has somebody else in
@@ -326,14 +310,6 @@ export const NewConversationDialog = () => {
             </p>
           ) : (
             <div className="space-y-3">
-              <FavoriteRoster
-                items={starredPeople}
-                answers={answers}
-                onPick={pick}
-                onGather={gather}
-                gathered={new Set(gatheredIds)}
-                onToggleFavorite={toggleFavorite}
-              />
               {groups
                 .filter((group) => group.items.length > 0)
                 .map((group) => (
@@ -347,11 +323,9 @@ export const NewConversationDialog = () => {
                     section={group}
                     search={settled}
                     answers={answers}
-                    starred={starredIds}
                     onPick={pick}
                     onGather={gather}
                     gathered={new Set(gatheredIds)}
-                    onToggleFavorite={toggleFavorite}
                   />
                 ))}
             </div>
@@ -378,20 +352,16 @@ const CommunityRoster = ({
   section,
   search,
   answers,
-  starred,
   onPick,
   onGather,
   gathered,
-  onToggleFavorite,
 }: {
   section: ContactCommunitySection;
   search: string;
   answers: Record<string, DirectMessagePermissionRead>;
-  starred: Set<number>;
   onPick: (person: ContactRead) => void;
   onGather: (person: ContactRead) => void;
   gathered: Set<number>;
-  onToggleFavorite: (person: ContactRead) => void;
 }) => {
   const { t } = useTranslation(["messages", "contacts"]);
   const [wantsMore, setWantsMore] = useState(false);
@@ -432,11 +402,9 @@ const CommunityRoster = ({
               key={person.id}
               person={person}
               answer={answer}
-              starred={starred.has(person.id)}
               onPick={onPick}
               onGather={onGather}
               gathered={gathered.has(person.id)}
-              onToggleFavorite={onToggleFavorite}
             />
           );
         })}
@@ -466,19 +434,15 @@ const CommunityRoster = ({
 const PickerPerson = ({
   person,
   answer,
-  starred,
   onPick,
   onGather,
   gathered,
-  onToggleFavorite,
 }: {
   person: ContactRead;
   answer: DirectMessagePermissionRead | undefined;
-  starred: boolean;
   onPick: (person: ContactRead) => void;
   onGather: (person: ContactRead) => void;
   gathered: boolean;
-  onToggleFavorite: (person: ContactRead) => void;
 }) => {
   const { t } = useTranslation(["messages", "contacts"]);
   const denied = answer?.permission === "denied";
@@ -533,16 +497,9 @@ const PickerPerson = ({
           {t("messages:newConversation.addToGroup", { name: getUserDisplayName(person) })}
         </span>
       </Button>
-      {/* Outside the button, and outside its `disabled`. For somebody you
-          share no community with, this dialog is the only place they appear
-          at all -- so if the way in is shut, everything else you might do
-          about them has to still be open: unstar them, go and look at them,
-          connect, ignore. */}
-      <FavoriteToggle
-        starred={starred}
-        name={getUserDisplayName(person)}
-        onToggle={() => onToggleFavorite(person)}
-      />
+      {/* Outside the button, and outside its `disabled`: if the way in is
+          shut, everything else you might do about them stays open -- go and
+          look at them, connect, ignore. */}
       <ContactActionsMenu
         user={{
           id: person.id,
@@ -551,69 +508,10 @@ const PickerPerson = ({
         }}
         className="size-8 shrink-0"
         permission={answer ?? null}
-        // The row is the way in and the star is beside it. Everything else
-        // the menu holds -- the profile above all -- is only here.
-        omit={["message", "ask", "favorite"]}
+        // The row is the way in. Everything else the menu holds -- the
+        // profile above all -- is only here.
+        omit={["message", "ask"]}
       />
     </li>
-  );
-};
-
-/**
- * The people this reader starred, above the communities.
- *
- * Starring is the one list that is not a slice of anything: a favourite may be
- * somebody you share no community with, so no roster below will ever hold
- * them. Without this they would be reachable only by typing their handle from
- * memory -- and somebody who starred a person is exactly somebody who expects
- * to find them again.
- *
- * A favourite you *do* share a community with appears twice, here and there.
- * That is what a shortcut is; carving them out of the rosters would leave the
- * paged ones with holes in them.
- */
-const FavoriteRoster = ({
-  items,
-  answers,
-  onPick,
-  onGather,
-  gathered,
-  onToggleFavorite,
-}: {
-  items: ContactRead[];
-  answers: Record<string, DirectMessagePermissionRead>;
-  onPick: (person: ContactRead) => void;
-  onGather: (person: ContactRead) => void;
-  gathered: Set<number>;
-  onToggleFavorite: (person: ContactRead) => void;
-}) => {
-  const { t } = useTranslation("messages");
-  const own = useDmPermissions(useMemo(() => items.map((person) => person.id), [items]));
-
-  if (items.length === 0) return null;
-
-  return (
-    <section>
-      <h3 className="flex items-center gap-1.5 py-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-        <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{t("newConversation.favorites")}</span>
-      </h3>
-      <ul>
-        {items.map((person) => (
-          <PickerPerson
-            key={person.id}
-            person={person}
-            // The dialog's own question covers whoever is also in a roster;
-            // the rest are this section's to ask about.
-            answer={answers[String(person.id)] ?? own.data?.permissions?.[String(person.id)]}
-            starred
-            onPick={onPick}
-            onGather={onGather}
-            gathered={gathered.has(person.id)}
-            onToggleFavorite={onToggleFavorite}
-          />
-        ))}
-      </ul>
-    </section>
   );
 };

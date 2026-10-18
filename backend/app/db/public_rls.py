@@ -1616,47 +1616,6 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             guest_base=frozenset({SELECT}),
         ),
     ),
-    # Who one account has starred on My Contacts. Personal, cross-guild and
-    # one-directional: the list is the holder's, and it may name people they share no
-    # guild with.
-    "profile_favorites": SharedTable(
-        rls=TableRls(
-            policies=(
-                Policy(
-                    "profile_favorites_self_delete",
-                    DELETE,
-                    ("platform_base",),
-                    using=own_row("user_id"),
-                ),
-                Policy(
-                    "profile_favorites_self_insert",
-                    INSERT,
-                    ("platform_base",),
-                    check=own_row("user_id"),
-                ),
-                Policy(
-                    "profile_favorites_self_read",
-                    SELECT,
-                    ("platform_base",),
-                    using=own_row("user_id"),
-                ),
-            ),
-        ),
-        grants=Grants(
-            # My Contacts stars. The request path owns every write under its own-row
-            # policies; the system engine reads and deletes only for erasure, which has
-            # to clear an anonymized account off other people's lists too — the row
-            # survives the husk, so the FK cascade never fires for it.
-            app_admin=frozenset({SELECT, DELETE}),
-            # A contacts list belongs to a signed-in account, and the bare pre-routing
-            # login role serves nobody in particular.
-            app_user=None,
-            # Platform-tier path only: every policy on these is TO platform_base, and
-            # the migration that added each took the schema default back.
-            app_guild_base=None,
-            platform_base=frozenset({SELECT, INSERT, DELETE}),
-        ),
-    ),
     # The picture on a user's profile. Public-plane identity like the row it hangs off:
     # one user spans guilds, and the bytes are served to anyone holding the URL.
     "user_avatars": SharedTable(

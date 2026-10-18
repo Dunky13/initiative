@@ -85,13 +85,10 @@ The tool, the search, the order, the page and the communities you picked all liv
 
 Your private conversations — two people or a few, end-to-end encrypted, and the only page here whose contents live on your device rather than on the server.
 
-Beside them is everyone you can reach. Unread first, then the people you starred, then your connections, then everybody else — each group folds away and stays folded. **Requests waiting on you** sit above the lot, connection or message, either direction, so answering one doesn't mean going rummaging in Settings.
-
-Star anyone to keep them near the top. It's completely private and tells them absolutely nothing, which is the correct design for a feature like this.
+Beside them is everyone you can reach, whoever wrote most recently at the top, the way any chat goes. A dot marks a conversation with something unread. **Requests waiting on you** sit above the lot, connection or message, either direction, so answering one doesn't mean going rummaging in Settings.
 
 Nobody in the list yet, or somebody missing from it? The **+** goes and finds them:
 
-- **The people you starred**, first, including anyone you share no community with.
 - **Each of your communities**, searchable, twenty at a time with a *Show more* under each.
 - **A whole handle, number included** (`sam#1234`) — the one way to reach an account no list of yours will ever show, because they've kept themselves to themselves.
 

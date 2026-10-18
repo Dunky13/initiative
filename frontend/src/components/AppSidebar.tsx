@@ -366,7 +366,7 @@ export const AppSidebar = () => {
                   <TabsContent value="initiatives" className="mt-0 flex-1 overflow-hidden">
                     <ScrollArea className="[&_[data-radix-scroll-area-viewport]>div]:block! h-full">
                       <SidebarContent className="overflow-x-hidden overflow-y-visible">
-                        {/* Favorites Section */}
+                        {/* Bookmarks */}
                         {Array.isArray(bookmarksQuery?.data) && bookmarksQuery.data.length > 0 && (
                           <>
                             <SidebarGroup>
