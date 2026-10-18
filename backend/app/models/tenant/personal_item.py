@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, Index, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, Index, Text, text
 from sqlmodel import Field, SQLModel
 
 from app.core.tools import CONTENT_KINDS, Tool
@@ -80,6 +80,13 @@ class PersonalItem(SQLModel, table=True):
         Index("ix_personal_items_entity", "entity_type", "entity_id"),
         # The tabs bar reads a person's newest opens.
         Index("ix_personal_items_user_viewed_at", "user_id", "viewed_at"),
+        # The subscription sweep asks whether anybody is subscribed, and since
+        # when, on every visit.
+        Index(
+            "ix_personal_items_subscribed_at",
+            "subscribed_at",
+            postgresql_where=text("subscribed_at IS NOT NULL"),
+        ),
     )
 
     user_id: int = Field(foreign_key="users.id", primary_key=True)

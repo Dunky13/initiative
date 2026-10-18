@@ -30,11 +30,15 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import BigInteger, DateTime, Integer, bindparam, func, select, text
+from sqlalchemy import column as sa_column
+from sqlalchemy import table as sa_table
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.types import Text
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db.holds import HOLDABLE_TABLES
+from app.db.initiative_rls import entity_tables
 from app.db.request_context import SystemGuild, SystemMaintenance
 from app.db.session import set_rls_context
 from app.models.platform.notification import NotificationType
@@ -150,6 +154,18 @@ def next_due(now: datetime):
     return select(func.now()).where(subscribed, untold)
 
 
+async def _held(session: AsyncSession, table: str, row_id: int) -> bool:
+    """Whether the platform holds this row: a held row reads as absent to the
+    community, so nobody in it hears of it."""
+    if table not in HOLDABLE_TABLES:
+        return False
+    row = sa_table(table, sa_column("id"), sa_column("held_at"))
+    found = await session.exec(  # type: ignore[call-overload]
+        select(row.c.id).where(row.c.id == row_id, row.c.held_at.is_not(None))
+    )
+    return found.first() is not None
+
+
 async def _tell(session: AsyncSession, txn_id: int) -> None:
     """Tell the subscribers of everything one transaction changed."""
     rows = (
@@ -181,6 +197,10 @@ async def _tell(session: AsyncSession, txn_id: int) -> None:
         subject = subject or await notifications.resolve_subject(session, about)
         actor = await accounts_service.load_one(row["actor"])
         if subject is None or actor is None:
+            continue
+        if await _held(session, entity_tables()[about[0]], about[1]) or await _held(
+            session, subject.tool.plural, subject.resource_id
+        ):
             continue
         name = await notifications.actor_name(session, actor)
         await notifications.notify(

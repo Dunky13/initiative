@@ -1,12 +1,16 @@
 """Subscribers hear of what other people change on what they subscribed to:
-after they subscribed, on one line per item, a comment included."""
+after they subscribed, on one line per item, a comment included, and nothing of
+what the platform holds."""
 
 from typing import cast
 
+from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import cohorts
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.models.platform.guild import CommunityRole
 from app.models.platform.notification import Notification, NotificationType
 from app.services.tenant import subscription_notices
@@ -86,3 +90,19 @@ async def test_a_subscriber_hears_of_changes_after_subscribing(
     (line,) = await _lines(session, b_id)
     assert line.data["verb"] == "commented"
     assert await _lines(session, a_id) == []
+
+    held = await client.patch(
+        a.g(f"/tasks/{task_id}"), headers=a.headers, json={"title": "Held hall"}
+    )
+    assert held.status_code == 200, held.text
+    async with cohorts.system_session(guild_id) as system:
+        await set_rls_context(system, SystemGuild(guild_id))
+        await system.exec(  # type: ignore[call-overload]
+            text("UPDATE tasks SET held_at = now() WHERE id = :id"),
+            params={"id": task_id},
+        )
+        await system.commit()
+    await _tell(guild_id)
+    session.expire_all()
+    (line,) = await _lines(session, b_id)
+    assert line.data["verb"] == "commented"
