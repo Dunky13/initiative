@@ -245,7 +245,9 @@
     "accountSettings": "Account settings",
     "platformSettings": "Platform settings",
     "shellBackToStart": "Back to start",
-    "logOut": "Log out"
+    "logOut": "Log out",
+    "unavailableTitle": "Couldn't load your communities",
+    "unavailableDescription": "Something went wrong while loading them. Your communities haven't gone anywhere."
   },
   "notifications": {
     "desktop": {

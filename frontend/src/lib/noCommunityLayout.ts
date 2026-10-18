@@ -21,6 +21,10 @@
  * - ``"empty"`` — no communities and no exempt path; show
  *                 ``NoCommunityState`` (the create / join / logout
  *                 landing page).
+ * - ``"unavailable"`` — where ``"empty"`` would be, but the list could not
+ *                 be read, so the account may well have communities. Show a
+ *                 way to try again rather than the start flow, which would
+ *                 greet an established account as a new one.
  *
  * The ``canAccessPlatformAreas`` flag is the coarse ``canAccessPlatformAreas``
  * predicate (can reach *either* the Operator dashboard or Platform settings).
@@ -29,10 +33,12 @@
  */
 import { isBillingForwardPath } from "@/lib/communityUrl";
 
-export type NoCommunityLayoutChoice = "main" | "shell" | "empty";
+export type NoCommunityLayoutChoice = "main" | "shell" | "empty" | "unavailable";
 
 export interface NoCommunityLayoutInputs {
   hasCommunities: boolean;
+  /** The community list could not be read: no communities is not an answer. */
+  listFailed?: boolean;
   pathname: string;
   canAccessPlatformAreas: boolean;
 }
@@ -57,6 +63,7 @@ const isPlatformSettingsPath = (path: string): boolean =>
 
 export function chooseNoCommunityLayout({
   hasCommunities,
+  listFailed = false,
   pathname,
   canAccessPlatformAreas,
 }: NoCommunityLayoutInputs): NoCommunityLayoutChoice {
@@ -65,5 +72,5 @@ export function chooseNoCommunityLayout({
   if (isCommunityPath(pathname)) return "shell";
   if (isBillingForwardPath(pathname)) return "shell";
   if (isPlatformSettingsPath(pathname) && canAccessPlatformAreas) return "shell";
-  return "empty";
+  return listFailed ? "unavailable" : "empty";
 }

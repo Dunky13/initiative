@@ -245,7 +245,9 @@
     "accountSettings": "Paramètres du compte",
     "platformSettings": "Paramètres de la plateforme",
     "shellBackToStart": "Retour à l'accueil",
-    "logOut": "Se déconnecter"
+    "logOut": "Se déconnecter",
+    "unavailableTitle": "Impossible de charger vos communautés",
+    "unavailableDescription": "Un problème est survenu pendant le chargement. Vos communautés sont toujours là."
   },
   "notifications": {
     "desktop": {

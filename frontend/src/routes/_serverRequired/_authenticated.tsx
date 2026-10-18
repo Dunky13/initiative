@@ -6,7 +6,7 @@ import {
   useLocation,
   useMatches,
 } from "@tanstack/react-router";
-import { Loader2, LogOut, Settings, UserCog } from "lucide-react";
+import { CloudOff, Loader2, LogOut, Settings, UserCog } from "lucide-react";
 import { Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -35,6 +35,14 @@ import { FeedbackHost } from "@/components/tickets/FeedbackSheet";
 import { CreateToolWizard } from "@/components/tools/CreateToolWizard";
 import { Button } from "@/components/ui/button";
 import { DocumentOutlineScope } from "@/components/ui/editor/DocumentOutline";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { useBackButton } from "@/hooks/useBackButton";
@@ -114,7 +122,12 @@ function AuthenticatedLayout() {
 function AppLayout() {
   // ALL hooks must be called before any conditional returns
   const { user, loading, logout } = useAuth();
-  const { communities, loading: communitiesLoading } = useCommunities();
+  const {
+    communities,
+    loading: communitiesLoading,
+    error: communitiesError,
+    refreshCommunities,
+  } = useCommunities();
   // Set while the start flow is making a community, so it stays on screen
   // once the account has one rather than giving way to the app shell.
   const [startFlowBusy, setStartFlowBusy] = useState(false);
@@ -206,9 +219,13 @@ function AppLayout() {
     const reachesPlatformAreas = canAccessPlatformAreas(user);
     const layout = chooseNoCommunityLayout({
       hasCommunities: communities.length > 0,
+      listFailed: communitiesError !== null,
       pathname: location.pathname,
       canAccessPlatformAreas: reachesPlatformAreas,
     });
+    if (layout === "unavailable" && !startFlowBusy) {
+      return <CommunitiesUnavailable logout={logout} onRetry={refreshCommunities} />;
+    }
     if (layout === "empty" || startFlowBusy) {
       return (
         <NoCommunityState
@@ -501,6 +518,52 @@ function NoCommunityState({
         </div>
       }
     />
+  );
+}
+
+/**
+ * The community list could not be read, so whether the account has any is not
+ * known: a way to ask again, and a way out.
+ */
+function CommunitiesUnavailable({
+  logout,
+  onRetry,
+}: {
+  logout: () => void;
+  onRetry: () => Promise<unknown>;
+}) {
+  const { t } = useTranslation(["communities", "common"]);
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
+  };
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <CloudOff />
+          </EmptyMedia>
+          <EmptyTitle>{t("noCommunity.unavailableTitle")}</EmptyTitle>
+          <EmptyDescription>{t("noCommunity.unavailableDescription")}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent className="flex-row flex-wrap justify-center">
+          <Button onClick={() => void retry()} disabled={retrying}>
+            {retrying && <Loader2 className="h-4 w-4 animate-spin" />}
+            {t("common:tryAgain")}
+          </Button>
+          <Button variant="ghost" onClick={logout}>
+            <LogOut className="h-4 w-4" />
+            {t("noCommunity.logOut")}
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </div>
   );
 }
 

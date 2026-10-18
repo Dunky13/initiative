@@ -245,7 +245,9 @@
     "accountSettings": "Kontoeinstellungen",
     "platformSettings": "Plattformeinstellungen",
     "shellBackToStart": "Zurück zum Start",
-    "logOut": "Abmelden"
+    "logOut": "Abmelden",
+    "unavailableTitle": "Deine Communitys konnten nicht geladen werden",
+    "unavailableDescription": "Beim Laden ist etwas schiefgelaufen. Deine Communitys sind noch da."
   },
   "notifications": {
     "desktop": {

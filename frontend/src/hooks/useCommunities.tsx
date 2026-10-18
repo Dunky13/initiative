@@ -46,6 +46,7 @@ import {
 import {
   currentServerKey,
   isNoAnswerError,
+  isSessionRejected,
   readOfflineCommunities,
   saveOfflineCommunities,
 } from "@/lib/offlineSession";
@@ -234,6 +235,13 @@ const recordGrantOnlyCommunities = (entries: CommunityEntry[], grantsKnown: bool
   }
 };
 
+/** A reply that came back after the account it was read for had left. */
+class SupersededCommunityList extends Error {
+  constructor() {
+    super("The community list was read for an account no longer here");
+  }
+}
+
 /**
  * Read the community list for `forUser`.
  *
@@ -246,7 +254,7 @@ const fetchCommunityList = async (
   forUser: number,
   currentUserId: { readonly current: number | null }
 ): Promise<CommunityList> => {
-  const superseded = () => new Error("The community list was read for an account no longer here");
+  const superseded = () => new SupersededCommunityList();
 
   let listed: CommunityRead[];
   try {
@@ -357,7 +365,11 @@ const communityListQuery = (
     networkMode: "always",
     // One account's list is never a placeholder for another's.
     placeholderData: undefined,
-    retry: false,
+    // The first read decides whether the account has any community at all, so
+    // a blip is asked again rather than taken as "none". Not a read for an
+    // account that has left, or one the server refused the session for.
+    retry: (failures, error) =>
+      failures < 2 && !(error instanceof SupersededCommunityList) && !isSessionRejected(error),
   });
 
 const NO_COMMUNITIES: CommunityEntry[] = [];
