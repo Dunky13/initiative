@@ -873,7 +873,8 @@ export const useMarkAllNotificationsRead = <
   return useMutation(getMarkAllNotificationsReadMutationOptions(options), queryClient);
 };
 /**
- * The registry, this account's overrides, and each community's level.
+ * The registry, this account's overrides, and each community's mute and
+ * rows.
  *
  * The registry travels with the response so the settings page renders the
  * categories this build has rather than a copy of the list.

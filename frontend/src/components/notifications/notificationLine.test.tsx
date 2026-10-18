@@ -360,4 +360,28 @@ describe("notificationText — something the reader subscribed to", () => {
       )
     ).toContain("notifications.subscriptionMulti");
   });
+
+  it("reads a change to what the reader is named on as a subscription line", () => {
+    const line = notice("assigned_activity", {
+      entity_type: "task",
+      entity_id: 9,
+      verb: "moved",
+      commenters: [{ name: "Ada" }],
+      commenter_count: 1,
+    });
+    expect(notificationText(line, t)).toContain("notifications.subscription.moved");
+    expect(notificationLink(line)).toBe("/go/task/9");
+  });
+
+  it("names a reaction to a post on the post's line", () => {
+    const one = notice("subscription_activity", {
+      entity_type: "post",
+      entity_id: 5,
+      verb: "reacted",
+      commenters: [{ name: "Ada" }],
+      commenter_count: 1,
+    });
+    expect(notificationText(one, t)).toContain("notifications.subscription.reacted");
+    expect(notificationLink(one)).toBe("/go/post/5");
+  });
 });

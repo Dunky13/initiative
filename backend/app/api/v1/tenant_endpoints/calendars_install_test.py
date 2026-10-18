@@ -14,12 +14,14 @@ from typing import Any
 from sqlmodel import select
 
 from app.core.messages import PluginMessages, CalendarMessages
+from app.db import cohorts
 from app.models.platform.guild import CommunityRole
 from app.models.platform.notification import Notification, NotificationType
 from app.models.tenant.calendar import Calendar
 from app.models.tenant.calendar_event import CalendarEvent
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.services.marketplace import plugin_refs
+from app.services.tenant import subscription_notices
 from app.testing import (
     guild_url,
     create_calendar,
@@ -334,24 +336,29 @@ async def test_invites_attendees_by_reference_in_its_own_name(
     assert invitations[0].data["organizer_name"] == installed.plugin.name
     assert invitations[0].data["event_id"] == event_id
 
-    # An edit worth telling them about names the plug-in too.
-    edited = await client.patch(
+    # Moving it is news to whoever is going, named for the plug-in, though it
+    # is no person's change.
+    async with cohorts.system_session(guild_id) as system:
+        await subscription_notices.tell_subscribers(system, guild_id)
+    moved = await client.patch(
         guild_url(guild_id, f"/calendar-events/{event_id}"),
         headers=headers,
         json={"title": "Planning (moved)", **_window()},
     )
-    assert edited.status_code == 200, edited.text
+    assert moved.status_code == 200, moved.text
+    async with cohorts.system_session(guild_id) as system:
+        await subscription_notices.tell_subscribers(system, guild_id)
     await drain_notices()
-    updates = (
+    (line,) = (
         await session.exec(
             select(Notification).where(
                 Notification.user_id == attendee.user.id,
-                Notification.type == NotificationType.event_updated,
+                Notification.type == NotificationType.assigned_activity,
             )
         )
     ).all()
-    assert updates, "the attendee is told the event changed"
-    assert all(n.data.get("editor_name") == installed.plugin.name for n in updates)
+    assert line.data["entity_id"] == event_id
+    assert line.data["commenters"] == [{"id": None, "name": installed.plugin.name}]
 
 
 async def test_an_attendee_it_does_not_know_is_unprocessable(

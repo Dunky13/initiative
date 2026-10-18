@@ -110,6 +110,23 @@
       "subject": "Nuevo comentario en {{context}}",
       "title": "Nuevo comentario en algo a lo que te suscribiste",
       "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
+    },
+    "reacted": {
+      "subject": "Nueva reacción en {{context}}",
+      "title": "Nueva reacción en algo a lo que te suscribiste",
+      "body": "<strong>{{actor}}</strong> reaccionó a <strong>{{context}}</strong>"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} cambió",
+      "title": "Algo en lo que participas cambió",
+      "body": "<strong>{{actor}}</strong> cambió <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nuevo comentario en {{context}}",
+      "title": "Nuevo comentario en algo en lo que participas",
+      "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
     }
   },
   "post": {
@@ -124,16 +141,6 @@
       "subject": "Tienes una invitación: {{event}}",
       "title": "Nueva invitación a un evento",
       "body": "<strong>{{organizer}}</strong> te invitó a <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
-    },
-    "rescheduled": {
-      "subject": "Evento reprogramado: {{event}}",
-      "title": "Evento reprogramado",
-      "body": "<strong>{{editor}}</strong> reprogramó <strong>{{event}}</strong> para <strong>{{when}}</strong>."
-    },
-    "updated": {
-      "subject": "Evento actualizado: {{event}}",
-      "title": "Evento actualizado",
-      "body": "<strong>{{editor}}</strong> actualizó <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
     },
     "cancelled": {
       "subject": "Evento cancelado: {{event}}",
@@ -368,29 +375,20 @@
     },
     "noCommunity": {
       "direct_messages": "Mensajes directos",
-      "connections": "Contactos",
       "account": "Tu cuenta",
       "other": "De tus comunidades"
     },
     "category": {
-      "mentions": "Menciones",
-      "replies": "Respuestas",
-      "comments": "Comentarios sobre tu trabajo",
-      "reactions": "Reacciones",
-      "assignments": "Tareas asignadas",
-      "due_dates": "Tareas vencidas",
-      "membership": "Nuevas incorporaciones",
-      "approvals": "Esperan tu decisión",
-      "posts": "Publicaciones",
-      "events": "Eventos",
-      "event_reminders": "Recordatorios de eventos",
-      "direct_messages": "Mensajes directos",
-      "connections": "Contactos",
-      "jobs": "Exportaciones e importaciones",
-      "account": "Tu cuenta",
+      "mentions": "Menciones y respuestas",
+      "assignments": "Asignado a ti",
+      "subscriptions": "Suscrito",
+      "news": "Novedades en tus comunidades",
+      "approvals": "Esperan por ti",
       "moderation": "Moderación",
       "cases": "Casos",
-      "subscriptions": "Suscripciones"
+      "direct_messages": "Mensajes y contactos",
+      "jobs": "Exportaciones e importaciones",
+      "account": "Tu cuenta"
     }
   },
   "signInCode": {

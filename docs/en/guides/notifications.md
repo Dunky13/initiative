@@ -17,7 +17,7 @@ What you get told about, and where, is entirely yours to decide. Nothing is bein
 | **Mobile** | Push notifications on your phone (needs the app, and permission). |
 | **Desktop** | Notifications from the [desktop app](../getting-started/install-the-app.md#the-desktop-app), whenever its window isn't the one in front. |
 
-All of them are yours, category by category, with no minimum — the bell included. Two categories keep the bell whatever you set: **Waiting on you** and **Your account**. Somebody's waiting on your decision, or somebody changed something about your account. Neither is a thing to discover in March. Their other switches turn off like anything else.
+All of them are yours, row by row, with no minimum — the bell included. Three rows keep the bell whatever you set: **Waiting on you**, **Moderation** and **Your account**. Somebody's waiting on your decision, or somebody did something about you or your account. None of that is a thing to discover in March. Their other switches turn off like anything else.
 
 ## The bell, and the page behind it
 
@@ -48,31 +48,27 @@ If push shows as **Blocked**, that's your phone rather than us. Open your device
 
 ## What you hear about
 
-**My Settings → Notifications** gives you a grid: one row per category, with a **Bell**, **Email**, **Mobile** and **Desktop** switch each. **Mobile** appears once your server sends to phones.
+**My Settings → Notifications** gives you a grid: one row each, with a **Bell**, **Email**, **Mobile** and **Desktop** switch. **Mobile** appears once your server sends to phones.
 
-| Category | You hear about it when… |
+The first four rows are about what happens in your communities, sorted by how it involves you rather than by what kind of thing it was.
+
+| Row | You hear about it when… |
 |---|---|
-| **Mentions** | Somebody writes your name. |
-| **Replies** | Somebody replies to something you said. |
-| **Task assignments** | Somebody assigns you tasks (one summary, not one per task). |
-| **Events** | You're invited to something, or something you're attending changes. |
-| **Direct messages** | Somebody messaged you. You're told who and how many — never what it says, because nothing outside your own devices could tell you that. |
-| **Comments on your work** | Somebody comments on a task you're on, or something you made. |
-| **Reactions** | Somebody reacts to one of your comments (a summary). |
-| **Subscriptions** | Somebody changes or comments on something you [subscribed to](your-space.md#subscribing), or on something inside it. One line per thing, however busy it gets. |
-| **Overdue tasks** | A daily nudge about what's past due, at a time you choose. |
-| **Event reminders** | Shortly before an event you're going to. |
-| **Joining things** | You're added to an initiative, or a project appears in one. |
+| **Mentions and replies** | Somebody writes your name, replies to something you said, or reacts to your comment. |
+| **Assigned to you** | You're given a task or invited to something, or something you're on is due, changes, gets cancelled, or is about to start. |
+| **Subscribed** | Somebody changes, comments on or reacts to something you [follow](your-space.md#subscribing). That includes everything you made. |
+| **New in your communities** | A post goes up where you can see it, you're added to an initiative or a project, or your request to join one is answered. |
 | **Waiting on you** | Somebody needs your decision — a join request, an access request. |
-| **Posts** | A notice goes up on a board you can see. Only the people it was shared with hear about it. |
-| **Cases** | A new case opens, or somebody answers on one nobody has taken. Only shows if you can read a project your server's cases land in. |
-| **Connections** | Somebody asked to connect with you, or accepted. |
+| **Moderation** | A community's moderators took something you wrote down, or warned you about it. |
+| **Messages and connections** | Somebody messaged you, asked to connect, or accepted. You're told who and how many — never what a message says, because nothing outside your own devices could tell you that. |
 | **Exports and imports** | Something you asked for has finished. |
 | **Your account** | Something was done to your account by somebody else. |
 
 Everything here is about something you can open. A comment on a project that isn't shared with you doesn't reach you, and neither does a mention there — so somebody who wants you in a thread shares it with you first.
 
-**Mentions** and **Comments on your work** are separate on purpose. Somebody typing your name is a decision about you. Somebody commenting on a task you happen to be on is just how busy the project got. Turn the second one down; keep the first.
+**Mentions and replies** and **Subscribed** are separate on purpose. Somebody typing your name is a decision about you. Somebody tweaking the seventh task in a project you made is just how busy the project got. Turn the second down; keep the first.
+
+If you answer [cases](../running-a-server/platform-roles.md#where-operations-work-lands) on your server, those reach you too, with no row to switch. Answering them is the job.
 
 ![Notification settings](../images/notifications/settings.png)
 
@@ -91,12 +87,12 @@ Anything held comes as a **single** message, grouped by community and then by wh
 
 ```
 Foundry
-  Mentions
+  Mentions and replies
     Alice mentioned you in a comment on Fix the login redirect
-  Comments on your work
+  Subscribed
     Alice and 2 others — 5 comments on Fix the login redirect
 Acme
-  Events
+  Assigned to you
     Dana invited you to Sprint review (Tue 10:00)
 ```
 
@@ -107,7 +103,9 @@ Two things soften the edges of that:
 
 ## Other timings worth knowing
 
-- **Comments** on the same thing arrive as **one line**, however many there are. Twenty comments on a task you're on is one notification naming who commented and how many — not twenty. Once you've read it, the next comment starts a fresh one, so new activity is still news.
+- **Everything on one thing** arrives as **one line**, however much there is. Twenty edits and comments on a task you follow is one notification naming who and how many — not twenty. Once you've read it, the next one starts a fresh line, so new activity is still news.
+- **Changes** gather for about a minute before they're told, so somebody fixing a typo four times in a row is one change.
+- **A plug-in's changes** — an automation closing a task, a calendar moving an event — reach the people on the thing, under **Assigned to you**, with the plug-in named. They don't reach everyone following it, so a busy automation doesn't fill **Subscribed**.
 - **Mentions in a text document** arrive as one line too. Somebody tidying a page that names you in four places tells you once, until you've read it.
 - **Task assignments** arrive as one summary once the dust has settled. Somebody assigning you ten things reaches you as one message rather than ten.
 - **Reactions** work the same way, for the same reason: they arrive in flurries.
@@ -152,19 +150,11 @@ A digest that would have landed in the middle of a booked pause waits for the en
 
 ## Per community
 
-Every community you're in gets one dial.
+Open a community under **Per community** and the first four rows are there again, one switch each. Switch **Subscribed** off for the parish council and you still hear when somebody names you there, while the vicar's fourteenth edit to the minutes passes you by.
 
-| Setting | What reaches you |
-|---|---|
-| **Everything** | Whatever your categories allow. The default. |
-| **Only what names me** | Mentions, replies, tasks assigned to you, event invitations, anything waiting on your decision, and your own exports. Nothing ambient. |
-| **Nothing** | Nothing. |
+**Mute** silences the whole community. That means everything, and somebody typing your name there is not an exception — a mute you have to keep checking isn't a mute.
 
-**Nothing** is the real one, not a quieter one. That community will not reach you, and somebody typing your name there is not an exception — a mute you have to keep checking isn't a mute.
-
-Three things ignore the dial, because they were never a community's to silence: **direct messages**, **connections**, and **your account**.
-
-Most people set the dial and never open the grid again. If you do want one community to differ category by category, it's in there.
+Neither reaches **messages**, **connections** or **your account**, which were never a community's to silence.
 
 ## What your server and community decide
 

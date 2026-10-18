@@ -364,6 +364,7 @@ export const useToggleSubscription = () => {
       if (before) {
         qc.setQueryData<PersonalItemState>(queryKey, {
           ...before,
+          subscribed: next,
           subscribed_at: next ? new Date().toISOString() : null,
         });
       }
@@ -372,10 +373,10 @@ export const useToggleSubscription = () => {
     onError: (_error, _args, context) => {
       if (context?.before) qc.setQueryData(context.queryKey, context.before);
     },
-    onSettled: (_data, _error, _args, context) => {
-      if (context) void qc.invalidateQueries({ queryKey: context.queryKey });
-      // The feed's order follows what the reader subscribes to.
-      void invalidate(q.activity());
+    onSettled: () => {
+      // Subscribing to a tool subscribes to what is inside it, so every item's
+      // bell is read again; the feed's order follows it too.
+      void invalidate(q.personalItems(), q.activity());
     },
   });
 };
@@ -386,7 +387,7 @@ export const useToggleSubscription = () => {
 export const useSubscription = (kind: ContentKind, entityId: number, communityId?: number) => {
   const { data } = useItemState(kind, entityId, communityId);
   const toggle = useToggleSubscription();
-  const subscribed = Boolean(data?.subscribed_at);
+  const subscribed = Boolean(data?.subscribed);
   return {
     subscribed,
     ready: Boolean(data) && !toggle.isPending,

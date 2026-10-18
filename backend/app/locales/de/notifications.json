@@ -80,6 +80,20 @@
     "commented": {
       "title": "Neuer Kommentar zu etwas, das du abonniert hast",
       "body": "{{actor}} hat {{context}} kommentiert"
+    },
+    "reacted": {
+      "title": "Neue Reaktion auf etwas, das du abonniert hast",
+      "body": "{{actor}} hat auf {{context}} reagiert"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "title": "Etwas, an dem du beteiligt bist, hat sich geändert",
+      "body": "{{actor}} hat {{context}} geändert"
+    },
+    "commented": {
+      "title": "Neuer Kommentar zu etwas, an dem du beteiligt bist",
+      "body": "{{actor}} hat {{context}} kommentiert"
     }
   },
   "post": {
@@ -91,14 +105,6 @@
   "event": {
     "invitation": {
       "title": "Neue Termineinladung",
-      "body": "{{event}} ({{when}})"
-    },
-    "rescheduled": {
-      "title": "Termin verschoben",
-      "body": "{{event}} ({{when}})"
-    },
-    "updated": {
-      "title": "Termin aktualisiert",
       "body": "{{event}} ({{when}})"
     },
     "cancelled": {
@@ -168,59 +174,35 @@
   },
   "redacted": {
     "mentions": {
-      "title": "Du wurdest erwähnt",
+      "title": "Du wurdest erwähnt oder hast eine Antwort",
       "body": "Öffne Initiative, um zu sehen, wo."
     },
-    "replies": {
-      "title": "Du hast eine Antwort",
-      "body": "Öffne Initiative, um sie zu lesen."
-    },
-    "comments": {
-      "title": "Neuer Kommentar",
-      "body": "Öffne Initiative, um ihn zu lesen."
-    },
-    "reactions": {
-      "title": "Neue Reaktion",
-      "body": "Öffne Initiative, um sie zu sehen."
+    "assignments": {
+      "title": "Etwas, an dem du beteiligt bist",
+      "body": "Öffne Initiative, um es zu sehen."
     },
     "subscriptions": {
       "title": "Etwas, das du abonniert hast, hat sich geändert",
       "body": "Öffne Initiative, um es zu sehen."
     },
-    "assignments": {
-      "title": "Neue Aufgabenzuweisung",
-      "body": "Öffne Initiative, um sie zu sehen."
-    },
-    "due_dates": {
-      "title": "Überfällige Aufgaben",
-      "body": "Öffne Initiative, um sie zu sehen."
-    },
-    "membership": {
-      "title": "Deine Mitgliedschaft hat sich geändert",
-      "body": "Öffne Initiative, um zu sehen, was sich geändert hat."
+    "news": {
+      "title": "Etwas Neues in einer Community",
+      "body": "Öffne Initiative, um es zu sehen."
     },
     "approvals": {
       "title": "Etwas wartet auf dich",
       "body": "Öffne Initiative, um es zu prüfen."
     },
-    "posts": {
-      "title": "Neuer Beitrag",
-      "body": "Öffne Initiative, um ihn zu lesen."
-    },
-    "events": {
-      "title": "Ein Termin hat sich geändert",
-      "body": "Öffne Initiative, um ihn zu sehen."
-    },
-    "event_reminders": {
-      "title": "Anstehender Termin",
-      "body": "Öffne Initiative, um ihn zu sehen."
-    },
-    "direct_messages": {
-      "title": "Neue Nachricht",
+    "moderation": {
+      "title": "Eine Moderationsmitteilung",
       "body": "Öffne Initiative, um sie zu lesen."
     },
-    "connections": {
-      "title": "Neuigkeiten zu Kontakten",
+    "cases": {
+      "title": "Neuigkeiten zu einem Fall",
+      "body": "Öffne Initiative, um sie zu lesen."
+    },
+    "direct_messages": {
+      "title": "Eine Nachricht oder Kontaktanfrage",
       "body": "Öffne Initiative, um sie zu sehen."
     },
     "jobs": {
@@ -230,14 +212,6 @@
     "account": {
       "title": "Ein Hinweis zu deinem Konto",
       "body": "Öffne Initiative, um ihn zu lesen."
-    },
-    "moderation": {
-      "title": "Eine Moderationsmitteilung",
-      "body": "Öffne Initiative, um sie zu lesen."
-    },
-    "cases": {
-      "title": "Neuigkeiten zu einem Fall",
-      "body": "Öffne Initiative, um sie zu lesen."
     }
   },
   "quietHours": {

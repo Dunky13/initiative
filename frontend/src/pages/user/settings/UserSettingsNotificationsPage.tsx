@@ -3,13 +3,14 @@ import { Bell, type LucideIcon, Mail, Monitor, Smartphone } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  Channel,
-  EmailCadence,
-  EmailScheduleInput,
-  NotificationCategoryRead,
-  NotificationLevel,
-  UserRead,
+import {
+  CategoryGroup,
+  type Channel,
+  type EmailCadence,
+  type EmailScheduleInput,
+  type NotificationCategoryRead,
+  type NotificationPreferencesUpdate,
+  type UserRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { SettingsRow, SettingsSection } from "@/components/settings/SettingsSection";
 import { Badge } from "@/components/ui/badge";
@@ -41,10 +42,10 @@ import { toast } from "@/lib/mascotToast";
 const REMINDER_MINUTE_OPTIONS = [0, 5, 10, 15, 30, 60, 1440] as const;
 const DEFAULT_REMINDER_MINUTES = 15;
 
-// The order the sections appear in. The registry says which group each
-// category belongs to, so a category added to the backend lands in one of
-// these without this file changing.
-const GROUP_ORDER = ["addressed_to_me", "activity", "community", "account"] as const;
+// The order the sections appear in, which is the registry's own. The registry
+// says which group each category belongs to, so a category added to the
+// backend lands in one of these without this file changing.
+const GROUP_ORDER = Object.values(CategoryGroup);
 
 // Every channel, in column order.
 const CHANNELS: Channel[] = ["in_app", "email", "push", "desktop"];
@@ -56,8 +57,6 @@ const CHANNEL_ICONS: Record<Channel, LucideIcon> = {
   push: Smartphone,
   desktop: Monitor,
 };
-
-const LEVELS: NotificationLevel[] = ["everything", "personal", "nothing"];
 
 // How often email may arrive, in the order the control offers them.
 const CADENCES: EmailCadence[] = ["instant", "hourly", "daily", "weekly"];
@@ -164,10 +163,10 @@ export const UserSettingsNotificationsPage = ({
       }
     );
 
-  // The registry decides which rows exist and which switches move; this file
-  // only decides what order the sections come in.
+  // The registry decides which rows exist and which switches move. A row with
+  // no switch at all is not a preference, so it is not shown.
   const grouped = useMemo(() => {
-    const rows = preferences?.categories ?? [];
+    const rows = (preferences?.categories ?? []).filter((row) => row.mutable_channels.length > 0);
     return GROUP_ORDER.map((group) => ({
       group,
       rows: rows.filter((row) => row.group === group),
@@ -176,37 +175,21 @@ export const UserSettingsNotificationsPage = ({
 
   const visibleChannels = CHANNELS.filter((channel) => channel !== "push" || showPushColumn);
 
-  const isOn = (row: NotificationCategoryRead, channel: Channel, communityId?: number) => {
-    const scoped = communityId
-      ? preferences?.communities?.find((entry) => entry.community_id === communityId)?.categories
-      : preferences?.settings;
-    const stored = scoped?.[row.category]?.[channel];
+  // The rows each community can switch off on its own.
+  const communityRows = grouped.flatMap((section) =>
+    section.rows.filter((row) => row.per_community)
+  );
+
+  const isOn = (row: NotificationCategoryRead, channel: Channel) => {
+    const stored = preferences?.settings?.[row.category]?.[channel];
     if (typeof stored === "boolean") return stored;
     return row.defaults[channel] ?? true;
   };
 
-  const toggle = (
-    row: NotificationCategoryRead,
-    channel: Channel,
-    next: boolean,
-    communityId?: number
-  ) => {
-    writePreferences.mutate(
-      {
-        channels: [
-          { category: row.category, channel, enabled: next, community_id: communityId ?? null },
-        ],
-      },
-      { onError: () => toast.error(t("notifications.toggleError")) }
-    );
-  };
-
-  const setLevel = (communityId: number, level: NotificationLevel) => {
-    writePreferences.mutate(
-      { levels: [{ community_id: communityId, level }] },
-      { onError: () => toast.error(t("notifications.toggleError")) }
-    );
-  };
+  const writeSwitch = (payload: NotificationPreferencesUpdate) =>
+    writePreferences.mutate(payload, {
+      onError: () => toast.error(t("notifications.toggleError")),
+    });
 
   const saveQuietHours = (enabled: boolean) => {
     const sent = quietHours.values;
@@ -246,7 +229,7 @@ export const UserSettingsNotificationsPage = ({
 
   const gridColumns = { gridTemplateColumns: `1fr repeat(${visibleChannels.length}, auto)` };
 
-  const renderGrid = (communityId?: number) => (
+  const renderGrid = () => (
     <div className="space-y-1">
       <div className="grid items-center gap-2 border-b pb-2 sm:gap-4" style={gridColumns}>
         <p className="font-medium text-muted-foreground text-sm">
@@ -268,67 +251,65 @@ export const UserSettingsNotificationsPage = ({
         })}
       </div>
 
-      {grouped.map((section) => {
-        const rows = section.rows.filter((row) => !communityId || row.community_scoped);
-        if (rows.length === 0) return null;
-        return (
-          <div key={section.group}>
-            <p className="pt-4 pb-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-              {t(`notifications.groups.${section.group}`)}
-            </p>
-            {rows.map((row) => (
-              <div key={row.category} className="border-b last:border-b-0">
-                <div className="grid items-center gap-2 py-3 sm:gap-4" style={gridColumns}>
-                  <div>
-                    <p className="font-medium">{t(`notifications.categories.${row.category}`)}</p>
-                    <p className="text-muted-foreground text-sm">
-                      {t(`notifications.categoryDescriptions.${row.category}`)}
-                    </p>
-                  </div>
-                  {visibleChannels.map((channel) => {
-                    const mutable = row.mutable_channels.includes(channel);
-                    return (
-                      <div key={channel} className="flex w-10 justify-center sm:w-16">
-                        <Switch
-                          checked={mutable ? isOn(row, channel, communityId) : true}
-                          disabled={!mutable || writePreferences.isPending}
-                          aria-label={t("notifications.switchLabel", {
-                            category: t(`notifications.categories.${row.category}`),
-                            channel: t(`notifications.channels.${channel}`),
-                          })}
-                          onCheckedChange={(checked) => toggle(row, channel, checked, communityId)}
-                        />
-                      </div>
-                    );
-                  })}
+      {grouped.map((section) => (
+        <div key={section.group}>
+          <p className="pt-4 pb-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            {t(`notifications.groups.${section.group}`)}
+          </p>
+          {section.rows.map((row) => (
+            <div key={row.category} className="border-b last:border-b-0">
+              <div className="grid items-center gap-2 py-3 sm:gap-4" style={gridColumns}>
+                <div>
+                  <p className="font-medium">{t(`notifications.categories.${row.category}`)}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {t(`notifications.categoryDescriptions.${row.category}`)}
+                  </p>
                 </div>
-                {row.category === "event_reminders" && !communityId && (
-                  <div className="flex items-center gap-2 pb-3 pl-1">
-                    <Label htmlFor="reminder-lead-time" className="text-muted-foreground text-sm">
-                      {t("notifications.reminderLeadTime.label")}
-                    </Label>
-                    <Select
-                      value={String(reminderMinutes)}
-                      onValueChange={handleReminderMinutesChange}
-                    >
-                      <SelectTrigger id="reminder-lead-time" className="w-44">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {REMINDER_MINUTE_OPTIONS.map((minutes) => (
-                          <SelectItem key={minutes} value={String(minutes)}>
-                            {reminderLabel(minutes)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                {visibleChannels.map((channel) => {
+                  const mutable = row.mutable_channels.includes(channel);
+                  return (
+                    <div key={channel} className="flex w-10 justify-center sm:w-16">
+                      <Switch
+                        checked={mutable ? isOn(row, channel) : true}
+                        disabled={!mutable || writePreferences.isPending}
+                        aria-label={t("notifications.switchLabel", {
+                          category: t(`notifications.categories.${row.category}`),
+                          channel: t(`notifications.channels.${channel}`),
+                        })}
+                        onCheckedChange={(enabled) =>
+                          writeSwitch({ channels: [{ category: row.category, channel, enabled }] })
+                        }
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        );
-      })}
+              {row.category === "assignments" && (
+                <div className="flex items-center gap-2 pb-3 pl-1">
+                  <Label htmlFor="reminder-lead-time" className="text-muted-foreground text-sm">
+                    {t("notifications.reminderLeadTime.label")}
+                  </Label>
+                  <Select
+                    value={String(reminderMinutes)}
+                    onValueChange={handleReminderMinutesChange}
+                  >
+                    <SelectTrigger id="reminder-lead-time" className="w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REMINDER_MINUTE_OPTIONS.map((minutes) => (
+                        <SelectItem key={minutes} value={String(minutes)}>
+                          {reminderLabel(minutes)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 
@@ -574,37 +555,54 @@ export const UserSettingsNotificationsPage = ({
               <details key={community.community_id} className="rounded-md border">
                 <summary className="flex cursor-pointer items-center justify-between gap-4 p-3">
                   <span className="font-medium">{community.community_name}</span>
-                  <Select
-                    value={community.level}
-                    onValueChange={(value) =>
-                      setLevel(community.community_id, value as NotificationLevel)
-                    }
-                  >
-                    <SelectTrigger
-                      className="w-56"
-                      aria-label={t("notifications.communities.levelLabel", {
+                  <span className="flex items-center gap-2 text-muted-foreground text-sm">
+                    <span aria-hidden>{t("notifications.communities.mute")}</span>
+                    <Switch
+                      checked={community.muted}
+                      disabled={writePreferences.isPending}
+                      aria-label={t("notifications.communities.muteLabel", {
                         community: community.community_name,
                       })}
-                      onClick={(event) => event.preventDefault()}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {t(`notifications.communities.levels.${level}`)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      onCheckedChange={(muted) =>
+                        writeSwitch({ mutes: [{ community_id: community.community_id, muted }] })
+                      }
+                    />
+                  </span>
                 </summary>
                 <div className="border-t p-3">
-                  {community.level === "nothing" ? (
+                  {community.muted ? (
                     <p className="text-muted-foreground text-sm">
                       {t("notifications.communities.mutedHelp")}
                     </p>
                   ) : (
-                    renderGrid(community.community_id)
+                    <div className="space-y-4">
+                      {communityRows.map((row) => {
+                        const label = t(`notifications.categories.${row.category}`);
+                        return (
+                          <SettingsRow key={row.category} label={label}>
+                            <Switch
+                              checked={!community.off.includes(row.category)}
+                              disabled={writePreferences.isPending}
+                              aria-label={t("notifications.communities.rowLabel", {
+                                row: label,
+                                community: community.community_name,
+                              })}
+                              onCheckedChange={(enabled) =>
+                                writeSwitch({
+                                  rows: [
+                                    {
+                                      community_id: community.community_id,
+                                      category: row.category,
+                                      enabled,
+                                    },
+                                  ],
+                                })
+                              }
+                            />
+                          </SettingsRow>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </details>

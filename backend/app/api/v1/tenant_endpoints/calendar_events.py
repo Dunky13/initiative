@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import recurrence
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import overwrites
+from app.services.tenant import personal_items
 from sqlmodel import select
 
 from app.api.actor_route import ActorRoute
@@ -712,35 +713,8 @@ async def _apply_update(
                 changed.add("attendees")
             await occurrences_service.follow(session, event, changed)
 
-        # Notify attendees only on meaningful changes (skip pure color/tag edits).
-        meaningful_change = (
-            time_changed
-            or event.title != old_title
-            or event.location != old_location
-            or event.all_day != old_all_day
-        )
-        if meaningful_change:
-            # Skip anyone who declined — a declined attendee isn't coming, so
-            # reschedules/edits are noise (mirrors the reminder pass, which
-            # also skips declined RSVPs).
-            answers = await occurrences_service.answers_on(session, event)
-            notify_ids: list[int | None] = [
-                attendee.user_id
-                for attendee in event.attendees
-                if answers.get(attendee.user_id) != RSVPStatus.declined
-            ]
-            await _notify_about_event(
-                session,
-                NotificationType.event_updated,
-                notify_ids,
-                event,
-                key="event.rescheduled" if time_changed else "event.updated",
-                actor=await notifications_service.author_of(
-                    session, guild_context, current_user
-                ),
-                role="editor",
-                data={"time_changed": time_changed},
-            )
+        # Attendees hear of the change from the change log, as everyone
+        # subscribed to the event does (``subscription_notices``).
 
         # A move that writes nothing a file shows from carries the event's own.
         await attachments_service.claim_uploads(
@@ -1040,10 +1014,20 @@ async def update_rsvp(
             session, event, current_user.id, answer, join=join
         )
 
+    # To whoever made the event or follows it. Going to it doesn't make every
+    # other answer news: each attendee answers for themselves.
+    about = ("calendar_event", cast(int, event.id))
+    subscribed = await personal_items.subscribers_of(
+        session, {about: (Tool.calendar.value, event.calendar_id)}
+    )
     await _notify_about_event(
         session,
         NotificationType.event_rsvp,
-        [event.created_by],
+        sorted(
+            person
+            for person, subscriber in subscribed[about].items()
+            if subscriber.follows
+        ),
         event,
         key="event.rsvp",
         actor=current_user,

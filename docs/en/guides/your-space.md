@@ -136,6 +136,8 @@ Leave a community and your bookmarks there go with you.
 
 A bookmark keeps a thing close. A subscription keeps you told. Subscribe to the fete project and every stall booking, rota swap and increasingly tense comment about the gazebo lands in your [notifications](notifications.md), and rises in the activity feed on the [community front page](communities.md#the-community-front-page). Subscribe to one task, one event or one page of the handbook, and you hear about just that.
 
+You're already subscribed to anything you made, and to anything you're assigned to or going to. The bell shows filled on those without you touching it.
+
 Look for the bell:
 
 | To subscribe to | It's |
@@ -145,7 +147,7 @@ Look for the bell:
 | A queue item, a picture or a counter | Beside its name. For a picture, that's under **Details**. |
 | A wiki | Beside its name at the top of the wiki's sidebar. Each page has its own, beside the wiki's bookmark. |
 
-You hear about what other people do from the moment you subscribe, on one line per thing, so a flurry of edits to the same task is one notification rather than twelve. Your own changes stay quiet. Too much? Turn **Subscriptions** down under [My Settings → Notifications](notifications.md), or click the bell again. What you subscribe to is yours alone, and leaving a community takes your subscriptions there with you.
+You hear about what other people do from the moment you subscribe, on one line per thing, so a flurry of edits to the same task is one notification rather than twelve. Your own changes stay quiet. Too much? Click the bell on that one thing — that holds even for something you made — or turn **Subscribed** down under [My Settings → Notifications](notifications.md). What you subscribe to is yours alone, and leaving a community takes your subscriptions there with you.
 
 ## Related
 

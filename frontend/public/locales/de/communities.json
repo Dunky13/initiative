@@ -269,7 +269,6 @@
     "initiativeJoinApproved": "Deine Anfrage, {{initiativeName}} beizutreten, wurde angenommen.",
     "initiativeJoinDenied": "Deine Anfrage, {{initiativeName}} beizutreten, wurde abgelehnt.",
     "projectAdded": "{{projectName}} wurde zu {{initiativeName}} hinzugefügt, in der du Mitglied bist.",
-    "userPendingApproval": "{{email}} wartet auf Genehmigung.",
     "mentionComment": "{{mentionedBy}} hat dich in einem Kommentar zu {{contextTitle}} erwähnt.",
     "mentionFile": "{{mentionedBy}} hat dich in {{fileTitle}} erwähnt.",
     "mentionTaskDescription": "{{mentionedBy}} hat dich in {{taskTitle}} erwähnt.",
@@ -296,8 +295,6 @@
     "accessGrantDenied": "Deine Zugriffsanfrage für {{community}} wurde abgelehnt.",
     "accessGrantRevoked": "Dein Zugriff auf {{community}} wurde widerrufen.",
     "eventInvitation": "{{organizer}} hat dich zu {{eventTitle}} eingeladen.",
-    "eventUpdated": "{{editor}} hat {{eventTitle}} aktualisiert.",
-    "eventRescheduled": "{{editor}} hat {{eventTitle}} verschoben.",
     "eventCancelled": "{{canceller}} hat {{eventTitle}} abgesagt.",
     "eventRsvp": "{{responder}} hat mit {{status}} auf {{eventTitle}} geantwortet.",
     "eventReminder": "{{eventTitle}} steht bald an.",
@@ -348,7 +345,8 @@
       "edited": "{{name}} hat {{entityName}} bearbeitet.",
       "moved": "{{name}} hat {{entityName}} verschoben.",
       "scheduled": "{{name}} hat {{entityName}} neu terminiert.",
-      "published": "{{name}} hat {{entityName}} veröffentlicht."
+      "published": "{{name}} hat {{entityName}} veröffentlicht.",
+      "reacted": "{{name}} hat auf {{entityName}} reagiert."
     },
     "subscriptionMulti_one": "{{name}} und 1 weitere Person haben {{entityName}} geändert.",
     "subscriptionMulti_other": "{{name}} und {{count}} weitere haben {{entityName}} geändert.",
@@ -379,8 +377,7 @@
       "project": "Ein Projekt",
       "projectIn": "einem Projekt",
       "task": "Eine Aufgabe",
-      "taskObject": "deine Aufgabe",
-      "user": "Ein Benutzer"
+      "taskObject": "deine Aufgabe"
     },
     "moderationRemoved": "Ein Moderator hat etwas von dir entfernt: {{reason}}",
     "moderationRemovedLegal": "Etwas, das du geschrieben hast, wurde aus rechtlichen Gründen entfernt",

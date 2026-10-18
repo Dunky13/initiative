@@ -118,7 +118,7 @@ async def test_a_cadence_defers_the_row(session: AsyncSession, configured):
     )
     # A comment is not addressed to anybody, so the lane does not carry it.
     assert await email_outbox.enqueue(
-        session, user, category=NotificationCategory.comments, pieces=_pieces()
+        session, user, category=NotificationCategory.subscriptions, pieces=_pieces()
     )
     await session.commit()
     (row,) = await _rows(session, user.id)
@@ -150,7 +150,7 @@ async def test_several_rows_go_out_as_one_digest(
         await email_outbox.enqueue(
             session,
             user,
-            category=NotificationCategory.mentions,
+            category=NotificationCategory.subscriptions,
             guild_id=guild.id,
             pieces=_pieces(body),
         )
@@ -221,7 +221,7 @@ async def test_a_channel_switched_off_after_writing_is_not_delivered(
         await email_outbox.enqueue(
             session,
             user,
-            category=NotificationCategory.replies,
+            category=NotificationCategory.subscriptions,
             guild_id=guild.id,
             pieces=_pieces(body="<strong>Alice</strong> replied on Q3 budget"),
         )
@@ -242,7 +242,7 @@ async def test_a_channel_switched_off_after_writing_is_not_delivered(
     letter, reply = sent
     assert letter["recipient"] == "switched-off@example.com"
     assert "Your password was changed" in letter["html"]
-    assert reply["subject"] == "You have a reply"
+    assert reply["subject"] == "Something you subscribed to changed"
     assert "Q3 budget" not in reply["html"]
     assert [row.sent_at is not None for row in await _rows(session, user.id)] == [
         True,
@@ -409,7 +409,7 @@ async def test_going_back_to_instant_releases_what_a_digest_was_holding(
     weekly = {"email": {"cadence": "weekly", "at": "09:00", "weekday": 1}}
     await set_notification_prefs(session, user, weekly)
     await email_outbox.enqueue(
-        session, user, category=NotificationCategory.comments, pieces=_pieces()
+        session, user, category=NotificationCategory.subscriptions, pieces=_pieces()
     )
     await session.commit()
 

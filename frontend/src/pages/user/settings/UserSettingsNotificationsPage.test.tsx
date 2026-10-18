@@ -1,8 +1,13 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildUser } from "@/__tests__/factories";
+import { buildNotificationPreferences } from "@/__tests__/helpers/handlers/notification.handlers";
+import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage as renderRoutedPage } from "@/__tests__/helpers/render";
+import type { NotificationPreferencesUpdate } from "@/api/generated/initiativeAPI.schemas";
 
 // usePushNotifications pulls in a Capacitor plugin that can't load in jsdom.
 vi.mock("@/hooks/usePushNotifications", () => ({
@@ -30,12 +35,13 @@ describe("UserSettingsNotificationsPage", () => {
 
   it("renders the grid from the registry the server sends", async () => {
     renderPage();
-    expect(await screen.findByText("Events")).toBeInTheDocument();
-    expect(screen.getByText("Event reminders")).toBeInTheDocument();
-    // Split from mentions: the whole reason ambient comment traffic can now be
-    // quietened on its own.
-    expect(screen.getByText("Mentions")).toBeInTheDocument();
-    expect(screen.getByText("Comments on your work")).toBeInTheDocument();
+    expect(await screen.findByText("In your communities")).toBeInTheDocument();
+    expect(screen.getByText("Mentions and replies")).toBeInTheDocument();
+    expect(screen.getByText("Assigned to you")).toBeInTheDocument();
+    expect(screen.getByText("Subscribed")).toBeInTheDocument();
+    expect(screen.getByText("Needs you")).toBeInTheDocument();
+    // Nothing switches cases off, so there is no row to show.
+    expect(screen.queryByText("Cases")).not.toBeInTheDocument();
   });
 
   it("offers the bell as a channel", async () => {
@@ -66,5 +72,54 @@ describe("UserSettingsNotificationsPage", () => {
   it("renders 'at the time of the event' when lead time is zero", async () => {
     renderPage({ event_reminder_minutes_before: 0 });
     expect(await screen.findByText("At the time of the event")).toBeInTheDocument();
+  });
+
+  describe("per community", () => {
+    const serve = (muted: boolean) => {
+      const sent: NotificationPreferencesUpdate[] = [];
+      const preferences = buildNotificationPreferences({
+        communities: [{ community_id: 4, community_name: "Acme", muted, off: ["subscriptions"] }],
+      });
+      server.use(
+        http.get("/api/v1/me/notification-preferences", () => HttpResponse.json(preferences)),
+        http.put("/api/v1/me/notification-preferences", async ({ request }) => {
+          sent.push((await request.json()) as NotificationPreferencesUpdate);
+          return HttpResponse.json(preferences);
+        })
+      );
+      return sent;
+    };
+
+    it("switches one row off for one community, and mutes it", async () => {
+      const user = userEvent.setup();
+      const sent = serve(false);
+      renderPage();
+
+      const mentions = await screen.findByLabelText("Mentions and replies in Acme");
+      expect(mentions).toBeChecked();
+      expect(screen.getByLabelText("Subscribed in Acme")).not.toBeChecked();
+      // Only the rows about a community's content are per community.
+      expect(screen.queryByLabelText("Waiting on you in Acme")).not.toBeInTheDocument();
+
+      await user.click(mentions);
+      // Every switch waits while a write is under way.
+      await waitFor(() => expect(screen.getByLabelText("Mute Acme")).toBeEnabled());
+      await user.click(screen.getByLabelText("Mute Acme"));
+      await waitFor(() =>
+        expect(sent).toEqual([
+          { rows: [{ community_id: 4, category: "mentions", enabled: false }] },
+          { mutes: [{ community_id: 4, muted: true }] },
+        ])
+      );
+    });
+
+    it("says a muted community says nothing, in place of its rows", async () => {
+      serve(true);
+      renderPage();
+
+      expect(await screen.findByLabelText("Mute Acme")).toBeChecked();
+      expect(screen.getByText(/This community says nothing at all/)).toBeInTheDocument();
+      expect(screen.queryByLabelText("Mentions and replies in Acme")).not.toBeInTheDocument();
+    });
   });
 });

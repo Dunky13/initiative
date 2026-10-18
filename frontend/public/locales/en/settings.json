@@ -356,24 +356,16 @@
     "toggleError": "Unable to update notification settings",
     "categoryHeader": "Category",
     "categories": {
-      "mentions": "Mentions",
-      "replies": "Replies",
-      "comments": "Comments on your work",
-      "reactions": "Reactions",
-      "subscriptions": "Subscriptions",
-      "assignments": "Task assignments",
-      "due_dates": "Overdue tasks",
-      "membership": "Joining things",
+      "mentions": "Mentions and replies",
+      "assignments": "Assigned to you",
+      "subscriptions": "Subscribed",
+      "news": "New in your communities",
       "approvals": "Waiting on you",
-      "posts": "Posts",
-      "events": "Events",
-      "event_reminders": "Event reminders",
-      "direct_messages": "Direct messages",
-      "connections": "Connections",
-      "jobs": "Exports and imports",
-      "account": "Your account",
       "moderation": "Moderation",
-      "cases": "Cases"
+      "cases": "Cases",
+      "direct_messages": "Messages and connections",
+      "jobs": "Exports and imports",
+      "account": "Your account"
     },
     "reminderLeadTime": {
       "label": "Remind me",
@@ -395,30 +387,21 @@
       "desktop": "Desktop"
     },
     "groups": {
-      "addressed_to_me": "Addressed to me",
-      "activity": "Activity",
-      "community": "Community",
-      "account": "Account"
+      "your_communities": "In your communities",
+      "community": "Needs you",
+      "account": "Just you"
     },
     "categoryDescriptions": {
-      "mentions": "Somebody wrote your name.",
-      "replies": "Somebody replied to something you said.",
-      "comments": "Somebody commented on a task you are on, or something you made. Rolled up per thread.",
-      "reactions": "Somebody reacted to one of your comments.",
-      "subscriptions": "Changes and comments on what you subscribed to, and on what's inside it.",
-      "assignments": "Somebody assigned you tasks. One summary, not one per task.",
-      "due_dates": "A daily nudge about what is past due, at a time you choose.",
-      "membership": "You were added to an initiative, or a project appeared in one.",
+      "mentions": "Somebody named you, replied to you or reacted to your comment.",
+      "assignments": "You were given a task or invited to something, or what you're on is due, changed, cancelled or about to start.",
+      "subscriptions": "Changes, comments and reactions on what you follow, which includes what you made. The bell on anything stops it.",
+      "news": "A post went up, you were added to an initiative or a project, or your request to join was answered.",
       "approvals": "Somebody is waiting on your decision. Always shows in the bell.",
-      "posts": "A notice went up on a board you can see.",
-      "events": "You were invited to something, or something you are attending changed.",
-      "event_reminders": "Shortly before an event you are going to.",
-      "direct_messages": "Somebody messaged you. Who and how many, never what it says.",
-      "connections": "Somebody asked to connect, or accepted.",
-      "jobs": "An export or import you asked for has finished.",
-      "account": "Something was done to your account. Always shows in the bell.",
       "moderation": "A community's moderators took down or warned you about something you wrote. Always shows in the bell.",
-      "cases": "A case opened where you work cases, or its requester answered and nobody has taken it."
+      "cases": "A case opened where you work cases, or its requester answered and nobody has taken it.",
+      "direct_messages": "Somebody messaged you, asked to connect, or accepted. Who and how many, never what a message says.",
+      "jobs": "An export or import you asked for has finished.",
+      "account": "Something was done to your account. Always shows in the bell."
     },
     "quietHours": {
       "title": "Quiet hours",
@@ -428,14 +411,11 @@
     },
     "communities": {
       "title": "Per community",
-      "description": "One dial each. Set a community to say less without changing anything anywhere else.",
-      "levelLabel": "How much {{community}} says",
-      "mutedHelp": "This community says nothing at all — including if somebody names you directly.",
-      "levels": {
-        "everything": "Everything",
-        "personal": "Only what names me",
-        "nothing": "Nothing"
-      }
+      "description": "Switch a row off for one community, or mute it, without changing anything anywhere else.",
+      "mute": "Mute",
+      "muteLabel": "Mute {{community}}",
+      "rowLabel": "{{row}} in {{community}}",
+      "mutedHelp": "This community says nothing at all — including if somebody names you directly."
     },
     "timing": {
       "title": "When you hear about it",

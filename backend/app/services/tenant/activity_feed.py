@@ -27,9 +27,14 @@ comparison of ids rather than a sharing check: a reader who can open little of
 a busy community does not pay for the rest of it.
 
 Whether the reader made an item or is assigned to it is asked of each kind's
-own table, once per kind among the candidates, and the candidates are scored
-here: asked inside the statement, every kind's table and its policies would be
-planned on every request whichever kinds were there.
+own table (``personal_items.NAMING``, the rule subscriptions are worked out by),
+once per kind among the candidates, and the candidates are scored here: asked
+inside the statement, every kind's table and its policies would be planned on
+every request whichever kinds were there. Unsubscribing from an item takes back
+what made it theirs.
+
+The same statement, over a batch of transactions rather than a window, is what
+subscribers are told from (``subscription_notices``), read as each of them.
 """
 
 from __future__ import annotations
@@ -39,17 +44,18 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from sqlalchemy import DateTime, Integer, Table, Text, bindparam, text
+from sqlalchemy import BigInteger, DateTime, Integer, Text, bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlmodel import SQLModel, col, select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.tools import Tool
-from app.db.initiative_rls import CONTENT_KIND_TABLES, NAMED_PEOPLE
+from app.db.initiative_rls import CONTENT_KIND_TABLES
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.search_entry import SearchEntry
 from app.services.tenant.change_log import RETENTION
 from app.services.tenant.engagement_levels import boosted
+from app.services.tenant.personal_items import NAMING
 
 #: How far back the feed reads: the change log's own retention.
 WINDOW = RETENTION
@@ -115,33 +121,6 @@ QUIET_FACETS: tuple[str, ...] = (
 _SCHEDULE_COLUMNS = ("start_date", "due_date", "start_at")
 
 
-def _naming_tables() -> dict[str, list[tuple[Table, str, str]]]:
-    """Per content kind, the tables whose rows say the reader is involved with
-    one: ``(table, column naming the item, column naming the person)``. The
-    item's own ``created_by``, and the kept :data:`NAMED_PEOPLE` rows (an
-    assignee, an attendee) whose foreign key is the kind's. From the schema, so
-    a new kind is asked the moment its table has either."""
-    kind_of = {table: kind for kind, table in CONTENT_KIND_TABLES.items()}
-    tables = SQLModel.metadata.tables
-    naming: dict[str, list[tuple[Table, str, str]]] = {}
-    for kind, name in CONTENT_KIND_TABLES.items():
-        if "created_by" in tables[name].c:
-            naming.setdefault(kind, []).append((tables[name], "id", "created_by"))
-    for named in NAMED_PEOPLE:
-        if named.clear:
-            continue
-        for fk in tables[named.table].foreign_keys:
-            kind = kind_of.get(fk.column.table.name)
-            if kind is not None:
-                naming.setdefault(kind, []).append(
-                    (tables[named.table], fk.parent.name, named.column)
-                )
-    return naming
-
-
-_NAMING = _naming_tables()
-
-
 def _verb() -> str:
     """One change as a verb, or NULL for a change that makes no entry."""
     return f"""
@@ -175,53 +154,78 @@ def _verb() -> str:
         END"""
 
 
-def _statement(tools: list[str]) -> Any:
+def _statement(tools: list[str] | None) -> Any:
     """The candidates as one statement: each item people changed among the
     changes in ``tools`` the reader can open (``:ids_<tool>`` each), with what
-    the log, the index and the levels say about it."""
-    readable = " OR ".join(
-        f"(o.dac_tool = '{tool}' AND o.dac_id = ANY (:ids_{tool}))" for tool in tools
-    )
+    the log, the index and the levels say about it. With ``tools`` ``None``,
+    the changes of the transactions ``:txns`` instead, however long ago, for
+    telling subscribers what one batch of the log did: plug-ins' changes
+    included, which the feed leaves out, and comments left out, which are told
+    where they are made."""
+    if tools is None:
+        scope = (
+            "o.txn_id = ANY (:txns) AND o.resource_type <> 'comments'"
+            " AND (o.actor_user_id IS NOT NULL OR o.actor_install_id IS NOT NULL)"
+        )
+        window = ""
+    else:
+        readable = " OR ".join(
+            f"(o.dac_tool = '{tool}' AND o.dac_id = ANY (:ids_{tool}))"
+            for tool in tools
+        )
+        scope = (
+            f"o.occurred_at > :since AND ({readable})"
+            " AND o.actor_user_id IS NOT NULL AND o.actor_install_id IS NULL"
+        )
+        window = "ORDER BY o.occurred_at DESC LIMIT :candidates"
     sql = f"""
     WITH changes AS (
         SELECT o.resource_type, o.resource_id, o.parents, o.action,
                o.changed::text[] AS changed,
-               o.actor_user_id, o.occurred_at
+               o.actor_user_id, o.actor_install_id, o.occurred_at
         FROM event_outbox o
-        WHERE o.occurred_at > :since
-          AND o.actor_user_id IS NOT NULL
-          AND o.actor_install_id IS NULL
+        WHERE {scope}
           AND NOT (o.action = 'updated' AND o.changed::text[] <@ :quiet)
-          AND ({readable})
-        ORDER BY o.occurred_at DESC
-        LIMIT :candidates
+        {window}
     ),
     attributed AS (
-        SELECT item.kind, item.id, o.actor_user_id AS actor, o.occurred_at,
+        SELECT item.kind, item.id, o.actor_user_id AS actor,
+               o.actor_install_id AS install, o.occurred_at,
                {_verb()} AS verb
         FROM changes o
         CROSS JOIN LATERAL content_item_of(o.resource_type, o.resource_id, o.parents)
             AS item
     ),
     per_actor AS (
-        SELECT kind, id, actor, max(occurred_at) AS last
+        SELECT kind, id, actor, install, max(occurred_at) AS last
         FROM attributed
-        WHERE actor <> :reader AND verb IS NOT NULL
-        GROUP BY kind, id, actor
+        WHERE actor IS DISTINCT FROM :reader AND verb IS NOT NULL
+        GROUP BY kind, id, actor, install
     ),
     items AS (
         SELECT p.kind, p.id, max(p.last) AS latest,
-               (array_agg(p.actor ORDER BY p.last DESC, p.actor))[1:{ACTORS_SHOWN}]
-                   AS actors,
+               (array_agg(p.actor ORDER BY p.last DESC, p.actor, p.install))
+                   [1:{ACTORS_SHOWN}] AS actors,
+               (array_agg(p.install ORDER BY p.last DESC, p.actor, p.install))
+                   [1:{ACTORS_SHOWN}] AS installs,
+               bool_or(p.install IS NULL) AS by_people,
                count(*) AS actor_count
         FROM per_actor p
         GROUP BY p.kind, p.id
     )
     SELECT i.kind AS entity_type, i.id AS entity_id, i.latest, i.actors,
-           i.actor_count,
+           i.installs, i.by_people, i.actor_count,
            (SELECT array_agg(DISTINCT a.verb ORDER BY a.verb) FROM attributed a
              WHERE a.kind = i.kind AND a.id = i.id
-               AND a.actor <> :reader AND a.verb IS NOT NULL) AS verbs,
+               AND a.actor IS DISTINCT FROM :reader AND a.verb IS NOT NULL)
+               AS verbs,
+           (SELECT array_agg(a.verb || ':' || coalesce(a.actor::text, '')
+                             || ':' || coalesce(a.install::text, '')
+                             ORDER BY a.occurred_at DESC)
+              FROM attributed a
+             WHERE a.kind = i.kind AND a.id = i.id
+               AND a.actor IS DISTINCT FROM :reader AND a.verb IS NOT NULL)
+               AS done,
            EXISTS (SELECT 1 FROM attributed a
                     WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
                AS changed,
@@ -229,6 +233,7 @@ def _statement(tools: list[str]) -> Any:
            mine_tool.bookmarked_at IS NOT NULL AS bookmarked,
            (mine.subscribed_at IS NOT NULL OR mine_tool.subscribed_at IS NOT NULL)
                AS subscribed,
+           mine.unsubscribed_at IS NOT NULL AS unsubscribed,
            coalesce(l.level, 0) AS level,
            se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,
            container.title AS tool_title, ini.name AS initiative_name
@@ -248,13 +253,18 @@ def _statement(tools: list[str]) -> Any:
      AND NOT (container.entity_type = i.kind AND container.entity_id = i.id)
     LEFT JOIN initiatives ini ON ini.id = se.initiative_id
     """
-    return text(sql).bindparams(
+    shared = (
         bindparam("reader", type_=Integer),
         bindparam("since", type_=DateTime(timezone=True)),
-        bindparam("candidates", type_=Integer),
         bindparam("quiet", type_=ARRAY(Text)),
         bindparam("schedule_columns", type_=ARRAY(Text)),
         bindparam("item_tables", type_=ARRAY(Text)),
+    )
+    if tools is None:
+        return text(sql).bindparams(*shared, bindparam("txns", type_=ARRAY(BigInteger)))
+    return text(sql).bindparams(
+        *shared,
+        bindparam("candidates", type_=Integer),
         *(bindparam(f"ids_{tool}", type_=ARRAY(Integer)) for tool in tools),
     )
 
@@ -324,13 +334,27 @@ def query(tools: dict[str, list[int]], *, reader_id: int) -> tuple[Any, dict]:
     return _statement(sorted(tools)), params
 
 
+def batch_query(txns: list[int], *, reader_id: int) -> tuple[Any, dict]:
+    """The same statement over the changes of the transactions ``txns``, and
+    its parameters: what those transactions did that the reader can see,
+    people's and plug-ins' changes, never the reader's own. ``by_people`` says
+    whether a person made any of an item's, and ``done`` pairs each verb with
+    who did it (``verb:person:install``), newest first."""
+    return _statement(None), {
+        "reader": reader_id,
+        "since": datetime.now(timezone.utc) - WINDOW,
+        "txns": txns,
+        **verb_params(),
+    }
+
+
 async def _involved(
     session: AsyncSession, reader_id: int, items: dict[str, list[int]]
 ) -> set[tuple[str, int]]:
     """The items, of those given by kind, the reader made or is named on."""
     found: set[tuple[str, int]] = set()
     for kind, ids in items.items():
-        for table, item_column, person_column in _NAMING.get(kind, ()):
+        for table, item_column, person_column, _tie in NAMING.get(kind, ()):
             rows = await session.exec(
                 select(table.c[item_column]).where(  # type: ignore[call-overload]
                     table.c[item_column].in_(ids), table.c[person_column] == reader_id
@@ -342,11 +366,13 @@ async def _involved(
 
 def _score(row: Any, now: datetime, involved: bool) -> float:
     age = (now - row["latest"]).total_seconds()
+    # Unsubscribing from an item takes back what made it the reader's.
+    kept = not row["unsubscribed"]
     relevance = (
         1
-        + (INVOLVED_WEIGHT if involved else 0)
+        + (INVOLVED_WEIGHT if involved and kept else 0)
         + (CHANGED_WEIGHT if row["changed"] else 0)
-        + (SUBSCRIBED_WEIGHT if row["subscribed"] else 0)
+        + (SUBSCRIBED_WEIGHT if row["subscribed"] and kept else 0)
         + (OPENED_WEIGHT if row["opened"] else 0)
         + (BOOKMARKED_WEIGHT if row["bookmarked"] else 0)
     )

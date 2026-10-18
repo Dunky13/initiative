@@ -24,9 +24,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlencode
 
-from sqlalchemy import column as sa_column
 from sqlalchemy import and_, delete, exists, func, or_, select
-from sqlalchemy import table as sa_table
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -46,9 +44,10 @@ from app.core.user_display import name_here
 from app.db.guild_standing import ActorContext, InstallContext
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
-from app.db.initiative_rls import entity_tables, governing_path
 from app.db.session import (
     SystemSessionLocal,
+    guild_context,
+    install_context,
     routed_guild_id,
     set_rls_context,
 )
@@ -59,7 +58,6 @@ from app.models.platform.user_notification_prefs import (
     EmailCadence,
     UserNotificationPrefs,
 )
-from app.models.tenant._mixins import tool_models
 from app.models.tenant.calendar_event import (
     CalendarEvent,
     CalendarEventAnswer,
@@ -75,7 +73,12 @@ from app.models.tenant.task import Task, TaskAssignee, TaskStatus, TaskStatusCat
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.services import email as email_service
 from app.services import permissions as permissions_service
-from app.services.tenant.named_people import Governing, readers_of, roster_session
+from app.services.tenant.named_people import (
+    Governing,
+    governing_of,
+    readers_of,
+    roster_session,
+)
 from app.services.cross_guild import gather_across_guilds, member_guild_ids
 from app.services.guild_sweeps import Scan, Scope
 from app.services.platform import accounts as accounts_service
@@ -259,7 +262,9 @@ def _place_of(subject: Subject) -> dict[str, Any]:
     }
 
 
-async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
+async def resolve_subject(
+    session: AsyncSession, ref: Ref, *, only: int | None = None
+) -> Subject | None:
     """Resolve ``ref`` on the caller's routed session, or ``None`` when the
     session cannot reach it.
 
@@ -269,28 +274,31 @@ async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
     ``named_people.readers_of``, the rule naming somebody on it uses, and who
     it is shared with is ``permissions.audience``, the rule the post audience
     uses.
+
+    ``only`` is the person the session is routed as, for a notice to them
+    alone: the session reaching it is their own policies' answer, so neither
+    rule is asked.
     """
     kind, entity_id = ref
-    table = entity_tables()[kind]
-    walk = governing_path(table)
-    if walk is None:
-        raise ValueError(f"no tool governs {kind!r}")
-    tool, hops = walk
-    row_id: int | None = entity_id
-    for column, parent in hops:
-        step = sa_table(table, sa_column("id"), sa_column(column))
-        row_id = (
-            await session.exec(select(step.c[column]).where(step.c.id == row_id))
-        ).scalar_one_or_none()
-        if row_id is None:
-            return None
-        table = parent
-    model = tool_models()[tool.plural]
-    row = (
-        await session.exec(select(model).where(model.id == row_id))
-    ).scalar_one_or_none()
-    if row is None:
+    governed = await governing_of(session, ref)
+    if governed is None:
         return None
+    tool, row = governed
+    target_path = (
+        reference_path(kind, entity_id)
+        if kind in _ADDRESSABLE
+        else reference_path(tool, row.id)
+    )
+    if only is not None:
+        return Subject(
+            about=ref,
+            tool=tool,
+            initiative_id=row.initiative_id,
+            resource_id=row.id,
+            shared_with=frozenset(),
+            readers=frozenset({only}),
+            target_path=target_path,
+        )
     governing = Governing.of(tool, row)
     async with roster_session(session, whole=True) as reader:
         readers = set(
@@ -310,11 +318,7 @@ async def resolve_subject(session: AsyncSession, ref: Ref) -> Subject | None:
         resource_id=row.id,
         shared_with=frozenset(shared),
         readers=frozenset(readers),
-        target_path=(
-            reference_path(kind, entity_id)
-            if kind in _ADDRESSABLE
-            else reference_path(tool, row.id)
-        ),
+        target_path=target_path,
     )
 
 
@@ -369,10 +373,21 @@ async def notify(
     payload: dict[str, Any] = {**(data or {}), "community_id": guild_id}
     allowed: frozenset[int] = frozenset()
     if about is not None:
+        # A notice to the person the session is routed as alone: their own
+        # policies answer whether they reach it.
+        reader = guild_context(session)
+        only = (
+            reader.user_id
+            if reader is not None
+            and install_context(session) is None
+            and recipients != SHARED_WITH
+            and list(cast(Iterable[int], recipients)) == [reader.user_id]
+            else None
+        )
         subject = (
             about
             if isinstance(about, Subject)
-            else await resolve_subject(session, about)
+            else await resolve_subject(session, about, only=only)
         )
         if subject is None:
             return
@@ -1480,7 +1495,7 @@ async def enqueue_reaction_event(
         ],
     )
     prefs = await notification_prefs.load_prefs_for_delivery(author.id)
-    if wants_digest(prefs, NotificationCategory.reactions, guild_id=guild_id):
+    if wants_digest(prefs, NotificationCategory.mentions, guild_id=guild_id):
         session.add(
             ReactionDigestItem(
                 user_id=author.id,
@@ -1605,7 +1620,7 @@ async def _roll_up_reaction(
     # line opens, as for a comment thread, so a flurry is one alert.
     if opened is not None and notification_prefs.reachable(
         prefs,
-        category=NotificationCategory.reactions,
+        category=NotificationCategory.mentions,
         channel=Channel.desktop,
         guild_id=guild_id,
         tz_name=recipient.timezone,
@@ -1749,7 +1764,7 @@ def _reaction_row(item, guild_id: int) -> dict:
 REACTION_DIGEST = DigestSpec(
     name="reaction-digest",
     model=ReactionDigestItem,
-    category=NotificationCategory.reactions,
+    category=NotificationCategory.mentions,
     row=_reaction_row,
     pieces=email_service.reaction_digest_pieces,
     push=_reaction_push,
@@ -2020,7 +2035,7 @@ async def _send_overdue(
     users = [
         u
         for u in users
-        if wants_digest(all_prefs.get(u.id), NotificationCategory.due_dates)
+        if wants_digest(all_prefs.get(u.id), NotificationCategory.assignments)
     ]
     if not users:
         logger.debug("overdue-digest: no users opted in")
@@ -2117,14 +2132,14 @@ async def _send_overdue(
         # channel switched off meanwhile stays quiet.
         delivered = False
         channels = await _channels(
-            session, user, category=NotificationCategory.due_dates
+            session, user, category=NotificationCategory.assignments
         )
         email_tasks, push_tasks = await _digest_batch(session, tasks)
         if channels.email and email_tasks:
             delivered = await email_outbox.enqueue(
                 session,
                 user,
-                category=NotificationCategory.due_dates,
+                category=NotificationCategory.assignments,
                 prefs=channels.prefs,
                 pieces=email_service.overdue_tasks_pieces(user, email_tasks),
             )

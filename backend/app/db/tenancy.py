@@ -115,8 +115,8 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         "guild_ai_connection_keys",
         "webhook_deliveries",  # per-subscription delivery ledger, no initiative of
         # its own; read through its subscription (LEDGER_TABLES below).
-        "subscription_notices",  # which change-log transactions subscribers were
-        # told of; the system engine's alone (LEDGER_TABLES below).
+        "subscription_progress",  # how far through the change log subscribers
+        # were told; the system engine's alone (LEDGER_TABLES below).
         "plugin_hook_deliveries",  # vendor webhook deliveries an install accepted;
         # read through the install (LEDGER_TABLES below).
         "plugin_schedule_runs",  # when an install's schedules last ran and run
@@ -290,7 +290,7 @@ SEAT_READ_TABLES: frozenset[str] = frozenset(
 # ``GUILD_LEVEL_TABLES`` — enforced in ``tenancy_test.py``.
 LEDGER_TABLES: dict[str, tuple[str, str] | None] = {
     "webhook_deliveries": ("webhook_subscriptions", "subscription_id"),
-    "subscription_notices": None,
+    "subscription_progress": None,
     "plugin_hook_deliveries": ("guild_plugins", "install_id"),
     "plugin_schedule_runs": ("guild_plugins", "install_id"),
 }
@@ -355,7 +355,7 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         "reaction_digest_items",
         "task_assignment_digest_items",
         "webhook_deliveries",
-        "subscription_notices",
+        "subscription_progress",
         "timer_marks",
         # The key -> task map the intake writer reads. The case it points at
         # carries the author, and a system-opened one has none by design.

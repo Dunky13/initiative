@@ -8,19 +8,21 @@ import { renderWithProviders } from "@/__tests__/helpers/render";
 
 import { SubscribeButton } from "./SubscribeButton";
 
-const state = (subscribed_at: string | null) => ({
+// `subscribed` is the worked-out answer; `subscribed_at` is only a by-hand subscription.
+const state = (subscribed: boolean, subscribed_at: string | null = null) => ({
   entity_type: "task",
   entity_id: 7,
   viewed_at: null,
   view_source: null,
   bookmarked_at: null,
   subscribed_at,
+  subscribed,
 });
 
 describe("SubscribeButton", () => {
   it("reads whether the item is subscribed to, subscribes to it, and puts it back when that fails", async () => {
     const user = userEvent.setup();
-    let subscribed: string | null = null;
+    let subscribed = false;
     let fail = false;
     const written: string[] = [];
     server.use(
@@ -28,12 +30,12 @@ describe("SubscribeButton", () => {
       http.put("/api/v1/c/3/personal-items/subscribe/:kind/:id", ({ params }) => {
         written.push(`subscribe ${params.kind}/${params.id}`);
         if (fail) return new HttpResponse(null, { status: 404 });
-        subscribed = "2026-10-17T00:00:00Z";
-        return HttpResponse.json(state(subscribed));
+        subscribed = true;
+        return HttpResponse.json(state(subscribed, "2026-10-17T00:00:00Z"));
       }),
       http.delete("/api/v1/c/3/personal-items/subscribe/:kind/:id", ({ params }) => {
         written.push(`unsubscribe ${params.kind}/${params.id}`);
-        subscribed = null;
+        subscribed = false;
         return new HttpResponse(null, { status: 204 });
       })
     );
@@ -60,6 +62,18 @@ describe("SubscribeButton", () => {
         "aria-pressed",
         "false"
       )
+    );
+  });
+
+  it("reads what the reader made as subscribed, with no subscription by hand", async () => {
+    server.use(http.get("/api/v1/c/3/personal-items/task/7", () => HttpResponse.json(state(true))));
+    renderWithProviders(<SubscribeButton kind="task" entityId={7} />, {
+      communities: { activeCommunityId: 3 },
+    });
+
+    expect(await screen.findByRole("button", { name: "Unsubscribe" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
     );
   });
 });

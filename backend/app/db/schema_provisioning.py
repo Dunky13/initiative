@@ -175,9 +175,6 @@ SYSTEM_GUILD_MAINTENANCE_GRANTS: dict[str, tuple[str, ...]] = {
     "webhook_deliveries": (
         "SELECT (subscription_id, txn_id, delivered_at, dead_lettered_at, next_attempt_at)",
     ),
-    # The same remainder for the subscribers' notices: the transactions they
-    # were already told of.
-    "subscription_notices": ("SELECT (txn_id)",),
     "search_entries": (
         "SELECT (entity_type, entity_id)",
         "INSERT (entity_type, entity_id, chunk_ix, initiative_id, dac_tool, "

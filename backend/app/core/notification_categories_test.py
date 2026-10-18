@@ -79,23 +79,32 @@ def test_personal_types_are_the_union_of_personal_categories():
     assert expected != set(NotificationType)
 
 
-def test_mentions_and_comments_are_separate_categories():
-    """One switch used to gate both, so nobody could quieten ambient comment
-    traffic without also losing being named."""
+def test_mentions_and_subscriptions_are_separate_rows():
+    """Being named, or answered, is a deliberate act by another person; what
+    happens on something you follow scales with how busy it is. One switch for
+    both would mean nobody could quieten the second without losing the first."""
     assert category_of(NotificationType.mention) is NotificationCategory.mentions
     assert (
-        category_of(NotificationType.comment_on_task) is NotificationCategory.comments
+        category_of(NotificationType.comment_reaction) is NotificationCategory.mentions
+    )
+    assert (
+        category_of(NotificationType.subscription_activity)
+        is NotificationCategory.subscriptions
     )
     assert is_personal(NotificationType.mention)
-    assert not is_personal(NotificationType.comment_on_task)
+    assert not is_personal(NotificationType.subscription_activity)
+
+
+def test_cases_are_not_a_preference():
+    """Answering cases is a platform role: nothing switches it off."""
+    assert CATEGORY_SPECS[NotificationCategory.cases].mutable_channels == frozenset()
 
 
 def test_direct_messages_and_account_are_not_guild_scoped():
-    """They exist outside any community, so no per-community override or level
-    can reach them."""
+    """They exist outside any community, so no community's mute or row can
+    reach them."""
     for category in (
         NotificationCategory.direct_messages,
-        NotificationCategory.connections,
         NotificationCategory.account,
     ):
         assert not CATEGORY_SPECS[category].guild_scoped

@@ -75,9 +75,30 @@ matter and can be deleted.
 - GET /api/v1/me/contacts/favorites api path removed without deprecation
 - DELETE /api/v1/me/contacts/favorites/{user_id} api path removed without deprecation
 - PUT /api/v1/me/contacts/favorites/{user_id} api path removed without deprecation
+- GET /api/v1/me/notification-preferences removed the required property `communities/items/categories` from the response with the `200` status
+- GET /api/v1/me/notification-preferences removed the required property `communities/items/level` from the response with the `200` status
+- PUT /api/v1/me/notification-preferences removed the enum value `comments` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `connections` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `due_dates` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `event_reminders` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `events` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `membership` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `posts` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `reactions` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the enum value `replies` of the request property `channels/items/category`
+- PUT /api/v1/me/notification-preferences removed the required property `communities/items/categories` from the response with the `200` status
+- PUT /api/v1/me/notification-preferences removed the required property `communities/items/level` from the response with the `200` status
 
 ### New values in a response's enums
 
+- GET /api/v1/me/notification-preferences added the new `news` enum value to the `categories/items/category` response property for the response status `200`
+- GET /api/v1/me/notification-preferences added the new `your_communities` enum value to the `categories/items/group` response property for the response status `200`
+- PUT /api/v1/me/notification-preferences added the new `news` enum value to the `categories/items/category` response property for the response status `200`
+- PUT /api/v1/me/notification-preferences added the new `your_communities` enum value to the `categories/items/group` response property for the response status `200`
+- GET /api/v1/notifications/ added the new `assigned_activity` enum value to the `notifications/items/type` response property for the response status `200`
+- GET /api/v1/notifications/{notification_id}/alert added the new `assigned_activity` enum value to the `notification/type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/read added the new `assigned_activity` enum value to the `type` response property for the response status `200`
+- POST /api/v1/notifications/{notification_id}/unread added the new `assigned_activity` enum value to the `type` response property for the response status `200`
 - POST /api/v1/auth/register added the new `billing.support` enum value to the `capabilities/items/` response property for the response status `201`
 - POST /api/v1/auth/register added the new `communities.read` enum value to the `capabilities/items/` response property for the response status `201`
 - POST /api/v1/auth/register added the new `communities.suspend` enum value to the `capabilities/items/` response property for the response status `201`

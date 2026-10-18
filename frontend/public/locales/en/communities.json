@@ -269,7 +269,6 @@
     "initiativeJoinApproved": "Your request to join {{initiativeName}} was approved.",
     "initiativeJoinDenied": "Your request to join {{initiativeName}} was declined.",
     "projectAdded": "{{projectName}} was added to {{initiativeName}} you’re part of.",
-    "userPendingApproval": "{{email}} is awaiting approval.",
     "mentionComment": "{{mentionedBy}} mentioned you in a comment on {{contextTitle}}.",
     "mentionFile": "{{mentionedBy}} mentioned you in {{fileTitle}}.",
     "mentionTaskDescription": "{{mentionedBy}} mentioned you in {{taskTitle}}.",
@@ -296,8 +295,6 @@
     "accessGrantDenied": "Your access request for {{community}} was denied.",
     "accessGrantRevoked": "Your access to {{community}} was revoked.",
     "eventInvitation": "{{organizer}} invited you to {{eventTitle}}.",
-    "eventUpdated": "{{editor}} updated {{eventTitle}}.",
-    "eventRescheduled": "{{editor}} rescheduled {{eventTitle}}.",
     "eventCancelled": "{{canceller}} cancelled {{eventTitle}}.",
     "eventRsvp": "{{responder}} responded {{status}} to {{eventTitle}}.",
     "eventReminder": "{{eventTitle}} is coming up.",
@@ -348,7 +345,8 @@
       "edited": "{{name}} edited {{entityName}}.",
       "moved": "{{name}} moved {{entityName}}.",
       "scheduled": "{{name}} rescheduled {{entityName}}.",
-      "published": "{{name}} published {{entityName}}."
+      "published": "{{name}} published {{entityName}}.",
+      "reacted": "{{name}} reacted to {{entityName}}."
     },
     "subscriptionMulti_one": "{{name}} and 1 other changed {{entityName}}.",
     "subscriptionMulti_other": "{{name}} and {{count}} others changed {{entityName}}.",
@@ -379,8 +377,7 @@
       "project": "A project",
       "projectIn": "a project",
       "task": "A task",
-      "taskObject": "your task",
-      "user": "A user"
+      "taskObject": "your task"
     },
     "moderationRemoved": "A moderator took down something you wrote: {{reason}}",
     "moderationRemovedLegal": "Something you wrote was taken down for legal reasons",

@@ -21,7 +21,6 @@ from app.core.notification_categories import (
 )
 from app.models.platform.guild import Guild, GuildMembership
 from app.models.platform.user import User
-from app.models.platform.user_notification_prefs import NotificationLevel
 from app.models.tenant.reaction_digest import ReactionDigestItem
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
 from app.schemas.platform.notification_prefs import (
@@ -42,11 +41,11 @@ from app.services.platform import notification_prefs as prefs_service
 me_router = APIRouter()
 
 
-#: The digest queues an opt-out can leave nobody wanting. One entry per digest,
-#: so a new digest is cleaned up on opt-out by being listed here.
-_DIGEST_QUEUES: tuple[tuple[NotificationCategory, type], ...] = (
-    (NotificationCategory.assignments, TaskAssignmentDigestItem),
-    (NotificationCategory.reactions, ReactionDigestItem),
+#: The digest queues an opt-out can leave nobody wanting, with the categories
+#: that fill each. A queue is emptied once none of them is wanted.
+_DIGEST_QUEUES: tuple[tuple[type, tuple[NotificationCategory, ...]], ...] = (
+    (TaskAssignmentDigestItem, (NotificationCategory.assignments,)),
+    (ReactionDigestItem, (NotificationCategory.mentions,)),
 )
 
 
@@ -59,6 +58,7 @@ def _registry(
             group=spec.group,
             personal=spec.personal,
             community_scoped=spec.guild_scoped,
+            per_community=spec.per_community,
             mutable_channels=[c for c in ALL_CHANNELS if c in spec.mutable_channels],
             defaults={channel: spec.defaults[channel] for channel in ALL_CHANNELS},
         )
@@ -116,7 +116,8 @@ async def read_my_notification_preferences(
     session: UserSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> NotificationPreferencesRead:
-    """The registry, this account's overrides, and each community's level.
+    """The registry, this account's overrides, and each community's mute and
+    rows.
 
     The registry travels with the response so the settings page renders the
     categories this build has rather than a copy of the list.
@@ -130,13 +131,17 @@ async def read_my_notification_preferences(
             .order_by(GuildMembership.position, Guild.name)
         )
     ).all()
-    guild_docs = _section(doc, "guilds")
     guilds = [
         CommunityNotificationSettings(
             community_id=guild.id,
             community_name=guild.name,
-            level=prefs_service.level_for(doc, guild.id),
-            categories=_section(guild_docs.get(str(guild.id)) or {}, "categories"),
+            muted=prefs_service.is_muted(doc, guild.id),
+            off=[
+                category
+                for category, spec in CATEGORY_SPECS.items()
+                if spec.per_community
+                and prefs_service.row_is_off(doc, guild.id, category)
+            ],
         )
         for guild, _membership in rows
     ]
@@ -195,14 +200,7 @@ async def update_my_notification_preferences(
             # A channel that cannot be switched off is not an error to ask
             # about — it simply does not move.
             continue
-        if change.community_id is not None and not spec.guild_scoped:
-            continue
-        branch = doc
-        if change.community_id is not None:
-            branch = doc.setdefault("guilds", {}).setdefault(
-                str(change.community_id), {}
-            )
-        categories = branch.setdefault("categories", {})
+        categories = doc.setdefault("categories", {})
         row = categories.setdefault(change.category.value, {})
         if change.enabled == spec.defaults[change.channel]:
             # Back to the default: forget it rather than storing the default,
@@ -211,14 +209,30 @@ async def update_my_notification_preferences(
         else:
             row[change.channel.value] = change.enabled
 
-    for level_change in payload.levels:
-        branch = doc.setdefault("guilds", {}).setdefault(
-            str(level_change.community_id), {}
+    for row_change in payload.rows:
+        spec = CATEGORY_SPECS[row_change.category]
+        if not spec.per_community:
+            continue
+        # Off is every channel off in that community; on is the account's own
+        # settings again, so nothing is kept.
+        categories = (
+            doc.setdefault("guilds", {})
+            .setdefault(str(row_change.community_id), {})
+            .setdefault("categories", {})
         )
-        if level_change.level is NotificationLevel.everything:
-            branch.pop("level", None)
+        if row_change.enabled:
+            categories.pop(row_change.category.value, None)
         else:
-            branch["level"] = level_change.level.value
+            categories[row_change.category.value] = {
+                channel.value: False for channel in spec.mutable_channels
+            }
+
+    for mute in payload.mutes:
+        branch = doc.setdefault("guilds", {}).setdefault(str(mute.community_id), {})
+        if mute.muted:
+            branch["muted"] = True
+        else:
+            branch.pop("muted", None)
 
     if payload.clear_quiet_hours:
         doc.pop("quiet_hours", None)
@@ -271,7 +285,8 @@ async def update_my_notification_preferences(
     await session.commit()
 
     if payload.email is not None or any(
-        change.category is NotificationCategory.due_dates for change in payload.channels
+        change.category is NotificationCategory.assignments
+        for change in (*payload.channels, *payload.rows)
     ):
         # The overdue digest goes out on their schedule, to those who want it.
         await sweep_timers.arm_in(
@@ -282,8 +297,10 @@ async def update_my_notification_preferences(
     # scoped, so this reaches into each of the account's guild schemas.
     emptied = [
         model
-        for category, model in _DIGEST_QUEUES
-        if not notifications_service.wants_digest(doc, category)
+        for model, categories in _DIGEST_QUEUES
+        if not any(
+            notifications_service.wants_digest(doc, category) for category in categories
+        )
     ]
     if emptied:
         user_id = current_user.id
