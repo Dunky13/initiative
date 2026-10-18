@@ -141,7 +141,6 @@ export const notificationLink = (notification: NotificationRead): string | null 
     case "comment_on_resource":
     case "subscription_activity":
     case "assigned_activity":
-    case "post_reaction":
       return entityRefFromData(data);
     case "post_published":
       if (typeof data.post_id === "number") {
@@ -323,19 +322,15 @@ export const notificationText = (
       return t("notifications.commentOnResource", { commenterName: name, entityName });
     }
     case "subscription_activity":
-    case "assigned_activity":
-    case "post_reaction": {
+    case "assigned_activity": {
       // One line per subscribed item: who changed it, and how, or how many did.
       const { name, others } = commentSummary(data);
       const entityName = data.entity_name ?? t("notifications.plain.item");
-      const emoji = typeof data.emoji === "string" ? data.emoji : "";
       if (others > 0) {
-        return notification.type === "post_reaction"
-          ? t("notifications.subscriptionReactedMulti", { name, count: others, entityName, emoji })
-          : t("notifications.subscriptionMulti", { name, count: others, entityName });
+        return t("notifications.subscriptionMulti", { name, count: others, entityName });
       }
       const verb = SUBSCRIPTION_VERBS.find((each) => each === data.verb) ?? "edited";
-      return t(`notifications.subscription.${verb}`, { name, entityName, emoji });
+      return t(`notifications.subscription.${verb}`, { name, entityName });
     }
     case "post_published":
       return t("notifications.postPublished", {

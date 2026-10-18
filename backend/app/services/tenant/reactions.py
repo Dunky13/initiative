@@ -418,7 +418,8 @@ async def _queue_reaction_notification(
     email/push wait for the queue to settle, exactly as task assignment does.
 
     On a post, everyone subscribed to it (``personal_items.subscribers_of``),
-    rolled into one line per post, as a comment on it is told.
+    on the line their subscription keeps for the post, as a comment on it is
+    told.
     """
     from app.models.platform.notification import NotificationType
     from app.services import notifications
@@ -435,19 +436,14 @@ async def _queue_reaction_notification(
         name = await notifications.actor_name(session, reactor)
         await notifications.notify(
             session,
-            NotificationType.post_reaction,
+            NotificationType.subscription_activity,
             sorted(subscribed[ctx.about]),
             about=subject,
             key="subscription.reacted",
             values={"actor": name, "context": ctx.title},
-            data={
-                "entity_type": kind,
-                "entity_id": entity_id,
-                "emoji": reaction.emoji,
-                "verb": "reacted",
-            },
+            data={"entity_type": kind, "entity_id": entity_id, "verb": "reacted"},
             actor=reactor,
-            rollup_key=f"reaction:{kind}:{entity_id}",
+            rollup_key=f"subscription:{kind}:{entity_id}",
         )
         return
     if ctx.author_id is None or ctx.author_id == reactor.id:

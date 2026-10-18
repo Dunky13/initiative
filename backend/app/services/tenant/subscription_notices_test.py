@@ -232,11 +232,6 @@ async def test_a_reaction_on_a_post_reaches_its_subscribers(
     )
     assert reacted.status_code == 200, reacted.text
     await drain_notices()
-    (line,) = await _lines(
-        session, cast(int, a.user.id), NotificationType.post_reaction
-    )
+    (line,) = await _lines(session, cast(int, a.user.id), SUBSCRIBED)
     assert (line.data["entity_id"], line.data["verb"]) == (post.id, "reacted")
-    assert (
-        await _lines(session, cast(int, b.user.id), NotificationType.post_reaction)
-        == []
-    )
+    assert await _lines(session, cast(int, b.user.id), SUBSCRIBED) == []

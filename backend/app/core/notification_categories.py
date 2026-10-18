@@ -173,7 +173,6 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
                 NotificationType.subscription_activity,
                 NotificationType.comment_on_task,
                 NotificationType.comment_on_resource,
-                NotificationType.post_reaction,
                 NotificationType.event_rsvp,
             }
         ),

@@ -20,8 +20,6 @@ class NotificationType(str, Enum):
     comment_reply = "comment_reply"
     #: Somebody reacted to the recipient's comment.
     comment_reaction = "comment_reaction"
-    #: Somebody reacted to a post the recipient is subscribed to.
-    post_reaction = "post_reaction"
     #: Somebody changed or commented on something the recipient is subscribed
     #: to, or on something inside a tool they are subscribed to.
     subscription_activity = "subscription_activity"

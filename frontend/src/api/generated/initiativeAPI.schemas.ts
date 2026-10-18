@@ -7493,7 +7493,6 @@ export const NotificationType = {
   comment_on_resource: "comment_on_resource",
   comment_reply: "comment_reply",
   comment_reaction: "comment_reaction",
-  post_reaction: "post_reaction",
   subscription_activity: "subscription_activity",
   assigned_activity: "assigned_activity",
   post_published: "post_published",

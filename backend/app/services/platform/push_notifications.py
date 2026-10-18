@@ -71,7 +71,6 @@ PUSH_CHANNELS: dict[NotificationType, str] = {
     # already registers for comments — same reasoning as the join requests
     # above: a new channel id would mean a native release.
     NotificationType.comment_reaction: "comments",
-    NotificationType.post_reaction: "comments",
     NotificationType.event_invitation: "calendar_events",
     NotificationType.event_cancelled: "calendar_events",
     NotificationType.event_rsvp: "calendar_events",

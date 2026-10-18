@@ -346,12 +346,10 @@
       "moved": "{{name}} a déplacé {{entityName}}.",
       "scheduled": "{{name}} a reprogrammé {{entityName}}.",
       "published": "{{name}} a publié {{entityName}}.",
-      "reacted": "{{name}} a réagi {{emoji}} à {{entityName}}."
+      "reacted": "{{name}} a réagi à {{entityName}}."
     },
     "subscriptionMulti_one": "{{name}} et 1 autre personne ont modifié {{entityName}}.",
     "subscriptionMulti_other": "{{name}} et {{count}} autres ont modifié {{entityName}}.",
-    "subscriptionReactedMulti_one": "{{name}} et 1 autre personne ont réagi {{emoji}} à {{entityName}}.",
-    "subscriptionReactedMulti_other": "{{name}} et {{count}} autres personnes ont réagi {{emoji}} à {{entityName}}.",
     "seeAll": "Tout voir",
     "inbox": {
       "title": "Notifications",
