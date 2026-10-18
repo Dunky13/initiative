@@ -184,8 +184,9 @@ async def test_posts_as_itself_and_the_notices_name_the_plugin(
     assert by_person[member.user.id].data["replier_name"] == installed.plugin.name
     assert by_person[member.user.id].data["replier_id"] is None
     owner_notice = by_person[installed.seat.user.id]
-    assert owner_notice.data["commenter_name"] == installed.plugin.name
-    assert owner_notice.data["commenter_id"] is None
+    assert owner_notice.data["commenters"] == [
+        {"id": None, "name": installed.plugin.name}
+    ]
 
     elsewhere = await client.post(
         guild_url(guild_id, "/comments/"),
