@@ -15,7 +15,7 @@ import base64
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import cryptography.fernet
 import httpx
@@ -32,7 +32,11 @@ from app.core.plugin_access_token import seal_install_token
 from app.core.config import settings
 from app.core.security import SESSION_COOKIE_NAME
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
-from app.core.messages import AccessGrantMessages, PluginChannelMessages
+from app.core.messages import (
+    AccessGrantMessages,
+    PluginChannelMessages,
+    PluginDataMessages,
+)
 from app.db import cohorts, post_commit
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.db.session import set_rls_context
@@ -2379,3 +2383,230 @@ class TestDeclarativePlugins:
             "Bearer ghs_installation_"
         )
         assert vendor.hooks == []
+
+
+# ---------------------------------------------------------------------------
+# A declarative plug-in's schedules: Initiative makes the read and its changes
+# ---------------------------------------------------------------------------
+
+#: Counts a repository's issues onto the tasks holding the repository, with
+#: when it last succeeded.
+SYNC = {
+    "id": "sync",
+    "every": "30m",
+    "endpoint": f"plugin.{DECLARATIVE_ID}.issues",
+    "params": '{"repo": connection.owner & "/web", "since": since}',
+    "write": (
+        '[{"target": {"holding": {"key": "github.repo", "value": "acme/web"}},'
+        ' "set": {"github.issues": result.total, "github.since": since}}]'
+    ),
+}
+
+
+def _syncing(**schedule: str) -> dict:
+    """:data:`DECLARATIVE` with no health check, its issues read taking
+    ``since`` as a query parameter, and :data:`SYNC` with ``schedule`` over
+    it."""
+    plugin = declarative_github(DECLARATIVE_ID)
+    del plugin["connections"][0]["health"]
+    issues = plugin["endpoints"][0]
+    issues["params"].append(
+        {"key": "since", "type": "string", "label": {"en": "Since"}}
+    )
+    issues["request"]["query"] = {"since": "params.since"}
+    plugin.update(scopes=["projects:read"], schedules=[{**SYNC, **schedule}])
+    return plugin
+
+
+class TestDeclarativeSchedules:
+    async def test_a_schedule_is_a_row_beside_the_health_checks(
+        self, acting_user, session, declarative
+    ):
+        """It goes when the pinned version no longer declares it."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(
+            session, seat, definition={**DECLARATIVE, "schedules": [SYNC]}
+        )
+        assert set(await _runs(session, seat.guild.id)) == {"workspace", "sync"}
+
+        await plugin_schedules.reconcile(seat.guild.id, plugin.id, DECLARATIVE)
+
+        assert set(await _runs(session, seat.guild.id)) == {"workspace"}
+
+    async def test_a_due_schedule_keeps_what_its_read_answers(
+        self, acting_user, session, role_session, vendor, declarative
+    ):
+        """The read is made with the installation's token and the params the
+        schedule answers from the connection and ``since``, when it last
+        succeeded. Its write keeps values, as the install, on the task holding
+        the repository."""
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        task = await create_task(session, seat.project)
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=_syncing(),
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        session.add_all(
+            [
+                PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=task.id,
+                    key="github.repo",
+                    value="acme/web",
+                    lookup="acme/web",
+                ),
+            ]
+        )
+        await session.commit()
+        worker = await role_session()
+
+        successes = []
+        for issues in ([{"title": "Broken build"}], [{"title": "A"}, {"title": "B"}]):
+            vendor.api_answers = [{"body": issues}]
+            await _due(session, seat.guild.id)
+            await _run_due(worker, seat.guild.id)
+            run = (await _runs(session, seat.guild.id))["sync"]
+            assert (run.failures, run.claimed_until) == (0, None)
+            successes.append(run.last_success_at)
+
+        first, second = successes
+        assert first < second
+        read = "https://api.github.test/repos/acme/web/issues"
+        assert [request["url"] for request in vendor.api_requests] == [
+            read,
+            f"{read}?{urlencode({'since': first.isoformat()})}",
+        ]
+        assert vendor.api_requests[0]["headers"]["authorization"].startswith(
+            "Bearer ghs_installation_"
+        )
+        kept = {
+            (row.entity_type, row.entity_id, row.key): row.value
+            for row in await session.exec(select(PluginMetadata))
+        }
+        assert kept == {
+            ("task", task.id, "github.repo"): "acme/web",
+            ("task", task.id, "github.issues"): 2,
+            ("task", task.id, "github.since"): first.isoformat(),
+        }
+
+    @pytest.mark.parametrize(
+        ("exchange", "answer", "schedule", "code"),
+        [
+            (
+                403,
+                {"body": [{"title": "A"}]},
+                {},
+                PluginDataMessages.NEEDS_CONFIGURATION,
+            ),
+            (201, {"status": 502}, {}, PluginDataMessages.SERVICE_UNAVAILABLE),
+            (201, {"status": 404}, {}, "not-found"),
+            (
+                201,
+                {"body": [{"title": "A"}]},
+                {"params": '"acme/web"'},
+                "mapping-failed",
+            ),
+            (
+                201,
+                {"body": [{"title": "A"}]},
+                {"write": '{"target": {"install": true}, "set": {"seen": true}}'},
+                PluginChannelMessages.INVALID_PAYLOAD,
+            ),
+        ],
+    )
+    async def test_a_failing_schedule_is_logged_and_backs_off(
+        self,
+        acting_user,
+        session,
+        role_session,
+        vendor,
+        declarative,
+        caplog,
+        exchange,
+        answer,
+        schedule,
+        code,
+    ):
+        """A stored connection whose token the vendor refuses, a read that
+        fails or answers unavailable, a ``params`` that is not an object and
+        changes that are not a list each fail the run: it is logged, nothing is
+        kept, ``since`` stays unset, and the schedule waits
+        ``every × 2^failures``."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        await _declarative_install(
+            session, seat, definition=_syncing(**schedule), config=_connected("42")
+        )
+        worker = await role_session()
+        vendor.exchange_status = exchange
+
+        waits = []
+        for _ in range(2):
+            vendor.api_answers = [answer]
+            await _due(session, guild_id)
+            before = datetime.now(timezone.utc)
+            await _run_due(worker, guild_id)
+            run = (await _runs(session, guild_id))["sync"]
+            minutes = round((run.next_due_at - before).total_seconds() / 60)
+            waits.append((run.failures, minutes))
+
+        assert waits == [(1, 60), (2, 120)]
+        assert run.last_success_at is None
+        assert (await session.exec(select(PluginMetadata))).all() == []
+        failure = (
+            f"plug-in schedules: {DECLARATIVE_ID} did not run sync "
+            f"for guild {guild_id} ({code})"
+        )
+        assert [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == plugin_schedules.__name__
+        ] == [failure, failure]
+
+    async def test_a_schedule_whose_connection_is_not_made_is_skipped(
+        self, acting_user, session, role_session, vendor, declarative, caplog
+    ):
+        """Nothing is sent or logged, its failures and ``since`` stay as they
+        were, and it is next due one interval later."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        await _declarative_install(session, seat, definition=_syncing())
+        since = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        await route_session_to_guild(session, guild_id)
+        await session.exec(update(PluginScheduleRun).values(last_success_at=since))
+        await session.commit()
+        await _due(session, guild_id)
+        before = datetime.now(timezone.utc)
+
+        await _run_due(await role_session(), guild_id)
+
+        run = (await _runs(session, guild_id))["sync"]
+        assert (run.failures, run.last_success_at) == (0, since)
+        wait = run.next_due_at - before
+        assert timedelta(minutes=30) <= wait <= timedelta(minutes=34)
+        assert (vendor.exchanges, vendor.api_requests) == ([], [])
+        assert [r for r in caplog.records if r.name == plugin_schedules.__name__] == []
+
+    async def test_a_switched_off_install_runs_no_schedule(
+        self, acting_user, session, role_session, vendor, declarative
+    ):
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(
+            session, seat, definition=_syncing(), config=_connected("42"), enabled=False
+        )
+        await _due(session, seat.guild.id)
+
+        await _run_due(await role_session(), seat.guild.id)
+
+        assert (vendor.exchanges, vendor.api_requests) == ([], [])
+        run = (await _runs(session, seat.guild.id))["sync"]
+        assert (run.failures, run.claimed_until) == (0, None)
