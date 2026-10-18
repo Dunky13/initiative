@@ -133,6 +133,7 @@ __all__ = [
     "call_hook",
     "callback_url",
     "clear_token_cache",
+    "forget_minted",
     "complete_callback",
     "complete_setup",
     "flow_of",
@@ -602,6 +603,15 @@ _minted: dict[tuple[Any, ...], _Minted] = {}
 def clear_token_cache() -> None:
     """Forget every minted token."""
     _minted.clear()
+
+
+def forget_minted(guild_id: int, install_id: int, connection_id: str) -> None:
+    """Forget the tokens minted for one community connection, as its stored
+    values go."""
+    for key in [
+        held for held in _minted if held[:3] == (guild_id, install_id, connection_id)
+    ]:
+        del _minted[key]
 
 
 def _keep_minted(key: tuple[Any, ...], minted: _Minted) -> None:

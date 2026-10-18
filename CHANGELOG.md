@@ -92,6 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A plug-in's sign-in, token and revocation addresses state their host in the manifest; one that would fill a value into the host is refused when the plug-in is published. A community connection's minted tokens are forgotten when the connection is cleared or the plug-in removed, and a member's credential is refreshed outside a call's time budget, so a refresh cut short no longer loses it.
+
 - **Signing in no longer greets an established account as a new one.** When your communities didn't load the first time, the app showed the setup for new accounts. It now tries again, and if it still can't load them, says so and offers **Try again**.
 - A dashboard tile over a plug-in's rows counted every row for `count(*) FILTER (WHERE …)` and `count(DISTINCT …)`. It now counts what they ask for.
 - **Icons sit the same distance from their labels everywhere.** In some buttons and menus, an icon or badge stood further from its label than usual: on plug-in, marketplace and dashboard buttons, in the table and text-alignment menus of the editor, and in the people and tag pickers.

@@ -794,8 +794,12 @@ def _template(
     if text is None:
         return None
     check_single_line(text, what=what)
-    if https and not text.startswith("https://"):
-        fail(f"{what} must be an https address")
+    if https:
+        if not text.startswith("https://"):
+            fail(f"{what} must be an https address")
+        # The host is the plug-in's to state; a value is filled in after it.
+        if "{" in text[len("https://") :].split("/", 1)[0]:
+            fail(f"{what} fills a value into its host")
     _check_placeholders(text, what=what, vendor_keys=vendor_keys, field_keys=field_keys)
     return text
 
