@@ -50,6 +50,8 @@ PUSH_CHANNELS: dict[NotificationType, str] = {
     NotificationType.mention: "mention",
     NotificationType.comment_on_task: "comments",
     NotificationType.comment_on_resource: "comments",
+    # Rides the comments channel: a channel of its own would need a new app.
+    NotificationType.subscription_activity: "comments",
     NotificationType.comment_reply: "comments",
     NotificationType.direct_message: "messages",
     # Somebody asking to reach you, and the answer when you asked. Messaging
