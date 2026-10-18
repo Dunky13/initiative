@@ -30,7 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable, type DataTableRowWrapperProps } from "@/components/ui/data-table";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
-import { type ColumnRoom, ROOM_EVERYWHERE } from "@/hooks/useColumnRoom";
+import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
@@ -81,7 +81,7 @@ type ProjectTasksListViewProps = {
   /** The groupings the view offers, in order, where it names them. */
   viewGroupings?: LayoutGrouping[] | null;
   /** How full the board's limited columns are. */
-  room?: ColumnRoom;
+  columnLimits?: ColumnLimits;
   /** The view is being edited. */
   editing?: boolean;
 };
@@ -295,7 +295,7 @@ const ProjectTasksTableViewComponent = ({
   tableState: [tableState, { setGrouping, setSorting }],
   viewColumns,
   viewGroupings,
-  room = ROOM_EVERYWHERE,
+  columnLimits = NO_COLUMN_LIMITS,
   editing = false,
 }: ProjectTasksListViewProps) => {
   const { t, i18n } = useTranslation(["projects", "comments", "tasks"]);
@@ -398,11 +398,13 @@ const ProjectTasksTableViewComponent = ({
         cell: ({ row }) => {
           const task = row.original;
           const isDone = task.task_status.category === "done";
-          // Done, a task moves into the done column, which may be full.
-          const doneFull =
-            !isDone &&
-            statusLookup.doneStatus !== undefined &&
-            !room.hasRoom(statusLookup.doneStatus.id);
+          // Checked or unchecked, a task moves into another column, which may
+          // be full.
+          const target = isDone ? statusLookup.inProgressStatus : statusLookup.doneStatus;
+          const full =
+            target !== undefined &&
+            target.id !== task.task_status_id &&
+            columnLimits.isFull(target.id);
           return (
             <Checkbox
               checked={isDone}
@@ -418,12 +420,8 @@ const ProjectTasksTableViewComponent = ({
                 }
               }}
               className="h-6 w-6"
-              disabled={statusDisabled || doneFull}
-              title={
-                doneFull
-                  ? t("kanban.statusFull", { name: statusLookup.doneStatus?.name })
-                  : undefined
-              }
+              disabled={statusDisabled || full}
+              title={full ? t("kanban.statusFull", { name: target.name }) : undefined}
               aria-label={isDone ? t("table.markInProgress") : t("table.markDone")}
             />
           );
@@ -486,7 +484,7 @@ const ProjectTasksTableViewComponent = ({
               </SelectTrigger>
               <SelectContent>
                 {taskStatuses.map((status) => {
-                  const full = status.id !== task.task_status_id && !room.hasRoom(status.id);
+                  const full = status.id !== task.task_status_id && columnLimits.isFull(status.id);
                   return (
                     <SelectItem key={status.id} value={String(status.id)} disabled={full}>
                       <TaskStatusOption status={status} />
@@ -510,7 +508,7 @@ const ProjectTasksTableViewComponent = ({
     env,
     onStatusChange,
     statusDisabled,
-    room,
+    columnLimits,
     groupings,
     grouped,
     taskStatuses,
@@ -633,6 +631,8 @@ const ProjectTasksTableViewComponent = ({
           virtualContainerHeight="h-[calc(100vh-20rem)]"
           virtualRowHeight={52}
           groupingOptions={groupingOptions}
+          // The layout editor offers it above the preview.
+          groupingControl={!editing}
           columnVisibility={columnVisibility}
           onSortingChange={setSorting}
           grouping={tableGrouping}
@@ -697,7 +697,7 @@ export const ProjectTasksTableView = memo(
       prevProps.tableState[0] === nextProps.tableState[0] &&
       prevProps.viewColumns === nextProps.viewColumns &&
       prevProps.viewGroupings === nextProps.viewGroupings &&
-      prevProps.room === nextProps.room &&
+      prevProps.columnLimits === nextProps.columnLimits &&
       prevProps.editing === nextProps.editing
       // Note: Intentionally ignoring callback prop changes as they're functionally the same
     );

@@ -144,13 +144,13 @@
   },
   "groupings": {
     "heading": "Gruppieren nach",
-    "help": "Wonach alle diese Tabelle gruppieren können, in dieser Reihenfolge. Entferne den Haken, um es nicht mehr anzubieten. Um eine Gruppe auszulassen, gruppiere die Tabelle hier danach und klicke über der Tabelle auf die Gruppe.",
+    "help": "Wonach alle dieses Layout gruppieren können, in dieser Reihenfolge. Entferne den Haken, um es nicht mehr anzubieten. Um eine Gruppe auszulassen, wähle ihre Gruppierung über der Vorschau und klicke auf die Gruppe.",
     "moveUp": "{{name}} nach oben",
     "moveDown": "{{name}} nach unten",
     "startsOn": "Beginnt gruppiert nach",
     "notGrouped": "Nicht gruppiert",
     "shown": "Angezeigte Gruppen:",
-    "full": "Eine Tabelle bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
+    "full": "Ein Layout bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
     "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen."
   },
   "limits": {

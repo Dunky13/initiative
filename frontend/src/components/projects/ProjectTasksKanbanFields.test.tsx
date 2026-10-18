@@ -226,8 +226,8 @@ describe("a limited column", () => {
           })
         )
       ),
-      communityHttp.get("/tasks/status-counts", () =>
-        HttpResponse.json([{ task_status_id: todo.id, count: 3 }])
+      communityHttp.get("/tasks/column-limits", () =>
+        HttpResponse.json([{ project_id: todo.project_id, status_id: todo.id, limit: 3, count: 3 }])
       )
     );
     board();

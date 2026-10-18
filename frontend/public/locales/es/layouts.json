@@ -144,13 +144,13 @@
   },
   "groupings": {
     "heading": "Agrupar por",
-    "help": "Por qué puede cualquiera agrupar esta tabla, en este orden. Desmarca una opción para dejar de ofrecerla. Para omitir un grupo, agrupa aquí la tabla por esa opción y haz clic en el grupo sobre la tabla.",
+    "help": "Por qué puede cualquiera agrupar este diseño, en este orden. Desmarca una opción para dejar de ofrecerla. Para omitir un grupo, elige su agrupación sobre la vista previa y haz clic en el grupo.",
     "moveUp": "Subir {{name}}",
     "moveDown": "Bajar {{name}}",
     "startsOn": "Empieza agrupada por",
     "notGrouped": "Sin agrupar",
     "shown": "Grupos visibles:",
-    "full": "Una tabla ofrece como máximo {{count}} agrupaciones. Desmarca una para ofrecer otra.",
+    "full": "Un diseño ofrece como máximo {{count}} agrupaciones. Desmarca una para ofrecer otra.",
     "hiddenFull": "Se pueden omitir como máximo {{count}} grupos de una agrupación. Muestra uno para omitir otro."
   },
   "limits": {

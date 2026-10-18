@@ -149,8 +149,9 @@ export const useSaveLayouts = (
         }
         return set;
       },
-      // The set is each answer; the initiative's list of layouts reads anew.
-      invalidate: () => invalidate(q.initiativeLayouts()),
+      // The set is each answer; the initiative's list of layouts, and how full
+      // the board's limited columns are, read anew.
+      invalidate: () => invalidate(q.initiativeLayouts(), q.columnLimits()),
       errorKey: "layouts:saveError",
     },
     options

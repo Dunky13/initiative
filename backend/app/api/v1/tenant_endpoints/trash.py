@@ -306,7 +306,7 @@ async def restore_trash_entity(
     await restore_entity(session, entity)
     # A task back out of the trash goes back into its column, unless archived.
     if isinstance(entity, Task) and entity.archived_at is None:
-        await column_limits.require_room(
+        await column_limits.refuse_full_columns(
             session, guild_context, entity.project_id, [entity]
         )
 

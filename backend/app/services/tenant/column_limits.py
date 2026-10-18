@@ -17,7 +17,7 @@ from typing import Sequence
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.messages import TaskMessages
@@ -25,8 +25,10 @@ from app.core.tools import Tool
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.guild_standing import ActorContext, InstallContext
 from app.db.session import routed_guild_id
+from app.models.tenant.project import Project
 from app.models.tenant.task import Task
 from app.models.tenant.tool_layout import ToolLayout
+from app.schemas.tenant.task import ColumnFillRead
 
 
 async def limits_of(session: AsyncSession, project_id: int) -> dict[int, int]:
@@ -48,30 +50,70 @@ async def limits_of(session: AsyncSession, project_id: int) -> dict[int, int]:
 
 async def open_counts(
     session: AsyncSession,
-    project_id: int,
+    project_ids: Sequence[int],
+    statuses: Sequence[int],
     *,
-    statuses: Sequence[int] | None = None,
     excluding: Sequence[int] = (),
 ) -> dict[int, int]:
-    """How many open (not archived, not trashed) tasks each of the project's
-    columns holds, less ``excluding``."""
+    """How many open (not archived, not trashed) tasks each of ``statuses``
+    of ``project_ids`` holds, less ``excluding``."""
     query = (
         select(Task.task_status_id, func.count())
-        .where(Task.project_id == project_id, Task.archived_at.is_(None))
+        .where(
+            col(Task.project_id).in_(project_ids),
+            Task.archived_at.is_(None),
+            Task.task_status_id.in_(statuses),
+        )
         .group_by(Task.task_status_id)
     )
-    if statuses is not None:
-        query = query.where(Task.task_status_id.in_(statuses))
     if excluding:
         query = query.where(Task.id.not_in(excluding))
     return {status_id: count for status_id, count in (await session.exec(query)).all()}
+
+
+async def fills(
+    session: AsyncSession, project_ids: Sequence[int]
+) -> list[ColumnFillRead]:
+    """Each limited column of the boards of ``project_ids`` the reader can
+    open: its limit, and how many open tasks it holds whatever the reader's
+    filters show."""
+    boards = (
+        await session.exec(
+            select(ToolLayout.tool_id, ToolLayout.definition)
+            .join(Project, col(Project.id) == ToolLayout.tool_id)
+            .where(
+                ToolLayout.tool == Tool.project.value,
+                ToolLayout.kind == "board",
+                col(ToolLayout.tool_id).in_(project_ids),
+            )
+        )
+    ).all()
+    limits = {
+        int(entry["status_id"]): (project_id, int(entry["limit"]))
+        for project_id, definition in boards
+        for entry in (definition or {}).get("limits") or ()
+    }
+    if not limits:
+        return []
+    held = await open_counts(
+        session, sorted({project_id for project_id, _ in limits.values()}), list(limits)
+    )
+    return [
+        ColumnFillRead(
+            project_id=project_id,
+            status_id=status_id,
+            limit=limit,
+            count=held.get(status_id, 0),
+        )
+        for status_id, (project_id, limit) in sorted(limits.items())
+    ]
 
 
 def _by_a_person(context: ActorContext) -> bool:
     return not isinstance(context, InstallContext) or context.member_user_id is not None
 
 
-async def require_room(
+async def refuse_full_columns(
     session: AsyncSession,
     context: ActorContext,
     project_id: int,
@@ -99,8 +141,8 @@ async def require_room(
         )
     held = await open_counts(
         session,
-        project_id,
-        statuses=list(into),
+        [project_id],
+        list(into),
         excluding=[task.id for task in entering if task.id is not None],
     )
     if any(

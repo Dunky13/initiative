@@ -31,7 +31,7 @@ export type BoardActions = {
   statuses: TaskStatusRead[];
   moveTo: (taskId: number, taskStatusId: number) => void;
   /** Whether the column takes one more task. */
-  hasRoom: (taskStatusId: number) => boolean;
+  isFull: (taskStatusId: number) => boolean;
 };
 
 export const BoardActionsContext = createContext<BoardActions | null>(null);
@@ -130,7 +130,7 @@ export const TaskCardActions = ({ item: task }: { item: TaskListRead }) => {
       }}
     >
       {board.statuses.map((status) => {
-        const full = status.id !== task.task_status_id && !board.hasRoom(status.id);
+        const full = status.id !== task.task_status_id && board.isFull(status.id);
         return (
           <DropdownMenuRadioItem key={status.id} value={String(status.id)} disabled={full}>
             <TaskStatusOption status={status} />

@@ -2309,7 +2309,8 @@ async def test_a_full_column_takes_no_more_from_a_person(
 ):
     """A person can't put a task into a column at its board's limit, by moving
     one there or adding one; a task already in it still changes and moves
-    within it, and the column's counts are its open tasks."""
+    within it. A limited column reads as its limit and its open tasks, to
+    those who can open the project."""
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
@@ -2349,18 +2350,27 @@ async def test_a_full_column_takes_no_more_from_a_person(
             "items": [{"id": held.id, "task_status_id": full, "position": 5}],
         },
     )
-    counts = await client.get(
-        a.g("/tasks/status-counts"),
-        params={"project_id": a.project.id},
-        headers=a.headers,
+    outsider = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
     )
+    fills = [
+        await client.get(
+            a.g("/tasks/column-limits"),
+            params={"project_id": a.project.id},
+            headers=reader.headers,
+        )
+        for reader in (a, outsider)
+    ]
 
     for refused in (moved, added):
         assert refused.status_code == 409, refused.text
         assert refused.json()["detail"] == TaskMessages.STATUS_AT_LIMIT
     assert changed.status_code == 200, changed.text
     assert within.status_code == 200, within.text
-    assert {entry["task_status_id"]: entry["count"] for entry in counts.json()} == {
-        full: 1,
-        waiting.task_status_id: 1,
-    }
+    assert [fill.json() for fill in fills] == [
+        [{"project_id": a.project.id, "status_id": full, "limit": 1, "count": 1}],
+        [],
+    ]

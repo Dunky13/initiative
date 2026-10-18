@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { MAX_COLUMN_LIMIT } from "@/hooks/useColumnRoom";
+import { MAX_COLUMN_LIMIT } from "@/hooks/useColumnLimits";
 import { LAYOUT_REGIONS } from "@/lib/layouts/detailLayout";
 import {
   cardOf,

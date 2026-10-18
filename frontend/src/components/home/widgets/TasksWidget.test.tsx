@@ -1,12 +1,13 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { buildProjectTaskStatus, buildTagSummary, buildTask } from "@/__tests__/factories";
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
 import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
+import { setInvalidationCommunity } from "@/api/query-keys";
 import { VIEW_PREFERENCES_QUERY_KEY } from "@/hooks/useViewPreference";
 
 import { TasksWidget as Widget } from "./TasksWidget";
@@ -223,6 +224,81 @@ describe("TasksWidget status changes", () => {
     await waitFor(() => expect(doneBoxes()[0]).toBeDisabled());
     expect(doneBoxes()[1]).toBeEnabled();
     await rowTitle("Read the thing");
+  });
+
+  it("can't check a task into its project's full done column", async () => {
+    stubTwoTasksAndStatuses();
+    server.use(
+      http.get("/api/v1/c/:communityId/tasks/column-limits", () =>
+        HttpResponse.json([{ project_id: 5, status_id: 11, limit: 1, count: 1 }])
+      )
+    );
+    renderMyTasks();
+
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+    await rowTitle("Read the thing");
+    await waitFor(() => expect(doneBoxes()[0]).toBeDisabled());
+    expect(doneBoxes()[0]).toHaveAttribute("title", "Done is full");
+    expect(doneBoxes()[1]).toBeDisabled();
+  });
+
+  it("frees a full column for the other rows once a task leaves it", async () => {
+    // Home keeps the last community visited as the active one, and the
+    // tasks are in another.
+    setInvalidationCommunity(9);
+    onTestFinished(() => setInvalidationCommunity(null));
+    const user = userEvent.setup();
+    const todo = buildProjectTaskStatus({ id: 10, project_id: 5, category: "todo", position: 0 });
+    const done = buildProjectTaskStatus({ id: 11, project_id: 5, category: "done", position: 1 });
+    const task = (id: number, title: string, status: typeof todo) =>
+      buildTask({
+        id,
+        title,
+        community_id: 3,
+        project_id: 5,
+        task_status_id: status.id,
+        task_status: status,
+      });
+    let left = false;
+    server.use(
+      http.get("/api/v1/me/tasks", ({ request }) => {
+        const forTable = new URL(request.url).searchParams.get("page_size") === "20";
+        const items = [
+          task(101, "Write the thing", left ? todo : done),
+          task(102, "Plan the trip", todo),
+        ];
+        return HttpResponse.json({
+          items: forTable ? items : [],
+          total_count: forTable ? items.length : 0,
+          page: 1,
+          page_size: 20,
+          has_next: false,
+        });
+      }),
+      http.get("/api/v1/c/:communityId/projects/:projectId/task-statuses", () =>
+        HttpResponse.json([todo, done])
+      ),
+      http.get("/api/v1/c/:communityId/tasks/column-limits", () =>
+        HttpResponse.json([{ project_id: 5, status_id: done.id, limit: 1, count: left ? 0 : 1 }])
+      ),
+      http.patch("/api/v1/c/:communityId/tasks/:taskId", () => {
+        left = true;
+        return HttpResponse.json(task(101, "Write the thing", todo));
+      })
+    );
+    renderMyTasks();
+
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+    await rowTitle("Plan the trip");
+    const doneBoxOf = (title: string) =>
+      within(
+        within(screen.getByRole("table")).getByText(title).closest("tr") as HTMLElement
+      ).getByRole("checkbox", { name: /mark task as (done|in progress)/i });
+    await waitFor(() => expect(doneBoxOf("Plan the trip")).toBeDisabled());
+
+    await user.click(doneBoxOf("Write the thing"));
+
+    await waitFor(() => expect(doneBoxOf("Plan the trip")).toBeEnabled());
   });
 });
 

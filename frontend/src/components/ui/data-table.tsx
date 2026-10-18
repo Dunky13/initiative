@@ -70,7 +70,7 @@ import { cn } from "@/lib/utils";
 
 type TableState = TableStateOf<AppTableFeatures>;
 
-interface GroupingOption {
+export interface GroupingOption {
   id: string;
   label: string;
 }
@@ -109,6 +109,9 @@ interface DataTableProps<TData extends RowData> {
   initialState?: Partial<TableState>;
   pageSizeOptions?: number[];
   groupingOptions?: GroupingOption[];
+  /** Whether the toolbar offers the grouping; false where the caller offers
+   *  it somewhere else. */
+  groupingControl?: boolean;
   helpText?: ReactNode | ((table: AppTable<TData>) => ReactNode);
   enableRowSelection?: boolean;
   onRowSelectionChange?: (selectedRows: TData[]) => void;
@@ -188,6 +191,7 @@ export function DataTable<TData extends RowData>({
   initialState,
   pageSizeOptions,
   groupingOptions,
+  groupingControl = true,
   helpText,
   enableRowSelection = false,
   onRowSelectionChange,
@@ -281,7 +285,6 @@ export function DataTable<TData extends RowData>({
   const lastSelectedRowIdRef = useRef<string | null>(null);
   const shiftKeyRef = useRef(false);
   const rowCheckboxHandlerRef = useRef<(rowId: string, value: boolean) => void>(() => {});
-  const groupingSelectId = useId();
   const computedInitialState: Partial<TableState> = {
     sorting: initialSortingRef.current,
     ...(initialStateRef.current ?? {}),
@@ -453,7 +456,7 @@ export function DataTable<TData extends RowData>({
     }
     return [...normalizedGroupingOptions, ...missing.map((id) => ({ id, label: id }))];
   }, [normalizedGroupingOptions, grouping]);
-  const hasGroupingOptions = groupingChoices.length > 0;
+  const hasGroupingOptions = groupingControl && groupingChoices.length > 0;
   const groupingColumnIdSet = useMemo(
     () => new Set(groupingChoices.map((option) => option.id)),
     [groupingChoices]
@@ -752,32 +755,11 @@ export function DataTable<TData extends RowData>({
                   </Button>
                 )}
                 {groupingEnabled && hasGroupingOptions ? (
-                  <div className="flex items-center gap-2">
-                    <Label
-                      htmlFor={groupingSelectId}
-                      className="font-medium text-muted-foreground text-sm"
-                    >
-                      {t("groupBy")}
-                    </Label>
-                    <Select
-                      value={groupingSelectValue}
-                      onValueChange={(value) => {
-                        handleGroupingChange(value === GROUPING_NONE_VALUE ? [] : [value]);
-                      }}
-                    >
-                      <SelectTrigger id={groupingSelectId} className="w-40">
-                        <SelectValue placeholder={t("chooseGrouping")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={GROUPING_NONE_VALUE}>{t("none")}</SelectItem>
-                        {groupingChoices.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <GroupBySelect
+                    options={groupingChoices}
+                    value={grouping[0] ?? null}
+                    onChange={(id) => handleGroupingChange(id === null ? [] : [id])}
+                  />
                 ) : null}
                 {enableColumnVisibilityDropdown && (
                   <DropdownMenu>
@@ -1095,6 +1077,44 @@ export function DataTable<TData extends RowData>({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** What a list is grouped by, of `options`, or none. A table's toolbar
+ *  holds it, and the board shows the same one above its columns. */
+export function GroupBySelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly GroupingOption[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const { t } = useTranslation("common");
+  const id = useId();
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor={id} className="font-medium text-muted-foreground text-sm">
+        {t("groupBy")}
+      </Label>
+      <Select
+        value={value ?? GROUPING_NONE_VALUE}
+        onValueChange={(next) => onChange(next === GROUPING_NONE_VALUE ? null : next)}
+      >
+        <SelectTrigger id={id} className="w-40">
+          <SelectValue placeholder={t("chooseGrouping")} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={GROUPING_NONE_VALUE}>{t("none")}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

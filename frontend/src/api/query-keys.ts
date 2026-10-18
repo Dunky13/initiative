@@ -531,6 +531,9 @@ const allReferences = (kind?: string): Spec => ({
 /** An initiative's list of its tools' layouts, for its settings. */
 const initiativeLayouts = (): Spec => ({ communityExact: ["/api/v1/layouts/initiative"] });
 
+/** How full each limited board column is, which a board's limits change. */
+const columnLimits = (): Spec => ({ communityExact: ["/api/v1/tasks/column-limits"] });
+
 /** Every set of layouts (one path serves them all, its target in the params),
  *  and the initiatives' lists of them. */
 const layouts = (): Spec => compose({ communityExact: ["/api/v1/layouts/"] }, initiativeLayouts());
@@ -742,6 +745,7 @@ export const q = {
   userStats,
   version,
   initiativeLayouts,
+  columnLimits,
   layouts,
   wiki,
   wikiPage,
