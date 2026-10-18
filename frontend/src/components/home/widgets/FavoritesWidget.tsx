@@ -14,7 +14,7 @@ import { HomeWidgetCard, HomeWidgetNotice } from "@/components/home/HomeWidgetCa
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useMyFavorites, useToggleFavorite } from "@/hooks/useFavorites";
+import { useMyFavorites, useToggleFavorite } from "@/hooks/usePersonalItems";
 import { renderRecentIcon } from "@/lib/recentIcon";
 import { recentRoute } from "@/lib/recentRoute";
 import { toolNavLabelKey } from "@/lib/tools";

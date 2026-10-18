@@ -1,6 +1,6 @@
 """
 Integration tests for the project endpoints: listing, creating (blank and from
-a template), duplicating, updating, deleting, favorites and the assignable
+a template), duplicating, updating, deleting, reordering and the assignable
 roster.
 
 Sharing and archiving are proved for every tool in ``tool_grants_test`` and
@@ -11,11 +11,7 @@ import json
 from dataclasses import replace
 from datetime import date, datetime, timezone
 
-import pytest
 from httpx import AsyncClient
-from sqlalchemy import event
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.engine import Engine
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -24,8 +20,6 @@ from app.models.platform.guild import CommunityRole
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.models.tenant.initiative import InitiativeRoleModel
-from app.models.tenant.favorite import Favorite
-from app.models.tenant.project_order import ProjectOrder
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.services.tenant import tags as tags_service
@@ -41,7 +35,7 @@ from app.testing.factories import (
     create_task,
     create_task_status,
 )
-from app.testing import checklist_items, route_as, route_session_to_guild
+from app.testing import checklist_items, route_session_to_guild
 
 
 async def test_list_projects_as_admin_shows_all(
@@ -1156,93 +1150,6 @@ async def test_delete_project_without_permission_forbidden(
     )  # RLS hides the content resource from a non-initiative-member (404, not 403)
 
 
-async def test_a_favorite_and_an_order_are_their_owners_rows(
-    client: AsyncClient, session: AsyncSession, acting_user, role_session
-):
-    """Neither another member who can edit the project nor the community's
-    admin reads or writes someone's favorite of it or their place for it in
-    the database."""
-    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
-    project = await create_project(session, a.initiative, a.user)
-    other = await acting_user(
-        guild_role=CommunityRole.member,
-        guild=a.guild,
-        initiative=a.initiative,
-        initiative_role="member",
-    )
-    await create_resource_grant(
-        session, project, user=other.user, level=ResourceAccessLevel.write
-    )
-    admin = await acting_user(guild_role=CommunityRole.admin, guild=a.guild)
-    favorited = await client.post(
-        a.g(f"/projects/{project.id}/favorite"), headers=a.headers
-    )
-    assert favorited.status_code == 204, favorited.text
-    await route_session_to_guild(session, a.guild.id)
-    session.add(ProjectOrder(user_id=a.user.id, project_id=project.id, sort_order=1))
-    await session.commit()
-
-    for outsider in (other, admin):
-        asking = await role_session("app_user")
-        await route_as(asking, user_id=outsider.user.id, guild_id=a.guild.id)
-        for model in (Favorite, ProjectOrder):
-            assert (await asking.exec(select(model))).all() == [], model
-        asking.add(
-            Favorite(user_id=a.user.id, entity_type="project", entity_id=project.id)
-        )
-        with pytest.raises(DBAPIError, match="row-level security"):
-            await asking.flush()
-
-
-async def test_favoriting_a_project_lists_it_until_it_is_unfavorited(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    user = await acting_user(guild_role=CommunityRole.member, initiative=True)
-    project = await create_project(session, user.initiative, user.user)
-    url = user.g(f"/projects/{project.id}/favorite")
-
-    added = await client.post(url, headers=user.headers)
-    assert added.status_code == 204
-    # Favoriting twice is a no-op, not a conflict.
-    assert (await client.post(url, headers=user.headers)).status_code == 204
-
-    sent: list[str] = []
-
-    def record(_conn, _cursor, statement, _params, _context, _many) -> None:
-        sent.append(statement)
-
-    event.listen(Engine, "before_cursor_execute", record)
-    try:
-        listed = await client.get(user.g("/projects/favorites"), headers=user.headers)
-    finally:
-        event.remove(Engine, "before_cursor_execute", record)
-    (item,) = listed.json()
-    assert (item["id"], item["is_favorited"]) == (project.id, True)
-    # The slim projection: what the sidebar reads, without the task summary
-    # pass or the heavy relationships.
-    assert item["initiative_id"] == user.initiative.id
-    assert item["can"]["edit"] is True
-    assert (item["grants"], item["tags"]) == ([], [])
-    assert item["initiative"] is None
-    assert sent
-    assert not [statement for statement in sent if "FROM tasks" in statement], sent
-
-    removed = await client.delete(url, headers=user.headers)
-    assert removed.status_code == 204
-    listed = await client.get(user.g("/projects/favorites"), headers=user.headers)
-    assert listed.json() == []
-
-    # Favorited again, an archived project leaves the favorites as it leaves
-    # the list.
-    assert (await client.post(url, headers=user.headers)).status_code == 204
-    archived = await client.post(
-        user.g(f"/archive/project/{project.id}"), headers=user.headers
-    )
-    assert archived.status_code == 200, archived.text
-    listed = await client.get(user.g("/projects/favorites"), headers=user.headers)
-    assert listed.json() == []
-
-
 async def test_reordering_puts_the_named_projects_first_and_keeps_the_rest(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
@@ -1259,11 +1166,19 @@ async def test_reordering_puts_the_named_projects_first_and_keeps_the_rest(
         response = await client.get(user.g("/projects/"), headers=user.headers)
         return [p["id"] for p in response.json()["items"]]
 
+    # A place is kept on the reader's row for the project, beside a star.
+    await client.put(
+        user.g(f"/personal-items/star/project/{third.id}"), headers=user.headers
+    )
     moved = await client.post(
         url, headers=user.headers, json={"project_ids": [third.id]}
     )
     assert moved.status_code == 204, moved.text
     assert await listed() == [third.id, first.id, second.id]
+    state = await client.get(
+        user.g(f"/personal-items/project/{third.id}"), headers=user.headers
+    )
+    assert state.json()["starred_at"]
 
     # The order it already holds changes nothing.
     kept = await client.post(

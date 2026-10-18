@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Tool, type WikiRead } from "@/api/generated/initiativeAPI.schemas";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { FollowButton } from "@/components/FollowButton";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,8 @@ interface WikiChromeProps {
   wiki: WikiRead;
   /** The page being read. This bar names where you are, not where you are in general. */
   pageTitle: string;
+  /** The page's id, for following it. Absent where the surface is not a page. */
+  pageId?: number;
   /** Renames the page. Present only while it is open for editing. */
   onRename?: (title: string) => void;
   /** Sends the name now, rather than waiting out the pause — on blur, or Enter. */
@@ -60,6 +63,7 @@ interface WikiChromeProps {
 export const WikiChrome = ({
   wiki,
   pageTitle,
+  pageId,
   onRename,
   onRenameCommit,
   pageUpdatedAt,
@@ -149,6 +153,8 @@ export const WikiChrome = ({
           initiativeId={wiki.initiative_id}
           className="size-8"
         />
+        {/* The follow is the page's: the wiki is followed from its sidebar. */}
+        {pageId ? <FollowButton kind="wiki_page" entityId={pageId} className="size-8" /> : null}
         {trailing}
 
         {/* A page is written before it is published, so the one thing a writer

@@ -14,9 +14,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { TaskRead } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { ContentKind, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { getReadTaskQueryKey, readTask } from "@/api/generated/tasks/tasks";
 import { invalidate, q } from "@/api/query-keys";
+import { FollowButton } from "@/components/FollowButton";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { StatusMessage } from "@/components/StatusMessage";
@@ -41,8 +42,8 @@ import { useColumnLimits } from "@/hooks/useColumnLimits";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useProject, useProjectTaskStatuses, useWritableProjects } from "@/hooks/useProjects";
-import { useRecordOpen } from "@/hooks/useRecents";
 import {
   useDeleteTask,
   useDuplicateTask,
@@ -391,28 +392,29 @@ export const TaskEditPage = () => {
   // A moderator's shield sits beside the menu rather than in it: a moderator
   // who may not edit the task has no menu, and still moderates it.
   const canModerate = Boolean(initiativeQuery.data?.can.moderate);
-  const actions =
-    menu || canModerate ? (
-      <div className="flex items-center gap-1">
-        <ModerationMenu
-          targetType="task"
-          targetId={parsedTaskId}
-          canModerate={canModerate}
-          onGone={() => {
-            leavingRef.current = true;
-            const returnProjectId = lastProjectIdRef.current;
-            router.navigate({
-              to: gp(
-                returnProjectId === null
-                  ? toolListRoute(Tool.project, initiativeId)
-                  : toolDetailRoute(Tool.project, initiativeId, returnProjectId)
-              ),
-            });
-          }}
-        />
-        {menu}
-      </div>
-    ) : null;
+  // Following needs nothing but read, so the actions are always there.
+  const actions = (
+    <div className="flex items-center gap-1">
+      <FollowButton kind={ContentKind.task} entityId={parsedTaskId} />
+      <ModerationMenu
+        targetType="task"
+        targetId={parsedTaskId}
+        canModerate={canModerate}
+        onGone={() => {
+          leavingRef.current = true;
+          const returnProjectId = lastProjectIdRef.current;
+          router.navigate({
+            to: gp(
+              returnProjectId === null
+                ? toolListRoute(Tool.project, initiativeId)
+                : toolDetailRoute(Tool.project, initiativeId, returnProjectId)
+            ),
+          });
+        }}
+      />
+      {menu}
+    </div>
+  );
 
   return (
     <div className="space-y-6">

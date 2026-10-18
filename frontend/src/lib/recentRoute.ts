@@ -1,9 +1,9 @@
-import type { FavoriteItemRead, RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import type { PersonalItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { communityPath } from "@/lib/communityUrl";
 import { showsActivity, TOOLS, toolDetailRoute, toolRouteSegment } from "@/lib/tools";
 
 export type RecentKey = {
-  entityType: RecentItemRead["entity_type"];
+  entityType: PersonalItemRead["entity_type"];
   entityId: number;
   /** Community parsed from the URL prefix. */
   communityId: number;
@@ -21,7 +21,7 @@ export type RecentKey = {
  * wrong community prefix would resolve to a different (or inaccessible) entity.
  * Navigating the link enters that community via the /c/$communityId layout.
  */
-export function recentRoute(item: RecentItemRead | FavoriteItemRead): string {
+export function recentRoute(item: PersonalItemRead): string {
   return communityPath(
     item.community_id,
     toolDetailRoute(item.entity_type as Tool, item.initiative_id, item.entity_id)
@@ -78,7 +78,7 @@ export function getActiveRecentKey(pathname: string): RecentKey | null {
  * otherwise a community-A file tab would light up while viewing community B's
  * file that happens to share the id.
  */
-export function recentKeyMatches(activeKey: RecentKey | null, item: RecentItemRead): boolean {
+export function recentKeyMatches(activeKey: RecentKey | null, item: PersonalItemRead): boolean {
   if (!activeKey) {
     return false;
   }

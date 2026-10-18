@@ -1580,8 +1580,6 @@ export interface ProjectRead {
   owner: UserPublic | null;
   owner_plugin: OwnerPluginSummary | null;
   initiative: InitiativeSummary | null;
-  is_favorited: boolean;
-  last_viewed_at: string | null;
   task_summary: ProjectTaskSummary;
   task_statuses: TaskStatusRead[];
 }
@@ -3853,6 +3851,26 @@ export interface ContentHoldRead {
   release_outcome?: HoldRelease | null;
 }
 
+export type ContentKind = (typeof ContentKind)[keyof typeof ContentKind];
+
+export const ContentKind = {
+  project: "project",
+  file: "file",
+  queue: "queue",
+  counter_group: "counter_group",
+  calendar: "calendar",
+  dashboard: "dashboard",
+  post: "post",
+  gallery: "gallery",
+  wiki: "wiki",
+  task: "task",
+  queue_item: "queue_item",
+  calendar_event: "calendar_event",
+  counter: "counter",
+  gallery_image: "gallery_image",
+  wiki_page: "wiki_page",
+} as const;
+
 /**
  * Which control fills this field.
  *
@@ -5407,23 +5425,6 @@ export interface FavoriteContactsResponse {
 }
 
 /**
- * One starred tool, as a list of them shows it: enough to draw its icon
- * and link to it without a fetch per kind, and nothing of its content.
- */
-export interface FavoriteItemRead {
-  entity_type: Tool;
-  entity_id: number;
-  community_id: number;
-  initiative_id: number | null;
-  name: string;
-  favorited_at: string;
-  icon: string | null;
-  file_type: string | null;
-  mime_type: string | null;
-  original_filename: string | null;
-}
-
-/**
  * What an entry has to be, to be in a view.
  */
 export type FeedView = (typeof FeedView)[keyof typeof FeedView];
@@ -6871,6 +6872,16 @@ export interface ListLayoutWrite {
 }
 
 /**
+ * The marks a list of tools is read by: the tabs, and the stars.
+ */
+export type ListedMark = (typeof ListedMark)[keyof typeof ListedMark];
+
+export const ListedMark = {
+  view: "view",
+  star: "star",
+} as const;
+
+/**
  * A picture uploaded to the marketplace's media.
  */
 export interface ListingMediaRead {
@@ -8188,6 +8199,47 @@ export interface PasswordResetSubmit {
   token: string;
   /** @maxLength 256 */
   password: string;
+}
+
+/**
+ * One tool in the reader's tabs or stars: enough to draw its icon and link
+ * to it without a fetch per kind, and nothing of its content.
+ */
+export interface PersonalItemRead {
+  entity_type: Tool;
+  entity_id: number;
+  community_id: number;
+  initiative_id: number | null;
+  name: string;
+  viewed_at: string | null;
+  starred_at: string | null;
+  icon: string | null;
+  file_type: string | null;
+  mime_type: string | null;
+  original_filename: string | null;
+}
+
+/**
+ * Where an open came from.
+ */
+export type ViewSource = (typeof ViewSource)[keyof typeof ViewSource];
+
+export const ViewSource = {
+  direct: "direct",
+  search: "search",
+  feed: "feed",
+} as const;
+
+/**
+ * What the reader keeps about one item.
+ */
+export interface PersonalItemState {
+  entity_type: ContentKind;
+  entity_id: number;
+  viewed_at: string | null;
+  view_source: ViewSource | null;
+  starred_at: string | null;
+  followed_at: string | null;
 }
 
 /**
@@ -9595,80 +9647,6 @@ export interface RecentActivityEntry {
   entity_name: string | null;
   initiative_id: number | null;
   reactions: ReactionGroup[];
-}
-
-export type RecentEntityType = (typeof RecentEntityType)[keyof typeof RecentEntityType];
-
-export const RecentEntityType = {
-  project: "project",
-  file: "file",
-  queue: "queue",
-  counter_group: "counter_group",
-  calendar: "calendar",
-  dashboard: "dashboard",
-  post: "post",
-  gallery: "gallery",
-  wiki: "wiki",
-} as const;
-
-/**
- * One entry in the user's recent-items bar.
- *
- * Denormalized: contains enough information to render an entity-specific
- * icon and link without an N+1 fetch per entity type.
- */
-export interface RecentItemRead {
-  entity_type: RecentEntityType;
-  entity_id: number;
-  community_id: number;
-  initiative_id: number | null;
-  name: string;
-  last_viewed_at: string;
-  icon: string | null;
-  file_type: string | null;
-  mime_type: string | null;
-  original_filename: string | null;
-}
-
-export type RecentKind = (typeof RecentKind)[keyof typeof RecentKind];
-
-export const RecentKind = {
-  project: "project",
-  file: "file",
-  queue: "queue",
-  counter_group: "counter_group",
-  calendar: "calendar",
-  dashboard: "dashboard",
-  post: "post",
-  gallery: "gallery",
-  wiki: "wiki",
-  task: "task",
-  queue_item: "queue_item",
-  calendar_event: "calendar_event",
-  counter: "counter",
-  gallery_image: "gallery_image",
-  wiki_page: "wiki_page",
-} as const;
-
-/**
- * Where an open came from.
- */
-export type ViewSource = (typeof ViewSource)[keyof typeof ViewSource];
-
-export const ViewSource = {
-  direct: "direct",
-  search: "search",
-  feed: "feed",
-} as const;
-
-/**
- * Response body for recording an open, common across kinds.
- */
-export interface RecentViewWrite {
-  entity_type: RecentKind;
-  entity_id: number;
-  last_viewed_at: string;
-  source: ViewSource;
 }
 
 /**
@@ -13347,7 +13325,11 @@ export type ExportUsersCsvParams = {
   user_id?: number[] | null;
 };
 
-export type RecordRecentParams = {
+export type ListPersonalItemsParams = {
+  mark: ListedMark;
+};
+
+export type RecordViewParams = {
   source?: ViewSource;
 };
 
@@ -13621,6 +13603,10 @@ export type ListMyWikisParams = {
    * @maximum 100
    */
   page_size?: number;
+};
+
+export type ListMyPersonalItemsParams = {
+  mark: ListedMark;
 };
 
 export type ListMyCalendarEntriesParams = {

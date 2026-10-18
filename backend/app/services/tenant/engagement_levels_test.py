@@ -12,12 +12,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models.platform.guild import CommunityRole, CommunityStatus
 from app.models.tenant.engagement_level import EngagementLevel
 from app.models.tenant.event_outbox import EventOutbox
-from app.models.tenant.recent_view import RecentView, ViewSource
+from app.models.tenant.personal_item import PersonalItem, ViewSource
 from app.services.guild_sweeps import Scope, each_guild
 from app.services.platform import app_settings as app_settings_service
 from app.services.tenant import engagement_levels
 from app.services.tenant.engagement_levels import HALF_LIFE
-from app.services.tenant.recent_views import WINDOW
+from app.services.tenant.personal_items import WINDOW
 from app.testing import create_task, guild_administration
 from app.testing.routing import route_as
 
@@ -59,12 +59,12 @@ async def _all_opened(
     now = datetime.now(timezone.utc)
     for person in people:
         session.add(
-            RecentView(
+            PersonalItem(
                 user_id=person.user.id,
                 entity_type="task",
                 entity_id=task.id,
-                last_viewed_at=now,
-                source=source.value,
+                viewed_at=now,
+                view_source=source.value,
             )
         )
     await session.commit()
@@ -178,9 +178,9 @@ async def test_each_person_counts_once_and_old_engagement_fades(
 
     async def opened_ago(person, age: timedelta) -> None:
         await session.exec(
-            update(RecentView)  # type: ignore[arg-type]
-            .where(RecentView.user_id == person.user.id)  # type: ignore[arg-type]
-            .values(last_viewed_at=datetime.now(timezone.utc) - age)
+            update(PersonalItem)  # type: ignore[arg-type]
+            .where(PersonalItem.user_id == person.user.id)  # type: ignore[arg-type]
+            .values(viewed_at=datetime.now(timezone.utc) - age)
         )
         await session.commit()
 

@@ -96,7 +96,7 @@ import {
   viewKey,
 } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useUpdateTask } from "@/hooks/useTasks";
 import { listLayouts, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useUnreadTree } from "@/hooks/useUnreadTree";

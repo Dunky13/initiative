@@ -1,5 +1,5 @@
 import { useParams } from "@tanstack/react-router";
-import { Clock, Info, LayoutGrid, Loader2, Plus, Tags } from "lucide-react";
+import { Clock, Info, LayoutGrid, Loader2, Plus, Radar, Tags } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -57,7 +57,7 @@ import { useImageUploader } from "@/hooks/useImageUploader";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { LIST, type ListViewSpec, NO_PART_VIEW, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useFollow, useRecordOpen } from "@/hooks/usePersonalItems";
 import { useKnownTagIds, useTags } from "@/hooks/useTags";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatPeriod } from "@/lib/formatDate";
@@ -241,6 +241,7 @@ export function GalleryDetailPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   // An image opens in the lightbox.
   useRecordOpen("gallery_image", openId ?? undefined, { source: ViewSource.direct });
+  const followImage = useFollow("gallery_image", openId ?? 0);
   const [detailsId, setDetailsId] = useState<number | null>(null);
   const openIndex = openId === null ? -1 : images.findIndex((image) => image.id === openId);
   const lightboxItems = useMemo<LightboxItem[]>(
@@ -541,15 +542,28 @@ export function GalleryDetailPage() {
         onNearEnd={onNearEnd}
         actions={
           openId !== null ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-white hover:bg-white/10 hover:text-white"
-              onClick={() => setDetailsId(openId)}
-            >
-              <Info className="size-4" />
-              {t("common:toolbar.details")}
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/10 hover:text-white"
+                aria-pressed={followImage.following}
+                disabled={!followImage.ready}
+                onClick={followImage.toggle}
+              >
+                <Radar className="size-4" />
+                {followImage.following ? t("common:follow.remove") : t("common:follow.add")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/10 hover:text-white"
+                onClick={() => setDetailsId(openId)}
+              >
+                <Info className="size-4" />
+                {t("common:toolbar.details")}
+              </Button>
+            </>
           ) : null
         }
       />

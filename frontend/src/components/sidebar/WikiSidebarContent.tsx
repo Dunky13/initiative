@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tool, WikiPageKind, type WikiPageSummary } from "@/api/generated/initiativeAPI.schemas";
+import { FollowButton } from "@/components/FollowButton";
 import { AddWikiFileDialog } from "@/components/initiativeTools/wikis/AddWikiFileDialog";
 import { WikiPageActions } from "@/components/initiativeTools/wikis/WikiPageActions";
 import {
@@ -132,6 +133,7 @@ export const WikiSidebarContent = ({
           <h2 className="min-w-0 flex-1 truncate font-semibold text-lg">
             {wikiQuery.data?.name ?? t("title")}
           </h2>
+          <FollowButton kind={Tool.wiki} entityId={wikiId} className="size-8" />
           {canWrite ? (
             <Button variant="ghost" size="icon" className="size-8 shrink-0" asChild>
               <Link to={gp(toolSettingsRoute(Tool.wiki, initiativeId, wikiId))}>

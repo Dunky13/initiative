@@ -18,7 +18,7 @@ import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useDashboardEditor } from "@/hooks/useDashboardEditor";
 import { useDashboard, useUpdateDashboard, useWidgetCatalog } from "@/hooks/useDashboards";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { toolListRoute, toolSettingsRoute } from "@/lib/tools";
 

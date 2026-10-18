@@ -35,7 +35,7 @@ from app.models.tenant.initiative import InitiativeMember
 from app.models.tenant.project import Project
 from app.models.tenant.property import PropertyType, PropertyValue
 from app.models.tenant.queue import QueueItem
-from app.models.tenant.recent_view import RecentView
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
 from app.models.tenant.task import TaskAssignee
 from app.services.permissions import (
@@ -823,8 +823,8 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
     session, role_session, acting_user
 ):
     """The community's own tools, such as a calendar in no initiative, are
-    left the same way when someone leaves the community, and their recent
-    views there go with them."""
+    left the same way when someone leaves the community, and what they kept
+    about its items there goes with them."""
     w = await build_world(session, role_session, acting_user, Tool.project)
     member = w.co_member.user
     member_id = member.id
@@ -833,8 +833,11 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
     )
     await create_resource_grant(session, named["calendar"], user=member)
     session.add(
-        RecentView(
-            user_id=member_id, entity_type="project", entity_id=named["project"].id
+        PersonalItem(
+            user_id=member_id,
+            entity_type="project",
+            entity_id=named["project"].id,
+            followed_at=datetime.now(timezone.utc),
         )
     )
     await session.commit()
@@ -846,5 +849,7 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
 
     assert await _still_named(session, member_id, named) == []
     assert (
-        await session.exec(select(RecentView).where(RecentView.user_id == member_id))
+        await session.exec(
+            select(PersonalItem).where(PersonalItem.user_id == member_id)
+        )
     ).all() == []

@@ -13,7 +13,7 @@ import {
 import { server } from "@/__tests__/helpers/msw-server";
 import { createTestQueryClient, renderPage } from "@/__tests__/helpers/render";
 import { keepViewPreferences } from "@/__tests__/helpers/viewPreferences";
-import type { FavoriteItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type { PersonalItemRead } from "@/api/generated/initiativeAPI.schemas";
 import { type HomeLayout, readingOrder } from "@/lib/home/layout";
 import { HOME_VIEWS_KEY, type HomeViews, homeViewKey, MAIN_VIEW_ID } from "@/lib/home/views";
 
@@ -432,7 +432,7 @@ describe("HomePage", () => {
 
   it("lists what the reader opened lately, each linking back into its community", async () => {
     server.use(
-      http.get("/api/v1/recents/", () =>
+      http.get("/api/v1/me/personal-items", () =>
         HttpResponse.json([
           {
             entity_type: "project",
@@ -440,7 +440,7 @@ describe("HomePage", () => {
             community_id: 3,
             initiative_id: 2,
             name: "Fete stalls",
-            last_viewed_at: new Date().toISOString(),
+            viewed_at: new Date().toISOString(),
             icon: "🎪",
             file_type: null,
             mime_type: null,
@@ -541,11 +541,12 @@ describe("HomePage", () => {
   it("lists what the reader starred in every community, and takes a star off", async () => {
     const user = userEvent.setup();
     const starred = (
-      over: Pick<FavoriteItemRead, "entity_type" | "entity_id" | "name"> & Partial<FavoriteItemRead>
-    ): FavoriteItemRead => ({
+      over: Pick<PersonalItemRead, "entity_type" | "entity_id" | "name"> & Partial<PersonalItemRead>
+    ): PersonalItemRead => ({
       community_id: 3,
       initiative_id: 2,
-      favorited_at: "2026-10-10T00:00:00Z",
+      viewed_at: null,
+      starred_at: "2026-10-10T00:00:00Z",
       icon: null,
       file_type: null,
       mime_type: null,
@@ -558,8 +559,8 @@ describe("HomePage", () => {
     ];
     const removed: string[] = [];
     server.use(
-      http.get("/api/v1/me/favorites", () => HttpResponse.json(favorites)),
-      http.delete("/api/v1/c/:communityId/favorites/:tool/:id", ({ params }) => {
+      http.get("/api/v1/me/personal-items", () => HttpResponse.json(favorites)),
+      http.delete("/api/v1/c/:communityId/personal-items/star/:tool/:id", ({ params }) => {
         removed.push(`${params.communityId}/${params.tool}/${params.id}`);
         favorites = favorites.filter((item) => item.entity_type !== params.tool);
         return new HttpResponse(null, { status: 204 });

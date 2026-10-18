@@ -121,7 +121,7 @@ describe("query-keys community scoping", () => {
       const communityScoped = seed(["/api/v1/c/5/initiatives/"]);
       const meTasks = seed(["/api/v1/me/tasks"]);
       const notifications = seed(["/api/v1/notifications/"]);
-      const recents = seed(["/api/v1/recents/"]);
+      const recents = seed(["/api/v1/me/personal-items"]);
 
       setInvalidationCommunity(5);
       await invalidate(q.allInitiatives());
@@ -191,8 +191,8 @@ describe("query-keys community scoping", () => {
         ["/api/v1/access-grants/queue", { status: "pending" }],
         ["/api/v1/me"],
         ["/api/v1/me/tasks", { page: 1 }],
-        // The recents bar spans every community, so a switch must not blank it.
-        ["/api/v1/recents/"],
+        // The tabs bar spans every community, so a switch must not blank it.
+        ["/api/v1/me/personal-items"],
         ["dm", "inbox"],
         // Hand-written community keys carry their community, so another community never reads them.
         ["query", 5, "SELECT 1", null],

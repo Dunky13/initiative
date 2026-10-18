@@ -6,6 +6,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  Radar,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -31,7 +32,7 @@ import {
   useSetCount,
   useSteppedCount,
 } from "@/hooks/useCounters";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useFollow, useRecordOpen } from "@/hooks/usePersonalItems";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getContrastingTextColor } from "@/lib/counter-color";
@@ -86,6 +87,7 @@ export function CounterDetailPage() {
   );
   const counter = currentIndex >= 0 ? counters[currentIndex] : null;
   useRecordOpen("counter", counter?.id);
+  const follow = useFollow("counter", counter?.id ?? 0);
 
   const canWrite = Boolean(group?.can.edit);
 
@@ -211,6 +213,10 @@ export function CounterDetailPage() {
             <DropdownMenuItem disabled={!canWrite} onSelect={() => setEditing(counter)}>
               <Pencil className="h-4 w-4" />
               {t("editCounter")}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!follow.ready} onSelect={follow.toggle}>
+              <Radar className="h-4 w-4" />
+              {follow.following ? t("common:follow.remove") : t("common:follow.add")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

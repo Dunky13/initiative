@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useRecentlyChangedTools } from "@/hooks/useMyTools";
-import { useRecents } from "@/hooks/useRecents";
+import { useRecents } from "@/hooks/usePersonalItems";
 import { communityPath } from "@/lib/communityUrl";
 import { renderRecentIcon } from "@/lib/recentIcon";
 import { recentRoute } from "@/lib/recentRoute";
@@ -117,7 +117,8 @@ function ViewedList({ tools }: { tools: Tool[] }) {
             icon: renderRecentIcon(item),
             name: item.name,
             detail: place ? `${kind} · ${place}` : kind,
-            at: item.last_viewed_at,
+            // A tab is an open, so it always has one.
+            at: item.viewed_at ?? "",
           };
         }),
     [recents.data, tools, t, where]

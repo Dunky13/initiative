@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { RecentItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type { PersonalItemRead } from "@/api/generated/initiativeAPI.schemas";
 import { SkeletonPillRow, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,11 +18,11 @@ import { type RecentKey, recentKeyMatches, recentRoute } from "@/lib/recentRoute
 import { cn } from "@/lib/utils";
 
 interface RecentTabsBarProps {
-  items?: RecentItemRead[];
+  items?: PersonalItemRead[];
   activeKey?: RecentKey | null;
   loading?: boolean;
-  onClose: (item: RecentItemRead) => void;
-  onCloseOthers: (item: RecentItemRead) => void;
+  onClose: (item: PersonalItemRead) => void;
+  onCloseOthers: (item: PersonalItemRead) => void;
   onCloseAll: () => void;
 }
 

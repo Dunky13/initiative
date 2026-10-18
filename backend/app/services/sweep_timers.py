@@ -139,7 +139,7 @@ def sweeps() -> tuple[Sweep, ...]:
     from app.models.tenant.intake import IntakeCase
     from app.models.tenant.moderation import ModerationReport
     from app.models.tenant.reaction_digest import ReactionDigestItem
-    from app.models.tenant.recent_view import RecentView
+    from app.models.tenant.personal_item import PersonalItem
     from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
     from app.models.tenant.guild_plugin import GuildPlugin
     from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
@@ -159,7 +159,7 @@ def sweeps() -> tuple[Sweep, ...]:
         plugin_hooks,
         plugin_schedules,
         post_publication,
-        recent_views,
+        personal_items,
         trash_purge,
     )
     from app.services.tenant.attachments import (
@@ -454,7 +454,7 @@ def sweeps() -> tuple[Sweep, ...]:
                 on_insert("plugin_hook_deliveries", after=plugin_hooks.DELIVERY_TTL),
                 # A new tab can push an old one past its person's limit, so a
                 # view is looked at within the hour, as before timers.
-                on_insert("recent_views", after=hour),
+                on_insert("personal_items", after=hour),
                 on_row(
                     "event_reminder_dispatches",
                     "{row}.event_start_at",
@@ -472,7 +472,7 @@ def sweeps() -> tuple[Sweep, ...]:
             next_due=lambda now: when_exists(
                 or_(
                     exists().where(
-                        RecentView.last_viewed_at > now - recent_views.WINDOW
+                        col(PersonalItem.viewed_at) > now - personal_items.WINDOW
                     ),
                     exists().where(
                         EventOutbox.occurred_at > now - change_log.RETENTION
@@ -482,7 +482,7 @@ def sweeps() -> tuple[Sweep, ...]:
             ),
             sources=(
                 on_insert("event_outbox", after=hour),
-                on_insert("recent_views", after=hour),
+                on_insert("personal_items", after=hour),
             ),
         ),
         Sweep(

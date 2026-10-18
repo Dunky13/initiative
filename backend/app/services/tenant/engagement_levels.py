@@ -4,7 +4,7 @@ Search orders by the level, read through :func:`level_of` beside the item and
 gated like the item itself; it only reorders what a search already found. The hourly pass works it out in each active community from two records
 the community already keeps, and writes nothing else:
 
-- **Views**: each person's latest open of each item, from ``recent_views``.
+- **Views**: each person's latest open of each item, from ``personal_items``.
 - **Contributions**: each change a person made, from the change log. A change to
   something that has no level of its own (a comment, a reaction) counts for the
   innermost item it sits in (``content_item_of``, which the feed asks too).
@@ -49,10 +49,10 @@ from app.core.guild_auth_options import CommunityAuthOption
 from app.models.platform.guild import LIVE_STATUS_VALUES, Guild
 from app.models.platform.user import User
 from app.models.tenant.engagement_level import LEVEL_MAX, EngagementLevel
-from app.models.tenant.recent_view import ViewSource
+from app.models.tenant.personal_item import ViewSource
 from app.services.guild_sweeps import Visit
 from app.services.platform import app_settings, guild_entitlements
-from app.services.tenant.recent_views import WINDOW
+from app.services.tenant.personal_items import WINDOW
 
 #: How fast an engagement fades: one this old counts half as much.
 HALF_LIFE = timedelta(days=2)
@@ -99,11 +99,11 @@ _LEVELS = text(
     """
     WITH engaged AS (
         SELECT v.user_id, v.entity_type AS kind, v.entity_id AS id,
-               v.last_viewed_at AS at,
-               CASE WHEN v.source = ANY (:ordered) THEN :ordered_view_weight
+               v.viewed_at AS at,
+               CASE WHEN v.view_source = ANY (:ordered) THEN :ordered_view_weight
                    ELSE :view_weight END AS weight
-        FROM recent_views v
-        WHERE v.last_viewed_at > :since
+        FROM personal_items v
+        WHERE v.viewed_at > :since
           AND v.user_id <> ALL (:uncounted)
       UNION ALL
         SELECT o.actor_user_id, t.kind, t.id, o.occurred_at, :contribution_weight

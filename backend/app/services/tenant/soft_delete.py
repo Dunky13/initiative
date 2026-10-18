@@ -267,11 +267,10 @@ async def _purge_references(session: AsyncSession, doomed: Level) -> None:
     from app.db.initiative_rls import CONTENT_KIND_TABLES
     from app.services.tenant import (
         engagement_levels,
-        favorites,
         plugin_metadata,
         properties,
         reactions,
-        recent_views,
+        personal_items,
         relationships,
         tool_layouts,
     )
@@ -290,9 +289,8 @@ async def _purge_references(session: AsyncSession, doomed: Level) -> None:
         if (target := reaction_targets.get(table)) is not None:
             await reactions.purge_reactions_for(session, target=target, target_ids=ids)
         if (content := content_kinds.get(table)) is not None:
-            await recent_views.purge_for_entities(session, content, ids)
+            await personal_items.purge_for_entities(session, content, ids)
             await engagement_levels.purge_for_entities(session, content, ids)
-            await favorites.purge_for_entities(session, content, ids)
         if (spec := properties.PROPERTY_LINKS_BY_MODEL.get(model)) is not None:
             await properties.drop_values(session, spec.target, ids)
         if (item := item_kinds.get(table)) is not None:

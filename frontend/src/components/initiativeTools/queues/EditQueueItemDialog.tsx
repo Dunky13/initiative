@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { type QueueItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { useReadQueueItem } from "@/api/generated/queues/queues";
+import { FollowButton } from "@/components/FollowButton";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { ReportButton } from "@/components/moderation/ReportButton";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ export const EditQueueItemDialog = ({
 
   const actions = (
     <div className="flex shrink-0 items-center gap-1">
+      <FollowButton kind="queue_item" entityId={item.id} />
       <ReportButton targetType="queue_item" targetId={item.id} authorId={item.created_by} />
       {/* Taken down or held, the item is off the queue, so the dialog about it
           closes. */}

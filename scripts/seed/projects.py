@@ -9,15 +9,14 @@ Templates and Archive tabs have the same variety the active list does.
 from __future__ import annotations
 
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import update
 
 from app.core.tools import Tool
 from app.models.tenant._mixins import archive_models
 from app.models.tenant.project import Project
-from app.models.tenant.favorite import Favorite
-from app.models.tenant.recent_view import RecentView
+from app.models.tenant.personal_item import PersonalItem, ViewSource
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.task import (
     Task,
@@ -1470,23 +1469,25 @@ def resolve_status(
 async def seed(c: Community) -> None:
     for d in PROJECTS[c.key]:
         await create_project(c, d)
-    for name, project in FAVORITES[c.key]:
-        c.session.add(
-            Favorite(
-                user_id=c.users[name].id,
-                entity_type="project",
-                entity_id=c.projects[project].id,
+    # A star and an open on one project are one row.
+    kept: dict[tuple[int, int], PersonalItem] = {}
+
+    def row(name: str, project: str) -> PersonalItem:
+        key = (c.users[name].id, c.projects[project].id)
+        if key not in kept:
+            kept[key] = PersonalItem(
+                user_id=key[0], entity_type=Tool.project.value, entity_id=key[1]
             )
-        )
+        return kept[key]
+
+    now = datetime.now(timezone.utc)
+    for name, project in FAVORITES[c.key]:
+        row(name, project).starred_at = now
         c.ids["favorites"].append(c.projects[project].id)
     for name, project in RECENT_VIEWS[c.key]:
-        c.session.add(
-            RecentView(
-                user_id=c.users[name].id,
-                entity_type=Tool.project.value,
-                entity_id=c.projects[project].id,
-            )
-        )
+        item = row(name, project)
+        item.viewed_at, item.view_source = now, ViewSource.direct.value
+    c.session.add_all(kept.values())
     await c.session.flush()
 
 

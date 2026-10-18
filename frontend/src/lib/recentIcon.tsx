@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 
-import {
-  type FavoriteItemRead,
-  type RecentItemRead,
-  Tool,
-} from "@/api/generated/initiativeAPI.schemas";
+import { type PersonalItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { fileIcon } from "@/lib/fileIcon";
 import { TOOL_ICONS } from "@/lib/tools";
 import { cn } from "@/lib/utils";
@@ -18,7 +14,7 @@ import { cn } from "@/lib/utils";
  *   (via ``fileIcon``).
  * - Every other tool renders its registry icon.
  */
-export function renderRecentIcon(item: RecentItemRead | FavoriteItemRead): ReactNode {
+export function renderRecentIcon(item: PersonalItemRead): ReactNode {
   switch (item.entity_type) {
     case Tool.project: {
       if (!item.icon) return null;

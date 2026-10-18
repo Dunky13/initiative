@@ -275,7 +275,7 @@ export const UserSettingsInterfacePage = ({ user, acceptUser }: UserSettingsInte
       if (variables.recent_tabs_limit !== undefined) {
         // The header tabs bar caches recents for 30s; refetch so a higher
         // limit surfaces more items immediately.
-        void invalidate(q.recents());
+        void invalidate(q.personalItems());
       }
       if (variables.locale) {
         void i18n.changeLanguage(variables.locale);

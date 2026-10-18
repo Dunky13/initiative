@@ -13,7 +13,6 @@ import {
   EntityType,
   PermissionKey,
   PropertyTarget,
-  RecentEntityType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { TOOL_SKETCHES } from "@/components/initiatives/ToolSkeletons";
@@ -115,10 +114,6 @@ describe("tool registry", () => {
       ...EXTRA_PERMISSION_KEYS,
     ];
     expect(derived.sort()).toEqual(Object.values(PermissionKey).sort());
-  });
-
-  it("every tool is recentable, matching the backend's RecentEntityType", () => {
-    expect(TOOLS.map(String).sort()).toEqual(Object.values(RecentEntityType).sort());
   });
 
   it("every tool is a trash entity type with a label", () => {

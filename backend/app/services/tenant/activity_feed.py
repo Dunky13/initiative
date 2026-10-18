@@ -8,7 +8,8 @@ engagement levels count it for, and an item is shown only where its search
 entry is readable too, which is also where its title comes from.
 
 An entry is ordered by how recent its latest change is, the item's engagement
-level, and how involved the reader is with it:
+level, and how involved the reader is with it: made it or named on it,
+changed it, following it or its tool, opened it, starred its tool.
 
     2^(−age / HALF_LIFE) × boosted(1, level) × relevance
 
@@ -65,8 +66,11 @@ ACTORS_SHOWN = 3
 #: Made it, or named on it (assigned, attending).
 INVOLVED_WEIGHT = 2.0
 CHANGED_WEIGHT = 1.0
+#: Following it, or the tool it is in: the reader asked to see it.
+FOLLOWING_WEIGHT = 2.0
 OPENED_WEIGHT = 0.5
-FAVOURITE_WEIGHT = 0.5
+#: Starred the tool it is in.
+STARRED_WEIGHT = 0.5
 
 
 class FeedView(str, Enum):
@@ -221,15 +225,10 @@ def _statement(tools: list[str]) -> Any:
            EXISTS (SELECT 1 FROM attributed a
                     WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
                AS changed,
-           EXISTS (SELECT 1 FROM recent_views v
-                    WHERE v.user_id = :reader AND v.entity_type = i.kind
-                      AND v.entity_id = i.id AND v.last_viewed_at > :since)
-               AS opened,
-           EXISTS (
-               SELECT 1 FROM favorites f
-                WHERE f.user_id = :reader AND f.entity_type = se.dac_tool
-                  AND f.entity_id = se.dac_id)
-               AS favourite,
+           coalesce(mine.viewed_at > :since, false) AS opened,
+           mine_tool.starred_at IS NOT NULL AS starred,
+           (mine.followed_at IS NOT NULL OR mine_tool.followed_at IS NOT NULL)
+               AS following,
            coalesce(l.level, 0) AS level,
            se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,
            container.title AS tool_title, ini.name AS initiative_name
@@ -238,6 +237,11 @@ def _statement(tools: list[str]) -> Any:
       ON se.entity_type = i.kind AND se.entity_id = i.id AND se.chunk_ix = 0
      AND NOT se.archived AND NOT se.template
     LEFT JOIN engagement_levels l ON l.entity_type = i.kind AND l.entity_id = i.id
+    LEFT JOIN personal_items mine
+      ON mine.user_id = :reader AND mine.entity_type = i.kind AND mine.entity_id = i.id
+    LEFT JOIN personal_items mine_tool
+      ON mine_tool.user_id = :reader AND mine_tool.entity_type = se.dac_tool
+     AND mine_tool.entity_id = se.dac_id
     LEFT JOIN search_entries container
       ON container.entity_type = se.dac_tool AND container.entity_id = se.dac_id
      AND container.chunk_ix = 0
@@ -334,8 +338,9 @@ def _score(row: Any, now: datetime, involved: bool) -> float:
         1
         + (INVOLVED_WEIGHT if involved else 0)
         + (CHANGED_WEIGHT if row["changed"] else 0)
+        + (FOLLOWING_WEIGHT if row["following"] else 0)
         + (OPENED_WEIGHT if row["opened"] else 0)
-        + (FAVOURITE_WEIGHT if row["favourite"] else 0)
+        + (STARRED_WEIGHT if row["starred"] else 0)
     )
     return (
         2 ** (-age / HALF_LIFE.total_seconds()) * boosted(1, row["level"]) * relevance

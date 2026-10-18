@@ -52,14 +52,14 @@ def _rules() -> tuple[Rule, ...]:
         change_log,
         outbox_poller,
         plugin_hooks,
-        recent_views,
+        personal_items,
     )
 
     return (
         change_log.expire,
         outbox_poller.expire_deliveries,
         plugin_hooks.expire_deliveries,
-        recent_views.expire,
+        personal_items.expire,
         notifications.expire_reminder_dispatches,
     )
 
@@ -67,7 +67,7 @@ def _rules() -> tuple[Rule, ...]:
 async def _tab_limits() -> dict[int, int]:
     """Each account whose recent-tabs limit is not the default, read once for
     the pass: a community's own session reads no accounts."""
-    from app.services.tenant.recent_views import (
+    from app.services.tenant.personal_items import (
         DEFAULT_RECENT_VIEWS,
         clamp_recent_limit,
     )
@@ -112,13 +112,13 @@ def next_due(_now: datetime) -> Any:
     """When the community next has something to let go, counting every
     recent view, tabs a person keeps included. Early for those: the visit
     answers exactly, with each person's tab limit."""
-    from app.models.tenant.recent_view import RecentView
-    from app.services.tenant.recent_views import WINDOW
+    from app.models.tenant.personal_item import PersonalItem
+    from app.services.tenant.personal_items import WINDOW
 
     return select(
         func.least(
             *(part.scalar_subquery() for part in _kept()),
-            select(func.min(RecentView.last_viewed_at) + WINDOW).scalar_subquery(),
+            select(func.min(PersonalItem.viewed_at) + WINDOW).scalar_subquery(),
         )
     )
 
@@ -127,7 +127,7 @@ async def prepare() -> Visit:
     """The visit that runs every rule in one community, with what the pass
     shares read once. It answers when the community next has something to
     let go."""
-    from app.services.tenant import recent_views
+    from app.services.tenant import personal_items
 
     now = datetime.now(timezone.utc)
     tab_limits = await _tab_limits()
@@ -142,7 +142,7 @@ async def prepare() -> Visit:
                 select(func.least(*(part.scalar_subquery() for part in _kept())))
             )
         ).first()
-        views = await recent_views.next_due(session, expiring)
+        views = await personal_items.next_due(session, expiring)
         return min((due for due in (kept, views) if due is not None), default=None)
 
     return visit

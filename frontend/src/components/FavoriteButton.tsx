@@ -3,7 +3,7 @@ import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { useIsFavorite, useToggleFavorite } from "@/hooks/useFavorites";
+import { useIsFavorite, useToggleFavorite } from "@/hooks/usePersonalItems";
 import { cn } from "@/lib/utils";
 
 interface FavoriteButtonProps {

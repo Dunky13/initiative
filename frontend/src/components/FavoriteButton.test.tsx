@@ -14,7 +14,7 @@ const starredQueue = {
   community_id: 3,
   initiative_id: 2,
   name: "Tea rota",
-  favorited_at: "2026-10-10T00:00:00Z",
+  starred_at: "2026-10-10T00:00:00Z",
   icon: null,
   file_type: null,
   mime_type: null,
@@ -27,8 +27,8 @@ describe("FavoriteButton", () => {
     let favorites: (typeof starredQueue)[] = [];
     const written: string[] = [];
     server.use(
-      http.get("/api/v1/c/3/favorites", () => HttpResponse.json(favorites)),
-      http.post("/api/v1/c/3/favorites/:tool/:id", ({ params }) => {
+      http.get("/api/v1/c/3/personal-items", () => HttpResponse.json(favorites)),
+      http.put("/api/v1/c/3/personal-items/star/:tool/:id", ({ params }) => {
         written.push(`${params.tool}/${params.id}`);
         favorites = [starredQueue];
         return new HttpResponse(null, { status: 204 });
@@ -53,8 +53,11 @@ describe("FavoriteButton", () => {
   it("puts the star back when starring fails", async () => {
     const user = userEvent.setup();
     server.use(
-      http.get("/api/v1/c/3/favorites", () => HttpResponse.json([])),
-      http.post("/api/v1/c/3/favorites/:tool/:id", () => new HttpResponse(null, { status: 404 }))
+      http.get("/api/v1/c/3/personal-items", () => HttpResponse.json([])),
+      http.put(
+        "/api/v1/c/3/personal-items/star/:tool/:id",
+        () => new HttpResponse(null, { status: 404 })
+      )
     );
     renderWithProviders(<FavoriteButton tool="file" entityId={9} />, {
       communities: { activeCommunityId: 3 },
@@ -77,14 +80,14 @@ describe("FavoriteButton", () => {
     });
     const writes: string[] = [];
     server.use(
-      http.get("/api/v1/c/3/favorites", () => HttpResponse.json([])),
-      http.post("/api/v1/c/3/favorites/:tool/:id", async () => {
+      http.get("/api/v1/c/3/personal-items", () => HttpResponse.json([])),
+      http.put("/api/v1/c/3/personal-items/star/:tool/:id", async () => {
         writes.push("star");
         await landed;
         await delay(0);
         return new HttpResponse(null, { status: 204 });
       }),
-      http.delete("/api/v1/c/3/favorites/:tool/:id", () => {
+      http.delete("/api/v1/c/3/personal-items/star/:tool/:id", () => {
         writes.push("unstar");
         return new HttpResponse(null, { status: 204 });
       })

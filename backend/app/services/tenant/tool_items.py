@@ -1,7 +1,7 @@
 """Tool rows named by ``(entity_type, entity_id)``, read as what a list of them
 shows: a name, an icon, where it lives.
 
-The recents bar and the favorites list both hold such pairs and both draw them
+The tabs bar and the stars both hold such pairs and both draw them
 the same way, so the reading is here once. It runs on a routed session, which
 decides: a tool the reader may not read does not load, and the caller leaves
 it out — the same verdict its own page reaches.

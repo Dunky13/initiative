@@ -170,7 +170,7 @@ from app.services import email as email_service
 from app.services.platform import app_settings as app_settings_service
 from app.services.platform import auth_posture
 from app.services.platform import user_tokens as user_tokens_service
-from app.services.tenant import recent_views as recent_views_service
+from app.services.tenant import personal_items as personal_items_service
 from app.db.query import (
     MAX_ID_FILTER_VALUES,
     apply_pagination,
@@ -1523,7 +1523,7 @@ async def update_me(
         if normalized_time_format is not None:
             current_user.time_format = normalized_time_format
     if "recent_tabs_limit" in update_data:
-        current_user.recent_tabs_limit = recent_views_service.clamp_recent_limit(
+        current_user.recent_tabs_limit = personal_items_service.clamp_recent_limit(
             update_data["recent_tabs_limit"]
         )
     if update_data.get("count_toward_engagement_ranking") is not None:

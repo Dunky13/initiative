@@ -1,4 +1,4 @@
-import type { RecentItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type { PersonalItemRead } from "@/api/generated/initiativeAPI.schemas";
 
 let counter = 0;
 
@@ -11,7 +11,7 @@ export function resetRecentCounter(): void {
  * ``entity_type`` and any other field. Use the type-specific helpers below
  * for ergonomic factories.
  */
-export function buildRecentItem(overrides: Partial<RecentItemRead> = {}): RecentItemRead {
+export function buildRecentItem(overrides: Partial<PersonalItemRead> = {}): PersonalItemRead {
   counter++;
   return {
     entity_type: "project",
@@ -19,7 +19,8 @@ export function buildRecentItem(overrides: Partial<RecentItemRead> = {}): Recent
     community_id: 1,
     initiative_id: 5,
     name: `Recent Item ${counter}`,
-    last_viewed_at: new Date().toISOString(),
+    viewed_at: new Date().toISOString(),
+    starred_at: null,
     icon: null,
     file_type: null,
     mime_type: null,
@@ -28,11 +29,13 @@ export function buildRecentItem(overrides: Partial<RecentItemRead> = {}): Recent
   };
 }
 
-export function buildRecentProjectItem(overrides: Partial<RecentItemRead> = {}): RecentItemRead {
+export function buildRecentProjectItem(
+  overrides: Partial<PersonalItemRead> = {}
+): PersonalItemRead {
   return buildRecentItem({ entity_type: "project", icon: "🛠", ...overrides });
 }
 
-export function buildRecentFileItem(overrides: Partial<RecentItemRead> = {}): RecentItemRead {
+export function buildRecentFileItem(overrides: Partial<PersonalItemRead> = {}): PersonalItemRead {
   return buildRecentItem({
     entity_type: "file",
     file_type: "native",
@@ -40,12 +43,12 @@ export function buildRecentFileItem(overrides: Partial<RecentItemRead> = {}): Re
   });
 }
 
-export function buildRecentQueueItem(overrides: Partial<RecentItemRead> = {}): RecentItemRead {
+export function buildRecentQueueItem(overrides: Partial<PersonalItemRead> = {}): PersonalItemRead {
   return buildRecentItem({ entity_type: "queue", ...overrides });
 }
 
 export function buildRecentCounterGroupItem(
-  overrides: Partial<RecentItemRead> = {}
-): RecentItemRead {
+  overrides: Partial<PersonalItemRead> = {}
+): PersonalItemRead {
   return buildRecentItem({ entity_type: "counter_group", ...overrides });
 }

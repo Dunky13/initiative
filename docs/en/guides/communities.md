@@ -37,7 +37,7 @@ Three circles sit on top of it:
 | **Yours** | What's happened to your things: what you made, what you're assigned to or going to, and what you changed or commented on this week. |
 | **Comments** | The latest comments themselves, from anywhere in the community: who said it, what they said, where, and the reactions it drew. |
 
-It isn't strictly newest first. Something recent comes higher, so does something lots of people are busy with, and so does anything that's yours: the task you're on, the project you favourited, the file you opened yesterday. Anything that changed since you last looked here is marked **New**. That's remembered on this device, so your phone and your laptop each keep their own count.
+It isn't strictly newest first. Something recent comes higher, so does something lots of people are busy with, and so does anything that's yours: the task you're on, the project you [follow](your-space.md#following) or favourited, the file you opened yesterday. Anything that changed since you last looked here is marked **New**. That's remembered on this device, so your phone and your laptop each keep their own count.
 
 A few things never make a card. Your own changes, because you were there. Reactions, though a thing that's drawn a pile of them rises a little. And reading a post, voting in a poll or answering an invitation, which are your business, not the community's.
 

@@ -1352,7 +1352,7 @@ def named_tool_path() -> InitiativePath:
     search index, and the change log.
 
     It stores ``initiative_id`` and its governing ``dac_tool``/``dac_id``
-    directly, so unlike ``recent_views`` this needs no per-type EXISTS join —
+    directly, so unlike ``personal_items`` this needs no per-type EXISTS join —
     the row was stamped by the same registries that render the source's own
     policies.
 
@@ -1549,14 +1549,12 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     "reactions": reactions_path(),
     "relationships": relationships_path(),
     # Per-user state, scoped via the entity it points at
-    "project_orders": via("projects", "project_id"),
     "task_assignment_digest_items": via("projects", "project_id"),
     # Same polymorphic target columns as the reactions themselves, so the
     # queued line is gated exactly like the gesture it describes.
     "reaction_digest_items": reactions_path(),
     "event_reminder_dispatches": via_event_calendar("event_id"),
-    "recent_views": content_kind_path(),
-    "favorites": content_kind_path(),
+    "personal_items": content_kind_path(),
     "engagement_levels": content_kind_path(),
 }
 
@@ -1629,9 +1627,7 @@ def initiative_of(table: str, row: str, *, qualify: str = "") -> str:
 _RESPONDING: frozenset[str] = frozenset()
 
 DAC_WRITE_COMMANDS: dict[str, frozenset[str]] = {
-    "project_orders": frozenset(),
-    "favorites": frozenset(),
-    "recent_views": frozenset(),
+    "personal_items": frozenset(),
     "post_reads": frozenset(),
     "post_poll_votes": frozenset(),
     "calendar_event_attendees": frozenset(),
@@ -2020,11 +2016,9 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     "plugin_event_outbox": Silent("delivered by the poller as events of its own"),
     # What one member did with their own UI, not a change to the initiative's
     # content, so every subscription would pay for pure noise.
-    "recent_views": Silent("one member's own viewing state"),
     "search_entries": Silent("derived index, rebuilt from the content it mirrors"),
     "engagement_levels": Silent("derived ranking, rewritten by the hourly pass"),
-    "project_orders": Silent("one member's own ordering state"),
-    "favorites": Silent("one member's own stars"),
+    "personal_items": Silent("one member's own opens, stars, follows and order"),
     "task_assignment_digest_items": Silent("internal digest bookkeeping"),
     "reaction_digest_items": Silent("internal digest bookkeeping"),
     "event_reminder_dispatches": Silent("internal reminder bookkeeping"),

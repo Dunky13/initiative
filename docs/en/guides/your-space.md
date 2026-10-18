@@ -135,6 +135,22 @@ Starred things go in **Favorites** at the top of the sidebar, for that community
 
 Leave a community and your stars there go with you.
 
+## Following
+
+A star keeps a thing close. Following keeps an eye on it. Follow the fete project and every stall booking, rota swap and increasingly tense comment about the gazebo rises in the activity feed on the [community front page](communities.md#the-community-front-page). Follow one task, one event or one page of the handbook, and just that rises.
+
+Look for the radar:
+
+| To follow | It's |
+|---|---|
+| A tool | Beside the star, next to its name. Following a tool covers everything inside it. |
+| A task, an event or a queue item | With the other buttons at the top of it. |
+| A picture | In the viewer, beside **Details**. |
+| A wiki | Beside its name at the top of the wiki's sidebar. Each page has its own, beside the wiki's star. |
+| A counter | In its menu. |
+
+Following changes the order of your feed and nothing else. Nobody gets told, nothing pings you, and what you follow is yours alone. It lifts things up the list rather than pinning them to the top, so a busy morning can still outrank the thing you followed last week. Leave a community and your follows there go with you.
+
 ## Related
 
 - [Messages](messages.md) — private conversations, and who can reach you.

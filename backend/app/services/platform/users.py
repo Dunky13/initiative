@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, List, TypeVar
 
 
 from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, update
-from sqlmodel import select, delete
+from sqlmodel import col, select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
@@ -51,8 +51,7 @@ from app.services.platform import user_avatars as user_avatars_service
 from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
-from app.models.tenant.project_order import ProjectOrder
-from app.models.tenant.favorite import Favorite
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.reaction_digest import ReactionDigestItem
 from app.models.tenant.ai_member_key import GuildAIMemberKey
 
@@ -240,9 +239,8 @@ async def _erase_in_guild(
     await set_rls_context(guild_session, SystemGuild(guild_id))
 
     await guild_session.exec(
-        delete(ProjectOrder).where(ProjectOrder.user_id == user_id)
+        delete(PersonalItem).where(col(PersonalItem.user_id) == user_id)
     )
-    await guild_session.exec(delete(Favorite).where(Favorite.user_id == user_id))
     # The ledger that stops an event reminder being sent twice: one row per
     # (event, person), of no use to anyone once the person is gone.
     await guild_session.exec(

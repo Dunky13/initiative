@@ -338,6 +338,10 @@
     "add": "Zu Favoriten hinzufügen",
     "remove": "Aus Favoriten entfernen"
   },
+  "follow": {
+    "add": "Folgen",
+    "remove": "Nicht mehr folgen"
+  },
   "toolHeader": {
     "rename": "Umbenennen"
   },

@@ -66,7 +66,6 @@ _NOT_PLUGIN_SURFACE: frozenset[str] = frozenset(
     {
         # One person's own state: their ordering, favourites, read markers and
         # ballots.
-        "project_orders",
         "post_reads",
         "post_poll_votes",
         # Run by the reminder scheduler.
@@ -171,8 +170,7 @@ PLUGIN_REFUSED_TABLES: frozenset[str] = frozenset(
     {
         "reactions",
         "reaction_digest_items",
-        "recent_views",
-        "favorites",
+        "personal_items",
         "engagement_levels",
     }
 )

@@ -41,7 +41,7 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDirectMessagesEnabled } from "@/hooks/useDirectMessages";
 import { useGlobalCreateAccess } from "@/hooks/useInitiativeAccess";
-import { useRecents } from "@/hooks/useRecents";
+import { useRecents } from "@/hooks/usePersonalItems";
 import { useCommunitySearchSuggest } from "@/hooks/useSearch";
 import { useTasks } from "@/hooks/useTasks";
 import { useHasFiledTickets } from "@/hooks/useTickets";
@@ -211,7 +211,7 @@ export function CommandCenter() {
     { enabled: open && !!user && !isSearching, staleTime: 30_000 }
   );
 
-  // Suggested = mixed-type recent items, ordered by ``last_viewed_at`` desc
+  // Suggested = mixed-type recent items, ordered by ``viewed_at`` desc
   // (same payload that backs the layout tabs bar).
   const recentItems = recentQuery.data ?? [];
   // Browse rows carry their own community_id — a task in this list can come from
