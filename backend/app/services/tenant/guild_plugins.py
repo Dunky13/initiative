@@ -62,6 +62,7 @@ from app.services import audit as audit_service
 from app.services.marketplace import (
     community_hooks,
     plugin_entitlements,
+    plugin_installs,
     registration_lookup,
 )
 from app.services.marketplace.service_plugins import is_admin_only
@@ -107,6 +108,7 @@ __all__ = [
     "placement_role_ids",
     "placements_by_install",
     "plugin_callers",
+    "reindex_install",
     "set_granted_scopes",
     "set_placed_initiatives",
     "set_placement_roles",
@@ -253,6 +255,16 @@ async def lock_install(session: AsyncSession, plugin_id: int) -> Optional[GuildP
             .execution_options(populate_existing=True)
         )
     ).first()
+
+
+async def reindex_install(session: AsyncSession, guild_id: int, plugin_id: int) -> None:
+    """Write an install's row in the install index from the install as it
+    stands, holding its row for the write as a connect does while it claims a
+    route, and commit."""
+    locked = await lock_install(session, plugin_id)
+    if locked is not None:
+        await plugin_installs.record(guild_id, locked)
+    await session.commit()
 
 
 async def load_secrets(session: AsyncSession, plugin: GuildPlugin) -> dict[str, Any]:

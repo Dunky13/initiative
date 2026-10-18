@@ -1225,7 +1225,7 @@ async def _store_community(
     if tokens is not None:
         config, secrets = seal_tokens(tokens, config=config, secrets=secrets)
     entries = _replace_entry(plugin.config, connection_id, config)
-    route = plugin_installs.route_of(plugin.definition, entries)
+    route = plugin_installs.hook_route(plugin.definition, entries)
     if not await plugin_installs.claim(guild_id, plugin, route):
         return "taken"
     try:
@@ -1241,8 +1241,7 @@ async def _store_community(
         await session.commit()
     except Exception:
         await session.rollback()
-        await session.refresh(plugin)
-        await plugin_installs.record(guild_id, plugin)
+        await guild_plugins_service.reindex_install(session, guild_id, plugin_id)
         raise
     return "connected"
 

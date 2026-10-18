@@ -51,9 +51,11 @@ from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
+from app.services.marketplace import declarative as declarative_service
 from app.services.marketplace import expressions
 from app.services.marketplace.registration_lookup import load_registrations
 from app.services.tenant import (
+    guild_plugins,
     plugin_connection_flows,
     plugin_connections,
     plugin_revocation,
@@ -317,17 +319,20 @@ def _landing(location: str) -> dict:
 
 
 async def _connect_installation(
-    client: AsyncClient, actor, plugin: GuildPlugin, vendor: FakeVendor
+    client: AsyncClient,
+    actor,
+    plugin: GuildPlugin,
+    vendor: FakeVendor,
+    installation: int = 42,
 ) -> dict:
-    """The install page, then one authorization, returning installation
-    42."""
+    """The install page, then one authorization, returning ``installation``."""
     start = await _start(client, actor, plugin, "workspace")
     setup = await client.get(
         "/api/v1/plugin-connections/setup",
         headers=_cookie(actor),
         params={
             "state": start["state"],
-            "installation_id": "42",
+            "installation_id": str(installation),
             "setup_action": "install",
         },
     )
@@ -1710,14 +1715,19 @@ async def _runs(session: AsyncSession, guild_id: int) -> dict[str, PluginSchedul
     return {run.schedule_id: run for run in runs}
 
 
-async def _due(session: AsyncSession, guild_id: int) -> None:
-    """Bring every schedule in the community due."""
+async def _due(
+    session: AsyncSession, guild_id: int, schedule_id: str | None = None
+) -> None:
+    """Bring every schedule in the community due, or only the one named."""
+    now = datetime.now(timezone.utc)
     await route_session_to_guild(session, guild_id)
-    await session.exec(
-        update(PluginScheduleRun).values(
-            next_due_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+    due = update(PluginScheduleRun).values(next_due_at=now - timedelta(seconds=1))
+    if schedule_id is not None:
+        await session.exec(
+            update(PluginScheduleRun).values(next_due_at=now + timedelta(hours=1))
         )
-    )
+        due = due.where(PluginScheduleRun.schedule_id == schedule_id)
+    await session.exec(due)
     await session.commit()
 
 
@@ -1977,19 +1987,26 @@ class TestDeclarativePlugins:
         assert vendor.hooks == []
 
     async def test_an_installation_event_sets_the_connections_state(
-        self, client: AsyncClient, acting_user, session, vendor, declarative
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
     ):
         """A removed installation holds no route, so nothing after it reaches
-        the community."""
+        the community. The index is written from the install as it stands once
+        the state commits, so a reconnect landing in between keeps its route,
+        and a status about an installation the community has since reconnected
+        away from changes nothing."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, seat, config=_connected("42"))
 
-        states = []
-        actions = ("suspend", "unsuspend", "deleted", "unsuspend")
-        for serial, action in enumerate(actions):
+        async def deliver(serial: int, action: str, installation: int = 42) -> tuple:
             body, headers = vendor.webhook(
-                {"action": action, "installation": {"id": 42}},
+                {"action": action, "installation": {"id": installation}},
                 delivery=f"delivery-{serial}",
             )
             headers["X-GitHub-Event"] = "installation"
@@ -1999,16 +2016,38 @@ class TestDeclarativePlugins:
             assert response.status_code == 202, response.text
             stored = await _reload(session, seat.guild.id, plugin.id)
             indexed = await _indexed(session, seat.guild.id, plugin.id)
-            states.append(
-                (stored.config_state, stored.config_state_detail, indexed.hook_route)
-            )
+            return (stored.config_state, stored.config_state_detail, indexed.hook_route)
 
-        assert states == [
-            ("invalid", "workspace_suspended", "42"),
-            ("ok", None, "42"),
-            ("invalid", "workspace_removed", None),
-            ("invalid", "workspace_removed", None),
-        ]
+        def reconnecting(installation: int, then):
+            """``then``, once the community has connected ``installation``."""
+
+            async def run(*args, **kwargs):
+                vendor.api_answers = [_installations((installation, "acme"))]
+                landing = await _connect_installation(
+                    client, seat, plugin, vendor, installation
+                )
+                assert landing["outcome"] == "connected"
+                return await then(*args, **kwargs)
+
+            return run
+
+        reindex = guild_plugins.reindex_install
+        mapping = declarative_service.map_delivery
+        removed = ("invalid", "workspace_removed", None)
+        assert await deliver(0, "suspend") == ("invalid", "workspace_suspended", "42")
+        assert await deliver(1, "unsuspend") == ("ok", None, "42")
+        # Reconnected between the state's commit and the index write.
+        monkeypatch.setattr(guild_plugins, "reindex_install", reconnecting(42, reindex))
+        assert await deliver(2, "deleted") == ("unverified", None, "42")
+        monkeypatch.setattr(guild_plugins, "reindex_install", reindex)
+        # Reconnected to installation 43 between routing and the status.
+        monkeypatch.setattr(
+            declarative_service, "map_delivery", reconnecting(43, mapping)
+        )
+        assert await deliver(3, "deleted") == ("unverified", None, "43")
+        monkeypatch.setattr(declarative_service, "map_delivery", mapping)
+        assert await deliver(4, "deleted", 43) == removed
+        assert await deliver(5, "unsuspend", 43) == removed
         assert await _events(session, seat.guild.id) == []
 
     async def test_the_pinned_mapping_is_used_when_the_listing_moved_on(
@@ -2138,28 +2177,51 @@ class TestDeclarativePlugins:
     ):
         """The check runs with the installation's own token. One answer that
         the installation is gone is not reported; two in a row are, and the
-        first answer that it works again is."""
+        first answer that it works again is. The removed connection holds no
+        route until then: each report of it removed writes the index again,
+        and another connection's report leaves it without one."""
+        mirror = {**DECLARATIVE["connections"][0], "id": "mirror"}
         seat = await acting_user(guild_role=CommunityRole.superadmin)
-        plugin = await _declarative_install(session, seat, config=_connected("42"))
-        assert set(await _runs(session, seat.guild.id)) == {"workspace"}
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition={
+                **DECLARATIVE,
+                "connections": [*DECLARATIVE["connections"], mirror],
+            },
+            config={
+                **_connected("42"),
+                "mirror": {"owner": "acme", "installation_id": "7"},
+            },
+        )
+        assert set(await _runs(session, seat.guild.id)) == {"workspace", "mirror"}
         worker = await role_session()
 
-        states = []
-        for answer in ({"status": 404}, {"status": 404}, {"body": {}}):
+        async def check(connection: str, answer: dict) -> tuple:
             vendor.api_answers = [answer]
-            await _due(session, seat.guild.id)
+            await _due(session, seat.guild.id, connection)
             await _run_due(worker, seat.guild.id)
             stored = await _reload(session, seat.guild.id, plugin.id)
             indexed = await _indexed(session, seat.guild.id, plugin.id)
-            states.append(
-                (stored.config_state, stored.config_state_detail, indexed.hook_route)
-            )
+            return (stored.config_state, stored.config_state_detail, indexed.hook_route)
 
-        assert states == [
-            ("unverified", None, "42"),
-            ("invalid", "workspace_removed", None),
-            ("ok", None, "42"),
-        ]
+        removed = ("invalid", "workspace_removed", None)
+        assert await check("workspace", {"status": 404}) == ("unverified", None, "42")
+        assert await check("workspace", {"status": 404}) == removed
+        await session.exec(
+            update(PluginInstall)
+            .where(
+                PluginInstall.guild_id == seat.guild.id,
+                PluginInstall.install_id == plugin.id,
+            )
+            .values(hook_route="42")
+        )
+        await session.commit()
+        assert await check("workspace", {"status": 404}) == removed
+        assert await check("mirror", {"status": 403}) == removed
+        suspended = ("invalid", "mirror_suspended")
+        assert await check("mirror", {"status": 403}) == (*suspended, None)
+        assert await check("workspace", {"body": {}}) == (*suspended, "42")
         assert {request["url"] for request in vendor.api_requests} == {
             "https://api.github.test/installation/repositories"
         }

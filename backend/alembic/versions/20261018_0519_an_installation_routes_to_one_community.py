@@ -9,7 +9,8 @@ route of an exclusive install to one community.
 A listing whose installs already share a route keeps sharing it: its
 registration is written ``shared_routes`` and its installs not exclusive. Both
 tables are FORCEd, so those writes run with FORCE lifted and restored around
-them, before the index is made.
+them, before the index is made. A route held by an install already reported
+removed is released on that install's next status or health result.
 
 Revision ID: 20261018_0519
 Revises: 20261018_0518

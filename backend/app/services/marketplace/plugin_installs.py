@@ -46,7 +46,7 @@ from app.models.platform.plugin_install import (
 from app.models.platform.plugin_service_registration import PluginServiceRegistration
 from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.tenant.plugin_config import connection_by_id
+from app.services.tenant.plugin_config import REMOVED_AT, connection_by_id
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,6 @@ __all__ = [
     "hook_route",
     "page",
     "record",
-    "route_of",
     "routed",
 ]
 
@@ -72,14 +71,17 @@ class IndexedInstall:
     install_id: int
     #: Switched on, in a community in use.
     active: bool
+    #: The route value it was found by, for :func:`routed`.
+    route: Optional[str] = None
 
 
-def route_of(
+def hook_route(
     definition: Optional[dict[str, Any]], config: Optional[Mapping[str, Any]]
 ) -> Optional[str]:
-    """The value vendor webhooks route by in an install's stored ``config``:
-    the field of the static connection the ``webhooks.route`` of
-    ``definition`` names.
+    """The value an install's vendor webhooks are routed by: in its stored
+    ``config``, the field of the static connection the ``webhooks.route`` of
+    its pinned ``definition`` names. None while that connection holds the
+    vendor's report that it was removed (``REMOVED_AT``).
 
     Only a managed field routes: its value comes from the plug-in's
     ``after_connect`` hook, which checked it at the vendor, and never from a
@@ -96,24 +98,13 @@ def route_of(
     if route.get("field") not in managed:
         return None
     stored = (config or {}).get(route.get("connection")) or {}
-    value = stored.get(route.get("field")) if isinstance(stored, dict) else None
+    if not isinstance(stored, dict) or REMOVED_AT in stored:
+        return None
+    value = stored.get(route.get("field"))
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         return None
     text = str(value)
     return text if text and len(text) <= HOOK_ROUTE_MAX_LENGTH else None
-
-
-def hook_route(plugin: GuildPlugin) -> Optional[str]:
-    """The value this install's vendor webhooks are routed by, as its pinned
-    definition reads it (:func:`route_of`). None once the vendor has reported
-    the routed connection ``removed``, which ``set_connection_state`` records
-    as the install's configuration state."""
-    route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
-    connection = route.get("connection") if isinstance(route, dict) else None
-    removed = ("invalid", f"{connection}_removed")
-    if (plugin.config_state, plugin.config_state_detail) == removed:
-        return None
-    return route_of(plugin.definition, plugin.config)
 
 
 async def claim(guild_id: int, plugin: GuildPlugin, route: Optional[str]) -> bool:
@@ -160,7 +151,7 @@ async def claim(guild_id: int, plugin: GuildPlugin, route: Optional[str]) -> boo
 async def record(guild_id: int, plugin: GuildPlugin) -> None:
     """Write one install's row as ``plugin`` now stands. A route held for
     another community is left out: the row is written with none."""
-    if not await claim(guild_id, plugin, hook_route(plugin)):
+    if not await claim(guild_id, plugin, hook_route(plugin.definition, plugin.config)):
         logger.info(
             "plug-in installs: install %s in guild %s routes by a value another "
             "community holds, and is indexed without it",
@@ -255,5 +246,8 @@ async def routed(listing_uid: str, route_value: str) -> list[IndexedInstall]:
     async with db_session.SystemSessionLocal() as session:
         rows = (await session.exec(statement)).all()
     return [
-        IndexedInstall(guild_id=row[0], install_id=row[1], active=True) for row in rows
+        IndexedInstall(
+            guild_id=row[0], install_id=row[1], active=True, route=route_value
+        )
+        for row in rows
     ]
