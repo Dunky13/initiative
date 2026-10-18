@@ -1,4 +1,4 @@
-"""What one member keeps about one item: their last open, a bookmark, a follow and
+"""What one member keeps about one item: their last open, a bookmark, a subscription and
 where they put a project in their own list.
 
 One row per ``(user_id, entity_type, entity_id)``, in the item's community's
@@ -73,7 +73,7 @@ class PersonalItem(SQLModel, table=True):
             name="ck_personal_items_view_source_with_view",
         ),
         CheckConstraint(
-            "num_nonnulls(viewed_at, bookmarked_at, followed_at, sort_order) > 0",
+            "num_nonnulls(viewed_at, bookmarked_at, subscribed_at, sort_order) > 0",
             name="ck_personal_items_holds_something",
         ),
         # A purge drops everyone's rows on an item.
@@ -95,7 +95,7 @@ class PersonalItem(SQLModel, table=True):
     bookmarked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    followed_at: Optional[datetime] = Field(
+    subscribed_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     #: Where the member put this project in their own list.

@@ -17,8 +17,8 @@ import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { BookmarkButton } from "@/components/BookmarkButton";
-import { FollowButton } from "@/components/FollowButton";
 import { useFullBleed } from "@/components/PageBanner";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { ToolBreadcrumb, type ToolBreadcrumbSegment } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +48,7 @@ export interface ToolPageHeaderProps {
   /** Saves a new name; given only to someone who may rename. Resolves once
    *  saved, so the field stays open on a failure. */
   onRename?: (name: string) => Promise<unknown>;
-  /** The tool this page is, for the bookmark and the follow beside its name. Left
+  /** The tool this page is, for the bookmark and the subscribe beside its name. Left
    *  out where the page is something inside a tool (a task) or about one (its
    *  settings). */
   starId?: number;
@@ -127,7 +127,7 @@ export const ToolPageHeader = ({
                   name={typeof title === "string" ? title : undefined}
                   initiativeId={initiativeId}
                 />
-                <FollowButton kind={tool} entityId={starId} />
+                <SubscribeButton kind={tool} entityId={starId} />
               </div>
             ) : null}
             {titleExtras}

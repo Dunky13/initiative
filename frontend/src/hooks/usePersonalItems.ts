@@ -1,12 +1,12 @@
 /**
  * What the reader keeps about items, one seam for all of it: their opens (the
- * header's tabs), their bookmarks and what they follow.
+ * header's tabs), their bookmarks and what they subscribe to.
  *
  * Tabs and bookmarks are lists of tools: `/me/personal-items?mark=…` across every
  * community, `/c/{id}/personal-items?mark=bookmark` for one community's sidebar and
  * the bookmarks on its pages (a few dozen rows at most, so one read lights every
- * bookmark on screen). One item's follow is read on its own,
- * `/c/{id}/personal-items/{kind}/{id}`, since a follow can be on anything.
+ * bookmark on screen). One item's subscription is read on its own,
+ * `/c/{id}/personal-items/{kind}/{id}`, since a subscription can be on anything.
  */
 
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,7 +24,6 @@ import {
 import {
   bookmarkItem,
   clearView,
-  followItem,
   getListMyPersonalItemsQueryKey,
   getListPersonalItemsQueryKey,
   getReadPersonalItemQueryKey,
@@ -32,8 +31,9 @@ import {
   listPersonalItems,
   readPersonalItem,
   recordView,
+  subscribeItem,
   unbookmarkItem,
-  unfollowItem,
+  unsubscribeItem,
 } from "@/api/generated/personal-items/personal-items";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
@@ -322,7 +322,7 @@ export const useToggleBookmark = () => {
 };
 
 /** What the reader keeps about one item, in its community (the active one
- *  unless named): whether they follow it. */
+ *  unless named): whether they are subscribed to it. */
 export const useItemState = (kind: ContentKind, entityId: number, communityId?: number) => {
   const active = useActiveCommunityId();
   const id = communityId ?? active;
@@ -334,28 +334,28 @@ export const useItemState = (kind: ContentKind, entityId: number, communityId?: 
   });
 };
 
-export interface ToggleFollowArgs {
+export interface ToggleSubscriptionArgs {
   kind: ContentKind;
   entityId: number;
-  /** Follow it (true) or stop (false). */
+  /** Subscribe (true) or unsubscribe (false). */
   next: boolean;
   /** The item's own community; the active one when left out. */
   communityId?: number;
 }
 
 /**
- * Follow or unfollow anything. The toggle changes at once, is put back if
+ * Subscribe to or unsubscribe from anything. The toggle changes at once, is put back if
  * the write fails, and the item is read again once it lands.
  */
-export const useToggleFollow = () => {
+export const useToggleSubscription = () => {
   const active = useActiveCommunityId();
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ kind, entityId, next, communityId }: ToggleFollowArgs) => {
+    mutationFn: async ({ kind, entityId, next, communityId }: ToggleSubscriptionArgs) => {
       const id = communityId ?? active;
-      if (next) await followItem(id, kind, entityId);
-      else await unfollowItem(id, kind, entityId);
+      if (next) await subscribeItem(id, kind, entityId);
+      else await unsubscribeItem(id, kind, entityId);
     },
     onMutate: async ({ kind, entityId, next, communityId }) => {
       const queryKey = getReadPersonalItemQueryKey(communityId ?? active, kind, entityId);
@@ -364,7 +364,7 @@ export const useToggleFollow = () => {
       if (before) {
         qc.setQueryData<PersonalItemState>(queryKey, {
           ...before,
-          followed_at: next ? new Date().toISOString() : null,
+          subscribed_at: next ? new Date().toISOString() : null,
         });
       }
       return { queryKey, before };
@@ -374,22 +374,22 @@ export const useToggleFollow = () => {
     },
     onSettled: (_data, _error, _args, context) => {
       if (context) void qc.invalidateQueries({ queryKey: context.queryKey });
-      // The feed's order follows what the reader follows.
+      // The feed's order follows what the reader subscribes to.
       void invalidate(q.activity());
     },
   });
 };
 
-/** Whether the reader follows this, and the toggle: what a follow control
- *  needs, wherever it sits. `ready` once the state is read and no write is
+/** Whether the reader is subscribed to this, and the toggle: what a subscribe
+ *  control needs, wherever it sits. `ready` once the state is read and no write is
  *  under way, so the last click is the one that holds. */
-export const useFollow = (kind: ContentKind, entityId: number, communityId?: number) => {
+export const useSubscription = (kind: ContentKind, entityId: number, communityId?: number) => {
   const { data } = useItemState(kind, entityId, communityId);
-  const toggle = useToggleFollow();
-  const following = Boolean(data?.followed_at);
+  const toggle = useToggleSubscription();
+  const subscribed = Boolean(data?.subscribed_at);
   return {
-    following,
+    subscribed,
     ready: Boolean(data) && !toggle.isPending,
-    toggle: () => toggle.mutate({ kind, entityId, next: !following, communityId }),
+    toggle: () => toggle.mutate({ kind, entityId, next: !subscribed, communityId }),
   };
 };

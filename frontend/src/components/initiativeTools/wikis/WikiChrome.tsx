@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Tool, type WikiRead } from "@/api/generated/initiativeAPI.schemas";
 import { BookmarkButton } from "@/components/BookmarkButton";
-import { FollowButton } from "@/components/FollowButton";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ interface WikiChromeProps {
   wiki: WikiRead;
   /** The page being read. This bar names where you are, not where you are in general. */
   pageTitle: string;
-  /** The page's id, for following it. Absent where the surface is not a page. */
+  /** The page's id, for subscribing to it. Absent where the surface is not a page. */
   pageId?: number;
   /** Renames the page. Present only while it is open for editing. */
   onRename?: (title: string) => void;
@@ -153,8 +153,8 @@ export const WikiChrome = ({
           initiativeId={wiki.initiative_id}
           className="size-8"
         />
-        {/* The follow is the page's: the wiki is followed from its sidebar. */}
-        {pageId ? <FollowButton kind="wiki_page" entityId={pageId} className="size-8" /> : null}
+        {/* This subscription is the page's: the wiki is subscribed to from its sidebar. */}
+        {pageId ? <SubscribeButton kind="wiki_page" entityId={pageId} className="size-8" /> : null}
         {trailing}
 
         {/* A page is written before it is published, so the one thing a writer

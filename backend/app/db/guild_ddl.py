@@ -322,7 +322,7 @@ _OWN_ROW_WRITE_PREDICATE = (
 _PRIVATE_ROW_SECTION = """\
 -- ===========================================================================
 -- Private-row tables (app.db.tenancy.PRIVATE_ROW_TABLES): one member's own
--- state about content they reach — their opens, bookmarks and follows, a read
+-- state about content they reach — their opens, bookmarks and subscriptions, a read
 -- receipt, a ballot. RESTRICTIVE on top of the table's initiative gate: only
 -- the member and trusted system maintenance reach a row, never the community's
 -- administrator, a settings rung or a grant. A table in PRIVATE_ROW_SHARED_READ

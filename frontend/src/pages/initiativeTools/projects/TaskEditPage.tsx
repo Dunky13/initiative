@@ -17,10 +17,10 @@ import type { TaskRead } from "@/api/generated/initiativeAPI.schemas";
 import { ContentKind, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { getReadTaskQueryKey, readTask } from "@/api/generated/tasks/tasks";
 import { invalidate, q } from "@/api/query-keys";
-import { FollowButton } from "@/components/FollowButton";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { StatusMessage } from "@/components/StatusMessage";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { TaskEditSkeleton } from "@/components/skeletons/PageSkeletons";
 import { ToolAccessStatus } from "@/components/ToolAccessStatus";
 import { MoveTaskDialog } from "@/components/tasks/MoveTaskDialog";
@@ -392,10 +392,10 @@ export const TaskEditPage = () => {
   // A moderator's shield sits beside the menu rather than in it: a moderator
   // who may not edit the task has no menu, and still moderates it.
   const canModerate = Boolean(initiativeQuery.data?.can.moderate);
-  // Following needs nothing but read, so the actions are always there.
+  // Subscribing needs nothing but read, so the actions are always there.
   const actions = (
     <div className="flex items-center gap-1">
-      <FollowButton kind={ContentKind.task} entityId={parsedTaskId} />
+      <SubscribeButton kind={ContentKind.task} entityId={parsedTaskId} />
       <ModerationMenu
         targetType="task"
         targetId={parsedTaskId}

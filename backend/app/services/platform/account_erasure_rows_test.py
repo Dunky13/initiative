@@ -262,7 +262,7 @@ async def test_the_preference_beside_it_goes(session: AsyncSession, role_session
 
 
 async def test_what_they_kept_goes(session: AsyncSession, role_session):
-    """Opens, bookmarks, follows and orders are one person's own: theirs go, and
+    """Opens, bookmarks, subscriptions and orders are one person's own: theirs go, and
     someone else's stay."""
     s = await _seed(session)
     await route_session_to_guild(session, s.guild_id)

@@ -1,10 +1,10 @@
 """What each member keeps about the items in a community: their opens, bookmarks,
-follows and their own order of projects, one ``personal_items`` row per item.
+subscriptions and their own order of projects, one ``personal_items`` row per item.
 
 Opening any tool, or anything inside one, records a view; the tools' views are
 the layout header's tabs. Every view is kept for :data:`WINDOW`; past it, a
 tool is kept while it is among the person's newest tabs, and anything else goes.
-A bookmark is on a tool, a follow on anything, and both last until taken off.
+A bookmark is on a tool, a subscription on anything, and both last until taken off.
 
 A row holds at least one of these, which the table checks. So each path that
 lets one go deletes the rows where it was the last, and empties it in the rest.
@@ -40,19 +40,19 @@ class Mark(str, Enum):
     view = "view"
     #: Bookmarked it. Tools only.
     bookmark = "bookmark"
-    #: Following it, which lifts it and what is inside it in their feed.
-    follow = "follow"
+    #: Subscribed to it: it and what is inside it rise in their feed and notify them.
+    subscribe = "subscribe"
 
 
 #: The columns each mark sets, the first being its time.
 MARK_COLUMNS: dict[Mark, tuple[str, ...]] = {
     Mark.view: ("viewed_at", "view_source"),
     Mark.bookmark: ("bookmarked_at",),
-    Mark.follow: ("followed_at",),
+    Mark.subscribe: ("subscribed_at",),
 }
 
 #: Every column that keeps a row: each mark's time, and the project order.
-_HOLDING = ("viewed_at", "bookmarked_at", "followed_at", "sort_order")
+_HOLDING = ("viewed_at", "bookmarked_at", "subscribed_at", "sort_order")
 
 # Per-user cap on tabs kept and shown. The user's ``recent_tabs_limit``
 # (Interface settings) picks the value within these bounds.
@@ -125,7 +125,7 @@ async def record_view(
 async def set_mark(
     session: AsyncSession, *, user_id: int, mark: Mark, kind: str, entity_id: int
 ) -> None:
-    """Bookmark or follow it. Setting one already set keeps the first time."""
+    """Bookmark or subscribe to it. Setting one already set keeps the first time."""
     (column,) = MARK_COLUMNS[mark]
     insert = pg_insert(PersonalItem).values(
         user_id=user_id,
@@ -149,7 +149,7 @@ async def set_mark(
 async def clear_mark(
     session: AsyncSession, *, user_id: int, mark: Mark, kind: str, entity_id: int
 ) -> None:
-    """Let go of a mark: close a tab, remove a bookmark, stop following.
+    """Let go of a mark: close a tab, remove a bookmark, unsubscribe.
     Idempotent, and whether or not the item can still be opened, so a mark on
     something the reader has lost can still come off. Run as the platform and
     limited to the reader's own row, which is locked while it is decided
@@ -288,14 +288,14 @@ _EXPIRE = f"""
         DELETE FROM personal_items p USING doomed d
          WHERE (p.user_id, p.entity_type, p.entity_id, p.viewed_at)
              = (d.user_id, d.entity_type, d.entity_id, d.viewed_at)
-           AND p.bookmarked_at IS NULL AND p.followed_at IS NULL
+           AND p.bookmarked_at IS NULL AND p.subscribed_at IS NULL
            AND p.sort_order IS NULL
     )
     UPDATE personal_items p SET viewed_at = NULL, view_source = NULL
       FROM doomed d
      WHERE (p.user_id, p.entity_type, p.entity_id, p.viewed_at)
          = (d.user_id, d.entity_type, d.entity_id, d.viewed_at)
-       AND num_nonnulls(p.bookmarked_at, p.followed_at, p.sort_order) > 0
+       AND num_nonnulls(p.bookmarked_at, p.subscribed_at, p.sort_order) > 0
 """
 
 #: The oldest view :func:`expire` would let go once it passes the window.

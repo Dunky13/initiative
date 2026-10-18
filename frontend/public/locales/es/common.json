@@ -338,9 +338,9 @@
     "add": "Agregar a marcadores",
     "remove": "Quitar de marcadores"
   },
-  "follow": {
-    "add": "Seguir",
-    "remove": "Dejar de seguir"
+  "subscribe": {
+    "add": "Suscribirse",
+    "remove": "Cancelar suscripción"
   },
   "toolHeader": {
     "rename": "Cambiar nombre"

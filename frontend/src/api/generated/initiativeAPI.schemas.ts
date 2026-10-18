@@ -8228,7 +8228,7 @@ export interface PersonalItemState {
   viewed_at: string | null;
   view_source: ViewSource | null;
   bookmarked_at: string | null;
-  followed_at: string | null;
+  subscribed_at: string | null;
 }
 
 /**

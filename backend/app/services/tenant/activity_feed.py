@@ -9,7 +9,7 @@ entry is readable too, which is also where its title comes from.
 
 An entry is ordered by how recent its latest change is, the item's engagement
 level, and how involved the reader is with it: made it or named on it,
-changed it, following it or its tool, opened it, bookmarked its tool.
+changed it, subscribed to it or its tool, opened it, bookmarked its tool.
 
     2^(−age / HALF_LIFE) × boosted(1, level) × relevance
 
@@ -66,8 +66,8 @@ ACTORS_SHOWN = 3
 #: Made it, or named on it (assigned, attending).
 INVOLVED_WEIGHT = 2.0
 CHANGED_WEIGHT = 1.0
-#: Following it, or the tool it is in: the reader asked to see it.
-FOLLOWING_WEIGHT = 2.0
+#: Subscribed to it, or the tool it is in: the reader asked to hear of it.
+SUBSCRIBED_WEIGHT = 2.0
 OPENED_WEIGHT = 0.5
 #: Bookmarked the tool it is in.
 BOOKMARKED_WEIGHT = 0.5
@@ -227,8 +227,8 @@ def _statement(tools: list[str]) -> Any:
                AS changed,
            coalesce(mine.viewed_at > :since, false) AS opened,
            mine_tool.bookmarked_at IS NOT NULL AS bookmarked,
-           (mine.followed_at IS NOT NULL OR mine_tool.followed_at IS NOT NULL)
-               AS following,
+           (mine.subscribed_at IS NOT NULL OR mine_tool.subscribed_at IS NOT NULL)
+               AS subscribed,
            coalesce(l.level, 0) AS level,
            se.title, se.initiative_id, se.dac_tool AS tool, se.dac_id AS tool_id,
            container.title AS tool_title, ini.name AS initiative_name
@@ -338,7 +338,7 @@ def _score(row: Any, now: datetime, involved: bool) -> float:
         1
         + (INVOLVED_WEIGHT if involved else 0)
         + (CHANGED_WEIGHT if row["changed"] else 0)
-        + (FOLLOWING_WEIGHT if row["following"] else 0)
+        + (SUBSCRIBED_WEIGHT if row["subscribed"] else 0)
         + (OPENED_WEIGHT if row["opened"] else 0)
         + (BOOKMARKED_WEIGHT if row["bookmarked"] else 0)
     )

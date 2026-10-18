@@ -1,8 +1,8 @@
-"""What a member keeps about items: opens, bookmarks and follows.
+"""What a member keeps about items: opens, bookmarks and subscriptions.
 
 Setting and clearing one is community-addressed
 (``/c/{community_id}/personal-items/{mark}/{kind}/{id}``): per-schema ids are
-only unique within a community. Opening and following take read on the item,
+only unique within a community. Opening and subscribing take read on the item,
 the same its own page takes; bookmarking takes it on a tool. Clearing asks
 nothing of the item, so a mark on something the reader has lost still comes
 off. A community's bookmarks serve its sidebar and the bookmarks on its pages;
@@ -86,7 +86,7 @@ async def _state(session, user_id: int, kind: str, entity_id: int) -> PersonalIt
         viewed_at=row.viewed_at if row else None,
         view_source=ViewSource(row.view_source) if row and row.view_source else None,
         bookmarked_at=row.bookmarked_at if row else None,
-        followed_at=row.followed_at if row else None,
+        subscribed_at=row.subscribed_at if row else None,
     )
 
 
@@ -98,7 +98,7 @@ async def _set(
     current_user,
     guild_context,
 ) -> PersonalItemState:
-    """Bookmark or follow, after loading the item as its page does. A platform
+    """Bookmark or subscribe, after loading the item as its page does. A platform
     grantee is not a member, so nothing is kept for them."""
     row = await resource_access.load_kind(
         session, kind, entity_id, current_user, guild_context
@@ -176,18 +176,18 @@ async def bookmark_item(
     )
 
 
-@guild_router.put("/follow/{kind}/{entity_id}", response_model=PersonalItemState)
-async def follow_item(
+@guild_router.put("/subscribe/{kind}/{entity_id}", response_model=PersonalItemState)
+async def subscribe_item(
     kind: ContentKind,
     entity_id: int,
     session: RLSSessionDep,
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> PersonalItemState:
-    """Follow a tool or anything inside one: its changes, and those of what is
+    """Subscribe to a tool or anything inside one: its changes, and those of what is
     inside it, rise in the reader's feed."""
     return await _set(
-        Mark.follow, kind.value, entity_id, session, current_user, guild_context
+        Mark.subscribe, kind.value, entity_id, session, current_user, guild_context
     )
 
 
@@ -226,18 +226,18 @@ async def unbookmark_item(
 
 
 @guild_router.delete(
-    "/follow/{kind}/{entity_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/subscribe/{kind}/{entity_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def unfollow_item(
+async def unsubscribe_item(
     kind: ContentKind,
     entity_id: int,
     session: RLSSessionDep,
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> None:
-    """Stop following. Idempotent."""
+    """Unsubscribe. Idempotent."""
     del guild_context
-    await _clear(Mark.follow, kind.value, entity_id, session, current_user.id)
+    await _clear(Mark.subscribe, kind.value, entity_id, session, current_user.id)
 
 
 @me_router.get("/personal-items", response_model=List[PersonalItemRead])
