@@ -55,7 +55,7 @@ from app.services.marketplace.service_plugins import schedule_minutes
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant.plugin_channels import owns_install, set_connection_state
-from app.services.tenant.plugin_config import without_tokens
+from app.services.tenant.plugin_config import REMOVED_AT, without_tokens
 from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
@@ -317,6 +317,13 @@ async def run_due(session: AsyncSession, guild_id: int) -> datetime | None:
     return (await session.exec(next_due(sorted(live)))).first()
 
 
+def _made(plugin: GuildPlugin, connection_id: str) -> dict[str, Any]:
+    """What a stored community connection was made with: its values, without
+    its tokens, which refresh, or the mark a ``removed`` report leaves."""
+    stored = without_tokens((plugin.config or {}).get(connection_id))
+    return {key: value for key, value in stored.items() if key != REMOVED_AT}
+
+
 async def _check_health(
     session: AsyncSession,
     plugin: GuildPlugin,
@@ -328,14 +335,16 @@ async def _check_health(
     """Run one community connection's health check and report what it read:
     ``ok`` at once, any other state once two checks in a row have read
     something other than ``ok``. A connection not yet made is not checked,
-    and answers ``None``. Once a report commits, a state that moved, or any
-    ``removed``, is written to the install index from the install as it then
-    stands."""
+    and answers ``None``, as does one made again while it was checked, whose
+    check read the connection it replaced. Once a report commits, a state
+    that moved, or any ``removed``, is written to the install index from the
+    install as it then stands."""
     connection_id = run.schedule_id
     health = _health_checks(plugin.definition).get(connection_id)
     stored = (plugin.config or {}).get(connection_id)
     if health is None or not stored:
         return None
+    checked = _made(plugin, connection_id)
     try:
         token = await flows.community_token(
             session,
@@ -362,8 +371,11 @@ async def _check_health(
         )
     if state == "ok" or run.failures >= 1:
         locked = await guild_plugins_service.lock_install(session, plugin.id)
+        if locked is None or _made(locked, connection_id) != checked:
+            await session.commit()
+            return None
         moved = False
-        if locked is not None and set_connection_state(locked, connection_id, state):
+        if set_connection_state(locked, connection_id, state):
             session.add(locked)
             moved = True
         await session.commit()

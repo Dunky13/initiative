@@ -2172,6 +2172,54 @@ class TestDeclarativePlugins:
             ISSUE_OPENED
         ]
 
+    async def test_a_check_of_a_connection_made_again_meanwhile_reports_nothing(
+        self, acting_user, session, role_session, vendor, declarative, monkeypatch
+    ):
+        """The check read the installation the connection replaced, so what it
+        found is not written to the new one, whose route stays."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        worker = await role_session()
+        vendor.api_answers = [{"status": 404}]
+        await _due(session, guild_id, "workspace")
+        await _run_due(worker, guild_id)
+
+        async def answer(request: httpx.Request) -> httpx.Response:
+            if request.headers.get("host") == vendor.api_host:
+                await route_session_to_guild(session, guild_id)
+                await session.exec(
+                    update(GuildPlugin)
+                    .where(GuildPlugin.id == plugin.id)  # type: ignore[arg-type]
+                    .values(config=_connected("99"))
+                )
+                await session.exec(
+                    update(PluginInstall)
+                    .where(
+                        PluginInstall.guild_id == guild_id,  # type: ignore[arg-type]
+                        PluginInstall.install_id == plugin.id,  # type: ignore[arg-type]
+                    )
+                    .values(hook_route="99")
+                )
+                await session.commit()
+            return vendor.handle(request)
+
+        monkeypatch.setattr(
+            plugin_connection_flows, "http_transport", httpx.MockTransport(answer)
+        )
+        vendor.api_answers = [{"status": 404}]
+        await _due(session, guild_id, "workspace")
+        await _run_due(worker, guild_id)
+
+        stored = await _reload(session, guild_id, plugin.id)
+        indexed = await _indexed(session, guild_id, plugin.id)
+        assert (
+            stored.config_state,
+            stored.config["workspace"]["installation_id"],
+            "removed_at" in stored.config["workspace"],
+            indexed.hook_route,
+        ) == ("unverified", "99", False, "99")
+
     async def test_health_reports_a_failure_read_twice_and_recovery_at_once(
         self, acting_user, session, role_session, vendor, declarative
     ):
