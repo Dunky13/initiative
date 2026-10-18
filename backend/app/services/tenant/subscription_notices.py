@@ -100,8 +100,7 @@ def _changes() -> Any:
     """What one transaction changed, by the item each change is part of: who
     changed it, when, the verbs it comes to, the item's title and the tool it
     is in."""
-    return text(
-        f"""
+    sql = f"""
         WITH changes AS (
             SELECT o.resource_type, o.resource_id, o.parents, o.action,
                    o.changed::text[] AS changed, o.actor_user_id, o.occurred_at
@@ -127,7 +126,7 @@ def _changes() -> Any:
          AND se.chunk_ix = 0
         GROUP BY item.kind, item.id, o.actor_user_id
         """
-    ).bindparams(
+    return text(sql).bindparams(
         bindparam("txn", type_=BigInteger),
         bindparam("quiet", type_=ARRAY(Text)),
         bindparam("schedule_columns", type_=ARRAY(Text)),
@@ -145,7 +144,7 @@ def next_due(now: datetime):
     """Now while somebody is subscribed and a committed transaction is untold,
     else nothing."""
     del now
-    untold = text(f"EXISTS (SELECT 1 FROM event_outbox o WHERE {_UNTOLD})")
+    untold = text("EXISTS (SELECT 1 FROM event_outbox o WHERE " + _UNTOLD + ")")
     subscribed = (
         select(PersonalItem.user_id)
         .where(col(PersonalItem.subscribed_at).is_not(None))

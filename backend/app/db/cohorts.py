@@ -242,14 +242,15 @@ async def system_session(guild_id: int | None) -> AsyncIterator[AsyncSession]:
 async def as_system(session: AsyncSession) -> AsyncIterator[AsyncSession]:
     """``session`` when it already works in its community as the platform, else
     a session routed there as the platform, committed on the way out. For the
-    cleanup a person's request makes of rows that are other members' alone.
+    cleanup a person's or an installed plug-in's request makes of rows that
+    are other members' alone.
 
     The work is a transaction of its own, so it must not touch a row the
     caller's transaction has already written."""
     from app.db.request_context import SystemGuild
-    from app.db.session import guild_context, set_rls_context
+    from app.db.session import guild_context, install_context, set_rls_context
 
-    context = guild_context(session)
+    context = guild_context(session) or install_context(session)
     if context is None:
         yield session
         return
