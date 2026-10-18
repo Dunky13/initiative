@@ -62,6 +62,7 @@ from app.services import audit as audit_service
 from app.services.marketplace import (
     community_hooks,
     plugin_entitlements,
+    plugin_installs,
     registration_lookup,
 )
 from app.services.marketplace.service_plugins import is_admin_only
@@ -107,6 +108,7 @@ __all__ = [
     "placement_role_ids",
     "placements_by_install",
     "plugin_callers",
+    "reindex_install",
     "set_granted_scopes",
     "set_placed_initiatives",
     "set_placement_roles",
@@ -253,6 +255,16 @@ async def lock_install(session: AsyncSession, plugin_id: int) -> Optional[GuildP
             .execution_options(populate_existing=True)
         )
     ).first()
+
+
+async def reindex_install(session: AsyncSession, guild_id: int, plugin_id: int) -> None:
+    """Write an install's row in the install index from the install as it
+    stands, holding its row for the write as a connect does while it claims a
+    route, and commit."""
+    locked = await lock_install(session, plugin_id)
+    if locked is not None:
+        await plugin_installs.record(guild_id, locked)
+    await session.commit()
 
 
 async def load_secrets(session: AsyncSession, plugin: GuildPlugin) -> dict[str, Any]:
@@ -1076,16 +1088,34 @@ class SurfaceAccess(str, Enum):
 
 
 def requested_scopes(definition: Any) -> list[str]:
-    """The scopes a pinned definition's service asks for, in vocabulary order,
-    then the ``plugins:`` scopes sorted.
+    """The scopes a pinned definition asks for, in vocabulary order, then the
+    ``plugins:`` scopes sorted: a container's in its ``service`` block, a
+    declarative plug-in's at the top of its manifest.
 
     Only known scopes are returned, each once.
     """
-    service = definition.get("service") if isinstance(definition, dict) else None
-    scopes = service.get("scopes") if isinstance(service, dict) else None
+    if registration_lookup.is_declarative(definition):
+        scopes = definition.get("scopes")
+    else:
+        service = definition.get("service") if isinstance(definition, dict) else None
+        scopes = service.get("scopes") if isinstance(service, dict) else None
     if not isinstance(scopes, list):
         return []
     return ordered_scopes(scopes)
+
+
+def install_scopes(
+    plugin: GuildPlugin, registration: registration_lookup.RegistrationSnapshot
+) -> frozenset[str]:
+    """The scopes the install acts with now: granted, still requested by the
+    pinned version, and within the registration's ceiling."""
+    requested = set(requested_scopes(plugin.definition))
+    ceiling = set(registration.scope_ceiling)
+    return frozenset(
+        scope
+        for scope in plugin.granted_scopes or ()
+        if scope in requested and scope in ceiling
+    )
 
 
 def offered_scopes(definition: Any, installed: Collection[str]) -> list[str]:
@@ -1428,9 +1458,9 @@ def item_openability(
     :func:`surface_openability` measures a page. A field, a part or an action
     is offered while the community's connections it requires hold a value
     (:func:`~app.services.tenant.plugin_config.installation_meets`), and an
-    action while those its write endpoint requires do too. An admin-only
-    endpoint's action is the community's admins' alone, and a frozen
-    community runs none."""
+    action while those its endpoint requires do too. An admin-only action, or
+    one whose endpoint is admin-only, is the community's admins' alone, and a
+    frozen community runs none."""
     definition = plugin.definition if isinstance(plugin.definition, dict) else {}
     initiatives = tuple(
         row.initiative_id
@@ -1461,8 +1491,9 @@ def item_openability(
             f["key"] for f in _declared(definition, "fields", "key") if met(f)
         ),
         parts=tuple(p["id"] for p in _declared(definition, "parts", "id") if met(p)),
+        # A declarative plug-in's actions are offered once Initiative runs them.
         actions=()
-        if frozen
+        if frozen or registration_lookup.is_declarative(definition)
         else tuple(
             action["id"]
             for action in _declared(definition, "actions", "id")
@@ -1470,7 +1501,10 @@ def item_openability(
             and met(endpoints.get(action.get("endpoint")) or {})
             and (
                 is_guild_admin
-                or not is_admin_only(endpoints.get(action.get("endpoint")))
+                or not (
+                    is_admin_only(action)
+                    or is_admin_only(endpoints.get(action.get("endpoint")))
+                )
             )
         ),
     )

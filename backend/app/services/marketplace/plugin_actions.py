@@ -49,20 +49,6 @@ from app.services.tenant.guild_plugins import SurfaceAccess
 __all__ = ["run_action"]
 
 
-def _install_scopes(
-    plugin: GuildPlugin, registration: RegistrationSnapshot
-) -> frozenset[str]:
-    """The scopes the install's tokens carry now: granted, still requested by
-    the pinned version, and within the registration's ceiling."""
-    requested = set(guild_plugins.requested_scopes(plugin.definition))
-    ceiling = set(registration.scope_ceiling)
-    return frozenset(
-        scope
-        for scope in plugin.granted_scopes or ()
-        if scope in requested and scope in ceiling
-    )
-
-
 async def _install_reads(
     plugin: GuildPlugin,
     registration: RegistrationSnapshot,
@@ -83,7 +69,7 @@ async def _install_reads(
                     guild_id=guild_id,
                     install_id=int(plugin.id or 0),
                     client_id=registration.public_id,
-                    scopes=_install_scopes(plugin, registration),
+                    scopes=guild_plugins.install_scopes(plugin, registration),
                 ),
             )
         except InstallAccessError:
@@ -162,11 +148,18 @@ async def run_action(
     registration = await plugin_data._load_registration(
         None, guild_id=context.guild_id, plugin=plugin
     )
+    # A declarative plug-in's action is run by Initiative itself, which this
+    # build does not do yet: it is offered once it does.
+    if registration.declarative:
+        raise _not_offered()
 
     install_id = int(plugin.id or 0)
     initiative_id = await _item_initiative(session, kind, entity_id, context)
     offered = guild_plugins.surface_access(
-        {**guild_plugins.ITEM_SURFACE, "admin_only": is_admin_only(write)},
+        {
+            **guild_plugins.ITEM_SURFACE,
+            "admin_only": is_admin_only(action) or is_admin_only(write),
+        },
         initiative_id=initiative_id,
         placement_role_ids=await guild_plugins.placement_role_ids(
             session, install_id, initiative_id

@@ -7,6 +7,11 @@ which rows it reaches: its own, on an item it can read, with the read scope of
 the item's tool. The checks here answer the same questions first, so a refusal
 names its reason instead of surfacing as a policy violation.
 
+A container plug-in writes its values through the installation API. A
+declarative plug-in's are the changes its expressions answer, which
+:func:`apply_changes` makes on a session of its own, routed as the install
+through the same seam.
+
 A value on an item is ``shown`` when the install's pinned version declares
 its key as a field on the item's kind: whoever can read the item reads it
 then, and it comes back with the item (:func:`annotate_plugin_values`). The
@@ -21,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -40,6 +46,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import InstallAccessError, VerifiedInstall, establish_install_access
 from app.core.messages import PluginChannelMessages, PluginMessages
 from app.core.plugin_scopes import tool_resource
 from app.core.tools import INSTALL_METADATA_KIND, ITEM_KINDS, KINDS
@@ -48,7 +55,12 @@ from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.guild_standing import GuildContext, InstallContext
 from app.db.initiative_rls import governing_path
 from app.db.request_context import SystemGuild
-from app.db.session import guild_context, require_actor_context, set_rls_context
+from app.db.session import (
+    RLS_CONTEXT_MAX_AGE_SECONDS,
+    guild_context,
+    require_actor_context,
+    set_rls_context,
+)
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import LOOKUP_LENGTH, PluginMetadata
 from app.models.tenant.plugin_placement import PluginPlacement
@@ -59,13 +71,16 @@ from app.schemas.query import FilterOp
 from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services.marketplace import contract
+from app.services.marketplace.expressions import UNDEFINED
 from app.services.marketplace.manifest_values import is_metadata_key
+from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.services.tenant import guild_plugins, plugin_age
 from app.services.tenant import properties as properties_service
 from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = [
     "annotate_plugin_values",
+    "apply_changes",
     "drop_for_items",
     "filter_clause",
     "filter_fields",
@@ -90,6 +105,15 @@ INSTALL_BYTES = contract.cap("installMetadataBytes")
 READ_IDS = 500
 #: The most items one look-up answers.
 FIND_LIMIT = 100
+#: The most targeted changes one of a declarative plug-in's ``write``
+#: expressions may answer.
+WRITE_TARGETS = contract.cap("writeTargets")
+#: How long one routing as the install serves a run of changes before it is
+#: established again, well inside the age a routing may reach.
+_REROUTE_SECONDS = RLS_CONTEXT_MAX_AGE_SECONDS / 2
+#: The largest id an item's row holds: a change naming one past it names an
+#: item that is not there.
+_MAX_ITEM_ID = 2**31 - 1
 
 
 def _table(kind: str) -> Table:
@@ -411,6 +435,150 @@ async def find(
         (entity_type, entity_id, grouped.get((entity_type, entity_id), {}))
         for entity_type, entity_id in matches
     ]
+
+
+def _is_target(target: Any) -> bool:
+    """Whether ``target`` is one of the contract's ``changeTarget`` shapes: an
+    item, the install, or the items the install holds a value on."""
+    if not isinstance(target, dict):
+        return False
+    if set(target) == {"kind", "id"}:
+        kind, entity_id = target["kind"], target["id"]
+        return (
+            isinstance(kind, str)
+            and kind in ITEM_KINDS
+            and isinstance(entity_id, int)
+            and not isinstance(entity_id, bool)
+            and entity_id >= 1
+        )
+    if set(target) == {"install"}:
+        return target["install"] is True
+    holding = target.get("holding") if set(target) == {"holding"} else None
+    return (
+        isinstance(holding, dict)
+        and set(holding) == {"key", "value"}
+        and is_metadata_key(holding["key"])
+        and isinstance(holding["value"], str)
+        and len(holding["value"]) <= LOOKUP_LENGTH
+    )
+
+
+def _targeted(answer: Any) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """What a declarative plug-in's ``write`` answered, held to the contract's
+    ``targetedChange``: a list of at most :data:`WRITE_TARGETS`, each a target
+    and the values it sets, where a value is at most :data:`VALUE_BYTES` as
+    JSON and a null removes its key. Nothing answered is no change. An answer
+    that is not that is refused whole, before anything is written."""
+    if answer is UNDEFINED:
+        return []
+    if not isinstance(answer, list) or len(answer) > WRITE_TARGETS:
+        raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+    changes: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for change in answer:
+        if not (
+            isinstance(change, dict)
+            and set(change) == {"target", "set"}
+            and _is_target(change["target"])
+            and isinstance(change["set"], dict)
+        ):
+            raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+        for key, value in change["set"].items():
+            _check_key(key)
+            if value is not None and _size(value) > VALUE_BYTES:
+                raise PluginChannelError(
+                    PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
+                )
+        changes.append((change["target"], change["set"]))
+    return changes
+
+
+async def apply_changes(
+    plugin: GuildPlugin,
+    registration: RegistrationSnapshot,
+    answer: Any,
+    *,
+    guild_id: int,
+) -> None:
+    """Make the changes a declarative plug-in's ``write`` answered, as its
+    install, on a session of its own routed through the install seam with the
+    scopes the install holds (:func:`guild_plugins.install_scopes`).
+
+    ``answer`` is held to the contract first (:func:`_targeted`). Each target
+    is then found as the install: one item, the install itself, or every item
+    the install holds a value on, at most :data:`FIND_LIMIT` (:func:`find`).
+    An item more than one change reaches is written once, with the later
+    change's values over the earlier's, which is what writing them in turn
+    leaves. Each item is written by :func:`write`, under its checks, caps and
+    locks, and committed; one the install cannot read, or that is not there,
+    is skipped.
+
+    Raises :class:`PluginChannelError` for an answer that is not targeted
+    changes, an install that may not act, and a write refused for any other
+    reason. The items written before a refusal keep what was written: every
+    change sets values, so making the same changes again leaves the same
+    values.
+    """
+    changes = _targeted(answer)
+    if not changes:
+        return
+    install = VerifiedInstall(
+        guild_id=guild_id,
+        install_id=int(plugin.id or 0),
+        client_id=registration.public_id,
+        scopes=guild_plugins.install_scopes(plugin, registration),
+    )
+    async with cohorts.request_sessionmaker(guild_id)() as session:
+
+        async def route() -> InstallContext:
+            try:
+                return await establish_install_access(session, install)
+            except InstallAccessError as exc:
+                raise PluginChannelError(
+                    PluginChannelMessages.INSTALL_NOT_FOUND, status_code=404
+                ) from exc
+
+        context = await route()
+        routed = time.monotonic()
+        targets: dict[tuple[str, int], dict[str, Any]] = {}
+        for target, values in changes:
+            if "holding" in target:
+                found = [
+                    (kind, entity_id)
+                    for kind, entity_id, _ in await find(
+                        session,
+                        context,
+                        target["holding"]["key"],
+                        target["holding"]["value"],
+                    )
+                ]
+            elif "install" in target:
+                found = [(INSTALL_METADATA_KIND, context.install_id)]
+            elif target["id"] <= _MAX_ITEM_ID:
+                found = [(target["kind"], target["id"])]
+            else:
+                found = []
+            for item in found:
+                targets.setdefault(item, {}).update(values)
+
+        async def pinned() -> Any:
+            return await session.scalar(
+                select(GuildPlugin.definition).where(
+                    GuildPlugin.id == context.install_id
+                )
+            )
+
+        for (kind, entity_id), values in targets.items():
+            if time.monotonic() - routed > _REROUTE_SECONDS:
+                context = await route()
+                routed = time.monotonic()
+            try:
+                await write(session, context, kind, entity_id, values, pinned)
+            except PluginChannelError as exc:
+                if exc.code not in (
+                    PluginMessages.SCOPE_REQUIRED,
+                    PluginChannelMessages.METADATA_ITEM_NOT_FOUND,
+                ):
+                    raise
 
 
 async def drop_for_items(

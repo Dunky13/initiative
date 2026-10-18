@@ -238,10 +238,12 @@ async def _plugin_names(
 
 
 async def _require_grantable(
-    session: AsyncSession, granted: set[str], definition: dict
+    session: AsyncSession, granted: set[str], definition: dict, listing_uid: str
 ) -> None:
     """Refuse a grant the manifest does not request, the ceiling does not allow,
-    or that uses a plug-in the community does not have.
+    or that uses a plug-in the community does not have. ``listing_uid`` is the
+    listing the definition is a version of, which names a declarative plug-in's
+    registration.
 
     The one check every write of a grant makes: setting the scopes, installing
     with them, and consenting to a version's new ones.
@@ -251,7 +253,9 @@ async def _require_grantable(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=GuildPluginMessages.SCOPE_NOT_REQUESTED,
         )
-    registration = await registration_lookup.registration_for_definition(definition)
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
     ceiling = set(registration.scope_ceiling) if registration is not None else set()
     if not granted <= ceiling:
         raise HTTPException(
@@ -560,7 +564,7 @@ async def install_community_plugin(
     definition = dict(version.definition)
     _require_installable_kind(definition)
     granted = set(payload.granted_scopes)
-    await _require_grantable(session, granted, definition)
+    await _require_grantable(session, granted, definition, listing.uid)
 
     name = (payload.name or definition.get("default_name") or listing.name).strip()
     try:
@@ -670,7 +674,9 @@ async def upgrade_community_plugin(
     definition = dict(version.definition)
     _require_installable_kind(definition)
 
-    registration = await registration_lookup.registration_for_definition(definition)
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=plugin.listing_uid
+    )
     asks = plugin_updates_service.upgrade_asks(
         plugin,
         definition,
@@ -696,7 +702,7 @@ async def upgrade_community_plugin(
             },
         )
     add_scopes = set(payload.add_scopes) if payload is not None else set()
-    await _require_grantable(session, add_scopes, definition)
+    await _require_grantable(session, add_scopes, definition, plugin.listing_uid)
 
     previous_version = plugin.listing_version
     previous_grant = sorted(plugin.granted_scopes or [])
@@ -1052,7 +1058,7 @@ async def put_community_plugin_scopes(
     plugin = await _load(session, plugin_id, for_update=True)
 
     granted = set(payload.granted)
-    await _require_grantable(session, granted, plugin.definition)
+    await _require_grantable(session, granted, plugin.definition, plugin.listing_uid)
     await guild_plugins_service.set_granted_scopes(
         session,
         plugin,

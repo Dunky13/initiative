@@ -192,7 +192,9 @@ async def _detail(session, listing: MarketplaceListing) -> MarketplaceListingDet
     if listing.kind == "plugin":
         installed = await guild_plugins_service.installed_plugin_ids(session)
         requested = guild_plugins_service.offered_scopes(definition, installed)
-        registration = await registration_lookup.registration_for_definition(definition)
+        registration = await registration_lookup.registration_for_definition(
+            definition, listing_uid=listing.uid
+        )
         grantable = guild_plugins_service.grantable_scopes(
             definition, registration.scope_ceiling if registration else (), installed
         )

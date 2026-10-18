@@ -31,6 +31,7 @@ from app.db.session import (
 )
 from app.models.platform.guild import CommunityRole, CommunityStatus
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+from app.models.platform.plugin_service_registration import RegistrationKind
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.file import File
@@ -82,21 +83,39 @@ async def _install(
     granted: list[str],
     placed: str = "ab",
     requested: tuple[str, ...] = ALL_SCOPES,
+    declarative: bool = False,
 ) -> _Install:
     """An install placed in ``placed`` (of initiatives A and B), granted
     ``granted`` by the community's seat, with a live registration and a pinned
-    manifest requesting ``requested``."""
+    manifest requesting ``requested``: a container's, or a declarative plug-in's
+    when ``declarative``."""
     seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
     second = await create_initiative(session, seat.guild, seat.user, name="B")
-    definition = {
-        **_PLUGIN_DEFINITION,
-        "service": {**_PLUGIN_DEFINITION["service"], "scopes": list(requested)},
-    }
+    definition = (
+        {"plugin_kind": "service", "hosts": ["api.test"], "scopes": list(requested)}
+        if declarative
+        else {
+            **_PLUGIN_DEFINITION,
+            "service": {**_PLUGIN_DEFINITION["service"], "scopes": list(requested)},
+        }
+    )
     plugin = await create_guild_plugin(
         session, seat.guild, seat.user, definition=definition, listing_uid=LISTING
     )
     await create_plugin_service_registration(
-        session, public_id=CLIENT, listing_uid=LISTING
+        session,
+        public_id=CLIENT,
+        listing_uid=LISTING,
+        **(
+            {
+                "kind": RegistrationKind.DECLARATIVE,
+                "base_url": None,
+                "allowed_origins": [],
+                "jwks": {},
+            }
+            if declarative
+            else {}
+        ),
     )
     install = _Install(seat, plugin, second)
 
@@ -323,6 +342,7 @@ async def _set_guild_status(
         "install_disabled",
         "registration_disabled",
         "registration_keyless",
+        "registration_declarative",
         "publisher_disabled",
         "operations_only_elsewhere",
         "another_client",
@@ -341,6 +361,10 @@ async def test_an_install_that_may_not_act_is_refused(
         await _set_registration(session, "enabled", False)
     elif reason == "registration_keyless":
         await _set_registration(session, "jwks", None)
+    elif reason == "registration_declarative":
+        # A declarative plug-in's registration stands only for an install
+        # pinned to a declarative version, and this one is a container's.
+        await _set_registration(session, "kind", RegistrationKind.DECLARATIVE)
     elif reason == "publisher_disabled":
         await session.exec(
             text(
@@ -467,6 +491,31 @@ async def test_the_gates_answer_for_an_install(session, acting_user, role_sessio
     )
     assert set((await narrowed.exec(select(File.name))).all()) == {"Shared A"}
     await narrowed.rollback()
+
+
+async def test_initiative_acts_as_a_declarative_install(
+    session, acting_user, role_session
+):
+    """A declarative plug-in is issued no token: Initiative routes as its
+    install, naming the client its registration is, with the read scopes its
+    manifest asks for at the top. The gates answer for it as for any install."""
+    install = await _install(
+        session,
+        acting_user,
+        role_session,
+        granted=["files:read"],
+        requested=("files:read",),
+        declarative=True,
+    )
+    shared = await create_file(session, install.a, install.seat.user, name="Shared A")
+    await create_resource_grant(session, shared, all_initiative_members=True)
+    await create_file(session, install.a, install.seat.user, name="Private A")
+
+    s, context = await _route(role_session, install, ["files:read"])
+    assert context.live
+    assert (set(context.install_read), context.install_write) == ({"files"}, ())
+    assert (await s.exec(select(File.name))).all() == ["Shared A"]
+    await s.rollback()
 
 
 async def test_an_install_without_a_tool_scope_reads_none_of_it(

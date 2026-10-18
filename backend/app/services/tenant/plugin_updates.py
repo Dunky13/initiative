@@ -141,9 +141,12 @@ def upgrade_asks(
     return UpgradeAsks(added_scopes=added_scopes, added_surfaces=added_surfaces)
 
 
-async def _ceiling(definition: dict) -> tuple[str, ...]:
-    """The registration's ceiling for the service a definition names, or none."""
-    registration = await registration_lookup.registration_for_definition(definition)
+async def _ceiling(definition: dict, listing_uid: str) -> tuple[str, ...]:
+    """The registration's ceiling for the plug-in a version of the listing
+    ``listing_uid`` is, or none."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
     return tuple(registration.scope_ceiling) if registration is not None else ()
 
 
@@ -169,7 +172,7 @@ async def update_offer(
     asks = upgrade_asks(
         plugin,
         pending.definition,
-        await _ceiling(pending.definition),
+        await _ceiling(pending.definition, plugin.listing_uid),
         await guild_plugins_service.installed_plugin_ids(session),
     )
     return UpdateOffer(update=pending, asks=asks)

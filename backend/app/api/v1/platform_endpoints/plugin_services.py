@@ -79,6 +79,7 @@ def _to_read(
         scope_ceiling=list(row.scope_ceiling or []),
         mandatory=row.mandatory,
         operations_only=row.operations_only,
+        shared_routes=row.shared_routes,
         enabled=row.enabled,
         source=row.source,
         image_digest=row.image_digest,
@@ -169,7 +170,9 @@ async def update_plugin_service(
     owner: PluginsManageDep,
 ) -> PluginServiceRegistrationRead:
     """Enable/disable, repoint either address, replace the keys, change the
-    reach conferred, or set the vendor values."""
+    reach conferred, let vendor installations be shared, or set the vendor
+    values. Turning sharing off while an installation is connected to more
+    than one community is refused (409)."""
     row = await registrations_service.update_registration(
         session,
         registration_id,
@@ -180,6 +183,7 @@ async def update_plugin_service(
         jwks_uri=payload.jwks_uri,
         mandatory=payload.mandatory,
         operations_only=payload.operations_only,
+        shared_routes=payload.shared_routes,
         enabled=payload.enabled,
         vendor_values=payload.vendor_values,
         actor_user_id=owner.id,

@@ -973,7 +973,10 @@ def _connection(
         if field["key"] in seen:
             fail(f"{what}: two fields share the key {field['key']!r}")
         if field["key"] in RESERVED_TOKEN_KEYS:
-            fail(f"{what}: {field['key']!r} is where a flow keeps its tokens")
+            fail(
+                f"{what}: {field['key']!r} is reserved for a flow's tokens and"
+                " the vendor's report that the connection was removed"
+            )
         seen.add(field["key"])
         fields.append(field)
 
@@ -1171,13 +1174,23 @@ def _webhooks(
         for index, entry in enumerate(events):
             what = f"service plug-in: webhooks.events.{index}"
             row = require_mapping(entry, what)
-            cleaned["events"].append(
-                {
-                    "when": _checked(row.get("when"), what=f"{what}.when"),
-                    "emit": _endpoint_id_chars(row.get("emit"), what=f"{what}.emit"),
-                    "map": _checked(row.get("map"), what=f"{what}.map"),
-                }
-            )
+            # A row emits an event, changes the plug-in's values, or both, and
+            # an event's payload is its map.
+            if row.get("emit") is None and row.get("write") is None:
+                fail(f"{what}: an event row emits, writes, or both")
+            if (row.get("emit") is None) != (row.get("map") is None):
+                fail(
+                    f"{what}: an event row gives both 'emit' and the 'map' of its payload"
+                )
+            event: dict[str, Any] = {
+                "when": _checked(row.get("when"), what=f"{what}.when")
+            }
+            if row.get("emit") is not None:
+                event["emit"] = _endpoint_id_chars(row["emit"], what=f"{what}.emit")
+                event["map"] = _checked(row["map"], what=f"{what}.map")
+            if row.get("write") is not None:
+                event["write"] = _checked(row["write"], what=f"{what}.write")
+            cleaned["events"].append(event)
     if statuses:
         declared = {entry["id"] for entry in connections}
         cleaned["status"] = []
@@ -1215,23 +1228,76 @@ def schedule_minutes(every: str) -> int:
     return count * 60 if every.endswith("h") else count
 
 
-def _schedules(raw: Any) -> list[dict[str, str]]:
-    """The intervals at which Initiative calls the plug-in's ``schedule`` hook:
-    each a unique id and a whole number of minutes or hours, within the
-    bounds."""
+def _schedules(
+    raw: Any,
+    *,
+    declarative: bool,
+    service_public_id: str,
+    endpoints: dict[str, dict[str, Any]],
+    connection_ids: set[str],
+) -> list[dict[str, str]]:
+    """What Initiative runs on an interval for each community: each a unique id
+    and a whole number of minutes or hours, within the bounds.
+
+    A container's schedule calls its ``schedule`` hook and names nothing more.
+    A declarative plug-in's makes one of its reads as the installation, so the
+    read's ``actors`` take it, and its ``write`` answers the changes made from
+    what the read answered. Its id is no connection's: a connection's health
+    check runs under the connection's id.
+    """
     schedules: list[dict[str, str]] = []
     for entry in require_list(raw, "service plug-in: schedules", MAX_SCHEDULES):
         schedule = require_mapping(entry, "service plug-in: schedule")
         schedule_id = check_identifier(
             schedule.get("id"), what="service plug-in: schedule id"
         )
+        what = f"service plug-in: schedule {schedule_id!r}"
         if any(kept["id"] == schedule_id for kept in schedules):
             fail(f"service plug-in: two schedules share the id {schedule_id!r}")
-        every = _every(
-            schedule.get("every"),
-            what=f"service plug-in: schedule {schedule_id!r} every",
+        cleaned = {
+            "id": schedule_id,
+            "every": _every(schedule.get("every"), what=f"{what} every"),
+        }
+        if not declarative:
+            if any(
+                schedule.get(term) is not None
+                for term in ("endpoint", "params", "write")
+            ):
+                fail(f"{what}: a container plug-in's schedule calls its schedule hook")
+            schedules.append(cleaned)
+            continue
+        if schedule_id in connection_ids:
+            fail(
+                f"{what} has a connection's id, and Initiative keys connection "
+                "health checks by connection id"
+            )
+        if schedule.get("endpoint") is None or schedule.get("write") is None:
+            fail(
+                f"{what}: a declarative plug-in's schedule names the read it makes "
+                "and the write it makes from the answer; there is no hook to call"
+            )
+        endpoint = _endpoint_id(
+            schedule["endpoint"],
+            service_public_id=service_public_id,
+            what=f"{what} endpoint",
         )
-        schedules.append({"id": schedule_id, "every": every})
+        named = endpoints.get(endpoint)
+        if named is None:
+            fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
+        if named["direction"] != "read":
+            fail(
+                f"{what}: names {endpoint!r}, which is a {named['direction']} endpoint"
+            )
+        if "installation" not in named.get("actors", ()):
+            fail(
+                f"{what}: {endpoint!r} does not take the installation as its actor, "
+                "and no person is present when a schedule runs"
+            )
+        cleaned["endpoint"] = endpoint
+        if schedule.get("params") is not None:
+            cleaned["params"] = _checked(schedule["params"], what=f"{what} params")
+        cleaned["write"] = _checked(schedule["write"], what=f"{what} write")
+        schedules.append(cleaned)
     return schedules
 
 
@@ -2498,36 +2564,73 @@ def _action(
     service_public_id: str,
     endpoints: dict[str, dict[str, Any]],
     connection_ids: set[str],
+    declarative: bool,
 ) -> dict[str, Any]:
+    """One thing a reader runs on an item. A container's names the write
+    endpoint its handler answers. A declarative plug-in's names an endpoint
+    whose call Initiative makes (a read that fetches what its ``write`` keeps,
+    or a write that changes something at the vendor), a ``write`` answering
+    the change Initiative makes to the plug-in's values on the item, or
+    both."""
     action = require_mapping(raw, "action")
     action_id = check_identifier(action.get("id"), what="action id")
     what = f"action {action_id!r}"
-    endpoint = _endpoint_id(
-        action.get("endpoint"),
-        service_public_id=service_public_id,
-        what=f"{what} endpoint",
-    )
-    # Initiative runs the endpoint for the reader, and only a write does
-    # something on their behalf. A run sends no params, so the endpoint can ask
-    # for none it needs.
-    declared = endpoints.get(endpoint)
-    if declared is None:
-        fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
-    if declared["direction"] != "write":
-        fail(f"{what}: names {endpoint!r}, which is a {declared['direction']} endpoint")
-    if any(param.get("required") is True for param in declared.get("params") or ()):
-        fail(f"{what}: names {endpoint!r}, which needs params an action cannot send")
+    if declarative:
+        if action.get("endpoint") is None and action.get("write") is None:
+            fail(
+                f"{what}: a declarative plug-in's action names an endpoint, a write, or both"
+            )
+    else:
+        if action.get("endpoint") is None:
+            fail(
+                f"{what}: a container plug-in's action names the write endpoint "
+                "its handler answers"
+            )
+        if action.get("write") is not None:
+            fail(f"{what}: a container plug-in's action is answered by its handler")
     cleaned: dict[str, Any] = {
         "id": action_id,
         "name": _label(action.get("name"), what=what),
-        "endpoint": endpoint,
-        "on": _item_kinds(action.get("on"), what=what),
-        # Stored whichever way it was declared, so every pinned action answers
-        # where it is offered the same way.
-        "menu": False
-        if action.get("menu") is None
-        else _flag(action["menu"], what=f"{what} menu"),
     }
+    if action.get("endpoint") is not None:
+        endpoint = _endpoint_id(
+            action["endpoint"],
+            service_public_id=service_public_id,
+            what=f"{what} endpoint",
+        )
+        # Initiative calls the endpoint for the reader. A container's does the
+        # work, so it is a write; a declarative plug-in's ``write`` does the
+        # work, so its endpoint may also be a read that fetches what the write
+        # keeps. A run sends no params, so the endpoint can ask for none it
+        # needs.
+        declared = endpoints.get(endpoint)
+        if declared is None:
+            fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
+        if declared["direction"] not in (
+            ("read", "write") if declarative else ("write",)
+        ):
+            fail(
+                f"{what}: names {endpoint!r}, which is a {declared['direction']} endpoint"
+            )
+        if any(param.get("required") is True for param in declared.get("params") or ()):
+            fail(
+                f"{what}: names {endpoint!r}, which needs params an action cannot send"
+            )
+        cleaned["endpoint"] = endpoint
+    if action.get("write") is not None:
+        cleaned["write"] = _checked(action["write"], what=f"{what} write")
+    cleaned["on"] = _item_kinds(action.get("on"), what=what)
+    # Stored whichever way it was declared, so every pinned action answers
+    # where it is offered the same way.
+    cleaned["menu"] = (
+        False
+        if action.get("menu") is None
+        else _flag(action["menu"], what=f"{what} menu")
+    )
+    # Stored only when it is, so an action published before the term reads the
+    # same as one that left it out.
+    if _admin_only(action, what=what):
+        cleaned["admin_only"] = True
     if action.get("confirm") is not None:
         cleaned["confirm"] = _label(action["confirm"], what=f"{what} confirm")
     requires = _requires(
@@ -2697,14 +2800,15 @@ def _service_block(raw: Any) -> dict[str, Any]:
             f"({sorted(PLUGIN_PROTOCOL_VERSIONS)})"
         )
     cleaned: dict[str, Any] = {"public_id": public_id, "protocol": protocol}
-    scopes = _requested_scopes(service.get("scopes"))
+    scopes = _requested_scopes(service.get("scopes"), where="service.scopes")
     if scopes:
         cleaned["scopes"] = scopes
     return cleaned
 
 
-def _requested_scopes(raw: Any) -> list[str]:
-    """The scopes a service asks a community to grant, canonically.
+def _requested_scopes(raw: Any, *, where: str) -> list[str]:
+    """The scopes a plug-in asks a community to grant, canonically: a
+    container's ``service.scopes``, or a declarative plug-in's ``scopes``.
 
     Absent means none. Each must be in the vocabulary, or a ``plugins:`` scope
     naming another plug-in's public id, and named once; stored sorted, so
@@ -2713,7 +2817,7 @@ def _requested_scopes(raw: Any) -> list[str]:
     if raw is None:
         return []
     declared = require_list(
-        raw, "service plug-in: service.scopes", len(ALL_SCOPES) + MAX_PLUGIN_SCOPES
+        raw, f"service plug-in: {where}", len(ALL_SCOPES) + MAX_PLUGIN_SCOPES
     )
     scopes: set[str] = set()
     plugin_scopes = 0
@@ -2727,12 +2831,10 @@ def _requested_scopes(raw: Any) -> list[str]:
         elif entry not in ALL_SCOPES:
             fail(f"service plug-in: {entry!r} is not a scope a plug-in may request")
         if entry in scopes:
-            fail(f"service plug-in: service.scopes names {entry!r} twice")
+            fail(f"service plug-in: {where} names {entry!r} twice")
         scopes.add(entry)
     if plugin_scopes > MAX_PLUGIN_SCOPES:
-        fail(
-            f"service plug-in: service.scopes names more than {MAX_PLUGIN_SCOPES} plug-ins"
-        )
+        fail(f"service plug-in: {where} names more than {MAX_PLUGIN_SCOPES} plug-ins")
     return sorted(scopes)
 
 
@@ -2851,9 +2953,10 @@ def normalize_service_plugin_definition(
 ) -> dict[str, Any]:
     """Validate and canonicalize a service plug-in's definition.
 
-    A container plug-in names itself in its ``service`` block. A declarative plug-in
-    has none, and is named by its listing's ``public_id``, which its endpoints
-    are namespaced under. One plug-in is never both.
+    A container plug-in names itself in its ``service`` block, and the scopes it
+    asks for there. A declarative plug-in has none, and is named by its
+    listing's ``public_id``, which its endpoints are namespaced under; it asks
+    for read scopes, at the top of its manifest. One plug-in is never both.
     """
     body = require_mapping(definition, "service plug-in definition")
 
@@ -2861,6 +2964,7 @@ def normalize_service_plugin_definition(
     service: dict[str, Any] | None = None
     hosts: list[str] = []
     auth: dict[str, str] | None = None
+    scopes: list[str] = []
     if declarative:
         if public_id is None:
             fail("service plug-in: a declarative plug-in is named by its listing")
@@ -2870,9 +2974,18 @@ def normalize_service_plugin_definition(
             fail("service plug-in: a declarative plug-in names the hosts it calls")
         if body.get("auth") is not None:
             auth = _auth(body["auth"])
-        for term in ("schedules", "pages", "fields", "parts", "actions"):
-            if body.get(term) is not None:
-                fail(f"service plug-in: a declarative plug-in has no {term}")
+        if body.get("pages") is not None:
+            fail(
+                "service plug-in: a declarative plug-in has no pages; a page is "
+                "served by a container"
+            )
+        scopes = _requested_scopes(body.get("scopes"), where="scopes")
+        if any(not scope.endswith(":read") for scope in scopes):
+            fail(
+                "service plug-in: a declarative plug-in asks only for read scopes: "
+                "it keeps its own values on items it can read, and does not call "
+                "Initiative"
+            )
     else:
         service = _service_block(body.get("service"))
         plugin_public_id = service["public_id"]
@@ -2882,6 +2995,11 @@ def normalize_service_plugin_definition(
                     f"service plug-in: {term!r} is a declarative plug-in's term; a "
                     "container plug-in makes its own calls"
                 )
+        if body.get("scopes") is not None:
+            fail(
+                "service plug-in: a container plug-in declares its scopes in its "
+                "service block"
+            )
     auth_header = (auth or {}).get("header", DEFAULT_AUTH_HEADER)
     vendor = _vendor(body.get("vendor"))
     vendor_keys = {field["key"] for field in (vendor or {}).get("fields", [])}
@@ -2908,7 +3026,6 @@ def normalize_service_plugin_definition(
         connections=connections,
         declarative=declarative,
     )
-    schedules = _schedules(body.get("schedules"))
 
     # One list for every direction, so a caller resolves an id without being
     # told which kind of thing it is first.
@@ -2939,11 +3056,20 @@ def normalize_service_plugin_definition(
         endpoint["id"] for endpoint in endpoints if endpoint["direction"] == "emit"
     }
     for index, event in enumerate((webhooks or {}).get("events", [])):
-        if event["emit"] not in emits:
+        if "emit" in event and event["emit"] not in emits:
             fail(
                 f"service plug-in: webhooks.events.{index} emits {event['emit']!r}, "
                 "which is not an emit endpoint this plug-in declares"
             )
+    by_id = {endpoint["id"]: endpoint for endpoint in endpoints}
+    # After the endpoints, because a declarative plug-in's schedule names one.
+    schedules = _schedules(
+        body.get("schedules"),
+        declarative=declarative,
+        service_public_id=plugin_public_id,
+        endpoints=by_id,
+        connection_ids=connection_ids,
+    )
 
     # A parameter naming where its values come from, checked once every endpoint
     # is known. Nothing downstream refuses a bad one: a form asks this
@@ -2987,13 +3113,13 @@ def normalize_service_plugin_definition(
             fail(f"service plug-in: two fields share the key {field['key']!r}")
         field_kinds[field["key"]] = field["on"]
 
-    by_id = {endpoint["id"]: endpoint for endpoint in endpoints}
     actions = [
         _action(
             entry,
             service_public_id=plugin_public_id,
             endpoints=by_id,
             connection_ids=connection_ids,
+            declarative=declarative,
         )
         for entry in require_list(
             body.get("actions"), "service plug-in: actions", MAX_ACTIONS
@@ -3033,6 +3159,8 @@ def normalize_service_plugin_definition(
         cleaned["hosts"] = hosts
         if auth is not None:
             cleaned["auth"] = auth
+        if scopes:
+            cleaned["scopes"] = scopes
     # Empty blocks are left out entirely, so "does this plug-in offer widgets?" has
     # one answer rather than two shapes that mean the same thing.
     if vendor is not None:

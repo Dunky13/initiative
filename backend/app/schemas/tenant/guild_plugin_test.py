@@ -253,9 +253,11 @@ def test_surface_access_is_computed_for_the_viewer():
 
 def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
     """The initiatives whose placements admit the viewer; the fields and parts
-    whose connections hold a value; and every action there but one whose write
-    endpoint is admin-only, which only an admin runs, one whose connections
-    hold nothing, and any while the community is frozen."""
+    whose connections hold a value; and every action there but one that is
+    admin-only or whose write endpoint is, which only an admin runs, one whose
+    connections hold nothing, and any while the community is frozen. A
+    declarative plug-in's fields and parts are offered as a container's are,
+    and its actions once Initiative runs them."""
     definition = {
         **DEFINITION,
         "endpoints": [
@@ -278,6 +280,7 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
                 "on": ["task"],
                 "requires": {"all_of": ["admin"]},
             },
+            {"id": "close", "endpoint": "link", "on": ["task"], "admin_only": True},
         ],
         "minimum_age": {"default": 18},
     }
@@ -320,14 +323,14 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
         [2, 5],
         every_field,
         ["builds"],
-        ["new-link", "purge", "sync", "audit"],
+        ["new-link", "purge", "sync", "audit", "close"],
     )
     # The connection holds nothing.
     assert access(context(guild_admin=True), secret_fields={}) == (
         [2, 5],
         ["ci.state"],
         [],
-        ["new-link", "purge"],
+        ["new-link", "purge", "close"],
     )
     assert access(context(guild_admin=True, content_read_only=True)) == (
         [2, 5],
@@ -340,5 +343,12 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
         [],
         [],
         [],
+        [],
+    )
+    del definition["service"]
+    assert access(context(guild_admin=True)) == (
+        [2, 5],
+        every_field,
+        ["builds"],
         [],
     )

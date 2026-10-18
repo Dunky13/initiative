@@ -710,6 +710,7 @@
   "PLUGIN_SERVICE_VENDOR_SETUP_INVALID_ORGANIZATION": "Das ist kein Organisationsname, den GitHub verwendet. Nutze Buchstaben, Ziffern und Bindestriche, höchstens 39 Zeichen.",
   "PLUGIN_SERVICE_VENDOR_SETUP_EXPIRED": "Diese Einrichtung ist abgelaufen oder wurde schon abgeschlossen. Starte sie in den Einstellungen des Plug-ins neu.",
   "PLUGIN_SERVICE_VENDOR_SETUP_FAILED": "GitHub hat die Werte der neuen App nicht übergeben. Starte die Einrichtung neu.",
+  "PLUGIN_SERVICE_SHARED_ROUTES_IN_USE": "Das Teilen lässt sich nicht ausschalten, solange eine Installation beim Anbieter mit mehr als einer Community verbunden ist.",
   "PLUGIN_CHANNEL_CONNECTION_EXPIRED": "Diese Verbindung ist abgelaufen, und das Mitglied muss sich erneut verbinden.",
   "PLUGIN_CHANNEL_CONNECTION_NO_TOKEN": "Diese Verbindung hält kein Token, das ausgegeben werden kann.",
   "PLUGIN_CHANNEL_TOKEN_UNAVAILABLE": "Der Anbieter hat kein Token ausgegeben. Versuche es gleich noch einmal.",

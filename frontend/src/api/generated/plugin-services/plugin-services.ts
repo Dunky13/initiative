@@ -264,7 +264,9 @@ export const useCreatePluginService = <TError = ErrorType<HTTPValidationError>, 
 };
 /**
  * Enable/disable, repoint either address, replace the keys, change the
- * reach conferred, or set the vendor values.
+ * reach conferred, let vendor installations be shared, or set the vendor
+ * values. Turning sharing off while an installation is connected to more
+ * than one community is refused (409).
  * @summary Update Plugin Service
  */
 export const updatePluginService = (

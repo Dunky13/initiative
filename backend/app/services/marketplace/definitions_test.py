@@ -530,8 +530,9 @@ class TestConnections:
         with pytest.raises(ListingDefinitionError, match=problem):
             _normalize(vendor=VENDOR, connections=connections, webhooks=webhooks)
 
-    def test_a_field_may_not_take_a_token_key(self):
-        with pytest.raises(ListingDefinitionError, match="keeps its tokens"):
+    @pytest.mark.parametrize("key", ["access_token", "removed_at"])
+    def test_a_field_may_not_take_a_reserved_key(self, key: str):
+        with pytest.raises(ListingDefinitionError, match="is reserved for"):
             _normalize(
                 vendor=VENDOR,
                 connections=[
@@ -540,7 +541,7 @@ class TestConnections:
                         "scope": "interactive",
                         "label": _label(),
                         "flow": FLOW,
-                        "fields": [_managed("access_token")],
+                        "fields": [_managed(key)],
                     }
                 ],
             )

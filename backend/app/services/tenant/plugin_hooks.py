@@ -18,10 +18,11 @@ the vendor. :func:`receive` takes each delivery through four steps:
    Otherwise a container's install has the raw body and the vendor's ``x-``
    headers sent to its ``webhook`` hook with a ``lifecycle`` token naming that
    install, and a 2xx records the id for 24 hours. A declarative plug-in's install
-   maps it with its ``events`` and ``status``: the event goes to the outbox as
-   a container's emission does, the state to the install's configuration
-   state, and the id is recorded with them. A mapping that cannot succeed is
-   logged and recorded; one that may succeed if asked again records nothing.
+   maps it with its ``events`` and ``status``: the changes to its values are
+   made as the install, the event goes to the outbox as a container's emission
+   does, the state to the install's configuration state, and the id is
+   recorded with them. A mapping that cannot succeed is logged and recorded;
+   one that may succeed if asked again records nothing.
 4. 202 when every matched install accepted it or already had; otherwise 503
    when a mapping is to be asked again, or 502, so the vendor's redelivery
    reaches only the ones that did not.
@@ -75,6 +76,7 @@ from app.services.marketplace.vendor_values import (
 )
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_metadata
 from app.services.tenant.plugin_channels import (
     PluginChannelError,
     keep_event,
@@ -238,7 +240,7 @@ async def _pending(
         ):
             return None
         route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
-        indexed = plugin_installs.hook_route(plugin)
+        indexed = plugin_installs.hook_route(plugin.definition, plugin.config)
         if indexed is None or _route_value(route, headers, body) != indexed:
             return None
         seen = (
@@ -331,12 +333,19 @@ async def _map(
     body: bytes,
 ) -> int:
     """A declarative plug-in's install: its pinned ``webhooks`` map the delivery
-    to an event, emitted as a container's is, and to a connection's state.
-    The delivery is recorded with them, so a redelivery emits nothing.
+    to changes to the plug-in's values, made as the install
+    (:func:`plugin_metadata.apply_changes`), to an event, emitted as a
+    container's is, and to a connection's state. The delivery is recorded with
+    the event and the state, so a redelivery does none of it again.
 
     A mapping that may answer if asked again records nothing and answers 503,
-    so the vendor sends it again; one that cannot is recorded beside whatever
-    did map."""
+    so the vendor sends it again; one that cannot, and changes that are
+    refused, are logged, and the delivery is recorded beside whatever did
+    map. The changes are made first, on the install's own sessions, and the
+    delivery is recorded after them, so a delivery whose changes did not finish
+    is still owed. A recorded delivery is not mapped again (:func:`_pending`);
+    two copies arriving together make the same changes, which set and merge
+    values and so repeat harmlessly, and one of them records it."""
     try:
         payload: Any = json.loads(body)
     except ValueError:
@@ -366,6 +375,19 @@ async def _map(
             install.guild_id,
             failure,
         )
+    try:
+        await plugin_metadata.apply_changes(
+            plugin, registration, delivered.writes, guild_id=install.guild_id
+        )
+    except PluginChannelError as exc:
+        logger.warning(
+            "plug-in hooks: %s could not make the changes of delivery %s for "
+            "guild %s (%s)",
+            registration.public_id,
+            delivery_id,
+            install.guild_id,
+            exc.code,
+        )
     async with cohorts.system_session(install.guild_id) as session:
         await set_rls_context(session, SystemGuild(install.guild_id))
         claimed = (
@@ -394,11 +416,23 @@ async def _map(
                     install.guild_id,
                     exc.code,
                 )
+        moved = removed = False
         if delivered.status is not None:
             locked = await guild_plugins_service.lock_install(session, plugin.id)
-            if locked is not None and set_connection_state(locked, *delivered.status):
-                session.add(locked)
+            if (
+                locked is not None
+                and plugin_installs.hook_route(locked.definition, locked.config)
+                == install.route
+            ):
+                removed = delivered.status[1] == "removed"
+                if set_connection_state(locked, *delivered.status):
+                    session.add(locked)
+                    moved = True
         await session.commit()
+        if moved or removed:
+            await guild_plugins_service.reindex_install(
+                session, install.guild_id, plugin.id
+            )
     return 202
 
 
