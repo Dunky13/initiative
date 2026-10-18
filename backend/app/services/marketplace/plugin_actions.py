@@ -1,29 +1,38 @@
 """A plug-in's actions on items: a reader runs one, and the plug-in does it.
 
-An action is declared in the install's pinned definition, offered on some kinds
-of item, and names one of the plug-in's write endpoints. Initiative only
-connects, and checks, in order, that the connection may be made:
+An action is declared in the install's pinned definition and offered on some
+kinds of item. Initiative checks, in order, that it may run:
 
 1. the pinned definition declares the action on this kind of item, the
-   community's content is not frozen, and the community's connections the
-   action requires hold a value;
+   community's content is not frozen, and the connections the action requires
+   hold a value: the community's, and the reader's own;
 2. the reader can read the item, through the ordinary resource path;
 3. the install is placed in the item's initiative with a role the reader holds
    (:func:`~app.services.tenant.guild_plugins.surface_access`, as a page
    opened there is);
 4. the install can read the item itself, routed as the install.
 
-The write is then called as the installation, with the reader as ``viewer``
-(by this install's reference for them) and the item as ``subject`` in the
-call's token. What it changes, and whether this reader may, is the plug-in's
-to decide; Initiative writes nothing for it. The answer is the values the
-install shows on the item as they stand afterwards, and every other reader
-hears that the item changed from its own values' change capture.
+A container plug-in's action names one of its write endpoints, which is then
+called as the installation, with the reader as ``viewer`` (by this install's
+reference for them) and the item as ``subject`` in the call's token. What it
+changes, and whether this reader may, is the plug-in's to decide; Initiative
+writes nothing for it.
+
+A declarative plug-in has no code, so Initiative does what its action
+declares: the call its endpoint makes, when it names one, on the credential
+the endpoint's ``actors`` say (:func:`_actor`), its expressions reading the
+item; then the change its ``write`` answers, when it has one, made to the
+plug-in's values on the item as the install. The checks above and the
+endpoint's own terms are all that decide who may run it.
+
+Either way the answer is the values the install shows on the item as they
+stand afterwards, and every other reader hears that the item changed from its
+own values' change capture.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 from sqlalchemy import exists
@@ -39,31 +48,38 @@ from app.db.guild_standing import GuildContext
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.services.marketplace import plugin_data
+from app.services.marketplace.declarative import action_change
+from app.services.marketplace.expressions import UNDEFINED
 from app.services.marketplace.plugin_data import PluginDataError
 from app.services.marketplace.plugin_refs import PluginNameRefused, ensure_plugin_ref
-from app.services.marketplace.registration_lookup import RegistrationSnapshot
-from app.services.marketplace.service_plugins import is_admin_only
-from app.services.tenant import guild_plugins, plugin_config
+from app.services.marketplace.registration_lookup import (
+    RegistrationSnapshot,
+    is_declarative,
+)
+from app.services.marketplace.service_plugins import PLATFORM_CODES, is_admin_only
+from app.services.tenant import guild_plugins, plugin_config, plugin_metadata
 from app.services.tenant.guild_plugins import SurfaceAccess
+from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = ["run_action"]
 
 
-async def _install_reads(
+async def _held(
     plugin: GuildPlugin,
     registration: RegistrationSnapshot,
     *,
     guild_id: int,
     kind: str,
     entity_id: int,
-) -> bool:
-    """Whether the install can read the item, asked of the database on a
-    session of its own routed as the install, with the scopes its tokens
-    carry: the answer its own reads get."""
+) -> Optional[dict[str, Any]]:
+    """The install's values on the item, by key, or ``None`` when it cannot
+    read the item: asked of the database on a session of its own routed as the
+    install, with the scopes its tokens carry, so the answer is the one its own
+    reads get."""
     table = SQLModel.metadata.tables[KINDS[kind].table]
     async with cohorts.request_sessionmaker(guild_id)() as session:
         try:
-            await establish_install_access(
+            install = await establish_install_access(
                 session,
                 VerifiedInstall(
                     guild_id=guild_id,
@@ -73,27 +89,159 @@ async def _install_reads(
                 ),
             )
         except InstallAccessError:
-            return False
-        return bool(
-            await session.scalar(exists().where(table.c.id == entity_id).select())
-        )
+            return None
+        if not await session.scalar(exists().where(table.c.id == entity_id).select()):
+            return None
+        held = await plugin_metadata.read(session, install, kind, [entity_id])
+        return next((values for _, _, values in held), {})
 
 
-async def _item_initiative(
+async def _item(
     session: AsyncSession, kind: str, entity_id: int, context: GuildContext
-) -> int:
-    """The item's initiative, once the reader is found to read it as its own
-    routes would let them (404 or 403 otherwise). An item of the community's
-    own tool, which no initiative holds, has no plug-in placed on it."""
+) -> tuple[int, str]:
+    """The item's initiative and what it is called, once the reader is found
+    to read it as its own routes would let them (404 or 403 otherwise). An
+    item of the community's own tool, which no initiative holds, has no
+    plug-in placed on it."""
     row = await resource_access.load_kind(session, kind, entity_id, None, context)
     tool = row if KINDS[kind].parent is None else resource_access.parent_of(row)
     if tool.initiative_id is None:
         raise _not_offered()
-    return int(tool.initiative_id)
+    # A tool's name, or the column its sub-tool keeps what it is called in.
+    column = "name" if tool is row else resource_access.SUB_TOOLS[type(row)].name
+    return int(tool.initiative_id), getattr(row, column) or ""
 
 
 def _not_offered() -> PluginDataError:
     return PluginDataError(PluginDataMessages.ACTION_NOT_OFFERED, 403)
+
+
+def _failed(detail: str) -> PluginDataError:
+    """The plug-in's work failing, answered as a container's failed call is."""
+    return PluginDataError(PluginDataMessages.SERVICE_UNAVAILABLE, 502, detail)
+
+
+async def _actor(
+    session: AsyncSession,
+    *,
+    plugin: GuildPlugin,
+    endpoint: dict[str, Any],
+    user_id: int,
+) -> tuple[str, dict[str, str], dict[str, dict[str, Any]]]:
+    """Whose credential a declarative action's call runs on, and the handles
+    and non-secret fields it runs with
+    (:func:`~app.services.marketplace.plugin_data._resolve_connections`): the
+    first of the endpoint's ``actors`` the reader's call can run as,
+    ``member`` on the reader's own connections and ``installation`` on the
+    community's. An endpoint naming no actors runs as the reader when its
+    first request carries an interactive connection, and as the installation
+    when it carries a static one. When none can, the best one's refusal is
+    the answer."""
+    actors = endpoint.get("actors")
+    if not isinstance(actors, list) or not actors:
+        request = (endpoint.get("steps") or [endpoint])[0]["request"]
+        connection = plugin_config.connection_by_id(
+            plugin.definition, request.get("connection")
+        )
+        interactive = (connection or {}).get("scope") == "interactive"
+        actors = ["member" if interactive else "installation"]
+    refusals: list[PluginDataError] = []
+    for actor in actors:
+        try:
+            refs, fields = await plugin_data._resolve_connections(
+                session,
+                plugin=plugin,
+                endpoint=endpoint,
+                user_id=user_id if actor == "member" else None,
+                actor=actor,
+            )
+        except PluginDataError as exc:
+            refusals.append(exc)
+            continue
+        return actor, refs, fields
+    raise refusals[0]
+
+
+async def _act(
+    session: AsyncSession,
+    *,
+    plugin: GuildPlugin,
+    registration: RegistrationSnapshot,
+    action: dict[str, Any],
+    endpoint: Optional[dict[str, Any]],
+    item: dict[str, Any],
+    held: dict[str, Any],
+    guild_id: int,
+    user_id: int,
+    transport: httpx.AsyncBaseTransport | None,
+) -> None:
+    """Do what a declarative action declares, as the SDK's ``runAction``
+    does: the call its endpoint makes, when it names one, on the credential
+    :func:`_actor` picks, its expressions reading ``item``; then the change
+    its ``write`` answers, when it has one (:func:`action_change`), made to
+    the plug-in's values on the item as the install
+    (:func:`~app.services.tenant.plugin_metadata.apply_changes`).
+
+    The endpoint refusing or answering unavailable, a ``write`` answering
+    what is not a change, and a change that is refused each fail the action
+    as a container's failed call does, and the plug-in's values stay as they
+    were.
+    """
+    result: Any = UNDEFINED
+    if endpoint is not None:
+        params, _ = plugin_data.validate_params(endpoint, None)
+        actor, refs, fields = await _actor(
+            session, plugin=plugin, endpoint=endpoint, user_id=user_id
+        )
+    # Nothing is held open while the vendor works and the values change, and
+    # what was read stays readable; the next statement routes the session again.
+    session.expunge_all()
+    await session.rollback()
+    if endpoint is not None:
+
+        async def read(
+            request: httpx.Request | plugin_data.Answered,
+        ) -> dict[str, Any]:
+            return await plugin_data._read_body(request, transport=transport)
+
+        try:
+            body = await plugin_data._call_plugin(
+                registration=registration,
+                plugin=plugin,
+                guild_id=guild_id,
+                endpoint_id=str(endpoint["id"]),
+                params=params,
+                refs=refs,
+                fields=fields,
+                transport=transport,
+                read=read,
+                actor=actor,
+                item=item,
+            )
+        except PluginDataError as exc:
+            # A write the vendor refused answers one of the endpoint's codes.
+            if exc.code not in {*PLATFORM_CODES, *(endpoint.get("unavailable") or ())}:
+                raise
+            raise _failed(f"{endpoint['id']} answered {exc.code}") from exc
+        result = body["result"]
+        if set(result) == {"unavailable"}:
+            raise _failed(f"{endpoint['id']} answered {result['unavailable']}")
+    change = (
+        await action_change(action["write"], item=item, held=held, result=result)
+        if action.get("write")
+        else None
+    )
+    if change is None:
+        return
+    try:
+        await plugin_metadata.apply_changes(
+            plugin,
+            registration,
+            [{"target": {"kind": item["kind"], "id": item["id"]}, **change}],
+            guild_id=guild_id,
+        )
+    except PluginChannelError as exc:
+        raise _failed(f"the change was refused: {exc.code}") from exc
 
 
 async def run_action(
@@ -115,6 +263,7 @@ async def run_action(
     their standing there. ``age_allows`` is whether the reader is old enough
     for the plug-in.
     """
+    declarative = is_declarative(plugin.definition)
     declared = (plugin.definition or {}).get("actions")
     action = next(
         (
@@ -126,16 +275,21 @@ async def run_action(
         ),
         {},
     )
-    write = next(
+    # A container's action names the write its handler answers; a declarative
+    # plug-in's names a read or a write, its own ``write``, or both.
+    endpoint = next(
         (
-            endpoint
-            for endpoint in plugin_data._endpoints(plugin.definition)
-            if endpoint.get("id") == action.get("endpoint")
-            and endpoint.get("direction") == "write"
+            entry
+            for entry in plugin_data._endpoints(plugin.definition)
+            if entry.get("id") == action.get("endpoint")
+            and entry.get("direction")
+            in (("read", "write") if declarative else ("write",))
         ),
         None,
     )
-    if write is None:
+    if endpoint is None and not (
+        declarative and action.get("endpoint") is None and action.get("write")
+    ):
         raise PluginDataError(PluginDataMessages.ACTION_NOT_FOUND, 404)
     if not plugin.enabled:
         raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409)
@@ -143,22 +297,21 @@ async def run_action(
     # write included.
     if context.content_read_only:
         raise _not_offered()
-    if not plugin_config.installation_meets(plugin, action.get("requires")):
-        raise PluginDataError(PluginDataMessages.NEEDS_CONFIGURATION, 409)
+    # The connections the action itself requires, resolved as an endpoint's
+    # are: the community's hold a value, and the reader has made their own.
+    await plugin_data._resolve_connections(
+        session, plugin=plugin, endpoint=action, user_id=user_id
+    )
     registration = await plugin_data._load_registration(
         None, guild_id=context.guild_id, plugin=plugin
     )
-    # A declarative plug-in's action is run by Initiative itself, which this
-    # build does not do yet: it is offered once it does.
-    if registration.declarative:
-        raise _not_offered()
 
     install_id = int(plugin.id or 0)
-    initiative_id = await _item_initiative(session, kind, entity_id, context)
+    initiative_id, title = await _item(session, kind, entity_id, context)
     offered = guild_plugins.surface_access(
         {
             **guild_plugins.ITEM_SURFACE,
-            "admin_only": is_admin_only(action) or is_admin_only(write),
+            "admin_only": is_admin_only(action) or is_admin_only(endpoint),
         },
         initiative_id=initiative_id,
         placement_role_ids=await guild_plugins.placement_role_ids(
@@ -172,46 +325,64 @@ async def run_action(
         raise PluginDataError(GuildPluginMessages.AGE_RESTRICTED, 403)
     if offered is not SurfaceAccess.open:
         raise _not_offered()
-    if not await _install_reads(
-        plugin,
-        registration,
-        guild_id=context.guild_id,
-        kind=kind,
-        entity_id=entity_id,
-    ):
+    held = await _held(
+        plugin, registration, guild_id=context.guild_id, kind=kind, entity_id=entity_id
+    )
+    if held is None:
         raise _not_offered()
 
-    params, _ = plugin_data.validate_params(write, None)
-    refs, fields = await plugin_data._resolve_connections(
-        session, plugin=plugin, endpoint=write, user_id=None, actor="installation"
-    )
-    try:
-        viewer = await ensure_plugin_ref(
-            guild_id=context.guild_id, public_id=registration.public_id, user_id=user_id
+    if declarative:
+        await _act(
+            session,
+            plugin=plugin,
+            registration=registration,
+            action=action,
+            endpoint=endpoint,
+            item={"kind": kind, "id": entity_id, "title": title},
+            held=held,
+            guild_id=context.guild_id,
+            user_id=user_id,
+            transport=transport,
         )
-    except PluginNameRefused as exc:
-        raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409) from exc
-    # Nothing is held open while the plug-in works, and what was read stays
-    # readable; the next statement routes the session again.
-    session.expunge_all()
-    await session.rollback()
+    else:
+        assert endpoint is not None  # a container's action names its write
+        params, _ = plugin_data.validate_params(endpoint, None)
+        refs, fields = await plugin_data._resolve_connections(
+            session,
+            plugin=plugin,
+            endpoint=endpoint,
+            user_id=None,
+            actor="installation",
+        )
+        try:
+            viewer = await ensure_plugin_ref(
+                guild_id=context.guild_id,
+                public_id=registration.public_id,
+                user_id=user_id,
+            )
+        except PluginNameRefused as exc:
+            raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409) from exc
+        # Nothing is held open while the plug-in works, and what was read stays
+        # readable; the next statement routes the session again.
+        session.expunge_all()
+        await session.rollback()
 
-    async def read(request: httpx.Request | plugin_data.Answered) -> None:
-        await plugin_data._read_body(request, transport=transport)
+        async def read(request: httpx.Request | plugin_data.Answered) -> None:
+            await plugin_data._read_body(request, transport=transport)
 
-    await plugin_data._call_plugin(
-        registration=registration,
-        plugin=plugin,
-        guild_id=context.guild_id,
-        endpoint_id=str(write["id"]),
-        params=params,
-        refs=refs,
-        fields=fields,
-        transport=transport,
-        read=read,
-        viewer=viewer,
-        subject={"type": kind, "id": entity_id},
-    )
+        await plugin_data._call_plugin(
+            registration=registration,
+            plugin=plugin,
+            guild_id=context.guild_id,
+            endpoint_id=str(endpoint["id"]),
+            params=params,
+            refs=refs,
+            fields=fields,
+            transport=transport,
+            read=read,
+            viewer=viewer,
+            subject={"type": kind, "id": entity_id},
+        )
     # The action may have changed what the install's reads answer.
     plugin_data.clear_plugin_data_cache(guild_id=context.guild_id, plugin_id=install_id)
 

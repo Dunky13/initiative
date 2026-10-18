@@ -11,15 +11,16 @@ everything around the call reads it the same way.
 It runs the rest of the plug-in the same way, as the SDK's runners do: a
 connection's ``after_connect`` (``runAfterConnect``) and ``health``
 (``runHealth``), what a vendor's delivery emits, changes in the plug-in's
-values and says about a connection (``runWebhook``), and a schedule's read and
-the changes it makes from the answer (``runSchedule``).
+values and says about a connection (``runWebhook``), a schedule's read and the
+changes it makes from the answer (``runSchedule``), and the change an action
+makes to the plug-in's values on its item (``runAction``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
   request's connection as ``connection`` and of each connection the endpoint's
   ``requires`` names that this call holds as ``connections.<id>``, ``now``,
-  each earlier step's answer as ``steps.<name>`` and, once a call is answered,
-  ``response``. A credential never enters one: it is added to the request as
-  the plug-in's ``auth`` says.
+  for an action's call its item as ``item``, each earlier step's answer as
+  ``steps.<name>`` and, once a call is answered, ``response``. A credential
+  never enters one: it is added to the request as the plug-in's ``auth`` says.
 * **Where a request may go**: https, on one of the plug-in's ``hosts``, to a public
   address, following no redirect.
 * **What an answer means**: the endpoint's ``errors`` rows first, then the
@@ -80,6 +81,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "Delivered",
+    "action_change",
     "after_connect",
     "call_endpoint",
     "health_state",
@@ -550,15 +552,17 @@ async def run_endpoint(
     connections: Mapping[str, Mapping[str, Any]],
     credentials: Credentials,
     now: datetime,
+    item: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint's answer: its result, or ``{"unavailable":
     <code>}``.
 
     ``connections`` holds each connection's non-secret fields and
     ``credentials`` its token, by connection id. Expressions read a request's
-    own connection as ``connection`` and every connection the endpoint's
-    ``requires`` names as ``connections.<id>``. A passing failure raises
-    :class:`PluginDataError` as the plug-in being unavailable.
+    own connection as ``connection``, every connection the endpoint's
+    ``requires`` names as ``connections.<id>``, and the ``item`` an action's
+    call is made on. A passing failure raises :class:`PluginDataError` as the
+    plug-in being unavailable.
     """
     run = _Run(
         definition,
@@ -575,6 +579,7 @@ async def run_endpoint(
             if connection_id in connections
         },
         "now": run.now,
+        **({} if item is None else {"item": dict(item)}),
     }
     steps = endpoint.get("steps") or [{"name": "", "request": endpoint["request"]}]
     named = "steps" in endpoint
@@ -744,6 +749,51 @@ async def health_state(
             exc.code or TRANSIENT_CODE,
         )
         return "unavailable"
+
+
+# --- an action's change ------------------------------------------------------
+
+
+async def action_change(
+    write: str,
+    *,
+    item: Mapping[str, Any],
+    held: Mapping[str, Any],
+    result: Any = UNDEFINED,
+    now: Optional[datetime] = None,
+) -> Optional[dict[str, Any]]:
+    """The change a declarative action's ``write`` answers, as the SDK's
+    ``runAction`` reads it: the one Initiative makes to the plug-in's values
+    on the action's own item, or ``None`` when it answers nothing.
+
+    ``write`` reads ``item`` (its ``kind``, ``id`` and ``title``), ``held``
+    (the install's values on it, by key), ``result`` (the endpoint's mapped
+    answer, absent when the action names no endpoint) and ``now``. A change
+    names no target: its item is the action's. The rest of the contract's
+    ``change`` is held where the change is made
+    (``plugin_metadata.apply_changes``). An expression that fails, or an
+    answer that is not a change, raises :class:`PluginDataError` as the
+    plug-in being unavailable.
+    """
+    millis, at = _clock(now or datetime.now(timezone.utc))
+    document: dict[str, Any] = {"item": dict(item), "held": dict(held), "now": at}
+    if result is not UNDEFINED:
+        document["result"] = result
+    try:
+        change = await expressions.evaluate(write, document, millis=millis)
+    except ExpressionError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, f"write: {exc}"
+        ) from exc
+    if change is UNDEFINED:
+        return None
+    if not isinstance(change, dict) or "target" in change:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE,
+            502,
+            f"write answered {_text(change)}, which is not a change",
+        )
+    return change
 
 
 # --- a vendor's deliveries ---------------------------------------------------
@@ -1089,13 +1139,15 @@ async def call_endpoint(
     refs: Mapping[str, str],
     fields: Mapping[str, Mapping[str, Any]],
     actor: Optional[str],
+    item: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint of an install, answered as a container
     answers: ``{endpoint, actor, result}``.
 
     ``fields`` is each satisfied connection's non-secret fields as the
     caller's resolution read them, which the response cache key holds, so
-    the expressions read those.
+    the expressions read those. ``item`` is the item an action's call is made
+    on, which they read too.
 
     Held to the envelope's time and size, as a container's answer is; each
     vendor answer to the connection egress limits.
@@ -1129,6 +1181,7 @@ async def call_endpoint(
                 connections={**used, **fields},
                 credentials=tokens,
                 now=datetime.now(timezone.utc),
+                item=item,
             )
     except TimeoutError as exc:
         raise PluginDataError(

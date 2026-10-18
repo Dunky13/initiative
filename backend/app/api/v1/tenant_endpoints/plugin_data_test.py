@@ -59,7 +59,7 @@ from app.services.marketplace.context_jwt_test import _PRIVATE_PEM
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant.plugin_connection_flows import TokenSet, seal_tokens
 from app.services.tenant.dashboard_definition import normalize_dashboard_definition
-from app.testing.fake_vendor import FakeVendor, declarative_plugin
+from app.testing.fake_vendor import API_HOST, FakeVendor, declarative_plugin
 from app.models.platform.access_grant import AccessGrantPurpose, SettingsLevel
 from app.models.platform.user import UserRole
 from app.testing import (
@@ -1781,6 +1781,76 @@ def _action_definition() -> dict:
     }
 
 
+FIND_ISSUE = f"plugin.{PUBLIC_ID}.find-issue"
+
+
+def _declarative_action_definition() -> dict:
+    """:func:`declarative_plugin` keeping an issue on tasks: ``link`` searches
+    for the task's title on the community's connection and keeps the number
+    found; ``unlink``, for a reader who has connected their own account, drops
+    it with no call, keeping what it was; ``relink`` is the community's admins'
+    alone; ``label`` makes the label write as the reader, on their own account;
+    ``garble`` answers a targeted change where a change belongs."""
+    definition = declarative_plugin(PUBLIC_ID)
+    (workspace,) = definition["connections"]
+    definition["connections"].append(
+        {**workspace, "id": "github", "scope": "interactive", "fields": []}
+    )
+    _, label = definition["endpoints"]
+    label.update(actors=["member"], requires={"all_of": ["workspace", "github"]})
+    label["request"]["connection"] = "github"
+    definition["endpoints"].append(
+        {
+            "id": FIND_ISSUE,
+            "direction": "read",
+            "actors": ["installation"],
+            "returns": [{"key": "number", "type": "int"}],
+            "request": {
+                "method": "GET",
+                "url": f'"https://{API_HOST}/search/issues"',
+                "query": {"q": "item.title"},
+                "connection": "workspace",
+            },
+            "map": '{"number": response.body.items[0].number}',
+        }
+    )
+    definition.update(
+        scopes=["projects:read"],
+        fields=[
+            {"key": "issue", "name": {"en": "Issue"}, "kind": "number", "on": ["task"]}
+        ],
+        actions=[
+            {"id": action_id, "name": {"en": action_id}, "on": ["task"], **terms}
+            for action_id, terms in (
+                (
+                    "link",
+                    {
+                        "endpoint": FIND_ISSUE,
+                        "write": '{"set": {"issue": result.number, "task": item.id}}',
+                    },
+                ),
+                (
+                    "unlink",
+                    {
+                        "write": '{"set": {"issue": null, "was": held.issue}}',
+                        "requires": {"all_of": ["github"]},
+                    },
+                ),
+                ("relink", {"write": '{"set": {"issue": 1}}', "admin_only": True}),
+                ("label", {"endpoint": f"plugin.{PUBLIC_ID}.label"}),
+                (
+                    "garble",
+                    {
+                        "write": '{"target": {"kind": "task", "id": item.id},'
+                        ' "set": {"issue": 1}}'
+                    },
+                ),
+            )
+        ],
+    )
+    return definition
+
+
 @pytest.fixture
 def plugin_write(monkeypatch):
     """Stand in for the plug-in's write: record each request, run ``then``,
@@ -1803,11 +1873,15 @@ def plugin_write(monkeypatch):
     return recorder
 
 
-async def _action_board(session: AsyncSession, acting_user):
-    """An install placed in one initiative for its members, and tasks each side
-    reads differently: ``shared`` both read, ``hidden`` only the install,
-    ``mine`` only the member, ``elsewhere`` in an initiative the install is not
-    placed in."""
+async def _action_board(
+    session: AsyncSession, acting_user, declarative: dict | None = None
+):
+    """An install placed in one initiative for its members, and tasks called
+    "Broken build" each side reads differently: ``shared`` both read,
+    ``hidden`` only the install, ``mine`` only the member, ``elsewhere`` in an
+    initiative the install is not placed in. The install is
+    :func:`_action_definition`'s container, or the ``declarative`` definition
+    with the community's workspace connected."""
     admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
     member = await acting_user(
         guild_role=CommunityRole.member,
@@ -1819,17 +1893,28 @@ async def _action_board(session: AsyncSession, acting_user):
         session,
         public_id=PUBLIC_ID,
         listing_uid=PLUGIN_UID,
-        base_url=BASE_URL,
-        allowed_origins=[BASE_URL],
         scope_ceiling=["projects:read"],
+        **(
+            {"base_url": None, "allowed_origins": [], "jwks": {}, "kind": "declarative"}
+            if declarative
+            else {"base_url": BASE_URL, "allowed_origins": [BASE_URL]}
+        ),
+    )
+    config, secrets = seal_tokens(
+        TokenSet(access_token="gho_community"), config={}, secrets={}
     )
     plugin = await create_guild_plugin(
         session,
         admin.guild,
         admin.user,
-        definition=_action_definition(),
+        definition=declarative or _action_definition(),
         listing_uid=PLUGIN_UID,
         granted_scopes=["projects:read"],
+        **(
+            {"config": {"workspace": config}, "secrets": {"workspace": secrets}}
+            if declarative
+            else {}
+        ),
     )
     await route_session_to_guild(session, admin.guild.id)
     role_id = (
@@ -1853,7 +1938,7 @@ async def _action_board(session: AsyncSession, acting_user):
             await create_resource_grant(session, made, all_initiative_members=True)
         if install:
             await create_resource_grant(session, made, plugin_install_id=plugin.id)
-        return (await create_task(session, made)).id
+        return (await create_task(session, made, title="Broken build")).id
 
     other = await create_initiative(session, admin.guild, admin.user, name="B")
     tasks = {
@@ -2011,3 +2096,99 @@ class TestActions:
         if detail is not None:
             assert response.json()["detail"] == getattr(PluginDataMessages, detail)
         assert plugin_write.calls == []
+
+    async def test_a_declarative_action_keeps_what_the_vendor_answers(
+        self, client, acting_user, session, monkeypatch
+    ):
+        """Initiative makes the call on the credential the endpoint's actors
+        say, its request reading the item: the community's for a read the
+        installation makes, and the reader's own, once they have connected
+        it, for a write made as them. What the write makes of the answer is
+        kept as the install. An action naming no endpoint calls nothing and
+        reads what the install holds on the item."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        vendor.api_answers = [
+            {"body": {"items": [{"number": 12}]}},
+            {"body": {"number": 12}},
+        ]
+        _admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+        body = {"entity_type": "task", "entity_id": tasks["shared"]}
+
+        linked = await client.post(
+            _run(member, plugin), headers=member.headers, json=body
+        )
+        await _connect(session, plugin=plugin, user=member.user, ref="cr_member")
+        labelled = await client.post(
+            _run(member, plugin, "label"), headers=member.headers, json=body
+        )
+        unlinked = await client.post(
+            _run(member, plugin, "unlink"), headers=member.headers, json=body
+        )
+
+        assert linked.status_code == 200, linked.text
+        assert linked.json() == {"values": {"issue": 12}}
+        assert labelled.status_code == 200, labelled.text
+        assert unlinked.status_code == 200, unlinked.text
+        assert unlinked.json() == {"values": {}}
+        found, labelling = vendor.api_requests
+        assert found["url"] == f"https://{API_HOST}/search/issues?q=Broken+build"
+        assert found["headers"]["authorization"] == "Bearer gho_community"
+        assert labelling["method"] == "PUT"
+        assert labelling["headers"]["authorization"] == "Bearer tok"
+        await route_session_to_guild(session, member.guild.id)
+        kept = {
+            row.key: row.value for row in await session.exec(select(PluginMetadata))
+        }
+        assert kept == {"task": tasks["shared"], "was": 12}
+
+    @pytest.mark.parametrize(
+        ("who", "task", "action", "status_code", "detail"),
+        [
+            ("member", "shared", "relink", 403, "ACTION_NOT_OFFERED"),
+            ("admin", "elsewhere", "link", 403, "ACTION_NOT_OFFERED"),
+            ("member", "shared", "label", 409, "CONNECTION_REQUIRED"),
+            ("member", "shared", "unlink", 409, "CONNECTION_REQUIRED"),
+            ("member", "shared", "garble", 502, "SERVICE_UNAVAILABLE"),
+        ],
+        ids=[
+            "an action for the community's admins alone",
+            "an initiative the install is not placed in",
+            "an endpoint on the reader's own account, which they never connected",
+            "an action needing the reader's own account, which they never connected",
+            "a write answering what is not a change",
+        ],
+    )
+    async def test_a_declarative_action_changes_nothing_where_it_may_not_run(
+        self,
+        client,
+        acting_user,
+        session,
+        monkeypatch,
+        who,
+        task,
+        action,
+        status_code,
+        detail,
+    ):
+        """The vendor is not called and the install keeps nothing."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+        actor = {"admin": admin, "member": member}[who]
+
+        response = await client.post(
+            _run(actor, plugin, action),
+            headers=actor.headers,
+            json={"entity_type": "task", "entity_id": tasks[task]},
+        )
+
+        assert response.status_code == status_code, response.text
+        assert response.json()["detail"] == getattr(PluginDataMessages, detail)
+        assert vendor.api_requests == []
+        await route_session_to_guild(session, admin.guild.id)
+        assert (await session.exec(select(PluginMetadata))).all() == []
