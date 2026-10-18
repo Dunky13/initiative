@@ -18,10 +18,11 @@ the vendor. :func:`receive` takes each delivery through four steps:
    Otherwise a container's install has the raw body and the vendor's ``x-``
    headers sent to its ``webhook`` hook with a ``lifecycle`` token naming that
    install, and a 2xx records the id for 24 hours. A declarative plug-in's install
-   maps it with its ``events`` and ``status``: the changes to its values are
-   made as the install, the event goes to the outbox as a container's emission
-   does, the state to the install's configuration state, and the id is
-   recorded with them. A mapping that cannot succeed is logged and recorded;
+   maps it with its ``events`` and ``status``: the id is held while it is
+   mapped, so a copy arriving meanwhile is skipped, the changes to its values
+   are made as the install, the event goes to the outbox as a container's
+   emission does, the state to the install's configuration state, and the id
+   is recorded with them. A mapping that cannot succeed is logged and recorded;
    one that may succeed if asked again records nothing.
 4. 202 when every matched install accepted it or already had; otherwise 503
    when a mapping is to be asked again, or 502, so the vendor's redelivery
@@ -43,6 +44,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, select
 
@@ -97,6 +99,10 @@ __all__ = ["DELIVERY_TTL", "receive"]
 
 #: How long an accepted delivery id is remembered.
 DELIVERY_TTL = timedelta(hours=24)
+#: How long a declarative install holds a delivery while it maps it: a copy
+#: that arrives meanwhile does nothing, and one whose holder stopped without
+#: finishing is taken again after it.
+DELIVERY_LEASE = timedelta(minutes=5)
 #: How many communities one delivery is forwarded to at once.
 FORWARD_CONCURRENCY = 8
 
@@ -255,10 +261,12 @@ async def _pending(
     return None if seen is not None else plugin
 
 
-def _remember(install_id: int, delivery_id: str) -> Any:
-    """The statement recording a delivery an install accepted, for 24 hours:
+def _remember(
+    install_id: int, delivery_id: str, *, held: timedelta = DELIVERY_TTL
+) -> Any:
+    """The statement recording a delivery an install accepted, for ``held``:
     its id, unless one still remembered holds it."""
-    expires_at = datetime.now(timezone.utc) + DELIVERY_TTL
+    expires_at = datetime.now(timezone.utc) + held
     statement = pg_insert(PluginHookDelivery).values(
         install_id=install_id, delivery_id=delivery_id, expires_at=expires_at
     )
@@ -276,6 +284,36 @@ async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
             col(PluginHookDelivery.expires_at) < expiring.now
         )
     )
+
+
+async def _take(install: plugin_installs.IndexedInstall, delivery_id: str) -> bool:
+    """Hold a delivery for :data:`DELIVERY_LEASE` while it is mapped, or
+    ``False`` when another copy of it holds it or has recorded it."""
+    async with cohorts.system_session(install.guild_id) as session:
+        await set_rls_context(session, SystemGuild(install.guild_id))
+        taken = (
+            await session.exec(
+                _remember(install.install_id, delivery_id, held=DELIVERY_LEASE)
+            )
+        ).first()
+        await session.commit()
+    return taken is not None
+
+
+async def _let_go(install: plugin_installs.IndexedInstall, delivery_id: str) -> None:
+    """Give back a delivery held while it was mapped and not recorded, so a
+    copy of it is owed again."""
+    async with cohorts.system_session(install.guild_id) as session:
+        await set_rls_context(session, SystemGuild(install.guild_id))
+        await session.exec(
+            delete(PluginHookDelivery).where(  # type: ignore[arg-type]
+                col(PluginHookDelivery.install_id) == install.install_id,
+                col(PluginHookDelivery.delivery_id) == delivery_id,
+                col(PluginHookDelivery.expires_at)
+                <= datetime.now(timezone.utc) + DELIVERY_LEASE,
+            )
+        )
+        await session.commit()
 
 
 async def _record(install: plugin_installs.IndexedInstall, delivery_id: str) -> None:
@@ -341,11 +379,12 @@ async def _map(
     A mapping that may answer if asked again records nothing and answers 503,
     so the vendor sends it again; one that cannot, and changes that are
     refused, are logged, and the delivery is recorded beside whatever did
-    map. The changes are made first, on the install's own sessions, and the
-    delivery is recorded after them, so a delivery whose changes did not finish
-    is still owed. A recorded delivery is not mapped again (:func:`_pending`);
-    two copies arriving together make the same changes, which set and merge
-    values and so repeat harmlessly, and one of them records it."""
+    map. The delivery is held (:func:`_take`) before any change is made, so a
+    copy of it that arrives meanwhile does nothing, and recorded once the
+    changes are made, on the install's own sessions. One whose work fails is
+    given back (:func:`_let_go`), and one whose holder stopped is taken again
+    once its hold runs out, so a delivery whose changes did not finish is
+    still owed. A recorded delivery is not mapped again (:func:`_pending`)."""
     try:
         payload: Any = json.loads(body)
     except ValueError:
@@ -376,6 +415,26 @@ async def _map(
             install.guild_id,
             failure,
         )
+    if not await _take(install, delivery_id):
+        return 202
+    try:
+        await _make(install, registration, plugin, delivered, delivery_id=delivery_id)
+    except Exception:
+        await _let_go(install, delivery_id)
+        raise
+    return 202
+
+
+async def _make(
+    install: plugin_installs.IndexedInstall,
+    registration: RegistrationSnapshot,
+    plugin: GuildPlugin,
+    delivered: declarative.Delivered,
+    *,
+    delivery_id: str,
+) -> None:
+    """Make a held delivery's changes, then record it with its event and its
+    connection's state."""
     try:
         await plugin_metadata.apply_changes(
             plugin, registration, delivered.writes, guild_id=install.guild_id
@@ -391,11 +450,14 @@ async def _map(
         )
     async with cohorts.system_session(install.guild_id) as session:
         await set_rls_context(session, SystemGuild(install.guild_id))
-        claimed = (
-            await session.exec(_remember(install.install_id, delivery_id))
-        ).first()
-        if claimed is None:
-            return 202
+        await session.exec(
+            update(PluginHookDelivery)
+            .where(
+                col(PluginHookDelivery.install_id) == install.install_id,
+                col(PluginHookDelivery.delivery_id) == delivery_id,
+            )
+            .values(expires_at=datetime.now(timezone.utc) + DELIVERY_TTL)
+        )
         if delivered.event is not None:
             event_type, event = delivered.event
             try:
@@ -434,7 +496,6 @@ async def _map(
             await guild_plugins_service.reindex_install(
                 session, install.guild_id, plugin.id
             )
-    return 202
 
 
 async def receive(public_id: str, headers: Mapping[str, str], body: bytes) -> int:
