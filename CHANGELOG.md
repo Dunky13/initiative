@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Signing in no longer greets an established account as a new one.** When your communities didn't load the first time, the app showed the setup for new accounts. It now tries again, and if it still can't load them, says so and offers **Try again**.
 - A dashboard tile over a plug-in's rows counted every row for `count(*) FILTER (WHERE …)` and `count(DISTINCT …)`. It now counts what they ask for.
 - **Icons sit the same distance from their labels everywhere.** In some buttons and menus, an icon or badge stood further from its label than usual: on plug-in, marketplace and dashboard buttons, in the table and text-alignment menus of the editor, and in the people and tag pickers.
 - **Webhooks arrive in order after a refusal.** When a receiver turned a delivery away, later changes could reach it before the retry did. They now wait for the retry.

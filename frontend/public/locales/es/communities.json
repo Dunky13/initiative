@@ -245,7 +245,9 @@
     "accountSettings": "Configuración de la cuenta",
     "platformSettings": "Configuración de la plataforma",
     "shellBackToStart": "Volver al inicio",
-    "logOut": "Cerrar sesión"
+    "logOut": "Cerrar sesión",
+    "unavailableTitle": "No se pudieron cargar tus comunidades",
+    "unavailableDescription": "Algo salió mal al cargarlas. Tus comunidades siguen ahí."
   },
   "notifications": {
     "desktop": {
