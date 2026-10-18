@@ -688,7 +688,7 @@ export const useUnbookmarkItem = <TError = ErrorType<HTTPValidationError>, TCont
 };
 /**
  * Subscribe to a tool or anything inside one: its changes, and those of what is
- * inside it, rise in the reader's feed.
+ * inside it, rise in the reader's feed and notify them.
  * @summary Subscribe Item
  */
 export const subscribeItem = (
@@ -778,7 +778,9 @@ export const useSubscribeItem = <TError = ErrorType<HTTPValidationError>, TConte
   return useMutation(getSubscribeItemMutationOptions(options), queryClient);
 };
 /**
- * Unsubscribe. Idempotent.
+ * Unsubscribe: nothing about it reaches the reader any more, whatever ties
+ * them to it, until they subscribe again. Loads the item as its page does;
+ * idempotent. A platform grantee is not a member, so nothing is kept.
  * @summary Unsubscribe Item
  */
 export const unsubscribeItem = (

@@ -2,7 +2,13 @@
 
 Every ``NotificationType`` belongs to exactly one category, and the category —
 not a hand-written list anywhere else — is what the preference storage, the
-settings grid, the per-community level and the "addressed to me" filter all read.
+settings grid, each community's rows and mute and the "addressed to me" filter
+all read.
+
+The rows for a community's content are by how the reader relates to what
+happened, not by what kind of thing it was: named or answered (``mentions``),
+given it or on it (``assignments``), following it, which includes having made
+it (``subscriptions``), and what arrived for them to see (``news``).
 ``notification_categories_test.py`` asserts the mapping is exhaustive over
 ``NotificationType``, so a new type cannot ship without a category decision.
 
@@ -11,13 +17,14 @@ axes to apply when a new one is proposed:
 
 ``personal``
     The notification is addressed to this account **by another person**. This is
-    what the ``personal`` community level keeps and what the inbox's "Mentions"
-    filter shows. One flag, three surfaces.
+    what email sends straight away when the rest waits for its schedule, and
+    what the inbox's "Mentions" filter shows.
 
 ``mutable_channels``
-    Which channels the account may switch off. ``account`` and ``approvals``
-    keep the in-app channel on: being told your account was suspended, or that
-    somebody is waiting on your decision, is not a preference.
+    Which channels the account may switch off. ``account``, ``approvals`` and
+    ``moderation`` keep the in-app channel on: being told your account was
+    suspended, or that somebody is waiting on your decision, is not a
+    preference. ``cases`` keeps every channel on.
 
 The difference between ``jobs`` and ``account`` is who started it. A job is your
 own request finishing — you asked for the export, so being pinged about it is
@@ -58,31 +65,26 @@ ALL_CHANNELS: tuple[Channel, ...] = tuple(Channel)
 
 class NotificationCategory(str, Enum):
     mentions = "mentions"
-    replies = "replies"
-    comments = "comments"
-    reactions = "reactions"
-    subscriptions = "subscriptions"
     assignments = "assignments"
-    due_dates = "due_dates"
-    membership = "membership"
+    subscriptions = "subscriptions"
+    news = "news"
     approvals = "approvals"
-    posts = "posts"
-    events = "events"
-    event_reminders = "event_reminders"
-    direct_messages = "direct_messages"
-    connections = "connections"
-    jobs = "jobs"
-    account = "account"
     moderation = "moderation"
     cases = "cases"
+    direct_messages = "direct_messages"
+    jobs = "jobs"
+    account = "account"
 
 
 #: How the settings page groups the rows. Presentation only — nothing resolves
 #: through it.
 class CategoryGroup(str, Enum):
-    addressed_to_me = "addressed_to_me"
-    activity = "activity"
+    #: What a community's content says to you, by how you relate to it. The
+    #: rows each community can switch on its own.
+    your_communities = "your_communities"
+    #: What a community needs of you, or did about you.
     community = "community"
+    #: Yours alone, outside any community's content.
     account = "account"
 
 
@@ -102,17 +104,24 @@ class CategorySpec:
     group: CategoryGroup
     #: Addressed to this account by another person.
     personal: bool
-    #: Belongs to a community, so a per-community override and the community
-    #: level apply. False for direct messages, connections and account notices,
-    #: which exist outside any guild.
+    #: Belongs to a community, so muting the community reaches it, and, where
+    #: it is in :attr:`CategoryGroup.your_communities`, the community's own row
+    #: switch. False for direct messages and account notices, which exist
+    #: outside any guild.
     guild_scoped: bool
-    #: Channels the account may switch off.
+    #: Channels the account may switch off. None at all means it is not a
+    #: preference: nothing turns it down, a muted community included.
     mutable_channels: frozenset[Channel]
     #: Every channel is on until the account switches it off.
     defaults: Mapping[Channel, bool] = field(default_factory=lambda: _ON)
 
     def is_mutable(self, channel: Channel) -> bool:
         return channel in self.mutable_channels
+
+    @property
+    def per_community(self) -> bool:
+        """Whether each community can switch this row off on its own."""
+        return self.group is CategoryGroup.your_communities
 
 
 _ALL_MUTABLE = frozenset(ALL_CHANNELS)
@@ -121,76 +130,71 @@ _KEEP_IN_APP = frozenset({Channel.email, Channel.push, Channel.desktop})
 
 
 CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
+    # Somebody named you, or answered something you said: a reply to your
+    # comment, or a reaction to it.
     NotificationCategory.mentions: CategorySpec(
-        types=frozenset({NotificationType.mention}),
-        group=CategoryGroup.addressed_to_me,
-        personal=True,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.replies: CategorySpec(
-        types=frozenset({NotificationType.comment_reply}),
-        group=CategoryGroup.addressed_to_me,
-        personal=True,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    # Split from mentions deliberately. Being named is a deliberate act by
-    # another person; a comment on something you happen to be assigned is
-    # ambient traffic that scales with how busy the project is. One switch for
-    # both meant nobody could turn the second off without losing the first.
-    NotificationCategory.comments: CategorySpec(
         types=frozenset(
             {
-                NotificationType.comment_on_task,
-                NotificationType.comment_on_resource,
+                NotificationType.mention,
+                NotificationType.comment_reply,
+                NotificationType.comment_reaction,
             }
         ),
-        group=CategoryGroup.activity,
-        personal=False,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.reactions: CategorySpec(
-        types=frozenset({NotificationType.comment_reaction}),
-        group=CategoryGroup.activity,
-        personal=False,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    # What the reader asked to hear about, by subscribing to it. Ambient like
-    # comments: it scales with how busy the thing is.
-    NotificationCategory.subscriptions: CategorySpec(
-        types=frozenset({NotificationType.subscription_activity}),
-        group=CategoryGroup.activity,
-        personal=False,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.assignments: CategorySpec(
-        types=frozenset({NotificationType.task_assignment}),
-        group=CategoryGroup.addressed_to_me,
+        group=CategoryGroup.your_communities,
         personal=True,
         guild_scoped=True,
         mutable_channels=_ALL_MUTABLE,
     ),
-    NotificationCategory.due_dates: CategorySpec(
-        types=frozenset({NotificationType.overdue_tasks}),
-        group=CategoryGroup.activity,
+    # You were given something, and what you are on: assigned, invited, due,
+    # changed, cancelled, about to start.
+    NotificationCategory.assignments: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.task_assignment,
+                NotificationType.overdue_tasks,
+                NotificationType.event_invitation,
+                NotificationType.event_cancelled,
+                NotificationType.event_reminder,
+                NotificationType.assigned_activity,
+            }
+        ),
+        group=CategoryGroup.your_communities,
+        personal=True,
+        guild_scoped=True,
+        mutable_channels=_ALL_MUTABLE,
+    ),
+    # What you follow, which includes what you made
+    # (``personal_items.subscribers_of``): changes, comments, reactions to a
+    # post and answers to an event. Ambient: it scales with how busy the
+    # thing is.
+    NotificationCategory.subscriptions: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.subscription_activity,
+                NotificationType.comment_on_task,
+                NotificationType.comment_on_resource,
+                NotificationType.post_reaction,
+                NotificationType.event_rsvp,
+            }
+        ),
+        group=CategoryGroup.your_communities,
         personal=False,
         guild_scoped=True,
         mutable_channels=_ALL_MUTABLE,
     ),
-    NotificationCategory.membership: CategorySpec(
+    # What arrived in a community for you to see: a post went up, you were
+    # added to an initiative or a project, your request to join was answered.
+    NotificationCategory.news: CategorySpec(
         types=frozenset(
             {
+                NotificationType.post_published,
+                NotificationType.project_added,
                 NotificationType.initiative_added,
                 NotificationType.initiative_join_approved,
                 NotificationType.initiative_join_denied,
-                NotificationType.project_added,
             }
         ),
-        group=CategoryGroup.community,
+        group=CategoryGroup.your_communities,
         personal=False,
         guild_scoped=True,
         mutable_channels=_ALL_MUTABLE,
@@ -201,7 +205,6 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
         types=frozenset(
             {
                 NotificationType.initiative_join_requested,
-                NotificationType.user_pending_approval,
                 NotificationType.access_grant_requested,
                 NotificationType.plugin_consent_requested,
                 NotificationType.plugin_update_pending,
@@ -212,33 +215,36 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
         guild_scoped=True,
         mutable_channels=_KEEP_IN_APP,
     ),
-    NotificationCategory.posts: CategorySpec(
-        types=frozenset({NotificationType.post_published}),
+    # A community's moderators acted on something this account wrote. Like an
+    # account notice, being told is not a preference; unlike one, it belongs
+    # to a community.
+    NotificationCategory.moderation: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.moderation_removal,
+                NotificationType.moderation_warning,
+            }
+        ),
+        group=CategoryGroup.community,
+        personal=True,
+        guild_scoped=True,
+        mutable_channels=_KEEP_IN_APP,
+    ),
+    # Work arriving for the people who answer the operations community's
+    # cases: a new one, and a requester's answer on one nobody has taken.
+    # Answering cases is a platform role rather than something anybody opted
+    # into, so nothing switches it off.
+    NotificationCategory.cases: CategorySpec(
+        types=frozenset(
+            {
+                NotificationType.case_opened,
+                NotificationType.case_replied,
+            }
+        ),
         group=CategoryGroup.community,
         personal=False,
         guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.events: CategorySpec(
-        types=frozenset(
-            {
-                NotificationType.event_invitation,
-                NotificationType.event_updated,
-                NotificationType.event_cancelled,
-                NotificationType.event_rsvp,
-            }
-        ),
-        group=CategoryGroup.addressed_to_me,
-        personal=True,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.event_reminders: CategorySpec(
-        types=frozenset({NotificationType.event_reminder}),
-        group=CategoryGroup.activity,
-        personal=False,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
+        mutable_channels=frozenset(),
     ),
     NotificationCategory.direct_messages: CategorySpec(
         types=frozenset(
@@ -246,21 +252,11 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
                 NotificationType.direct_message,
                 NotificationType.message_request_received,
                 NotificationType.message_request_accepted,
-            }
-        ),
-        group=CategoryGroup.addressed_to_me,
-        personal=True,
-        guild_scoped=False,
-        mutable_channels=_ALL_MUTABLE,
-    ),
-    NotificationCategory.connections: CategorySpec(
-        types=frozenset(
-            {
                 NotificationType.connection_requested,
                 NotificationType.connection_accepted,
             }
         ),
-        group=CategoryGroup.addressed_to_me,
+        group=CategoryGroup.account,
         personal=True,
         guild_scoped=False,
         mutable_channels=_ALL_MUTABLE,
@@ -305,36 +301,6 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
         guild_scoped=False,
         mutable_channels=_KEEP_IN_APP,
     ),
-    # A community's moderators acted on something this account wrote. Like an
-    # account notice, being told is not a preference; unlike one, it belongs
-    # to a community.
-    NotificationCategory.moderation: CategorySpec(
-        types=frozenset(
-            {
-                NotificationType.moderation_removal,
-                NotificationType.moderation_warning,
-            }
-        ),
-        group=CategoryGroup.community,
-        personal=True,
-        guild_scoped=True,
-        mutable_channels=_KEEP_IN_APP,
-    ),
-    # Work arriving for the people who answer the operations community's
-    # cases: a new one, and a requester's answer on one nobody has taken. Told
-    # to everyone who can read the case, so each can turn it down.
-    NotificationCategory.cases: CategorySpec(
-        types=frozenset(
-            {
-                NotificationType.case_opened,
-                NotificationType.case_replied,
-            }
-        ),
-        group=CategoryGroup.activity,
-        personal=False,
-        guild_scoped=True,
-        mutable_channels=_ALL_MUTABLE,
-    ),
 }
 
 
@@ -345,7 +311,7 @@ CATEGORY_OF: Mapping[NotificationType, NotificationCategory] = {
     for notification_type in spec.types
 }
 
-#: The types the "addressed to me" level and the Mentions filter keep.
+#: The types the inbox's Mentions filter keeps, and email sends at once.
 PERSONAL_TYPES: frozenset[NotificationType] = frozenset(
     notification_type
     for category, spec in CATEGORY_SPECS.items()

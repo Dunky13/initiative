@@ -14,15 +14,20 @@ class NotificationType(str, Enum):
     initiative_join_approved = "initiative_join_approved"
     initiative_join_denied = "initiative_join_denied"
     project_added = "project_added"
-    user_pending_approval = "user_pending_approval"
     mention = "mention"
     comment_on_task = "comment_on_task"
     comment_on_resource = "comment_on_resource"
     comment_reply = "comment_reply"
+    #: Somebody reacted to the recipient's comment.
     comment_reaction = "comment_reaction"
-    #: Somebody changed or commented on something the recipient subscribed
-    #: to, or on something inside a tool they subscribed to.
+    #: Somebody reacted to a post the recipient is subscribed to.
+    post_reaction = "post_reaction"
+    #: Somebody changed or commented on something the recipient is subscribed
+    #: to, or on something inside a tool they are subscribed to.
     subscription_activity = "subscription_activity"
+    #: Somebody changed something the recipient is named on: a task they are
+    #: assigned, an event they are going to.
+    assigned_activity = "assigned_activity"
     #: A notice went up on a bulletin board the recipient can see.
     post_published = "post_published"
     access_grant_requested = "access_grant_requested"
@@ -30,7 +35,6 @@ class NotificationType(str, Enum):
     access_grant_denied = "access_grant_denied"
     access_grant_revoked = "access_grant_revoked"
     event_invitation = "event_invitation"
-    event_updated = "event_updated"
     event_cancelled = "event_cancelled"
     event_rsvp = "event_rsvp"
     event_reminder = "event_reminder"

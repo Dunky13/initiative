@@ -46,12 +46,12 @@ PUSH_CHANNELS: dict[NotificationType, str] = {
     NotificationType.initiative_join_approved: "initiative_added",
     NotificationType.initiative_join_denied: "initiative_added",
     NotificationType.project_added: "project_added",
-    NotificationType.user_pending_approval: "user_pending_approval",
     NotificationType.mention: "mention",
     NotificationType.comment_on_task: "comments",
     NotificationType.comment_on_resource: "comments",
     # Rides the comments channel: a channel of its own would need a new app.
     NotificationType.subscription_activity: "comments",
+    NotificationType.assigned_activity: "comments",
     NotificationType.comment_reply: "comments",
     NotificationType.direct_message: "messages",
     # Somebody asking to reach you, and the answer when you asked. Messaging
@@ -71,8 +71,8 @@ PUSH_CHANNELS: dict[NotificationType, str] = {
     # already registers for comments — same reasoning as the join requests
     # above: a new channel id would mean a native release.
     NotificationType.comment_reaction: "comments",
+    NotificationType.post_reaction: "comments",
     NotificationType.event_invitation: "calendar_events",
-    NotificationType.event_updated: "calendar_events",
     NotificationType.event_cancelled: "calendar_events",
     NotificationType.event_rsvp: "calendar_events",
     NotificationType.event_reminder: "event_reminder",

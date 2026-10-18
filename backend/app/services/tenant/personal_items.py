@@ -6,6 +6,12 @@ the layout header's tabs. Every view is kept for :data:`WINDOW`; past it, a
 tool is kept while it is among the person's newest tabs, and anything else goes.
 A bookmark is on a tool, a subscription on anything, and both last until taken off.
 
+Who is subscribed to an item is worked out, not only kept (:func:`subscribers_of`):
+whoever made it or is named on it (an assignee, an attendee, :data:`NAMING`), and
+whoever subscribed to it or to its tool by hand, less whoever unsubscribed from
+it. The activity feed ranks by the same rule, and every notice about what
+happens on an item goes to it.
+
 A row holds at least one of these, which the table checks. So each path that
 lets one go deletes the rows where it was the last, and empties it in the rest.
 
@@ -17,15 +23,18 @@ and whoever triggers a purge cannot reach rows that are someone else's alone.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Sequence
 
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import Table, and_, func, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, delete, select
+from sqlmodel import SQLModel, col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db.initiative_rls import CONTENT_KIND_TABLES, NAMED_PEOPLE
+from app.models.tenant.calendar_event import CalendarEventAnswer, RSVPStatus
 from app.models.tenant.personal_item import TOOL_KINDS, PersonalItem, ViewSource
 from app.services.tenant.change_log import RETENTION
 
@@ -40,7 +49,9 @@ class Mark(str, Enum):
     view = "view"
     #: Bookmarked it. Tools only.
     bookmark = "bookmark"
-    #: Subscribed to it: it and what is inside it rise in their feed and notify them.
+    #: Subscribed to it: it and what is inside it rise in their feed and notify
+    #: them. Letting go of it is an unsubscription (:func:`unsubscribe`), not
+    #: a clear: making something or being named on it subscribes too.
     subscribe = "subscribe"
 
 
@@ -51,8 +62,15 @@ MARK_COLUMNS: dict[Mark, tuple[str, ...]] = {
     Mark.subscribe: ("subscribed_at",),
 }
 
-#: Every column that keeps a row: each mark's time, and the project order.
-_HOLDING = ("viewed_at", "bookmarked_at", "subscribed_at", "sort_order")
+#: Every column that keeps a row: each mark's time, an unsubscription, and the
+#: project order.
+_HOLDING = (
+    "viewed_at",
+    "bookmarked_at",
+    "subscribed_at",
+    "unsubscribed_at",
+    "sort_order",
+)
 
 # Per-user cap on tabs kept and shown. The user's ``recent_tabs_limit``
 # (Interface settings) picks the value within these bounds.
@@ -125,7 +143,8 @@ async def record_view(
 async def set_mark(
     session: AsyncSession, *, user_id: int, mark: Mark, kind: str, entity_id: int
 ) -> None:
-    """Bookmark or subscribe to it. Setting one already set keeps the first time."""
+    """Bookmark or subscribe to it. Setting one already set keeps the first
+    time; subscribing takes back an unsubscription."""
     (column,) = MARK_COLUMNS[mark]
     insert = pg_insert(PersonalItem).values(
         user_id=user_id,
@@ -133,13 +152,40 @@ async def set_mark(
         entity_id=entity_id,
         **{column: datetime.now(timezone.utc)},
     )
+    undone = {"unsubscribed_at": None} if mark is Mark.subscribe else {}
     await session.exec(
         insert.on_conflict_do_update(
             index_elements=["user_id", "entity_type", "entity_id"],
             set_={
                 column: func.coalesce(
                     PersonalItem.__table__.c[column], insert.excluded[column]
-                )
+                ),
+                **undone,
+            },
+        )
+    )
+    await session.commit()
+
+
+async def unsubscribe(
+    session: AsyncSession, *, user_id: int, kind: str, entity_id: int
+) -> None:
+    """Hear nothing more about it, whatever ties the reader to it. Idempotent,
+    and whether or not the item can still be opened. Kept on the reader's own
+    row until they subscribe again or the item goes."""
+    now = datetime.now(timezone.utc)
+    await session.exec(
+        pg_insert(PersonalItem)
+        .values(
+            user_id=user_id, entity_type=kind, entity_id=entity_id, unsubscribed_at=now
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "entity_type", "entity_id"],
+            set_={
+                "subscribed_at": None,
+                "unsubscribed_at": func.coalesce(
+                    PersonalItem.__table__.c.unsubscribed_at, now
+                ),
             },
         )
     )
@@ -149,7 +195,7 @@ async def set_mark(
 async def clear_mark(
     session: AsyncSession, *, user_id: int, mark: Mark, kind: str, entity_id: int
 ) -> None:
-    """Let go of a mark: close a tab, remove a bookmark, unsubscribe.
+    """Let go of a mark: close a tab, remove a bookmark.
     Idempotent, and whether or not the item can still be opened, so a mark on
     something the reader has lost can still come off. Run as the platform and
     limited to the reader's own row, which is locked while it is decided
@@ -205,39 +251,184 @@ async def list_marked(
     return (await session.exec(statement)).all()
 
 
-async def subscribers(
+class Tie(str, Enum):
+    """Why somebody is subscribed to an item, the strongest first."""
+
+    #: Named on it: assigned to it, going to it.
+    named = "named"
+    #: Made it.
+    made = "made"
+    #: Subscribed to it or to its tool by hand, or made or is named on its tool.
+    subscribed = "subscribed"
+
+
+_STRENGTH = {tie: rank for rank, tie in enumerate(Tie)}
+
+
+@dataclass(frozen=True)
+class Subscriber:
+    tie: Tie
+    #: When they subscribed by hand, where that is all that ties them: what
+    #: happened before it is not news to them.
+    since: Optional[datetime] = None
+
+    def outranks(self, other: "Subscriber") -> bool:
+        return _STRENGTH[self.tie] < _STRENGTH[other.tie] or (
+            self.tie is other.tie and self.since is None and other.since is not None
+        )
+
+
+Ref = tuple[str, int]
+
+
+def _naming_tables() -> dict[str, list[tuple[Table, str, str, Tie]]]:
+    """Per content kind, the tables whose rows tie a person to one: ``(table,
+    column naming the item, column naming the person, tie)``. The item's own
+    ``created_by``, and the kept :data:`NAMED_PEOPLE` rows (an assignee, an
+    attendee) whose foreign key is the kind's. From the schema, so a new kind
+    is asked the moment its table has either."""
+    kind_of = {table: kind for kind, table in CONTENT_KIND_TABLES.items()}
+    tables = SQLModel.metadata.tables
+    naming: dict[str, list[tuple[Table, str, str, Tie]]] = {}
+    for kind, name in CONTENT_KIND_TABLES.items():
+        if "created_by" in tables[name].c:
+            naming.setdefault(kind, []).append(
+                (tables[name], "id", "created_by", Tie.made)
+            )
+    for named in NAMED_PEOPLE:
+        if named.clear:
+            continue
+        for fk in tables[named.table].foreign_keys:
+            kind = kind_of.get(fk.column.table.name)
+            if kind is not None:
+                naming.setdefault(kind, []).append(
+                    (tables[named.table], fk.parent.name, named.column, Tie.named)
+                )
+    return naming
+
+
+NAMING = _naming_tables()
+
+
+async def _declined(session: AsyncSession, event_ids: set[int]) -> set[tuple[int, int]]:
+    """``(event, person)`` for everyone who declined an event as a whole: they
+    aren't going, so they are no longer named on it."""
+    if not event_ids:
+        return set()
+    rows = await session.exec(
+        select(
+            CalendarEventAnswer.calendar_event_id, CalendarEventAnswer.user_id
+        ).where(
+            col(CalendarEventAnswer.calendar_event_id).in_(event_ids),
+            col(CalendarEventAnswer.occurrence_start).is_(None),
+            CalendarEventAnswer.rsvp_status == RSVPStatus.declined,
+        )
+    )
+    return set(rows.all())
+
+
+async def subscribers_of(
     session: AsyncSession,
-    about: tuple[str, int],
-    tool: tuple[str, int],
+    items: Mapping[Ref, Optional[Ref]],
     *,
-    since: Optional[datetime] = None,
-) -> list[int]:
-    """Who is subscribed to ``about``, or to ``tool``, the tool it is in: who
-    to tell what changed on it. With ``since``, only those subscribed by then,
-    so a subscription hears of what happens after it and nothing before. Read
-    as the platform, since each row is its own member's."""
+    user_id: Optional[int] = None,
+) -> dict[Ref, dict[int, Subscriber]]:
+    """Who is subscribed to each item, given the tool it is in, and why.
+
+    Subscribed to an item is: made it or named on it, or subscribed to it by
+    hand; or made, is named on or subscribed to the tool it is in, unless
+    unsubscribed from the tool. Unsubscribing from the item itself overrides
+    all of it. ``user_id`` asks about one person.
+
+    Identifiers only, read as the platform: rows here are each member's own,
+    and this decides only whom to ask, never what anyone may see.
+    """
     from app.db.cohorts import as_system
 
+    refs = set(items) | {tool for tool in items.values() if tool is not None}
+    by_kind: dict[str, set[int]] = {}
+    for kind, entity_id in refs:
+        by_kind.setdefault(kind, set()).add(entity_id)
+    tied: dict[Ref, dict[int, Tie]] = {}
+    explicit: dict[Ref, dict[int, datetime]] = {}
+    unsubscribed: dict[Ref, set[int]] = {}
     async with as_system(session) as system:
-        rows = await system.exec(
-            select(PersonalItem.user_id)
-            .where(
+        for kind, ids in by_kind.items():
+            for table, item_column, person_column, tie in NAMING.get(kind, ()):
+                statement = select(table.c[item_column], table.c[person_column]).where(
+                    table.c[item_column].in_(ids), table.c[person_column].is_not(None)
+                )
+                if user_id is not None:
+                    statement = statement.where(table.c[person_column] == user_id)
+                for entity_id, person in (await system.exec(statement)).all():  # type: ignore[call-overload]
+                    held = tied.setdefault((kind, entity_id), {})
+                    if person not in held or _STRENGTH[tie] < _STRENGTH[held[person]]:
+                        held[person] = tie
+        declined = await _declined(system, by_kind.get("calendar_event", set()))
+        for event_id, person in declined:
+            if tied.get(("calendar_event", event_id), {}).get(person) is Tie.named:
+                del tied[("calendar_event", event_id)][person]
+        marks = select(PersonalItem).where(
+            or_(
+                *(
+                    and_(
+                        col(PersonalItem.entity_type) == kind,
+                        col(PersonalItem.entity_id).in_(ids),
+                    )
+                    for kind, ids in by_kind.items()
+                )
+            ),
+            or_(
                 col(PersonalItem.subscribed_at).is_not(None),
-                or_(
-                    and_(
-                        col(PersonalItem.entity_type) == about[0],
-                        col(PersonalItem.entity_id) == about[1],
-                    ),
-                    and_(
-                        col(PersonalItem.entity_type) == tool[0],
-                        col(PersonalItem.entity_id) == tool[1],
-                    ),
-                ),
-                *(() if since is None else (col(PersonalItem.subscribed_at) <= since,)),
-            )
-            .distinct()
+                col(PersonalItem.unsubscribed_at).is_not(None),
+            ),
         )
-        return sorted(rows.all())
+        if user_id is not None:
+            marks = marks.where(col(PersonalItem.user_id) == user_id)
+        for row in (await system.exec(marks)).all():
+            ref = (row.entity_type, row.entity_id)
+            if row.subscribed_at is not None:
+                explicit.setdefault(ref, {})[row.user_id] = row.subscribed_at
+            else:
+                unsubscribed.setdefault(ref, set()).add(row.user_id)
+
+    found: dict[Ref, dict[int, Subscriber]] = {}
+    for item, tool in items.items():
+        people: dict[int, Subscriber] = {}
+
+        def tie(person: int, subscriber: Subscriber) -> None:
+            if person not in people or subscriber.outranks(people[person]):
+                people[person] = subscriber
+
+        if tool is not None and tool != item:
+            gone = unsubscribed.get(tool, set())
+            for person in tied.get(tool, {}):
+                if person not in gone:
+                    tie(person, Subscriber(Tie.subscribed))
+            for person, at in explicit.get(tool, {}).items():
+                tie(person, Subscriber(Tie.subscribed, since=at))
+        for person, at in explicit.get(item, {}).items():
+            tie(person, Subscriber(Tie.subscribed, since=at))
+        for person, how in tied.get(item, {}).items():
+            tie(person, Subscriber(how))
+        for person in unsubscribed.get(item, set()):
+            people.pop(person, None)
+        found[item] = people
+    return found
+
+
+async def is_subscribed(
+    session: AsyncSession, *, user_id: int, kind: str, entity_id: int
+) -> bool:
+    """Whether the reader is subscribed to one item, as :func:`subscribers_of`
+    says, the tool it is in read on their own session."""
+    from app.services.tenant.named_people import governing_of
+
+    item = (kind, entity_id)
+    governed = await governing_of(session, item)
+    tool = None if governed is None else (governed[0].value, governed[1].id)
+    found = await subscribers_of(session, {item: tool}, user_id=user_id)
+    return user_id in found[item]
 
 
 async def rows_for(
@@ -324,13 +515,15 @@ _EXPIRE = f"""
          WHERE (p.user_id, p.entity_type, p.entity_id, p.viewed_at)
              = (d.user_id, d.entity_type, d.entity_id, d.viewed_at)
            AND p.bookmarked_at IS NULL AND p.subscribed_at IS NULL
-           AND p.sort_order IS NULL
+           AND p.unsubscribed_at IS NULL AND p.sort_order IS NULL
     )
     UPDATE personal_items p SET viewed_at = NULL, view_source = NULL
       FROM doomed d
      WHERE (p.user_id, p.entity_type, p.entity_id, p.viewed_at)
          = (d.user_id, d.entity_type, d.entity_id, d.viewed_at)
-       AND num_nonnulls(p.bookmarked_at, p.subscribed_at, p.sort_order) > 0
+       AND num_nonnulls(
+               p.bookmarked_at, p.subscribed_at, p.unsubscribed_at, p.sort_order
+           ) > 0
 """
 
 #: The oldest view :func:`expire` would let go once it passes the window.

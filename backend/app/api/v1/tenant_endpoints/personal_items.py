@@ -1,5 +1,8 @@
 """What a member keeps about items: opens, bookmarks and subscriptions.
 
+A subscription is also worked out: making something or being named on it
+subscribes the reader, so unsubscribing is kept as a mark of its own.
+
 Setting and clearing one is community-addressed
 (``/c/{community_id}/personal-items/{mark}/{kind}/{id}``): per-schema ids are
 only unique within a community. Opening and subscribing take read on the item,
@@ -76,9 +79,18 @@ async def _community_items(
     return items
 
 
-async def _state(session, user_id: int, kind: str, entity_id: int) -> PersonalItemState:
+async def _state(
+    session, user_id: int, kind: str, entity_id: int, *, subscription: bool = True
+) -> PersonalItemState:
     row = await service.item_state(
         session, user_id=user_id, kind=kind, entity_id=entity_id
+    )
+    subscribed = (
+        await service.is_subscribed(
+            session, user_id=user_id, kind=kind, entity_id=entity_id
+        )
+        if subscription
+        else None
     )
     return PersonalItemState(
         entity_type=ContentKind(kind),
@@ -87,6 +99,7 @@ async def _state(session, user_id: int, kind: str, entity_id: int) -> PersonalIt
         view_source=ViewSource(row.view_source) if row and row.view_source else None,
         bookmarked_at=row.bookmarked_at if row else None,
         subscribed_at=row.subscribed_at if row else None,
+        subscribed=subscribed,
     )
 
 
@@ -158,7 +171,9 @@ async def record_view(
         source=source,
         persist=not guild_context.is_pam,
     )
-    state = await _state(session, current_user.id, kind.value, row.id)
+    state = await _state(
+        session, current_user.id, kind.value, row.id, subscription=False
+    )
     return state.model_copy(update={"viewed_at": viewed_at, "view_source": source})
 
 
@@ -185,7 +200,7 @@ async def subscribe_item(
     guild_context: GuildContextDep,
 ) -> PersonalItemState:
     """Subscribe to a tool or anything inside one: its changes, and those of what is
-    inside it, rise in the reader's feed."""
+    inside it, rise in the reader's feed and notify them."""
     return await _set(
         Mark.subscribe, kind.value, entity_id, session, current_user, guild_context
     )
@@ -235,9 +250,16 @@ async def unsubscribe_item(
     current_user: CurrentUser,
     guild_context: GuildContextDep,
 ) -> None:
-    """Unsubscribe. Idempotent."""
-    del guild_context
-    await _clear(Mark.subscribe, kind.value, entity_id, session, current_user.id)
+    """Unsubscribe: nothing about it reaches the reader any more, whatever ties
+    them to it, until they subscribe again. Loads the item as its page does;
+    idempotent. A platform grantee is not a member, so nothing is kept."""
+    row = await resource_access.load_kind(
+        session, kind.value, entity_id, current_user, guild_context
+    )
+    if not guild_context.is_pam:
+        await service.unsubscribe(
+            session, user_id=current_user.id, kind=kind.value, entity_id=row.id
+        )
 
 
 @me_router.get("/personal-items", response_model=List[PersonalItemRead])

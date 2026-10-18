@@ -41,25 +41,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
-class NotificationLevel(str, Enum):
-    """How much one community is allowed to say.
-
-    The dial almost everyone will use, in place of the per-category grid. It
-    lives in the settings document rather than on ``guild_memberships`` because
-    a roster row is read by other people, and this is not theirs to see.
-    """
-
-    #: Everything the account's category settings allow. The default, and the
-    #: value a community joined tomorrow has without anything being written.
-    everything = "everything"
-    #: Only categories marked ``personal`` — the things another person
-    #: addressed to this account.
-    personal = "personal"
-    #: Nothing at all, including a direct mention. Silence means silence; the
-    #: control says so where it is chosen.
-    nothing = "nothing"
-
-
 class EmailCadence(str, Enum):
     """How often email is allowed to arrive.
 

@@ -2150,8 +2150,7 @@ export interface CaseMessageRead {
 export type CategoryGroup = (typeof CategoryGroup)[keyof typeof CategoryGroup];
 
 export const CategoryGroup = {
-  addressed_to_me: "addressed_to_me",
-  activity: "activity",
+  your_communities: "your_communities",
   community: "community",
   account: "account",
 } as const;
@@ -2962,6 +2961,11 @@ export interface CommunityMembershipUpdate {
   role: CommunityRole;
 }
 
+export interface CommunityMuteSet {
+  community_id: number;
+  muted: boolean;
+}
+
 /**
  * Whether these values are this community's to claim.
  */
@@ -2983,28 +2987,26 @@ export interface CommunityNarrowingPending {
   agreed: boolean;
 }
 
-export type CommunityNotificationSettingsCategories = { [key: string]: { [key: string]: boolean } };
+export type NotificationCategory = (typeof NotificationCategory)[keyof typeof NotificationCategory];
 
-/**
- * How much one community is allowed to say.
- *
- * The dial almost everyone will use, in place of the per-category grid. It
- * lives in the settings document rather than on ``guild_memberships`` because
- * a roster row is read by other people, and this is not theirs to see.
- */
-export type NotificationLevel = (typeof NotificationLevel)[keyof typeof NotificationLevel];
-
-export const NotificationLevel = {
-  everything: "everything",
-  personal: "personal",
-  nothing: "nothing",
+export const NotificationCategory = {
+  mentions: "mentions",
+  assignments: "assignments",
+  subscriptions: "subscriptions",
+  news: "news",
+  approvals: "approvals",
+  moderation: "moderation",
+  cases: "cases",
+  direct_messages: "direct_messages",
+  jobs: "jobs",
+  account: "account",
 } as const;
 
 export interface CommunityNotificationSettings {
   community_id: number;
   community_name: string;
-  level: NotificationLevel;
-  categories: CommunityNotificationSettingsCategories;
+  muted: boolean;
+  off: NotificationCategory[];
 }
 
 export interface CommunityOrderUpdate {
@@ -3610,6 +3612,15 @@ export interface CommunityRosterResponse {
   has_prev: boolean;
   items: CommunityRosterMember[];
   presence_counts: Partial<Record<Presence, number>>;
+}
+
+/**
+ * One row switched on or off in one community, on every channel.
+ */
+export interface CommunityRowSet {
+  community_id: number;
+  category: NotificationCategory;
+  enabled: boolean;
 }
 
 /**
@@ -7477,20 +7488,20 @@ export const NotificationType = {
   initiative_join_approved: "initiative_join_approved",
   initiative_join_denied: "initiative_join_denied",
   project_added: "project_added",
-  user_pending_approval: "user_pending_approval",
   mention: "mention",
   comment_on_task: "comment_on_task",
   comment_on_resource: "comment_on_resource",
   comment_reply: "comment_reply",
   comment_reaction: "comment_reaction",
+  post_reaction: "post_reaction",
   subscription_activity: "subscription_activity",
+  assigned_activity: "assigned_activity",
   post_published: "post_published",
   access_grant_requested: "access_grant_requested",
   access_grant_approved: "access_grant_approved",
   access_grant_denied: "access_grant_denied",
   access_grant_revoked: "access_grant_revoked",
   event_invitation: "event_invitation",
-  event_updated: "event_updated",
   event_cancelled: "event_cancelled",
   event_rsvp: "event_rsvp",
   event_reminder: "event_reminder",
@@ -7551,29 +7562,6 @@ export interface NotificationAlertRead {
   redacted: RedactedAlert | null;
 }
 
-export type NotificationCategory = (typeof NotificationCategory)[keyof typeof NotificationCategory];
-
-export const NotificationCategory = {
-  mentions: "mentions",
-  replies: "replies",
-  comments: "comments",
-  reactions: "reactions",
-  subscriptions: "subscriptions",
-  assignments: "assignments",
-  due_dates: "due_dates",
-  membership: "membership",
-  approvals: "approvals",
-  posts: "posts",
-  events: "events",
-  event_reminders: "event_reminders",
-  direct_messages: "direct_messages",
-  connections: "connections",
-  jobs: "jobs",
-  account: "account",
-  moderation: "moderation",
-  cases: "cases",
-} as const;
-
 /**
  * One row of the settings grid, described by the backend.
  */
@@ -7582,15 +7570,15 @@ export interface NotificationCategoryRead {
   group: CategoryGroup;
   personal: boolean;
   community_scoped: boolean;
+  per_community: boolean;
   mutable_channels: Channel[];
   defaults: Partial<Record<Channel, boolean>>;
 }
 
 /**
- * One switch being moved. ``guild_id`` scopes it to one community.
+ * One switch being moved, for the whole account.
  */
 export interface NotificationChannelSet {
-  community_id?: number | null;
   category: NotificationCategory;
   channel: Channel;
   enabled: boolean;
@@ -7598,11 +7586,6 @@ export interface NotificationChannelSet {
 
 export interface NotificationCountResponse {
   unread_count: number;
-}
-
-export interface NotificationLevelSet {
-  community_id: number;
-  level: NotificationLevel;
 }
 
 export interface NotificationListResponse {
@@ -7661,7 +7644,8 @@ export interface NotificationPreferencesRead {
  */
 export interface NotificationPreferencesUpdate {
   channels?: NotificationChannelSet[];
-  levels?: NotificationLevelSet[];
+  rows?: CommunityRowSet[];
+  mutes?: CommunityMuteSet[];
   quiet_hours?: QuietHours | null;
   clear_quiet_hours?: boolean;
   email?: EmailScheduleInput | null;
@@ -8231,6 +8215,7 @@ export interface PersonalItemState {
   view_source: ViewSource | null;
   bookmarked_at: string | null;
   subscribed_at: string | null;
+  subscribed: boolean | null;
 }
 
 /**

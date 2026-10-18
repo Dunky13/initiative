@@ -320,7 +320,7 @@ EXEMPT: dict[str, str] = {
     "plugin_hook_deliveries": "operational",
     "plugin_schedule_runs": "operational",
     "timer_marks": "operational",
-    "subscription_notices": "operational",
+    "subscription_progress": "operational",
     # In-flight workflow rather than owned content: a request to join is a
     # question waiting on somebody in THIS instance.
     "initiative_join_requests": "in_flight",

@@ -152,11 +152,6 @@ class ExtraCommentTarget:
     model: type[SQLModel]
     #: The column holding what the thread is called.
     title_field: str
-    #: Whether a new comment tells whoever wrote the row. A page's author
-    #: wants to hear about a note on their page; a task instead tells the
-    #: people it is assigned to, which is a different question and already
-    #: answered further down.
-    notifies_author: bool = True
     #: Whether the anchoring tool's ``comments_enabled`` governs this thread.
     #: True for a wiki page — the wiki is where that switch is offered, and a
     #: wiki with comments off should have none on its pages. False for a task:
@@ -178,7 +173,6 @@ EXTRA_COMMENT_TARGETS: dict[str, ExtraCommentTarget] = {
             "task",
             Task,
             "title",
-            notifies_author=False,
             anchor_switch=False,
         ),
         ExtraCommentTarget("wiki_page", WikiPage, "title"),
@@ -840,25 +834,19 @@ async def notify_task_assignees(
     comment: Comment,
     author: User | notifications.PluginAuthor,
     task: Task,
-    thread: notifications.Subject | None = None,
-    recipients: Sequence[int] | None = None,
 ) -> None:
     """Tell a task's assignees there is a new comment on it, rolled into
-    their unread line for the task.
-
-    ``recipients`` defaults to every assignee but the author; a caller already
-    telling some of them about the comment another way passes who is left.
-    """
+    their unread line for the task: a requester's answer on a case somebody
+    took, which arrives from outside the community rather than as a comment
+    made in it."""
+    thread = await notifications.resolve_subject(session, ("task", task.id))
     if thread is None:
-        thread = await notifications.resolve_subject(session, ("task", task.id))
-        if thread is None:
-            return
-    if recipients is None:
-        recipients = [
-            user_id
-            for user_id in await _task_assignee_ids(session, cast(int, task.id))
-            if user_id != author.id
-        ]
+        return
+    recipients = [
+        user_id
+        for user_id in await _task_assignee_ids(session, cast(int, task.id))
+        if user_id != author.id
+    ]
     name = await notifications.actor_name(session, author)
     await notifications.notify(
         session,
@@ -889,8 +877,9 @@ async def _process_comment_notifications(
 ) -> None:
     """Tell the people a new comment concerns, each once, in priority order:
     the author of the comment it replies to, the people it @mentions, the
-    assignees of a task it #mentions, the assignees of the task it is on, and
-    whoever wrote the tool entity or page it is on.
+    assignees of a task it #mentions, and everyone subscribed to what it is on
+    (``personal_items.subscribers_of``): who made it, who is on it, and who
+    follows it.
 
     Every notice is about the thread, so ``notifications.notify`` sends each
     only to people who can open it; a ``#task`` notice names the mentioned task
@@ -971,51 +960,18 @@ async def _process_comment_notifications(
             actor=author,
         )
 
-    if ctx.task is not None:
-        await notify_task_assignees(
-            session,
-            comment=comment,
-            author=author,
-            task=ctx.task,
-            thread=thread,
-            recipients=first_time(
-                await _task_assignee_ids(session, cast(int, ctx.task.id))
-            ),
-        )
-
-    # The row the thread hangs off, so a note on a page reaches the page's
-    # author rather than whoever started the wiki.
-    owner_row = ctx.extra_row if ctx.extra is not None else ctx.resource
-    if owner_row is not None and (ctx.extra is None or ctx.extra.notifies_author):
-        await notifications.notify(
-            session,
-            NotificationType.comment_on_resource,
-            first_time([getattr(owner_row, "created_by", None)]),
-            about=thread,
-            key="comment.onResource",
-            values={"actor": name, "context": ctx.title},
-            data={
-                "comment_id": comment.id,
-                "entity_type": ctx.ref_type,
-                "entity_id": ctx.entity_id,
-                "commenter_name": name,
-                "commenter_id": author.id,
-            },
-            actor=author,
-            rollup_key=f"{ctx.ref_type}:{ctx.entity_id}",
-        )
-
-    # Last, so anybody the comment concerns already heard of it above. On the
-    # line their subscription keeps for the thing, beside its other changes.
+    # Last, so anybody the comment names or answers already heard of it
+    # above: everyone subscribed to the thing, which includes whoever made it
+    # and whoever is assigned to it or going to it, on the line their
+    # subscription keeps for it beside its other changes.
     kind, entity_id = thread.about
+    subscribed = await personal_items.subscribers_of(
+        session, {thread.about: (thread.tool.value, thread.resource_id)}
+    )
     await notifications.notify(
         session,
         NotificationType.subscription_activity,
-        first_time(
-            await personal_items.subscribers(
-                session, thread.about, (thread.tool.value, thread.resource_id)
-            )
-        ),
+        first_time(sorted(subscribed[thread.about])),
         about=thread,
         key="subscription.commented",
         values={"actor": name, "context": ctx.title},

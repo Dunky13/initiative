@@ -15,10 +15,7 @@ from app.core.notification_categories import (
     Channel,
     NotificationCategory,
 )
-from app.models.platform.user_notification_prefs import (
-    EmailCadence,
-    NotificationLevel,
-)
+from app.models.platform.user_notification_prefs import EmailCadence
 from app.services.platform.notification_prefs import (
     DEFAULT_DIGEST_CLOCK,
     DEFAULT_DIGEST_WEEKDAY,
@@ -86,15 +83,17 @@ class NotificationCategoryRead(SanitizedBaseModel):
 
     category: NotificationCategory
     group: CategoryGroup
-    #: Addressed to this account by another person — what the "only what names
-    #: me" community level keeps, and what the inbox's Mentions filter shows.
+    #: Addressed to this account by another person: what email sends straight
+    #: away, and what the inbox's Mentions filter shows.
     personal: bool
-    #: Whether a community level or per-community override can reach it.
+    #: Whether muting a community reaches it.
     community_scoped: bool = Field(
         validation_alias=AliasChoices("community_scoped", "guild_scoped")
     )
+    #: Whether each community can switch this row off on its own.
+    per_community: bool
     #: Channels the account may switch off. A channel absent from this renders
-    #: as on and disabled.
+    #: as on and disabled; a row with none is not shown.
     mutable_channels: list[Channel]
     defaults: dict[Channel, bool]
 
@@ -106,9 +105,10 @@ class CommunityNotificationSettings(SanitizedBaseModel):
     community_name: str = Field(
         validation_alias=AliasChoices("community_name", "guild_name")
     )
-    level: NotificationLevel = NotificationLevel.everything
-    #: Per-category overrides for this community only. Sparse.
-    categories: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    #: Nothing from this community at all, a direct mention included.
+    muted: bool = False
+    #: The rows switched off in this community only, on every channel.
+    off: list[NotificationCategory] = Field(default_factory=list)
 
 
 class NotificationPreferencesRead(SanitizedBaseModel):
@@ -132,17 +132,24 @@ class NotificationPreferencesRead(SanitizedBaseModel):
 
 
 class NotificationChannelSet(SanitizedBaseModel):
-    """One switch being moved. ``guild_id`` scopes it to one community."""
+    """One switch being moved, for the whole account."""
 
-    community_id: Optional[int] = None
     category: NotificationCategory
     channel: Channel
     enabled: bool
 
 
-class NotificationLevelSet(SanitizedBaseModel):
+class CommunityRowSet(SanitizedBaseModel):
+    """One row switched on or off in one community, on every channel."""
+
     community_id: int
-    level: NotificationLevel
+    category: NotificationCategory
+    enabled: bool
+
+
+class CommunityMuteSet(SanitizedBaseModel):
+    community_id: int
+    muted: bool
 
 
 class NotificationPreferencesUpdate(SanitizedBaseModel):
@@ -153,7 +160,8 @@ class NotificationPreferencesUpdate(SanitizedBaseModel):
     """
 
     channels: list[NotificationChannelSet] = Field(default_factory=list)
-    levels: list[NotificationLevelSet] = Field(default_factory=list)
+    rows: list[CommunityRowSet] = Field(default_factory=list)
+    mutes: list[CommunityMuteSet] = Field(default_factory=list)
     quiet_hours: Optional[QuietHours] = None
     #: Explicit, because ``quiet_hours: null`` is indistinguishable from
     #: "not mentioned" in a partial write.
@@ -163,7 +171,7 @@ class NotificationPreferencesUpdate(SanitizedBaseModel):
     #: a date is how somebody books next week's holiday before they go.
     pause_from: Optional[datetime] = None
     #: When it ends. Every pause has one: permanent silence is what the
-    #: category grid and the community dial are for, and both are visible on
+    #: category grid and the community mute are for, and both are visible on
     #: the page that owns them.
     pause_until: Optional[datetime] = None
     #: Explicit, for the same reason ``clear_quiet_hours`` is. This is what

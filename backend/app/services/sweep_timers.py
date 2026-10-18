@@ -240,8 +240,8 @@ def sweeps() -> tuple[Sweep, ...]:
                 ),
             ),
         ),
-        # Telling subscribers what changed: woken by the same writes that give
-        # the webhooks work, and only while somebody is subscribed.
+        # Telling subscribers what changed: woken a minute after the writes
+        # that give the webhooks work, so a burst of edits is one line.
         Sweep(
             kind="subscriptions",
             scope=Scope.ACTIVE,

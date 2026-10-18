@@ -34,7 +34,12 @@ class PersonalItemState(SanitizedBaseModel):
     viewed_at: Optional[datetime] = None
     view_source: Optional[ViewSource] = None
     bookmarked_at: Optional[datetime] = None
+    #: When they subscribed by hand.
     subscribed_at: Optional[datetime] = None
+    #: Whether they are subscribed, by hand or by making it or being named on
+    #: it (``personal_items.subscribers_of``). Left out of a recorded open,
+    #: which does not ask.
+    subscribed: Optional[bool] = None
 
 
 class PersonalItemRead(SanitizedBaseModel):

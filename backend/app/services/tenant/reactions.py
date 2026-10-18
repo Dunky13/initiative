@@ -410,14 +410,46 @@ async def _queue_reaction_notification(
     ctx: TargetContext,
     guild_id: int,
 ) -> None:
-    """Tell the author someone reacted — through the digest, never at once.
+    """Tell whoever a reaction concerns, as a comment on the same thing would.
 
-    A reaction is the lightest signal in the app and they arrive in flurries, so
-    the bell gets one entry immediately and email/push wait for the queue to
-    settle, exactly as task assignment does.
+    On a comment, its author: somebody answered what they said. Through the
+    digest, never at once: a reaction is the lightest signal in the app and
+    they arrive in flurries, so the bell gets one entry immediately and
+    email/push wait for the queue to settle, exactly as task assignment does.
+
+    On a post, everyone subscribed to it (``personal_items.subscribers_of``),
+    rolled into one line per post, as a comment on it is told.
     """
+    from app.models.platform.notification import NotificationType
     from app.services import notifications
+    from app.services.tenant import personal_items
 
+    if ctx.target is ReactionTarget.post:
+        subject = await notifications.resolve_subject(session, ctx.about)
+        if subject is None:
+            return
+        kind, entity_id = ctx.about
+        subscribed = await personal_items.subscribers_of(
+            session, {ctx.about: (subject.tool.value, subject.resource_id)}
+        )
+        name = await notifications.actor_name(session, reactor)
+        await notifications.notify(
+            session,
+            NotificationType.post_reaction,
+            sorted(subscribed[ctx.about]),
+            about=subject,
+            key="subscription.reacted",
+            values={"actor": name, "context": ctx.title},
+            data={
+                "entity_type": kind,
+                "entity_id": entity_id,
+                "emoji": reaction.emoji,
+                "verb": "reacted",
+            },
+            actor=reactor,
+            rollup_key=f"reaction:{kind}:{entity_id}",
+        )
+        return
     if ctx.author_id is None or ctx.author_id == reactor.id:
         return
     # The line names what was reacted to, so it goes only to an author who can
@@ -460,6 +492,10 @@ async def _withdraw_reaction_notification(
     """
     from app.services import notifications
 
+    # A post's subscribers hear of it on their line for the post, as of a
+    # comment, which is not taken back.
+    if ctx.target is ReactionTarget.post:
+        return
     if ctx.author_id is None or ctx.author_id == reactor.id:
         return
     await notifications.withdraw_reaction_event(
