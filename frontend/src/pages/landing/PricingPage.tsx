@@ -87,7 +87,7 @@ export const PricingPage = () => {
         )}
 
         <ul
-          className="mt-12 grid gap-3 md:grid-cols-3 sm:gap-4"
+          className="mt-12 grid gap-3 sm:gap-4 md:grid-cols-3"
           aria-label={t("pricing.everyPlanAria")}
         >
           <Fact icon={Layers} title={t("pricing.sameTitle")} body={t("pricing.sameBody")} />

@@ -294,7 +294,7 @@ export const CreateFileDialog = ({
                 aria-label={t("create.templateLabel")}
               />
             </div>
-            <div className="flex flex-wrap gap-2 rounded-lg border bg-muted/40 p-3 items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 p-3">
               <div>
                 <p className="font-medium text-sm">{t("create.saveAsTemplate")}</p>
                 <p className="text-muted-foreground text-xs">{t("create.templateDescription")}</p>

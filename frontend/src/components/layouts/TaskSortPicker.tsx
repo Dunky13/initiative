@@ -46,7 +46,7 @@ export function TaskSortPicker({
       : translate(fields.get(label.field)?.label ?? label.field);
 
   return (
-    <div className="grid-cols-pair grid gap-4">
+    <div className="grid grid-cols-pair gap-4">
       <div className="space-y-2">
         <Label htmlFor="task-sort">{translate("layouts:presets.sortBy")}</Label>
         <Select

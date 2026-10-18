@@ -237,7 +237,7 @@ export const DownloadPage = () => {
 
       <div className="mx-auto max-w-6xl px-4 sm:px-8">
         <section
-          className="relative -mt-12 grid items-center gap-5 rounded-3xl border bg-card p-5 shadow-2xl md:grid-cols-[1fr_auto] sm:gap-8 sm:p-9"
+          className="relative -mt-12 grid items-center gap-5 rounded-3xl border bg-card p-5 shadow-2xl sm:gap-8 sm:p-9 md:grid-cols-[1fr_auto]"
           aria-labelledby="landing-download-feature"
         >
           <div>
@@ -304,7 +304,7 @@ export const DownloadPage = () => {
         </section>
 
         <ul
-          className="mt-8 grid gap-3 sm:mt-10 md:grid-cols-2 sm:gap-4 lg:grid-cols-4"
+          className="mt-8 grid gap-3 sm:mt-10 sm:gap-4 md:grid-cols-2 lg:grid-cols-4"
           aria-label={t("download.cardsAria")}
         >
           <PlatformCard
@@ -390,7 +390,7 @@ export const DownloadPage = () => {
         </ul>
 
         <ul
-          className="mt-8 mb-20 grid gap-3 sm:mt-10 sm:mb-24 md:grid-cols-3 sm:gap-4"
+          className="mt-8 mb-20 grid gap-3 sm:mt-10 sm:mb-24 sm:gap-4 md:grid-cols-3"
           aria-label={t("download.factsAria")}
         >
           <Fact

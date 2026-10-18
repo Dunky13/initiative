@@ -93,7 +93,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
               return (
                 <div
                   key={announcement.key}
-                  className="flex flex-wrap gap-3 rounded-md border p-3 items-center justify-between"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">

@@ -523,7 +523,7 @@ export const FileDetailSkeleton = ({ label }: LabelledSkeletonProps) => (
 export const TaskEditSkeleton = ({ label }: LabelledSkeletonProps) => (
   <SkeletonRegion label={label}>
     <DetailPageSkeleton actions={2} description={false}>
-      <div className="grid gap-6 canvas-md:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid canvas-md:grid-cols-[minmax(0,1fr)_20rem] gap-6">
         <EditorSkeleton lines={8} />
         <FormSkeleton card={false} fields={5} action={false} />
       </div>

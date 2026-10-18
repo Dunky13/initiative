@@ -41,7 +41,7 @@ export function MyStatsPage() {
   return (
     <div className="space-y-6">
       {/* Header with Community filter */}
-      <div className="flex flex-wrap gap-4 items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-semibold text-3xl tracking-tight">{t("page.title")}</h1>
         <div className="w-full sm:w-[200px]">
           <Select value={selectedCommunityId} onValueChange={handleCommunityChange}>
