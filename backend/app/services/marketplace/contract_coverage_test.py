@@ -357,7 +357,7 @@ def maximal_declarative_manifest() -> dict:
 
     A request sends a body or a GraphQL query, a cursor goes in a parameter or
     a variable, and a route reads a body path or a header, so those are spread
-    over several requests.
+    over several requests. Only a write's request names a connection per actor.
     """
     api = '"https://api.tracker.example/issues"'
     paged = {
@@ -555,6 +555,8 @@ def maximal_declarative_manifest() -> dict:
             {
                 "id": "plugin.acme.issues.label",
                 "direction": "write",
+                "actors": ["member", "installation"],
+                "requires": {"all_of": ["workspace"]},
                 "returns": [{"key": "number", "type": "int"}],
                 "identity": {"kind": "issue", "key": ["number"]},
                 "steps": [
@@ -580,7 +582,10 @@ def maximal_declarative_manifest() -> dict:
                             "method": "PUT",
                             "url": api,
                             "body": '{"labels": steps.current.body.name}',
-                            "connection": "workspace",
+                            "connection": {
+                                "member": "profile",
+                                "installation": "workspace",
+                            },
                         },
                     },
                 ],
@@ -709,6 +714,7 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
             "vendorRequest",
             {**listed["request"], **searched["request"], **setting["request"]},
         ),
+        ("actorConnections", setting["request"]["connection"]),
         ("graphqlRequest", searched["request"]["graphql"]),
         ("requestStep", current),
         ("pageNumberPaging", listed["request"]["paging"]),
@@ -994,6 +1000,14 @@ def _with(build, change):
     return body
 
 
+def _labelled_on(connection) -> dict:
+    """The maximal declarative manifest, its write's second request naming
+    ``connection``."""
+    body = maximal_declarative_manifest()
+    body["endpoints"][2]["steps"][1]["request"]["connection"] = connection
+    return body
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -1119,6 +1133,23 @@ def _with(build, change):
             maximal_declarative_manifest, lambda b: b["endpoints"][0].update(retries=3)
         ),
         _with(maximal_declarative_manifest, _member_request_not_required),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: (
+                b["endpoints"][2].update(requires={"all_of": ["workspace", "profile"]}),
+                b["endpoints"][2]["steps"][1]["request"].update(connection="profile"),
+            ),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["endpoints"][0]["request"].update(
+                connection={"installation": "workspace"}
+            ),
+        ),
+        _labelled_on({"member": "profile"}),
+        _labelled_on({"member": "profile", "installation": "workspace", "owner": "x"}),
+        _labelled_on({"member": "workspace", "installation": "workspace"}),
+        _labelled_on({"member": "profile", "installation": "profile"}),
         _with(maximal_manifest, lambda b: b["fields"][0].update(actions=["new-link"])),
         _with(maximal_declarative_manifest, lambda b: b["fields"][0].pop("list")),
         _with(
@@ -1173,6 +1204,12 @@ def _with(build, change):
         "declarative-sets-the-credential",
         "unknown-endpoint-term",
         "member-connection-not-in-requires",
+        "member-connection-the-installation-may-make",
+        "connection-per-actor-on-a-read",
+        "connection-per-actor-not-for-each-actor",
+        "connection-per-actor-not-an-actor",
+        "connection-per-actor-community-for-the-member",
+        "connection-per-actor-members-for-the-installation",
         "container-element-actions",
         "element-actions-on-a-field-not-a-list",
         "element-action-not-declared",
@@ -1188,8 +1225,11 @@ def test_one_plugin_is_one_kind_and_says_only_what_its_kind_says(body):
     installation; and an event row emits, writes, or both. Only a declarative
     plug-in's list field offers actions on its elements, each declared and
     offered wherever the field is, and an action asks for the params of an
-    endpoint it names. An endpoint is closed: a misspelt term is refused, not
-    dropped."""
+    endpoint it names. A request on a member's connection is one its endpoint
+    requires and the installation does not make; a write's request naming a
+    connection per actor names one for each of its actors, the member's own
+    for the member and the community's for the installation. An endpoint is
+    closed: a misspelt term is refused, not dropped."""
     from app.services.marketplace.manifest_values import ListingDefinitionError
 
     with pytest.raises(ListingDefinitionError):

@@ -99,7 +99,7 @@ from app.services.marketplace.registration_lookup import (
     service_public_id,
 )
 from app.services.query.rows import RowColumn
-from app.services.marketplace.service_plugins import is_admin_only
+from app.services.marketplace.service_plugins import _requests, is_admin_only
 from app.services.safe_http import build_validated_request
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.webhook_target_url import (
@@ -442,6 +442,26 @@ def _required_connection_ids(endpoint: Mapping[str, Any]) -> tuple[list[str], bo
     return [], True
 
 
+def _request_connection(
+    request: Mapping[str, Any], actor: Optional[str]
+) -> Optional[str]:
+    """The connection whose credential ``request`` carries on a call made as
+    ``actor``: the one it names for every call, or, when it names one per
+    actor, the one it names for ``actor``. ``None`` when it names none for
+    ``actor``, as on a call made as no actor."""
+    named = request.get("connection")
+    if isinstance(named, dict):
+        named = named.get(actor) if actor is not None else None
+    return named if isinstance(named, str) else None
+
+
+def _connection_ids(endpoint: Mapping[str, Any], actor: Optional[str]) -> list[str]:
+    """The connections the endpoint's requests carry on a call made as
+    ``actor`` (:func:`_request_connection`), once each."""
+    named = (_request_connection(request, actor) for request in _requests(endpoint))
+    return list(dict.fromkeys(name for name in named if name is not None))
+
+
 async def _resolve_connections(
     session: AsyncSession,
     *,
@@ -462,13 +482,30 @@ async def _resolve_connections(
     someone who has not is told to connect rather than being served the other
     person's view.
 
-    ``actor`` is set on a call another plug-in made: ``installation`` has no
-    member (``user_id`` is ``None``), so a per-member connection is never
-    satisfied, and ``member`` hands on only the member's own handles, not the
-    community's.
+    ``actor`` is set on a call made as one of the endpoint's actors:
+    ``installation`` has no member (``user_id`` is ``None``), so a per-member
+    connection is never satisfied, and ``member`` hands on only the member's
+    own handles, not the community's. A call made as ``member`` also needs
+    each of the member's own connections its requests carry
+    (:func:`_connection_ids`), as an ``all_of`` term would, which a request
+    naming one per actor need not name in ``requires``.
     """
     required, needs_all = _required_connection_ids(endpoint)
-    if not required:
+    #: The member's own connections a call made as the member carries beyond
+    #: those ``requires`` names, every one needed.
+    own = [
+        connection_id
+        for connection_id in (
+            _connection_ids(endpoint, actor) if actor == "member" else ()
+        )
+        if connection_id not in required
+        and (
+            plugin_config_service.connection_by_id(plugin.definition, connection_id)
+            or {}
+        ).get("scope")
+        == "interactive"
+    ]
+    if not required and not own:
         return {}, {}
 
     config = plugin.config or {}
@@ -478,10 +515,11 @@ async def _resolve_connections(
     member_refs: set[str] = set()
     satisfied: list[str] = []
     fields: dict[str, dict[str, Any]] = {}
-    #: The first reason a candidate failed, reported when nothing satisfies.
+    #: The first reason a candidate failed, reported when nothing satisfies:
+    #: the member's own come first, so a call they cannot make says so.
     refusal: PluginDataError | None = None
 
-    for connection_id in required:
+    for connection_id in [*own, *required]:
         connection = plugin_config_service.connection_by_id(
             plugin.definition, connection_id
         )
@@ -548,9 +586,12 @@ async def _resolve_connections(
             config.get(connection_id)
         )
 
-    if needs_all and len(satisfied) != len(required):
-        raise refusal or PluginDataError(PluginDataMessages.NEEDS_CONFIGURATION, 409)
-    if not needs_all and not satisfied:
+    met = [connection_id for connection_id in required if connection_id in satisfied]
+    if (
+        any(connection_id not in satisfied for connection_id in own)
+        or (needs_all and len(met) != len(required))
+        or (not needs_all and not met)
+    ):
         raise refusal or PluginDataError(PluginDataMessages.NEEDS_CONFIGURATION, 409)
     # For ``any_of`` the handles of every satisfied candidate travel, and the plug-in
     # picks the least-privileged one it recognizes. They are part of the cache

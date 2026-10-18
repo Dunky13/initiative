@@ -856,6 +856,62 @@ async def test_a_member_write_reads_the_community_connection_without_its_secrets
     }
 
 
+@pytest.mark.parametrize(
+    "caller,status,token",
+    [
+        ("installation", 200, "gho_community"),
+        ("member", 200, "gho_member"),
+        ("unconnected", 409, None),
+    ],
+    ids=["installation", "member", "member-not-connected"],
+)
+async def test_a_write_naming_a_connection_per_actor_runs_on_the_callers(
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    role_session,
+    monkeypatch,
+    caller,
+    status,
+    token,
+):
+    """A write made as the installation carries the community's credential
+    and one made as a member the member's own, which ``requires`` need not
+    name: a member who has not connected it is told to, and the vendor is
+    not called."""
+    definition = _with_member_account(None)
+    label = definition["endpoints"][1]
+    label.update(actors=["member", "installation"], requires={"all_of": ["workspace"]})
+    label["request"]["connection"] = {"member": "account", "installation": "workspace"}
+    vendor = FakeVendor()
+    vendor.install(monkeypatch)
+    vendor.api_answers = [{"body": {"number": 7}}]
+    installed, target = await _hub(
+        session, acting_user, role_session, declarative=True, definition=definition
+    )
+    assert target is not None
+    headers = _installation_headers(installed)
+    if caller != "installation":
+        member = await _member(session, acting_user, installed)
+        if caller == "member":
+            await _connect(session, installed, target, member)
+        headers = _member_headers(installed, member)
+
+    response = await client.post(
+        _url(f"plugin.{TARGET}.label"),
+        json={"params": {"repo": "web", "number": 7}},
+        headers=headers,
+    )
+
+    assert response.status_code == status, response.text
+    if token is None:
+        assert response.json()["detail"] == PluginDataMessages.CONNECTION_REQUIRED
+        assert vendor.api_requests == []
+    else:
+        assert response.json()["actor"] == caller
+        assert vendor.api_requests[0]["headers"]["authorization"] == f"Bearer {token}"
+
+
 async def test_a_cached_read_follows_the_members_connection_fields(
     client: AsyncClient,
     session: AsyncSession,

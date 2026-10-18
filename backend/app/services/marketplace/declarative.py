@@ -16,8 +16,9 @@ changes it makes from the answer (``runSchedule``), and the change an action
 makes to the plug-in's values on its item (``runAction``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
-  request's connection as ``connection`` and of each connection the endpoint's
-  ``requires`` names that this call holds as ``connections.<id>``, ``now``,
+  connection the request carries for the call's actor as ``connection`` and
+  of each connection the endpoint's ``requires`` names that this call holds
+  as ``connections.<id>``, ``now``,
   for an action's call its item as ``item``, each earlier step's answer as
   ``steps.<name>`` and, once a call is answered, ``response``. A credential
   never enters one: it is added to the request as the plug-in's ``auth`` says.
@@ -54,6 +55,8 @@ from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
     REQUEST_TIMEOUT_SECONDS,
     PluginDataError,
+    _connection_ids,
+    _request_connection,
     _required_connection_ids,
 )
 from app.services.marketplace.expressions import UNDEFINED, ExpressionError
@@ -63,6 +66,7 @@ from app.services.marketplace.service_plugins import (
     DEFAULT_AUTH_PREFIX,
     PLATFORM_CODES,
     TRANSIENT_CODE,
+    _requests,
 )
 from app.services.safe_http import ResponseTooLargeError, request_public_target
 from app.services.tenant import plugin_connection_flows as flows
@@ -277,7 +281,8 @@ Credentials = Mapping[str, str]
 
 
 class _Run:
-    """One endpoint call: its clock, its hosts, its rules and its credentials."""
+    """One endpoint call: its clock, its hosts, its rules, its credentials
+    and who it is made as."""
 
     def __init__(
         self,
@@ -286,6 +291,7 @@ class _Run:
         *,
         credentials: Credentials,
         now: datetime,
+        actor: Optional[str] = None,
     ) -> None:
         auth = definition.get("auth") or {}
         self.hosts: list[str] = list(definition.get("hosts") or [])
@@ -295,6 +301,8 @@ class _Run:
         #: it to neither, for a health check, whose states read every answer.
         self.rules = rules
         self.credentials = credentials
+        #: Which connection a request naming one per actor carries.
+        self.actor = actor
         self.millis, self.now = _clock(now)
 
     async def value(self, text: str, document: Any, where: str) -> Any:
@@ -389,7 +397,7 @@ class _Run:
             "url": str(url),
             "headers": headers,
             "body": body,
-            "connection": request.get("connection"),
+            "connection": _request_connection(request, self.actor),
         }
 
     async def send(self, rendered: dict[str, Any]) -> _Answer:
@@ -554,13 +562,16 @@ async def run_endpoint(
     credentials: Credentials,
     now: datetime,
     item: Optional[Mapping[str, Any]] = None,
+    actor: Optional[str] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint's answer: its result, or ``{"unavailable":
     <code>}``.
 
     ``connections`` holds each connection's non-secret fields and
-    ``credentials`` its token, by connection id. Expressions read a request's
-    own connection as ``connection``, every connection the endpoint's
+    ``credentials`` its token, by connection id. The call is made as
+    ``actor``: a request carries the connection it names, or, naming one per
+    actor, the one it names for ``actor``. Expressions read a request's own
+    connection as ``connection``, every connection the endpoint's
     ``requires`` names as ``connections.<id>``, and the ``item`` an action's
     call is made on. A passing failure raises :class:`PluginDataError` as the
     plug-in being unavailable.
@@ -570,6 +581,7 @@ async def run_endpoint(
         list(endpoint.get("errors") or []),
         credentials=credentials,
         now=now,
+        actor=actor,
     )
     required, _ = _required_connection_ids(endpoint)
     base = {
@@ -592,7 +604,7 @@ async def run_endpoint(
             read = {
                 **base,
                 "connection": dict(
-                    connections.get(request.get("connection") or "") or {}
+                    connections.get(_request_connection(request, actor) or "") or {}
                 ),
                 **({"steps": dict(answers)} if named else {}),
             }
@@ -954,7 +966,7 @@ async def run_schedule(
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
     stored = plugin.config or {}
-    for connection_id in _connection_ids(endpoint):
+    for connection_id in _connection_ids(endpoint, "installation"):
         declared = connection_by_id(plugin.definition, connection_id) or {}
         if declared.get("scope") == "static" and not stored.get(connection_id):
             raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
@@ -968,7 +980,9 @@ async def run_schedule(
     now = datetime.now(timezone.utc)
     run = _Run(plugin.definition, None, credentials={}, now=now)
     steps = endpoint.get("steps") or [{"request": endpoint["request"]}]
-    connection = without_tokens(stored.get(steps[0]["request"].get("connection") or ""))
+    connection = without_tokens(
+        stored.get(_request_connection(steps[0]["request"], "installation") or "")
+    )
     try:
         params = (
             await run.value(
@@ -997,6 +1011,7 @@ async def run_schedule(
                 connections={**fields, **required},
                 credentials=tokens,
                 now=now,
+                actor="installation",
             )
         if set(result) == {"unavailable"}:
             raise PluginDataError(result["unavailable"], _STATE_REFUSED)
@@ -1040,12 +1055,6 @@ def _typed(endpoint: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, 
     }
 
 
-def _connection_ids(endpoint: Mapping[str, Any]) -> list[str]:
-    steps = endpoint.get("steps") or [{"request": endpoint.get("request") or {}}]
-    named = [step["request"].get("connection") for step in steps]
-    return list(dict.fromkeys(name for name in named if isinstance(name, str)))
-
-
 def _refusal(connection: Optional[Mapping[str, Any]]) -> PluginDataError:
     """A call refused for want of ``connection``: a member's own is theirs to
     connect, and the community's is its admins' to configure."""
@@ -1064,13 +1073,18 @@ def request_refusal(
     actor: Optional[str],
 ) -> Optional[PluginDataError]:
     """Why the endpoint's requests cannot be made as ``actor`` with the
-    handles ``refs``, before any token is asked for: a connection one names
-    that ``definition`` does not declare, a member's own whose handle ``refs``
-    lacks, or, on a member's behalf, the community's when the endpoint's
-    ``requires`` does not name it. ``None`` when they can."""
+    handles ``refs``, before any token is asked for: one naming no connection
+    for ``actor`` (one per actor, on a call made as another or as none), a
+    connection one names that ``definition`` does not declare, a member's own
+    whose handle ``refs`` lacks, or, on a member's behalf, the community's
+    when the endpoint's ``requires`` does not name it. ``None`` when they
+    can."""
     required, _ = _required_connection_ids(endpoint)
-    for connection_id in _connection_ids(endpoint):
-        connection = connection_by_id(definition, connection_id)
+    for request in _requests(endpoint):
+        connection_id = _request_connection(request, actor)
+        connection = (
+            connection_by_id(definition, connection_id) if connection_id else None
+        )
         interactive = (connection or {}).get("scope") == "interactive"
         if (
             connection is None
@@ -1090,14 +1104,15 @@ async def _credentials(
     refs: Mapping[str, str],
     actor: Optional[str],
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]], bool]:
-    """Each connection the endpoint's requests name: its token and non-secret
-    fields, and whether any is a member's own.
+    """Each connection the endpoint's requests carry on a call made as
+    ``actor``: its token and non-secret fields, and whether any is a
+    member's own.
 
     A static connection's is the community's, which a call on a member's
     behalf carries only when the endpoint's ``requires`` names it; an
-    interactive one's is the acting member's, by the handle the endpoint's
-    ``requires`` resolved for them (:func:`request_refusal`). Tokens are
-    refreshed or minted as the plug-in channel hands them out.
+    interactive one's is the acting member's, by the handle resolved for
+    them (:func:`request_refusal`). Tokens are refreshed or minted as the
+    plug-in channel hands them out.
     """
     tokens: dict[str, str] = {}
     fields: dict[str, dict[str, Any]] = {}
@@ -1116,7 +1131,7 @@ async def _credentials(
         refused = request_refusal(install.definition, endpoint, refs, actor)
         if refused is not None:
             raise refused
-        for connection_id in _connection_ids(endpoint):
+        for connection_id in _connection_ids(endpoint, actor):
             connection = connection_by_id(install.definition, connection_id)
             interactive = (connection or {}).get("scope") == "interactive"
             refusal = _refusal(connection)
@@ -1211,6 +1226,7 @@ async def call_endpoint(
                 credentials=tokens,
                 now=datetime.now(timezone.utc),
                 item=item,
+                actor=actor,
             )
     except TimeoutError as exc:
         raise PluginDataError(
