@@ -16,9 +16,11 @@ what the batch did with the activity feed's own statement
 (``activity_feed.batch_query``), so their own policies decide what reaches
 them: sharing, the initiative, holds, archiving. Nothing here restates them.
 
-What counts is what the feed counts: people's changes, never a plug-in's, not
-the facets that are no news (``activity_feed.QUIET_FACETS``), and never the
-reader's own. Somebody named on an item (an assignee, an attendee) hears of it
+What counts is what the feed counts, not the facets that are no news
+(``activity_feed.QUIET_FACETS``) and never the reader's own, with one more: a
+plug-in's change (an automation completing a task, a calendar moving an event)
+is told to the people named on the item, though not to everyone following it,
+naming the plug-in, or the member it acted for. Somebody named on an item (an assignee, an attendee) hears of it
 under what they are given (``assigned_activity``); everyone else under what
 they follow (``subscription_activity``). Either is one line per item, which a
 comment on it joins. A subscription by hand hears only of what happened after
@@ -39,13 +41,14 @@ from typing import Any
 from sqlalchemy import BigInteger, Integer, bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.types import Text
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
 from app.models.platform.notification import NotificationType
 from app.models.platform.user import User
+from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.subscription_progress import SubscriptionProgress
 from app.services import notifications
 from app.services.cross_guild import gather_across_guilds
@@ -82,12 +85,12 @@ _PICK = text(
 #: in: identifiers only, for finding whom it concerns.
 _CONCERNS = text(
     "SELECT item.kind, item.id, o.dac_tool, o.dac_id,"
-    " max(o.occurred_at) AS latest"
+    " max(o.occurred_at) AS latest, bool_or(o.actor_install_id IS NULL) AS by_people"
     " FROM event_outbox o"
     " CROSS JOIN LATERAL content_item_of(o.resource_type, o.resource_id, o.parents)"
     " AS item"
     " WHERE o.txn_id = ANY (:txns)"
-    " AND o.actor_user_id IS NOT NULL AND o.actor_install_id IS NULL"
+    " AND (o.actor_user_id IS NOT NULL OR o.actor_install_id IS NOT NULL)"
     " AND o.resource_type <> 'comments'"
     " AND NOT (o.action = 'updated' AND o.changed::text[] <@ :quiet)"
     " GROUP BY item.kind, item.id, o.dac_tool, o.dac_id"
@@ -96,10 +99,11 @@ _CONCERNS = text(
     bindparam("quiet", type_=ARRAY(Text)),
 )
 
-#: Who made the batch's changes.
+#: Who made the batch's changes: the people, and the installs that acted as
+#: themselves.
 _ACTORS = text(
-    "SELECT DISTINCT actor_user_id FROM event_outbox"
-    " WHERE txn_id = ANY (:txns) AND actor_user_id IS NOT NULL"
+    "SELECT DISTINCT actor_user_id, actor_install_id FROM event_outbox"
+    " WHERE txn_id = ANY (:txns)"
 ).bindparams(bindparam("txns", type_=ARRAY(BigInteger)))
 
 
@@ -130,15 +134,21 @@ async def _concerned(
     ).all()
     items: dict[Ref, Ref | None] = {}
     latest: dict[Ref, datetime] = {}
-    for kind, entity_id, tool, tool_id, at in rows:
+    by_people: set[Ref] = set()
+    for kind, entity_id, tool, tool_id, at, people in rows:
         ref = (kind, entity_id)
         items[ref] = None if tool is None else (tool, tool_id)
         latest[ref] = max(at, latest.get(ref, at))
+        if people:
+            by_people.add(ref)
     by_person: dict[int, dict[Ref, Subscriber]] = {}
     for ref, people in (await personal_items.subscribers_of(session, items)).items():
         for person, subscriber in people.items():
             # Subscribed by hand after it happened: not news to them.
             if subscriber.since is not None and subscriber.since > latest[ref]:
+                continue
+            # Only plug-ins changed it: news to whoever is named on it.
+            if ref not in by_people and subscriber.tie is not Tie.named:
                 continue
             by_person.setdefault(person, {})[ref] = subscriber
     return by_person
@@ -148,6 +158,7 @@ async def _tell(
     batch: list[int],
     concerns: dict[Ref, Subscriber],
     actors: dict[int, User],
+    installs: dict[int, notifications.PluginAuthor],
     reader_id: int,
     routed: AsyncSession,
     _guild_id: int,
@@ -161,10 +172,16 @@ async def _tell(
         subscriber = concerns.get(ref)
         verbs = set(row["verbs"] or ())
         verb = next((v for v in VERB_ORDER if v in verbs), None)
-        actor = actors.get(row["actors"][0]) if row["actors"] else None
+        # The latest to act: a person, a plug-in acting for one, or a plug-in.
+        person, install = (row["actors"] or [None])[0], (row["installs"] or [None])[0]
+        actor: User | notifications.PluginAuthor | None = (
+            actors.get(person) if person is not None else installs.get(install)
+        )
         if subscriber is None or verb is None or actor is None:
             continue
         named = subscriber.tie is Tie.named
+        if not row["by_people"] and not named:
+            continue
         line = "assigned" if named else "subscription"
         await notifications.notify(
             routed,
@@ -208,16 +225,27 @@ async def tell_subscribers(session: AsyncSession, guild_id: int) -> None:
     batch = untold[:BATCH_LIMIT]
     if batch:
         concerned = await _concerned(session, batch)
-        actor_ids = (
+        acted = (
             await session.exec(_ACTORS, params={"txns": batch})  # type: ignore[call-overload]
-        ).scalars()
-        actors = await accounts_service.load(list(actor_ids))
+        ).all()
+        actors = await accounts_service.load([person for person, _ in acted])
+        install_ids = [i for person, i in acted if person is None and i is not None]
+        installs = {
+            install_id: notifications.PluginAuthor(name=name)
+            for install_id, name in (
+                await session.exec(
+                    select(GuildPlugin.id, GuildPlugin.name).where(
+                        col(GuildPlugin.id).in_(install_ids)
+                    )
+                )
+            ).all()
+        }
         for reader_id, concerns in sorted(concerned.items()):
             await gather_across_guilds(
                 session,
                 reader_id,
                 [guild_id],
-                partial(_tell, batch, concerns, actors, reader_id),
+                partial(_tell, batch, concerns, actors, installs, reader_id),
                 on_behalf=True,
                 writes=True,
             )

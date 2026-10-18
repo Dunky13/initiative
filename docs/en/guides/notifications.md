@@ -105,6 +105,7 @@ Two things soften the edges of that:
 
 - **Everything on one thing** arrives as **one line**, however much there is. Twenty edits and comments on a task you follow is one notification naming who and how many — not twenty. Once you've read it, the next one starts a fresh line, so new activity is still news.
 - **Changes** gather for about a minute before they're told, so somebody fixing a typo four times in a row is one change.
+- **A plug-in's changes** — an automation closing a task, a calendar moving an event — reach the people on the thing, under **Assigned to you**, with the plug-in named. They don't reach everyone following it, so a busy automation doesn't fill **Subscribed**.
 - **Mentions in a text document** arrive as one line too. Somebody tidying a page that names you in four places tells you once, until you've read it.
 - **Task assignments** arrive as one summary once the dust has settled. Somebody assigning you ten things reaches you as one message rather than ten.
 - **Reactions** work the same way, for the same reason: they arrive in flurries.

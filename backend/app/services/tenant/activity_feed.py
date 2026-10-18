@@ -159,56 +159,66 @@ def _statement(tools: list[str] | None) -> Any:
     changes in ``tools`` the reader can open (``:ids_<tool>`` each), with what
     the log, the index and the levels say about it. With ``tools`` ``None``,
     the changes of the transactions ``:txns`` instead, however long ago, for
-    telling subscribers what one batch of the log did; comments are told where
-    they are made, so they are left out of that."""
+    telling subscribers what one batch of the log did: plug-ins' changes
+    included, which the feed leaves out, and comments left out, which are told
+    where they are made."""
     if tools is None:
-        scope = "o.txn_id = ANY (:txns) AND o.resource_type <> 'comments'"
+        scope = (
+            "o.txn_id = ANY (:txns) AND o.resource_type <> 'comments'"
+            " AND (o.actor_user_id IS NOT NULL OR o.actor_install_id IS NOT NULL)"
+        )
         window = ""
     else:
         readable = " OR ".join(
             f"(o.dac_tool = '{tool}' AND o.dac_id = ANY (:ids_{tool}))"
             for tool in tools
         )
-        scope = f"o.occurred_at > :since AND ({readable})"
+        scope = (
+            f"o.occurred_at > :since AND ({readable})"
+            " AND o.actor_user_id IS NOT NULL AND o.actor_install_id IS NULL"
+        )
         window = "ORDER BY o.occurred_at DESC LIMIT :candidates"
     sql = f"""
     WITH changes AS (
         SELECT o.resource_type, o.resource_id, o.parents, o.action,
                o.changed::text[] AS changed,
-               o.actor_user_id, o.occurred_at
+               o.actor_user_id, o.actor_install_id, o.occurred_at
         FROM event_outbox o
         WHERE {scope}
-          AND o.actor_user_id IS NOT NULL
-          AND o.actor_install_id IS NULL
           AND NOT (o.action = 'updated' AND o.changed::text[] <@ :quiet)
         {window}
     ),
     attributed AS (
-        SELECT item.kind, item.id, o.actor_user_id AS actor, o.occurred_at,
+        SELECT item.kind, item.id, o.actor_user_id AS actor,
+               o.actor_install_id AS install, o.occurred_at,
                {_verb()} AS verb
         FROM changes o
         CROSS JOIN LATERAL content_item_of(o.resource_type, o.resource_id, o.parents)
             AS item
     ),
     per_actor AS (
-        SELECT kind, id, actor, max(occurred_at) AS last
+        SELECT kind, id, actor, install, max(occurred_at) AS last
         FROM attributed
-        WHERE actor <> :reader AND verb IS NOT NULL
-        GROUP BY kind, id, actor
+        WHERE actor IS DISTINCT FROM :reader AND verb IS NOT NULL
+        GROUP BY kind, id, actor, install
     ),
     items AS (
         SELECT p.kind, p.id, max(p.last) AS latest,
-               (array_agg(p.actor ORDER BY p.last DESC, p.actor))[1:{ACTORS_SHOWN}]
-                   AS actors,
+               (array_agg(p.actor ORDER BY p.last DESC, p.actor, p.install))
+                   [1:{ACTORS_SHOWN}] AS actors,
+               (array_agg(p.install ORDER BY p.last DESC, p.actor, p.install))
+                   [1:{ACTORS_SHOWN}] AS installs,
+               bool_or(p.install IS NULL) AS by_people,
                count(*) AS actor_count
         FROM per_actor p
         GROUP BY p.kind, p.id
     )
     SELECT i.kind AS entity_type, i.id AS entity_id, i.latest, i.actors,
-           i.actor_count,
+           i.installs, i.by_people, i.actor_count,
            (SELECT array_agg(DISTINCT a.verb ORDER BY a.verb) FROM attributed a
              WHERE a.kind = i.kind AND a.id = i.id
-               AND a.actor <> :reader AND a.verb IS NOT NULL) AS verbs,
+               AND a.actor IS DISTINCT FROM :reader AND a.verb IS NOT NULL)
+               AS verbs,
            EXISTS (SELECT 1 FROM attributed a
                     WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
                AS changed,
@@ -320,7 +330,8 @@ def query(tools: dict[str, list[int]], *, reader_id: int) -> tuple[Any, dict]:
 def batch_query(txns: list[int], *, reader_id: int) -> tuple[Any, dict]:
     """The same statement over the changes of the transactions ``txns``, and
     its parameters: what those transactions did that the reader can see,
-    people's changes only and never the reader's own."""
+    people's and plug-ins' changes, never the reader's own. ``by_people`` says
+    whether a person made any of an item's."""
     return _statement(None), {
         "reader": reader_id,
         "since": datetime.now(timezone.utc) - WINDOW,
