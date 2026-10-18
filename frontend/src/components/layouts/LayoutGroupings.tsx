@@ -1,5 +1,5 @@
 import type { GroupingState } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeClosed } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -226,10 +226,15 @@ export const CanvasGrouping = ({
                 disabled={disabled || (shown && hiddenFull)}
                 onClick={() => onToggle(active.grouping.id, key, !shown)}
                 className={cn(
-                  "inline-flex items-center rounded-md border px-2 py-1",
-                  !shown && "border-dashed line-through opacity-50"
+                  "inline-flex items-center gap-1 rounded-md border px-2 py-1",
+                  !shown && "border-dashed opacity-50"
                 )}
               >
+                {shown ? (
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <EyeClosed className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
                 {active.grouping.header(key)}
               </button>
             );

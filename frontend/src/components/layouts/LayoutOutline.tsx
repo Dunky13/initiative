@@ -17,7 +17,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Columns2,
-  EyeOff,
+  EyeClosed,
   FileText,
   GripVertical,
   LayoutList,
@@ -664,7 +664,7 @@ const OutlineRow = ({
           disabled={locked}
           onClick={hide.run}
         >
-          <EyeOff className="h-4 w-4" />
+          <EyeClosed className="h-4 w-4" />
         </Button>
       ) : null}
     </div>
