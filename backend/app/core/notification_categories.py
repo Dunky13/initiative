@@ -61,6 +61,7 @@ class NotificationCategory(str, Enum):
     replies = "replies"
     comments = "comments"
     reactions = "reactions"
+    subscriptions = "subscriptions"
     assignments = "assignments"
     due_dates = "due_dates"
     membership = "membership"
@@ -152,6 +153,15 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
     ),
     NotificationCategory.reactions: CategorySpec(
         types=frozenset({NotificationType.comment_reaction}),
+        group=CategoryGroup.activity,
+        personal=False,
+        guild_scoped=True,
+        mutable_channels=_ALL_MUTABLE,
+    ),
+    # What the reader asked to hear about, by subscribing to it. Ambient like
+    # comments: it scales with how busy the thing is.
+    NotificationCategory.subscriptions: CategorySpec(
+        types=frozenset({NotificationType.subscription_activity}),
         group=CategoryGroup.activity,
         personal=False,
         guild_scoped=True,

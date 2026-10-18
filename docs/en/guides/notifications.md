@@ -59,6 +59,7 @@ If push shows as **Blocked**, that's your phone rather than us. Open your device
 | **Direct messages** | Somebody messaged you. You're told who and how many — never what it says, because nothing outside your own devices could tell you that. |
 | **Comments on your work** | Somebody comments on a task you're on, or something you made. |
 | **Reactions** | Somebody reacts to one of your comments (a summary). |
+| **Subscriptions** | Somebody changes or comments on something you [subscribed to](your-space.md#subscribing), or on something inside it. One line per thing, however busy it gets. |
 | **Overdue tasks** | A daily nudge about what's past due, at a time you choose. |
 | **Event reminders** | Shortly before an event you're going to. |
 | **Joining things** | You're added to an initiative, or a project appears in one. |

@@ -59,7 +59,7 @@ from app.models.tenant.task import Task, TaskAssignee
 from app.models.platform.user import User
 from app.services import keyset_cursor
 from app.services.tenant import attachments as attachments_service
-from app.services.tenant import content_references
+from app.services.tenant import content_references, personal_items
 from app.services import notifications
 from app.services import reachability
 from app.services.tenant.mention_parser import (
@@ -1004,6 +1004,30 @@ async def _process_comment_notifications(
             actor=author,
             rollup_key=f"{ctx.ref_type}:{ctx.entity_id}",
         )
+
+    # Last, so anybody the comment concerns already heard of it above. On the
+    # line their subscription keeps for the thing, beside its other changes.
+    kind, entity_id = thread.about
+    await notifications.notify(
+        session,
+        NotificationType.subscription_activity,
+        first_time(
+            await personal_items.subscribers(
+                session, thread.about, (thread.tool.value, thread.resource_id)
+            )
+        ),
+        about=thread,
+        key="subscription.commented",
+        values={"actor": name, "context": ctx.title},
+        data={
+            "comment_id": comment.id,
+            "entity_type": kind,
+            "entity_id": entity_id,
+            "verb": "commented",
+        },
+        actor=author,
+        rollup_key=f"subscription:{kind}:{entity_id}",
+    )
 
 
 async def list_comments(

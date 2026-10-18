@@ -100,6 +100,18 @@
       "body": "<strong>{{actor}}</strong> hat auf deinen Kommentar zu <strong>{{context}}</strong> geantwortet"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} hat sich geändert",
+      "title": "Etwas, das du abonniert hast, hat sich geändert",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> geändert"
+    },
+    "commented": {
+      "subject": "Neuer Kommentar zu {{context}}",
+      "title": "Neuer Kommentar zu etwas, das du abonniert hast",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> kommentiert"
+    }
+  },
   "post": {
     "published": {
       "subject": "Neuer Beitrag: {{post}}",

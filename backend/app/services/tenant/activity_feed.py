@@ -302,15 +302,23 @@ async def readable_tools(
     return tools
 
 
+def verb_params() -> dict[str, Any]:
+    """What :func:`_verb` and the quiet filter read: the facets that are no
+    news, the columns that reschedule, the tables an item is."""
+    return {
+        "quiet": list(QUIET_FACETS),
+        "schedule_columns": list(_SCHEDULE_COLUMNS),
+        "item_tables": sorted(CONTENT_KIND_TABLES.values()),
+    }
+
+
 def query(tools: dict[str, list[int]], *, reader_id: int) -> tuple[Any, dict]:
     """The candidates' statement over ``tools``, and its parameters."""
     params: dict[str, Any] = {
         "reader": reader_id,
         "since": datetime.now(timezone.utc) - WINDOW,
         "candidates": CANDIDATE_CHANGES,
-        "quiet": list(QUIET_FACETS),
-        "schedule_columns": list(_SCHEDULE_COLUMNS),
-        "item_tables": sorted(CONTENT_KIND_TABLES.values()),
+        **verb_params(),
         **{f"ids_{tool}": ids for tool, ids in tools.items()},
     }
     return _statement(sorted(tools)), params

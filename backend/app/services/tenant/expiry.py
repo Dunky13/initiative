@@ -53,12 +53,14 @@ def _rules() -> tuple[Rule, ...]:
         outbox_poller,
         plugin_hooks,
         personal_items,
+        subscription_notices,
     )
 
     return (
         change_log.expire,
         outbox_poller.expire_deliveries,
         plugin_hooks.expire_deliveries,
+        subscription_notices.expire,
         personal_items.expire,
         notifications.expire_reminder_dispatches,
     )

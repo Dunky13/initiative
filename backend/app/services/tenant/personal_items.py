@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
 
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -203,6 +203,41 @@ async def list_marked(
     if limit is not None:
         statement = statement.limit(limit)
     return (await session.exec(statement)).all()
+
+
+async def subscribers(
+    session: AsyncSession,
+    about: tuple[str, int],
+    tool: tuple[str, int],
+    *,
+    since: Optional[datetime] = None,
+) -> list[int]:
+    """Who is subscribed to ``about``, or to ``tool``, the tool it is in: who
+    to tell what changed on it. With ``since``, only those subscribed by then,
+    so a subscription hears of what happens after it and nothing before. Read
+    as the platform, since each row is its own member's."""
+    from app.db.cohorts import as_system
+
+    async with as_system(session) as system:
+        rows = await system.exec(
+            select(PersonalItem.user_id)
+            .where(
+                col(PersonalItem.subscribed_at).is_not(None),
+                or_(
+                    and_(
+                        col(PersonalItem.entity_type) == about[0],
+                        col(PersonalItem.entity_id) == about[1],
+                    ),
+                    and_(
+                        col(PersonalItem.entity_type) == tool[0],
+                        col(PersonalItem.entity_id) == tool[1],
+                    ),
+                ),
+                *(() if since is None else (col(PersonalItem.subscribed_at) <= since,)),
+            )
+            .distinct()
+        )
+        return sorted(rows.all())
 
 
 async def rows_for(

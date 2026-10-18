@@ -160,6 +160,7 @@ def sweeps() -> tuple[Sweep, ...]:
         plugin_schedules,
         post_publication,
         personal_items,
+        subscription_notices,
         trash_purge,
     )
     from app.services.tenant.attachments import (
@@ -238,6 +239,16 @@ def sweeps() -> tuple[Sweep, ...]:
                     when="NEW.active",
                 ),
             ),
+        ),
+        # Telling subscribers what changed: woken by the same writes that give
+        # the webhooks work, and only while somebody is subscribed.
+        Sweep(
+            kind="subscriptions",
+            scope=Scope.ACTIVE,
+            every=minute,
+            visit=subscription_notices.tell_subscribers,
+            next_due=subscription_notices.next_due,
+            sources=(on_insert("event_outbox", after=minute),),
         ),
         Sweep(
             kind="plugin_schedules",
