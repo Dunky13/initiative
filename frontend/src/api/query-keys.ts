@@ -224,6 +224,9 @@ const projectTaskStatuses = (projectId: number): Spec => ({
 
 // What the reader keeps about items: a community's stars and each item's
 // state, and every community's tabs and stars (`/me/personal-items`).
+// The activity feed, whose order follows what the reader follows.
+const activity = (): Spec => ({ communityPrefix: ["/api/v1/activity"] });
+
 const personalItems = (): Spec => ({
   communityPrefix: ["/api/v1/personal-items"],
   personalExact: ["/api/v1/me/personal-items"],
@@ -702,6 +705,7 @@ export const q = {
   fileVersions,
   emailSettings,
   personalItems,
+  activity,
   fcmConfig,
   communityAIConnections,
   communityContent,

@@ -374,6 +374,8 @@ export const useToggleFollow = () => {
     },
     onSettled: (_data, _error, _args, context) => {
       if (context) void qc.invalidateQueries({ queryKey: context.queryKey });
+      // The feed's order follows what the reader follows.
+      void invalidate(q.activity());
     },
   });
 };

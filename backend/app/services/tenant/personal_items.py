@@ -21,9 +21,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import col, delete, select, update
+from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.tenant.personal_item import TOOL_KINDS, PersonalItem, ViewSource
@@ -152,22 +152,26 @@ async def clear_mark(
     """Let go of a mark: close a tab, remove a bookmark, stop following.
     Idempotent, and whether or not the item can still be opened, so a mark on
     something the reader has lost can still come off. Run as the platform and
-    limited to the reader's own row."""
-    from app.db.cohorts import exec_as_system
+    limited to the reader's own row, which is locked while it is decided
+    whether anything else keeps it, so two marks let go at once both go."""
+    from app.db.cohorts import as_system
 
-    columns = MARK_COLUMNS[mark]
-    others = [PersonalItem.__table__.c[c] for c in _HOLDING if c != columns[0]]
-    key = _key(user_id, kind, entity_id)
-    await exec_as_system(
-        session,
-        delete(PersonalItem).where(*key, *(c.is_(None) for c in others)),  # type: ignore[arg-type]
-    )
-    await exec_as_system(
-        session,
-        update(PersonalItem)  # type: ignore[arg-type]
-        .where(*key, or_(*(c.is_not(None) for c in others)))
-        .values({c: None for c in columns}),
-    )
+    async with as_system(session) as system:
+        row = (
+            await system.exec(
+                select(PersonalItem)
+                .where(*_key(user_id, kind, entity_id))
+                .with_for_update()
+            )
+        ).one_or_none()
+        if row is not None:
+            for column in MARK_COLUMNS[mark]:
+                setattr(row, column, None)
+            if all(getattr(row, column) is None for column in _HOLDING):
+                await system.delete(row)
+            else:
+                system.add(row)
+            await system.flush()
     await session.commit()
 
 
