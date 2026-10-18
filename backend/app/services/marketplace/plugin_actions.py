@@ -133,7 +133,8 @@ async def _actor(
     first of the endpoint's ``actors`` the reader's call can run as,
     ``member`` on the reader's own connections and ``installation`` on the
     community's: its ``requires`` met, and every connection its requests name
-    able to travel (:func:`~app.services.marketplace.declarative.request_refusal`).
+    for that actor able to travel
+    (:func:`~app.services.marketplace.declarative.request_refusal`).
     An endpoint naming no actors runs as the reader when its
     first request carries an interactive connection, and as the installation
     when it carries a static one. When none can, the best one's refusal is

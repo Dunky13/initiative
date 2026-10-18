@@ -35,7 +35,7 @@ foothold in a guild is a legitimate install with nothing to render.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from app.core.plugin_scopes import ALL_SCOPES, plugin_scope_target
 from app.services.marketplace import contract, expressions, plugin_api
@@ -1545,8 +1545,9 @@ def _vendor_request(
     """One call to the vendor, rendered from expressions.
 
     ``connection_ids`` is the connections an endpoint's request may name, and
-    it must name one; ``None`` is a connection's own request (``after_connect``
-    and ``health``), which carries that connection's credential and names none.
+    it must name one, or one per actor; ``None`` is a connection's own request
+    (``after_connect`` and ``health``), which carries that connection's
+    credential and names none.
     """
     request = require_mapping(raw, what)
     method = request.get("method")
@@ -1599,11 +1600,24 @@ def _vendor_request(
     if connection_ids is None:
         if connection is not None:
             fail(f"{what}: carries the credential of the connection it belongs to")
+    elif isinstance(connection, dict):
+        # One per actor: which actors, and each connection's scope, are held
+        # to the endpoint's actors (``_endpoint``).
+        if not connection or not set(connection) <= ACTOR_KINDS:
+            fail(
+                f"{what}.connection: names one connection per actor, drawn from "
+                f"{sorted(ACTOR_KINDS)}"
+            )
+        cleaned["connection"] = {
+            actor: _declared_connection(
+                named, what=f"{what}.connection.{actor}", connection_ids=connection_ids
+            )
+            for actor, named in connection.items()
+        }
     else:
-        connection = check_identifier(connection, what=f"{what}.connection")
-        if connection not in connection_ids:
-            fail(f"{what}: {connection!r} is not a connection this plug-in declares")
-        cleaned["connection"] = connection
+        cleaned["connection"] = _declared_connection(
+            connection, what=f"{what}.connection", connection_ids=connection_ids
+        )
     if request.get("paging") is not None:
         cleaned["paging"] = _paging(
             request["paging"],
@@ -1612,6 +1626,14 @@ def _vendor_request(
             steps=steps,
         )
     return cleaned
+
+
+def _declared_connection(raw: Any, *, what: str, connection_ids: set[str]) -> str:
+    """A connection a request names, which the plug-in declares."""
+    connection = check_identifier(raw, what=what)
+    if connection not in connection_ids:
+        fail(f"{what}: {connection!r} is not a connection this plug-in declares")
+    return connection
 
 
 def _request_or_steps(
@@ -2029,19 +2051,43 @@ def _endpoint(
     if requires is not None:
         cleaned["requires"] = requires
     # A member's own connection is resolved for the caller by ``requires``, so
-    # a request carrying one names it there too.
+    # a request carrying one on every call names it there too, and is not one
+    # the installation, which has no member, can make. A write's request may
+    # name one connection per actor instead, for exactly its actors: the
+    # member's own for the member, and the community's for the installation.
     required = {term for terms in (requires or {}).values() for term in terms}
     for request in _requests(cleaned):
         named = request.get("connection")
-        if named in interactive_ids and named not in required:
-            fail(
-                f"{what}: its request uses the member connection {named!r}, "
-                "which requires does not name"
-            )
+        if isinstance(named, dict):
+            if direction != "write":
+                fail(f"{what}: only a write's request names a connection per actor")
+            if set(named) != set(actors):
+                fail(
+                    f"{what}: its request names a connection per actor, one for "
+                    "each of the endpoint's actors and no other"
+                )
+            for actor, connection_id in named.items():
+                if (connection_id in interactive_ids) != (actor == "member"):
+                    scope = "an interactive" if actor == "member" else "a static"
+                    fail(
+                        f"{what}: its request names {connection_id!r} for the "
+                        f"{actor}, which is not {scope} connection"
+                    )
+        elif named in interactive_ids:
+            if named not in required:
+                fail(
+                    f"{what}: its request uses the member connection {named!r}, "
+                    "which requires does not name"
+                )
+            if "installation" in actors:
+                fail(
+                    f"{what}: its request uses the member connection {named!r}, "
+                    "which a call made as the installation does not have"
+                )
     return cleaned
 
 
-def _requests(endpoint: dict[str, Any]) -> list[dict[str, Any]]:
+def _requests(endpoint: Mapping[str, Any]) -> list[dict[str, Any]]:
     """A declarative endpoint's requests, its one or each step's."""
     if "request" in endpoint:
         return [endpoint["request"]]

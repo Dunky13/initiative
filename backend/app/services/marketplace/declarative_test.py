@@ -14,7 +14,11 @@ import pytest
 
 from app.core.messages import PluginDataMessages
 from app.services.marketplace.plugin_data import PluginDataError
-from app.services.marketplace.declarative import after_connect, run_endpoint
+from app.services.marketplace.declarative import (
+    after_connect,
+    request_refusal,
+    run_endpoint,
+)
 from app.services.marketplace.definitions import normalize_listing_definition
 from app.services.tenant.plugin_connection_flows import HookError
 from app.testing.fake_vendor import FakeVendor
@@ -172,7 +176,7 @@ def vendor(monkeypatch) -> FakeVendor:
 
 
 async def _run(
-    name: str, *, params=None, definition=None, connections=WORKSPACE
+    name: str, *, params=None, definition=None, connections=WORKSPACE, actor=None
 ) -> dict:
     definition = definition or issues_plugin()
     endpoint = next(
@@ -185,6 +189,7 @@ async def _run(
         connections=connections,
         credentials=CREDENTIALS,
         now=NOW,
+        actor=actor,
     )
 
 
@@ -378,6 +383,75 @@ async def test_connections_holds_each_connection_requires_names(vendor):
         "login": "alice",
     }
     assert result == {"id": 9}
+
+
+def _label_per_actor() -> dict:
+    """:func:`issues_plugin` with its label write made as the member, setting
+    the labels on their own account, or as the installation, on the
+    community's workspace."""
+    current, put = issues_plugin()["endpoints"][1]["steps"]
+    put["request"].update(
+        body='{"labels": [params.label], "own": connection}',
+        connection={"member": "account", "installation": "workspace"},
+    )
+    return issues_plugin(
+        label={
+            "actors": ["member", "installation"],
+            "requires": {"all_of": ["workspace"]},
+            "steps": [current, put],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "actor,token,own",
+    [
+        ("installation", "tok-workspace", {"owner": "acme"}),
+        ("member", "tok-account", {"login": "alice"}),
+    ],
+)
+async def test_a_request_naming_a_connection_per_actor_carries_the_actors(
+    vendor, actor, token, own
+):
+    """A call carries, and reads as ``connection``, the connection a request
+    names for the actor it is made as; one named for every call, whoever
+    makes it."""
+    vendor.api_answers = [{"body": [{"name": "ui"}]}, {"body": [{"name": "bug"}]}]
+    result = await _run(
+        "label",
+        params={"number": 7, "label": "bug"},
+        definition=_label_per_actor(),
+        connections={**WORKSPACE, "account": {"login": "alice"}},
+        actor=actor,
+    )
+
+    current, put = vendor.api_requests
+    assert current["headers"]["authorization"] == "Bearer tok-workspace"
+    assert put["headers"]["authorization"] == f"Bearer {token}"
+    assert put["body"] == {"labels": ["bug"], "own": own}
+    assert result == {"labels": ["bug"]}
+
+
+def test_a_call_made_as_no_actor_carries_no_connection_named_per_actor():
+    """A request naming a connection per actor names none for a call made as
+    no actor, which is refused before any token is asked for; a call made as
+    the member needs the handle of the member's own."""
+    definition = _label_per_actor()
+    label = definition["endpoints"][1]
+    assert [
+        getattr(request_refusal(definition, label, refs, actor), "code", None)
+        for actor, refs in (
+            (None, {}),
+            ("member", {}),
+            ("member", {"account": "cr_member"}),
+            ("installation", {}),
+        )
+    ] == [
+        PluginDataMessages.NEEDS_CONFIGURATION,
+        PluginDataMessages.CONNECTION_REQUIRED,
+        None,
+        None,
+    ]
 
 
 async def test_a_graphql_cursor_is_sent_in_its_variable_from_the_second_page(vendor):

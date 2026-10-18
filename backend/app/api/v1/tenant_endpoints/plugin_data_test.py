@@ -1791,20 +1791,17 @@ def _declarative_action_definition() -> dict:
     found; ``tally`` adds one to it; ``unlink``, for a reader who has
     connected their own account, drops it with no call, keeping what it was;
     ``relink`` is the community's admins' alone; ``label`` makes the label
-    write on the reader's own account, which its request names, though its
-    ``requires`` would let the installation make it; ``garble`` answers a
-    targeted change where a change belongs."""
+    write as the reader, on the account its request names for the member,
+    once they have connected it, and as the installation, on the community's,
+    before; ``garble`` answers a targeted change where a change belongs."""
     definition = declarative_plugin(PUBLIC_ID)
     (workspace,) = definition["connections"]
     definition["connections"].append(
         {**workspace, "id": "github", "scope": "interactive", "fields": []}
     )
     _, label = definition["endpoints"]
-    label.update(
-        actors=["installation", "member"],
-        requires={"any_of": ["workspace", "github"]},
-    )
-    label["request"]["connection"] = "github"
+    label.update(actors=["member", "installation"], requires={"all_of": ["workspace"]})
+    label["request"]["connection"] = {"member": "github", "installation": "workspace"}
     definition["endpoints"].append(
         {
             "id": FIND_ISSUE,
@@ -2120,14 +2117,16 @@ class TestActions:
     ):
         """Initiative makes the call on the credential the endpoint's actors
         say, its request reading the item: the community's for a read the
-        installation makes, and the reader's own, once they have connected
-        it, for a write made as them. What the write makes of the answer is
-        kept as the install. An action naming no endpoint calls nothing and
-        reads what the install holds on the item."""
+        installation makes, and for a write made as the reader, their own
+        once they have connected it, and the community's, as the
+        installation, before. What the write makes of the answer is kept as
+        the install. An action naming no endpoint calls nothing and reads
+        what the install holds on the item."""
         vendor = FakeVendor()
         vendor.install(monkeypatch)
         vendor.api_answers = [
             {"body": {"items": [{"number": 12}]}},
+            {"body": {"number": 12}},
             {"body": {"number": 12}},
         ]
         _admin, member, plugin, tasks = await _action_board(
@@ -2137,6 +2136,9 @@ class TestActions:
 
         linked = await client.post(
             _run(member, plugin), headers=member.headers, json=body
+        )
+        unconnected = await client.post(
+            _run(member, plugin, "label"), headers=member.headers, json=body
         )
         await _connect(session, plugin=plugin, user=member.user, ref="cr_member")
         labelled = await client.post(
@@ -2148,12 +2150,14 @@ class TestActions:
 
         assert linked.status_code == 200, linked.text
         assert linked.json() == {"values": {"issue": 12}}
+        assert unconnected.status_code == 200, unconnected.text
         assert labelled.status_code == 200, labelled.text
         assert unlinked.status_code == 200, unlinked.text
         assert unlinked.json() == {"values": {}}
-        found, labelling = vendor.api_requests
+        found, by_community, labelling = vendor.api_requests
         assert found["url"] == f"https://{API_HOST}/search/issues?q=Broken+build"
         assert found["headers"]["authorization"] == "Bearer gho_community"
+        assert by_community["headers"]["authorization"] == "Bearer gho_community"
         assert labelling["method"] == "PUT"
         assert labelling["headers"]["authorization"] == "Bearer tok"
         await route_session_to_guild(session, member.guild.id)
@@ -2226,14 +2230,12 @@ class TestActions:
         [
             ("member", "shared", "relink", 403, "ACTION_NOT_OFFERED"),
             ("admin", "elsewhere", "link", 403, "ACTION_NOT_OFFERED"),
-            ("member", "shared", "label", 409, "CONNECTION_REQUIRED"),
             ("member", "shared", "unlink", 409, "CONNECTION_REQUIRED"),
             ("member", "shared", "garble", 502, "SERVICE_UNAVAILABLE"),
         ],
         ids=[
             "an action for the community's admins alone",
             "an initiative the install is not placed in",
-            "an endpoint on the reader's own account, which they never connected",
             "an action needing the reader's own account, which they never connected",
             "a write answering what is not a change",
         ],
