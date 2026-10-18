@@ -12,16 +12,16 @@ tables are FORCEd, so those writes run with FORCE lifted and restored around
 them, before the index is made. A route held by an install already reported
 removed is released on that install's next status or health result.
 
-Revision ID: 20261018_0519
-Revises: 20261018_0518
+Revision ID: 20261018_0520
+Revises: 20261018_0519
 Create Date: 2026-10-18
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20261018_0519"
-down_revision = "20261018_0518"
+revision = "20261018_0520"
+down_revision = "20261018_0519"
 branch_labels = None
 depends_on = None
 
