@@ -2596,6 +2596,51 @@ class TestDeclarativeSchedules:
         assert (vendor.exchanges, vendor.api_requests) == ([], [])
         assert [r for r in caplog.records if r.name == plugin_schedules.__name__] == []
 
+    @pytest.mark.parametrize(
+        ("settings", "urls"),
+        [
+            ({"org": "acme"}, ["https://api.github.test/orgs/acme/issues"]),
+            (None, []),
+        ],
+        ids=["held", "not stored yet"],
+    )
+    async def test_a_read_sees_each_connection_its_requires_names(
+        self, acting_user, session, role_session, vendor, declarative, settings, urls
+    ):
+        """As ``connections.<id>``, as when the installation calls it. One the
+        community has not stored yet is waited for, as the read's own is."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        definition = _syncing()
+        definition["connections"].append(
+            {
+                "id": "settings",
+                "scope": "static",
+                "label": {"en": "Settings"},
+                "fields": [
+                    {
+                        "key": "org",
+                        "type": "string",
+                        "required": True,
+                        "label": {"en": "Organization"},
+                    }
+                ],
+            }
+        )
+        issues = definition["endpoints"][0]
+        issues["requires"] = {"all_of": ["workspace", "settings"]}
+        issues["request"]["url"] = (
+            '"https://api.github.test/orgs/" & connections.settings.org & "/issues"'
+        )
+        config = _connected("42") | ({} if settings is None else {"settings": settings})
+        await _declarative_install(session, seat, definition=definition, config=config)
+        vendor.api_answers = [{"body": []}]
+        await _due(session, seat.guild.id)
+
+        await _run_due(await role_session(), seat.guild.id)
+
+        assert [request["url"] for request in vendor.api_requests] == urls
+        assert (await _runs(session, seat.guild.id))["sync"].failures == 0
+
     async def test_a_switched_off_install_runs_no_schedule(
         self, acting_user, session, role_session, vendor, declarative
     ):

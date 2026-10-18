@@ -66,7 +66,11 @@ from app.services.marketplace.service_plugins import (
 from app.services.safe_http import ResponseTooLargeError, request_public_target
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant.plugin_channels import PluginChannelError, load_install
-from app.services.tenant.plugin_config import connection_by_id, without_tokens
+from app.services.tenant.plugin_config import (
+    connection_by_id,
+    installation_meets,
+    without_tokens,
+)
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
@@ -877,9 +881,13 @@ async def run_schedule(
     ``since`` and ``now``. The read is held to the envelope's time, as
     :func:`call_endpoint`'s is.
 
+    The read's expressions read each community connection its ``requires``
+    names as ``connections.<id>``, as a call the installation makes does.
+
     Raises :class:`PluginDataError`: with ``CONNECTION_NO_TOKEN``, before
     anything is asked of the vendor, while a community connection the read
-    names is not stored; with the code the read answered unavailable with;
+    names is not stored, or those its ``requires`` names hold no value; with
+    the code the read answered unavailable with;
     with ``mapping-failed`` when ``params`` or ``write`` fails or ``params``
     answers something other than an object; and otherwise as
     :func:`call_endpoint` refuses a call or finds the plug-in unavailable.
@@ -899,6 +907,13 @@ async def run_schedule(
         declared = connection_by_id(plugin.definition, connection_id) or {}
         if declared.get("scope") == "static" and not stored.get(connection_id):
             raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
+    if not installation_meets(plugin, endpoint.get("requires")):
+        raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
+    required = {
+        connection_id: without_tokens(stored.get(connection_id))
+        for connection_id in _required_connection_ids(endpoint)[0]
+        if installation_meets(plugin, {"all_of": [connection_id]})
+    }
     now = datetime.now(timezone.utc)
     run = _Run(plugin.definition, None, credentials={}, now=now)
     steps = endpoint.get("steps") or [{"request": endpoint["request"]}]
@@ -928,7 +943,7 @@ async def run_schedule(
                 plugin.definition,
                 endpoint,
                 params={} if params is UNDEFINED else params,
-                connections=fields,
+                connections={**fields, **required},
                 credentials=tokens,
                 now=now,
             )
