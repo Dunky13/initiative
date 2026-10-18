@@ -356,24 +356,16 @@
     "toggleError": "Benachrichtigungseinstellungen konnten nicht aktualisiert werden",
     "categoryHeader": "Kategorie",
     "categories": {
-      "mentions": "Erwähnungen",
-      "replies": "Antworten",
-      "comments": "Kommentare zu deiner Arbeit",
-      "reactions": "Reaktionen",
-      "subscriptions": "Abonnements",
-      "assignments": "Aufgabenzuweisungen",
-      "due_dates": "Überfällige Aufgaben",
-      "membership": "Neue Mitgliedschaften",
+      "mentions": "Erwähnungen und Antworten",
+      "assignments": "Dir zugewiesen",
+      "subscriptions": "Abonniert",
+      "news": "Neu in deinen Communities",
       "approvals": "Wartet auf dich",
-      "posts": "Beiträge",
-      "events": "Termine",
-      "event_reminders": "Terminerinnerungen",
-      "direct_messages": "Direktnachrichten",
-      "connections": "Kontakte",
-      "jobs": "Exporte und Importe",
-      "account": "Dein Konto",
       "moderation": "Moderation",
-      "cases": "Fälle"
+      "cases": "Fälle",
+      "direct_messages": "Nachrichten und Kontakte",
+      "jobs": "Exporte und Importe",
+      "account": "Dein Konto"
     },
     "reminderLeadTime": {
       "label": "Erinnere mich",
@@ -395,30 +387,21 @@
       "desktop": "Desktop"
     },
     "groups": {
-      "addressed_to_me": "An mich gerichtet",
-      "activity": "Aktivität",
-      "community": "Community",
-      "account": "Konto"
+      "your_communities": "In deinen Communities",
+      "community": "Braucht dich",
+      "account": "Nur du"
     },
     "categoryDescriptions": {
-      "mentions": "Jemand hat deinen Namen geschrieben.",
-      "replies": "Jemand hat auf etwas geantwortet, das du geschrieben hast.",
-      "comments": "Jemand hat eine Aufgabe kommentiert, an der du beteiligt bist, oder etwas von dir. Pro Thread zusammengefasst.",
-      "reactions": "Jemand hat auf einen deiner Kommentare reagiert.",
-      "subscriptions": "Änderungen und Kommentare an dem, was du abonniert hast, und an allem darin.",
-      "assignments": "Jemand hat dir Aufgaben zugewiesen. Eine Zusammenfassung, nicht eine pro Aufgabe.",
-      "due_dates": "Ein täglicher Hinweis auf Überfälliges, zu einer Zeit deiner Wahl.",
-      "membership": "Du wurdest zu einer Initiative hinzugefügt oder ein Projekt ist darin entstanden.",
+      "mentions": "Jemand hat dich genannt, dir geantwortet oder auf deinen Kommentar reagiert.",
+      "assignments": "Du hast eine Aufgabe bekommen oder wurdest zu etwas eingeladen, oder woran du beteiligt bist, ist fällig, hat sich geändert, wurde abgesagt oder beginnt gleich.",
+      "subscriptions": "Änderungen, Kommentare und Reaktionen an dem, was du verfolgst, auch an dem, was du erstellt hast. Die Glocke an jedem Eintrag stellt es ab.",
+      "news": "Ein Beitrag wurde veröffentlicht, du wurdest zu einer Initiative oder einem Projekt hinzugefügt, oder deine Beitrittsanfrage wurde beantwortet.",
       "approvals": "Jemand wartet auf deine Entscheidung. Erscheint immer in der Glocke.",
-      "posts": "Ein Aushang wurde an einem Board veröffentlicht, das du sehen kannst.",
-      "events": "Du wurdest eingeladen oder etwas hat sich geändert, woran du teilnimmst.",
-      "event_reminders": "Kurz vor einem Termin, zu dem du gehst.",
-      "direct_messages": "Jemand hat dir geschrieben. Wer und wie viele, nie der Inhalt.",
-      "connections": "Jemand möchte sich vernetzen oder hat angenommen.",
-      "jobs": "Ein Export oder Import, den du angefordert hast, ist fertig.",
-      "account": "An deinem Konto wurde etwas geändert. Erscheint immer in der Glocke.",
       "moderation": "Die Moderatoren einer Community haben etwas von dir entfernt oder dich deswegen verwarnt. Erscheint immer in der Glocke.",
-      "cases": "Ein Fall wurde dort eröffnet, wo du Fälle bearbeitest, oder seine anfragende Person hat geantwortet und niemand hat ihn übernommen."
+      "cases": "Ein Fall wurde dort eröffnet, wo du Fälle bearbeitest, oder seine anfragende Person hat geantwortet und niemand hat ihn übernommen.",
+      "direct_messages": "Jemand hat dir geschrieben, möchte sich vernetzen oder hat angenommen. Wer und wie viele, nie der Inhalt einer Nachricht.",
+      "jobs": "Ein Export oder Import, den du angefordert hast, ist fertig.",
+      "account": "An deinem Konto wurde etwas geändert. Erscheint immer in der Glocke."
     },
     "quietHours": {
       "title": "Ruhezeiten",
@@ -428,14 +411,11 @@
     },
     "communities": {
       "title": "Pro Community",
-      "description": "Ein Regler pro Community. Stell eine leiser, ohne sonst etwas zu ändern.",
-      "levelLabel": "Wie viel {{community}} sagt",
-      "mutedHelp": "Diese Community sagt gar nichts — auch nicht, wenn dich jemand direkt nennt.",
-      "levels": {
-        "everything": "Alles",
-        "personal": "Nur was mich nennt",
-        "nothing": "Nichts"
-      }
+      "description": "Schalte eine Zeile für eine Community ab oder schalte sie stumm, ohne sonst etwas zu ändern.",
+      "mute": "Stummschalten",
+      "muteLabel": "{{community}} stummschalten",
+      "rowLabel": "{{row}} in {{community}}",
+      "mutedHelp": "Diese Community sagt gar nichts — auch nicht, wenn dich jemand direkt nennt."
     },
     "timing": {
       "title": "Wann du davon erfährst",

@@ -67,18 +67,14 @@ VERB_ORDER: tuple[str, ...] = (
     activity_feed.Verb.edited.value,
 )
 
-#: A committed transaction of the change log past the progress row.
-_UNTOLD = (
-    "o.txn_id >= p.told_xmin AND o.txn_id <> ALL (p.told_above)"
-    " AND pg_visible_in_snapshot(o.txn_id::text::xid8, pg_current_snapshot())"
-)
-
-#: The oldest untold transactions, and the oldest transaction still running,
-#: read in one snapshot.
+#: The oldest untold transactions (committed, and past the progress row), and
+#: the oldest transaction still running, read in one snapshot.
 _PICK = text(
     "SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint AS xmin,"
     " ARRAY(SELECT o.txn_id FROM event_outbox o, subscription_progress p"
-    f" WHERE {_UNTOLD} GROUP BY o.txn_id ORDER BY o.txn_id LIMIT :limit)"
+    " WHERE o.txn_id >= p.told_xmin AND o.txn_id <> ALL (p.told_above)"
+    " AND pg_visible_in_snapshot(o.txn_id::text::xid8, pg_current_snapshot())"
+    " GROUP BY o.txn_id ORDER BY o.txn_id LIMIT :limit)"
     " AS untold"
 ).bindparams(bindparam("limit", type_=Integer))
 
@@ -115,7 +111,8 @@ def next_due(now: datetime) -> Any:
         text(
             "NOT EXISTS (SELECT 1 FROM subscription_progress)"
             " OR EXISTS (SELECT 1 FROM event_outbox o, subscription_progress p"
-            f" WHERE {_UNTOLD})"
+            " WHERE o.txn_id >= p.told_xmin AND o.txn_id <> ALL (p.told_above)"
+            " AND pg_visible_in_snapshot(o.txn_id::text::xid8, pg_current_snapshot()))"
         )
     )
 

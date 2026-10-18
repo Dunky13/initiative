@@ -238,6 +238,7 @@ def _statement(tools: list[str] | None) -> Any:
     """
     shared = (
         bindparam("reader", type_=Integer),
+        bindparam("since", type_=DateTime(timezone=True)),
         bindparam("quiet", type_=ARRAY(Text)),
         bindparam("schedule_columns", type_=ARRAY(Text)),
         bindparam("item_tables", type_=ARRAY(Text)),
@@ -246,7 +247,6 @@ def _statement(tools: list[str] | None) -> Any:
         return text(sql).bindparams(*shared, bindparam("txns", type_=ARRAY(BigInteger)))
     return text(sql).bindparams(
         *shared,
-        bindparam("since", type_=DateTime(timezone=True)),
         bindparam("candidates", type_=Integer),
         *(bindparam(f"ids_{tool}", type_=ARRAY(Integer)) for tool in tools),
     )
@@ -321,7 +321,12 @@ def batch_query(txns: list[int], *, reader_id: int) -> tuple[Any, dict]:
     """The same statement over the changes of the transactions ``txns``, and
     its parameters: what those transactions did that the reader can see,
     people's changes only and never the reader's own."""
-    return _statement(None), {"reader": reader_id, "txns": txns, **verb_params()}
+    return _statement(None), {
+        "reader": reader_id,
+        "since": datetime.now(timezone.utc) - WINDOW,
+        "txns": txns,
+        **verb_params(),
+    }
 
 
 async def _involved(

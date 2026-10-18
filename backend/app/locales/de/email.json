@@ -110,6 +110,18 @@
       "subject": "Neuer Kommentar zu {{context}}",
       "title": "Neuer Kommentar zu etwas, das du abonniert hast",
       "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> kommentiert"
+    },
+    "reacted": {
+      "subject": "Neue Reaktion auf {{context}}",
+      "title": "Neue Reaktion auf etwas, das du abonniert hast",
+      "body": "<strong>{{actor}}</strong> hat auf <strong>{{context}}</strong> reagiert"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} hat sich geändert",
+      "title": "Etwas, an dem du beteiligt bist, hat sich geändert",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> geändert"
     }
   },
   "post": {
@@ -124,16 +136,6 @@
       "subject": "Du bist eingeladen: {{event}}",
       "title": "Neue Termineinladung",
       "body": "<strong>{{organizer}}</strong> hat dich zu <strong>{{event}}</strong> (<strong>{{when}}</strong>) eingeladen."
-    },
-    "rescheduled": {
-      "subject": "Termin verschoben: {{event}}",
-      "title": "Termin verschoben",
-      "body": "<strong>{{editor}}</strong> hat <strong>{{event}}</strong> auf <strong>{{when}}</strong> verschoben."
-    },
-    "updated": {
-      "subject": "Termin aktualisiert: {{event}}",
-      "title": "Termin aktualisiert",
-      "body": "<strong>{{editor}}</strong> hat <strong>{{event}}</strong> (<strong>{{when}}</strong>) aktualisiert."
     },
     "cancelled": {
       "subject": "Termin abgesagt: {{event}}",
@@ -368,28 +370,20 @@
     },
     "noCommunity": {
       "direct_messages": "Direktnachrichten",
-      "connections": "Kontakte",
       "account": "Dein Konto",
       "other": "Aus deinen Communities"
     },
     "category": {
-      "mentions": "Erwähnungen",
-      "replies": "Antworten",
-      "comments": "Kommentare zu deiner Arbeit",
-      "reactions": "Reaktionen",
-      "assignments": "Aufgabenzuweisungen",
-      "due_dates": "Überfällige Aufgaben",
-      "membership": "Neue Mitgliedschaften",
+      "mentions": "Erwähnungen und Antworten",
+      "assignments": "Dir zugewiesen",
+      "subscriptions": "Abonniert",
+      "news": "Neu in deinen Communities",
       "approvals": "Wartet auf dich",
-      "posts": "Beiträge",
-      "events": "Termine",
-      "event_reminders": "Terminerinnerungen",
-      "direct_messages": "Direktnachrichten",
-      "connections": "Kontakte",
-      "jobs": "Exporte und Importe",
-      "account": "Dein Konto",
       "moderation": "Moderation",
-      "cases": "Fälle"
+      "cases": "Fälle",
+      "direct_messages": "Nachrichten und Kontakte",
+      "jobs": "Exporte und Importe",
+      "account": "Dein Konto"
     }
   },
   "signInCode": {

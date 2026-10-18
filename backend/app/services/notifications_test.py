@@ -619,7 +619,7 @@ async def test_overdue_digest_pushes_when_email_opted_out(
         user,
         {
             "email": {"at": "00:00"},
-            "categories": {"due_dates": {"email": False}},
+            "categories": {"assignments": {"email": False}},
         },
     )
     await _overdue_task_in_new_guild(session, user, label="Alpha")
@@ -664,7 +664,7 @@ async def test_overdue_digest_skips_push_when_opted_out(
         user,
         {
             "email": {"at": "00:00"},
-            "categories": {"due_dates": {"push": False}},
+            "categories": {"assignments": {"push": False}},
         },
     )
     await _overdue_task_in_new_guild(session, user, label="Alpha")
@@ -1335,7 +1335,7 @@ async def test_reaction_digest_respects_the_opt_out(session: AsyncSession, monke
     await set_notification_prefs(
         session,
         user,
-        {"categories": {"reactions": {"email": False, "push": False}}},
+        {"categories": {"mentions": {"email": False, "push": False}}},
     )
     await _reaction_item_in_new_guild(session, user, label="Alpha")
 

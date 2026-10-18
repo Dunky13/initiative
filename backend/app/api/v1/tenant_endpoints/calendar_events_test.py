@@ -775,39 +775,6 @@ async def test_a_move_into_another_initiative_drops_property_values(
     assert await holding_values(seat.id) == sorted([series.id, override.id])
 
 
-async def test_update_event_time_notifies_attendees_as_rescheduled(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    (
-        organizer,
-        attendee,
-        guild,
-        initiative,
-        calendar,
-    ) = await _setup_organizer_and_attendee(session, acting_user)
-    event = await create_calendar_event(
-        session, calendar, organizer.user, title="Review"
-    )
-    await client.put(
-        organizer.g(f"/calendar-events/{event.id}/attendees"),
-        headers=organizer.headers,
-        json=[attendee.user.id],
-    )
-
-    response = await client.patch(
-        organizer.g(f"/calendar-events/{event.id}"),
-        headers=organizer.headers,
-        json={"start_at": "2026-08-01T15:00:00Z", "end_at": "2026-08-01T16:00:00Z"},
-    )
-    assert response.status_code == 200
-
-    updates = await _notifications_for(
-        session, attendee.user.id, NotificationType.event_updated
-    )
-    assert len(updates) == 1
-    assert updates[0].data["time_changed"] is True
-
-
 async def test_a_description_written_over_one_since_changed_is_refused(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
@@ -861,45 +828,6 @@ async def test_delete_event_notifies_attendees(
         session, attendee.user.id, NotificationType.event_cancelled
     )
     assert len(cancels) == 1
-
-
-async def test_update_event_skips_declined_attendees(
-    client: AsyncClient, session: AsyncSession, acting_user
-):
-    """An attendee who declined doesn't get reschedule/update notifications."""
-    (
-        organizer,
-        attendee,
-        guild,
-        initiative,
-        calendar,
-    ) = await _setup_organizer_and_attendee(session, acting_user)
-    event = await create_calendar_event(
-        session, calendar, organizer.user, title="Review"
-    )
-    await client.put(
-        organizer.g(f"/calendar-events/{event.id}/attendees"),
-        headers=organizer.headers,
-        json=[attendee.user.id],
-    )
-    declined = await client.patch(
-        organizer.g(f"/calendar-events/{event.id}/rsvp"),
-        headers=attendee.headers,
-        json={"rsvp_status": "declined"},
-    )
-    assert declined.status_code == 200
-
-    response = await client.patch(
-        organizer.g(f"/calendar-events/{event.id}"),
-        headers=organizer.headers,
-        json={"start_at": "2026-08-01T15:00:00Z", "end_at": "2026-08-01T16:00:00Z"},
-    )
-    assert response.status_code == 200
-
-    updates = await _notifications_for(
-        session, attendee.user.id, NotificationType.event_updated
-    )
-    assert updates == []
 
 
 async def test_delete_event_skips_declined_attendees(

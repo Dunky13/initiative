@@ -110,6 +110,18 @@
       "subject": "New comment on {{context}}",
       "title": "New comment on something you subscribed to",
       "body": "<strong>{{actor}}</strong> commented on <strong>{{context}}</strong>"
+    },
+    "reacted": {
+      "subject": "New reaction on {{context}}",
+      "title": "New reaction on something you're subscribed to",
+      "body": "<strong>{{actor}}</strong> reacted to <strong>{{context}}</strong>"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} changed",
+      "title": "Something you're on changed",
+      "body": "<strong>{{actor}}</strong> changed <strong>{{context}}</strong>"
     }
   },
   "post": {
@@ -124,16 +136,6 @@
       "subject": "You're invited: {{event}}",
       "title": "New event invitation",
       "body": "<strong>{{organizer}}</strong> invited you to <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
-    },
-    "rescheduled": {
-      "subject": "Event rescheduled: {{event}}",
-      "title": "Event rescheduled",
-      "body": "<strong>{{editor}}</strong> rescheduled <strong>{{event}}</strong> to <strong>{{when}}</strong>."
-    },
-    "updated": {
-      "subject": "Event updated: {{event}}",
-      "title": "Event updated",
-      "body": "<strong>{{editor}}</strong> updated <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
     },
     "cancelled": {
       "subject": "Event cancelled: {{event}}",
@@ -368,28 +370,20 @@
     },
     "noCommunity": {
       "direct_messages": "Direct messages",
-      "connections": "Connections",
       "account": "Your account",
       "other": "Across your communities"
     },
     "category": {
-      "mentions": "Mentions",
-      "replies": "Replies",
-      "comments": "Comments on your work",
-      "reactions": "Reactions",
-      "assignments": "Task assignments",
-      "due_dates": "Overdue tasks",
-      "membership": "Joining things",
+      "mentions": "Mentions and replies",
+      "assignments": "Assigned to you",
+      "subscriptions": "Subscribed",
+      "news": "New in your communities",
       "approvals": "Waiting on you",
-      "posts": "Posts",
-      "events": "Events",
-      "event_reminders": "Event reminders",
-      "direct_messages": "Direct messages",
-      "connections": "Connections",
-      "jobs": "Exports and imports",
-      "account": "Your account",
       "moderation": "Moderation",
-      "cases": "Cases"
+      "cases": "Cases",
+      "direct_messages": "Messages and connections",
+      "jobs": "Exports and imports",
+      "account": "Your account"
     }
   },
   "signInCode": {

@@ -168,28 +168,44 @@ async def set_mark(
 
 
 async def unsubscribe(
-    session: AsyncSession, *, user_id: int, kind: str, entity_id: int
-) -> None:
-    """Hear nothing more about it, whatever ties the reader to it. Idempotent,
-    and whether or not the item can still be opened. Kept on the reader's own
-    row until they subscribe again or the item goes."""
+    session: AsyncSession,
+    *,
+    user_id: int,
+    kind: str,
+    entity_id: int,
+    new: bool = False,
+) -> bool:
+    """Hear nothing more about it, whatever ties the reader to it, until they
+    subscribe again. Returns whether it is kept.
+
+    On a row the reader already keeps about it, run as the platform and
+    limited to that row, so a subscription comes off something they can no
+    longer open, as any mark does (:func:`clear_mark`). Where they keep
+    nothing, only with ``new``, on the reader's own session: for an item the
+    caller loaded, since an unsubscription is kept only about what the reader
+    can open."""
+    from app.db.cohorts import as_system
+
     now = datetime.now(timezone.utc)
-    await session.exec(
-        pg_insert(PersonalItem)
-        .values(
-            user_id=user_id, entity_type=kind, entity_id=entity_id, unsubscribed_at=now
+    async with as_system(session) as system:
+        row = (
+            await system.exec(
+                select(PersonalItem)
+                .where(*_key(user_id, kind, entity_id))
+                .with_for_update()
+            )
+        ).one_or_none()
+        if row is not None:
+            row.subscribed_at = None
+            row.unsubscribed_at = row.unsubscribed_at or now
+            system.add(row)
+            await system.flush()
+    if row is None and new:
+        await _upsert(
+            session, user_id, kind, entity_id, subscribed_at=None, unsubscribed_at=now
         )
-        .on_conflict_do_update(
-            index_elements=["user_id", "entity_type", "entity_id"],
-            set_={
-                "subscribed_at": None,
-                "unsubscribed_at": func.coalesce(
-                    PersonalItem.__table__.c.unsubscribed_at, now
-                ),
-            },
-        )
-    )
     await session.commit()
+    return row is not None or new
 
 
 async def clear_mark(

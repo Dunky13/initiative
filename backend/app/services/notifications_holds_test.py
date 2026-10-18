@@ -112,7 +112,7 @@ def test_mail_timed_to_land_inside_a_booked_pause_waits_for_the_end():
     }
     due = notification_prefs.email_due_at(
         prefs,
-        category=NotificationCategory.comments,
+        category=NotificationCategory.subscriptions,
         tz_name="UTC",
         now=_at(12, day=19),
     )

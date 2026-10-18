@@ -356,24 +356,16 @@
     "toggleError": "Impossible de mettre à jour les paramètres de notification",
     "categoryHeader": "Catégorie",
     "categories": {
-      "mentions": "Mentions",
-      "replies": "Réponses",
-      "comments": "Commentaires sur votre travail",
-      "reactions": "Réactions",
+      "mentions": "Mentions et réponses",
+      "assignments": "Qui vous est assigné",
       "subscriptions": "Abonnements",
-      "assignments": "Tâches assignées",
-      "due_dates": "Tâches en retard",
-      "membership": "Nouvelles arrivées",
+      "news": "Nouveau dans vos communautés",
       "approvals": "En attente de vous",
-      "posts": "Annonces",
-      "events": "Événements",
-      "event_reminders": "Rappels d'événements",
-      "direct_messages": "Messages directs",
-      "connections": "Contacts",
-      "jobs": "Exports et imports",
-      "account": "Votre compte",
       "moderation": "Modération",
-      "cases": "Dossiers"
+      "cases": "Dossiers",
+      "direct_messages": "Messages et contacts",
+      "jobs": "Exports et imports",
+      "account": "Votre compte"
     },
     "reminderLeadTime": {
       "label": "Me rappeler",
@@ -395,30 +387,21 @@
       "desktop": "Ordinateur"
     },
     "groups": {
-      "addressed_to_me": "Qui m'est adressé",
-      "activity": "Activité",
-      "community": "Communauté",
-      "account": "Compte"
+      "your_communities": "Dans vos communautés",
+      "community": "A besoin de vous",
+      "account": "Vous uniquement"
     },
     "categoryDescriptions": {
-      "mentions": "Quelqu'un a écrit votre nom.",
-      "replies": "Quelqu'un a répondu à ce que vous avez dit.",
-      "comments": "Quelqu'un a commenté une tâche dont vous faites partie, ou quelque chose que vous avez créé. Regroupé par fil.",
-      "reactions": "Quelqu'un a réagi à l'un de vos commentaires.",
-      "subscriptions": "Les modifications et commentaires sur ce à quoi vous êtes abonné, et sur ce qu'il contient.",
-      "assignments": "Quelqu'un vous a assigné des tâches. Un résumé, pas un par tâche.",
-      "due_dates": "Un rappel quotidien de ce qui est en retard, à l'heure de votre choix.",
-      "membership": "Vous avez été ajouté à une initiative, ou un projet y est apparu.",
+      "mentions": "Quelqu'un vous a nommé, vous a répondu ou a réagi à votre commentaire.",
+      "assignments": "On vous a confié une tâche ou invité à quelque chose, ou ce dont vous faites partie arrive à échéance, a changé, a été annulé ou va commencer.",
+      "subscriptions": "Les modifications, commentaires et réactions sur ce que vous suivez, y compris ce que vous avez créé. La cloche sur chaque élément l'arrête.",
+      "news": "Une annonce a été publiée, vous avez été ajouté à une initiative ou à un projet, ou votre demande d'adhésion a reçu une réponse.",
       "approvals": "Quelqu'un attend votre décision. Toujours visible dans la cloche.",
-      "posts": "Une annonce a été publiée sur un tableau que vous pouvez voir.",
-      "events": "Vous avez été invité, ou quelque chose auquel vous participez a changé.",
-      "event_reminders": "Peu avant un événement où vous vous rendez.",
-      "direct_messages": "Quelqu'un vous a écrit. Qui et combien, jamais le contenu.",
-      "connections": "Quelqu'un a demandé à se connecter, ou a accepté.",
-      "jobs": "Un export ou import que vous avez demandé est terminé.",
-      "account": "Quelque chose a été fait sur votre compte. Toujours visible dans la cloche.",
       "moderation": "Les modérateurs d'une communauté ont retiré quelque chose que vous avez écrit, ou vous ont averti à ce sujet. Toujours affiché dans la cloche.",
-      "cases": "Un dossier a été ouvert là où vous traitez les dossiers, ou la personne qui l'a soumis a répondu et personne ne l'a pris."
+      "cases": "Un dossier a été ouvert là où vous traitez les dossiers, ou la personne qui l'a soumis a répondu et personne ne l'a pris.",
+      "direct_messages": "Quelqu'un vous a écrit, a demandé à se connecter ou a accepté. Qui et combien, jamais le contenu d'un message.",
+      "jobs": "Un export ou import que vous avez demandé est terminé.",
+      "account": "Quelque chose a été fait sur votre compte. Toujours visible dans la cloche."
     },
     "quietHours": {
       "title": "Heures calmes",
@@ -428,14 +411,11 @@
     },
     "communities": {
       "title": "Par communauté",
-      "description": "Un réglage par communauté. Faites-en parler une moins sans rien changer ailleurs.",
-      "levelLabel": "Ce que dit {{community}}",
-      "mutedHelp": "Cette communauté ne dit rien du tout — même si quelqu'un vous nomme directement.",
-      "levels": {
-        "everything": "Tout",
-        "personal": "Seulement ce qui me nomme",
-        "nothing": "Rien"
-      }
+      "description": "Désactivez une ligne pour une communauté, ou mettez-la en sourdine, sans rien changer ailleurs.",
+      "mute": "Mettre en sourdine",
+      "muteLabel": "Mettre {{community}} en sourdine",
+      "rowLabel": "{{row}} dans {{community}}",
+      "mutedHelp": "Cette communauté ne dit rien du tout — même si quelqu'un vous nomme directement."
     },
     "timing": {
       "title": "Quand vous êtes prévenu",

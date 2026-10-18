@@ -80,6 +80,16 @@
     "commented": {
       "title": "New comment on something you subscribed to",
       "body": "{{actor}} commented on {{context}}"
+    },
+    "reacted": {
+      "title": "New reaction on something you're subscribed to",
+      "body": "{{actor}} reacted to {{context}}"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "title": "Something you're on changed",
+      "body": "{{actor}} changed {{context}}"
     }
   },
   "post": {
@@ -91,14 +101,6 @@
   "event": {
     "invitation": {
       "title": "New event invitation",
-      "body": "{{event}} ({{when}})"
-    },
-    "rescheduled": {
-      "title": "Event rescheduled",
-      "body": "{{event}} ({{when}})"
-    },
-    "updated": {
-      "title": "Event updated",
       "body": "{{event}} ({{when}})"
     },
     "cancelled": {
@@ -168,59 +170,35 @@
   },
   "redacted": {
     "mentions": {
-      "title": "You were mentioned",
+      "title": "You were mentioned or answered",
       "body": "Open Initiative to see where."
     },
-    "replies": {
-      "title": "You have a reply",
-      "body": "Open Initiative to read it."
-    },
-    "comments": {
-      "title": "New comment",
-      "body": "Open Initiative to read it."
-    },
-    "reactions": {
-      "title": "New reaction",
+    "assignments": {
+      "title": "Something you're on",
       "body": "Open Initiative to see it."
     },
     "subscriptions": {
       "title": "Something you subscribed to changed",
       "body": "Open Initiative to see it."
     },
-    "assignments": {
-      "title": "New task assignment",
+    "news": {
+      "title": "Something new in a community",
       "body": "Open Initiative to see it."
-    },
-    "due_dates": {
-      "title": "Overdue tasks",
-      "body": "Open Initiative to see them."
-    },
-    "membership": {
-      "title": "Your membership changed",
-      "body": "Open Initiative to see what changed."
     },
     "approvals": {
       "title": "Something is waiting on you",
       "body": "Open Initiative to review it."
     },
-    "posts": {
-      "title": "New post",
+    "moderation": {
+      "title": "A moderation notice",
       "body": "Open Initiative to read it."
     },
-    "events": {
-      "title": "An event changed",
-      "body": "Open Initiative to see it."
-    },
-    "event_reminders": {
-      "title": "Upcoming event",
-      "body": "Open Initiative to see it."
+    "cases": {
+      "title": "News about a case",
+      "body": "Open Initiative to read it."
     },
     "direct_messages": {
-      "title": "New message",
-      "body": "Open Initiative to read it."
-    },
-    "connections": {
-      "title": "A connection update",
+      "title": "A message or a connection request",
       "body": "Open Initiative to see it."
     },
     "jobs": {
@@ -229,14 +207,6 @@
     },
     "account": {
       "title": "An account notice",
-      "body": "Open Initiative to read it."
-    },
-    "moderation": {
-      "title": "A moderation notice",
-      "body": "Open Initiative to read it."
-    },
-    "cases": {
-      "title": "News about a case",
       "body": "Open Initiative to read it."
     }
   },

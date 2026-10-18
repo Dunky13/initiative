@@ -124,8 +124,6 @@ export const notificationLink = (notification: NotificationRead): string | null 
         ? buildCommunityPath(communityId, "/settings/data")
         : null;
     }
-    case "user_pending_approval":
-      return "/settings";
     case "direct_message":
       // The page opens the conversation itself: the thread is read out of this
       // device's own store, so there is nothing for a route param to fetch.
@@ -142,6 +140,8 @@ export const notificationLink = (notification: NotificationRead): string | null 
     case "comment_reply":
     case "comment_on_resource":
     case "subscription_activity":
+    case "assigned_activity":
+    case "post_reaction":
       return entityRefFromData(data);
     case "post_published":
       if (typeof data.post_id === "number") {
@@ -156,7 +156,6 @@ export const notificationLink = (notification: NotificationRead): string | null 
       // (the queue). It's a platform route, not community-scoped.
       return "/settings/operator/access";
     case "event_invitation":
-    case "event_updated":
     case "event_cancelled":
     case "event_rsvp":
     case "event_reminder": {
@@ -239,6 +238,7 @@ const SUBSCRIPTION_VERBS = [
   "moved",
   "scheduled",
   "published",
+  "reacted",
 ] as const;
 
 export const commentSummary = (
@@ -284,10 +284,6 @@ export const notificationText = (
         projectName: data.project_name ?? t("notifications.plain.project"),
         initiativeName: data.initiative_name ?? t("notifications.plain.initiativeIn"),
       });
-    case "user_pending_approval":
-      return t("notifications.userPendingApproval", {
-        email: data.email ?? t("notifications.plain.user"),
-      });
     case "mention":
       // A comment, a task's description, or a file.
       if (data.comment_id) {
@@ -326,15 +322,20 @@ export const notificationText = (
       }
       return t("notifications.commentOnResource", { commenterName: name, entityName });
     }
-    case "subscription_activity": {
+    case "subscription_activity":
+    case "assigned_activity":
+    case "post_reaction": {
       // One line per subscribed item: who changed it, and how, or how many did.
       const { name, others } = commentSummary(data);
       const entityName = data.entity_name ?? t("notifications.plain.item");
+      const emoji = typeof data.emoji === "string" ? data.emoji : "";
       if (others > 0) {
-        return t("notifications.subscriptionMulti", { name, count: others, entityName });
+        return notification.type === "post_reaction"
+          ? t("notifications.subscriptionReactedMulti", { name, count: others, entityName, emoji })
+          : t("notifications.subscriptionMulti", { name, count: others, entityName });
       }
       const verb = SUBSCRIPTION_VERBS.find((each) => each === data.verb) ?? "edited";
-      return t(`notifications.subscription.${verb}`, { name, entityName });
+      return t(`notifications.subscription.${verb}`, { name, entityName, emoji });
     }
     case "post_published":
       return t("notifications.postPublished", {
@@ -421,16 +422,6 @@ export const notificationText = (
         organizer: data.organizer_name ?? t("notifications.someone"),
         eventTitle: data.event_title ?? t("notifications.plain.event"),
       });
-    case "event_updated":
-      return data.time_changed
-        ? t("notifications.eventRescheduled", {
-            editor: data.editor_name ?? t("notifications.someone"),
-            eventTitle: data.event_title ?? t("notifications.plain.event"),
-          })
-        : t("notifications.eventUpdated", {
-            editor: data.editor_name ?? t("notifications.someone"),
-            eventTitle: data.event_title ?? t("notifications.plain.event"),
-          });
     case "event_cancelled":
       return t("notifications.eventCancelled", {
         canceller: data.canceller_name ?? t("notifications.someone"),

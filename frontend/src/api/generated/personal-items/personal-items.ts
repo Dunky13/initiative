@@ -779,8 +779,10 @@ export const useSubscribeItem = <TError = ErrorType<HTTPValidationError>, TConte
 };
 /**
  * Unsubscribe: nothing about it reaches the reader any more, whatever ties
- * them to it, until they subscribe again. Loads the item as its page does;
- * idempotent. A platform grantee is not a member, so nothing is kept.
+ * them to it, until they subscribe again. Idempotent, and a subscription
+ * comes off something the reader has lost too; where they keep nothing about
+ * it yet, the item is loaded as its page does. A platform grantee is not a
+ * member, so nothing is kept.
  * @summary Unsubscribe Item
  */
 export const unsubscribeItem = (

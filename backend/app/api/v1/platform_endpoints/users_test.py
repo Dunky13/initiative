@@ -196,34 +196,62 @@ async def test_returning_a_switch_to_its_default_leaves_no_trace(client, acting_
         "/api/v1/me/notification-preferences",
         headers=a.headers,
         json={
-            "channels": [{"category": "reactions", "channel": "push", "enabled": False}]
+            "channels": [
+                {"category": "subscriptions", "channel": "push", "enabled": False}
+            ]
         },
     )
-    assert off.json()["settings"]["reactions"]["push"] is False
+    assert off.json()["settings"]["subscriptions"]["push"] is False
 
     back_on = await client.put(
         "/api/v1/me/notification-preferences",
         headers=a.headers,
         json={
-            "channels": [{"category": "reactions", "channel": "push", "enabled": True}]
+            "channels": [
+                {"category": "subscriptions", "channel": "push", "enabled": True}
+            ]
         },
     )
     assert back_on.json()["settings"] == {}
 
 
-async def test_a_community_can_be_set_to_say_less(client, acting_user):
-    """The one dial almost everybody will use."""
+async def test_a_community_can_say_less_or_nothing(client, acting_user):
+    """A row switched off in one community, and a community muted; a row a
+    community cannot switch on its own does not move."""
     a = await acting_user(guild_role=CommunityRole.member)
 
     response = await client.put(
         "/api/v1/me/notification-preferences",
         headers=a.headers,
-        json={"levels": [{"community_id": a.guild.id, "level": "personal"}]},
+        json={
+            "rows": [
+                {"community_id": a.guild.id, "category": "news", "enabled": False},
+                {"community_id": a.guild.id, "category": "approvals", "enabled": False},
+            ]
+        },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     listed = {g["community_id"]: g for g in response.json()["communities"]}
-    assert listed[a.guild.id]["level"] == "personal"
+    assert listed[a.guild.id] == {
+        "community_id": a.guild.id,
+        "community_name": a.guild.name,
+        "muted": False,
+        "off": ["news"],
+    }
+
+    response = await client.put(
+        "/api/v1/me/notification-preferences",
+        headers=a.headers,
+        json={
+            "rows": [{"community_id": a.guild.id, "category": "news", "enabled": True}],
+            "mutes": [{"community_id": a.guild.id, "muted": True}],
+        },
+    )
+
+    listed = {g["community_id"]: g for g in response.json()["communities"]}
+    assert listed[a.guild.id]["muted"] is True
+    assert listed[a.guild.id]["off"] == []
 
 
 async def test_quiet_hours_round_trip(client, acting_user):

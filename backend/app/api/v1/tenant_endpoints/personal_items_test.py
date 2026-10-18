@@ -439,10 +439,11 @@ async def test_opening_something_inside_a_tool_is_recorded_and_never_a_tab(
     state = await client.get(
         a.g(f"/personal-items/{kind}/{entity.id}"), headers=a.headers
     )
-    assert (state.json()["subscribed_at"], state.json()["view_source"]) == (
-        None,
-        "search",
-    )
+    assert (
+        state.json()["subscribed_at"],
+        state.json()["subscribed"],
+        state.json()["view_source"],
+    ) == (None, False, "search")
     refused = await client.put(
         outsider.g(f"/personal-items/subscribe/{kind}/{entity.id}"),
         headers=outsider.headers,
@@ -495,7 +496,8 @@ async def test_a_bookmark_and_a_subscription_come_off(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """One item's state says what the reader keeps; each mark comes off on its
-    own, idempotently, and the row goes with the last."""
+    own, idempotently. Unsubscribing is kept: they made it, which subscribes
+    them, until they say otherwise."""
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
     project = await create_project(session, a.initiative, a.user)
     state_path = a.g(f"/personal-items/project/{project.id}")
@@ -522,8 +524,47 @@ async def test_a_bookmark_and_a_subscription_come_off(
     await client.delete(
         a.g(f"/personal-items/subscribe/project/{project.id}"), headers=a.headers
     )
+    state = (await client.get(state_path, headers=a.headers)).json()
+    assert (state["subscribed_at"], state["subscribed"]) == (None, False)
     await route_session_to_guild(session, a.guild.id)
-    assert (await session.exec(select(PersonalItem))).all() == []
+    (row,) = (await session.exec(select(PersonalItem))).all()
+    assert (row.subscribed_at, row.bookmarked_at) == (None, None)
+    assert row.unsubscribed_at is not None
+
+
+async def test_making_or_being_named_on_something_subscribes(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Nobody subscribed by hand: the maker of a project, and the assignee of
+    a task in it, are subscribed to the task, and an unsubscription from it
+    holds whatever ties them."""
+    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
+    b = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    project = await create_project(session, a.initiative, a.user)
+    await create_resource_grant(session, project, user=b.user)
+    task = await create_task(session, project, assignees=[b.user])
+    path = f"/personal-items/task/{task.id}"
+
+    for actor in (a, b):
+        state = (await client.get(actor.g(path), headers=actor.headers)).json()
+        assert (state["subscribed"], state["subscribed_at"]) == (True, None)
+
+    off = await client.delete(
+        b.g(f"/personal-items/subscribe/task/{task.id}"), headers=b.headers
+    )
+    assert off.status_code == 204, off.text
+    assert (await client.get(b.g(path), headers=b.headers)).json()[
+        "subscribed"
+    ] is False
+    on = await client.put(
+        b.g(f"/personal-items/subscribe/task/{task.id}"), headers=b.headers
+    )
+    assert on.json()["subscribed"] is True
 
 
 async def test_a_tool_the_reader_cannot_open_cannot_be_bookmarked_or_subscribed_to(
@@ -641,4 +682,6 @@ async def test_marks_come_off_a_tool_the_reader_has_lost(
 
     session.expunge_all()
     await route_session_to_guild(session, a.guild.id)
-    assert (await session.exec(select(PersonalItem.user_id))).all() == []
+    (row,) = (await session.exec(select(PersonalItem))).all()
+    assert (row.bookmarked_at, row.subscribed_at) == (None, None)
+    assert row.unsubscribed_at is not None

@@ -2214,7 +2214,7 @@ async def test_a_resolution_reaches_the_requester_on_both_channels(
 
     assert [m["recipient_id"] for m in sent] == [member.user.id]
     # Being told the answer is membership news, not something to act on.
-    assert sent[0]["category"] is NotificationCategory.membership
+    assert sent[0]["category"] is NotificationCategory.news
     assert sent[0]["subject"] == subject
     assert f"community_id={manager.guild.id}" in sent[0]["link"]
 

@@ -110,6 +110,18 @@
       "subject": "Nouveau commentaire sur {{context}}",
       "title": "Nouveau commentaire sur un élément auquel vous êtes abonné",
       "body": "<strong>{{actor}}</strong> a commenté <strong>{{context}}</strong>"
+    },
+    "reacted": {
+      "subject": "Nouvelle réaction sur {{context}}",
+      "title": "Nouvelle réaction sur un élément auquel vous êtes abonné",
+      "body": "<strong>{{actor}}</strong> a réagi à <strong>{{context}}</strong>"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} a changé",
+      "title": "Un élément qui vous concerne a changé",
+      "body": "<strong>{{actor}}</strong> a modifié <strong>{{context}}</strong>"
     }
   },
   "post": {
@@ -124,16 +136,6 @@
       "subject": "Vous êtes invité(e) : {{event}}",
       "title": "Nouvelle invitation à un événement",
       "body": "<strong>{{organizer}}</strong> vous a invité(e) à <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
-    },
-    "rescheduled": {
-      "subject": "Événement reprogrammé : {{event}}",
-      "title": "Événement reprogrammé",
-      "body": "<strong>{{editor}}</strong> a reprogrammé <strong>{{event}}</strong> pour <strong>{{when}}</strong>."
-    },
-    "updated": {
-      "subject": "Événement mis à jour : {{event}}",
-      "title": "Événement mis à jour",
-      "body": "<strong>{{editor}}</strong> a mis à jour <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
     },
     "cancelled": {
       "subject": "Événement annulé : {{event}}",
@@ -368,28 +370,20 @@
     },
     "noCommunity": {
       "direct_messages": "Messages directs",
-      "connections": "Contacts",
       "account": "Votre compte",
       "other": "Dans vos communautés"
     },
     "category": {
-      "mentions": "Mentions",
-      "replies": "Réponses",
-      "comments": "Commentaires sur votre travail",
-      "reactions": "Réactions",
-      "assignments": "Tâches assignées",
-      "due_dates": "Tâches en retard",
-      "membership": "Nouvelles arrivées",
+      "mentions": "Mentions et réponses",
+      "assignments": "Qui vous est assigné",
+      "subscriptions": "Abonnements",
+      "news": "Nouveau dans vos communautés",
       "approvals": "En attente de vous",
-      "posts": "Publications",
-      "events": "Événements",
-      "event_reminders": "Rappels d'événements",
-      "direct_messages": "Messages directs",
-      "connections": "Contacts",
-      "jobs": "Exports et imports",
-      "account": "Votre compte",
       "moderation": "Modération",
-      "cases": "Dossiers"
+      "cases": "Dossiers",
+      "direct_messages": "Messages et contacts",
+      "jobs": "Exports et imports",
+      "account": "Votre compte"
     }
   },
   "signInCode": {

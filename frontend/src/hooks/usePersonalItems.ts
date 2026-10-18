@@ -364,6 +364,7 @@ export const useToggleSubscription = () => {
       if (before) {
         qc.setQueryData<PersonalItemState>(queryKey, {
           ...before,
+          subscribed: next,
           subscribed_at: next ? new Date().toISOString() : null,
         });
       }
@@ -386,7 +387,7 @@ export const useToggleSubscription = () => {
 export const useSubscription = (kind: ContentKind, entityId: number, communityId?: number) => {
   const { data } = useItemState(kind, entityId, communityId);
   const toggle = useToggleSubscription();
-  const subscribed = Boolean(data?.subscribed_at);
+  const subscribed = Boolean(data?.subscribed);
   return {
     subscribed,
     ready: Boolean(data) && !toggle.isPending,

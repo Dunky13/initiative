@@ -108,14 +108,14 @@ async def governing_of(
         step = sa_table(table, sa_column("id"), sa_column(column))
         row_id = (
             await session.exec(select(step.c[column]).where(step.c.id == row_id))
-        ).scalar_one_or_none()
+        ).one_or_none()
         if row_id is None:
             return None
         table = parent
     model = tool_models()[tool.plural]
     row = (
-        await session.exec(select(model).where(model.id == row_id))
-    ).scalar_one_or_none()
+        await session.exec(select(model).where(model.id == row_id))  # type: ignore[attr-defined]
+    ).one_or_none()
     return None if row is None else (tool, row)
 
 

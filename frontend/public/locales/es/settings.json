@@ -356,24 +356,16 @@
     "toggleError": "No se pudo actualizar la configuración de notificaciones",
     "categoryHeader": "Categoría",
     "categories": {
-      "mentions": "Menciones",
-      "replies": "Respuestas",
-      "comments": "Comentarios en tu trabajo",
-      "reactions": "Reacciones",
-      "subscriptions": "Suscripciones",
-      "assignments": "Tareas asignadas",
-      "due_dates": "Tareas vencidas",
-      "membership": "Nuevas incorporaciones",
+      "mentions": "Menciones y respuestas",
+      "assignments": "Asignado a ti",
+      "subscriptions": "Suscrito",
+      "news": "Novedades en tus comunidades",
       "approvals": "Esperan por ti",
-      "posts": "Publicaciones",
-      "events": "Eventos",
-      "event_reminders": "Recordatorios de eventos",
-      "direct_messages": "Mensajes directos",
-      "connections": "Contactos",
-      "jobs": "Exportaciones e importaciones",
-      "account": "Tu cuenta",
       "moderation": "Moderación",
-      "cases": "Casos"
+      "cases": "Casos",
+      "direct_messages": "Mensajes y contactos",
+      "jobs": "Exportaciones e importaciones",
+      "account": "Tu cuenta"
     },
     "reminderLeadTime": {
       "label": "Recordarme",
@@ -395,30 +387,21 @@
       "desktop": "Escritorio"
     },
     "groups": {
-      "addressed_to_me": "Dirigido a mí",
-      "activity": "Actividad",
-      "community": "Comunidad",
-      "account": "Cuenta"
+      "your_communities": "En tus comunidades",
+      "community": "Te necesita",
+      "account": "Solo tú"
     },
     "categoryDescriptions": {
-      "mentions": "Alguien escribió tu nombre.",
-      "replies": "Alguien respondió a algo que dijiste.",
-      "comments": "Alguien comentó una tarea en la que estás, o algo que creaste. Agrupado por hilo.",
-      "reactions": "Alguien reaccionó a uno de tus comentarios.",
-      "subscriptions": "Cambios y comentarios en aquello a lo que te suscribiste y en lo que contiene.",
-      "assignments": "Alguien te asignó tareas. Un resumen, no uno por tarea.",
-      "due_dates": "Un aviso diario de lo vencido, a la hora que elijas.",
-      "membership": "Te añadieron a una iniciativa, o apareció un proyecto en una.",
+      "mentions": "Alguien te nombró, te respondió o reaccionó a tu comentario.",
+      "assignments": "Te dieron una tarea o te invitaron a algo, o aquello en lo que estás vence, cambió, se canceló o está por empezar.",
+      "subscriptions": "Cambios, comentarios y reacciones en lo que sigues, incluido lo que creaste. La campana de cualquier elemento lo detiene.",
+      "news": "Se publicó algo, te añadieron a una iniciativa o a un proyecto, o respondieron a tu solicitud para unirte.",
       "approvals": "Alguien espera tu decisión. Siempre aparece en la campana.",
-      "posts": "Se publicó un aviso en un tablón que puedes ver.",
-      "events": "Te invitaron a algo, o cambió algo a lo que asistes.",
-      "event_reminders": "Poco antes de un evento al que vas.",
-      "direct_messages": "Alguien te escribió. Quién y cuántos, nunca qué dice.",
-      "connections": "Alguien pidió conectar, o aceptó.",
-      "jobs": "Terminó una exportación o importación que pediste.",
-      "account": "Se hizo algo con tu cuenta. Siempre aparece en la campana.",
       "moderation": "Los moderadores de una comunidad retiraron algo que escribiste o te avisaron por ello. Siempre aparece en la campana.",
-      "cases": "Se abrió un caso donde atiendes casos, o quien lo presentó respondió y nadie lo ha tomado."
+      "cases": "Se abrió un caso donde atiendes casos, o quien lo presentó respondió y nadie lo ha tomado.",
+      "direct_messages": "Alguien te escribió, pidió conectar o aceptó. Quién y cuántos, nunca lo que dice un mensaje.",
+      "jobs": "Terminó una exportación o importación que pediste.",
+      "account": "Se hizo algo con tu cuenta. Siempre aparece en la campana."
     },
     "quietHours": {
       "title": "Horas de silencio",
@@ -428,14 +411,11 @@
     },
     "communities": {
       "title": "Por comunidad",
-      "description": "Un control por comunidad. Haz que una hable menos sin cambiar nada más.",
-      "levelLabel": "Cuánto dice {{community}}",
-      "mutedHelp": "Esta comunidad no dice nada — ni siquiera si alguien te nombra directamente.",
-      "levels": {
-        "everything": "Todo",
-        "personal": "Solo lo que me nombra",
-        "nothing": "Nada"
-      }
+      "description": "Desactiva una fila para una comunidad, o silénciala, sin cambiar nada en ningún otro sitio.",
+      "mute": "Silenciar",
+      "muteLabel": "Silenciar {{community}}",
+      "rowLabel": "{{row}} en {{community}}",
+      "mutedHelp": "Esta comunidad no dice nada — ni siquiera si alguien te nombra directamente."
     },
     "timing": {
       "title": "Cuándo te enteras",

@@ -114,14 +114,24 @@ def regroup(doc: dict[str, Any]) -> dict[str, Any]:
 
 @contextmanager
 def _writing(table: str) -> Iterator[None]:
-    # FORCE-RLS tables the migration role owns: their policies key on request
-    # settings a migration has no value for, so the force is lifted for the
-    # write and restored with it.
-    op.execute(f"ALTER TABLE public.{table} NO FORCE ROW LEVEL SECURITY")
+    # A FORCE-RLS table the migration role owns binds it to policies keyed on
+    # request settings a migration has no value for, so a forced table has
+    # the force lifted for the write and restored with it.
+    conn = op.get_bind()
+    forced = conn.execute(
+        sa.text(
+            "SELECT relforcerowsecurity FROM pg_class"
+            " WHERE oid = CAST(:table AS regclass)"
+        ),
+        {"table": f"public.{table}"},
+    ).scalar_one()
+    if forced:
+        op.execute(f"ALTER TABLE public.{table} NO FORCE ROW LEVEL SECURITY")
     try:
         yield
     finally:
-        op.execute(f"ALTER TABLE public.{table} FORCE ROW LEVEL SECURITY")
+        if forced:
+            op.execute(f"ALTER TABLE public.{table} FORCE ROW LEVEL SECURITY")
 
 
 def upgrade() -> None:

@@ -251,15 +251,22 @@ async def unsubscribe_item(
     guild_context: GuildContextDep,
 ) -> None:
     """Unsubscribe: nothing about it reaches the reader any more, whatever ties
-    them to it, until they subscribe again. Loads the item as its page does;
-    idempotent. A platform grantee is not a member, so nothing is kept."""
+    them to it, until they subscribe again. Idempotent, and a subscription
+    comes off something the reader has lost too; where they keep nothing about
+    it yet, the item is loaded as its page does. A platform grantee is not a
+    member, so nothing is kept."""
+    if guild_context.is_pam:
+        return
+    if await service.unsubscribe(
+        session, user_id=current_user.id, kind=kind.value, entity_id=entity_id
+    ):
+        return
     row = await resource_access.load_kind(
         session, kind.value, entity_id, current_user, guild_context
     )
-    if not guild_context.is_pam:
-        await service.unsubscribe(
-            session, user_id=current_user.id, kind=kind.value, entity_id=row.id
-        )
+    await service.unsubscribe(
+        session, user_id=current_user.id, kind=kind.value, entity_id=row.id, new=True
+    )
 
 
 @me_router.get("/personal-items", response_model=List[PersonalItemRead])

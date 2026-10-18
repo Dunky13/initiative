@@ -360,4 +360,42 @@ describe("notificationText — something the reader subscribed to", () => {
       )
     ).toContain("notifications.subscriptionMulti");
   });
+
+  it("reads a change to what the reader is named on as a subscription line", () => {
+    const line = notice("assigned_activity", {
+      entity_type: "task",
+      entity_id: 9,
+      verb: "moved",
+      commenters: [{ name: "Ada" }],
+      commenter_count: 1,
+    });
+    expect(notificationText(line, t)).toContain("notifications.subscription.moved");
+    expect(notificationLink(line)).toBe("/go/task/9");
+  });
+
+  it("names the reaction to a post, and counts the rest once several reacted", () => {
+    const one = notice("post_reaction", {
+      entity_type: "post",
+      entity_id: 5,
+      emoji: "🎉",
+      verb: "reacted",
+      commenters: [{ name: "Ada" }],
+      commenter_count: 1,
+    });
+    expect(notificationText(one, t)).toContain("notifications.subscription.reacted");
+    expect(notificationText(one, t)).toContain("🎉");
+    expect(notificationLink(one)).toBe("/go/post/5");
+
+    expect(
+      notificationText(
+        notice("post_reaction", {
+          emoji: "🎉",
+          verb: "reacted",
+          commenters: [{ name: "Ada" }, { name: "Bram" }],
+          commenter_count: 2,
+        }),
+        t
+      )
+    ).toContain("notifications.subscriptionReactedMulti");
+  });
 });
