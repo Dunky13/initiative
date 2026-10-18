@@ -55,7 +55,7 @@ interface TaskBulkEditDialogProps {
   selectedTasks: TaskListRead[];
   taskStatuses: TaskStatusRead[];
   /** Whether a column takes every selected task not already in it. */
-  hasRoom?: (taskStatusId: number) => boolean;
+  isFull?: (taskStatusId: number) => boolean;
   projectId: number;
   isSubmitting: boolean;
   onApply: (changes: Partial<TaskBulkUpdate>) => void;
@@ -65,7 +65,7 @@ interface TaskBulkEditDialogProps {
 export const TaskBulkEditDialog = ({
   selectedTasks,
   taskStatuses,
-  hasRoom,
+  isFull,
   projectId,
   isSubmitting,
   onApply,
@@ -179,7 +179,7 @@ export const TaskBulkEditDialog = ({
                   </SelectTrigger>
                   <SelectContent>
                     {taskStatuses.map((status) => {
-                      const full = hasRoom?.(status.id) === false;
+                      const full = isFull?.(status.id) === true;
                       return (
                         <SelectItem key={status.id} value={String(status.id)} disabled={full}>
                           {full

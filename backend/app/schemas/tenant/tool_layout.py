@@ -280,13 +280,14 @@ CardFieldId = Union[TaskFieldId, NamedFieldId]
 class TaskGroupingId(str, Enum):
     """What a project's tasks are grouped by beside their properties: their
     date window and status, which are not fields, and the built-in fields whose
-    values group. In the order a list offers them as shipped."""
+    values group. In the order a list offers them as shipped: the two a table
+    always offered first."""
 
     date = "date"
+    tags = "tags"
     status = "status"
     priority = "priority"
     assignees = "assignees"
-    tags = "tags"
 
 
 def _property_field(value: str) -> str:

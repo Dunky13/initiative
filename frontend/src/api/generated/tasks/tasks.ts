@@ -25,11 +25,12 @@ import type {
   ArchiveDoneTasksParams,
   ChecklistItem,
   ChecklistItemToggle,
-  CountTasksByStatusParams,
+  ColumnFillRead,
   DeleteTaskParams,
   GenerateChecklistResponse,
   GenerateDescriptionResponse,
   HTTPValidationError,
+  ListColumnLimitsParams,
   ListMyTasksParams,
   ListTasksParams,
   ReadTaskParams,
@@ -39,7 +40,6 @@ import type {
   TaskMoveRequest,
   TaskRead,
   TaskReorderRequest,
-  TaskStatusCount,
   TaskUpdate,
 } from "../initiativeAPI.schemas";
 
@@ -277,75 +277,74 @@ export const useCreateTask = <TError = ErrorType<HTTPValidationError>, TContext 
   return useMutation(getCreateTaskMutationOptions(options), queryClient);
 };
 /**
- * How many open tasks each of a project's columns holds, whatever the
- * reader's filters show: what a column's limit is held to.
- * @summary Count Tasks By Status
+ * Each limited board column of the named projects the reader can open:
+ * its limit, and how many open tasks it holds. A project with no limits, or
+ * one the reader can't open, has none.
+ * @summary List Column Limits
  */
-export const countTasksByStatus = (
+export const listColumnLimits = (
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<TaskStatusCount[]>(
-    { url: `/api/v1/c/${communityId}/tasks/status-counts`, method: "GET", params, signal },
+  return apiMutator<ColumnFillRead[]>(
+    { url: `/api/v1/c/${communityId}/tasks/column-limits`, method: "GET", params, signal },
     options
   );
 };
 
-export const getCountTasksByStatusQueryKey = (
+export const getListColumnLimitsQueryKey = (
   communityId: number,
-  params?: CountTasksByStatusParams
+  params?: ListColumnLimitsParams
 ) => {
-  return [`/api/v1/c/${communityId}/tasks/status-counts`, ...(params ? [params] : [])] as const;
+  return [`/api/v1/c/${communityId}/tasks/column-limits`, ...(params ? [params] : [])] as const;
 };
 
-export const getCountTasksByStatusQueryOptions = <
-  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+export const getListColumnLimitsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listColumnLimits>>,
   TError = ErrorType<HTTPValidationError>,
 >(
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   }
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getCountTasksByStatusQueryKey(communityId, params);
+  const queryKey = queryOptions?.queryKey ?? getListColumnLimitsQueryKey(communityId, params);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof countTasksByStatus>>> = ({ signal }) =>
-    countTasksByStatus(communityId, params, requestOptions, signal);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listColumnLimits>>> = ({ signal }) =>
+    listColumnLimits(communityId, params, requestOptions, signal);
 
   return {
     queryKey,
     queryFn,
     enabled: communityId !== null && communityId !== undefined,
     ...queryOptions,
-  } as UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData> & {
+  } as UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData> & {
     queryKey: DataTag<QueryKey, TData, TError>;
   };
 };
 
-export type CountTasksByStatusQueryResult = NonNullable<
-  Awaited<ReturnType<typeof countTasksByStatus>>
->;
-export type CountTasksByStatusQueryError = ErrorType<HTTPValidationError>;
+export type ListColumnLimitsQueryResult = NonNullable<Awaited<ReturnType<typeof listColumnLimits>>>;
+export type ListColumnLimitsQueryError = ErrorType<HTTPValidationError>;
 
-export function useCountTasksByStatus<
-  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+export function useListColumnLimits<
+  TData = Awaited<ReturnType<typeof listColumnLimits>>,
   TError = ErrorType<HTTPValidationError>,
 >(
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options: {
-    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>> &
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData>> &
       Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof countTasksByStatus>>,
+          Awaited<ReturnType<typeof listColumnLimits>>,
           TError,
-          Awaited<ReturnType<typeof countTasksByStatus>>
+          Awaited<ReturnType<typeof listColumnLimits>>
         >,
         "initialData"
       >;
@@ -353,21 +352,19 @@ export function useCountTasksByStatus<
   },
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useCountTasksByStatus<
-  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+export function useListColumnLimits<
+  TData = Awaited<ReturnType<typeof listColumnLimits>>,
   TError = ErrorType<HTTPValidationError>,
 >(
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>
-    > &
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData>> &
       Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof countTasksByStatus>>,
+          Awaited<ReturnType<typeof listColumnLimits>>,
           TError,
-          Awaited<ReturnType<typeof countTasksByStatus>>
+          Awaited<ReturnType<typeof listColumnLimits>>
         >,
         "initialData"
       >;
@@ -375,35 +372,35 @@ export function useCountTasksByStatus<
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useCountTasksByStatus<
-  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+export function useListColumnLimits<
+  TData = Awaited<ReturnType<typeof listColumnLimits>>,
   TError = ErrorType<HTTPValidationError>,
 >(
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * @summary Count Tasks By Status
+ * @summary List Column Limits
  */
 
-export function useCountTasksByStatus<
-  TData = Awaited<ReturnType<typeof countTasksByStatus>>,
+export function useListColumnLimits<
+  TData = Awaited<ReturnType<typeof listColumnLimits>>,
   TError = ErrorType<HTTPValidationError>,
 >(
   communityId: number,
-  params: CountTasksByStatusParams,
+  params: ListColumnLimitsParams,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof countTasksByStatus>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listColumnLimits>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getCountTasksByStatusQueryOptions(communityId, params, options);
+  const queryOptions = getListColumnLimitsQueryOptions(communityId, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

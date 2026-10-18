@@ -11,6 +11,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { getListMyTasksQueryKey, listMyTasks } from "@/api/generated/tasks/tasks";
 import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
+import { useTaskColumnLimits } from "@/hooks/useColumnLimits";
 import { useCommunities } from "@/hooks/useCommunities";
 import { deviceJSON, LIST, type ListViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useMyTaskStatusChanges } from "@/hooks/useMyTaskStatusChanges";
@@ -220,6 +221,7 @@ export function useGlobalTasksTable() {
   const { rememberStatuses } = status;
   const tasks = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data]);
   useEffect(() => rememberStatuses(tasks), [tasks, rememberStatuses]);
+  const columnLimits = useTaskColumnLimits(tasks);
 
   // --- Display tasks ---
   // Archived/template projects are excluded server-side, so the rows come
@@ -272,6 +274,8 @@ export function useGlobalTasksTable() {
     fetchProjectStatuses: status.fetchProjectStatuses,
     projectStatusCache: status.projectStatusCache,
     isUpdatingTask: status.isUpdatingTask,
+    // Which of the rows' projects' columns are full
+    columnLimits,
 
     // Display data
     displayTasks,

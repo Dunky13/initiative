@@ -224,6 +224,22 @@ describe("TasksWidget status changes", () => {
     expect(doneBoxes()[1]).toBeEnabled();
     await rowTitle("Read the thing");
   });
+
+  it("can't check a task into its project's full done column", async () => {
+    stubTwoTasksAndStatuses();
+    server.use(
+      http.get("/api/v1/c/:communityId/tasks/column-limits", () =>
+        HttpResponse.json([{ project_id: 5, status_id: 11, limit: 1, count: 1 }])
+      )
+    );
+    renderMyTasks();
+
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+    await rowTitle("Read the thing");
+    await waitFor(() => expect(doneBoxes()[0]).toBeDisabled());
+    expect(doneBoxes()[0]).toHaveAttribute("title", "Done is full");
+    expect(doneBoxes()[1]).toBeDisabled();
+  });
 });
 
 describe("TasksWidget priority", () => {

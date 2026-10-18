@@ -197,7 +197,9 @@ async def unarchive_entity(
     await archive_service.unarchive_entity(session, row)
     # A task back out of the archive goes back into its column.
     if isinstance(row, Task) and was_archived:
-        await column_limits.require_room(session, guild_context, row.project_id, [row])
+        await column_limits.refuse_full_columns(
+            session, guild_context, row.project_id, [row]
+        )
     await session.commit()
     return ArchiveResponse(
         entity_type=entity_type, entity_id=entity_id, archived_at=None

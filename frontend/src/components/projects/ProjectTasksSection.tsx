@@ -59,7 +59,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
-import { useColumnRoom } from "@/hooks/useColumnRoom";
+import { useColumnLimits } from "@/hooks/useColumnLimits";
 import { useInitiative } from "@/hooks/useInitiatives";
 import {
   type ProjectViewSearch,
@@ -358,22 +358,22 @@ export const ProjectTasksSection = ({
 
   // How full the board's limited columns are, which every way a person puts
   // a task into a column here holds to.
-  const room = useColumnRoom(projectId);
+  const columnLimits = useColumnLimits(projectId);
   const refuseFull = useCallback(
     (taskStatusId: number, entering = 1) => {
-      if (room.hasRoom(taskStatusId, entering)) return false;
+      if (!columnLimits.isFull(taskStatusId, entering)) return false;
       toast.error(t("errors:TASK_STATUS_AT_LIMIT"));
       return true;
     },
-    [room, t]
+    [columnLimits, t]
   );
 
   // A task is added to the project's default status unless another is picked,
   // or that column is full and another isn't.
   const projectDefault = sortedTaskStatuses.find((status) => status.id === defaultStatusId);
   const defaultStatus =
-    projectDefault && !room.hasRoom(projectDefault.id)
-      ? (sortedTaskStatuses.find((status) => room.hasRoom(status.id)) ?? projectDefault)
+    projectDefault && columnLimits.isFull(projectDefault.id)
+      ? (sortedTaskStatuses.find((status) => !columnLimits.isFull(status.id)) ?? projectDefault)
       : projectDefault;
   const leaving = useRef(false);
   const neverAsks = useCallback(async () => null, []);
@@ -981,7 +981,7 @@ export const ProjectTasksSection = ({
             }
             isArchivingDoneTasks={archiveDoneTasks.isPending}
             card={layout?.definition.card as LayoutNode | null | undefined}
-            room={room}
+            columnLimits={columnLimits}
             grouping={grouping}
             onGroupingChange={setGrouping}
             viewGroupings={layout?.definition.groupings}
@@ -1041,7 +1041,7 @@ export const ProjectTasksSection = ({
                 tableState={tableState}
                 viewColumns={layout?.definition.columns}
                 viewGroupings={layout?.definition.groupings}
-                room={room}
+                columnLimits={columnLimits}
               />
             ) : null}
             {canEditTaskDetails && (
@@ -1084,8 +1084,8 @@ export const ProjectTasksSection = ({
       {canEditTaskDetails ? (
         <>
           {/* Mounted once the columns' counts are in, so a new task starts in
-              a column with room. */}
-          {canAddTasks && defaultStatus && room.ready ? (
+              a column that isn't full. */}
+          {canAddTasks && defaultStatus && columnLimits.ready ? (
             <AddItemDialog
               open={isComposerOpen}
               onOpenChange={setIsComposerOpen}
@@ -1095,7 +1095,7 @@ export const ProjectTasksSection = ({
                 readOnly: false,
                 readOnlyMessage: null,
                 statuses: sortedTaskStatuses,
-                hasRoom: room.hasRoom,
+                isFull: columnLimits.isFull,
                 initiativeId,
                 currentUserId: user?.id,
                 askScope: neverAsks,
@@ -1121,8 +1121,8 @@ export const ProjectTasksSection = ({
             <TaskBulkEditDialog
               selectedTasks={selectedTasks}
               taskStatuses={sortedTaskStatuses}
-              hasRoom={(statusId) =>
-                room.hasRoom(
+              isFull={(statusId) =>
+                columnLimits.isFull(
                   statusId,
                   selectedTasks.filter((task) => task.task_status_id !== statusId).length
                 )

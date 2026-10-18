@@ -22,6 +22,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
+import { columnLimitsOf } from "@/hooks/useColumnLimits";
 import type { ProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useTasks } from "@/hooks/useTasks";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
@@ -540,6 +541,18 @@ export const LayoutCanvas = ({
     }
     return groups;
   }, [tasks, statuses]);
+  // The limits being set, against the open tasks the preview holds.
+  const columnLimits = useMemo(
+    () =>
+      columnLimitsOf(
+        (definition.limits ?? []).map(({ status_id, limit }) => ({
+          status_id,
+          limit,
+          count: groupedTasks[status_id]?.length ?? 0,
+        }))
+      ),
+    [definition.limits, groupedTasks]
+  );
   // Each list's preview is grouped as the list starts until a grouping is
   // picked here, as a person's list is, so the groups of it can be hidden.
   const [picks, setPicks] = useState<Partial<Record<string, GroupingState>>>({});
@@ -607,6 +620,7 @@ export const LayoutCanvas = ({
           onDragCancel={noop}
           onToggleCollapse={noop}
           card={card}
+          columnLimits={columnLimits}
           grouping={grouping}
           viewGroupings={definition.groupings}
           editing={paths}

@@ -1,4 +1,7 @@
+import { useMemo } from "react";
+
 import { FocusSummary } from "@/components/tasks/FocusSummary";
+import { useTaskColumnLimits } from "@/hooks/useColumnLimits";
 import { useFocusSummary } from "@/hooks/useFocusSummary";
 import { useMyTaskStatusChanges } from "@/hooks/useMyTaskStatusChanges";
 
@@ -14,6 +17,12 @@ import type { HomeWidgetProps } from "./types";
 export const FocusWidget = ({ stacked }: HomeWidgetProps) => {
   const focus = useFocusSummary();
   const status = useMyTaskStatusChanges();
+  const { pinned, upcoming, completedToday } = focus;
+  const tasks = useMemo(
+    () => [...pinned, ...upcoming, ...completedToday],
+    [pinned, upcoming, completedToday]
+  );
+  const columnLimits = useTaskColumnLimits(tasks);
   return (
     <FocusSummary
       fill={!stacked}
@@ -21,6 +30,7 @@ export const FocusWidget = ({ stacked }: HomeWidgetProps) => {
       activeCommunityId={null}
       changeTaskStatus={status.changeTaskStatus}
       isUpdatingTask={status.isUpdatingTask}
+      columnLimits={columnLimits}
     />
   );
 };

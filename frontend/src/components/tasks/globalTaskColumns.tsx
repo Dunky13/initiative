@@ -15,6 +15,7 @@ import { TaskPrioritySelector } from "@/components/tasks/TaskPrioritySelector";
 import { TaskStatusSelector } from "@/components/tasks/TaskStatusSelector";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { NO_TASK_COLUMN_LIMITS, type TaskColumnLimits } from "@/hooks/useColumnLimits";
 import { InitiativeColorDot } from "@/lib/initiativeColors";
 import { type FieldColumnOptions, fieldColumn } from "@/lib/layouts/columns";
 import type { FieldDef, LayoutEnv } from "@/lib/layouts/fields";
@@ -46,6 +47,8 @@ interface GlobalTaskColumnsOptions {
   projectStatusCache: React.MutableRefObject<
     Map<number, { statuses: TaskStatusRead[]; complete: boolean }>
   >;
+  /** Which of the rows' projects' columns are full. */
+  columnLimits?: TaskColumnLimits;
   t: TranslateFn;
   /**
    * Focus-summary pinning. Both are omitted on views that have no focus
@@ -129,6 +132,7 @@ export function globalTaskColumns({
   changeTaskStatusById,
   fetchProjectStatuses,
   projectStatusCache,
+  columnLimits = NO_TASK_COLUMN_LIMITS,
   t,
   isPinned,
   togglePin,
@@ -160,6 +164,10 @@ export function globalTaskColumns({
       header: () => <span className="font-medium">{t("columns.done")}</span>,
       cell: ({ row }) => {
         const task = row.original;
+        const full = columnLimits.fullFor(
+          task,
+          task.task_status.category === "done" ? "in_progress" : "done"
+        );
         return (
           <Checkbox
             checked={task.task_status.category === "done"}
@@ -171,7 +179,8 @@ export function globalTaskColumns({
               void changeTaskStatus(task, targetCategory);
             }}
             className="h-6 w-6"
-            disabled={isUpdatingTask(task)}
+            disabled={isUpdatingTask(task) || full !== undefined}
+            title={full ? t("projects:kanban.statusFull", { name: full.name }) : undefined}
             aria-label={
               task.task_status.category === "done"
                 ? t("checkbox.markInProgress")
@@ -324,6 +333,7 @@ export function globalTaskColumns({
               changeTaskStatusById={changeTaskStatusById}
               fetchProjectStatuses={fetchProjectStatuses}
               projectStatusCache={projectStatusCache}
+              isFull={(statusId) => columnLimits.isFull(task, statusId)}
             />
           </div>
         );

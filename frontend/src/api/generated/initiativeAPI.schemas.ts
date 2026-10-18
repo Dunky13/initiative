@@ -2241,6 +2241,17 @@ export interface CollaborationHandover {
 }
 
 /**
+ * One limited column of a project's board: its limit, and how many open
+ * tasks it holds.
+ */
+export interface ColumnFillRead {
+  project_id: number;
+  status_id: number;
+  limit: number;
+  count: number;
+}
+
+/**
  * How many open tasks one board column takes from a person.
  */
 export interface ColumnLimit {
@@ -6597,16 +6608,17 @@ export interface LayoutPreset {
 /**
  * What a project's tasks are grouped by beside their properties: their
  * date window and status, which are not fields, and the built-in fields whose
- * values group. In the order a list offers them as shipped.
+ * values group. In the order a list offers them as shipped: the two a table
+ * always offered first.
  */
 export type TaskGroupingId = (typeof TaskGroupingId)[keyof typeof TaskGroupingId];
 
 export const TaskGroupingId = {
   date: "date",
+  tags: "tags",
   status: "status",
   priority: "priority",
   assignees: "assignees",
-  tags: "tags",
 } as const;
 
 /**
@@ -10498,14 +10510,6 @@ export interface TaskReorderRequest {
   items: TaskReorderItem[];
 }
 
-/**
- * How many open tasks one of a project's columns holds.
- */
-export interface TaskStatusCount {
-  task_status_id: number;
-  count: number;
-}
-
 export interface TaskStatusCreate {
   /**
    * @minLength 1
@@ -12495,8 +12499,12 @@ export type ListTasksParams = {
   tz?: string | null;
 };
 
-export type CountTasksByStatusParams = {
-  project_id: number;
+export type ListColumnLimitsParams = {
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  project_id: number[];
 };
 
 export type ReadTaskParams = {

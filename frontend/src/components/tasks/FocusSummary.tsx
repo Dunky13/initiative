@@ -15,6 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { NO_TASK_COLUMN_LIMITS, type TaskColumnLimits } from "@/hooks/useColumnLimits";
 import { FOCUS_HORIZON_ANY, FOCUS_PRIORITIES, type useFocusSummary } from "@/hooks/useFocusSummary";
 import { communityPath } from "@/lib/communityUrl";
 import { entityRefRoute, taskRoute } from "@/lib/tools";
@@ -30,6 +31,8 @@ export type FocusSummaryProps = {
   /** Whether THIS task has a status change in flight, so one row saving leaves
    *  the rest of the section usable. */
   isUpdatingTask: (task: TaskListRead) => boolean;
+  /** Which of the tasks' projects' columns are full. */
+  columnLimits?: TaskColumnLimits;
   /** Fill a home page tile on the grid: always open, its list scrolling inside
    *  the tile. The tile is what the reader sizes there, so there is nothing to
    *  fold; stacked on a narrow screen, it folds as usual. */
@@ -54,6 +57,8 @@ type FocusRowProps = {
   onTogglePin: () => void;
   onToggleDone: () => void;
   disabled: boolean;
+  /** The full column checking it would put the task in, which disables it. */
+  full?: string;
   done?: boolean;
 };
 
@@ -64,16 +69,18 @@ const FocusRow = ({
   onTogglePin,
   onToggleDone,
   disabled,
+  full,
   done = false,
 }: FocusRowProps) => {
-  const { t } = useTranslation(["tasks", "common"]);
+  const { t } = useTranslation(["tasks", "common", "projects"]);
   const context = [task.project_name, task.community_name].filter(Boolean).join(" · ");
 
   return (
     <div className="group flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50">
       <Checkbox
         checked={done}
-        disabled={disabled}
+        disabled={disabled || full !== undefined}
+        title={full === undefined ? undefined : t("projects:kanban.statusFull", { name: full })}
         onCheckedChange={() => onToggleDone()}
         aria-label={done ? t("checkbox.markInProgress") : t("checkbox.markDone")}
       />
@@ -182,6 +189,7 @@ export const FocusSummary = ({
   activeCommunityId,
   changeTaskStatus,
   isUpdatingTask,
+  columnLimits = NO_TASK_COLUMN_LIMITS,
   fill = false,
 }: FocusSummaryProps) => {
   const { t } = useTranslation(["tasks", "common"]);
@@ -199,6 +207,7 @@ export const FocusSummary = ({
       onTogglePin={() => focus.togglePin(task)}
       onToggleDone={() => void changeTaskStatus(task, done ? "in_progress" : "done")}
       disabled={isUpdatingTask(task)}
+      full={columnLimits.fullFor(task, done ? "in_progress" : "done")?.name}
       done={done}
     />
   );

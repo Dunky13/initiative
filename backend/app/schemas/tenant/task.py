@@ -301,10 +301,13 @@ class TaskListRead(TaskBase):
     plugin_values: List[PluginValueSummary] = []
 
 
-class TaskStatusCount(SanitizedBaseModel):
-    """How many open tasks one of a project's columns holds."""
+class ColumnFillRead(SanitizedBaseModel):
+    """One limited column of a project's board: its limit, and how many open
+    tasks it holds."""
 
-    task_status_id: int
+    project_id: int
+    status_id: int
+    limit: int
     count: int
 
 

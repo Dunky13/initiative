@@ -28,16 +28,9 @@ import { priorityVariant } from "@/components/projects/projectTasksConfig";
 import { resolveKanbanDropTarget } from "@/components/projects/taskOrdering";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { GroupBySelect } from "@/components/ui/data-table";
 import { MentionText } from "@/components/user/MentionText";
-import { type ColumnRoom, ROOM_EVERYWHERE } from "@/hooks/useColumnRoom";
+import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
 import { useProperties } from "@/hooks/useProperties";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { formatDateTime } from "@/lib/formatDate";
@@ -87,7 +80,7 @@ type ProjectTasksKanbanViewProps = {
   /** The groupings the board offers, in order, where its layout names them. */
   viewGroupings?: LayoutGrouping[] | null;
   /** How full its limited columns are. */
-  room?: ColumnRoom;
+  columnLimits?: ColumnLimits;
   /** While the view is edited: the path of each part of its card. */
   editing?: WeakMap<LayoutNode, string>;
 };
@@ -96,7 +89,6 @@ type ProjectTasksKanbanViewProps = {
 // every pass until they arrive.
 const NO_DEFINITIONS: PropertyDefinitionRead[] = [];
 const NOT_GROUPED: GroupingState = [];
-const NO_GROUPING = "__none__";
 
 export const ProjectTasksKanbanView = ({
   projectId,
@@ -122,7 +114,7 @@ export const ProjectTasksKanbanView = ({
   grouping = NOT_GROUPED,
   onGroupingChange,
   viewGroupings,
-  room = ROOM_EVERYWHERE,
+  columnLimits = NO_COLUMN_LIMITS,
   editing,
 }: ProjectTasksKanbanViewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -157,16 +149,16 @@ export const ProjectTasksKanbanView = ({
         ? {
             statuses: taskStatuses,
             moveTo: (taskId, statusId) => moveRef.current?.(taskId, statusId),
-            hasRoom: room.hasRoom,
+            isFull: columnLimits.isFull,
           }
         : null,
-    [canMove, taskStatuses, room]
+    [canMove, taskStatuses, columnLimits]
   );
   const fillOf = (statusId: number): ColumnFill | undefined => {
-    const limit = room.limitOf(statusId);
-    return limit === undefined ? undefined : { count: room.countOf(statusId), limit };
+    const limit = columnLimits.limitOf(statusId);
+    return limit === undefined ? undefined : { count: columnLimits.countOf(statusId), limit };
   };
-  const { t, i18n } = useTranslation(["projects", "common"]);
+  const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
   const fields = useMemo(
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
@@ -230,7 +222,7 @@ export const ProjectTasksKanbanView = ({
     const intoFull =
       target?.data?.statusId !== undefined &&
       target.data.statusId !== dragged?.statusId &&
-      !room.hasRoom(target.data.statusId);
+      columnLimits.isFull(target.data.statusId);
     const intoBand =
       active?.grouping.move !== undefined &&
       canEditTasks &&
@@ -258,26 +250,12 @@ export const ProjectTasksKanbanView = ({
   return (
     <BoardActionsContext.Provider value={boardActions}>
       {onGroupingChange && offered.length > 0 && !editing ? (
-        <div className="mb-3 flex items-center justify-end gap-2">
-          <Label htmlFor="board-group-by" className="text-muted-foreground text-sm">
-            {t("common:groupBy")}
-          </Label>
-          <Select
-            value={active?.grouping.column ?? NO_GROUPING}
-            onValueChange={(value) => onGroupingChange(value === NO_GROUPING ? [] : [value])}
-          >
-            <SelectTrigger id="board-group-by" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_GROUPING}>{t("common:none")}</SelectItem>
-              {offered.map(({ grouping: each }) => (
-                <SelectItem key={each.id} value={each.column}>
-                  {each.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="mb-3 flex justify-end">
+          <GroupBySelect
+            options={offered.map(({ grouping: each }) => ({ id: each.column, label: each.label }))}
+            value={active?.grouping.column ?? null}
+            onChange={(id) => onGroupingChange(id === null ? [] : [id])}
+          />
         </div>
       ) : null}
       <DndContext

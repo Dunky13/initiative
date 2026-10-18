@@ -144,13 +144,13 @@
   },
   "groupings": {
     "heading": "Group by",
-    "help": "What anyone can group this table by, in this order. Untick one to stop offering it. To leave a group out, group the table by it here and click the group above the table.",
+    "help": "What anyone can group this layout by, in this order. Untick one to stop offering it. To leave a group out, pick its grouping above the preview and click the group.",
     "moveUp": "Move {{name}} up",
     "moveDown": "Move {{name}} down",
     "startsOn": "Starts grouped by",
     "notGrouped": "Not grouped",
     "shown": "Groups shown:",
-    "full": "A table offers at most {{count}} groupings. Untick one to offer another.",
+    "full": "A layout offers at most {{count}} groupings. Untick one to offer another.",
     "hiddenFull": "At most {{count}} groups can be left out of one grouping. Show one to leave out another."
   },
   "limits": {
