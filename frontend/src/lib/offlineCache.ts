@@ -90,7 +90,7 @@ const PERSIST_ALLOWLIST = [
   // Enough identity and structure to render the shell around all of it.
   "/api/v1/me",
   "/api/v1/communities",
-  "/api/v1/recents",
+  "/api/v1/me/personal-items",
 ] as const;
 
 /**

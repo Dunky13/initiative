@@ -1470,7 +1470,7 @@ async def seed(c: Community) -> None:
     for d in PROJECTS[c.key]:
         await create_project(c, d)
     # A star and an open on one project are one row.
-    kept: dict[tuple[int, int], PersonalItem] = {}
+    kept: dict[tuple[int | None, int | None], PersonalItem] = {}
 
     def row(name: str, project: str) -> PersonalItem:
         key = (c.users[name].id, c.projects[project].id)

@@ -201,44 +201,22 @@ async def list_marked(
     return (await session.exec(statement)).all()
 
 
-async def marked_ids(
-    session: AsyncSession, *, user_id: int, mark: Mark, kind: str, ids: Iterable[int]
-) -> set[int]:
-    """Which of these the reader marked this way, for a list that shows it."""
-    wanted = list(ids)
-    if not wanted:
-        return set()
-    column = PersonalItem.__table__.c[MARK_COLUMNS[mark][0]]
-    return set(
-        (
-            await session.exec(
-                select(PersonalItem.entity_id).where(
-                    col(PersonalItem.user_id) == user_id,
-                    col(PersonalItem.entity_type) == kind,
-                    col(PersonalItem.entity_id).in_(wanted),
-                    column.is_not(None),
-                )
-            )
-        ).all()
-    )
-
-
-async def project_orders(
-    session: AsyncSession, *, user_id: int, ids: Iterable[int]
-) -> dict[int, float]:
-    """Where the reader put each of these projects, for those they placed."""
+async def rows_for(
+    session: AsyncSession, *, user_id: int, kind: str, ids: Iterable[int]
+) -> dict[int, PersonalItem]:
+    """The reader's rows on these items of one kind, by id, for a list that
+    shows what they keep about each."""
     wanted = list(ids)
     if not wanted:
         return {}
     rows = await session.exec(
-        select(PersonalItem.entity_id, PersonalItem.sort_order).where(
+        select(PersonalItem).where(
             col(PersonalItem.user_id) == user_id,
-            col(PersonalItem.entity_type) == "project",
+            col(PersonalItem.entity_type) == kind,
             col(PersonalItem.entity_id).in_(wanted),
-            col(PersonalItem.sort_order).is_not(None),
         )
     )
-    return {entity_id: order for entity_id, order in rows.all() if order is not None}
+    return {row.entity_id: row for row in rows.all()}
 
 
 async def place_projects(

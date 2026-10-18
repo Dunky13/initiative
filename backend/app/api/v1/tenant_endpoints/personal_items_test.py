@@ -507,6 +507,9 @@ async def test_a_star_and_a_follow_come_off(
         assert response.status_code == 200, response.text
     state = (await client.get(state_path, headers=a.headers)).json()
     assert state["starred_at"] and state["followed_at"] and state["viewed_at"] is None
+    # The project says so too, as the plug-in API publishes it.
+    read = await client.get(a.g(f"/projects/{project.id}"), headers=a.headers)
+    assert read.json()["is_favorited"] is True
 
     for _ in range(2):
         removed = await client.delete(

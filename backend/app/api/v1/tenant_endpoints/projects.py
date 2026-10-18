@@ -183,7 +183,9 @@ async def _project_reads(
     user_id: int | None,
     projects: List[Project],
 ) -> List[ProjectRead]:
-    """``ProjectRead`` for each project, in the order given."""
+    """``ProjectRead`` for each project, in the order given, with whether the
+    reader starred it and when they last opened it. An installed plug-in
+    (``user_id`` ``None``) keeps neither."""
     if not projects:
         return []
 
@@ -191,16 +193,31 @@ async def _project_reads(
     await tags_service.annotate_tags(session, projects)
     await properties_service.annotate_properties(session, projects)
     await ownership_service.annotate_owner_plugins(session, projects)
-    context = require_actor_context(session)
-    return [
-        serialize_tool(
-            ProjectRead,
-            project,
-            context=context,
+    kept = (
+        await personal_items_service.rows_for(
+            session,
             user_id=user_id,
+            kind=Tool.project.value,
+            ids=(project.id for project in projects if project.id is not None),
         )
-        for project in projects
-    ]
+        if user_id is not None
+        else {}
+    )
+    context = require_actor_context(session)
+    reads = []
+    for project in projects:
+        mine = kept.get(project.id or 0)
+        reads.append(
+            serialize_tool(
+                ProjectRead,
+                project,
+                context=context,
+                user_id=user_id,
+                is_favorited=bool(mine and mine.starred_at),
+                last_viewed_at=mine.viewed_at if mine else None,
+            )
+        )
+    return reads
 
 
 def _slim_project_reads(
@@ -432,9 +449,18 @@ async def reorder_projects(
             )
         )
     ).all()
-    placed = await personal_items_service.project_orders(
-        session, user_id=current_user.id, ids=visible_ids
-    )
+    placed = {
+        project_id: row.sort_order
+        for project_id, row in (
+            await personal_items_service.rows_for(
+                session,
+                user_id=current_user.id,
+                kind=Tool.project.value,
+                ids=visible_ids,
+            )
+        ).items()
+        if row.sort_order is not None
+    }
     # The order as it stands: those the reader has placed first, then the
     # rest by id.
     current_ids = sorted(

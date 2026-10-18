@@ -1580,6 +1580,8 @@ export interface ProjectRead {
   owner: UserPublic | null;
   owner_plugin: OwnerPluginSummary | null;
   initiative: InitiativeSummary | null;
+  is_favorited: boolean;
+  last_viewed_at: string | null;
   task_summary: ProjectTaskSummary;
   task_statuses: TaskStatusRead[];
 }
