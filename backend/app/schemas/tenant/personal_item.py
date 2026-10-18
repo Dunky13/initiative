@@ -1,4 +1,4 @@
-"""Schemas for what a member keeps about items: opens, bookmarks, follows."""
+"""Schemas for what a member keeps about items: opens, bookmarks, subscriptions."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class PersonalItemState(SanitizedBaseModel):
     viewed_at: Optional[datetime] = None
     view_source: Optional[ViewSource] = None
     bookmarked_at: Optional[datetime] = None
-    followed_at: Optional[datetime] = None
+    subscribed_at: Optional[datetime] = None
 
 
 class PersonalItemRead(SanitizedBaseModel):

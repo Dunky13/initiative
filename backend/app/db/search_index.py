@@ -570,7 +570,7 @@ NOT_SEARCHABLE: dict[str, str] = {
     "moderation_actions": "the moderation log, reached from its own surface",
     "intake_cases": "the key -> task map; the task it names is what is indexed",
     "evidence": "files attached to a report or a case, opened only through it",
-    "personal_items": "one member's own opens, bookmarks and follows",
+    "personal_items": "one member's own opens, bookmarks and subscriptions",
     "engagement_levels": "how widely an item was engaged with, not content",
     "tool_layouts": "how a tool is laid out, reached from the tool",
     "task_statuses": "column names, reached from the project",
@@ -584,6 +584,7 @@ NOT_SEARCHABLE: dict[str, str] = {
     "task_assignment_digest_items": "scheduler bookkeeping",
     "reaction_digest_items": "scheduler bookkeeping",
     "timer_marks": "scheduler bookkeeping",
+    "subscription_notices": "notification bookkeeping",
     "reactions": "a gesture with no text of its own",
     "relationships": "an edge between two things, each indexed on its own",
 }

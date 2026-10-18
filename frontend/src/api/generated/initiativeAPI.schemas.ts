@@ -7483,6 +7483,7 @@ export const NotificationType = {
   comment_on_resource: "comment_on_resource",
   comment_reply: "comment_reply",
   comment_reaction: "comment_reaction",
+  subscription_activity: "subscription_activity",
   post_published: "post_published",
   access_grant_requested: "access_grant_requested",
   access_grant_approved: "access_grant_approved",
@@ -7557,6 +7558,7 @@ export const NotificationCategory = {
   replies: "replies",
   comments: "comments",
   reactions: "reactions",
+  subscriptions: "subscriptions",
   assignments: "assignments",
   due_dates: "due_dates",
   membership: "membership",
@@ -8228,7 +8230,7 @@ export interface PersonalItemState {
   viewed_at: string | null;
   view_source: ViewSource | null;
   bookmarked_at: string | null;
-  followed_at: string | null;
+  subscribed_at: string | null;
 }
 
 /**

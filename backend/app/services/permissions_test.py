@@ -837,7 +837,7 @@ async def test_leaving_the_community_takes_you_off_its_own_content(
             user_id=member_id,
             entity_type="project",
             entity_id=named["project"].id,
-            followed_at=datetime.now(timezone.utc),
+            subscribed_at=datetime.now(timezone.utc),
         )
     )
     await session.commit()

@@ -133,8 +133,10 @@ async def test_views_and_narrowing(session, acting_user, reading_as):
     assert elsewhere.id in ids(await _feed(reading_as, b))
 
 
-async def test_following_an_item_or_its_tool_lifts_it(session, acting_user, reading_as):
-    """Unfollowed, the newer change leads. Following the older item, or the
+async def test_subscribing_to_an_item_or_its_tool_lifts_it(
+    session, acting_user, reading_as
+):
+    """Unsubscribed, the newer change leads. Subscribing to the older item, or the
     project it is in, puts it first."""
     a, b = await _start(session, acting_user)
     other = await create_project(session, a.initiative, a.user)
@@ -152,7 +154,7 @@ async def test_following_an_item_or_its_tool_lifts_it(session, acting_user, read
         s = await reading_as(b.user.id, b.guild.id)
         change = personal_items.set_mark if on else personal_items.clear_mark
         await change(
-            s, user_id=b.user.id, mark=Mark.follow, kind=kind, entity_id=entity_id
+            s, user_id=b.user.id, mark=Mark.subscribe, kind=kind, entity_id=entity_id
         )
 
     assert await tasks() == [newer.id, older.id]

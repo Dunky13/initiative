@@ -322,7 +322,7 @@ _OWN_ROW_WRITE_PREDICATE = (
 _PRIVATE_ROW_SECTION = """\
 -- ===========================================================================
 -- Private-row tables (app.db.tenancy.PRIVATE_ROW_TABLES): one member's own
--- state about content they reach — their opens, bookmarks and follows, a read
+-- state about content they reach — their opens, bookmarks and subscriptions, a read
 -- receipt, a ballot. RESTRICTIVE on top of the table's initiative gate: only
 -- the member and trusted system maintenance reach a row, never the community's
 -- administrator, a settings rung or a grant. A table in PRIVATE_ROW_SHARED_READ
@@ -858,16 +858,19 @@ _LEDGER_SECTION = """\
 -- Ledger guild-level tables (app.db.tenancy.LEDGER_TABLES): bookkeeping a
 -- system job keeps about a parent row. Read through the parent — the sub-select
 -- runs the parent's own SELECT policy, so a row is visible to whoever sees its
--- parent. Written by the system engine alone.
+-- parent — or by the system engine alone where there is none. Written by the
+-- system engine alone.
 -- ==========================================================================="""
 
 
-def _ledger_block(table: str, parent: str, fk: str) -> str:
-    """RLS for a ledger table: read through its parent, written by the system
-    engine."""
+def _ledger_block(table: str, parent: tuple[str, str] | None) -> str:
+    """RLS for a ledger table: read through its parent, or by the system engine
+    alone where it has none; written by the system engine."""
     read = (
-        f"({IN_POLICY.system} OR EXISTS (SELECT 1 FROM {parent}"
-        f" WHERE {parent}.id = {table}.{fk}))"
+        IN_POLICY.system
+        if parent is None
+        else f"({IN_POLICY.system} OR EXISTS (SELECT 1 FROM {parent[0]}"
+        f" WHERE {parent[0]}.id = {table}.{parent[1]}))"
     )
     return "\n".join(
         [
@@ -1492,7 +1495,7 @@ def render_guild_rls_ddl() -> str:
     out += "\n\n" + _SEAT_SECTION + "\n\n" + "\n\n".join(seats)
     out += "\n" + PLUGIN_SECRET_FIELDS_FN + "\n" + PLUGIN_SECRET_FIELDS_TRIGGER
     out += "\n" + AI_KEY_PRESENT_FN + "\n" + AI_KEY_PRESENT_TRIGGER
-    ledgers = [_ledger_block(t, p, fk) for t, (p, fk) in sorted(LEDGER_TABLES.items())]
+    ledgers = [_ledger_block(t, p) for t, p in sorted(LEDGER_TABLES.items())]
     out += "\n\n" + _LEDGER_SECTION + "\n\n" + "\n\n".join(ledgers)
     # The sweep timers' marks: open to whatever write arms a timer, so the
     # plug-in policies below are what keep an install to its triggers.

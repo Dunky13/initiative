@@ -338,9 +338,9 @@
     "add": "Bookmark",
     "remove": "Remove bookmark"
   },
-  "follow": {
-    "add": "Follow",
-    "remove": "Stop following"
+  "subscribe": {
+    "add": "Subscribe",
+    "remove": "Unsubscribe"
   },
   "toolHeader": {
     "rename": "Rename"

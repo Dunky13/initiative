@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
   Minus,
@@ -7,7 +8,6 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Star,
   X,
 } from "lucide-react";
 import { type TouchEvent, useMemo, useState } from "react";
@@ -32,7 +32,7 @@ import {
   useSetCount,
   useSteppedCount,
 } from "@/hooks/useCounters";
-import { useFollow, useRecordOpen } from "@/hooks/usePersonalItems";
+import { useRecordOpen, useSubscription } from "@/hooks/usePersonalItems";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getContrastingTextColor } from "@/lib/counter-color";
@@ -87,7 +87,7 @@ export function CounterDetailPage() {
   );
   const counter = currentIndex >= 0 ? counters[currentIndex] : null;
   useRecordOpen("counter", counter?.id);
-  const follow = useFollow("counter", counter?.id ?? 0);
+  const subscription = useSubscription("counter", counter?.id ?? 0);
 
   const canWrite = Boolean(group?.can.edit);
 
@@ -187,19 +187,21 @@ export function CounterDetailPage() {
         >
           {counter.name}
         </h1>
-        {/* On the counter's own colours: filled when followed. */}
+        {/* On the counter's own colours: filled when subscribed. */}
         <Button
           variant="ghost"
           size="icon"
-          aria-pressed={follow.following}
-          aria-label={follow.following ? t("common:follow.remove") : t("common:follow.add")}
-          title={follow.following ? t("common:follow.remove") : t("common:follow.add")}
-          disabled={!follow.ready}
-          onClick={follow.toggle}
+          aria-pressed={subscription.subscribed}
+          aria-label={
+            subscription.subscribed ? t("common:subscribe.remove") : t("common:subscribe.add")
+          }
+          title={subscription.subscribed ? t("common:subscribe.remove") : t("common:subscribe.add")}
+          disabled={!subscription.ready}
+          onClick={subscription.toggle}
           className={cn("h-10 w-10", chromeButtonClass)}
           style={{ color: fg }}
         >
-          <Star className="h-5 w-5" fill={follow.following ? "currentColor" : "none"} />
+          <Bell className="h-5 w-5" fill={subscription.subscribed ? "currentColor" : "none"} />
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

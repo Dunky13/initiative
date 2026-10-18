@@ -132,20 +132,20 @@ Bookmarked things go in **Bookmarks** at the top of the sidebar, for that commun
 
 Leave a community and your bookmarks there go with you.
 
-## Following
+## Subscribing
 
-A bookmark keeps a thing close. Following keeps an eye on it. Follow the fete project and every stall booking, rota swap and increasingly tense comment about the gazebo rises in the activity feed on the [community front page](communities.md#the-community-front-page). Follow one task, one event or one page of the handbook, and just that rises.
+A bookmark keeps a thing close. A subscription keeps you told. Subscribe to the fete project and every stall booking, rota swap and increasingly tense comment about the gazebo lands in your [notifications](notifications.md), and rises in the activity feed on the [community front page](communities.md#the-community-front-page). Subscribe to one task, one event or one page of the handbook, and you hear about just that.
 
-Look for the star:
+Look for the bell:
 
-| To follow | It's |
+| To subscribe to | It's |
 |---|---|
-| A tool | Beside the bookmark, next to its name. Following a tool covers everything inside it. |
+| A tool | Beside the bookmark, next to its name. Subscribing to a tool covers everything inside it. |
 | A task or an event | With the other buttons at the top of it. |
 | A queue item, a picture or a counter | Beside its name. For a picture, that's under **Details**. |
 | A wiki | Beside its name at the top of the wiki's sidebar. Each page has its own, beside the wiki's bookmark. |
 
-Following changes the order of your feed and nothing else. Nobody gets told, nothing pings you, and what you follow is yours alone. It lifts things up the list rather than pinning them to the top, so a busy morning can still outrank the thing you followed last week. Leave a community and your follows there go with you.
+You hear about what other people do from the moment you subscribe, on one line per thing, so a flurry of edits to the same task is one notification rather than twelve. Your own changes stay quiet. Too much? Turn **Subscriptions** down under [My Settings → Notifications](notifications.md), or click the bell again. What you subscribe to is yours alone, and leaving a community takes your subscriptions there with you.
 
 ## Related
 

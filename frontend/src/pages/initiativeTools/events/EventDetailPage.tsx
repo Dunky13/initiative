@@ -10,10 +10,10 @@ import {
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { isRepeating, occurrenceTarget } from "@/components/calendar/eventCalendarEntry";
-import { FollowButton } from "@/components/FollowButton";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { ReportButton } from "@/components/moderation/ReportButton";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { DetailPageSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { ToolAccessStatus } from "@/components/ToolAccessStatus";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
@@ -184,7 +184,7 @@ export function EventDetailPage() {
   const menuPending = duplicateEvent.isPending || detach.isPending;
   const actions = (
     <div className="flex items-center gap-1">
-      <FollowButton
+      <SubscribeButton
         kind={ContentKind.calendar_event}
         entityId={event.id}
         communityId={event.community_id}

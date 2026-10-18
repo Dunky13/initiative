@@ -224,7 +224,7 @@ const projectTaskStatuses = (projectId: number): Spec => ({
 
 // What the reader keeps about items: a community's stars and each item's
 // state, and every community's tabs and stars (`/me/personal-items`).
-// The activity feed, whose order follows what the reader follows.
+// The activity feed, whose order follows what the reader subscribes to.
 const activity = (): Spec => ({ communityPrefix: ["/api/v1/activity"] });
 
 const personalItems = (): Spec => ({

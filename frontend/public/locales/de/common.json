@@ -338,9 +338,9 @@
     "add": "Lesezeichen setzen",
     "remove": "Lesezeichen entfernen"
   },
-  "follow": {
-    "add": "Folgen",
-    "remove": "Nicht mehr folgen"
+  "subscribe": {
+    "add": "Abonnieren",
+    "remove": "Abo beenden"
   },
   "toolHeader": {
     "rename": "Umbenennen"

@@ -687,11 +687,11 @@ export const useUnbookmarkItem = <TError = ErrorType<HTTPValidationError>, TCont
   return useMutation(getUnbookmarkItemMutationOptions(options), queryClient);
 };
 /**
- * Follow a tool or anything inside one: its changes, and those of what is
+ * Subscribe to a tool or anything inside one: its changes, and those of what is
  * inside it, rise in the reader's feed.
- * @summary Follow Item
+ * @summary Subscribe Item
  */
-export const followItem = (
+export const subscribeItem = (
   communityId: number,
   kind: ContentKind,
   entityId: number,
@@ -700,7 +700,7 @@ export const followItem = (
 ) => {
   return apiMutator<PersonalItemState>(
     {
-      url: `/api/v1/c/${communityId}/personal-items/follow/${kind}/${entityId}`,
+      url: `/api/v1/c/${communityId}/personal-items/subscribe/${kind}/${entityId}`,
       method: "PUT",
       signal,
     },
@@ -708,26 +708,26 @@ export const followItem = (
   );
 };
 
-export const getFollowItemMutationKey = () => ["followItem"] as const;
+export const getSubscribeItemMutationKey = () => ["subscribeItem"] as const;
 
-export const getFollowItemMutationOptions = <
+export const getSubscribeItemMutationOptions = <
   TError = ErrorType<HTTPValidationError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof followItem>>,
+    Awaited<ReturnType<typeof subscribeItem>>,
     TError,
-    FollowItemMutationVariables,
+    SubscribeItemMutationVariables,
     TContext
   >;
   request?: SecondParameter<typeof apiMutator>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof followItem>>,
+  Awaited<ReturnType<typeof subscribeItem>>,
   TError,
-  FollowItemMutationVariables,
+  SubscribeItemMutationVariables,
   TContext
 > => {
-  const mutationKey = getFollowItemMutationKey();
+  const mutationKey = getSubscribeItemMutationKey();
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -735,53 +735,53 @@ export const getFollowItemMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof followItem>>,
-    FollowItemMutationVariables
+    Awaited<ReturnType<typeof subscribeItem>>,
+    SubscribeItemMutationVariables
   > = (props) => {
     const { communityId, kind, entityId } = props ?? {};
 
-    return followItem(communityId, kind, entityId, requestOptions);
+    return subscribeItem(communityId, kind, entityId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type FollowItemMutationResult = NonNullable<Awaited<ReturnType<typeof followItem>>>;
+export type SubscribeItemMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeItem>>>;
 
-export type FollowItemMutationError = ErrorType<HTTPValidationError>;
-export type FollowItemMutationVariables = {
+export type SubscribeItemMutationError = ErrorType<HTTPValidationError>;
+export type SubscribeItemMutationVariables = {
   communityId: number;
   kind: ContentKind;
   entityId: number;
 };
 
 /**
- * @summary Follow Item
+ * @summary Subscribe Item
  */
-export const useFollowItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+export const useSubscribeItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof followItem>>,
+      Awaited<ReturnType<typeof subscribeItem>>,
       TError,
-      FollowItemMutationVariables,
+      SubscribeItemMutationVariables,
       TContext
     >;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseMutationResult<
-  Awaited<ReturnType<typeof followItem>>,
+  Awaited<ReturnType<typeof subscribeItem>>,
   TError,
-  FollowItemMutationVariables,
+  SubscribeItemMutationVariables,
   TContext
 > => {
-  return useMutation(getFollowItemMutationOptions(options), queryClient);
+  return useMutation(getSubscribeItemMutationOptions(options), queryClient);
 };
 /**
- * Stop following. Idempotent.
- * @summary Unfollow Item
+ * Unsubscribe. Idempotent.
+ * @summary Unsubscribe Item
  */
-export const unfollowItem = (
+export const unsubscribeItem = (
   communityId: number,
   kind: ContentKind,
   entityId: number,
@@ -790,7 +790,7 @@ export const unfollowItem = (
 ) => {
   return apiMutator<void>(
     {
-      url: `/api/v1/c/${communityId}/personal-items/follow/${kind}/${entityId}`,
+      url: `/api/v1/c/${communityId}/personal-items/subscribe/${kind}/${entityId}`,
       method: "DELETE",
       signal,
     },
@@ -798,26 +798,26 @@ export const unfollowItem = (
   );
 };
 
-export const getUnfollowItemMutationKey = () => ["unfollowItem"] as const;
+export const getUnsubscribeItemMutationKey = () => ["unsubscribeItem"] as const;
 
-export const getUnfollowItemMutationOptions = <
+export const getUnsubscribeItemMutationOptions = <
   TError = ErrorType<HTTPValidationError>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unfollowItem>>,
+    Awaited<ReturnType<typeof unsubscribeItem>>,
     TError,
-    UnfollowItemMutationVariables,
+    UnsubscribeItemMutationVariables,
     TContext
   >;
   request?: SecondParameter<typeof apiMutator>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof unfollowItem>>,
+  Awaited<ReturnType<typeof unsubscribeItem>>,
   TError,
-  UnfollowItemMutationVariables,
+  UnsubscribeItemMutationVariables,
   TContext
 > => {
-  const mutationKey = getUnfollowItemMutationKey();
+  const mutationKey = getUnsubscribeItemMutationKey();
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -825,47 +825,49 @@ export const getUnfollowItemMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof unfollowItem>>,
-    UnfollowItemMutationVariables
+    Awaited<ReturnType<typeof unsubscribeItem>>,
+    UnsubscribeItemMutationVariables
   > = (props) => {
     const { communityId, kind, entityId } = props ?? {};
 
-    return unfollowItem(communityId, kind, entityId, requestOptions);
+    return unsubscribeItem(communityId, kind, entityId, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type UnfollowItemMutationResult = NonNullable<Awaited<ReturnType<typeof unfollowItem>>>;
+export type UnsubscribeItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unsubscribeItem>>
+>;
 
-export type UnfollowItemMutationError = ErrorType<HTTPValidationError>;
-export type UnfollowItemMutationVariables = {
+export type UnsubscribeItemMutationError = ErrorType<HTTPValidationError>;
+export type UnsubscribeItemMutationVariables = {
   communityId: number;
   kind: ContentKind;
   entityId: number;
 };
 
 /**
- * @summary Unfollow Item
+ * @summary Unsubscribe Item
  */
-export const useUnfollowItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+export const useUnsubscribeItem = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof unfollowItem>>,
+      Awaited<ReturnType<typeof unsubscribeItem>>,
       TError,
-      UnfollowItemMutationVariables,
+      UnsubscribeItemMutationVariables,
       TContext
     >;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseMutationResult<
-  Awaited<ReturnType<typeof unfollowItem>>,
+  Awaited<ReturnType<typeof unsubscribeItem>>,
   TError,
-  UnfollowItemMutationVariables,
+  UnsubscribeItemMutationVariables,
   TContext
 > => {
-  return useMutation(getUnfollowItemMutationOptions(options), queryClient);
+  return useMutation(getUnsubscribeItemMutationOptions(options), queryClient);
 };
 /**
  * The tools the reader opened or bookmarked in every community they are in,

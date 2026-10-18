@@ -20,6 +20,9 @@ class NotificationType(str, Enum):
     comment_on_resource = "comment_on_resource"
     comment_reply = "comment_reply"
     comment_reaction = "comment_reaction"
+    #: Somebody changed or commented on something the recipient subscribed
+    #: to, or on something inside a tool they subscribed to.
+    subscription_activity = "subscription_activity"
     #: A notice went up on a bulletin board the recipient can see.
     post_published = "post_published"
     access_grant_requested = "access_grant_requested"

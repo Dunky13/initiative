@@ -147,6 +147,9 @@ def test_seat_and_ledger_tables_are_guild_level():
     assert SEAT_TABLES <= GUILD_LEVEL_TABLES
     assert SEAT_READ_TABLES <= SEAT_TABLES
     assert set(LEDGER_TABLES) <= GUILD_LEVEL_TABLES
-    for table, (parent, fk) in LEDGER_TABLES.items():
+    for table, parent_key in LEDGER_TABLES.items():
+        if parent_key is None:
+            continue
+        parent, fk = parent_key
         column = SQLModel.metadata.tables[table].columns[fk]
         assert {key.column.table.name for key in column.foreign_keys} == {parent}
