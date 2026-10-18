@@ -1,6 +1,4 @@
 {
-  "favorite": "Añadir a {{name}} a favoritos",
-  "unfavorite": "Quitar a {{name}} de favoritos",
   "unreachable": {
     "age": {
       "title": "Los mensajes directos están desactivados en esta cuenta"
@@ -26,8 +24,6 @@
     "removeConnectionBody": "Dejaréis de estar conectados. Si nada más os permite escribiros —una comunidad que compartáis, o que ambos estéis abiertos a mensajes—, eso también termina.",
     "message": "Mensaje",
     "viewProfile": "Ver perfil",
-    "favorite": "Añadir a favoritos",
-    "unfavorite": "Quitar de favoritos",
     "copyHandle": "Copiar identificador",
     "handleCopied": "Identificador copiado."
   }

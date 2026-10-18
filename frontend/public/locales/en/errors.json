@@ -626,7 +626,6 @@
   "OWNER_MUST_BE_COMMUNITY_ADMIN": "The new owner has to be an admin of this community.",
   "OWNER_ALREADY_HOLDS_CONTENT": "That person already owns this content.",
   "OWNER_PLUGIN_NOT_ELIGIBLE": "A plug-in can own this only while it is switched on, is placed in the content's initiative, and may change that tool.",
-  "CONTACT_CANNOT_FAVORITE_SELF": "You can't add yourself to your contacts.",
   "ICAL_PARSE_FAILED": "That isn't a calendar file we can read.",
   "RECURRENCE_INVALID": "That repeat isn't one we can use.",
   "CALENDAR_EVENT_OCCURRENCE_REQUIRED": "Choose which occurrence of the repeating event this is for.",

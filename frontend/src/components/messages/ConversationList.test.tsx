@@ -12,12 +12,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildContactGrant } from "@/__tests__/factories";
 import { renderPage } from "@/__tests__/helpers/render";
-import { removeItem } from "@/lib/storage";
 
 const mocks = vi.hoisted(() => ({
   conversations: vi.fn(),
   unread: vi.fn(),
-  favorites: vi.fn(),
+  latest: vi.fn(),
   messageRequests: vi.fn(),
   connections: vi.fn(),
   acceptMessage: vi.fn(),
@@ -36,11 +35,7 @@ vi.mock("@/components/messages/NewConversationDialog", () => ({
 vi.mock("@/hooks/useMyMessages", () => ({
   useConversations: () => mocks.conversations(),
   useUnreadMessages: () => mocks.unread(),
-}));
-
-vi.mock("@/hooks/useContacts", () => ({
-  useFavoriteContacts: () => mocks.favorites(),
-  useToggleFavoriteContact: () => vi.fn(),
+  useLatestMessages: () => mocks.latest(),
 }));
 
 vi.mock("@/hooks/useDirectMessages", async (importOriginal) => ({
@@ -73,12 +68,9 @@ const show = ({ explain = false } = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Through the storage module the component reads: it answers from an
-  // in-memory cache that a bare `localStorage.clear()` leaves standing.
-  removeItem("messages-groups-collapsed");
   mocks.conversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
   mocks.unread.mockReturnValue({ data: new Map<string, number>() });
-  mocks.favorites.mockReturnValue({ data: { items: [] } });
+  mocks.latest.mockReturnValue({ data: new Map<string, string>() });
   mocks.messageRequests.mockReturnValue({ data: { ...noGrants, accepted: [ADA, GRACE] } });
   mocks.connections.mockReturnValue({ data: noGrants });
   mocks.settings.mockReturnValue({
@@ -92,21 +84,28 @@ beforeEach(() => {
 });
 
 describe("ConversationList", () => {
-  it("reads anybody with something waiting at the top, whatever else they are", async () => {
-    // Starred, so without the unread they would be under Favorites.
-    mocks.favorites.mockReturnValue({ data: { items: [{ id: 1 }] } });
+  it("puts the newest message first, and people not yet written to last", async () => {
+    // Grace's thread was opened later, Ada wrote since; and somebody reachable
+    // with no thread yet comes after both.
+    const HEDY = buildContactGrant({ user_id: 3, username: "hedy" });
+    mocks.messageRequests.mockReturnValue({ data: { ...noGrants, accepted: [ADA, GRACE, HEDY] } });
     mocks.conversations.mockReturnValue({
-      data: { conversations: [{ id: "c1", other_user_id: 1 }] },
+      data: {
+        conversations: [
+          { id: "c1", other_user_id: 1, created_at: "2026-10-01T00:00:00Z" },
+          { id: "c2", other_user_id: 2, created_at: "2026-10-10T00:00:00Z" },
+        ],
+      },
       isLoading: false,
     });
-    mocks.unread.mockReturnValue({ data: new Map([["c1", 3]]) });
+    mocks.latest.mockReturnValue({ data: new Map([["c1", "2026-10-15T09:00:00.000Z"]]) });
     show();
 
-    const headings = await screen.findAllByRole("button", { name: /Unread|Favorites|Messages/ });
-    expect(headings[0]).toHaveTextContent(/Unread/);
-    expect(headings[0]).toHaveTextContent("1");
-    // And not left behind under the section they would otherwise sort into.
-    expect(screen.queryByRole("button", { name: /Favorites/ })).not.toBeInTheDocument();
+    await screen.findByTitle("ada#1234");
+    const order = screen.getAllByTitle(/#1234$/).map((row) => row.getAttribute("title"));
+    expect(order).toEqual(["ada#1234", "grace#1234", "hedy#1234"]);
+    // One list, with no sections to fold.
+    expect(screen.queryByRole("button", { name: /Unread|Connections/ })).not.toBeInTheDocument();
   });
 
   it("narrows the list to a handle, without asking the server for anything", async () => {

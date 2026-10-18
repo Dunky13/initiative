@@ -626,7 +626,6 @@
   "OWNER_MUST_BE_COMMUNITY_ADMIN": "La nueva persona propietaria debe ser administradora de esta comunidad.",
   "OWNER_ALREADY_HOLDS_CONTENT": "Esa persona ya es propietaria de este contenido.",
   "OWNER_PLUGIN_NOT_ELIGIBLE": "Un complemento solo puede ser propietario de esto si está activado, está ubicado en la iniciativa del contenido y puede modificar esa herramienta.",
-  "CONTACT_CANNOT_FAVORITE_SELF": "No puedes añadirte a ti mismo a tus contactos.",
   "ICAL_PARSE_FAILED": "Ese no es un archivo de calendario que podamos leer.",
   "RECURRENCE_INVALID": "No podemos usar esa repetición.",
   "CALENDAR_EVENT_OCCURRENCE_REQUIRED": "Elige a qué ocurrencia del evento periódico se aplica.",

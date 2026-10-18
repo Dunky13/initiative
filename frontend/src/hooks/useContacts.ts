@@ -1,28 +1,18 @@
 /**
- * Who there is to reach, and the one write that stars them.
+ * Who there is to reach.
  *
  * The rosters are a single server-side aggregate — the backend walks the
- * reader's communities the way every other "my" page does — and the starred
- * list is a second read, because a favorite may be somebody you share no
- * community with. Growing one community past its first page is a third: a
- * request for that community alone.
+ * reader's communities the way every other "my" page does. Growing one
+ * community past its first page is a second read: a request for that
+ * community alone.
  *
  * These were My Contacts' reads; the page is gone and the new-conversation
  * picker on My Messages makes them now.
  */
 
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 
-import {
-  getListContactSectionsQueryKey,
-  getListFavoriteContactsQueryKey,
-  listContactSections,
-  useAddFavoriteContact,
-  useListContactSections,
-  useListFavoriteContacts,
-  useRemoveFavoriteContact,
-} from "@/api/generated/contacts/contacts";
+import { listContactSections, useListContactSections } from "@/api/generated/contacts/contacts";
 
 /** Members read per community at a time. */
 const CONTACTS_PAGE_SIZE = 20;
@@ -32,8 +22,6 @@ const PAGE_STALE_MS = 30_000;
 
 const sectionParams = (search: string) =>
   search.trim() ? { search, page_size: CONTACTS_PAGE_SIZE } : { page_size: CONTACTS_PAGE_SIZE };
-
-const favoriteParams = (search: string) => (search.trim() ? { search } : undefined);
 
 /** One community, one page — the request a roster makes for itself. */
 const communityPageParams = (communityId: number, page: number, search: string) => ({
@@ -52,12 +40,6 @@ const communityPageParams = (communityId: number, page: number, search: string) 
  */
 export const useContactSections = (search: string, options?: { enabled?: boolean }) =>
   useListContactSections(sectionParams(search), {
-    query: { enabled: options?.enabled ?? true },
-  });
-
-/** The reader's starred people. `enabled` for the same reason as above. */
-export const useFavoriteContacts = (search: string, options?: { enabled?: boolean }) =>
-  useListFavoriteContacts(favoriteParams(search), {
     query: { enabled: options?.enabled ?? true },
   });
 
@@ -90,37 +72,3 @@ export const useMoreCommunityContacts = (communityId: number, search: string, en
     enabled,
     staleTime: PAGE_STALE_MS,
   });
-
-/**
- * Star or unstar somebody.
- *
- * Both lists are invalidated on either: the person moves into or out of
- * Favorites, and the star on their community rows has to follow.
- */
-export const useToggleFavoriteContact = () => {
-  const queryClient = useQueryClient();
-
-  const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: getListFavoriteContactsQueryKey(),
-    });
-    void queryClient.invalidateQueries({
-      queryKey: getListContactSectionsQueryKey(),
-    });
-  }, [queryClient]);
-
-  const add = useAddFavoriteContact({
-    mutation: { onSuccess: invalidate },
-  });
-  const remove = useRemoveFavoriteContact({
-    mutation: { onSuccess: invalidate },
-  });
-
-  return useCallback(
-    (userId: number, starred: boolean) => {
-      if (starred) remove.mutate({ userId });
-      else add.mutate({ userId });
-    },
-    [add, remove]
-  );
-};

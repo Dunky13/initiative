@@ -12,7 +12,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useFavoriteContacts, useToggleFavoriteContact } from "@/hooks/useContacts";
 import {
   useConnections,
   useDmPermission,
@@ -33,7 +32,7 @@ import { getUrlHandle, getUserHandle } from "@/lib/userDisplay";
  * draw this menu already *are* the person or link to them, so it is the one
  * that is usually left out rather than usually kept.
  */
-type MenuAction = "profile" | "message" | "connect" | "ask" | "favorite";
+type MenuAction = "profile" | "message" | "connect" | "ask";
 
 interface ContactActionsMenuProps {
   /** The account being acted on. The handle is what a connection is addressed
@@ -49,7 +48,7 @@ interface ContactActionsMenuProps {
   permission?: DirectMessagePermissionRead | null;
   /**
    * What the menu must not offer, because the surface around it already does —
-   * a row of buttons, a star of its own, a link on the name. Everything else
+   * a row of buttons, a link on the name. Everything else
    * appears, subject to what the server says is possible, so a person is never
    * offered the same thing twice and never quietly missing an action either.
    */
@@ -94,10 +93,6 @@ export const ContactActionsMenu = ({
   const permission = supplied ?? own.data;
   const { data: connections } = useConnections();
   const { data: ignored } = useIgnoredAccounts();
-  // The reader's own starred list, which every surface that draws a person
-  // already reads -- so this is the same cached answer rather than a new ask.
-  const { data: favorites } = useFavoriteContacts("");
-  const setFavorite = useToggleFavoriteContact();
 
   const requestConnection = useRequestConnection();
   const requestMessage = useRequestMessage();
@@ -110,7 +105,6 @@ export const ContactActionsMenu = ({
     .concat(connections?.outgoing ?? [])
     .some((g) => g.user_id === user.id);
   const isIgnored = (ignored?.items ?? []).some((row) => row.user_id === user.id);
-  const isStarred = (favorites?.items ?? []).some((contact) => contact.id === user.id);
 
   return (
     <>
@@ -182,13 +176,6 @@ export const ContactActionsMenu = ({
               }
             >
               {t("actions.ask")}
-            </DropdownMenuItem>
-          )}
-          {/* Starring is private and one-directional — the other person is
-              never told — so there is nothing to confirm in either direction. */}
-          {shows("favorite") && (
-            <DropdownMenuItem onSelect={() => setFavorite(user.id, isStarred)}>
-              {t(isStarred ? "actions.unfavorite" : "actions.favorite")}
             </DropdownMenuItem>
           )}
           {isConnection && (

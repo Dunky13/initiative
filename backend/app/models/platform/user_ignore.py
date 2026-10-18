@@ -1,7 +1,7 @@
 """The accounts one person has chosen not to hear from.
 
-A row is one account on one account's list. It is private and one-directional,
-like ``profile_favorites``: the list is the holder's, and who has ignored *you*
+A row is one account on one account's list. It is private and one-directional:
+the list is the holder's, and who has ignored *you*
 is not a question this table answers for anybody on the request path.
 
 What it governs is arrival, not permission — an ignored account's messages,

@@ -9,7 +9,6 @@ import { CommunityRole } from "@/api/generated/initiativeAPI.schemas";
 import { MemberDisplayNameDialog } from "@/components/communities/MemberDisplayNameDialog";
 import { ContactActionButtons } from "@/components/contacts/ContactActionButtons";
 import { ContactActionsMenu } from "@/components/contacts/ContactActionsMenu";
-import { FavoriteToggle } from "@/components/contacts/FavoriteToggle";
 import { StatusMessage } from "@/components/StatusMessage";
 import { UserHandle } from "@/components/UserHandle";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +17,6 @@ import { DataTable } from "@/components/ui/data-table";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useFavoriteContacts, useToggleFavoriteContact } from "@/hooks/useContacts";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDmPermissions } from "@/hooks/useDirectMessages";
 import {
@@ -32,7 +30,7 @@ import {
 import { USER_SEARCH_PAGE_SIZE, useUserSearch } from "@/hooks/useUsers";
 import { isAdminRole } from "@/lib/permissions";
 import type { AppColumnDef } from "@/lib/table";
-import { getUrlHandle, getUserDisplayName } from "@/lib/userDisplay";
+import { getUrlHandle } from "@/lib/userDisplay";
 
 /**
  * Everyone in this community, and a way to reach them.
@@ -120,15 +118,6 @@ export const CommunityMembersPage = () => {
     setSearch({ q: settled || undefined, page: undefined });
   }, [settled, draft, q, setSearch]);
 
-  // Starring is a second read: a favourite may be somebody you share no
-  // community with, so the list is not a slice of this roster.
-  const favorites = useFavoriteContacts("");
-  const starred = useMemo(
-    () => new Set((favorites.data?.items ?? []).map((contact) => contact.id)),
-    [favorites.data]
-  );
-  const setFavorite = useToggleFavoriteContact();
-
   const answers = permissions.data?.permissions ?? {};
 
   // The columns this person shows, kept in their view of the roster. What
@@ -197,21 +186,13 @@ export const CommunityMembersPage = () => {
           return (
             <div className="flex items-center justify-end gap-1">
               <ContactActionButtons user={person} permission={answers[String(person.id)] ?? null} />
-              {/* Its own control rather than a menu item, the way a contacts
-                  row has it: starring is one private, reversible click and
-                  nothing is told to anybody. */}
-              <FavoriteToggle
-                starred={starred.has(row.original.id)}
-                name={getUserDisplayName(row.original)}
-                onToggle={() => setFavorite(row.original.id, starred.has(row.original.id))}
-              />
               {/* Everything else a person can be to you — ignoring above all,
                   which a roster is the likeliest place to want. Same menu as
                   their profile and their contacts row, so it holds no surprise
                   and nothing has to be kept in step. */}
               <ContactActionsMenu
                 user={person}
-                omit={["profile", "message", "connect", "ask", "favorite"]}
+                omit={["profile", "message", "connect", "ask"]}
                 permission={answers[String(person.id)] ?? null}
               />
             </div>
@@ -219,7 +200,7 @@ export const CommunityMembersPage = () => {
         },
       },
     ],
-    [t, starred, setFavorite, me?.id, answers]
+    [t, me?.id, answers]
   );
 
   return (

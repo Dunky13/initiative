@@ -1,6 +1,4 @@
 {
-  "favorite": "Add {{name}} to favorites",
-  "unfavorite": "Remove {{name}} from favorites",
   "unreachable": {
     "age": {
       "title": "Direct messages are off for this account"
@@ -26,8 +24,6 @@
     "removeConnectionBody": "You will no longer be connected. If nothing else lets the two of you message each other — a community you both belong to, or both of you being open to messages — that ends with it.",
     "message": "Message",
     "viewProfile": "View profile",
-    "favorite": "Add to favorites",
-    "unfavorite": "Remove from favorites",
     "copyHandle": "Copy handle",
     "handleCopied": "Handle copied."
   }

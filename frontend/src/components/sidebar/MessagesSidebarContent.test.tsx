@@ -19,20 +19,15 @@ const mocks = vi.hoisted(() => ({
   unread: vi.fn(),
   messageRequests: vi.fn(),
   connections: vi.fn(),
-  favorites: vi.fn(),
   accept: vi.fn(),
   decline: vi.fn(),
-}));
-
-vi.mock("@/hooks/useContacts", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  useFavoriteContacts: () => mocks.favorites(),
 }));
 
 vi.mock("@/hooks/useMyMessages", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useConversations: () => mocks.conversations(),
   useUnreadMessages: () => mocks.unread(),
+  useLatestMessages: () => ({ data: new Map<string, string>() }),
 }));
 
 vi.mock("@/hooks/useDirectMessages", async (importOriginal) => ({
@@ -77,7 +72,6 @@ beforeEach(() => {
     data: { accepted: [], incoming: [], outgoing: [] },
   });
   mocks.connections.mockReturnValue({ data: { accepted: [], incoming: [], outgoing: [] } });
-  mocks.favorites.mockReturnValue({ data: { items: [] } });
 });
 
 describe("the messages sidebar", () => {
@@ -173,55 +167,5 @@ describe("the messages sidebar", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /back to navigation/i }));
     expect(onBack).toHaveBeenCalled();
-  });
-});
-
-describe("the list's sections", () => {
-  const withThree = () => {
-    mocks.messageRequests.mockReturnValue({
-      data: {
-        accepted: [grant(7, "alex"), grant(8, "sam"), grant(9, "robin")],
-        incoming: [],
-        outgoing: [],
-      },
-    });
-    // Starred outranks connected: `sam` is both, and belongs under Favorites.
-    mocks.favorites.mockReturnValue({ data: { items: [{ id: 8 }] } });
-    mocks.connections.mockReturnValue({
-      data: { accepted: [grant(8, "sam"), grant(9, "robin")], incoming: [], outgoing: [] },
-    });
-  };
-
-  it("cuts the list into favorites, connections and everyone else", async () => {
-    withThree();
-    setup();
-
-    for (const heading of ["Favorites", "Connections", "Messages"]) {
-      expect(await screen.findByRole("button", { name: new RegExp(heading) })).toBeInTheDocument();
-    }
-    // sam is starred and connected; the star wins.
-    const favorites = (await screen.findByRole("button", { name: /Favorites/ })).parentElement;
-    expect(favorites).toHaveTextContent("sam#1234");
-  });
-
-  it("folds a section away and leaves the rest", async () => {
-    withThree();
-    setup();
-
-    await userEvent.click(await screen.findByRole("button", { name: /Favorites/ }));
-
-    expect(screen.queryByTitle("sam#1234")).toBeNull();
-    expect(screen.getByTitle("robin#1234")).toBeInTheDocument();
-  });
-
-  it("draws no heading where everybody is in one section", async () => {
-    // A label naming all of them says nothing, and there is nothing to fold.
-    mocks.messageRequests.mockReturnValue({
-      data: { accepted: [grant(7, "alex")], incoming: [], outgoing: [] },
-    });
-    setup();
-
-    expect(await screen.findByTitle("alex#1234")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Messages/ })).toBeNull();
   });
 });

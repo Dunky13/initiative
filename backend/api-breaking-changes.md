@@ -72,6 +72,9 @@ matter and can be deleted.
 - DELETE /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} api path removed without deprecation
 - POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} api path removed without deprecation
 - GET /api/v1/recents/ api path removed without deprecation
+- GET /api/v1/me/contacts/favorites api path removed without deprecation
+- DELETE /api/v1/me/contacts/favorites/{user_id} api path removed without deprecation
+- PUT /api/v1/me/contacts/favorites/{user_id} api path removed without deprecation
 
 ### New values in a response's enums
 

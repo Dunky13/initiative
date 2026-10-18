@@ -592,7 +592,6 @@ async def _erase_personal_rows(session: AsyncSession, *, user_id: int) -> None:
     from app.models.platform.dm_conversation import DmConversationMember
     from app.models.platform.dm_device import DmDevice
     from app.models.platform.email_outbox import EmailOutboxItem
-    from app.models.platform.profile_favorite import ProfileFavorite
     from app.models.platform.user_cookie_consent import UserCookieConsent
     from app.models.platform.user_decoration import UserDecoration
     from app.models.platform.user_dm_guild_optout import UserDmGuildOptout
@@ -633,14 +632,6 @@ async def _erase_personal_rows(session: AsyncSession, *, user_id: int) -> None:
         delete(UserDmGuildOptout).where(UserDmGuildOptout.user_id == user_id)
     )
     # The social graph, both directions.
-    await session.exec(
-        delete(ProfileFavorite).where(
-            or_(
-                ProfileFavorite.user_id == user_id,
-                ProfileFavorite.favorite_user_id == user_id,
-            )
-        )
-    )
     await session.exec(
         delete(UserIgnore).where(
             or_(UserIgnore.user_id == user_id, UserIgnore.ignored_user_id == user_id)

@@ -1811,9 +1811,3 @@ class DemoMessages:
     DEMO_PERSONA_TAKEN = "DEMO_PERSONA_TAKEN"
     #: A link's end is in the past.
     DEMO_LINK_EXPIRY_INVALID = "DEMO_LINK_EXPIRY_INVALID"
-
-
-class ContactMessages:
-    """My Contacts — the starred list on the personal page."""
-
-    CANNOT_FAVORITE_SELF = "CONTACT_CANNOT_FAVORITE_SELF"

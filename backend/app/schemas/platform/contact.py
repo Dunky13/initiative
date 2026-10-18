@@ -1,7 +1,7 @@
 """Shapes for the My Contacts page.
 
 A contact is a person the reader can already see — someone in one of their
-guilds, or someone they starred. ``ContactRead`` is ``UserSummary`` plus the
+guilds. ``ContactRead`` is ``UserSummary`` plus the
 few things only this page asks for, kept off the shared picker projection so
 every other caller of that shape is untouched.
 """
@@ -70,16 +70,3 @@ class ContactSectionsResponse(SanitizedBaseModel):
     sections: List[ContactCommunitySection]
     page: int
     page_size: int
-
-
-class FavoriteContactsResponse(SanitizedBaseModel):
-    """The starred section.
-
-    Not part of the guild aggregate: a favorite may be someone the reader
-    shares no guild with, so it cannot come from a walk of their guilds.
-    """
-
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    items: List[ContactRead]
-    total_count: int
