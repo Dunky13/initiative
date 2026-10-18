@@ -38,7 +38,7 @@ import json
 import httpx
 import jwt
 import pytest
-from sqlmodel import select
+from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
@@ -57,6 +57,7 @@ from app.services.marketplace.plugin_refs import (
 from app.services.marketplace import plugin_data as plugin_data_service
 from app.services.marketplace.context_jwt_test import _PRIVATE_PEM
 from app.services.marketplace.registration_lookup import invalidate_registrations
+from app.services.tenant import plugin_connection_flows
 from app.services.tenant.plugin_connection_flows import TokenSet, seal_tokens
 from app.services.tenant.dashboard_definition import normalize_dashboard_definition
 from app.testing.fake_vendor import API_HOST, FakeVendor, declarative_plugin
@@ -1787,17 +1788,22 @@ FIND_ISSUE = f"plugin.{PUBLIC_ID}.find-issue"
 def _declarative_action_definition() -> dict:
     """:func:`declarative_plugin` keeping an issue on tasks: ``link`` searches
     for the task's title on the community's connection and keeps the number
-    found; ``unlink``, for a reader who has connected their own account, drops
-    it with no call, keeping what it was; ``relink`` is the community's admins'
-    alone; ``label`` makes the label write as the reader, on their own account;
-    ``garble`` answers a targeted change where a change belongs."""
+    found; ``tally`` adds one to it; ``unlink``, for a reader who has
+    connected their own account, drops it with no call, keeping what it was;
+    ``relink`` is the community's admins' alone; ``label`` makes the label
+    write on the reader's own account, which its request names, though its
+    ``requires`` would let the installation make it; ``garble`` answers a
+    targeted change where a change belongs."""
     definition = declarative_plugin(PUBLIC_ID)
     (workspace,) = definition["connections"]
     definition["connections"].append(
         {**workspace, "id": "github", "scope": "interactive", "fields": []}
     )
     _, label = definition["endpoints"]
-    label.update(actors=["member"], requires={"all_of": ["workspace", "github"]})
+    label.update(
+        actors=["installation", "member"],
+        requires={"any_of": ["workspace", "github"]},
+    )
     label["request"]["connection"] = "github"
     definition["endpoints"].append(
         {
@@ -1827,6 +1833,13 @@ def _declarative_action_definition() -> dict:
                     {
                         "endpoint": FIND_ISSUE,
                         "write": '{"set": {"issue": result.number, "task": item.id}}',
+                    },
+                ),
+                (
+                    "tally",
+                    {
+                        "endpoint": FIND_ISSUE,
+                        "write": '{"set": {"issue": $sum([held.issue, 1])}}',
                     },
                 ),
                 (
@@ -2143,6 +2156,65 @@ class TestActions:
             row.key: row.value for row in await session.exec(select(PluginMetadata))
         }
         assert kept == {"task": tasks["shared"], "was": 12}
+
+    @pytest.mark.parametrize(
+        ("unplace", "status_code", "kept"),
+        [(False, 200, {"issue": 6}), (True, 502, {})],
+        ids=[
+            "another run changed the value meanwhile",
+            "the install was taken out of the initiative meanwhile",
+        ],
+    )
+    async def test_a_declarative_action_changes_the_values_once_answered(
+        self, client, acting_user, session, monkeypatch, unplace, status_code, kept
+    ):
+        """``held`` is what the install holds on the item once the vendor has
+        answered, so a change made while it worked is built on; an item the
+        install no longer reads by then fails the action, which keeps
+        nothing."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        vendor.api_answers = [{"body": {"items": [{"number": 12}]}}]
+        _admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+
+        async def answer(request: httpx.Request) -> httpx.Response:
+            await route_session_to_guild(session, member.guild.id)
+            if unplace:
+                await session.exec(
+                    delete(PluginPlacement).where(
+                        PluginPlacement.install_id == plugin.id
+                    )
+                )
+            else:
+                session.add(
+                    PluginMetadata(
+                        install_id=plugin.id,
+                        entity_type="task",
+                        entity_id=tasks["shared"],
+                        key="issue",
+                        value=5,
+                        shown=True,
+                    )
+                )
+            await session.commit()
+            return vendor.handle(request)
+
+        monkeypatch.setattr(
+            plugin_connection_flows, "http_transport", httpx.MockTransport(answer)
+        )
+        response = await client.post(
+            _run(member, plugin, "tally"),
+            headers=member.headers,
+            json={"entity_type": "task", "entity_id": tasks["shared"]},
+        )
+
+        assert response.status_code == status_code, response.text
+        await route_session_to_guild(session, member.guild.id)
+        assert {
+            row.key: row.value for row in await session.exec(select(PluginMetadata))
+        } == kept
 
     @pytest.mark.parametrize(
         ("who", "task", "action", "status_code", "detail"),

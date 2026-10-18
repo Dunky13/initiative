@@ -86,6 +86,7 @@ __all__ = [
     "call_endpoint",
     "health_state",
     "map_delivery",
+    "request_refusal",
     "run_endpoint",
     "run_schedule",
 ]
@@ -1045,6 +1046,41 @@ def _connection_ids(endpoint: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys(name for name in named if isinstance(name, str)))
 
 
+def _refusal(connection: Optional[Mapping[str, Any]]) -> PluginDataError:
+    """A call refused for want of ``connection``: a member's own is theirs to
+    connect, and the community's is its admins' to configure."""
+    return PluginDataError(
+        PluginDataMessages.CONNECTION_REQUIRED
+        if (connection or {}).get("scope") == "interactive"
+        else PluginDataMessages.NEEDS_CONFIGURATION,
+        409,
+    )
+
+
+def request_refusal(
+    definition: Any,
+    endpoint: Mapping[str, Any],
+    refs: Mapping[str, str],
+    actor: Optional[str],
+) -> Optional[PluginDataError]:
+    """Why the endpoint's requests cannot be made as ``actor`` with the
+    handles ``refs``, before any token is asked for: a connection one names
+    that ``definition`` does not declare, a member's own whose handle ``refs``
+    lacks, or, on a member's behalf, the community's when the endpoint's
+    ``requires`` does not name it. ``None`` when they can."""
+    required, _ = _required_connection_ids(endpoint)
+    for connection_id in _connection_ids(endpoint):
+        connection = connection_by_id(definition, connection_id)
+        interactive = (connection or {}).get("scope") == "interactive"
+        if (
+            connection is None
+            or (interactive and connection_id not in refs)
+            or (not interactive and actor == "member" and connection_id not in required)
+        ):
+            return _refusal(connection)
+    return None
+
+
 async def _credentials(
     *,
     registration: RegistrationSnapshot,
@@ -1060,10 +1096,9 @@ async def _credentials(
     A static connection's is the community's, which a call on a member's
     behalf carries only when the endpoint's ``requires`` names it; an
     interactive one's is the acting member's, by the handle the endpoint's
-    ``requires`` resolved for them. Tokens are refreshed or minted as the plug-in
-    channel hands them out.
+    ``requires`` resolved for them (:func:`request_refusal`). Tokens are
+    refreshed or minted as the plug-in channel hands them out.
     """
-    required, _ = _required_connection_ids(endpoint)
     tokens: dict[str, str] = {}
     fields: dict[str, dict[str, Any]] = {}
     member = False
@@ -1078,20 +1113,14 @@ async def _credentials(
             )
         except PluginChannelError as exc:
             raise PluginDataError(exc.code, exc.status_code) from exc
+        refused = request_refusal(install.definition, endpoint, refs, actor)
+        if refused is not None:
+            raise refused
         for connection_id in _connection_ids(endpoint):
             connection = connection_by_id(install.definition, connection_id)
             interactive = (connection or {}).get("scope") == "interactive"
-            refusal = PluginDataError(
-                PluginDataMessages.CONNECTION_REQUIRED
-                if interactive
-                else PluginDataMessages.NEEDS_CONFIGURATION,
-                409,
-            )
+            refusal = _refusal(connection)
             ref = refs.get(connection_id)
-            if connection is None or (interactive and ref is None):
-                raise refusal
-            if not interactive and actor == "member" and connection_id not in required:
-                raise refusal
             try:
                 if interactive:
                     held = await flows.member_token(

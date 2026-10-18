@@ -28,10 +28,12 @@ import json
 import math
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import (
     Any,
+    AsyncIterator,
     Awaitable,
     Callable,
     Collection,
@@ -263,9 +265,15 @@ async def write(
     entity_id: Optional[int],
     values: Mapping[str, Any],
     pinned: Callable[[], Awaitable[Any]],
+    *,
+    made: Optional[Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]] = None,
 ) -> dict[str, Any]:
     """Write some of the install's values on one item, or on itself; a
     ``None`` removes its key. Answers every value it keeps there now.
+
+    With ``made``, the values written are those it answers when given what
+    the install holds there, by key, under the item's lock, so writes made at
+    once each read what the one before left.
 
     ``pinned`` reads the install's pinned definition, whose fields on the
     item's kind say which values are shown; a value on the install itself is
@@ -290,22 +298,6 @@ async def write(
                 PluginChannelMessages.METADATA_ITEM_NOT_FOUND, status_code=404
             )
         max_keys, max_bytes = ITEM_KEYS, ITEM_BYTES
-
-    # The keys an item ends up with are counted below; a write may remove every
-    # key it holds and set as many again, and no more.
-    if len(values) > 2 * max_keys:
-        raise PluginChannelError(
-            PluginChannelMessages.METADATA_LIMIT_REACHED, status_code=409
-        )
-    sizes: dict[str, int] = {}
-    for key, value in values.items():
-        _check_key(key)
-        if value is not None:
-            sizes[key] = _size(value)
-            if sizes[key] > VALUE_BYTES:
-                raise PluginChannelError(
-                    PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
-                )
 
     shown: Collection[str] = frozenset()
     if kind != INSTALL_METADATA_KIND:
@@ -332,6 +324,24 @@ async def write(
         row.key: row.value
         for row in await session.exec(select(PluginMetadata).where(*where))
     }
+    if made is not None:
+        values = await made(dict(kept))
+    # The keys an item ends up with are counted below; a write may remove every
+    # key it holds and set as many again, and no more.
+    if len(values) > 2 * max_keys:
+        raise PluginChannelError(
+            PluginChannelMessages.METADATA_LIMIT_REACHED, status_code=409
+        )
+    sizes: dict[str, int] = {}
+    for key, value in values.items():
+        _check_key(key)
+        if value is not None:
+            sizes[key] = _size(value)
+            if sizes[key] > VALUE_BYTES:
+                raise PluginChannelError(
+                    PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
+                )
+
     after = {key: value for key, value in kept.items() if key not in values}
     after.update({key: value for key, value in values.items() if value is not None})
     total = sum(
@@ -492,6 +502,46 @@ def _targeted(answer: Any) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     return changes
 
 
+@asynccontextmanager
+async def _as_install(
+    plugin: GuildPlugin, registration: RegistrationSnapshot, guild_id: int
+) -> AsyncIterator[
+    tuple[
+        AsyncSession,
+        Callable[[], Awaitable[InstallContext]],
+        Callable[[], Awaitable[Any]],
+    ]
+]:
+    """A session of its own routed as the install, through the install seam
+    with the scopes the install holds (:func:`guild_plugins.install_scopes`):
+    the session, what routes it again, and what reads the install's pinned
+    definition."""
+    install = VerifiedInstall(
+        guild_id=guild_id,
+        install_id=int(plugin.id or 0),
+        client_id=registration.public_id,
+        scopes=guild_plugins.install_scopes(plugin, registration),
+    )
+    async with cohorts.request_sessionmaker(guild_id)() as session:
+
+        async def route() -> InstallContext:
+            try:
+                return await establish_install_access(session, install)
+            except InstallAccessError as exc:
+                raise PluginChannelError(
+                    PluginChannelMessages.INSTALL_NOT_FOUND, status_code=404
+                ) from exc
+
+        async def pinned() -> Any:
+            return await session.scalar(
+                select(GuildPlugin.definition).where(
+                    GuildPlugin.id == install.install_id
+                )
+            )
+
+        yield session, route, pinned
+
+
 async def apply_changes(
     plugin: GuildPlugin,
     registration: RegistrationSnapshot,
@@ -521,22 +571,7 @@ async def apply_changes(
     changes = _targeted(answer)
     if not changes:
         return
-    install = VerifiedInstall(
-        guild_id=guild_id,
-        install_id=int(plugin.id or 0),
-        client_id=registration.public_id,
-        scopes=guild_plugins.install_scopes(plugin, registration),
-    )
-    async with cohorts.request_sessionmaker(guild_id)() as session:
-
-        async def route() -> InstallContext:
-            try:
-                return await establish_install_access(session, install)
-            except InstallAccessError as exc:
-                raise PluginChannelError(
-                    PluginChannelMessages.INSTALL_NOT_FOUND, status_code=404
-                ) from exc
-
+    async with _as_install(plugin, registration, guild_id) as (session, route, pinned):
         context = await route()
         routed = time.monotonic()
         targets: dict[tuple[str, int], dict[str, Any]] = {}
@@ -560,13 +595,6 @@ async def apply_changes(
             for item in found:
                 targets.setdefault(item, {}).update(values)
 
-        async def pinned() -> Any:
-            return await session.scalar(
-                select(GuildPlugin.definition).where(
-                    GuildPlugin.id == context.install_id
-                )
-            )
-
         for (kind, entity_id), values in targets.items():
             if time.monotonic() - routed > _REROUTE_SECONDS:
                 context = await route()
@@ -579,6 +607,36 @@ async def apply_changes(
                     PluginChannelMessages.METADATA_ITEM_NOT_FOUND,
                 ):
                     raise
+
+
+async def change_item(
+    plugin: GuildPlugin,
+    registration: RegistrationSnapshot,
+    kind: str,
+    entity_id: int,
+    made: Callable[[dict[str, Any]], Awaitable[Any]],
+    *,
+    guild_id: int,
+) -> None:
+    """Make the change ``made`` answers on one item, as :func:`apply_changes`
+    makes a change, from what the install holds there: ``made`` is given those
+    values, by key, under the item's lock (:func:`write`), so changes made at
+    once each start from what the one before left. It answers one change,
+    held to the contract's ``change``, or ``None`` for none. An item the
+    install cannot read, or that is not there, is refused rather than
+    skipped."""
+
+    async def values(held: dict[str, Any]) -> Mapping[str, Any]:
+        answer = await made(held)
+        if answer is None:
+            return {}
+        ((_, changed),) = _targeted(
+            [{**answer, "target": {"kind": kind, "id": entity_id}}]
+        )
+        return changed
+
+    async with _as_install(plugin, registration, guild_id) as (session, route, pinned):
+        await write(session, await route(), kind, entity_id, {}, pinned, made=values)
 
 
 async def drop_for_items(

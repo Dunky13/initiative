@@ -21,9 +21,10 @@ writes nothing for it.
 A declarative plug-in has no code, so Initiative does what its action
 declares: the call its endpoint makes, when it names one, on the credential
 the endpoint's ``actors`` say (:func:`_actor`), its expressions reading the
-item; then the change its ``write`` answers, when it has one, made to the
-plug-in's values on the item as the install. The checks above and the
-endpoint's own terms are all that decide who may run it.
+item; then the change its ``write`` answers, when it has one, from the
+plug-in's values on the item as they stand once the call is answered, made to
+them as the install. The checks above and the endpoint's own terms are all
+that decide who may run it.
 
 Either way the answer is the values the install shows on the item as they
 stand afterwards, and every other reader hears that the item changed from its
@@ -48,7 +49,7 @@ from app.db.guild_standing import GuildContext
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.services.marketplace import plugin_data
-from app.services.marketplace.declarative import action_change
+from app.services.marketplace.declarative import action_change, request_refusal
 from app.services.marketplace.expressions import UNDEFINED
 from app.services.marketplace.plugin_data import PluginDataError
 from app.services.marketplace.plugin_refs import PluginNameRefused, ensure_plugin_ref
@@ -64,22 +65,21 @@ from app.services.tenant.plugin_channels import PluginChannelError
 __all__ = ["run_action"]
 
 
-async def _held(
+async def _reads(
     plugin: GuildPlugin,
     registration: RegistrationSnapshot,
     *,
     guild_id: int,
     kind: str,
     entity_id: int,
-) -> Optional[dict[str, Any]]:
-    """The install's values on the item, by key, or ``None`` when it cannot
-    read the item: asked of the database on a session of its own routed as the
-    install, with the scopes its tokens carry, so the answer is the one its own
-    reads get."""
+) -> bool:
+    """Whether the install can read the item: asked of the database on a
+    session of its own routed as the install, with the scopes its tokens
+    carry, so the answer is the one its own reads get."""
     table = SQLModel.metadata.tables[KINDS[kind].table]
     async with cohorts.request_sessionmaker(guild_id)() as session:
         try:
-            install = await establish_install_access(
+            await establish_install_access(
                 session,
                 VerifiedInstall(
                     guild_id=guild_id,
@@ -89,11 +89,10 @@ async def _held(
                 ),
             )
         except InstallAccessError:
-            return None
-        if not await session.scalar(exists().where(table.c.id == entity_id).select()):
-            return None
-        held = await plugin_metadata.read(session, install, kind, [entity_id])
-        return next((values for _, _, values in held), {})
+            return False
+        return bool(
+            await session.scalar(exists().where(table.c.id == entity_id).select())
+        )
 
 
 async def _item(
@@ -133,7 +132,9 @@ async def _actor(
     (:func:`~app.services.marketplace.plugin_data._resolve_connections`): the
     first of the endpoint's ``actors`` the reader's call can run as,
     ``member`` on the reader's own connections and ``installation`` on the
-    community's. An endpoint naming no actors runs as the reader when its
+    community's: its ``requires`` met, and every connection its requests name
+    able to travel (:func:`~app.services.marketplace.declarative.request_refusal`).
+    An endpoint naming no actors runs as the reader when its
     first request carries an interactive connection, and as the installation
     when it carries a static one. When none can, the best one's refusal is
     the answer."""
@@ -158,6 +159,10 @@ async def _actor(
         except PluginDataError as exc:
             refusals.append(exc)
             continue
+        refused = request_refusal(plugin.definition, endpoint, refs, actor)
+        if refused is not None:
+            refusals.append(refused)
+            continue
         return actor, refs, fields
     raise refusals[0]
 
@@ -170,7 +175,6 @@ async def _act(
     action: dict[str, Any],
     endpoint: Optional[dict[str, Any]],
     item: dict[str, Any],
-    held: dict[str, Any],
     guild_id: int,
     user_id: int,
     transport: httpx.AsyncBaseTransport | None,
@@ -178,14 +182,15 @@ async def _act(
     """Do what a declarative action declares, as the SDK's ``runAction``
     does: the call its endpoint makes, when it names one, on the credential
     :func:`_actor` picks, its expressions reading ``item``; then the change
-    its ``write`` answers, when it has one (:func:`action_change`), made to
-    the plug-in's values on the item as the install
-    (:func:`~app.services.tenant.plugin_metadata.apply_changes`).
+    its ``write`` answers, when it has one (:func:`action_change`), reading
+    the plug-in's values on the item as they stand once the call is answered,
+    made to them as the install
+    (:func:`~app.services.tenant.plugin_metadata.change_item`).
 
     The endpoint refusing or answering unavailable, a ``write`` answering
-    what is not a change, and a change that is refused each fail the action
-    as a container's failed call does, and the plug-in's values stay as they
-    were.
+    what is not a change, and a change that is refused, the install no longer
+    reading the item included, each fail the action as a container's failed
+    call does, and the plug-in's values stay as they were.
     """
     result: Any = UNDEFINED
     if endpoint is not None:
@@ -226,19 +231,15 @@ async def _act(
         result = body["result"]
         if set(result) == {"unavailable"}:
             raise _failed(f"{endpoint['id']} answered {result['unavailable']}")
-    change = (
-        await action_change(action["write"], item=item, held=held, result=result)
-        if action.get("write")
-        else None
-    )
-    if change is None:
+    if not action.get("write"):
         return
+
+    async def made(held: dict[str, Any]) -> Optional[dict[str, Any]]:
+        return await action_change(action["write"], item=item, held=held, result=result)
+
     try:
-        await plugin_metadata.apply_changes(
-            plugin,
-            registration,
-            [{"target": {"kind": item["kind"], "id": item["id"]}, **change}],
-            guild_id=guild_id,
+        await plugin_metadata.change_item(
+            plugin, registration, item["kind"], item["id"], made, guild_id=guild_id
         )
     except PluginChannelError as exc:
         raise _failed(f"the change was refused: {exc.code}") from exc
@@ -325,10 +326,9 @@ async def run_action(
         raise PluginDataError(GuildPluginMessages.AGE_RESTRICTED, 403)
     if offered is not SurfaceAccess.open:
         raise _not_offered()
-    held = await _held(
+    if not await _reads(
         plugin, registration, guild_id=context.guild_id, kind=kind, entity_id=entity_id
-    )
-    if held is None:
+    ):
         raise _not_offered()
 
     if declarative:
@@ -339,7 +339,6 @@ async def run_action(
             action=action,
             endpoint=endpoint,
             item={"kind": kind, "id": entity_id, "title": title},
-            held=held,
             guild_id=context.guild_id,
             user_id=user_id,
             transport=transport,
