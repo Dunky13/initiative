@@ -1098,7 +1098,8 @@ class TestTokens:
         self, client: AsyncClient, acting_user, session, vendor, registration
     ):
         """An ``exchange_body`` expression answers the body from the
-        connection's fields, and a token is minted again when they change."""
+        connection's fields, and a token is minted again when they change. A
+        token past reuse is dropped when another is minted."""
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _install(
             session,
@@ -1121,6 +1122,8 @@ class TestTokens:
         first = await client.post(
             TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
         )
+        [held] = plugin_connection_flows._minted.values()
+        held.reuse_until = 0.0
         plugin = await _reload(session, a.guild.id, plugin.id)
         plugin.config = {
             "workspace": {"owner": "ada", "installation_id": "42", "owner_type": "User"}
@@ -1136,6 +1139,9 @@ class TestTokens:
         assert [body for _, body in vendor.exchanges] == [
             {"permissions": {"issues": "write", "members": "read"}},
             {"permissions": {"issues": "write"}},
+        ]
+        assert [one.token for one in plugin_connection_flows._minted.values()] == [
+            second.json()["access_token"]
         ]
 
     async def test_an_expression_answering_no_object_mints_nothing(

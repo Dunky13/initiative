@@ -41,6 +41,7 @@ address, as an endpoint call does.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import time
@@ -593,13 +594,21 @@ class _Minted:
 
 
 #: Minted tokens, per worker, by the connection and the exact request that
-#: minted them.
+#: minted them. Each token minted drops those past reuse.
 _minted: dict[tuple[Any, ...], _Minted] = {}
 
 
 def clear_token_cache() -> None:
     """Forget every minted token."""
     _minted.clear()
+
+
+def _keep_minted(key: tuple[Any, ...], minted: _Minted) -> None:
+    """Hold ``minted`` under ``key``, and drop every token past reuse."""
+    now = time.monotonic()
+    for stale in [held for held, one in _minted.items() if one.reuse_until <= now]:
+        del _minted[stale]
+    _minted[key] = minted
 
 
 def _parse_expiry(body: Mapping[str, Any], *, now: int) -> Optional[int]:
@@ -681,7 +690,9 @@ async def mint_jwt_bearer(
         *cache_key,
         url,
         issuer,
-        json.dumps(asked, sort_keys=True, default=str),
+        hashlib.sha256(
+            json.dumps(asked, sort_keys=True, default=str).encode()
+        ).hexdigest(),
     )
     cached = _minted.get(full_key)
     if cached is not None and cached.reuse_until > time.monotonic():
@@ -736,10 +747,13 @@ async def mint_jwt_bearer(
     expires_at = _parse_expiry(body, now=now)
     remaining = (expires_at - now) if expires_at is not None else 0
     if remaining > _MINTED_REUSE_MARGIN_SECONDS:
-        _minted[full_key] = _Minted(
-            token=token,
-            expires_at=expires_at,
-            reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+        _keep_minted(
+            full_key,
+            _Minted(
+                token=token,
+                expires_at=expires_at,
+                reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+            ),
         )
     return TokenSet(access_token=token, expires_at=expires_at)
 
