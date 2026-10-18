@@ -51,8 +51,7 @@ from app.api.v1.tenant_endpoints import (
     property_values,
     queues,
     reactions,
-    favorites,
-    recents,
+    personal_items,
     relationships,
     resource_grants,
     storage,
@@ -248,7 +247,6 @@ api_router.include_router(
 )
 # Recents tabs bar is cross-guild (GET list). The addressed delete lives under
 # the guild router below.
-api_router.include_router(recents.router, prefix="/recents", tags=["recents"])
 api_router.include_router(
     user_view_preferences.router,
     prefix="/user-view-preferences",
@@ -386,11 +384,8 @@ guild_router.include_router(archive.router, tags=["archive"])
 # under /me below; users.router keeps the routes about other people.
 guild_router.include_router(users.guild_router, prefix="/users", tags=["users"])
 guild_router.include_router(users.members_router, prefix="/members", tags=["users"])
-# Recents: the addressed DELETE is guild-scoped (the cross-guild GET list stays
-# top-level — fully separate endpoints, see recents.py).
-guild_router.include_router(recents.guild_router, prefix="/recents", tags=["recents"])
 guild_router.include_router(
-    favorites.guild_router, prefix="/favorites", tags=["favorites"]
+    personal_items.guild_router, prefix="/personal-items", tags=["personal-items"]
 )
 # WebSockets (guild-scoped). Mounting under /c fixes the URL shape now; the
 # handlers are rewired to read the path guild in a follow-up step.
@@ -413,7 +408,7 @@ me_router.include_router(tickets.me_router, tags=["tickets"])
 # MY_TOOL_LISTS, plus the tab counts. One tag, because they are one page rather
 # than nine domains reaching across guilds for their own reasons.
 me_router.include_router(me_tools.me_router, tags=["my-tools"])
-me_router.include_router(favorites.me_router, tags=["favorites"])
+me_router.include_router(personal_items.me_router, tags=["personal-items"])
 me_router.include_router(calendar_entries.me_router, tags=["calendar-entries"])
 me_router.include_router(me_trash.me_router, tags=["trash"])
 me_router.include_router(me_ai.me_router, tags=["ai-settings"])

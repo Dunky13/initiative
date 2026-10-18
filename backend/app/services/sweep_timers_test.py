@@ -21,14 +21,14 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.post import Post
 from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
-from app.models.tenant.recent_view import RecentView
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.webhook_subscription import WebhookSubscription
 from app.models.platform.user_notification_prefs import EmailCadence
 from app.services import notifications, sweep_timers
 from app.services.guild_sweeps import Scan, Scope
 from app.services.platform import notify_bus
 from app.services.platform.notification_prefs import EmailSchedule
-from app.services.tenant import outbox_poller, post_publication, recent_views
+from app.services.tenant import outbox_poller, personal_items, post_publication
 from app.services.tenant.expiry import Expiring
 from app.testing import (
     create_calendar,
@@ -455,14 +455,15 @@ async def test_a_kept_tab_is_not_work_but_an_old_view_is(session: AsyncSession):
     task = await create_task(session, project)
     project_id, task_id = project.id, task.id
     now = datetime.now(timezone.utc)
-    old = now - recent_views.WINDOW - timedelta(days=1)
+    old = now - personal_items.WINDOW - timedelta(days=1)
     await route_session_to_guild(session, community_id)
     session.add(
-        RecentView(
+        PersonalItem(
             user_id=author.id,
             entity_type="project",
             entity_id=project_id,
-            last_viewed_at=old,
+            viewed_at=old,
+            view_source="direct",
         )
     )
     await session.commit()
@@ -470,17 +471,23 @@ async def test_a_kept_tab_is_not_work_but_an_old_view_is(session: AsyncSession):
     async def next_due():
         async with cohorts.system_session(community_id) as routed:
             await route_system(routed, guild_id=community_id)
-            return await recent_views.next_due(routed, Expiring(now=now, tab_limits={}))
+            return await personal_items.next_due(
+                routed, Expiring(now=now, tab_limits={})
+            )
 
     assert await next_due() is None
     await route_session_to_guild(session, community_id)
     session.add(
-        RecentView(
-            user_id=author.id, entity_type="task", entity_id=task_id, last_viewed_at=old
+        PersonalItem(
+            user_id=author.id,
+            entity_type="task",
+            entity_id=task_id,
+            viewed_at=old,
+            view_source="direct",
         )
     )
     await session.commit()
-    assert await next_due() == old + recent_views.WINDOW
+    assert await next_due() == old + personal_items.WINDOW
 
 
 async def test_a_digest_is_armed_for_when_its_items_are_due(session: AsyncSession):

@@ -56,7 +56,7 @@ beforeEach(() => {
       stored = { ...stored, ...body };
       return HttpResponse.json(stored);
     }),
-    communityHttp.post("/recents/", () => HttpResponse.json({})),
+    communityHttp.put("/personal-items/view/:kind/:id", () => HttpResponse.json({})),
     communityHttp.get("/relationships/", () => HttpResponse.json([])),
     communityHttp.get("/properties/definitions", () => HttpResponse.json([]))
   );

@@ -53,6 +53,7 @@ const LabelEditor = ({ item, label }: EditorProps) => {
       save={useSave(item, label)}
       readOnly={useQueueItemLayout().readOnly}
       placeholder={t("labelPlaceholder")}
+      follow={{ kind: "queue_item", id: item.id }}
     />
   );
 };

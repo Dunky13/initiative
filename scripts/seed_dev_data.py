@@ -196,7 +196,7 @@ async def seed() -> None:
     )
     print(f"  {len(ids['comments'])} comments")
     print(
-        f"  {len(ids['favorites'])} favorites, "
+        f"  {len(ids['bookmarks'])} bookmarks, "
         f"{len(ids['content_references'])} content references"
     )
     print(

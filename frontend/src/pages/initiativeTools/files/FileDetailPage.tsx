@@ -37,7 +37,7 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useFile, useSetFileCache, useUpdateFile } from "@/hooks/useFiles";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { useServerForm } from "@/hooks/useServerForm";
 import { uploadAttachment } from "@/lib/attachmentUtils";

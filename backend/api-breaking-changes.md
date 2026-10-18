@@ -52,6 +52,26 @@ matter and can be deleted.
 - PATCH /api/v1/plugin-services/{registration_id} removed the required property `embed_origin` from the response with the `200` status
 - POST /api/v1/plugin-services/{registration_id}/connect removed the required property `embed_origin` from the response with the `200` status
 - POST /api/v1/plugin-services/{registration_id}/vendor-setup/complete removed the required property `embed_origin` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/ removed the required property `items/items/is_favorited` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/ removed the required property `items/items/last_viewed_at` from the response with the `200` status
+- POST /api/v1/c/{community_id}/projects/ removed the required property `is_favorited` from the response with the `201` status
+- POST /api/v1/c/{community_id}/projects/ removed the required property `last_viewed_at` from the response with the `201` status
+- GET /api/v1/c/{community_id}/projects/{project_id} removed the required property `is_favorited` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/{project_id} removed the required property `last_viewed_at` from the response with the `200` status
+- PATCH /api/v1/c/{community_id}/projects/{project_id} removed the required property `is_favorited` from the response with the `200` status
+- PATCH /api/v1/c/{community_id}/projects/{project_id} removed the required property `last_viewed_at` from the response with the `200` status
+- POST /api/v1/c/{community_id}/projects/{project_id}/duplicate removed the required property `is_favorited` from the response with the `201` status
+- POST /api/v1/c/{community_id}/projects/{project_id}/duplicate removed the required property `last_viewed_at` from the response with the `201` status
+- PUT /api/v1/c/{community_id}/projects/{project_id}/grants removed the required property `is_favorited` from the response with the `200` status
+- PUT /api/v1/c/{community_id}/projects/{project_id}/grants removed the required property `last_viewed_at` from the response with the `200` status
+- GET /api/v1/me/projects removed the required property `items/items/is_favorited` from the response with the `200` status
+- GET /api/v1/me/projects removed the required property `items/items/last_viewed_at` from the response with the `200` status
+- GET /api/v1/c/{community_id}/projects/favorites api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/projects/{project_id}/favorite api path removed without deprecation
+- POST /api/v1/c/{community_id}/projects/{project_id}/favorite api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} api path removed without deprecation
+- POST /api/v1/c/{community_id}/recents/{entity_type}/{entity_id} api path removed without deprecation
+- GET /api/v1/recents/ api path removed without deprecation
 
 ### New values in a response's enums
 

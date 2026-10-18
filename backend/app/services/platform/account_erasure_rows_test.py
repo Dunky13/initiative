@@ -47,7 +47,7 @@ from app.models.tenant.ai_member_key import GuildAIMemberKey
 from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.models.tenant.comment import Comment
 from app.models.tenant.event_reminder_dispatch import EventReminderDispatch
-from app.models.tenant.favorite import Favorite
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.initiative import InitiativeJoinRequest
@@ -261,18 +261,26 @@ async def test_the_preference_beside_it_goes(session: AsyncSession, role_session
     assert await _reread(session, s.guild_id, GuildAIMemberPref, s.ai_pref) is None
 
 
-async def test_their_stars_go(session: AsyncSession, role_session):
-    """A star is one person's pick: theirs goes, and someone else's stays."""
+async def test_what_they_kept_goes(session: AsyncSession, role_session):
+    """Opens, bookmarks, follows and orders are one person's own: theirs go, and
+    someone else's stay."""
     s = await _seed(session)
     await route_session_to_guild(session, s.guild_id)
     for person in (s.victim_id, s.keeper_id):
-        session.add(Favorite(user_id=person, entity_type="project", entity_id=1))
+        session.add(
+            PersonalItem(
+                user_id=person,
+                entity_type="project",
+                entity_id=1,
+                bookmarked_at=datetime.now(timezone.utc),
+            )
+        )
     await session.commit()
 
     await user_service.hard_delete_user(await role_session("app_admin"), s.victim_id)
     session.expunge_all()
     await route_session_to_guild(session, s.guild_id)
-    left = (await session.exec(select(Favorite.user_id))).all()
+    left = (await session.exec(select(PersonalItem.user_id))).all()
     assert left == [s.keeper_id]
 
 

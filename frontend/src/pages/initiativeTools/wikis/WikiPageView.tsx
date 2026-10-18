@@ -5,8 +5,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from "react-i18next";
 
 import {
+  ContentKind,
   PropertyTarget,
-  RecentKind,
   SearchEntityType,
   Tool,
   WikiPageKind,
@@ -31,8 +31,8 @@ import { useCollaboration } from "@/hooks/useCollaboration";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { propertySaves } from "@/hooks/useProperties";
-import { useRecordOpen } from "@/hooks/useRecents";
 import { atLeast, useRegionWidthClass } from "@/hooks/useWidthClass";
 import { useAddWikiPage, useUpdateWikiPage, useWiki, useWikiPage } from "@/hooks/useWikis";
 import { useCommunityPath } from "@/lib/communityUrl";
@@ -145,7 +145,7 @@ export const WikiPageView = () => {
   // which is the tab.
   const loadedWikiId = pageQuery.data?.wiki_id;
   useRecordOpen(Tool.wiki, loadedWikiId, { each: loadedPageId });
-  useRecordOpen(RecentKind.wiki_page, loadedPageId);
+  useRecordOpen(ContentKind.wiki_page, loadedPageId);
   const loadedTitle = pageQuery.data?.title;
   useEffect(() => {
     sentTitle.current = null;
@@ -382,6 +382,7 @@ export const WikiPageView = () => {
         <WikiChrome
           wiki={wiki}
           pageTitle={isEditing ? draftTitle : page?.title || t("common:untitled")}
+          pageId={page?.id}
           onRename={isEditing ? (value) => setDraft({ pageId, title: value }) : undefined}
           // Leaving the field sends the name now. Clicking a page in the tree
           // blurs before it navigates, so a rename typed and immediately

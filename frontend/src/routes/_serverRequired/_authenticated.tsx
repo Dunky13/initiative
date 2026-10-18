@@ -10,7 +10,7 @@ import { Loader2, LogOut, Settings, UserCog } from "lucide-react";
 import { Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { type PersonalItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { AcceptTerms } from "@/components/AcceptTerms";
 import { AccountTimeOut } from "@/components/AccountTimeOut";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -43,14 +43,14 @@ import { useDesktopApp } from "@/hooks/useDesktopApp";
 import { useFinishPendingStart } from "@/hooks/useFinishPendingStart";
 import { useCollectMessagesWhereRegistered } from "@/hooks/useMyMessages";
 import { useNotificationStream } from "@/hooks/useNotificationStream";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 import {
   type ClearRecentTarget,
   useClearRecentView,
   useClearRecentViews,
   useRecents,
-} from "@/hooks/useRecents";
+} from "@/hooks/usePersonalItems";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 import { useResumePendingShare } from "@/hooks/useShareTarget";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { isJustSignedIn } from "@/lib/authTransition";
@@ -224,17 +224,17 @@ function AppLayout() {
     // layout === "main" → fall through to the standard sidebar layout.
   }
 
-  const toClearTarget = (item: RecentItemRead): ClearRecentTarget => ({
+  const toClearTarget = (item: PersonalItemRead): ClearRecentTarget => ({
     entityType: item.entity_type,
     entityId: item.entity_id,
     communityId: item.community_id,
   });
 
-  const handleClearRecent = (item: RecentItemRead) => {
+  const handleClearRecent = (item: PersonalItemRead) => {
     clearRecent.mutate(toClearTarget(item));
   };
 
-  const handleCloseOtherRecents = (keep: RecentItemRead) => {
+  const handleCloseOtherRecents = (keep: PersonalItemRead) => {
     const others = (recentQuery.data ?? []).filter(
       (item) =>
         !(

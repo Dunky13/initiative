@@ -10,7 +10,7 @@
   "peopleError": "La liste des personnes n'a pas pu être chargée.",
   "peopleReaderHidden": "Vous n'apparaissez pas dans cette liste, car les personnes d'ici ne peuvent pas vous envoyer de messages.",
   "peopleReaderHiddenLink": "Modifier",
-  "favorites": "Favoris",
+  "bookmarks": "Signets",
   "noInitiativesAvailable": "Aucune initiative disponible",
   "addInitiative": "Ajouter une initiative",
   "noTagsCreated": "Aucune étiquette créée pour l'instant",

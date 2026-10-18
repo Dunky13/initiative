@@ -1,12 +1,12 @@
-import { Star } from "lucide-react";
+import { Bookmark } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Tool } from "@/api/generated/initiativeAPI.schemas";
-import { useIsFavorite, useToggleFavorite } from "@/hooks/useFavorites";
+import { useIsBookmarked, useToggleBookmark } from "@/hooks/usePersonalItems";
 import { cn } from "@/lib/utils";
 
-interface FavoriteButtonProps {
+interface BookmarkButtonProps {
   tool: Tool;
   entityId: number;
   /** What the sidebar shows for it until the server's answer arrives. */
@@ -15,13 +15,13 @@ interface FavoriteButtonProps {
   /** The tool's own community, where it is not the one the page is in. */
   communityId?: number;
   className?: string;
-  /** On a card that is a link: the click stars, and does not open the card. */
+  /** On a card that is a link: the click bookmarks, and does not open the card. */
   suppressNavigation?: boolean;
   iconSize?: "sm" | "md";
 }
 
-/** The star on any tool: on its page, its card and its row. */
-export const FavoriteButton = ({
+/** The bookmark on any tool: on its page, its card and its row. */
+export const BookmarkButton = ({
   tool,
   entityId,
   name,
@@ -30,17 +30,17 @@ export const FavoriteButton = ({
   className,
   suppressNavigation = false,
   iconSize = "md",
-}: FavoriteButtonProps) => {
+}: BookmarkButtonProps) => {
   const { t } = useTranslation("common");
-  const starred = useIsFavorite(tool, entityId, communityId);
-  const toggle = useToggleFavorite();
+  const bookmarked = useIsBookmarked(tool, entityId, communityId);
+  const toggle = useToggleBookmark();
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (suppressNavigation) {
       event.preventDefault();
       event.stopPropagation();
     }
-    toggle.mutate({ tool, entityId, next: !starred, name, initiativeId, communityId });
+    toggle.mutate({ tool, entityId, next: !bookmarked, name, initiativeId, communityId });
   };
 
   return (
@@ -51,16 +51,16 @@ export const FavoriteButton = ({
         iconSize === "sm" ? "size-7" : "size-9",
         className
       )}
-      aria-pressed={starred}
-      aria-label={starred ? t("favorite.remove") : t("favorite.add")}
-      title={starred ? t("favorite.remove") : t("favorite.add")}
+      aria-pressed={bookmarked}
+      aria-label={bookmarked ? t("bookmark.remove") : t("bookmark.add")}
+      title={bookmarked ? t("bookmark.remove") : t("bookmark.add")}
       // One write at a time, so the last click is the one that holds.
       disabled={toggle.isPending}
       onClick={handleClick}
     >
-      <Star
-        className={cn("size-4", starred && "text-amber-500")}
-        fill={starred ? "currentColor" : "none"}
+      <Bookmark
+        className={cn("size-4", bookmarked && "text-amber-500")}
+        fill={bookmarked ? "currentColor" : "none"}
         aria-hidden
       />
     </button>

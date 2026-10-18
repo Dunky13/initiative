@@ -25,7 +25,7 @@ It starts out arranged for whatever you told us when you signed up: your own lis
 | **Coming up** | Events and task dates over the next few days. You pick how many. |
 | **My calendar** | The whole of [My Calendar](#my-calendar), filters and all, by month or week. |
 | **Recent** | What you opened lately, or what changed lately, across every kind of tool and every community. Narrow it to a few kinds in its settings. |
-| **Favorites** | Everything you've [starred](#favourites), from every community. Narrow it to a few kinds in its settings. |
+| **Bookmarks** | Everything you've [bookmarked](#bookmarks), from every community. Narrow it to a few kinds in its settings. |
 | **Activity** | What people changed lately in one community. |
 | **My communities** | Every community you're in, as the card the directory shows, with a way in. |
 | **My progress** | Your streak, your week, and how much lands on time. |
@@ -42,7 +42,7 @@ Here for more than one reason? Keep more than one home page. While customizing, 
 | *Heads down* | Getting through it: a timer and the few things that need doing now. |
 | *Assigned work* | Work that's handed to you: your list, the urgent part, and what's happened to your things. |
 | *Community* | Following a club or a space: your communities, what's going on, and what's coming up. |
-| *Running the show* | Keeping a community moving: its activity, what you starred, what changed in projects and dashboards, your own list. |
+| *Running the show* | Keeping a community moving: its activity, what you bookmarked, what changed in projects and dashboards, your own list. |
 
 More are in [the marketplace](plugins-and-marketplace.md#home-layouts) — **Browse the marketplace** at the foot of the same picker.
 
@@ -127,13 +127,28 @@ It exists because watching a streak build is quite nice, and that turns out to b
 
 ![Your personal stats](../images/your-space/my-stats.png)
 
-## Favourites
+## Bookmarks
 
-Anything can have a star: a project, a file, the tea rota, the counter of how many raffle tickets are left. The star sits beside its name at the top of its page, and on its card or row in a list.
+Any tool can be bookmarked: a project, a file, the tea rota, the counter of how many raffle tickets are left. The bookmark sits beside its name at the top of its page, and on its card or row in a list.
 
-Starred things go in **Favorites** at the top of the sidebar, for that community, and in the **Favorites** widget on Home, from all of them. A star is yours alone. Starring the committee's minutes doesn't pin them to anybody else's screen, which is probably for the best.
+Bookmarked things go in **Bookmarks** at the top of the sidebar, for that community, and in the **Bookmarks** widget on Home, from all of them. A bookmark is yours alone. Bookmarking the committee's minutes doesn't pin them to anybody else's screen, which is probably for the best.
 
-Leave a community and your stars there go with you.
+Leave a community and your bookmarks there go with you.
+
+## Following
+
+A bookmark keeps a thing close. Following keeps an eye on it. Follow the fete project and every stall booking, rota swap and increasingly tense comment about the gazebo rises in the activity feed on the [community front page](communities.md#the-community-front-page). Follow one task, one event or one page of the handbook, and just that rises.
+
+Look for the star:
+
+| To follow | It's |
+|---|---|
+| A tool | Beside the bookmark, next to its name. Following a tool covers everything inside it. |
+| A task or an event | With the other buttons at the top of it. |
+| A queue item, a picture or a counter | Beside its name. For a picture, that's under **Details**. |
+| A wiki | Beside its name at the top of the wiki's sidebar. Each page has its own, beside the wiki's bookmark. |
+
+Following changes the order of your feed and nothing else. Nobody gets told, nothing pings you, and what you follow is yours alone. It lifts things up the list rather than pinning them to the top, so a busy morning can still outrank the thing you followed last week. Leave a community and your follows there go with you.
 
 ## Related
 

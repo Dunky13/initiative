@@ -33,6 +33,7 @@ import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { layoutViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import {
   useAdvanceTurn,
   useCreateQueueItem,
@@ -46,7 +47,6 @@ import {
   useStopQueue,
   useUpdateQueue,
 } from "@/hooks/useQueues";
-import { useRecordOpen } from "@/hooks/useRecents";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { instanceTarget } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";

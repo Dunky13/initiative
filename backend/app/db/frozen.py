@@ -184,11 +184,9 @@ _OWN_KIND_PARENTS: dict[str, tuple[str, ...]] = _derive_own_kind_parents()
 #: an RSVP are gestures on the content, and frozen content takes none of them.
 FREEZE_EXEMPT_TABLES: frozenset[str] = frozenset(
     {
-        "recent_views",
+        "personal_items",
         "engagement_levels",
         "post_reads",
-        "project_orders",
-        "favorites",
         "event_outbox",
         "plugin_event_outbox",
         "search_entries",

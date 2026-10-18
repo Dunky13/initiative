@@ -300,7 +300,7 @@ class User(SQLModel, table=True):
     )
     # How many recently-opened items the header tabs bar keeps and shows for
     # this user, across all entity types and guilds. Drives both the display
-    # count and how many each guild keeps (app.services.tenant.recent_views).
+    # count and how many each guild keeps (app.services.tenant.personal_items).
     # Clamped to [1, 100] on write; default 20 preserves the historic behavior.
     recent_tabs_limit: int = Field(
         default=20,
@@ -406,7 +406,7 @@ class User(SQLModel, table=True):
 
     # An account has no standing view of guild content. What refers to a person
     # from inside a guild schema — an assignment, a membership, an ordering, a
-    # favourite — is reached from that content, through ``MemberProfile``, on a
+    # bookmark — is reached from that content, through ``MemberProfile``, on a
     # session routed into the guild that holds it. ``hard_delete_user`` clears
     # those rows itself, guild by guild.
     #

@@ -602,9 +602,9 @@ class TestWhatTheFreezeLeavesAlone:
         await _archive(session, project)
         await routed.exec(
             text(
-                "INSERT INTO recent_views"
-                " (user_id, entity_type, entity_id, last_viewed_at)"
-                " VALUES (:uid, 'project', :pid, now())"
+                "INSERT INTO personal_items"
+                " (user_id, entity_type, entity_id, viewed_at, view_source)"
+                " VALUES (:uid, 'project', :pid, now(), 'direct')"
             ).bindparams(uid=user.id, pid=project.id)
         )
         await routed.commit()

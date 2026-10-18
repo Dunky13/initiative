@@ -106,7 +106,7 @@ Learn it once and it's true of the next one. That's the entire point of doing it
 Open a project, a queue, a dashboard or any other tool and the top of the page is laid out the same way:
 
 - **A band in the initiative's colour**, so you always know which initiative you're standing in. It holds the breadcrumb back out, and **Settings** across from it if you're allowed to change things.
-- **The name and description.** Click the name to rename it. A file is the one exception: its title is the field at the top of the file. The star beside the name adds it to your [Favorites](your-space.md#favourites).
+- **The name and description.** Click the name to rename it. A file is the one exception: its title is the field at the top of the file. The bookmark beside the name adds it to your [Bookmarks](your-space.md#bookmarks), and the star beside that [follows](your-space.md#following) it.
 - **A strip underneath**, with **Status**, **Tags** and **Properties**, all changeable right there, beside whatever only that tool has — a project's progress and dates, a queue's turn controls.
 
 ![The top of a project: the initiative's band with the breadcrumb and Settings, the name, and the strip with status, progress, dates, tags and properties](../images/tools/connections.png)

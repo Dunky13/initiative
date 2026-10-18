@@ -53,7 +53,7 @@
     },
     "owner": {
       "name": "Aux commandes",
-      "description": "Ce qui bouge dans votre communauté, ce que vous avez mis en favori et ce qui a changé dans les projets et tableaux de bord, et votre propre liste."
+      "description": "Ce qui bouge dans votre communauté, ce que vous avez mis en signet et ce qui a changé dans les projets et tableaux de bord, et votre propre liste."
     }
   },
   "settingsDialog": {
@@ -171,13 +171,13 @@
       "loadError": "Impossible de charger ce qui est récent.",
       "openTools": "Ouvrir Mes outils"
     },
-    "favorites": {
-      "title": "Favoris",
-      "titleIn": "{{tool}} favoris",
-      "description": "Tout ce que vous avez mis en favori, dans chaque communauté, à portée de clic.",
+    "bookmarks": {
+      "title": "Signets",
+      "titleIn": "{{tool}} en signet",
+      "description": "Tout ce que vous avez mis en signet, dans chaque communauté, à portée de clic.",
       "toolsHint": "N'afficher que ces types d'outils. Laissez vide pour tous les afficher.",
-      "empty": "Aucun favori pour l'instant. Mettez une étoile à un projet, un fichier ou autre chose depuis sa page, et il vous attendra ici.",
-      "loadError": "Impossible de charger vos favoris."
+      "empty": "Aucun signet pour l'instant. Mettez un signet sur un projet, un fichier ou autre chose depuis sa page, et il vous attendra ici.",
+      "loadError": "Impossible de charger vos signets."
     },
     "activity": {
       "title": "Activité",

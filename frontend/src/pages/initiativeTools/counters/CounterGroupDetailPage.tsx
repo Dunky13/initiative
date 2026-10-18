@@ -59,7 +59,7 @@ import {
 } from "@/hooks/useCounters";
 import { layoutViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { instanceTarget } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";

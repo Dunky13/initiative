@@ -6,15 +6,17 @@
 
 import { useBlocker } from "@tanstack/react-router";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { type RefObject, useContext, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  ContentKind,
   PropertyDefinitionRead,
   PropertySummary,
   TagSummary,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
+import { FollowButton } from "@/components/FollowButton";
 import { MentionComposer } from "@/components/markdown/MentionComposer";
 import { AddPropertyButton } from "@/components/properties/AddPropertyButton";
 import { PropertyInput } from "@/components/properties/PropertyInput";
@@ -64,6 +66,7 @@ export const TitleField = <I, P>({
   placeholder,
   field = "title",
   optional = false,
+  follow,
 }: {
   id: string;
   label: string;
@@ -75,9 +78,20 @@ export const TitleField = <I, P>({
   /** It may be emptied, and then reads as `placeholder` (a picture's title,
    *  which falls back to its file's name). */
   optional?: boolean;
+  /** The item, for a follow toggle beside its title. */
+  follow?: { kind: ContentKind; id: number };
 }) => {
   // One being added may be emptied while it is typed: Add waits for a title.
   const adding = useContext(ItemDraftContext) !== null;
+  const besides = (title: ReactNode) =>
+    follow && !adding ? (
+      <div className="flex min-w-0 flex-1 items-start gap-1">
+        {title}
+        <FollowButton kind={follow.kind} entityId={follow.id} className="mt-0.5" />
+      </div>
+    ) : (
+      title
+    );
   const draft = useFieldDraft(value, async (text) => {
     const title = text.trim() ? text : optional ? null : adding ? "" : undefined;
     return title === undefined
@@ -85,13 +99,13 @@ export const TitleField = <I, P>({
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
   });
   if (readOnly) {
-    return (
+    return besides(
       <h1 className="min-w-0 flex-1 break-words font-semibold text-3xl tracking-tight">
         {value || placeholder}
       </h1>
     );
   }
-  return (
+  return besides(
     <FieldFrame
       label={label}
       htmlFor={id}

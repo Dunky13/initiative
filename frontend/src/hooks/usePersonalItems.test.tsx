@@ -15,9 +15,13 @@ import { buildRecentItem } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
-import { type RecentItemRead, ViewSource } from "@/api/generated/initiativeAPI.schemas";
-import { getListRecentsQueryKey } from "@/api/generated/recents/recents";
-import { useRecordOpen, useRecordRecentView } from "@/hooks/useRecents";
+import {
+  ListedMark,
+  type PersonalItemRead,
+  ViewSource,
+} from "@/api/generated/initiativeAPI.schemas";
+import { getListMyPersonalItemsQueryKey } from "@/api/generated/personal-items/personal-items";
+import { useRecordOpen, useRecordRecentView } from "@/hooks/usePersonalItems";
 import { queryClient } from "@/lib/queryClient";
 import { FROM_SEARCH } from "@/lib/searchResults";
 
@@ -31,14 +35,14 @@ const VIEWED_AT = "2026-09-30T12:00:00.000Z";
 const recordOpens = () => {
   const opened: string[] = [];
   server.use(
-    communityHttp.post("/recents/:entityType/:entityId", ({ request, params }) => {
+    communityHttp.put("/personal-items/view/:entityType/:entityId", ({ request, params }) => {
       const source = new URL(request.url).searchParams.get("source") ?? "direct";
       opened.push(`${params.entityType} ${params.entityId} ${source}`);
       return HttpResponse.json({
         entity_type: params.entityType,
         entity_id: Number(params.entityId),
-        last_viewed_at: VIEWED_AT,
-        source,
+        viewed_at: VIEWED_AT,
+        view_source: source,
       });
     })
   );
@@ -49,18 +53,18 @@ describe("useRecordRecentView", () => {
   afterEach(() => queryClient.clear());
 
   it("moves a reopened tab to the front, and reads the bar again only for a new one", async () => {
-    const key = getListRecentsQueryKey();
+    const key = getListMyPersonalItemsQueryKey({ mark: ListedMark.view });
     const [first, reopened] = [
-      buildRecentItem({ last_viewed_at: "2026-09-30T11:00:00.000Z" }),
-      buildRecentItem({ last_viewed_at: "2026-09-30T10:00:00.000Z" }),
+      buildRecentItem({ viewed_at: "2026-09-30T11:00:00.000Z" }),
+      buildRecentItem({ viewed_at: "2026-09-30T10:00:00.000Z" }),
     ];
-    queryClient.setQueryData<RecentItemRead[]>(key, [first, reopened]);
+    queryClient.setQueryData<PersonalItemRead[]>(key, [first, reopened]);
     server.use(
-      communityHttp.post("/recents/:entityType/:entityId", ({ params }) =>
+      communityHttp.put("/personal-items/view/:entityType/:entityId", ({ params }) =>
         HttpResponse.json({
           entity_type: "project",
           entity_id: Number(params.entityId),
-          last_viewed_at: VIEWED_AT,
+          viewed_at: VIEWED_AT,
         })
       )
     );
@@ -71,20 +75,17 @@ describe("useRecordRecentView", () => {
     result.current.mutate(reopened.entity_id);
 
     await waitFor(() =>
-      expect(queryClient.getQueryData(key)).toEqual([
-        { ...reopened, last_viewed_at: VIEWED_AT },
-        first,
-      ])
+      expect(queryClient.getQueryData(key)).toEqual([{ ...reopened, viewed_at: VIEWED_AT }, first])
     );
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
 
     // An answer for an earlier view, arriving last, does not jump the queue.
     server.use(
-      communityHttp.post("/recents/:entityType/:entityId", ({ params }) =>
+      communityHttp.put("/personal-items/view/:entityType/:entityId", ({ params }) =>
         HttpResponse.json({
           entity_type: "project",
           entity_id: Number(params.entityId),
-          last_viewed_at: "2026-09-30T11:30:00.000Z",
+          viewed_at: "2026-09-30T11:30:00.000Z",
         })
       )
     );
@@ -92,8 +93,8 @@ describe("useRecordRecentView", () => {
 
     await waitFor(() =>
       expect(queryClient.getQueryData(key)).toEqual([
-        { ...reopened, last_viewed_at: VIEWED_AT },
-        { ...first, last_viewed_at: "2026-09-30T11:30:00.000Z" },
+        { ...reopened, viewed_at: VIEWED_AT },
+        { ...first, viewed_at: "2026-09-30T11:30:00.000Z" },
       ])
     );
 
@@ -116,7 +117,7 @@ describe("useRecordRecentView", () => {
       useRecordOpen("task", shown);
       return null;
     };
-    const key = getListRecentsQueryKey();
+    const key = getListMyPersonalItemsQueryKey({ mark: ListedMark.view });
     const bar = [buildRecentItem()];
     queryClient.setQueryData(key, bar);
     const { router } = renderPage(TaskPage, {

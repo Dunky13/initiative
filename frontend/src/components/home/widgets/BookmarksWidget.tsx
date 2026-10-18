@@ -1,11 +1,11 @@
 /**
- * What the reader starred, from every community: the things they keep coming
+ * What the reader bookmarked, from every community: the things they keep coming
  * back to, one click away. Every kind of tool unless the reader picks some in
- * its settings. The star on each row takes it off again.
+ * its settings. The bookmark on each row takes it off again.
  */
 
 import { Link } from "@tanstack/react-router";
-import { Star } from "lucide-react";
+import { Bookmark } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,7 +14,7 @@ import { HomeWidgetCard, HomeWidgetNotice } from "@/components/home/HomeWidgetCa
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useMyFavorites, useToggleFavorite } from "@/hooks/useFavorites";
+import { useMyBookmarks, useToggleBookmark } from "@/hooks/usePersonalItems";
 import { renderRecentIcon } from "@/lib/recentIcon";
 import { recentRoute } from "@/lib/recentRoute";
 import { toolNavLabelKey } from "@/lib/tools";
@@ -22,13 +22,13 @@ import { toolNavLabelKey } from "@/lib/tools";
 import { onlyTool, ToolsSetting, toolsOf } from "./toolFilter";
 import type { HomeWidgetProps, HomeWidgetSettingsProps } from "./types";
 
-export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
+export const BookmarksWidget = ({ options }: HomeWidgetProps) => {
   const { t } = useTranslation(["home", "search", "common"]);
   const { t: tNav } = useTranslation("nav");
   const tools = toolsOf(options);
   const only = onlyTool(options);
-  const favorites = useMyFavorites();
-  const unstar = useToggleFavorite();
+  const bookmarks = useMyBookmarks();
+  const unbookmark = useToggleBookmark();
   const { communities } = useCommunities();
 
   // A row's community, said only to somebody who is in more than one.
@@ -38,10 +38,10 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
     return (communityId: number) => (several ? (names.get(communityId) ?? null) : null);
   }, [communities]);
 
-  const rows = (favorites.data ?? []).filter((item) => tools.includes(item.entity_type as Tool));
+  const rows = (bookmarks.data ?? []).filter((item) => tools.includes(item.entity_type as Tool));
 
   let body: React.ReactNode;
-  if (favorites.isLoading) {
+  if (bookmarks.isLoading) {
     body = (
       <div className="space-y-2">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -50,19 +50,19 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
         ))}
       </div>
     );
-  } else if (favorites.isError) {
-    body = <p className="text-destructive text-sm">{t("widgets.favorites.loadError")}</p>;
+  } else if (bookmarks.isError) {
+    body = <p className="text-destructive text-sm">{t("widgets.bookmarks.loadError")}</p>;
   } else if (rows.length === 0) {
     body = (
       <HomeWidgetNotice
-        icon={Star}
+        icon={Bookmark}
         action={
           <Button asChild size="sm" variant="outline">
             <Link to="/my-tools">{t("widgets.recent.openTools")}</Link>
           </Button>
         }
       >
-        {t("widgets.favorites.empty")}
+        {t("widgets.bookmarks.empty")}
       </HomeWidgetNotice>
     );
   } else {
@@ -92,10 +92,10 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
               <button
                 type="button"
                 className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-amber-500 transition hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={t("common:favorite.remove")}
-                title={t("common:favorite.remove")}
+                aria-label={t("common:bookmark.remove")}
+                title={t("common:bookmark.remove")}
                 onClick={() =>
-                  unstar.mutate({
+                  unbookmark.mutate({
                     tool: item.entity_type,
                     entityId: item.entity_id,
                     communityId: item.community_id,
@@ -103,7 +103,7 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
                   })
                 }
               >
-                <Star className="size-4" fill="currentColor" aria-hidden />
+                <Bookmark className="size-4" fill="currentColor" aria-hidden />
               </button>
             </li>
           );
@@ -114,11 +114,11 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
 
   return (
     <HomeWidgetCard
-      icon={Star}
+      icon={Bookmark}
       title={
         only
-          ? t("widgets.favorites.titleIn", { tool: tNav(toolNavLabelKey(only)) })
-          : t("widgets.favorites.title")
+          ? t("widgets.bookmarks.titleIn", { tool: tNav(toolNavLabelKey(only)) })
+          : t("widgets.bookmarks.title")
       }
     >
       {body}
@@ -126,14 +126,14 @@ export const FavoritesWidget = ({ options }: HomeWidgetProps) => {
   );
 };
 
-export const FavoritesSettings = ({ options, onChange }: HomeWidgetSettingsProps) => {
+export const BookmarksSettings = ({ options, onChange }: HomeWidgetSettingsProps) => {
   const { t } = useTranslation("home");
   return (
     <ToolsSetting
-      id="favorites-widget-tools"
+      id="bookmarks-widget-tools"
       options={options}
       onChange={onChange}
-      hint={t("widgets.favorites.toolsHint")}
+      hint={t("widgets.bookmarks.toolsHint")}
     />
   );
 };

@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Star,
   X,
 } from "lucide-react";
 import { type TouchEvent, useMemo, useState } from "react";
@@ -31,7 +32,7 @@ import {
   useSetCount,
   useSteppedCount,
 } from "@/hooks/useCounters";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useFollow, useRecordOpen } from "@/hooks/usePersonalItems";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getContrastingTextColor } from "@/lib/counter-color";
@@ -86,6 +87,7 @@ export function CounterDetailPage() {
   );
   const counter = currentIndex >= 0 ? counters[currentIndex] : null;
   useRecordOpen("counter", counter?.id);
+  const follow = useFollow("counter", counter?.id ?? 0);
 
   const canWrite = Boolean(group?.can.edit);
 
@@ -185,6 +187,20 @@ export function CounterDetailPage() {
         >
           {counter.name}
         </h1>
+        {/* On the counter's own colours: filled when followed. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-pressed={follow.following}
+          aria-label={follow.following ? t("common:follow.remove") : t("common:follow.add")}
+          title={follow.following ? t("common:follow.remove") : t("common:follow.add")}
+          disabled={!follow.ready}
+          onClick={follow.toggle}
+          className={cn("h-10 w-10", chromeButtonClass)}
+          style={{ color: fg }}
+        >
+          <Star className="h-5 w-5" fill={follow.following ? "currentColor" : "none"} />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

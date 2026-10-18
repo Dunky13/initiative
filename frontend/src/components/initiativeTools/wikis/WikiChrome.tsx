@@ -1,9 +1,10 @@
-import { BookText, Eye, MessageSquare, PanelRight, Pencil, Send } from "lucide-react";
+import { BookText, MessageSquare, PanelRight, Pencil, Send } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tool, type WikiRead } from "@/api/generated/initiativeAPI.schemas";
-import { FavoriteButton } from "@/components/FavoriteButton";
+import { BookmarkButton } from "@/components/BookmarkButton";
+import { FollowButton } from "@/components/FollowButton";
 import { ToolBreadcrumb } from "@/components/tools/ToolBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,8 @@ interface WikiChromeProps {
   wiki: WikiRead;
   /** The page being read. This bar names where you are, not where you are in general. */
   pageTitle: string;
+  /** The page's id, for following it. Absent where the surface is not a page. */
+  pageId?: number;
   /** Renames the page. Present only while it is open for editing. */
   onRename?: (title: string) => void;
   /** Sends the name now, rather than waiting out the pause — on blur, or Enter. */
@@ -60,6 +63,7 @@ interface WikiChromeProps {
 export const WikiChrome = ({
   wiki,
   pageTitle,
+  pageId,
   onRename,
   onRenameCommit,
   pageUpdatedAt,
@@ -141,14 +145,16 @@ export const WikiChrome = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* The wiki's star, on every page of it: what is starred is the wiki. */}
-        <FavoriteButton
+        {/* The wiki's bookmark, on every page of it: what is bookmarked is the wiki. */}
+        <BookmarkButton
           tool={Tool.wiki}
           entityId={wiki.id}
           name={wiki.name}
           initiativeId={wiki.initiative_id}
           className="size-8"
         />
+        {/* The follow is the page's: the wiki is followed from its sidebar. */}
+        {pageId ? <FollowButton kind="wiki_page" entityId={pageId} className="size-8" /> : null}
         {trailing}
 
         {/* A page is written before it is published, so the one thing a writer
@@ -176,11 +182,9 @@ export const WikiChrome = ({
                 aria-pressed={editing}
                 aria-label={editing ? t("viewMode.read") : t("viewMode.edit")}
               >
-                {editing ? (
-                  <Eye className="size-4" aria-hidden />
-                ) : (
-                  <Pencil className="size-4" aria-hidden />
-                )}
+                {/* The pencil either way: pressed while the page is open
+                    for editing. */}
+                <Pencil className="size-4" aria-hidden />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{editing ? t("viewMode.read") : t("viewMode.edit")}</TooltipContent>

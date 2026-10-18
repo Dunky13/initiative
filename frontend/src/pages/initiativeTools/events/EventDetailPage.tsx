@@ -5,10 +5,12 @@ import { useTranslation } from "react-i18next";
 
 import {
   type CalendarEventRead,
+  ContentKind,
   SearchEntityType,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { isRepeating, occurrenceTarget } from "@/components/calendar/eventCalendarEntry";
+import { FollowButton } from "@/components/FollowButton";
 import { ModerationMenu } from "@/components/moderation/ModerationMenu";
 import { ReportButton } from "@/components/moderation/ReportButton";
 import { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
@@ -33,7 +35,7 @@ import {
 import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { detailLayoutOf, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { DetailLayoutView } from "@/lib/layouts/DetailLayoutView";
@@ -182,6 +184,11 @@ export function EventDetailPage() {
   const menuPending = duplicateEvent.isPending || detach.isPending;
   const actions = (
     <div className="flex items-center gap-1">
+      <FollowButton
+        kind={ContentKind.calendar_event}
+        entityId={event.id}
+        communityId={event.community_id}
+      />
       <ReportButton
         targetType={SearchEntityType.calendar_event}
         targetId={event.id}

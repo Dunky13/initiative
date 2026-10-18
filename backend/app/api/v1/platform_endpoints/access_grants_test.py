@@ -348,10 +348,10 @@ async def test_grantee_sees_guild_content(
     )
     assert events.status_code == 200, events.text
 
-    # Recording a recent view answers rather than faulting: a grantee's own
-    # view is simply not persisted.
-    viewed = await client.post(
-        host.g(f"/recents/project/{host.project.id}"), headers=headers
+    # Recording an open answers rather than faulting: a grantee's own view
+    # is simply not persisted.
+    viewed = await client.put(
+        host.g(f"/personal-items/view/project/{host.project.id}"), headers=headers
     )
     assert viewed.status_code == 200, viewed.text
 

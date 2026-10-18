@@ -582,10 +582,10 @@ class TestTheAggregateRoutes:
         assert response.status_code == 403
         assert response.json()["detail"] == "ACCOUNT_SUSPENDED"
 
-    async def test_recents_is_refused_once_suspended(
+    async def test_tabs_are_refused_once_suspended(
         self, client, session, suspended_with_work
     ):
-        """``/recents`` builds its own guild list rather than going through
+        """``/me/personal-items`` builds its own guild list rather than going through
         ``member_guild_ids``; the account gate stops it before either."""
         moderator, a = suspended_with_work
 
@@ -595,7 +595,9 @@ class TestTheAggregateRoutes:
             json={"suspended": True},
         )
 
-        response = await client.get("/api/v1/recents/", headers=a.headers)
+        response = await client.get(
+            "/api/v1/me/personal-items?mark=view", headers=a.headers
+        )
         assert response.status_code == 403
         assert response.json()["detail"] == "ACCOUNT_SUSPENDED"
 

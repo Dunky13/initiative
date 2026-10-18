@@ -24,7 +24,7 @@
  *    community, and never a non-community key. This is the tenancy boundary: a mutation
  *    in one community can't touch another community's (or a personal) cached data.
  *  - PERSONAL / platform keys are everything else (`/api/v1/me/*`, `/settings`,
- *    `/users`, `/communities`, `/operator`, `/notifications`, `/version`, `/recents`).
+ *    `/users`, `/communities`, `/operator`, `/notifications`, `/version`, `/me/personal-items`).
  *    `personalExact` and `personalPrefix` reach these and ONLY these.
  *
  * A few resources genuinely span both (a community list plus its cross-community `/me`
@@ -222,14 +222,14 @@ const projectTaskStatuses = (projectId: number): Spec => ({
   communityExact: [`/api/v1/projects/${projectId}/task-statuses/`],
 });
 
-// Recents list is a cross-community personal endpoint (`/api/v1/recents/`, no /c/).
-const recents = (): Spec => ({ personalExact: ["/api/v1/recents/"] });
+// What the reader keeps about items: a community's stars and each item's
+// state, and every community's tabs and stars (`/me/personal-items`).
+// The activity feed, whose order follows what the reader follows.
+const activity = (): Spec => ({ communityPrefix: ["/api/v1/activity"] });
 
-// A community's stars, and every community's on the home page. The project
-// form (`/projects/favorites`) is the same rows, so it goes stale with them.
-const favorites = (): Spec => ({
-  communityExact: ["/api/v1/favorites", "/api/v1/projects/favorites"],
-  personalExact: ["/api/v1/me/favorites"],
+const personalItems = (): Spec => ({
+  communityPrefix: ["/api/v1/personal-items"],
+  personalExact: ["/api/v1/me/personal-items"],
 });
 
 // ── Files (community) ────────────────────────────────────────────────────────
@@ -704,7 +704,8 @@ export const q = {
   file,
   fileVersions,
   emailSettings,
-  favorites,
+  personalItems,
+  activity,
   fcmConfig,
   communityAIConnections,
   communityContent,
@@ -731,7 +732,6 @@ export const q = {
   propertyHolder,
   pushSettings,
   recentComments,
-  recents,
   relationships,
   resolvedAISettings,
   storageSettings,
@@ -764,7 +764,7 @@ export const q = {
  * when the device has no connection to refetch from.
  *
  * Everything else survives. A platform or personal path (`/me/*`, `/users`,
- * `/communities`, `/recents`) answers the same in every community, and a
+ * `/communities`, `/me/personal-items`) answers the same in every community, and a
  * hand-written key that holds community data (`["query", communityId, …]`) carries the
  * community's id, so another community's entry is never the one read.
  */

@@ -1001,12 +1001,12 @@ class TestReactionLifecycle:
     async def test_purging_a_post_takes_what_names_it(
         self, client, session, acting_user
     ):
-        """Reactions on the post and on its comments, and recent views of it,
+        """Reactions on the post and on its comments, and opens of it,
         go with the post: they name it by id, and nothing could remove them
         once it is gone. They are a member's own, which the admin purging
         never reaches, and the purge takes them all the same."""
         from app.models.tenant.reaction import Reaction
-        from app.models.tenant.recent_view import RecentView
+        from app.models.tenant.personal_item import PersonalItem
         from sqlmodel import select
 
         a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
@@ -1027,7 +1027,9 @@ class TestReactionLifecycle:
                 a.g(path), headers=b.headers, json={"emoji": THUMBS}
             )
             assert resp.status_code == 200, resp.text
-        viewed = await client.post(a.g(f"/recents/post/{post.id}"), headers=b.headers)
+        viewed = await client.put(
+            a.g(f"/personal-items/view/post/{post.id}"), headers=b.headers
+        )
         assert viewed.status_code == 200, viewed.text
 
         trashed = await client.delete(a.g(f"/posts/{post.id}"), headers=a.headers)
@@ -1039,4 +1041,4 @@ class TestReactionLifecycle:
 
         await route_session_to_guild(session, a.guild.id)
         assert (await session.exec(select(Reaction))).all() == []
-        assert (await session.exec(select(RecentView))).all() == []
+        assert (await session.exec(select(PersonalItem))).all() == []

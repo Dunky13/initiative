@@ -57,7 +57,7 @@ import { useImageUploader } from "@/hooks/useImageUploader";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { LIST, type ListViewSpec, NO_PART_VIEW, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordOpen } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useKnownTagIds, useTags } from "@/hooks/useTags";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatPeriod } from "@/lib/formatDate";

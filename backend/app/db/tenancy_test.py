@@ -82,7 +82,7 @@ def test_helpers_agree_with_sets():
 # and GUILD_SCOPED_TABLES derives from (initiative | guild-level), so the
 # "registry matches the set" and "they partition GUILD_SCOPED" invariants hold
 # by construction — no test needed. What still needs guarding: the two halves
-# must be disjoint, and the polymorphic recent_views path must cover every
+# must be disjoint, and the polymorphic personal_items path must cover every
 # entity type the app records.
 
 

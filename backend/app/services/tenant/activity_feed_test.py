@@ -9,8 +9,9 @@ from app.db.request_context import SystemGuild
 from app.db.session import clear_rls_context, set_rls_context
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import TaskStatusCategory
-from app.services.tenant import activity_feed
+from app.services.tenant import activity_feed, personal_items
 from app.services.tenant.activity_feed import FeedView
+from app.services.tenant.personal_items import Mark
 from app.testing import (
     create_comment,
     create_project,
@@ -130,6 +131,36 @@ async def test_views_and_narrowing(session, acting_user, reading_as):
         commented.id,
     }
     assert elsewhere.id in ids(await _feed(reading_as, b))
+
+
+async def test_following_an_item_or_its_tool_lifts_it(session, acting_user, reading_as):
+    """Unfollowed, the newer change leads. Following the older item, or the
+    project it is in, puts it first."""
+    a, b = await _start(session, acting_user)
+    other = await create_project(session, a.initiative, a.user)
+    await create_resource_grant(session, other, user=b.user)
+    older = await create_task(session, a.project)
+    newer = await create_task(session, other)
+    await _by(session, a.guild.id, a.user.id)
+
+    async def tasks() -> list[int]:
+        return [
+            e.entity_id for e in await _feed(reading_as, b) if e.entity_type == "task"
+        ]
+
+    async def mark(kind: str, entity_id: int, on: bool) -> None:
+        s = await reading_as(b.user.id, b.guild.id)
+        change = personal_items.set_mark if on else personal_items.clear_mark
+        await change(
+            s, user_id=b.user.id, mark=Mark.follow, kind=kind, entity_id=entity_id
+        )
+
+    assert await tasks() == [newer.id, older.id]
+    await mark("task", older.id, True)
+    assert await tasks() == [older.id, newer.id]
+    await mark("task", older.id, False)
+    await mark("project", a.project.id, True)
+    assert await tasks() == [older.id, newer.id]
 
 
 async def test_only_the_latest_completion_reads_as_completed(

@@ -15,7 +15,7 @@ export const HOME_WIDGET_TYPES = [
   "comingUp",
   "calendar",
   "recent",
-  "favorites",
+  "bookmarks",
   "activity",
   "communities",
   "progress",
@@ -44,7 +44,7 @@ export const HOME_WIDGET_SIZES: Record<HomeWidgetType, HomeWidgetSize> = {
   // One calendar view and one set of filters, the reader's own, as on My Calendar.
   calendar: { w: 12, h: 11, minW: 5, minH: 7, single: true },
   recent: { w: 4, h: 6, minW: 3, minH: 3 },
-  favorites: { w: 4, h: 6, minW: 3, minH: 3 },
+  bookmarks: { w: 4, h: 6, minW: 3, minH: 3 },
   activity: { w: 8, h: 9, minW: 3, minH: 4 },
   communities: { w: 12, h: 6, minW: 4, minH: 5, single: true },
   progress: { w: 12, h: 3, minW: 4, minH: 2, single: true },

@@ -58,15 +58,14 @@ _NOT_GUEST_SURFACE: frozenset[str] = frozenset(
 #: The tables no tool governs that a guest reaches, by name.
 _NAMED: dict[str, GuestAccess] = {
     # Responding to what they reach, and their own history of visiting it
-    # and starring it.
+    # and bookmarking it.
     "comments": GuestAccess.write,
     "reactions": GuestAccess.write,
     "reaction_digest_items": GuestAccess.write,
     # The sweep timers a guest's writes arm (public.arm_timer reads the mark
     # before it writes one).
     "timer_marks": GuestAccess.write,
-    "recent_views": GuestAccess.write,
-    "favorites": GuestAccess.write,
+    "personal_items": GuestAccess.write,
     # How widely what they reach was engaged with, read beside it.
     "engagement_levels": GuestAccess.read,
     "relationships": GuestAccess.write,

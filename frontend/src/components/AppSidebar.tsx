@@ -1,13 +1,13 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   Binoculars,
+  Bookmark,
   Check,
   ChevronsDownUp,
   ChevronsUpDown,
   Pencil,
   Plus,
   Settings,
-  Star,
   Tag,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -48,10 +48,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAutoCloseSidebar } from "@/hooks/useAutoCloseSidebar";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPlugins } from "@/hooks/useCommunityPlugins";
-import { useCommunityFavorites } from "@/hooks/useFavorites";
 import { liveInitiatives } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
 import { compareVersions, useLatestVersion } from "@/hooks/useLatestVersion";
+import { useCommunityBookmarks } from "@/hooks/usePersonalItems";
 import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { useToolCountsByInitiative } from "@/hooks/useToolCounts";
@@ -154,8 +154,8 @@ export const AppSidebar = () => {
     }
   );
 
-  // The reader's stars here, every kind of tool, newest first.
-  const favoritesQuery = useCommunityFavorites(null, {
+  // The reader's bookmarks here, every kind of tool, newest first.
+  const bookmarksQuery = useCommunityBookmarks(null, {
     enabled: communityTreeEnabled,
     staleTime: 60_000,
   });
@@ -367,16 +367,16 @@ export const AppSidebar = () => {
                     <ScrollArea className="[&_[data-radix-scroll-area-viewport]>div]:block! h-full">
                       <SidebarContent className="overflow-x-hidden overflow-y-visible">
                         {/* Favorites Section */}
-                        {Array.isArray(favoritesQuery?.data) && favoritesQuery.data.length > 0 && (
+                        {Array.isArray(bookmarksQuery?.data) && bookmarksQuery.data.length > 0 && (
                           <>
                             <SidebarGroup>
                               <SidebarGroupLabel className="flex items-center gap-2 py-2">
-                                <Star className="h-4 w-4" />
-                                {t("favorites")}
+                                <Bookmark className="h-4 w-4" />
+                                {t("bookmarks")}
                               </SidebarGroupLabel>
                               <SidebarGroupContent>
                                 <SidebarMenu>
-                                  {favoritesQuery.data.map((item) => (
+                                  {bookmarksQuery.data.map((item) => (
                                     <SidebarMenuItem key={`${item.entity_type}:${item.entity_id}`}>
                                       <SidebarMenuButton
                                         asChild

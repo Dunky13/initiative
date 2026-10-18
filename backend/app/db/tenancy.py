@@ -210,9 +210,7 @@ OWN_ROW_TABLES: dict[str, str] = {
 # on top of the table's initiative gate. Every entry here MUST also be in
 # ``INITIATIVE_PATHS`` — enforced in ``tenancy_test.py``.
 PRIVATE_ROW_TABLES: dict[str, str] = {
-    "recent_views": "user_id",
-    "favorites": "user_id",
-    "project_orders": "user_id",
+    "personal_items": "user_id",
     "post_reads": "user_id",
     "post_poll_votes": "user_id",
     "reactions": "created_by",
@@ -335,9 +333,7 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         # A ballot: ``user_id`` is the voter, which is both the author of the
         # row and its whole content.
         "post_poll_votes",
-        "favorites",
-        "project_orders",
-        "recent_views",
+        "personal_items",
         # A property value belongs to the initiative, not to whoever set it.
         "property_values",
         # A plug-in's own values: ``install_id`` names who keeps them.

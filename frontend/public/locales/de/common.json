@@ -334,9 +334,13 @@
     "desktopReady": "Initiative hat das Update heruntergeladen. Starte neu, um es abzuschließen.",
     "restart": "Neu starten"
   },
-  "favorite": {
-    "add": "Zu Favoriten hinzufügen",
-    "remove": "Aus Favoriten entfernen"
+  "bookmark": {
+    "add": "Lesezeichen setzen",
+    "remove": "Lesezeichen entfernen"
+  },
+  "follow": {
+    "add": "Folgen",
+    "remove": "Nicht mehr folgen"
   },
   "toolHeader": {
     "rename": "Umbenennen"
