@@ -216,6 +216,51 @@ class TestTheListingSaysWhatTheDialogAsks:
         assert body["grantable_scopes"] == ["projects:read", "comments:read"]
         assert body["has_initiative_surfaces"] is True
 
+    async def test_a_declarative_plugin_asks_at_the_top_of_its_manifest(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """A declarative plug-in has no service block: it asks for its read
+        scopes at the top of its manifest, and the registration its listing
+        applied holds the ceiling the install is granted within."""
+        uid = marketplace_uid("declaredco")
+        await create_plugin_service_registration(
+            session,
+            public_id="tests.declaredco",
+            listing_uid=uid,
+            base_url=None,
+            allowed_origins=[],
+            jwks={},
+            kind="declarative",
+            scope_ceiling=["projects:read"],
+        )
+        await create_marketplace_listing(
+            session,
+            uid=uid,
+            public_id="tests.declaredco",
+            kind="plugin",
+            name="DeclaredCo",
+            definition={
+                "plugin_kind": "service",
+                "features": [],
+                "hosts": ["api.declared.test"],
+                "scopes": ["comments:read", "projects:read"],
+            },
+        )
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{uid}"), headers=a.headers
+        )
+        installed = await _install(
+            client, a, listing_uid=uid, granted_scopes=["projects:read"]
+        )
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["requested_scopes"] == ["projects:read", "comments:read"]
+        assert detail.json()["grantable_scopes"] == ["projects:read"]
+        assert installed.status_code == 201, installed.text
+        assert installed.json()["granted_scopes"] == ["projects:read"]
+
 
 class TestAPluginAskingToUseAnother:
     """``plugins:<public_id>`` is asked when that plug-in is installed, not before."""

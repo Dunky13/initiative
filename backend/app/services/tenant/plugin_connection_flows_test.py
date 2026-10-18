@@ -47,6 +47,8 @@ from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import RegistrationKind
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
 from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
+from app.models.tenant.plugin_metadata import PluginMetadata
+from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
@@ -65,9 +67,13 @@ from app.services.tenant.plugin_connections import load_connection_secrets
 from app.testing import (
     create_plugin_user_connection,
     create_access_grant,
+    create_initiative,
     create_plugin_service_registration,
     create_guild_plugin,
     create_marketplace_listing,
+    create_project,
+    create_resource_grant,
+    create_task,
     route_session_to_guild,
     sealed_vendor_values,
 )
@@ -1850,6 +1856,7 @@ async def declarative(session: AsyncSession):
         jwks={},
         kind="declarative",
         vendor_values=sealed_vendor_values(VENDOR_VALUES),
+        scope_ceiling=["projects:read"],
     )
 
 
@@ -1971,6 +1978,92 @@ class TestDeclarativePlugins:
         assert vendor.hooks == []
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
+
+    async def test_a_delivery_keeps_values_as_the_install(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """The matched row's ``write`` keeps values, as the install, on a task
+        it reads, on every task holding a value it names and on the install
+        itself, beside the event the row emits. A task in an initiative the
+        install is not placed in is passed over. A value is shown where the
+        plug-in declares its key as a field."""
+        writing = declarative_github(DECLARATIVE_ID)
+        writing.update(
+            scopes=["projects:read"],
+            features=["endpoints", "fields"],
+            fields=[
+                {
+                    "key": "github.issue",
+                    "name": {"en": "Issue"},
+                    "kind": "number",
+                    "on": ["task"],
+                }
+            ],
+        )
+        writing["webhooks"]["events"][0]["write"] = (
+            '[{"target": {"kind": "task", "id": payload.task},'
+            ' "set": {"github.issue": payload.issue.number}},'
+            ' {"target": {"kind": "task", "id": payload.hidden},'
+            ' "set": {"github.issue": payload.issue.number}},'
+            ' {"target": {"holding": {"key": "github.repo",'
+            ' "value": payload.repository.full_name}},'
+            ' "set": {"github.state": "open"}},'
+            ' {"target": {"install": true},'
+            ' "set": {"github.delivery": headers."x-github-delivery"}}]'
+        )
+        await _declarative_listing(session, writing)
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        task = await create_task(session, seat.project)
+        linked = await create_task(session, seat.project)
+        elsewhere = await create_initiative(session, seat.guild, seat.user, name="B")
+        hidden = await create_task(
+            session, await create_project(session, elsewhere, seat.user)
+        )
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=writing,
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        session.add_all(
+            [
+                PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=linked.id,
+                    key="github.repo",
+                    value="acme/web",
+                    lookup="acme/web",
+                ),
+            ]
+        )
+        await session.commit()
+        body, headers = vendor.webhook(
+            {**_issue(), "task": task.id, "hidden": hidden.id}
+        )
+
+        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert response.status_code == 202, response.text
+        assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
+            ISSUE_OPENED
+        ]
+        kept = {
+            (row.entity_type, row.entity_id, row.key): (row.value, row.shown)
+            for row in await session.exec(select(PluginMetadata))
+        }
+        assert kept == {
+            ("task", task.id, "github.issue"): (12, True),
+            ("task", linked.id, "github.repo"): ("acme/web", False),
+            ("task", linked.id, "github.state"): ("open", False),
+            ("plugin", plugin.id, "github.delivery"): ("delivery-1", False),
+        }
 
     async def test_a_pull_request_is_not_an_opened_issue(
         self, client: AsyncClient, acting_user, session, vendor, declarative
@@ -2106,12 +2199,15 @@ class TestDeclarativePlugins:
     async def test_a_mapping_that_cannot_answer_is_logged_and_the_state_kept(
         self, client: AsyncClient, acting_user, session, vendor, declarative, caplog
     ):
-        """The event's payload does not fit its returns, which no redelivery
-        changes: the delivery is recorded, the failure logged, and the status
-        row it also matched still sets the state."""
+        """The event's payload does not fit its returns, and its write answers
+        one change where a list belongs, neither of which a redelivery changes:
+        the delivery is recorded, each failure logged, nothing written, and the
+        status row it also matched still sets the state."""
         broken = declarative_github(DECLARATIVE_ID)
         broken["webhooks"]["events"][0].update(
-            when="$exists(payload.action)", map='{"number": "twelve"}'
+            when="$exists(payload.action)",
+            map='{"number": "twelve"}',
+            write='{"target": {"install": true}, "set": {"seen": true}}',
         )
         await _declarative_listing(session, broken)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
@@ -2130,16 +2226,22 @@ class TestDeclarativePlugins:
             assert response.status_code == 202, response.text
 
         assert await _events(session, seat.guild.id) == []
+        assert (await session.exec(select(PluginMetadata))).all() == []
         stored = await _reload(session, seat.guild.id, plugin.id)
         assert stored.config_state_detail == "workspace_removed"
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
-        logged = [
-            record.getMessage()
-            for record in caplog.records
-            if "could not map delivery delivery-1" in record.getMessage()
-        ]
-        assert len(logged) == 1 and DECLARATIVE_ID in logged[0]
+        for failed in (
+            "could not map delivery",
+            "could not make the changes of delivery",
+        ):
+            logged = [
+                record.getMessage()
+                for record in caplog.records
+                if f"{failed} delivery-1" in record.getMessage()
+            ]
+            assert len(logged) == 1 and DECLARATIVE_ID in logged[0]
+        assert PluginChannelMessages.INVALID_PAYLOAD in logged[0]
 
     async def test_an_install_pinned_to_an_older_route_is_still_reached(
         self, client: AsyncClient, acting_user, session, vendor, declarative
