@@ -42,6 +42,7 @@ from app.models.platform.plugin_install import PluginInstallClaim
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.marketplace import plugin_installs
 from app.services.marketplace.registration_lookup import invalidate_registrations
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_revocation
 from app.services.tenant.plugin_connection_flows import callback_url
 from app.services.tenant.plugin_connections import load_connection_secrets
@@ -728,6 +729,98 @@ class TestSettings:
             await client.get(seat.g(f"/plugins/{plugin.id}"), headers=seat.headers)
         ).json()
         assert _setting(body, "task_prefix") == ("beta", [])
+
+    async def test_an_update_that_makes_a_setting_unique_claims_what_it_holds(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """The first community to update keeps its value and claims it; one
+        whose value another community claimed first is given a value of its
+        own."""
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.0.0",
+            definition={
+                **MEMBER_ONLY_DEFINITION,
+                "settings": [
+                    {"key": "task_prefix", "type": "string", "label": {"en": "P"}}
+                ],
+            },
+        )
+        installs = []
+        for name in ("Acme", "Beta"):
+            seat = await _seat(acting_user, session, name)
+            installed = await client.post(
+                seat.g("/plugins/"),
+                headers=seat.headers,
+                json={"listing_uid": SETTINGS_UID},
+            )
+            plugin_id = installed.json()["id"]
+            typed = await client.put(
+                seat.g(f"/plugins/{plugin_id}/settings/task_prefix"),
+                headers=seat.headers,
+                json={"value": "acme"},
+            )
+            assert typed.status_code == 200, typed.text
+            installs.append((seat, plugin_id))
+        assert await _claims(session) == set()
+        await create_marketplace_listing(
+            session,
+            uid=SETTINGS_UID,
+            public_id="tests.gh",
+            kind="plugin",
+            version="1.1.0",
+            definition=SETTINGS_DEFINITION,
+        )
+
+        upgraded = [
+            await client.post(
+                seat.g(f"/plugins/{plugin_id}/upgrade"), headers=seat.headers
+            )
+            for seat, plugin_id in installs
+        ]
+
+        assert [_setting(one.json(), "task_prefix") for one in upgraded] == [
+            ("acme", []),
+            ("beta", []),
+        ]
+        (first, first_id), (second, second_id) = installs
+        assert await _claims(session) == {
+            (first.guild.id, first_id, "acme", True),
+            (second.guild.id, second_id, "beta", True),
+        }
+
+    async def test_a_failed_save_gives_back_only_what_the_install_does_not_hold(
+        self, acting_user, session: AsyncSession
+    ):
+        """Its claims are given back under the install's row: one a save made
+        meanwhile stored is kept, as current or earlier, and the rest go."""
+        seat = await _seat(acting_user, session, "Acme")
+        plugin = await create_guild_plugin(
+            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
+        )
+        stored = await plugin_installs.claim_setting(
+            seat.guild.id, plugin, "task_prefix", "acmeco"
+        )
+        lost = await plugin_installs.claim_setting(
+            seat.guild.id, plugin, "task_prefix", "acmezz"
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        plugin.settings = {"task_prefix": "acmeco"}
+        plugin.setting_aliases = {"task_prefix": ["acme"]}
+        session.add(plugin)
+        await session.commit()
+
+        await guild_plugins_service._give_back(
+            session, seat.guild.id, plugin.id, [stored, lost]
+        )
+
+        assert await _claims(session) == {
+            (seat.guild.id, plugin.id, "acme", False),
+            (seat.guild.id, plugin.id, "acmeco", True),
+        }
 
     async def test_removing_the_plugin_gives_its_values_back(
         self, client: AsyncClient, acting_user, session: AsyncSession

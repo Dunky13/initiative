@@ -75,6 +75,7 @@ __all__ = [
     "SettingClaim",
     "claim",
     "claim_assigned",
+    "claim_held",
     "claim_setting",
     "forget",
     "hook_route",
@@ -399,6 +400,24 @@ async def claim_setting(
     as an earlier value."""
     async with db_session.SystemSessionLocal() as session:
         claimed = await _claim_setting(session, guild_id, plugin, key, value)
+        await session.commit()
+    return claimed
+
+
+async def claim_held(
+    guild_id: int, plugin: GuildPlugin, values: Mapping[str, str]
+) -> list[SettingClaim]:
+    """Claim each value the install holds for a unique setting, by key, as the
+    one it holds now. A value another install of the plug-in holds, now or as
+    an earlier value, is left out."""
+    if not values:
+        return []
+    async with db_session.SystemSessionLocal() as session:
+        claimed: list[SettingClaim] = []
+        for key, value in values.items():
+            one = await _claim_setting(session, guild_id, plugin, key, value)
+            if one is not None:
+                claimed.append(one)
         await session.commit()
     return claimed
 
