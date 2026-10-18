@@ -10,8 +10,8 @@ everything around the call reads it the same way.
 
 It runs the rest of the plug-in the same way, as the SDK's runners do: a
 connection's ``after_connect`` (``runAfterConnect``) and ``health``
-(``runHealth``), and what a vendor's delivery emits and says about a
-connection (``runWebhook``).
+(``runHealth``), and what a vendor's delivery emits, changes in the plug-in's
+values and says about a connection (``runWebhook``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
   request's connection as ``connection`` and of each connection the endpoint's
@@ -745,10 +745,15 @@ async def health_state(
 
 @dataclass(frozen=True)
 class Delivered:
-    """What one delivery emits, and the connection state it sets."""
+    """What one delivery emits, the changes it makes to the plug-in's values,
+    and the connection state it sets."""
 
     #: The emit endpoint's id and its payload.
     event: Optional[tuple[str, dict[str, Any]]] = None
+    #: What the matched row's ``write`` answered: the changes the install makes
+    #: to its values (``plugin_metadata.apply_changes``), :data:`UNDEFINED`
+    #: when the row has no ``write`` or it answered nothing.
+    writes: Any = UNDEFINED
     #: The connection and its state.
     status: Optional[tuple[str, str]] = None
     #: Why ``events`` or ``status`` answered nothing, when an expression of
@@ -766,15 +771,17 @@ async def map_delivery(
     now: Optional[datetime] = None,
 ) -> Delivered:
     """One webhook delivery, as a declarative plug-in's ``webhooks`` map it: the
-    event the first ``events`` row whose ``when`` holds emits, its payload held
-    to the emit endpoint's returns, and the state the first matching
-    ``status`` row sets. A delivery nothing matches answers neither.
+    first ``events`` row whose ``when`` holds gives the event it emits, its
+    payload held to the emit endpoint's returns, and the changes its ``write``
+    answers; and the first matching ``status`` row gives the state it sets. A
+    delivery nothing matches answers none of them.
 
     The expressions read ``headers`` (names in lowercase), ``payload``, the
-    routed connection's non-secret fields as ``connection``, and ``now``.
-    ``events`` and ``status`` are read apart: one failing leaves the other's
-    answer, and where it failed is in ``failures``. An evaluation that may answer
-    if asked again raises :class:`ExpressionError` with ``transient`` set.
+    routed connection's non-secret fields as ``connection``, and ``now``. The
+    event, the changes and the state are read apart: one failing leaves the
+    others' answers, and where it failed is in ``failures``. An evaluation that
+    may answer if asked again raises :class:`ExpressionError` with
+    ``transient`` set.
     """
     millis, at = _clock(now or datetime.now(timezone.utc))
     document = {
@@ -805,29 +812,42 @@ async def map_delivery(
         return None
 
     event: Optional[tuple[str, dict[str, Any]]] = None
+    writes: Any = UNDEFINED
     matched = await first("events")
     if matched is not None:
         index, row = matched
-        where = f"events/{index}/map"
-        try:
-            mapped = await expressions.evaluate(row["map"], document, millis=millis)
-        except ExpressionError as exc:
-            if exc.transient:
-                raise
-            failures.append(f"{where}: the expression failed")
-        else:
-            problem = _fits(mapped, returns.get(row["emit"]) or [])
-            if problem is None:
-                event = (row["emit"], mapped)
+        if "emit" in row:
+            where = f"events/{index}/map"
+            try:
+                mapped = await expressions.evaluate(row["map"], document, millis=millis)
+            except ExpressionError as exc:
+                if exc.transient:
+                    raise
+                failures.append(f"{where}: the expression failed")
             else:
-                failures.append(
-                    f"{where}: the {row['emit']} event does not fit its returns"
+                problem = _fits(mapped, returns.get(row["emit"]) or [])
+                if problem is None:
+                    event = (row["emit"], mapped)
+                else:
+                    failures.append(
+                        f"{where}: the {row['emit']} event does not fit its returns"
+                    )
+        if "write" in row:
+            try:
+                writes = await expressions.evaluate(
+                    row["write"], document, millis=millis
                 )
+            except ExpressionError as exc:
+                if exc.transient:
+                    raise
+                failures.append(f"events/{index}/write: the expression failed")
     status: Optional[tuple[str, str]] = None
     matched = await first("status")
     if matched is not None:
         status = (matched[1]["connection"], matched[1]["state"])
-    return Delivered(event=event, status=status, failures=tuple(failures))
+    return Delivered(
+        event=event, writes=writes, status=status, failures=tuple(failures)
+    )
 
 
 # --- the call behind ``_call_plugin`` -------------------------------------------

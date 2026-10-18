@@ -1752,7 +1752,8 @@ LINK_ISSUE = f"plugin.{PUBLIC_ID}.link-issue"
 
 
 def _action_definition() -> dict:
-    """One field and one action on tasks, the action running a write."""
+    """One field and two actions on tasks, each running a write, the second
+    for the community's admins alone."""
     return {
         "plugin_kind": "service",
         "service": {"public_id": PUBLIC_ID, "protocol": 1, "scopes": ["projects:read"]},
@@ -1767,7 +1768,15 @@ def _action_definition() -> dict:
                 "endpoint": LINK_ISSUE,
                 "on": ["task"],
                 "menu": False,
-            }
+            },
+            {
+                "id": "relink",
+                "name": {"en": "Link again"},
+                "endpoint": LINK_ISSUE,
+                "on": ["task"],
+                "menu": False,
+                "admin_only": True,
+            },
         ],
     }
 
@@ -1954,6 +1963,7 @@ class TestActions:
             ("member", "hidden", {}, 404, None),
             ("admin", "elsewhere", {}, 403, "ACTION_NOT_OFFERED"),
             ("manager", "shared", {}, 403, "ACTION_NOT_OFFERED"),
+            ("member", "shared", {"action": "relink"}, 403, "ACTION_NOT_OFFERED"),
             ("member", "mine", {}, 403, "ACTION_NOT_OFFERED"),
         ],
         ids=[
@@ -1962,6 +1972,7 @@ class TestActions:
             "an item the viewer cannot read",
             "an initiative the install is not placed in",
             "a role the placement does not allow",
+            "an action for the community's admins alone",
             "an item the install cannot read",
         ],
     )

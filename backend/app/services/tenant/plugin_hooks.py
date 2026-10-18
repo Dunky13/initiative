@@ -18,10 +18,11 @@ the vendor. :func:`receive` takes each delivery through four steps:
    Otherwise a container's install has the raw body and the vendor's ``x-``
    headers sent to its ``webhook`` hook with a ``lifecycle`` token naming that
    install, and a 2xx records the id for 24 hours. A declarative plug-in's install
-   maps it with its ``events`` and ``status``: the event goes to the outbox as
-   a container's emission does, the state to the install's configuration
-   state, and the id is recorded with them. A mapping that cannot succeed is
-   logged and recorded; one that may succeed if asked again records nothing.
+   maps it with its ``events`` and ``status``: the changes to its values are
+   made as the install, the event goes to the outbox as a container's emission
+   does, the state to the install's configuration state, and the id is
+   recorded with them. A mapping that cannot succeed is logged and recorded;
+   one that may succeed if asked again records nothing.
 4. 202 when every matched install accepted it or already had; otherwise 503
    when a mapping is to be asked again, or 502, so the vendor's redelivery
    reaches only the ones that did not.
@@ -75,6 +76,7 @@ from app.services.marketplace.vendor_values import (
 )
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_metadata
 from app.services.tenant.plugin_channels import (
     PluginChannelError,
     keep_event,
@@ -331,12 +333,16 @@ async def _map(
     body: bytes,
 ) -> int:
     """A declarative plug-in's install: its pinned ``webhooks`` map the delivery
-    to an event, emitted as a container's is, and to a connection's state.
-    The delivery is recorded with them, so a redelivery emits nothing.
+    to changes to the plug-in's values, made as the install
+    (:func:`plugin_metadata.apply_changes`), to an event, emitted as a
+    container's is, and to a connection's state. The delivery is recorded with
+    the event and the state, so a redelivery does none of it again.
 
     A mapping that may answer if asked again records nothing and answers 503,
-    so the vendor sends it again; one that cannot is recorded beside whatever
-    did map."""
+    so the vendor sends it again; one that cannot, and changes that are
+    refused, are logged, and the delivery is recorded beside whatever did
+    map. The changes are made once the delivery is recorded, on the install's
+    own sessions, so a delivery that is not new changes nothing."""
     try:
         payload: Any = json.loads(body)
     except ValueError:
@@ -399,6 +405,19 @@ async def _map(
             if locked is not None and set_connection_state(locked, *delivered.status):
                 session.add(locked)
         await session.commit()
+    try:
+        await plugin_metadata.apply_changes(
+            plugin, registration, delivered.writes, guild_id=install.guild_id
+        )
+    except PluginChannelError as exc:
+        logger.warning(
+            "plug-in hooks: %s could not make the changes of delivery %s for "
+            "guild %s (%s)",
+            registration.public_id,
+            delivery_id,
+            install.guild_id,
+            exc.code,
+        )
     return 202
 
 

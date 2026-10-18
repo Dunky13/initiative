@@ -352,14 +352,16 @@ def _permission_default_values() -> str:
     )
 
 
-#: The scopes an install's tokens may carry, as ``text[]`` over ``guild_plugins
-#: a``: those the seat granted that the pinned version still requests. The
-#: grant itself is left as the seat set it, so a scope a later version stops
-#: requesting stops being carried by every token at once. Read by token
-#: issuance, the install standing and the plug-in hub alike.
+#: The scopes an install may use, as ``text[]`` over ``guild_plugins a``: those
+#: the seat granted that the pinned version still requests, a container's in
+#: its ``service`` block and a declarative plug-in's, which has none, at the top
+#: of its manifest. The grant itself is left as the seat set it, so a scope a
+#: later version stops requesting stops being carried by every token at once.
+#: Read by token issuance, the install standing and the plug-in hub alike.
 ISSUABLE_SCOPES_SQL = (
     "ARRAY(SELECT s FROM unnest(a.granted_scopes) AS s "
-    "WHERE a.definition -> 'service' -> 'scopes' @> jsonb_build_array(s))"
+    "WHERE COALESCE(a.definition -> 'service', a.definition) -> 'scopes' "
+    "@> jsonb_build_array(s))"
 )
 
 
@@ -440,10 +442,14 @@ _INSTALL_STANDING: dict[gucs.Guc, str] = {
 #:
 #: ``install`` is the install when it may act at all: the community's status is
 #: one its members use, the install is on, and the operator's registration for
-#: its listing is live in this community (on, its publisher on, holding a key
-#: set, and not limited to the operations community unless this is it) and the
-#: client the token names. Every value below is computed from it, so an install
-#: that may not act has an empty standing. ``live`` says which.
+#: its listing is live in this community (on, its publisher on, a container's
+#: holding a key set, and not limited to the operations community unless this
+#: is it) and the client the token names. That registration is a container's,
+#: or a declarative plug-in's for an install pinned to a declarative version: a
+#: declarative plug-in is issued no token, and Initiative routes as its install
+#: itself, with the scopes the install holds. Every value below is computed from
+#: it, so an install that may not act has an empty standing. ``live`` says
+#: which.
 #:
 #: An install is a member of the initiatives it is placed in (narrowed to one
 #: when the token names it), and its initiative role is exactly what its scopes
@@ -512,7 +518,9 @@ install AS (
       JOIN public.publishers p ON p.id = r.publisher_id
       WHERE r.listing_uid = a.listing_uid
         AND r.public_id = {gucs.TOKEN_CLIENT_ID}
-        AND r.kind = '{RegistrationKind.CONTAINER}'
+        AND (r.kind = '{RegistrationKind.CONTAINER}'
+          OR (r.kind = '{RegistrationKind.DECLARATIVE}'
+            AND a.definition -> 'service' IS NULL))
         AND {registration_live_sql("r", "p", "g.id")}
     )
     AND ({gucs.USER_ID} IS NULL OR (

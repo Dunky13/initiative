@@ -1076,16 +1076,34 @@ class SurfaceAccess(str, Enum):
 
 
 def requested_scopes(definition: Any) -> list[str]:
-    """The scopes a pinned definition's service asks for, in vocabulary order,
-    then the ``plugins:`` scopes sorted.
+    """The scopes a pinned definition asks for, in vocabulary order, then the
+    ``plugins:`` scopes sorted: a container's in its ``service`` block, a
+    declarative plug-in's at the top of its manifest.
 
     Only known scopes are returned, each once.
     """
-    service = definition.get("service") if isinstance(definition, dict) else None
-    scopes = service.get("scopes") if isinstance(service, dict) else None
+    if registration_lookup.is_declarative(definition):
+        scopes = definition.get("scopes")
+    else:
+        service = definition.get("service") if isinstance(definition, dict) else None
+        scopes = service.get("scopes") if isinstance(service, dict) else None
     if not isinstance(scopes, list):
         return []
     return ordered_scopes(scopes)
+
+
+def install_scopes(
+    plugin: GuildPlugin, registration: registration_lookup.RegistrationSnapshot
+) -> frozenset[str]:
+    """The scopes the install acts with now: granted, still requested by the
+    pinned version, and within the registration's ceiling."""
+    requested = set(requested_scopes(plugin.definition))
+    ceiling = set(registration.scope_ceiling)
+    return frozenset(
+        scope
+        for scope in plugin.granted_scopes or ()
+        if scope in requested and scope in ceiling
+    )
 
 
 def offered_scopes(definition: Any, installed: Collection[str]) -> list[str]:
@@ -1428,9 +1446,9 @@ def item_openability(
     :func:`surface_openability` measures a page. A field, a part or an action
     is offered while the community's connections it requires hold a value
     (:func:`~app.services.tenant.plugin_config.installation_meets`), and an
-    action while those its write endpoint requires do too. An admin-only
-    endpoint's action is the community's admins' alone, and a frozen
-    community runs none."""
+    action while those its endpoint requires do too. An admin-only action, or
+    one whose endpoint is admin-only, is the community's admins' alone, and a
+    frozen community runs none."""
     definition = plugin.definition if isinstance(plugin.definition, dict) else {}
     initiatives = tuple(
         row.initiative_id
@@ -1470,7 +1488,10 @@ def item_openability(
             and met(endpoints.get(action.get("endpoint")) or {})
             and (
                 is_guild_admin
-                or not is_admin_only(endpoints.get(action.get("endpoint")))
+                or not (
+                    is_admin_only(action)
+                    or is_admin_only(endpoints.get(action.get("endpoint")))
+                )
             )
         ),
     )
