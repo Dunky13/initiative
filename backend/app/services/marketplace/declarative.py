@@ -10,8 +10,9 @@ everything around the call reads it the same way.
 
 It runs the rest of the plug-in the same way, as the SDK's runners do: a
 connection's ``after_connect`` (``runAfterConnect``) and ``health``
-(``runHealth``), and what a vendor's delivery emits, changes in the plug-in's
-values and says about a connection (``runWebhook``).
+(``runHealth``), what a vendor's delivery emits, changes in the plug-in's
+values and says about a connection (``runWebhook``), and a schedule's read and
+the changes it makes from the answer (``runSchedule``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
   request's connection as ``connection`` and of each connection the endpoint's
@@ -43,7 +44,7 @@ from urllib.parse import parse_qsl, quote, urljoin, urlsplit
 import httpx
 from sqlmodel import select
 
-from app.core.messages import PluginDataMessages
+from app.core.messages import PluginChannelMessages, PluginDataMessages
 from app.db import cohorts
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
@@ -65,7 +66,11 @@ from app.services.marketplace.service_plugins import (
 from app.services.safe_http import ResponseTooLargeError, request_public_target
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant.plugin_channels import PluginChannelError, load_install
-from app.services.tenant.plugin_config import connection_by_id, without_tokens
+from app.services.tenant.plugin_config import (
+    connection_by_id,
+    installation_meets,
+    without_tokens,
+)
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
@@ -80,6 +85,7 @@ __all__ = [
     "health_state",
     "map_delivery",
     "run_endpoint",
+    "run_schedule",
 ]
 
 MAPPING_FAILED = "mapping-failed"
@@ -848,6 +854,112 @@ async def map_delivery(
     return Delivered(
         event=event, writes=writes, status=status, failures=tuple(failures)
     )
+
+
+# --- a schedule's run ----------------------------------------------------------
+
+
+async def run_schedule(
+    *,
+    registration: RegistrationSnapshot,
+    plugin: GuildPlugin,
+    guild_id: int,
+    schedule: Mapping[str, Any],
+    since: Optional[str],
+) -> Any:
+    """One run of an install's declarative schedule, as the SDK's
+    ``runSchedule`` makes it: its read is made as the installation, with the
+    params its ``params`` answers, and its ``write`` answers, from the read's
+    answer, the changes the install makes to its values
+    (``plugin_metadata.apply_changes``). Answers what ``write`` answered,
+    :data:`UNDEFINED` for nothing.
+
+    ``params`` reads ``since`` (when the schedule last succeeded in the
+    community, ISO 8601, or null), ``now`` and ``connection``, the non-secret
+    fields of the connection the read's first request names, and answers an
+    object or nothing. ``write`` reads the read's mapped answer as ``result``,
+    ``since`` and ``now``. The read is held to the envelope's time, as
+    :func:`call_endpoint`'s is.
+
+    The read's expressions read each community connection its ``requires``
+    names as ``connections.<id>``, as a call the installation makes does.
+
+    Raises :class:`PluginDataError`: with ``CONNECTION_NO_TOKEN``, before
+    anything is asked of the vendor, while a community connection the read
+    names is not stored, or those its ``requires`` names hold no value; with
+    the code the read answered unavailable with;
+    with ``mapping-failed`` when ``params`` or ``write`` fails or ``params``
+    answers something other than an object; and otherwise as
+    :func:`call_endpoint` refuses a call or finds the plug-in unavailable.
+    """
+    endpoint = next(
+        (
+            entry
+            for entry in (plugin.definition or {}).get("endpoints") or []
+            if isinstance(entry, dict) and entry.get("id") == schedule["endpoint"]
+        ),
+        None,
+    )
+    if endpoint is None:
+        raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
+    stored = plugin.config or {}
+    for connection_id in _connection_ids(endpoint):
+        declared = connection_by_id(plugin.definition, connection_id) or {}
+        if declared.get("scope") == "static" and not stored.get(connection_id):
+            raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
+    if not installation_meets(plugin, endpoint.get("requires")):
+        raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
+    required = {
+        connection_id: without_tokens(stored.get(connection_id))
+        for connection_id in _required_connection_ids(endpoint)[0]
+        if installation_meets(plugin, {"all_of": [connection_id]})
+    }
+    now = datetime.now(timezone.utc)
+    run = _Run(plugin.definition, None, credentials={}, now=now)
+    steps = endpoint.get("steps") or [{"request": endpoint["request"]}]
+    connection = without_tokens(stored.get(steps[0]["request"].get("connection") or ""))
+    try:
+        params = (
+            await run.value(
+                schedule["params"],
+                {"since": since, "now": run.now, "connection": connection},
+                "params",
+            )
+            if "params" in schedule
+            else UNDEFINED
+        )
+        if params is not UNDEFINED and not isinstance(params, dict):
+            raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED)
+        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
+            tokens, fields, _ = await _credentials(
+                registration=registration,
+                plugin=plugin,
+                guild_id=guild_id,
+                endpoint=endpoint,
+                refs={},
+                actor="installation",
+            )
+            result = await run_endpoint(
+                plugin.definition,
+                endpoint,
+                params={} if params is UNDEFINED else params,
+                connections={**fields, **required},
+                credentials=tokens,
+                now=now,
+            )
+        if set(result) == {"unavailable"}:
+            raise PluginDataError(result["unavailable"], _STATE_REFUSED)
+        return await run.value(
+            schedule["write"],
+            {"result": result, "since": since, "now": run.now},
+            "write",
+        )
+    except TimeoutError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
+        ) from exc
+    except _Outcome as exc:
+        raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED) from exc
 
 
 # --- the call behind ``_call_plugin`` -------------------------------------------
