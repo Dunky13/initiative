@@ -389,7 +389,8 @@
       "jobs": "Exports and imports",
       "account": "Your account",
       "moderation": "Moderation",
-      "cases": "Cases"
+      "cases": "Cases",
+      "subscriptions": "Subscriptions"
     }
   },
   "signInCode": {

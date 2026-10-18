@@ -28,10 +28,12 @@ async def _tell(guild_id: int) -> None:
 async def _lines(session: AsyncSession, user_id: int) -> list[Notification]:
     return list(
         await session.exec(
-            select(Notification).where(
+            select(Notification)
+            .where(
                 Notification.user_id == user_id,
                 Notification.type == NotificationType.subscription_activity,
             )
+            .execution_options(populate_existing=True)
         )
     )
 
@@ -86,7 +88,6 @@ async def test_a_subscriber_hears_of_changes_after_subscribing(
     )
     assert commented.status_code == 201, commented.text
     await drain_notices()
-    session.expire_all()
     (line,) = await _lines(session, b_id)
     assert line.data["verb"] == "commented"
     assert await _lines(session, a_id) == []
@@ -103,6 +104,5 @@ async def test_a_subscriber_hears_of_changes_after_subscribing(
         )
         await system.commit()
     await _tell(guild_id)
-    session.expire_all()
     (line,) = await _lines(session, b_id)
     assert line.data["verb"] == "commented"

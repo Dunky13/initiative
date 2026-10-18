@@ -181,6 +181,7 @@ async def test_a_change_arms_the_upkeep_and_the_webhook_backstop(
 
     assert {kind for _c, kind, _due in await _timers(session)} == {
         "webhooks",
+        "subscriptions",
         "expiry",
         "engagement",
         sweep_timers.RECONCILE,
