@@ -11,8 +11,8 @@ community's log stands. Its policies are rendered from the registry at boot.
 Conditional where 0519 may or may not have run its shape, so every database
 lands on the same one.
 
-Revision ID: 20261018_0520
-Revises: 20261018_0519
+Revision ID: 20261018_0521
+Revises: 20261018_0520
 Create Date: 2026-10-18
 """
 
@@ -31,8 +31,8 @@ _STARTS_NOW = sa.text(
     " WHERE current_schema() <> 'guild_template'"
 )
 
-revision = "20261018_0520"
-down_revision = "20261018_0519"
+revision = "20261018_0521"
+down_revision = "20261018_0520"
 branch_labels = None
 depends_on = None
 

@@ -18,8 +18,8 @@ never sent) take their unread lines and waiting notices with them.
 The downgrade leaves the settings as they are: a build that reads the old rows
 finds them at their defaults.
 
-Revision ID: 20261018_0521
-Revises: 20261018_0520
+Revision ID: 20261018_0522
+Revises: 20261018_0521
 Create Date: 2026-10-18
 """
 
@@ -32,8 +32,8 @@ from typing import Any, Iterator
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20261018_0521"
-down_revision = "20261018_0520"
+revision = "20261018_0522"
+down_revision = "20261018_0521"
 branch_labels = None
 depends_on = None
 

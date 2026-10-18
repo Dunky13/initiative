@@ -1,4 +1,4 @@
-"""Revision 0521 carries each account's settings onto the nine rows: where
+"""Revision 0522 carries each account's settings onto the nine rows: where
 several rows became one, one of them decides; the rest go; a community's
 level becomes its mute or its rows, and it keeps only rows off on every
 channel."""
@@ -12,7 +12,7 @@ _PATH = (
     Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
-    / "20261018_0521_notification_rows_by_relationship.py"
+    / "20261018_0522_notification_rows_by_relationship.py"
 )
 
 
