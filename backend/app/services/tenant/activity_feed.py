@@ -219,6 +219,13 @@ def _statement(tools: list[str] | None) -> Any:
              WHERE a.kind = i.kind AND a.id = i.id
                AND a.actor IS DISTINCT FROM :reader AND a.verb IS NOT NULL)
                AS verbs,
+           (SELECT array_agg(a.verb || ':' || coalesce(a.actor::text, '')
+                             || ':' || coalesce(a.install::text, '')
+                             ORDER BY a.occurred_at DESC)
+              FROM attributed a
+             WHERE a.kind = i.kind AND a.id = i.id
+               AND a.actor IS DISTINCT FROM :reader AND a.verb IS NOT NULL)
+               AS done,
            EXISTS (SELECT 1 FROM attributed a
                     WHERE a.kind = i.kind AND a.id = i.id AND a.actor = :reader)
                AS changed,
@@ -331,7 +338,8 @@ def batch_query(txns: list[int], *, reader_id: int) -> tuple[Any, dict]:
     """The same statement over the changes of the transactions ``txns``, and
     its parameters: what those transactions did that the reader can see,
     people's and plug-ins' changes, never the reader's own. ``by_people`` says
-    whether a person made any of an item's."""
+    whether a person made any of an item's, and ``done`` pairs each verb with
+    who did it (``verb:person:install``), newest first."""
     return _statement(None), {
         "reader": reader_id,
         "since": datetime.now(timezone.utc) - WINDOW,

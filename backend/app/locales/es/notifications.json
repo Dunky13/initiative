@@ -90,6 +90,10 @@
     "changed": {
       "title": "Algo en lo que participas cambió",
       "body": "{{actor}} cambió {{context}}"
+    },
+    "commented": {
+      "title": "Nuevo comentario en algo en lo que participas",
+      "body": "{{actor}} comentó en {{context}}"
     }
   },
   "post": {

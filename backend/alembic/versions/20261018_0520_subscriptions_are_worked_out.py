@@ -5,8 +5,8 @@ saying so, so ``personal_items`` gains ``unsubscribed_at``: the mark that
 outlives "never subscribed". And subscribers are told from the change log as
 themselves, one batch at a time, so the per-transaction ledger
 (``subscription_notices``) and the index its sweep read give way to one row of
-progress per community (``subscription_progress``). Its policies are rendered
-from the registry at boot.
+progress per community (``subscription_progress``), started where each
+community's log stands. Its policies are rendered from the registry at boot.
 
 Conditional where 0519 may or may not have run its shape, so every database
 lands on the same one.
@@ -21,6 +21,15 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 from app.db.guild_migrations import run_for_each_guild_schema
+
+#: Each community's progress starts where its log stands, so nothing already
+#: in it is told; the template keeps none, as a new community's starts at its
+#: own first change.
+_STARTS_NOW = sa.text(
+    "INSERT INTO subscription_progress (id, told_xmin)"
+    " SELECT 1, pg_snapshot_xmin(pg_current_snapshot())::text::bigint"
+    " WHERE current_schema() <> 'guild_template'"
+)
 
 revision = "20261018_0520"
 down_revision = "20261018_0519"
@@ -62,6 +71,7 @@ def _apply_upgrade() -> None:
         sa.CheckConstraint("id = 1", name="ck_subscription_progress_one"),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.execute(_STARTS_NOW)
 
 
 def _apply_downgrade() -> None:

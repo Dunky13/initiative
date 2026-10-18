@@ -122,6 +122,11 @@
       "subject": "{{context}} a changé",
       "title": "Un élément qui vous concerne a changé",
       "body": "<strong>{{actor}}</strong> a modifié <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nouveau commentaire sur {{context}}",
+      "title": "Nouveau commentaire sur un élément qui vous concerne",
+      "body": "<strong>{{actor}}</strong> a commenté <strong>{{context}}</strong>"
     }
   },
   "post": {

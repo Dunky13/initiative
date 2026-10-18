@@ -29,7 +29,9 @@ it.
 Progress is one row (``subscription_progress``): a transaction-id snapshot,
 so a transaction that commits after a later one has been told is still read.
 It moves once a batch is told; a visit cut short tells that batch again, and
-the notices join the lines they already opened.
+the notices join the lines they already opened. The migration that made it
+started each community's where its log stood; a community made since starts
+at the beginning of its own.
 """
 
 from __future__ import annotations
@@ -170,12 +172,16 @@ async def _tell(
     for row in rows:
         ref = (row["entity_type"], row["entity_id"])
         subscriber = concerns.get(ref)
-        verbs = set(row["verbs"] or ())
-        verb = next((v for v in VERB_ORDER if v in verbs), None)
-        # The latest to act: a person, a plug-in acting for one, or a plug-in.
-        person, install = (row["actors"] or [None])[0], (row["installs"] or [None])[0]
+        # The verb that says the most, and whoever did that, latest first.
+        done = [entry.split(":") for entry in row["done"] or ()]
+        verb = next((v for v in VERB_ORDER if any(d[0] == v for d in done)), None)
+        _verb, person, install = next((d for d in done if d[0] == verb), (None, "", ""))
         actor: User | notifications.PluginAuthor | None = (
-            actors.get(person) if person is not None else installs.get(install)
+            actors.get(int(person))
+            if person
+            else installs.get(int(install))
+            if install
+            else None
         )
         if subscriber is None or verb is None or actor is None:
             continue
@@ -208,16 +214,11 @@ async def tell_subscribers(session: AsyncSession, guild_id: int) -> None:
     await set_rls_context(session, SystemGuild(guild_id))
     progress = (await session.exec(select(SubscriptionProgress))).one_or_none()
     if progress is None:
-        # The first visit starts from now: what happened before it was never
-        # anybody's to be told.
-        xmin = (
-            await session.exec(  # type: ignore[call-overload]
-                text("SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint")
-            )
-        ).scalar_one()
-        session.add(SubscriptionProgress(told_xmin=xmin, told_above=[]))
+        # A community made since subscriptions began: everything in its log
+        # is its own, so the first visit starts at the beginning of it.
+        progress = SubscriptionProgress(told_xmin=0, told_above=[])
+        session.add(progress)
         await session.commit()
-        return
     picked = (
         await session.exec(_PICK, params={"limit": BATCH_LIMIT + 1})  # type: ignore[call-overload]
     ).one()

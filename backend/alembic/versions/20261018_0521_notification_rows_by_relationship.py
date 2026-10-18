@@ -93,10 +93,13 @@ def regroup(doc: dict[str, Any]) -> dict[str, Any]:
             if key not in ("categories", "level")
         }
         level = section.get("level")
+        # A community switches a whole row, so only a row that was off on
+        # every channel there stays off; a channel or two goes.
         community_rows = {
             name: value
             for name, value in _rows(section, ()).items()
             if name in _PER_COMMUNITY
+            and all(value.get(channel) is False for channel in _CHANNELS)
         }
         if level == "personal":
             for name in ("subscriptions", "news"):

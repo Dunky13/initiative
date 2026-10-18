@@ -76,7 +76,7 @@ async def test_subscribers_hear_of_what_others_change(
     guild_id = cast(int, a.guild.id)
     a_id, b_id, c_id = (cast(int, x.user.id) for x in (a, b, c))
     path = f"/tasks/{task_id}"
-    await _tell(guild_id)  # the first visit starts from now
+    await _tell(guild_id)  # what the factories wrote names nobody
 
     # Before c subscribed: b, its assignee, hears; a made the change.
     edited = await client.patch(a.g(path), headers=a.headers, json={"title": "Book"})
@@ -104,7 +104,8 @@ async def test_subscribers_hear_of_what_others_change(
         assert line.data["verb"] == "edited"
     assert len(await _lines(session, b_id, ASSIGNED)) == 1
 
-    # A comment joins the line it is told on.
+    # A comment joins the line it is told on: the assignee's one line for the
+    # task, beside its changes.
     commented = await client.post(
         a.g("/comments/"), headers=a.headers, json={"task_id": task_id, "content": "Ok"}
     )
@@ -112,8 +113,9 @@ async def test_subscribers_hear_of_what_others_change(
     await drain_notices()
     (line,) = await _lines(session, c_id, SUBSCRIBED)
     assert line.data["verb"] == "commented"
-    (line,) = await _lines(session, b_id, SUBSCRIBED)
+    (line,) = await _lines(session, b_id, ASSIGNED)
     assert line.data["verb"] == "commented"
+    assert await _lines(session, b_id, SUBSCRIBED) == []
 
     # Unsubscribed from the task, c hears no more of it; b still does.
     off = await client.delete(

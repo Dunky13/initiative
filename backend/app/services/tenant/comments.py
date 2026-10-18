@@ -962,28 +962,41 @@ async def _process_comment_notifications(
 
     # Last, so anybody the comment names or answers already heard of it
     # above: everyone subscribed to the thing, which includes whoever made it
-    # and whoever is assigned to it or going to it, on the line their
-    # subscription keeps for it beside its other changes.
+    # and whoever is assigned to it or going to it, each on the one line they
+    # keep for it beside its other changes: what they are given for those
+    # named on it, what they follow for everyone else.
     kind, entity_id = thread.about
-    subscribed = await personal_items.subscribers_of(
-        session, {thread.about: (thread.tool.value, thread.resource_id)}
-    )
-    await notifications.notify(
-        session,
-        NotificationType.subscription_activity,
-        first_time(sorted(subscribed[thread.about])),
-        about=thread,
-        key="subscription.commented",
-        values={"actor": name, "context": ctx.title},
-        data={
-            "comment_id": comment.id,
-            "entity_type": kind,
-            "entity_id": entity_id,
-            "verb": "commented",
-        },
-        actor=author,
-        rollup_key=f"subscription:{kind}:{entity_id}",
-    )
+    subscribed = (
+        await personal_items.subscribers_of(
+            session, {thread.about: (thread.tool.value, thread.resource_id)}
+        )
+    )[thread.about]
+    for named, notice_type, line in (
+        (True, NotificationType.assigned_activity, "assigned"),
+        (False, NotificationType.subscription_activity, "subscription"),
+    ):
+        await notifications.notify(
+            session,
+            notice_type,
+            first_time(
+                sorted(
+                    person
+                    for person, subscriber in subscribed.items()
+                    if (subscriber.tie is personal_items.Tie.named) is named
+                )
+            ),
+            about=thread,
+            key=f"{line}.commented",
+            values={"actor": name, "context": ctx.title},
+            data={
+                "comment_id": comment.id,
+                "entity_type": kind,
+                "entity_id": entity_id,
+                "verb": "commented",
+            },
+            actor=author,
+            rollup_key=f"{line}:{kind}:{entity_id}",
+        )
 
 
 async def list_comments(

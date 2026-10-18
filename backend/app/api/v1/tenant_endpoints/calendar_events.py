@@ -1026,7 +1026,7 @@ async def update_rsvp(
         sorted(
             person
             for person, subscriber in subscribed[about].items()
-            if subscriber.tie is not personal_items.Tie.named
+            if subscriber.follows
         ),
         event,
         key="event.rsvp",

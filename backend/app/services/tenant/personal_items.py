@@ -283,15 +283,30 @@ _STRENGTH = {tie: rank for rank, tie in enumerate(Tie)}
 
 @dataclass(frozen=True)
 class Subscriber:
-    tie: Tie
-    #: When they subscribed by hand, where that is all that ties them: what
-    #: happened before it is not news to them.
+    #: Everything that ties them to it.
+    ties: frozenset[Tie]
+    #: When they first subscribed by hand, where that is all that ties them:
+    #: what happened before it is not news to them.
     since: Optional[datetime] = None
 
-    def outranks(self, other: "Subscriber") -> bool:
-        return _STRENGTH[self.tie] < _STRENGTH[other.tie] or (
-            self.tie is other.tie and self.since is None and other.since is not None
+    @property
+    def tie(self) -> Tie:
+        """The strongest of their ties."""
+        return min(self.ties, key=_STRENGTH.__getitem__)
+
+    @property
+    def follows(self) -> bool:
+        """Made it or follows it, beyond being named on it."""
+        return bool(self.ties - {Tie.named})
+
+    def joined(self, other: "Subscriber") -> "Subscriber":
+        """Both ties at once. A date holds only while every tie has one."""
+        since = (
+            None
+            if self.since is None or other.since is None
+            else min(self.since, other.since)
         )
+        return Subscriber(self.ties | other.ties, since)
 
 
 Ref = tuple[str, int]
@@ -361,11 +376,13 @@ async def subscribers_of(
     """
     from app.db.cohorts import as_system
 
+    if not items:
+        return {}
     refs = set(items) | {tool for tool in items.values() if tool is not None}
     by_kind: dict[str, set[int]] = {}
     for kind, entity_id in refs:
         by_kind.setdefault(kind, set()).add(entity_id)
-    tied: dict[Ref, dict[int, Tie]] = {}
+    tied: dict[Ref, dict[int, set[Tie]]] = {}
     explicit: dict[Ref, dict[int, datetime]] = {}
     unsubscribed: dict[Ref, set[int]] = {}
     async with as_system(session) as system:
@@ -377,13 +394,14 @@ async def subscribers_of(
                 if user_id is not None:
                     statement = statement.where(table.c[person_column] == user_id)
                 for entity_id, person in (await system.exec(statement)).all():  # type: ignore[call-overload]
-                    held = tied.setdefault((kind, entity_id), {})
-                    if person not in held or _STRENGTH[tie] < _STRENGTH[held[person]]:
-                        held[person] = tie
+                    tied.setdefault((kind, entity_id), {}).setdefault(
+                        person, set()
+                    ).add(tie)
         declined = await _declined(system, by_kind.get("calendar_event", set()))
         for event_id, person in declined:
-            if tied.get(("calendar_event", event_id), {}).get(person) is Tie.named:
-                del tied[("calendar_event", event_id)][person]
+            tied.get(("calendar_event", event_id), {}).get(person, set()).discard(
+                Tie.named
+            )
         marks = select(PersonalItem).where(
             or_(
                 *(
@@ -412,21 +430,23 @@ async def subscribers_of(
     for item, tool in items.items():
         people: dict[int, Subscriber] = {}
 
-        def tie(person: int, subscriber: Subscriber) -> None:
-            if person not in people or subscriber.outranks(people[person]):
-                people[person] = subscriber
+        def tie(person: int, how: Tie, since: Optional[datetime] = None) -> None:
+            subscriber = Subscriber(frozenset({how}), since)
+            held = people.get(person)
+            people[person] = subscriber if held is None else held.joined(subscriber)
 
         if tool is not None and tool != item:
             gone = unsubscribed.get(tool, set())
-            for person in tied.get(tool, {}):
-                if person not in gone:
-                    tie(person, Subscriber(Tie.subscribed))
+            for person, hows in tied.get(tool, {}).items():
+                if hows and person not in gone:
+                    tie(person, Tie.subscribed)
             for person, at in explicit.get(tool, {}).items():
-                tie(person, Subscriber(Tie.subscribed, since=at))
+                tie(person, Tie.subscribed, at)
         for person, at in explicit.get(item, {}).items():
-            tie(person, Subscriber(Tie.subscribed, since=at))
-        for person, how in tied.get(item, {}).items():
-            tie(person, Subscriber(how))
+            tie(person, Tie.subscribed, at)
+        for person, hows in tied.get(item, {}).items():
+            for how in hows:
+                tie(person, how)
         for person in unsubscribed.get(item, set()):
             people.pop(person, None)
         found[item] = people

@@ -122,6 +122,11 @@
       "subject": "{{context}} cambió",
       "title": "Algo en lo que participas cambió",
       "body": "<strong>{{actor}}</strong> cambió <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nuevo comentario en {{context}}",
+      "title": "Nuevo comentario en algo en lo que participas",
+      "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
     }
   },
   "post": {

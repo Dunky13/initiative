@@ -1,6 +1,7 @@
 """Revision 0521 carries each account's settings onto the nine rows: where
 several rows became one, one of them decides; the rest go; a community's
-level becomes its mute or its rows."""
+level becomes its mute or its rows, and it keeps only rows off on every
+channel."""
 
 from __future__ import annotations
 
@@ -57,6 +58,7 @@ def test_a_communitys_level_becomes_its_mute_or_its_rows() -> None:
                     "level": "everything",
                     "categories": {
                         "mentions": {"push": False},
+                        "comments": off,
                         "approvals": {"email": False},
                     },
                 },
@@ -67,6 +69,6 @@ def test_a_communitys_level_becomes_its_mute_or_its_rows() -> None:
         "guilds": {
             "1": {"muted": True},
             "2": {"categories": {"subscriptions": off, "news": off}},
-            "3": {"categories": {"mentions": {"push": False}}},
+            "3": {"categories": {"subscriptions": off}},
         }
     }
