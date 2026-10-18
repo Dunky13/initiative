@@ -1,4 +1,4 @@
-"""What one member keeps about one item: their last open, a bookmark, a follow and
+"""What one member keeps about one item: their last open, a bookmark, a subscription and
 where they put a project in their own list.
 
 One row per ``(user_id, entity_type, entity_id)``, in the item's community's
@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, Index, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, Index, Text, text
 from sqlmodel import Field, SQLModel
 
 from app.core.tools import CONTENT_KINDS, Tool
@@ -73,13 +73,20 @@ class PersonalItem(SQLModel, table=True):
             name="ck_personal_items_view_source_with_view",
         ),
         CheckConstraint(
-            "num_nonnulls(viewed_at, bookmarked_at, followed_at, sort_order) > 0",
+            "num_nonnulls(viewed_at, bookmarked_at, subscribed_at, sort_order) > 0",
             name="ck_personal_items_holds_something",
         ),
         # A purge drops everyone's rows on an item.
         Index("ix_personal_items_entity", "entity_type", "entity_id"),
         # The tabs bar reads a person's newest opens.
         Index("ix_personal_items_user_viewed_at", "user_id", "viewed_at"),
+        # The subscription sweep asks whether anybody is subscribed, and since
+        # when, on every visit.
+        Index(
+            "ix_personal_items_subscribed_at",
+            "subscribed_at",
+            postgresql_where=text("subscribed_at IS NOT NULL"),
+        ),
     )
 
     user_id: int = Field(foreign_key="users.id", primary_key=True)
@@ -95,7 +102,7 @@ class PersonalItem(SQLModel, table=True):
     bookmarked_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    followed_at: Optional[datetime] = Field(
+    subscribed_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     #: Where the member put this project in their own list.

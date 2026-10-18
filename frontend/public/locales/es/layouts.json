@@ -40,7 +40,7 @@
   "builtIn": "Integrados",
   "properties": "Propiedades",
   "layoutParts": "Diseño",
-  "remove": "Quitar",
+  "hidePart": "Ocultar",
   "settings": "Ajustes",
   "cardHelp": "Lo que muestra cada tarea en el tablero. Selecciona una parte para cambiarla o añade una bajo el esquema.",
   "propertiesHelp": "Muestra cada propiedad para la que una tarea tiene un valor.",

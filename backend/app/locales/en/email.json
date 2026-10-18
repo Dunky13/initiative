@@ -100,6 +100,18 @@
       "body": "<strong>{{actor}}</strong> replied to your comment on <strong>{{context}}</strong>"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} changed",
+      "title": "Something you subscribed to changed",
+      "body": "<strong>{{actor}}</strong> changed <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "New comment on {{context}}",
+      "title": "New comment on something you subscribed to",
+      "body": "<strong>{{actor}}</strong> commented on <strong>{{context}}</strong>"
+    }
+  },
   "post": {
     "published": {
       "subject": "New post: {{post}}",
@@ -377,7 +389,8 @@
       "jobs": "Exports and imports",
       "account": "Your account",
       "moderation": "Moderation",
-      "cases": "Cases"
+      "cases": "Cases",
+      "subscriptions": "Subscriptions"
     }
   },
   "signInCode": {

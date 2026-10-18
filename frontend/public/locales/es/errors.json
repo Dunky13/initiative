@@ -710,6 +710,7 @@
   "PLUGIN_SERVICE_VENDOR_SETUP_INVALID_ORGANIZATION": "Ese no es un nombre de organización que use GitHub. Usa letras, números y guiones, hasta 39 caracteres.",
   "PLUGIN_SERVICE_VENDOR_SETUP_EXPIRED": "Esta configuración ha caducado o ya se completó. Vuelve a empezarla desde los ajustes del complemento.",
   "PLUGIN_SERVICE_VENDOR_SETUP_FAILED": "GitHub no entregó los valores de la nueva aplicación. Vuelve a empezar la configuración.",
+  "PLUGIN_SERVICE_SHARED_ROUTES_IN_USE": "No se puede dejar de compartir mientras una instalación esté conectada a más de una comunidad.",
   "PLUGIN_CHANNEL_CONNECTION_EXPIRED": "Esa conexión ha caducado y el miembro tiene que volver a conectar.",
   "PLUGIN_CHANNEL_CONNECTION_NO_TOKEN": "Esa conexión no tiene ningún token que entregar.",
   "PLUGIN_CHANNEL_TOKEN_UNAVAILABLE": "El proveedor no entregó un token. Inténtalo de nuevo en un momento.",

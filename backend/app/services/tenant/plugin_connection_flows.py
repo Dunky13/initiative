@@ -156,6 +156,8 @@ OUTCOMES: frozenset[str] = frozenset(
         "not_recorded",
         "awaiting_approval",
         "sign_in_required",
+        # Another community on this deployment holds the vendor installation.
+        "taken",
     }
 )
 
@@ -1096,7 +1098,7 @@ async def complete_callback(
         plugin = loaded.plugin
         try:
             if state.user_id is not None:
-                stored = await _store_member(
+                outcome = await _store_member(
                     session,
                     plugin=plugin,
                     connection=loaded.connection,
@@ -1106,8 +1108,9 @@ async def complete_callback(
                     label=label,
                 )
             else:
-                stored = await _store_community(
+                outcome = await _store_community(
                     session,
+                    guild_id=state.guild_id,
                     plugin_id=plugin.id,
                     connection=loaded.connection,
                     tokens=None if loaded.flow.get("install_url") else tokens,
@@ -1118,13 +1121,7 @@ async def complete_callback(
                 "plug-in connection: after_connect values refused (%s)", exc.code
             )
             return landing_url(state.return_path, "not_recorded")
-        if not stored:
-            return landing_url(state.return_path, "not_recorded")
-        await session.commit()
-        if state.user_id is None:
-            await session.refresh(plugin)
-            await plugin_installs.record(state.guild_id, plugin)
-    return landing_url(state.return_path, "connected")
+    return landing_url(state.return_path, outcome)
 
 
 def _managed_only(connection: Mapping[str, Any], values: Mapping[str, Any]) -> dict:
@@ -1147,9 +1144,10 @@ async def _store_member(
     tokens: TokenSet,
     values: Mapping[str, Any],
     label: Optional[str],
-) -> bool:
+) -> str:
     """The member's row: their token set, the managed values and the account
-    label, ``connected``. A blocked member's row is left as it is."""
+    label, ``connected``. A blocked member's row is left as it is. Answers the
+    landing outcome."""
     connection_id = str(connection.get("id"))
     row = (
         await session.exec(
@@ -1163,7 +1161,7 @@ async def _store_member(
         )
     ).first()
     if row is not None and row.blocked_at is not None:
-        return False
+        return "not_recorded"
     if row is None:
         row = GuildPluginUserConnection(
             plugin_id=plugin.id,
@@ -1189,22 +1187,30 @@ async def _store_member(
     row.status = "connected"
     row.updated_at = datetime.now(timezone.utc)
     await connections_service.store_connection_secrets(session, row, sealed)
-    return True
+    await session.commit()
+    return "connected"
 
 
 async def _store_community(
     session: AsyncSession,
     *,
+    guild_id: int,
     plugin_id: int,
     connection: Mapping[str, Any],
     tokens: Optional[TokenSet],
     values: Mapping[str, Any],
-) -> bool:
+) -> str:
     """The community's own connection: the managed values, and the token set
-    unless the flow is installation-style, whose person's token is not kept."""
+    unless the flow is installation-style, whose person's token is not kept.
+    Answers the landing outcome.
+
+    The route the values give the install's vendor webhooks is claimed in the
+    install index before anything is stored, and nothing is stored when
+    another community holds it (``taken``). A store that fails after the claim
+    rewrites the index from what the community holds."""
     plugin = await guild_plugins_service.lock_install(session, plugin_id)
     if plugin is None:
-        return False
+        return "not_recorded"
     connection_id = str(connection.get("id"))
     all_secrets = await guild_plugins_service.load_secrets(session, plugin)
     stored_config = (plugin.config or {}).get(connection_id) or {}
@@ -1218,16 +1224,26 @@ async def _store_community(
     )
     if tokens is not None:
         config, secrets = seal_tokens(tokens, config=config, secrets=secrets)
-    plugin.config = _replace_entry(plugin.config, connection_id, config)
-    plugin_config_service.guild_connection_ref(plugin, connection_id)
-    plugin.config_state = "unverified"
-    plugin.config_state_detail = None
-    plugin.updated_at = datetime.now(timezone.utc)
-    session.add(plugin)
-    await guild_plugins_service.store_secrets(
-        session, plugin, _replace_entry(all_secrets, connection_id, secrets)
-    )
-    return True
+    entries = _replace_entry(plugin.config, connection_id, config)
+    route = plugin_installs.hook_route(plugin.definition, entries)
+    if not await plugin_installs.claim(guild_id, plugin, route):
+        return "taken"
+    try:
+        plugin.config = entries
+        plugin_config_service.guild_connection_ref(plugin, connection_id)
+        plugin.config_state = "unverified"
+        plugin.config_state_detail = None
+        plugin.updated_at = datetime.now(timezone.utc)
+        session.add(plugin)
+        await guild_plugins_service.store_secrets(
+            session, plugin, _replace_entry(all_secrets, connection_id, secrets)
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        await guild_plugins_service.reindex_install(session, guild_id, plugin_id)
+        raise
+    return "connected"
 
 
 def _replace_entry(

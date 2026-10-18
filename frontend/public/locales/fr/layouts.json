@@ -40,7 +40,7 @@
   "builtIn": "Intégrés",
   "properties": "Propriétés",
   "layoutParts": "Mise en page",
-  "remove": "Retirer",
+  "hidePart": "Masquer",
   "settings": "Réglages",
   "cardHelp": "Ce que chaque tâche affiche sur le tableau. Sélectionnez un élément pour le modifier, ou ajoutez-en un sous le plan.",
   "propertiesHelp": "Affiche chaque propriété pour laquelle une tâche a une valeur.",

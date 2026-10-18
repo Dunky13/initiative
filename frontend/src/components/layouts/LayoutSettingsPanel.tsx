@@ -1,3 +1,4 @@
+import { EyeClosed } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -260,7 +261,8 @@ const ColumnSettings = ({
       </p>
       {keeps ? null : (
         <Button type="button" variant="outline" size="sm" onClick={() => edits.removeColumn(field)}>
-          {t("layouts:remove")}
+          <EyeClosed className="h-4 w-4" aria-hidden="true" />
+          {t("layouts:hidePart")}
         </Button>
       )}
     </Panel>
@@ -306,7 +308,8 @@ const PartSettings = ({
   const canRemove = removable(node, fields);
   const remove = canRemove ? (
     <Button type="button" variant="outline" size="sm" onClick={() => edits.removePart(path)}>
-      {translate("layouts:remove")}
+      <EyeClosed className="h-4 w-4" aria-hidden="true" />
+      {translate("layouts:hidePart")}
     </Button>
   ) : (
     <p className="text-muted-foreground text-xs">{translate("layouts:holdsTitle")}</p>

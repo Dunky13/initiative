@@ -65,7 +65,7 @@ const NameEditor = ({ item: counter, label }: EditorProps) => {
       save={useSave(counter, label)}
       readOnly={useCounterLayout().readOnly}
       placeholder={t("counterNamePlaceholder")}
-      follow={{ kind: "counter", id: counter.id }}
+      subscribe={{ kind: "counter", id: counter.id }}
     />
   );
 };

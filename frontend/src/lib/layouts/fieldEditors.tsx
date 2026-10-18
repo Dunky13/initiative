@@ -16,7 +16,6 @@ import type {
   TagSummary,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { FollowButton } from "@/components/FollowButton";
 import { MentionComposer } from "@/components/markdown/MentionComposer";
 import { AddPropertyButton } from "@/components/properties/AddPropertyButton";
 import { PropertyInput } from "@/components/properties/PropertyInput";
@@ -28,6 +27,7 @@ import {
   userReferenceValue,
 } from "@/components/properties/propertyHelpers";
 import { iconForPropertyType } from "@/components/properties/propertyTypeIcons";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { TagPicker } from "@/components/tags";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TaskDescription } from "@/components/tasks/TaskDescription";
@@ -66,7 +66,7 @@ export const TitleField = <I, P>({
   placeholder,
   field = "title",
   optional = false,
-  follow,
+  subscribe,
 }: {
   id: string;
   label: string;
@@ -78,16 +78,16 @@ export const TitleField = <I, P>({
   /** It may be emptied, and then reads as `placeholder` (a picture's title,
    *  which falls back to its file's name). */
   optional?: boolean;
-  /** The item, for a follow toggle beside its title. */
-  follow?: { kind: ContentKind; id: number };
+  /** The item, for a subscribe toggle beside its title. */
+  subscribe?: { kind: ContentKind; id: number };
 }) => {
   // One being added may be emptied while it is typed: Add waits for a title.
   const adding = useContext(ItemDraftContext) !== null;
   const besides = (title: ReactNode) =>
-    follow && !adding ? (
+    subscribe && !adding ? (
       <div className="flex min-w-0 flex-1 items-start gap-1">
         {title}
-        <FollowButton kind={follow.kind} entityId={follow.id} className="mt-0.5" />
+        <SubscribeButton kind={subscribe.kind} entityId={subscribe.id} className="mt-0.5" />
       </div>
     ) : (
       title

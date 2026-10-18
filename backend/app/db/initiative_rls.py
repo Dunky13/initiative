@@ -2018,7 +2018,9 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     # content, so every subscription would pay for pure noise.
     "search_entries": Silent("derived index, rebuilt from the content it mirrors"),
     "engagement_levels": Silent("derived ranking, rewritten by the hourly pass"),
-    "personal_items": Silent("one member's own opens, bookmarks, follows and order"),
+    "personal_items": Silent(
+        "one member's own opens, bookmarks, subscriptions and order"
+    ),
     "task_assignment_digest_items": Silent("internal digest bookkeeping"),
     "reaction_digest_items": Silent("internal digest bookkeeping"),
     "event_reminder_dispatches": Silent("internal reminder bookkeeping"),

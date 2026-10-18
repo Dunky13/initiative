@@ -2,7 +2,7 @@
 
 ``personal_items``, in every guild schema: what one member keeps about one
 item, one row per ``(user_id, entity_type, entity_id)``. Their last open and
-where it came from, a bookmark, a follow, and where they put a project in their own
+where it came from, a bookmark, a subscription, and where they put a project in their own
 list. It takes every row of ``recent_views``, ``favorites`` and
 ``project_orders``, merged on that key, and those three go. Its registry CHECKs
 and its policies are rendered from the model and the registries at boot.
@@ -55,7 +55,7 @@ def _apply_upgrade(bind) -> None:
         sa.Column("viewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("view_source", sa.Text(), nullable=True),
         sa.Column("bookmarked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("followed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("subscribed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("sort_order", sa.Float(), nullable=True),
         sa.PrimaryKeyConstraint("user_id", "entity_type", "entity_id"),
         sa.CheckConstraint(
@@ -63,7 +63,7 @@ def _apply_upgrade(bind) -> None:
             name="ck_personal_items_view_source_with_view",
         ),
         sa.CheckConstraint(
-            "num_nonnulls(viewed_at, bookmarked_at, followed_at, sort_order) > 0",
+            "num_nonnulls(viewed_at, bookmarked_at, subscribed_at, sort_order) > 0",
             name="ck_personal_items_holds_something",
         ),
     )
@@ -147,7 +147,7 @@ def _apply_downgrade(bind) -> None:
         " WHERE bookmarked_at IS NOT NULL"
     )
     # Only orders of projects that are still there: the old table's key holds
-    # its rows to a project. Follows have nowhere to go.
+    # its rows to a project. Subscriptions have nowhere to go.
     op.execute(
         "INSERT INTO project_orders (user_id, project_id, sort_order)"
         " SELECT i.user_id, i.entity_id, i.sort_order FROM personal_items i"

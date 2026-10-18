@@ -72,6 +72,16 @@
       "body_other": "{{count}} new reactions to your posts, including {{emoji}} from {{actor}}"
     }
   },
+  "subscription": {
+    "changed": {
+      "title": "Something you subscribed to changed",
+      "body": "{{actor}} changed {{context}}"
+    },
+    "commented": {
+      "title": "New comment on something you subscribed to",
+      "body": "{{actor}} commented on {{context}}"
+    }
+  },
   "post": {
     "published": {
       "title": "New post",
@@ -171,6 +181,10 @@
     },
     "reactions": {
       "title": "New reaction",
+      "body": "Open Initiative to see it."
+    },
+    "subscriptions": {
+      "title": "Something you subscribed to changed",
       "body": "Open Initiative to see it."
     },
     "assignments": {

@@ -194,6 +194,7 @@ FREEZE_EXEMPT_TABLES: frozenset[str] = frozenset(
         "task_assignment_digest_items",
         "event_reminder_dispatches",
         "timer_marks",
+        "subscription_notices",
         "uploads",
     }
 )

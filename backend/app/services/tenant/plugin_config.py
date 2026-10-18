@@ -46,6 +46,7 @@ from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
 from app.core.messages import GuildPluginMessages
 
 __all__ = [
+    "REMOVED_AT",
     "RESERVED_TOKEN_KEYS",
     "PluginConfigError",
     "ConfigState",
@@ -79,11 +80,15 @@ MAX_SECRET_VALUE_LENGTH = 16_000
 #: What a plug-in may report back about the configuration it was handed.
 CONFIG_STATES: frozenset[str] = frozenset({"unverified", "ok", "invalid"})
 
+#: When the vendor reported a connection removed (epoch seconds), kept in its
+#: plain map until the connection is read ``ok`` or connected again.
+REMOVED_AT = "removed_at"
+
 #: Where a connection's flow keeps its tokens, beside its declared fields: the
 #: two tokens sealed in the secrets map, the two expiry times (epoch seconds)
-#: in the plain map.
+#: in the plain map. :data:`REMOVED_AT` is kept in the plain map the same way.
 RESERVED_TOKEN_KEYS: frozenset[str] = frozenset(
-    {"access_token", "refresh_token", "expires_at", "refresh_expires_at"}
+    {"access_token", "refresh_token", "expires_at", "refresh_expires_at", REMOVED_AT}
 )
 
 #: Long enough that a handle is never guessed, short enough to sit in a URL the
@@ -355,7 +360,8 @@ def prune_to_definition(
     entirely, which the caller revokes — the plug-in is still holding whatever
     those values bought it.
     """
-    # A connection with a flow keeps its tokens too, under the reserved keys.
+    # A connection with a flow keeps its tokens and its removal mark too, under
+    # the reserved keys.
     declared: dict[str, set[str]] = {
         connection["id"]: {
             field["key"] for field in _fields(connection) if "key" in field

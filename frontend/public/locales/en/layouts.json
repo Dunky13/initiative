@@ -40,7 +40,7 @@
   "builtIn": "Built-in",
   "properties": "Properties",
   "layoutParts": "Layout",
-  "remove": "Remove",
+  "hidePart": "Hide",
   "settings": "Settings",
   "cardHelp": "What each task shows on the board. Select a part to change it, or add one below the outline.",
   "propertiesHelp": "Shows every property a task has a value for.",

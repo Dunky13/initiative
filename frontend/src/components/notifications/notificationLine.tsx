@@ -141,6 +141,7 @@ export const notificationLink = (notification: NotificationRead): string | null 
     case "mention":
     case "comment_reply":
     case "comment_on_resource":
+    case "subscription_activity":
       return entityRefFromData(data);
     case "post_published":
       if (typeof data.post_id === "number") {
@@ -229,6 +230,17 @@ const reactionSummary = (
 // A comment notification rolls up every comment on the same thing, so the line
 // names who and how many rather than repeating per comment. Rows written before
 // the rollup carry only ``commenter_name``, which reads here as a rollup of one.
+/** What a subscription line can say happened, as the feed names it. */
+const SUBSCRIPTION_VERBS = [
+  "created",
+  "completed",
+  "commented",
+  "edited",
+  "moved",
+  "scheduled",
+  "published",
+] as const;
+
 export const commentSummary = (
   data: Record<string, unknown>
 ): { name: string; others: number; count: number } => {
@@ -313,6 +325,16 @@ export const notificationText = (
           : t("notifications.commentsOnResource", { name, count, entityName });
       }
       return t("notifications.commentOnResource", { commenterName: name, entityName });
+    }
+    case "subscription_activity": {
+      // One line per subscribed item: who changed it, and how, or how many did.
+      const { name, others } = commentSummary(data);
+      const entityName = data.entity_name ?? t("notifications.plain.item");
+      if (others > 0) {
+        return t("notifications.subscriptionMulti", { name, count: others, entityName });
+      }
+      const verb = SUBSCRIPTION_VERBS.find((each) => each === data.verb) ?? "edited";
+      return t(`notifications.subscription.${verb}`, { name, entityName });
     }
     case "post_published":
       return t("notifications.postPublished", {

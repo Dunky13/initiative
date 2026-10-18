@@ -329,3 +329,35 @@ describe("notificationText — a profile cleared by staff", () => {
     );
   });
 });
+
+describe("notificationText — something the reader subscribed to", () => {
+  it("names what one person did, and counts the rest once several did", () => {
+    const one = notificationText(
+      notice("subscription_activity", {
+        verb: "completed",
+        entity_name: "Book the hall",
+        commenters: [{ name: "Ada" }],
+        commenter_count: 1,
+      }),
+      t
+    );
+    expect(one).toContain("notifications.subscription.completed");
+    expect(one).toContain("Book the hall");
+
+    // A verb the line does not know reads as an edit rather than nothing.
+    expect(notificationText(notice("subscription_activity", { verb: "teleported" }), t)).toContain(
+      "notifications.subscription.edited"
+    );
+
+    expect(
+      notificationText(
+        notice("subscription_activity", {
+          verb: "commented",
+          commenters: [{ name: "Ada" }, { name: "Bram" }],
+          commenter_count: 3,
+        }),
+        t
+      )
+    ).toContain("notifications.subscriptionMulti");
+  });
+});

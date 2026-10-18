@@ -369,7 +369,7 @@ async def remove_user_from_guild_initiatives(
     that belongs to the community itself. What they owned is left **unowned**
     rather than handed to anyone; guild admins can claim it whenever they
     choose (``app.services.tenant.ownership``). What they kept about its items
-    (opens, bookmarks, follows) goes too.
+    (opens, bookmarks, subscriptions) goes too.
     """
     from app.db.schema_provisioning import guild_schema_name
     from app.services.tenant import personal_items

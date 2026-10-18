@@ -37,7 +37,7 @@ def _load(name: str):
 
 async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
     """A view, a bookmark and an order on one project become one row; each alone
-    becomes its own. The downgrade splits them back, leaving follows behind and
+    becomes its own. The downgrade splits them back, leaving subscriptions behind and
     an order on a project that is gone."""
     user = await create_user(session)
     other = await create_user(session)
@@ -102,7 +102,7 @@ async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
     rows = (
         await sql(
             "SELECT user_id, entity_type, entity_id, viewed_at, view_source,"
-            f" bookmarked_at, followed_at, sort_order FROM {schema}.personal_items"
+            f" bookmarked_at, subscribed_at, sort_order FROM {schema}.personal_items"
             " ORDER BY user_id, entity_type, entity_id"
         )
     ).all()
@@ -120,10 +120,10 @@ async def test_opens_stars_and_orders_merge_and_come_back(session) -> None:
             await sql("SELECT to_regclass(:t)", t=f"{schema}.{old}")
         ).scalar() is None
 
-    # A follow has no place in the old tables, nor an order on a project that
+    # A subscription has no place in the old tables, nor an order on a project that
     # has gone.
     await sql(
-        f"UPDATE {schema}.personal_items SET followed_at = now()"
+        f"UPDATE {schema}.personal_items SET subscribed_at = now()"
         " WHERE entity_type = 'task'"
     )
     await sql(

@@ -220,6 +220,10 @@
       "title": "Zum Abschließen anmelden",
       "body": "Schließe die Verbindung in dem Browser ab, in dem du bei Initiative angemeldet bist, als die Person, die sie begonnen hat."
     },
+    "taken": {
+      "title": "Bereits anderswo verbunden",
+      "body": "Diese Organisation ist bereits mit einer anderen Community auf diesem Server verbunden, deshalb hat sich hier nichts geändert. Um sie hier zu verbinden, trenne sie zuerst dort, oder entferne die App beim anderen Dienst aus der Organisation und verbinde sie danach erneut."
+    },
     "closeTab": "Du kannst diesen Tab schließen."
   },
   "scopes": {

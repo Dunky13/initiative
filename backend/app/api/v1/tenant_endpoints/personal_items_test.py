@@ -1,8 +1,8 @@
-"""What a member keeps about items: opens (the tabs bar), bookmarks and follows.
+"""What a member keeps about items: opens (the tabs bar), bookmarks and subscriptions.
 
 Covers ``GET /api/v1/me/personal-items`` (every community's tabs or bookmarks),
 a community's own list, one item's state, and the guild-addressed routes that
-set and clear each mark. Opening and following are proved over the whole
+set and clear each mark. Opening and subscribing are proved over the whole
 ``Tool`` enum and over every kind inside one, so a new kind is exercised here
 the moment it exists.
 """
@@ -426,25 +426,25 @@ async def test_opening_something_inside_a_tool_is_recorded_and_never_a_tab(
     assert refused.status_code == 404, refused.text
     assert refused.json() == KINDS[kind].not_found().body
 
-    # Followed too, and the follow comes off leaving the open.
-    followed = await client.put(
-        a.g(f"/personal-items/follow/{kind}/{entity.id}"), headers=a.headers
+    # Subscribed too, and the subscription comes off leaving the open.
+    subscribed = await client.put(
+        a.g(f"/personal-items/subscribe/{kind}/{entity.id}"), headers=a.headers
     )
-    assert followed.status_code == 200, followed.text
-    assert followed.json()["followed_at"]
-    unfollowed = await client.delete(
-        a.g(f"/personal-items/follow/{kind}/{entity.id}"), headers=a.headers
+    assert subscribed.status_code == 200, subscribed.text
+    assert subscribed.json()["subscribed_at"]
+    unsubscribed = await client.delete(
+        a.g(f"/personal-items/subscribe/{kind}/{entity.id}"), headers=a.headers
     )
-    assert unfollowed.status_code == 204
+    assert unsubscribed.status_code == 204
     state = await client.get(
         a.g(f"/personal-items/{kind}/{entity.id}"), headers=a.headers
     )
-    assert (state.json()["followed_at"], state.json()["view_source"]) == (
+    assert (state.json()["subscribed_at"], state.json()["view_source"]) == (
         None,
         "search",
     )
     refused = await client.put(
-        outsider.g(f"/personal-items/follow/{kind}/{entity.id}"),
+        outsider.g(f"/personal-items/subscribe/{kind}/{entity.id}"),
         headers=outsider.headers,
     )
     assert refused.status_code == 404, refused.text
@@ -491,7 +491,7 @@ async def test_any_tool_can_be_bookmarked_and_listed_newest_first(
     assert items[1]["community_id"] == a.guild.id
 
 
-async def test_a_bookmark_and_a_follow_come_off(
+async def test_a_bookmark_and_a_subscription_come_off(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """One item's state says what the reader keeps; each mark comes off on its
@@ -500,14 +500,14 @@ async def test_a_bookmark_and_a_follow_come_off(
     project = await create_project(session, a.initiative, a.user)
     state_path = a.g(f"/personal-items/project/{project.id}")
 
-    for mark in ("bookmark", "follow"):
+    for mark in ("bookmark", "subscribe"):
         response = await client.put(
             a.g(f"/personal-items/{mark}/project/{project.id}"), headers=a.headers
         )
         assert response.status_code == 200, response.text
     state = (await client.get(state_path, headers=a.headers)).json()
     assert (
-        state["bookmarked_at"] and state["followed_at"] and state["viewed_at"] is None
+        state["bookmarked_at"] and state["subscribed_at"] and state["viewed_at"] is None
     )
 
     for _ in range(2):
@@ -517,16 +517,16 @@ async def test_a_bookmark_and_a_follow_come_off(
         assert removed.status_code == 204
     assert (await client.get(a.g(BOOKMARKS), headers=a.headers)).json() == []
     state = (await client.get(state_path, headers=a.headers)).json()
-    assert state["bookmarked_at"] is None and state["followed_at"]
+    assert state["bookmarked_at"] is None and state["subscribed_at"]
 
     await client.delete(
-        a.g(f"/personal-items/follow/project/{project.id}"), headers=a.headers
+        a.g(f"/personal-items/subscribe/project/{project.id}"), headers=a.headers
     )
     await route_session_to_guild(session, a.guild.id)
     assert (await session.exec(select(PersonalItem))).all() == []
 
 
-async def test_a_tool_the_reader_cannot_open_cannot_be_bookmarked_or_followed(
+async def test_a_tool_the_reader_cannot_open_cannot_be_bookmarked_or_subscribed_to(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """Both take read access, as the tool's own page does: a queue in an
@@ -536,7 +536,7 @@ async def test_a_tool_the_reader_cannot_open_cannot_be_bookmarked_or_followed(
     elsewhere = await create_initiative(session, a.guild, owner)
     hidden = await create_queue(session, elsewhere, owner)
 
-    for mark in ("bookmark", "follow"):
+    for mark in ("bookmark", "subscribe"):
         response = await client.put(
             a.g(f"/personal-items/{mark}/queue/{hidden.id}"), headers=a.headers
         )
@@ -577,7 +577,7 @@ async def test_leaving_a_community_takes_what_they_kept(
 ):
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
     project = await create_project(session, a.initiative, a.user)
-    for mark in ("bookmark", "follow", "view"):
+    for mark in ("bookmark", "subscribe", "view"):
         await client.put(
             a.g(f"/personal-items/{mark}/project/{project.id}"), headers=a.headers
         )
@@ -593,7 +593,9 @@ async def test_leaving_a_community_takes_what_they_kept(
     state = await client.get(
         a.g(f"/personal-items/project/{project.id}"), headers=a.headers
     )
-    assert [state.json()[k] for k in ("viewed_at", "bookmarked_at", "followed_at")] == [
+    assert [
+        state.json()[k] for k in ("viewed_at", "bookmarked_at", "subscribed_at")
+    ] == [
         None,
         None,
         None,
@@ -603,7 +605,7 @@ async def test_leaving_a_community_takes_what_they_kept(
 async def test_marks_come_off_a_tool_the_reader_has_lost(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    """Out of the initiative, a bookmark and a follow still come off rather than
+    """Out of the initiative, a bookmark and a subscription still come off rather than
     waiting for them to be let back in."""
     a = await acting_user(guild_role=CommunityRole.member, initiative=True)
     b = await acting_user(
@@ -613,7 +615,7 @@ async def test_marks_come_off_a_tool_the_reader_has_lost(
         initiative_role="member",
     )
     project = await create_project(session, a.initiative, b.user)
-    for mark in ("bookmark", "follow"):
+    for mark in ("bookmark", "subscribe"):
         response = await client.put(
             b.g(f"/personal-items/{mark}/project/{project.id}"), headers=b.headers
         )
@@ -631,7 +633,7 @@ async def test_marks_come_off_a_tool_the_reader_has_lost(
     gone = await client.get(b.g(f"/projects/{project.id}"), headers=b.headers)
     assert gone.status_code == 404, gone.text
 
-    for mark in ("bookmark", "follow"):
+    for mark in ("bookmark", "subscribe"):
         removed = await client.delete(
             b.g(f"/personal-items/{mark}/project/{project.id}"), headers=b.headers
         )

@@ -100,6 +100,18 @@
       "body": "<strong>{{actor}}</strong> respondió a tu comentario en <strong>{{context}}</strong>"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} cambió",
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "<strong>{{actor}}</strong> cambió <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nuevo comentario en {{context}}",
+      "title": "Nuevo comentario en algo a lo que te suscribiste",
+      "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
+    }
+  },
   "post": {
     "published": {
       "subject": "Nueva publicación: {{post}}",
@@ -377,7 +389,8 @@
       "jobs": "Exportaciones e importaciones",
       "account": "Tu cuenta",
       "moderation": "Moderación",
-      "cases": "Casos"
+      "cases": "Casos",
+      "subscriptions": "Suscripciones"
     }
   },
   "signInCode": {

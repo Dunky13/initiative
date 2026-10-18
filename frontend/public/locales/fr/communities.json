@@ -341,6 +341,17 @@
     "commentsOnTaskMulti": "{{name}} et {{others}} autres ont laissé {{count}} commentaires sur {{taskTitle}}",
     "commentsOnResource": "{{name}} a laissé {{count}} commentaires sur {{entityName}}",
     "commentsOnResourceMulti": "{{name}} et {{others}} autres ont laissé {{count}} commentaires sur {{entityName}}",
+    "subscription": {
+      "created": "{{name}} a créé {{entityName}}.",
+      "completed": "{{name}} a terminé {{entityName}}.",
+      "commented": "{{name}} a commenté {{entityName}}.",
+      "edited": "{{name}} a modifié {{entityName}}.",
+      "moved": "{{name}} a déplacé {{entityName}}.",
+      "scheduled": "{{name}} a reprogrammé {{entityName}}.",
+      "published": "{{name}} a publié {{entityName}}."
+    },
+    "subscriptionMulti_one": "{{name}} et 1 autre personne ont modifié {{entityName}}.",
+    "subscriptionMulti_other": "{{name}} et {{count}} autres ont modifié {{entityName}}.",
     "seeAll": "Tout voir",
     "inbox": {
       "title": "Notifications",

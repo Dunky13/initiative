@@ -72,6 +72,16 @@
       "body_other": "{{count}} nuevas reacciones a tus publicaciones, incluida {{emoji}} de {{actor}}"
     }
   },
+  "subscription": {
+    "changed": {
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "{{actor}} cambió {{context}}"
+    },
+    "commented": {
+      "title": "Nuevo comentario en algo a lo que te suscribiste",
+      "body": "{{actor}} comentó en {{context}}"
+    }
+  },
   "post": {
     "published": {
       "title": "Nueva publicación",
@@ -172,6 +182,10 @@
     "reactions": {
       "title": "Nueva reacción",
       "body": "Abre Initiative para verla."
+    },
+    "subscriptions": {
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "Abre Initiative para verlo."
     },
     "assignments": {
       "title": "Nueva tarea asignada",

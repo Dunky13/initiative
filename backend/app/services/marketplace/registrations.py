@@ -48,6 +48,8 @@ import httpx
 from fastapi import HTTPException, status as http_status
 from jwt import PyJWK
 from jwt.exceptions import InvalidKeyError, PyJWKError
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -56,6 +58,8 @@ from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.messages import PluginServiceMessages
 from app.core.security import plugin_platform_signing_enabled
+from app.db.errors import dbapi_constraint
+from app.models.platform.plugin_install import EXCLUSIVE_ROUTE_INDEX, PluginInstall
 from app.models.platform.plugin_service_registration import (
     IMAGE_REFERENCE_MAX_LENGTH,
     LISTING_STATED_FIELDS,
@@ -104,6 +108,7 @@ AUDITED_FIELDS: tuple[str, ...] = (
     "scope_ceiling",
     "mandatory",
     "operations_only",
+    "shared_routes",
     "enabled",
     "source",
     "image_digest",
@@ -573,6 +578,7 @@ async def update_registration(
     jwks_uri: Optional[str] = None,
     mandatory: Optional[bool] = None,
     operations_only: Optional[bool] = None,
+    shared_routes: Optional[bool] = None,
     enabled: Optional[bool] = None,
     vendor_values: Optional[dict[str, Optional[str]]] = None,
     actor_user_id: int | None = None,
@@ -581,7 +587,10 @@ async def update_registration(
 
     An empty ``page_origin`` clears it, putting both surfaces back on
     ``base_url``; an empty ``jwks_uri`` clears it. A ``jwks_uri`` kept while
-    ``base_url`` moves is checked against the new origin.
+    ``base_url`` moves is checked against the new origin. ``shared_routes``
+    is written to the registration's installs in the install index in the same
+    transaction, and turning it off is refused (409) while a vendor
+    installation routes to more than one community.
     """
     row = await get_registration(session, registration_id)
     before = audit_service.snapshot(row, AUDITED_FIELDS)
@@ -605,6 +614,8 @@ async def update_registration(
         row.mandatory = mandatory
     if operations_only is not None:
         row.operations_only = operations_only
+    if shared_routes is not None:
+        row.shared_routes = shared_routes
     if enabled is not None:
         row.enabled = enabled
     vendor_changed = await _apply_vendor(session, row, vendor_values)
@@ -612,6 +623,8 @@ async def update_registration(
 
     row.updated_at = utcnow()
     session.add(row)
+    if shared_routes is not None and row.listing_uid:
+        await _write_exclusive(session, row)
     changed = audit_service.changed_fields(
         before, audit_service.snapshot(row, AUDITED_FIELDS)
     )
@@ -635,6 +648,34 @@ async def update_registration(
     # drops it rather than waiting out its TTL.
     invalidate_registrations()
     return row
+
+
+async def _write_exclusive(
+    session: AsyncSession, row: PluginServiceRegistration
+) -> None:
+    """Write each of the registration's installs ``exclusive`` as
+    ``shared_routes`` now says. The registration's row is written first: a
+    connect claiming a route reads it under a share lock, so it comes wholly
+    before this write or after it."""
+    exclusive = not row.shared_routes
+    await session.flush()
+    try:
+        await session.exec(
+            update(PluginInstall)
+            .where(
+                PluginInstall.listing_uid == row.listing_uid,
+                PluginInstall.exclusive != exclusive,
+            )
+            .values(exclusive=exclusive)
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        if dbapi_constraint(exc) != EXCLUSIVE_ROUTE_INDEX:
+            raise
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=PluginServiceMessages.SHARED_ROUTES_IN_USE,
+        ) from exc
 
 
 def _write_placement(

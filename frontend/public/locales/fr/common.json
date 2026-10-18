@@ -338,9 +338,9 @@
     "add": "Ajouter aux signets",
     "remove": "Retirer des signets"
   },
-  "follow": {
-    "add": "Suivre",
-    "remove": "Ne plus suivre"
+  "subscribe": {
+    "add": "S'abonner",
+    "remove": "Se désabonner"
   },
   "toolHeader": {
     "rename": "Renommer"

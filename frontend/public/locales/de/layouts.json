@@ -40,7 +40,7 @@
   "builtIn": "Eingebaut",
   "properties": "Eigenschaften",
   "layoutParts": "Layout",
-  "remove": "Entfernen",
+  "hidePart": "Ausblenden",
   "settings": "Einstellungen",
   "cardHelp": "Was jede Aufgabe auf dem Board zeigt. Wähle einen Teil aus, um ihn zu ändern, oder füge unter der Gliederung einen hinzu.",
   "propertiesHelp": "Zeigt jede Eigenschaft, für die eine Aufgabe einen Wert hat.",
