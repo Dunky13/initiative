@@ -25,6 +25,7 @@ const buildRegistration = (
   scope_ceiling: [],
   mandatory: false,
   operations_only: false,
+  shared_routes: false,
   enabled: true,
   source: "operator",
   image_digest: null,
@@ -347,7 +348,7 @@ describe("SettingsPluginServicesPage", () => {
       expect(updateMutate.mock.calls[0][0].data).toMatchObject({ operations_only: false });
     });
 
-    it("asks for the vendor values the listing declares, keeping a secret left alone", async () => {
+    it("asks for the vendor values and sharing, keeping a secret left alone", async () => {
       const user = userEvent.setup();
       registrations = [
         buildRegistration({
@@ -381,9 +382,15 @@ describe("SettingsPluginServicesPage", () => {
 
       await user.clear(clientId);
       await user.type(clientId, "gh-app-2");
+      await user.click(
+        screen.getByRole("switch", { name: "Share installations between communities" })
+      );
       await user.click(screen.getByRole("button", { name: "Save" }));
 
-      expect(updateMutate.mock.calls[0][0].data.vendor_values).toEqual({ client_id: "gh-app-2" });
+      expect(updateMutate.mock.calls[0][0].data).toMatchObject({
+        shared_routes: true,
+        vendor_values: { client_id: "gh-app-2" },
+      });
     });
 
     it("asks a declarative plug-in for its vendor values and nothing about where it runs", async () => {
@@ -411,6 +418,7 @@ describe("SettingsPluginServicesPage", () => {
       expect(updateMutate.mock.calls[0][0].data).toEqual({
         mandatory: false,
         operations_only: false,
+        shared_routes: false,
         vendor_values: { client_id: "gh-app" },
       });
     });

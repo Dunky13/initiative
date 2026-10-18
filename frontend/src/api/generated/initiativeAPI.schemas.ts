@@ -8757,6 +8757,7 @@ export interface PluginServiceRegistrationRead {
   scope_ceiling: string[];
   mandatory: boolean;
   operations_only: boolean;
+  shared_routes: boolean;
   enabled: boolean;
   source: string;
   image_digest: string | null;
@@ -8796,6 +8797,7 @@ export interface PluginServiceRegistrationUpdate {
   jwks_uri?: string | null;
   mandatory?: boolean | null;
   operations_only?: boolean | null;
+  shared_routes?: boolean | null;
   enabled?: boolean | null;
   vendor_values?: PluginServiceRegistrationUpdateVendorValues;
 }

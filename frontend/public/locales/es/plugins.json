@@ -220,6 +220,10 @@
       "title": "Inicia sesión para terminar",
       "body": "Termina de conectar en el navegador donde has iniciado sesión en Initiative, como la persona que lo empezó."
     },
+    "taken": {
+      "title": "Ya conectada en otro sitio",
+      "body": "Esta organización ya está conectada a otra comunidad de este servidor, así que aquí no ha cambiado nada. Para conectarla aquí, desconéctala primero allí, o quita la aplicación de la organización en el otro servicio y vuelve a conectarla."
+    },
     "closeTab": "Puedes cerrar esta pestaña."
   },
   "scopes": {

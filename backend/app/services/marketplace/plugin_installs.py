@@ -4,24 +4,31 @@
 rows: the listing an install came from, whether it is switched on, and the
 value its plug-in's vendor webhooks are routed to it by (``hook_route``). It is
 written wherever those facts change — at install and uninstall, when the plug-in
-is switched on or off, and when the routed static connection's value is stored
-or removed — and read by two things:
+is switched on or off, and when the routed static connection's value is stored,
+removed, or reported removed by the vendor — and read by two things:
 
 * :func:`page`, the plug-in's own listing of its installs, a keyset page at a
   time;
 * :func:`routed`, the installs a vendor delivery belongs to.
+
+A route is held by one community unless the listing's registration shares
+routes (``shared_routes``): each row's ``exclusive`` is the negation of it, and
+a unique index holds an exclusive route to one row. A connect claims its route
+(:func:`claim`) before it stores the value.
 
 Every call runs on the system engine, which alone reaches the table.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import delete, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from app.core.encryption import (
@@ -30,18 +37,28 @@ from app.core.encryption import (
     encrypt_field,
 )
 from app.db import session as db_session
-from app.models.platform.plugin_install import HOOK_ROUTE_MAX_LENGTH, PluginInstall
+from app.db.errors import dbapi_constraint
+from app.models.platform.plugin_install import (
+    EXCLUSIVE_ROUTE_INDEX,
+    HOOK_ROUTE_MAX_LENGTH,
+    PluginInstall,
+)
+from app.models.platform.plugin_service_registration import PluginServiceRegistration
 from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.tenant.plugin_config import connection_by_id
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "PAGE_LIMIT",
     "IndexedInstall",
+    "claim",
     "forget",
     "hook_route",
     "page",
     "record",
+    "route_of",
     "routed",
 ]
 
@@ -57,17 +74,20 @@ class IndexedInstall:
     active: bool
 
 
-def hook_route(plugin: GuildPlugin) -> Optional[str]:
-    """The value this install's vendor webhooks are routed by: the stored
-    field of the static connection its pinned ``webhooks.route`` names.
+def route_of(
+    definition: Optional[dict[str, Any]], config: Optional[Mapping[str, Any]]
+) -> Optional[str]:
+    """The value vendor webhooks route by in an install's stored ``config``:
+    the field of the static connection the ``webhooks.route`` of
+    ``definition`` names.
 
     Only a managed field routes: its value comes from the plug-in's
     ``after_connect`` hook, which checked it at the vendor, and never from a
     form."""
-    route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
+    route = ((definition or {}).get("webhooks") or {}).get("route")
     if not isinstance(route, dict):
         return None
-    connection = connection_by_id(plugin.definition, route.get("connection"))
+    connection = connection_by_id(definition, route.get("connection"))
     managed = {
         field.get("key")
         for field in (connection or {}).get("fields") or []
@@ -75,7 +95,7 @@ def hook_route(plugin: GuildPlugin) -> Optional[str]:
     }
     if route.get("field") not in managed:
         return None
-    stored = (plugin.config or {}).get(route.get("connection")) or {}
+    stored = (config or {}).get(route.get("connection")) or {}
     value = stored.get(route.get("field")) if isinstance(stored, dict) else None
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         return None
@@ -83,26 +103,71 @@ def hook_route(plugin: GuildPlugin) -> Optional[str]:
     return text if text and len(text) <= HOOK_ROUTE_MAX_LENGTH else None
 
 
-async def record(guild_id: int, plugin: GuildPlugin) -> None:
-    """Write one install's row as ``plugin`` now stands."""
+def hook_route(plugin: GuildPlugin) -> Optional[str]:
+    """The value this install's vendor webhooks are routed by, as its pinned
+    definition reads it (:func:`route_of`). None once the vendor has reported
+    the routed connection ``removed``, which ``set_connection_state`` records
+    as the install's configuration state."""
+    route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
+    connection = route.get("connection") if isinstance(route, dict) else None
+    removed = ("invalid", f"{connection}_removed")
+    if (plugin.config_state, plugin.config_state_detail) == removed:
+        return None
+    return route_of(plugin.definition, plugin.config)
+
+
+async def claim(guild_id: int, plugin: GuildPlugin, route: Optional[str]) -> bool:
+    """Write one install's row as ``plugin`` stands, routed by ``route``.
+
+    False, writing nothing, when the route is held for another community's
+    install. Whether this install's route is its own alone follows its
+    registration's ``shared_routes``, read under a share lock, so a change to
+    the setting waits for this write and this write for the change."""
     if not plugin.listing_uid or plugin.id is None:
-        return
-    values = {
-        "listing_uid": plugin.listing_uid,
-        "enabled": bool(plugin.enabled),
-        "hook_route": hook_route(plugin),
-    }
-    statement = (
-        pg_insert(PluginInstall)
-        .values(guild_id=guild_id, install_id=plugin.id, **values)
-        .on_conflict_do_update(
-            index_elements=[PluginInstall.guild_id, PluginInstall.install_id],
-            set_=values,
-        )
-    )
+        return True
     async with db_session.SystemSessionLocal() as session:
-        await session.exec(statement)
-        await session.commit()
+        shared = (
+            await session.exec(
+                select(PluginServiceRegistration.shared_routes)
+                .where(PluginServiceRegistration.listing_uid == plugin.listing_uid)
+                .with_for_update(read=True)
+            )
+        ).all()
+        values = {
+            "listing_uid": plugin.listing_uid,
+            "enabled": bool(plugin.enabled),
+            "hook_route": route,
+            "exclusive": not (shared and all(shared)),
+        }
+        try:
+            await session.exec(
+                pg_insert(PluginInstall)
+                .values(guild_id=guild_id, install_id=plugin.id, **values)
+                .on_conflict_do_update(
+                    index_elements=[PluginInstall.guild_id, PluginInstall.install_id],
+                    set_=values,
+                )
+            )
+            await session.commit()
+        except IntegrityError as exc:
+            if dbapi_constraint(exc) != EXCLUSIVE_ROUTE_INDEX:
+                raise
+            await session.rollback()
+            return False
+    return True
+
+
+async def record(guild_id: int, plugin: GuildPlugin) -> None:
+    """Write one install's row as ``plugin`` now stands. A route held for
+    another community is left out: the row is written with none."""
+    if not await claim(guild_id, plugin, hook_route(plugin)):
+        logger.info(
+            "plug-in installs: install %s in guild %s routes by a value another "
+            "community holds, and is indexed without it",
+            plugin.id,
+            guild_id,
+        )
+        await claim(guild_id, plugin, None)
 
 
 async def forget(guild_id: int, install_id: int) -> None:

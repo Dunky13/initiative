@@ -81,6 +81,8 @@ class PluginServiceRegistrationRead(SanitizedBaseModel):
     mandatory: bool = False
     #: Offered to, installed in and live in the operations community alone.
     operations_only: bool = False
+    #: One vendor installation may connect to several communities.
+    shared_routes: bool = False
     enabled: bool = True
     #: ``registry`` when its plug-in facts come from a listing the registry signed,
     #: ``operator`` otherwise.
@@ -173,6 +175,9 @@ class PluginServiceRegistrationUpdate(_DeploymentFacts):
     jwks_uri: Optional[str] = Field(default=None, max_length=1000)
     mandatory: Optional[bool] = None
     operations_only: Optional[bool] = None
+    #: Let one vendor installation connect to several communities. Turning it
+    #: off is refused while one is connected to more than one.
+    shared_routes: Optional[bool] = None
     enabled: Optional[bool] = None
     #: Set or clear vendor values, by key.
     vendor_values: Optional[Dict[str, Optional[RawTextStr]]] = None

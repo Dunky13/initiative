@@ -220,6 +220,10 @@
       "title": "Connectez-vous pour terminer",
       "body": "Terminez la connexion dans le navigateur où vous êtes connecté à Initiative, en tant que la personne qui l'a commencée."
     },
+    "taken": {
+      "title": "Déjà connectée ailleurs",
+      "body": "Cette organisation est déjà connectée à une autre communauté de ce serveur, rien n'a donc changé ici. Pour la connecter ici, déconnectez-la d'abord là-bas, ou retirez l'application de l'organisation chez l'autre service, puis reconnectez-la."
+    },
     "closeTab": "Vous pouvez fermer cet onglet."
   },
   "scopes": {

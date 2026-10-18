@@ -16,27 +16,32 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
 from jwt.algorithms import OKPAlgorithm
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.messages import PluginServiceMessages, AuthMessages
+from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import (
     LISTING_STATED_FIELDS,
     PluginServiceRegistration,
 )
 from app.models.platform.user import UserRole
 from app.services import safe_http
-from app.services.marketplace import plugin_keys, vendor_setup
+from app.services.marketplace import plugin_installs, plugin_keys, vendor_setup
 from app.services.marketplace.vendor_values import load_vendor_values
 from app.services.webhook_target_url import ValidatedTarget
 from app.testing import emitted
 from app.testing.factories import (
+    create_guild,
+    create_guild_plugin,
     create_plugin_service_registration,
     create_marketplace_listing,
     create_user,
     get_auth_headers,
 )
+from app.testing.fake_vendor import declarative_github
 
 
 BASE = "/api/v1/plugin-services/"
@@ -314,6 +319,62 @@ async def test_patch_sets_the_operator_only_fields(
     assert body["mandatory"] is True
     assert body["operations_only"] is True
     assert body["enabled"] is False
+
+
+async def test_sharing_is_turned_off_once_each_installation_has_one_community(
+    client: AsyncClient, session: AsyncSession
+):
+    """Two communities hold installation 42. While sharing is off the second
+    is indexed without it; turning sharing on gives it the route, turning it
+    off is refused while both hold it, and goes through once one does."""
+    headers = await _owner_headers(session)
+    row = await _seed(session)
+    user = await create_user(session)
+    installs = []
+    for _ in range(2):
+        guild = await create_guild(session, creator=user)
+        plugin = await create_guild_plugin(
+            session,
+            guild,
+            user,
+            definition=declarative_github(row.public_id),
+            listing_uid=LISTING_UID,
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+        )
+        installs.append((guild.id, plugin))
+    (first, _), (second, second_plugin) = installs
+
+    async def indexed() -> dict[int, tuple]:
+        session.expunge_all()
+        rows = await session.exec(
+            select(PluginInstall).where(PluginInstall.listing_uid == LISTING_UID)
+        )
+        return {item.guild_id: (item.hook_route, item.exclusive) for item in rows}
+
+    async def share(on: bool) -> httpx.Response:
+        return await client.patch(
+            f"{BASE}{row.id}", headers=headers, json={"shared_routes": on}
+        )
+
+    assert await indexed() == {first: ("42", True), second: (None, True)}
+
+    shared = await share(True)
+    assert shared.status_code == 200, shared.text
+    assert shared.json()["shared_routes"] is True
+    await plugin_installs.record(second, second_plugin)
+    assert await indexed() == {first: ("42", False), second: ("42", False)}
+
+    refused = await share(False)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == PluginServiceMessages.SHARED_ROUTES_IN_USE
+    assert (await _listed(client, headers, row.id))["shared_routes"] is True
+    assert await indexed() == {first: ("42", False), second: ("42", False)}
+
+    await plugin_installs.forget(second, second_plugin.id)
+    unshared = await share(False)
+    assert unshared.status_code == 200, unshared.text
+    assert unshared.json()["shared_routes"] is False
+    assert await indexed() == {first: ("42", True)}
 
 
 async def test_the_browser_address_round_trips_and_clears(

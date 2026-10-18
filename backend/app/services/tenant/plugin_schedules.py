@@ -45,7 +45,7 @@ from app.db import cohorts
 from app.db.session import set_rls_context
 from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import community_hooks, declarative
+from app.services.marketplace import community_hooks, declarative, plugin_installs
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
     is_declarative,
@@ -360,7 +360,11 @@ async def _check_health(
         )
     if state == "ok" or run.failures >= 1:
         locked = await guild_plugins_service.lock_install(session, plugin.id)
+        moved: Optional[GuildPlugin] = None
         if locked is not None and set_connection_state(locked, connection_id, state):
             session.add(locked)
+            moved = locked
         await session.commit()
+        if moved is not None:
+            await plugin_installs.record(guild_id, moved)
     return state

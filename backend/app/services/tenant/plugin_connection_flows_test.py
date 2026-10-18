@@ -316,6 +316,30 @@ def _landing(location: str) -> dict:
     }
 
 
+async def _connect_installation(
+    client: AsyncClient, actor, plugin: GuildPlugin, vendor: FakeVendor
+) -> dict:
+    """The install page, then one authorization, returning installation
+    42."""
+    start = await _start(client, actor, plugin, "workspace")
+    setup = await client.get(
+        "/api/v1/plugin-connections/setup",
+        headers=_cookie(actor),
+        params={
+            "state": start["state"],
+            "installation_id": "42",
+            "setup_action": "install",
+        },
+    )
+    assert setup.status_code == 303, setup.text
+    query = {
+        key: values[0]
+        for key, values in parse_qs(urlparse(setup.headers["location"]).query).items()
+    }
+    code = vendor.authorize(query["code_challenge"])
+    return await _callback(client, actor, state=query["state"], code=code)
+
+
 def _install_headers(guild, plugin) -> dict[str, str]:
     token, _ = seal_install_token(
         guild_id=guild.id,
@@ -1501,19 +1525,47 @@ class TestVendorWebhooks:
         assert _key("203.0.113.7") == _key("203.0.113.7")
 
     async def test_a_delivery_reaches_each_community_that_connected_it_once(
-        self, client: AsyncClient, acting_user, session, vendor, listing, monkeypatch
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        registration,
+        listing,
+        monkeypatch,
     ):
-        """Two communities connected installation 42 and a third connected 7.
-        A delivery for 42 is forwarded to each of the two at once, on a
-        lifecycle token naming that install, and a redelivery forwards
-        nothing."""
+        """One community connected installation 42 and a third connected 7.
+        The second's connect of 42 is refused, storing nothing, until the
+        registration shares routes, and then goes through. A delivery for 42
+        is forwarded to each of the two at once, on a lifecycle token naming
+        that install, and a redelivery forwards nothing."""
         seats = [
             await acting_user(guild_role=CommunityRole.superadmin) for _ in range(3)
         ]
         plugins = [
-            await _install(session, seat, config=_connected(value))
-            for seat, value in zip(seats, ("42", "42", "7"))
+            await _install(session, seats[0], config=_connected("42")),
+            await _install(session, seats[1]),
+            await _install(session, seats[2], config=_connected("7")),
         ]
+        vendor.after_connect_answer = {
+            "values": {"owner": "acme", "installation_id": "42"}
+        }
+        guild_id, install_id = seats[1].guild.id, plugins[1].id
+
+        refused = await _connect_installation(client, seats[1], plugins[1], vendor)
+        assert refused["outcome"] == "taken"
+        stored = await _reload(session, guild_id, install_id)
+        assert not stored.config and not stored.connection_refs
+        assert (await _indexed(session, guild_id, install_id)).hook_route is None
+
+        registration.shared_routes = True
+        session.add(registration)
+        await session.commit()
+        connected = await _connect_installation(client, seats[1], plugins[1], vendor)
+        assert connected["outcome"] == "connected"
+        indexed = await _indexed(session, guild_id, install_id)
+        assert (indexed.hook_route, indexed.exclusive) == ("42", False)
+
         # Each forward waits for the other, so both go only when sent together.
         both = asyncio.Barrier(2)
         call_hook = plugin_connection_flows.call_hook
@@ -1841,29 +1893,6 @@ def _issue(**issue) -> dict:
 
 
 class TestDeclarativePlugins:
-    async def _connect(self, client: AsyncClient, actor, plugin: GuildPlugin, vendor):
-        """The install page, then one authorization, returning installation
-        42."""
-        start = await _start(client, actor, plugin, "workspace")
-        setup = await client.get(
-            "/api/v1/plugin-connections/setup",
-            headers=_cookie(actor),
-            params={
-                "state": start["state"],
-                "installation_id": "42",
-                "setup_action": "install",
-            },
-        )
-        assert setup.status_code == 303, setup.text
-        query = {
-            key: values[0]
-            for key, values in parse_qs(
-                urlparse(setup.headers["location"]).query
-            ).items()
-        }
-        code = vendor.authorize(query["code_challenge"])
-        return await _callback(client, actor, state=query["state"], code=code)
-
     async def test_after_connect_finds_the_installation_among_the_persons(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
@@ -1876,7 +1905,7 @@ class TestDeclarativePlugins:
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, a)
 
-        landing = await self._connect(client, a, plugin, vendor)
+        landing = await _connect_installation(client, a, plugin, vendor)
 
         assert landing["outcome"] == "connected"
         assert vendor.hooks == []
@@ -1898,7 +1927,7 @@ class TestDeclarativePlugins:
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, a)
 
-        landing = await self._connect(client, a, plugin, vendor)
+        landing = await _connect_installation(client, a, plugin, vendor)
 
         assert landing["outcome"] == "refused"
         stored = await _reload(session, a.guild.id, plugin.id)
@@ -1950,12 +1979,15 @@ class TestDeclarativePlugins:
     async def test_an_installation_event_sets_the_connections_state(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
+        """A removed installation holds no route, so nothing after it reaches
+        the community."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, seat, config=_connected("42"))
 
         states = []
-        for serial, action in enumerate(("deleted", "unsuspend")):
+        actions = ("suspend", "unsuspend", "deleted", "unsuspend")
+        for serial, action in enumerate(actions):
             body, headers = vendor.webhook(
                 {"action": action, "installation": {"id": 42}},
                 delivery=f"delivery-{serial}",
@@ -1966,9 +1998,17 @@ class TestDeclarativePlugins:
             )
             assert response.status_code == 202, response.text
             stored = await _reload(session, seat.guild.id, plugin.id)
-            states.append((stored.config_state, stored.config_state_detail))
+            indexed = await _indexed(session, seat.guild.id, plugin.id)
+            states.append(
+                (stored.config_state, stored.config_state_detail, indexed.hook_route)
+            )
 
-        assert states == [("invalid", "workspace_removed"), ("ok", None)]
+        assert states == [
+            ("invalid", "workspace_suspended", "42"),
+            ("ok", None, "42"),
+            ("invalid", "workspace_removed", None),
+            ("invalid", "workspace_removed", None),
+        ]
         assert await _events(session, seat.guild.id) == []
 
     async def test_the_pinned_mapping_is_used_when_the_listing_moved_on(
@@ -2110,12 +2150,15 @@ class TestDeclarativePlugins:
             await _due(session, seat.guild.id)
             await _run_due(worker, seat.guild.id)
             stored = await _reload(session, seat.guild.id, plugin.id)
-            states.append((stored.config_state, stored.config_state_detail))
+            indexed = await _indexed(session, seat.guild.id, plugin.id)
+            states.append(
+                (stored.config_state, stored.config_state_detail, indexed.hook_route)
+            )
 
         assert states == [
-            ("unverified", None),
-            ("invalid", "workspace_removed"),
-            ("ok", None),
+            ("unverified", None, "42"),
+            ("invalid", "workspace_removed", None),
+            ("ok", None, "42"),
         ]
         assert {request["url"] for request in vendor.api_requests} == {
             "https://api.github.test/installation/repositories"
