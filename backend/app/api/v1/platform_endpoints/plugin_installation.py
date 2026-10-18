@@ -407,7 +407,8 @@ async def read_installation_metadata(
     entity_ids: Annotated[List[int], Query()] = [],
 ) -> PluginMetadataItems:
     """The values this install keeps on each named item, or on itself with
-    ``entity_type=plugin`` (``entity_ids`` is then not read).
+    ``entity_type=plugin`` (``entity_ids`` is then not read), a list field's
+    as an array of its elements, newest first.
 
     An item holding none, one the install cannot read, and an id that names
     nothing are all left out.
@@ -426,16 +427,22 @@ async def write_installation_metadata(
     session: SessionDep,
     system: SystemSessionDep,
 ) -> PluginMetadataValues:
-    """Write some of this install's values on one item, or on itself; a
-    ``null`` removes its key. Answers every value it keeps there now. A value
-    on an item whose key the pinned version declares as a field there is shown
-    to whoever can read the item.
+    """Change this install's values on one item, or on itself: ``values``
+    sets them by key, a ``null`` removing its key; ``upsert`` adds a list
+    field's elements, or merges each into the element with its ``ref``; and
+    ``remove`` takes the elements with these refs. Answers every value it
+    keeps there now, a list field's as an array of its elements, newest
+    first. A value on an item whose key the pinned version declares as a
+    field there is shown to whoever can read the item.
 
     On an item, the install needs the read scope of the item's tool (403) and
     to be able to read the item (404). A key is a lowercase letter, then
-    lowercase letters, digits, ``_`` and ``.``, at most 64 characters (400); a
-    value at most 8192 bytes as JSON (413); an item at most 32 keys and 65536
-    bytes, and the install itself 256 keys and 1048576 bytes (409).
+    lowercase letters, digits, ``_`` and ``.``, at most 64 characters, and is
+    changed by one of the three (400); only a key the pinned version declares
+    as a list field there holds elements (400); a value, and each element, at
+    most 8192 bytes as JSON (413); an item at most 32 keys and 65536 bytes, a
+    list counting as one key, and the install itself 256 keys and 1048576
+    bytes (409).
     """
 
     async def pinned() -> Any:
@@ -446,7 +453,11 @@ async def write_installation_metadata(
         installation.context,
         payload.entity_type.value,
         payload.entity_id,
-        payload.values,
+        [
+            metadata_service.change(
+                values=payload.values, upsert=payload.upsert, remove=payload.remove
+            )
+        ],
         pinned,
     )
     return PluginMetadataValues(values=values)
@@ -461,6 +472,7 @@ async def find_installation_metadata(
 ) -> PluginMetadataItems:
     """The items this install can read that hold ``value`` under ``key``, with
     every value it keeps on each: at most 100, in kind and id order. A value
-    is found by its text, a number or a boolean as JSON writes it."""
+    is found by its text, a number or a boolean as JSON writes it, and a list
+    field's element by its ``ref``."""
     found = await metadata_service.find(session, installation.context, key, value)
     return _items(found)

@@ -1981,10 +1981,15 @@ class TestActions:
                     entity_type="task",
                     entity_id=tasks["shared"],
                     key=key,
-                    value=7,
+                    ref=ref,
+                    value=value,
                     shown=shown,
                 )
-                for key, shown in (("issue", True), ("etag", False))
+                for key, ref, value, shown in (
+                    ("issue", "", 7, True),
+                    ("etag", "", 7, False),
+                    ("pulls", "812", {"ref": "812"}, True),
+                )
             )
             await session.commit()
 
@@ -1996,7 +2001,7 @@ class TestActions:
         )
 
         assert response.status_code == 200, response.text
-        assert response.json() == {"values": {"issue": 7}}
+        assert response.json() == {"values": {"issue": 7, "pulls": [{"ref": "812"}]}}
         (call,) = plugin_write.calls
         assert json.loads(call.content)["endpoint"] == LINK_ISSUE
         claims = jwt.decode(

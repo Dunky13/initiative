@@ -1987,10 +1987,11 @@ class TestDeclarativePlugins:
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
         """The matched row's ``write`` keeps values, as the install, on a task
-        it reads, on every task holding a value it names and on the install
-        itself, beside the event the row emits. A task in an initiative the
-        install is not placed in is passed over. A value is shown where the
-        plug-in declares its key as a field."""
+        it reads, on every task holding a value it names, a list's element by
+        its ref, and on the install itself, beside the event the row emits. A
+        task in an initiative the install is not placed in is passed over. A
+        value is shown where the plug-in declares its key as a field, and an
+        upserted element merges into the one with its ref."""
         writing = declarative_github(DECLARATIVE_ID)
         writing.update(
             scopes=["projects:read"],
@@ -2001,7 +2002,14 @@ class TestDeclarativePlugins:
                     "name": {"en": "Issue"},
                     "kind": "number",
                     "on": ["task"],
-                }
+                },
+                {
+                    "key": "github.pulls",
+                    "name": {"en": "Pull requests"},
+                    "kind": "link",
+                    "list": True,
+                    "on": ["task"],
+                },
             ],
         )
         writing["webhooks"]["events"][0]["write"] = (
@@ -2012,6 +2020,9 @@ class TestDeclarativePlugins:
             ' {"target": {"holding": {"key": "github.repo",'
             ' "value": payload.repository.full_name}},'
             ' "set": {"github.state": "open"}},'
+            ' {"target": {"holding": {"key": "github.pulls", "value": "812"}},'
+            ' "upsert": {"github.pulls": [{"ref": "812",'
+            ' "state": {"status": "merged"}}]}},'
             ' {"target": {"install": true},'
             ' "set": {"github.delivery": headers."x-github-delivery"}}]'
         )
@@ -2033,6 +2044,7 @@ class TestDeclarativePlugins:
             config=_connected("42"),
             granted_scopes=["projects:read"],
         )
+        pull = {"ref": "812", "url": "https://github.test/acme/web/pull/812"}
         await route_session_to_guild(session, seat.guild.id)
         session.add_all(
             [
@@ -2044,6 +2056,15 @@ class TestDeclarativePlugins:
                     key="github.repo",
                     value="acme/web",
                     lookup="acme/web",
+                ),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=linked.id,
+                    key="github.pulls",
+                    ref="812",
+                    value={**pull, "state": {"status": "open", "review": "approved"}},
+                    lookup="812",
                 ),
             ]
         )
@@ -2059,14 +2080,18 @@ class TestDeclarativePlugins:
             ISSUE_OPENED
         ]
         kept = {
-            (row.entity_type, row.entity_id, row.key): (row.value, row.shown)
+            (row.entity_type, row.entity_id, row.key, row.ref): (row.value, row.shown)
             for row in await session.exec(select(PluginMetadata))
         }
         assert kept == {
-            ("task", task.id, "github.issue"): (12, True),
-            ("task", linked.id, "github.repo"): ("acme/web", False),
-            ("task", linked.id, "github.state"): ("open", False),
-            ("plugin", plugin.id, "github.delivery"): ("delivery-1", False),
+            ("task", task.id, "github.issue", ""): (12, True),
+            ("task", linked.id, "github.repo", ""): ("acme/web", False),
+            ("task", linked.id, "github.state", ""): ("open", False),
+            ("task", linked.id, "github.pulls", "812"): (
+                {**pull, "state": {"status": "merged", "review": "approved"}},
+                True,
+            ),
+            ("plugin", plugin.id, "github.delivery", ""): ("delivery-1", False),
         }
 
     async def test_a_pull_request_is_not_an_opened_issue(

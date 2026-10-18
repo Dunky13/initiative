@@ -1635,6 +1635,10 @@ class PluginChannelMessages:
     METADATA_LIMIT_REACHED = "PLUGIN_CHANNEL_METADATA_LIMIT_REACHED"
     #: No item of that kind and id that the install can read.
     METADATA_ITEM_NOT_FOUND = "PLUGIN_CHANNEL_METADATA_ITEM_NOT_FOUND"
+    #: A change upserts or removes elements of a key that is not a list field
+    #: on the item's kind, or sets a list field to what is not a list of
+    #: elements.
+    METADATA_LIST_MISMATCH = "PLUGIN_CHANNEL_METADATA_LIST_MISMATCH"
 
 
 class WebhookSubscriptionMessages:

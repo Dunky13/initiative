@@ -1140,6 +1140,10 @@ def _nested(depth: int) -> dict:
     return node
 
 
+#: A field's state facet, with one key.
+FACET = {"name": _label("Status"), "values": {"open": {"label": _label("Open")}}}
+
+
 def _items(change=None) -> dict:
     """A plug-in with a field, an action and a part on tasks, and the write the
     action runs. ``change`` edits the manifest before it is published."""
@@ -1186,15 +1190,44 @@ class TestFieldsPartsAndActions:
     it is offered on, and every action a write."""
 
     def test_they_are_stored_canonically(self):
-        definition = _items(lambda b: b["fields"][0].update(on=["task", "post"]))
+        definition = _items(
+            lambda b: b["fields"][0].update(
+                on=["task", "post"],
+                list=True,
+                states={
+                    "status": {
+                        **FACET,
+                        "values": {
+                            "open": {"label": _label("Open"), "tone": "positive"},
+                            "shut": {"label": _label("Shut"), "colour": "red"},
+                        },
+                    }
+                },
+            )
+        )
         assert definition["fields"] == [
             {
                 "key": "demo.link",
                 "name": {"en": "Demo"},
                 "kind": "link",
                 "on": ["post", "task"],
+                "list": True,
+                "states": {
+                    "status": {
+                        "name": {"en": "Status"},
+                        "values": {
+                            "open": {"label": {"en": "Open"}, "tone": "positive"},
+                            "shut": {"label": {"en": "Shut"}},
+                        },
+                    }
+                },
             }
         ]
+        # Stored only when it is a list.
+        assert (
+            "list"
+            not in _items(lambda b: b["fields"][0].update(list=False))["fields"][0]
+        )
         assert definition["actions"] == [
             {
                 "id": "new-link",
@@ -1247,6 +1280,47 @@ class TestFieldsPartsAndActions:
             (lambda b: b["fields"][0].update(kind="colour"), "kind must be one of"),
             (lambda b: b["fields"][0].update(on=["wiki_page"]), "not an item kind"),
             (lambda b: b["fields"][0].update(on=[]), "names no item kind"),
+            (lambda b: b["fields"][0].update(list="yes"), "true or false"),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        f"f{index}": FACET
+                        for index in range(service_plugins.MAX_FACETS + 1)
+                    }
+                ),
+                f"more than {service_plugins.MAX_FACETS} facets",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        "status": {
+                            **FACET,
+                            "values": {
+                                f"k{index}": {"label": _label()}
+                                for index in range(service_plugins.MAX_FACET_VALUES + 1)
+                            },
+                        }
+                    }
+                ),
+                f"more than {service_plugins.MAX_FACET_VALUES} keys",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={"status": {**FACET, "values": {"open": {}}}}
+                ),
+                "must carry a label",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        "status": {
+                            **FACET,
+                            "values": {"open": {"label": _label(), "tone": "loud"}},
+                        }
+                    }
+                ),
+                "tone must be one of",
+            ),
             (lambda b: b["actions"][0].update(on=["task", "task"]), "twice"),
             (lambda b: b["actions"][0].update(endpoint=READ_ID), "a read endpoint"),
             (
@@ -1269,6 +1343,29 @@ class TestFieldsPartsAndActions:
                 "does not declare",
             ),
             (lambda b: b["actions"][0].update(menu="yes"), "true or false"),
+            (
+                lambda b: b["actions"][0].update(params=["colour"]),
+                "'colour' is not a parameter of",
+            ),
+            (
+                lambda b: b.update(
+                    settings=[
+                        {
+                            "key": "prefix",
+                            "type": "string",
+                            "label": _label(),
+                            "assigned": "community_name",
+                        }
+                    ]
+                ),
+                "only a unique setting's value is assigned",
+            ),
+            (
+                lambda b: b.update(
+                    help={"en": "x" * (service_plugins.MAX_HELP_LENGTH + 1)}
+                ),
+                "help in 'en' is longer than",
+            ),
             (
                 lambda b: b["parts"][0].update(tree={"type": "image"}),
                 "type must be one of",
@@ -1359,11 +1456,19 @@ class TestFieldsPartsAndActions:
             "unknown-field-kind",
             "unknown-item-kind",
             "offered-nowhere",
+            "list-not-a-boolean",
+            "too-many-facets",
+            "too-many-state-keys",
+            "state-key-without-a-label",
+            "unknown-state-tone",
             "item-kind-twice",
             "action-runs-a-read",
             "action-runs-a-write-needing-params",
             "action-runs-nothing-declared",
             "menu-not-a-boolean",
+            "action-asks-for-what-its-endpoint-does-not-take",
+            "assigned-setting-not-unique",
+            "help-too-long",
             "unknown-component",
             "unknown-node-term",
             "unknown-prop",

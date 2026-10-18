@@ -386,11 +386,13 @@ async def run_action(
     plugin_data.clear_plugin_data_cache(guild_id=context.guild_id, plugin_id=install_id)
 
     rows = await session.exec(
-        select(PluginMetadata.key, PluginMetadata.value).where(
+        select(PluginMetadata.key, PluginMetadata.ref, PluginMetadata.value)
+        .where(
             PluginMetadata.install_id == install_id,
             PluginMetadata.entity_type == kind,
             PluginMetadata.entity_id == entity_id,
             PluginMetadata.shown.is_(True),
         )
+        .order_by(*plugin_metadata.NEWEST_FIRST)
     )
-    return dict(rows.all())
+    return plugin_metadata.assembled(rows.all())

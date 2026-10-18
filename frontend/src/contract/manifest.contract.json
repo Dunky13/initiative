@@ -3,7 +3,7 @@
   "schema": {
     "$id": "https://initiativetasks.com/schemas/plugin-manifest-v1.json",
     "title": "Initiative plug-in manifest (the 'definition' body)",
-    "description": "What a plug-in declares it can do. A plug-in is a container, which names its `service` and answers Initiative's calls, or declarative, which names its `hosts` and no service, and whose endpoints, connection checks, webhook events, schedules and actions Initiative runs itself from the requests and JSONata expressions written here, keeping the values they write on items; one plug-in is never both. This is the 'definition' field of the document served at /.well-known/initiative-plugin.json, NOT that whole document: a registrar also requires protocol_version, public_id and kind alongside it, and refuses a definition served bare. Generated from the platform's own validator vocabulary. A manifest that satisfies this schema is well-formed, not necessarily acceptable. Cross-references (the endpoint a widget binds, a requires term's connection, an endpoint's service prefix), the direction-specific rules on an endpoint, the features/blocks cross-check in both directions, UTF-8 byte-size caps, the rules tying a connection's flow and token to its scope and fields, what a webhooks block names, what a vendor setup writes to, whether every expression parses, what a declarative request and its steps name, the bounds, ids and endpoints of schedules, which terms each kind's schedules, actions and webhook events take, the unique keys and ids of fields, parts and actions, what a part's nodes and an action name, and a part's size and depth are enforced by the platform on publish and are not expressible here."
+    "description": "What a plug-in declares it can do. A plug-in is a container, which names its `service` and answers Initiative's calls, or declarative, which names its `hosts` and no service, and whose endpoints, connection checks, webhook events, schedules and actions Initiative runs itself from the requests and JSONata expressions written here, keeping the values they write on items; one plug-in is never both. This is the 'definition' field of the document served at /.well-known/initiative-plugin.json, NOT that whole document: a registrar also requires protocol_version, public_id and kind alongside it, and refuses a definition served bare. Generated from the platform's own validator vocabulary. A manifest that satisfies this schema is well-formed, not necessarily acceptable. Cross-references (the endpoint a widget binds, a requires term's connection, an endpoint's service prefix), the direction-specific rules on an endpoint, the features/blocks cross-check in both directions, UTF-8 byte-size caps, the rules tying a connection's flow and token to its scope and fields, what a webhooks block names, what a vendor setup writes to, whether every expression parses, what a declarative request and its steps name, the bounds, ids and endpoints of schedules, which terms each kind's schedules, actions, fields and webhook events take, the unique keys and ids of fields, parts, actions and settings, what a part's nodes, a field's element actions and an action's endpoint and params name, the placeholders in a part's text, and a part's size and depth are enforced by the platform on publish and are not expressible here."
   },
   "charsets": {
     "identifier": "-0123456789_abcdefghijklmnopqrstuvwxyz",
@@ -17,7 +17,8 @@
     "version": "0123456789.-+abcdefghijklmnopqrstuvwxyz",
     "artwork": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-",
     "queryName": "-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_abcdefghijklmnopqrstuvwxyz~",
-    "metadataKey": "._0123456789abcdefghijklmnopqrstuvwxyz"
+    "metadataKey": "._0123456789abcdefghijklmnopqrstuvwxyz",
+    "uniqueSettingValue": "0123456789abcdefghijklmnopqrstuvwxyz"
   },
   "enums": {
     "feature": [
@@ -181,6 +182,12 @@
       "neutral",
       "muted"
     ],
+    "settingType": [
+      "string"
+    ],
+    "settingAssignment": [
+      "community_name"
+    ],
     "listingKind": [
       "plugin",
       "dashboard"
@@ -241,6 +248,8 @@
     "actions": 16,
     "partNodes": 50,
     "partDepth": 4,
+    "facetsPerField": 4,
+    "valuesPerFacet": 12,
     "metadataKeyLength": 64,
     "metadataValueBytes": 8192,
     "metadataLookupLength": 255,
@@ -250,6 +259,9 @@
     "installMetadataBytes": 1048576,
     "writeTargets": 100,
     "partsPlacedPerItem": 3,
+    "settings": 16,
+    "uniqueSettingValueLength": 16,
+    "helpLength": 2000,
     "bundledDashboards": 8,
     "dashboardWidgets": 50,
     "dashboardGridColumns": 12,
@@ -835,6 +847,10 @@
           "maxLength": "urlLength",
           "description": "Where the signed JWT is posted, https. The answer's 'token' (or 'access_token') and 'expires_at' (or 'expires_in') are read. May name a vendor value as '{vendor.<key>}' and one of this connection's own fields as '{<key>}'."
         },
+        "exchange_body": {
+          "type": "object",
+          "description": "A JSON body posted with the signed JWT, such as the narrower permissions a token is asked for. Absent: none. A string anywhere in it may name a vendor value as '{vendor.<key>}' and one of this connection's own fields as '{<key>}'."
+        },
         "iss": {
           "type": "string",
           "minLength": 1,
@@ -999,11 +1015,11 @@
         },
         "params": {
           "ref": "expression",
-          "description": "Declarative plug-ins: the endpoint's params, as one expression answering an object. It reads 'since', when the schedule last succeeded in the community (ISO 8601), or null the first time; 'now'; and 'connection', the non-secret fields of the connection the endpoint's first request names. Absent: none."
+          "description": "Declarative plug-ins: the endpoint's params, as one expression answering an object. It reads 'since', when the schedule last succeeded in the community (ISO 8601), or null the first time; 'now'; 'connection', the non-secret fields of the connection the endpoint's first request names; 'settings' and 'aliases'. Absent: none."
         },
         "write": {
           "ref": "expression",
-          "description": "Declarative plug-ins: the changes Initiative makes to the plug-in's values from the endpoint's answer, as the install: a list of at most {writeTargets} targeted changes ('targetedChange'). It reads 'result', the endpoint's mapped answer, 'since' and 'now'. Answering nothing changes nothing."
+          "description": "Declarative plug-ins: the changes Initiative makes to the plug-in's values from the endpoint's answer, as the install: a list of at most {writeTargets} targeted changes ('targetedChange'). It reads 'result', the endpoint's mapped answer, 'since', 'now', 'settings' and 'aliases'. Answering nothing changes nothing."
         }
       }
     },
@@ -1019,7 +1035,7 @@
       "patternFrom": "publicId",
       "patternForm": "dotted",
       "patternPrefix": "plugins:",
-      "description": "'plugins:<public_id>': permission to call another plug-in's public endpoints through the deployment, as this community or as one of its members. Not one of the fixed scopes: the family is open, one per plug-in, and the public id after the prefix is the plug-in being called. The deployment never lets a plug-in address another directly; the call goes through it, and the plug-in called is handed its own references for whoever the call is for."
+      "description": "'plugins:<public_id>': permission to call another plug-in's public endpoints through the deployment, as this community or as one of its members, and to read the values that plug-in shows on items this one can read. Not one of the fixed scopes: the family is open, one per plug-in, and the public id after the prefix is the plug-in being called. The deployment never lets a plug-in address another directly; the call goes through it, and the plug-in called is handed its own references for whoever the call is for."
     },
     "endpoint": {
       "type": "object",
@@ -1232,7 +1248,7 @@
     },
     "field": {
       "type": "object",
-      "description": "How one of the plug-in's metadata keys is shown on Initiative's items. The value is kept in Initiative: a container plug-in writes it with its installation token, and for a declarative plug-in Initiative writes it from the plug-in's expressions. Initiative draws it with its own component for `kind` and computes its plain text itself, so a field filters, sorts and exports with no call to the plug-in. Which views show it is chosen by the community's managers, never by the plug-in. Initiative holds what is kept, and these caps are enforced there rather than here: a value of at most {metadataValueBytes} bytes as JSON, with a string of at most {metadataLookupLength} characters to be found by; at most {metadataKeysPerObject} keys and {metadataBytesPerObject} bytes on one item, and {installMetadataKeys} keys and {installMetadataBytes} bytes on the install.",
+      "description": "How one of the plug-in's metadata keys is shown on Initiative's items. The value is kept in Initiative: a container plug-in writes it with its installation token, and for a declarative plug-in Initiative writes it from the plug-in's expressions. Initiative draws it with its own component for `kind` and computes its plain text itself, so a field filters, sorts and exports with no call to the plug-in. Which views show it is chosen by the community's managers, never by the plug-in. Initiative holds what is kept, and these caps are enforced there rather than here: a value of at most {metadataValueBytes} bytes as JSON, with a string of at most {metadataLookupLength} characters to be found by, and each element of a list a value of its own, found by its 'ref'; at most {metadataKeysPerObject} keys and {metadataBytesPerObject} bytes on one item, and {installMetadataKeys} keys and {installMetadataBytes} bytes on the install.",
       "required": [
         "key",
         "name",
@@ -1251,6 +1267,11 @@
         "kind": {
           "enum": "fieldKind",
           "description": "What the value is, and so how it is drawn: 'text' a string; 'number' a number; 'date' a 'YYYY-MM-DD' string; 'datetime' an ISO 8601 string with its offset; 'link' {url, text?}; 'badge' {text, tone?}; 'progress' {value, max}; 'checkbox' a boolean."
+        },
+        "list": {
+          "type": "boolean",
+          "default": false,
+          "description": "Several values rather than one: the value is a list of elements, each one value of 'kind' with a 'ref' that tells it from the others ('listElement'). A change gives the whole list in 'set', or adds, replaces and removes elements by 'ref' with 'upsert' and 'remove'. Absent: one value, which a change sets."
         },
         "on": {
           "type": "array",
@@ -1272,10 +1293,75 @@
           "enum": "tone",
           "description": "A badge's tone when its value names none."
         },
+        "states": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": "facetsPerField",
+          "propertyNames": {
+            "ref": "identifier"
+          },
+          "additionalProperties": {
+            "ref": "stateFacet"
+          },
+          "description": "What state the value is in, as facets by id, at most {facetsPerField}, each with keys of its own. The value names a key of each facet it is in as 'state', {\"<facet>\": \"<key>\"}, and Initiative draws each as a badge, labelled in the reader's language. A list element, and a link, badge or progress value, carries 'state' beside its other properties; a text, number, date, datetime or checkbox value that carries one is written as an element is, without the 'ref': {\"value\": \u2026, \"state\": \u2026}."
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": "actions",
+          "uniqueItems": true,
+          "items": {
+            "ref": "identifier"
+          },
+          "description": "Declarative plug-ins, on a list field: actions offered on each of its elements, by id, each one offered on every item kind this field is. An action run from an element reads that element's 'ref' as 'element'."
+        },
         "requires": {
           "ref": "requires"
         }
       }
+    },
+    "stateFacet": {
+      "type": "object",
+      "description": "One facet of a field's state, such as whether a piece of work is open or what review it has: its name, and the keys a value may name.",
+      "required": [
+        "name",
+        "values"
+      ],
+      "properties": {
+        "name": {
+          "ref": "localizedText",
+          "description": "What the facet is called."
+        },
+        "values": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": "valuesPerFacet",
+          "propertyNames": {
+            "ref": "identifier"
+          },
+          "additionalProperties": {
+            "ref": "stateValue"
+          },
+          "description": "The keys a value may name, at most {valuesPerFacet}, each with its badge's words and tone."
+        }
+      },
+      "additionalProperties": false
+    },
+    "stateValue": {
+      "type": "object",
+      "description": "One key of a state facet, as its badge shows it.",
+      "required": [
+        "label"
+      ],
+      "properties": {
+        "label": {
+          "ref": "localizedText"
+        },
+        "tone": {
+          "enum": "tone"
+        }
+      },
+      "additionalProperties": false
     },
     "partNode": {
       "description": "One node of a part: one of Initiative's own components, told apart by 'type', with its props and, for a section or a stack, the nodes inside it.",
@@ -1455,7 +1541,8 @@
           ],
           "properties": {
             "text": {
-              "ref": "localizedText"
+              "ref": "localizedText",
+              "description": "May name '{item.id}', the item's id, and '{settings.<key>}', one of this plug-in's settings, which Initiative fills in when it draws the part. Any other '{\u2026}' is refused."
             },
             "tone": {
               "enum": "tone"
@@ -1545,7 +1632,7 @@
     },
     "action": {
       "type": "object",
-      "description": "Something a reader runs on one item, from a part's button or the item's own menu. For a container plug-in, Initiative only connects: it calls the write endpoint as the installation, with the reader as 'viewer' and the item as 'subject' in the call's token, and the endpoint does the work, usually writing the plug-in's metadata. For a declarative plug-in, Initiative does the work: it makes the endpoint's call, when the action names one, on the credential its 'actors' say, its expressions reading the item as 'item'; then it makes the change 'write' answers, when the action has one, to the plug-in's values on the item, as the install. Either way Initiative then answers the reader with the item's metadata as it stands.",
+      "description": "Something a reader runs on one item, from a part's button, the item's own menu, or an element of a list field that offers it. Initiative first asks the reader for the 'params' the action names, when it names any. For a container plug-in, Initiative only connects: it calls the write endpoint as the installation, with those parameters, the reader as 'viewer' and the item as 'subject' in the call's token, and the endpoint does the work, usually writing the plug-in's metadata. For a declarative plug-in, Initiative does the work: it makes the endpoint's call, when the action names one, with those parameters, on the credential its 'actors' say, its expressions reading the item as 'item' and the element it was run from, if any, as 'element'; then it makes the change 'write' answers, when the action has one, to the plug-in's values on the item, as the install. Either way Initiative then answers the reader with the item's metadata as it stands.",
       "required": [
         "id",
         "name",
@@ -1564,9 +1651,19 @@
           "ref": "namespacedId",
           "description": "An endpoint this manifest declares. A container plug-in's action names a write, which its handler answers. A declarative plug-in's names a read or a write, a 'write' expression, or both: a read fetches what the 'write' keeps, a write changes something at the vendor."
         },
+        "params": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": "paramsPerEndpoint",
+          "uniqueItems": true,
+          "items": {
+            "ref": "identifier"
+          },
+          "description": "Parameters of the action's endpoint, by key, that Initiative asks the reader for before it runs the action, in a form drawn from the endpoint's own declarations of them: each one's type and label, and its 'options' or 'options_from'. The endpoint is sent these and nothing else, so every parameter it requires is among them."
+        },
         "write": {
           "ref": "expression",
-          "description": "Declarative plug-ins: the change Initiative makes to the plug-in's values on the action's item, as the install: one change ('change'). It reads 'item', the item ({kind, id, title}); 'held', this install's values on it, by key; 'result', the endpoint's mapped answer, absent when the action names no endpoint; and 'now'. Answering nothing changes nothing."
+          "description": "Declarative plug-ins: the change Initiative makes to the plug-in's values on the action's item, as the install: one change ('change'). It reads 'item', the item ({kind, id, title}); 'held', this install's values on it, by key; 'result', the endpoint's mapped answer, absent when the action names no endpoint; 'params', what the reader answered; 'element', the 'ref' of the list element it was run from, absent when it was not; 'settings', 'aliases' and 'now'. Answering nothing changes nothing."
         },
         "on": {
           "type": "array",
@@ -1601,27 +1698,66 @@
     },
     "change": {
       "type": "object",
-      "description": "A change to the plug-in's values on one item or on its install, as a declarative plug-in's 'write' answers it: the shape of a container's client.metadata.set. Initiative makes it as the install, and holds what is kept to the caps a field's description gives.",
-      "required": [
-        "set"
-      ],
+      "description": "A change to the plug-in's values on one item or on its install, as a declarative plug-in's 'write' answers it. 'set' writes values by key, as a container's client.metadata.set does; 'upsert' and 'remove' change a list field's elements by their 'ref'. A change gives at least one of the three, and changes each key with only one. Initiative makes it as the install, and holds what is kept to the caps a field's description gives.",
       "properties": {
         "set": {
           "type": "object",
           "propertyNames": {
             "ref": "metadataKey"
           },
-          "description": "Values by metadata key, each any JSON value of at most {metadataValueBytes} bytes; a null removes its key."
+          "description": "Values by metadata key, each any JSON value of at most {metadataValueBytes} bytes; a null removes its key. A list field's value is its whole list of elements, each held to that cap."
+        },
+        "upsert": {
+          "type": "object",
+          "propertyNames": {
+            "ref": "metadataKey"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "ref": "listElement"
+            }
+          },
+          "description": "Elements by metadata key ('listElement'): each is added to that key's list, or merged into the element there with its 'ref': the properties it gives replace that element's, the ones it leaves out stay, and its 'state' merges the same way by facet. So a write that knows one fact about an element changes that fact alone."
+        },
+        "remove": {
+          "type": "object",
+          "propertyNames": {
+            "ref": "metadataKey"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "ref": "elementRef"
+            }
+          },
+          "description": "Refs by metadata key: the element with each is taken from that key's list. A ref the list does not hold changes nothing."
         }
       },
+      "anyOf": [
+        {
+          "required": [
+            "set"
+          ]
+        },
+        {
+          "required": [
+            "upsert"
+          ]
+        },
+        {
+          "required": [
+            "remove"
+          ]
+        }
+      ],
       "additionalProperties": false
     },
     "targetedChange": {
       "type": "object",
       "description": "A change and where Initiative makes it. A webhook event's or a schedule's 'write' answers a list of at most {writeTargets}, and cannot read what their targets hold.",
       "required": [
-        "target",
-        "set"
+        "target"
       ],
       "properties": {
         "target": {
@@ -1633,12 +1769,55 @@
             "ref": "metadataKey"
           },
           "description": "As a change's: values by metadata key, a null removing its key."
+        },
+        "upsert": {
+          "type": "object",
+          "propertyNames": {
+            "ref": "metadataKey"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "ref": "listElement"
+            }
+          },
+          "description": "As a change's: elements by metadata key, each added to its list or merged into the one with its 'ref', property by property and its 'state' facet by facet."
+        },
+        "remove": {
+          "type": "object",
+          "propertyNames": {
+            "ref": "metadataKey"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "ref": "elementRef"
+            }
+          },
+          "description": "As a change's: refs by metadata key, each element with one taken from its list."
         }
       },
+      "anyOf": [
+        {
+          "required": [
+            "set"
+          ]
+        },
+        {
+          "required": [
+            "upsert"
+          ]
+        },
+        {
+          "required": [
+            "remove"
+          ]
+        }
+      ],
       "additionalProperties": false
     },
     "changeTarget": {
-      "description": "Where a change is made: {kind, id}, one item; {install: true}, the install itself; or {holding: {key, value}}, every item on which this install holds 'value' under 'key', as a container's client.metadata.find finds them. A target the install cannot read is skipped.",
+      "description": "Where a change is made: {kind, id}, one item; {install: true}, the install itself; or {holding: {key, value}}, every item on which this install holds 'value' under 'key', as a container's client.metadata.find finds them. Initiative keeps each element of a list as a value of its own, so 'holding' reaches an element by its 'ref'. A target the install cannot read is skipped.",
       "oneOf": [
         {
           "type": "object",
@@ -1688,7 +1867,7 @@
                 "value": {
                   "type": "string",
                   "maxLength": "metadataLookupLength",
-                  "description": "A value is found by its text: a string as it is, a number or a boolean as JSON writes it."
+                  "description": "A value is found by its text: a string as it is, a number or a boolean as JSON writes it; a list element by its 'ref'."
                 }
               },
               "additionalProperties": false
@@ -1697,6 +1876,117 @@
           "additionalProperties": false
         }
       ]
+    },
+    "listElement": {
+      "type": "object",
+      "description": "One element of a list field's value: one value of the field's 'kind', with a 'ref' that tells it from the list's others. A text, number, date, datetime or checkbox element holds its value in 'value'; a link element is {ref, url, text?}, a badge element {ref, text, tone?} and a progress element {ref, value, max}. Initiative keeps each element as a value of its own, of at most {metadataValueBytes} bytes as JSON. An 'upsert' may give only some of an element's properties: they are merged into the element with its 'ref'.",
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "ref": "elementRef"
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ],
+          "description": "A text, number, date, datetime or checkbox element's value, or a progress element's figure."
+        },
+        "url": {
+          "type": "string",
+          "description": "A link element's address."
+        },
+        "text": {
+          "type": "string",
+          "description": "A link element's words, or a badge element's."
+        },
+        "tone": {
+          "enum": "tone",
+          "description": "A badge element's tone."
+        },
+        "max": {
+          "type": "number",
+          "description": "A progress element's whole."
+        },
+        "state": {
+          "type": "object",
+          "propertyNames": {
+            "ref": "identifier"
+          },
+          "additionalProperties": {
+            "ref": "identifier"
+          },
+          "description": "A key of each of the field's state facets this element is in, by facet id."
+        }
+      },
+      "additionalProperties": false
+    },
+    "elementRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": "metadataLookupLength",
+      "description": "What tells a list's element from the others, such as the vendor's own id for what it shows: unique in its list, and how a change replaces or removes the element and a 'holding' target finds it."
+    },
+    "setting": {
+      "type": "object",
+      "description": "A value the community's admins see and may change on the install, which the plug-in's expressions read as 'settings.<key>' and its parts' text names as '{settings.<key>}'.",
+      "required": [
+        "key",
+        "type",
+        "label"
+      ],
+      "properties": {
+        "key": {
+          "ref": "identifier",
+          "description": "Unique among this manifest's settings."
+        },
+        "type": {
+          "enum": "settingType",
+          "description": "What the value is: 'string', a line of text."
+        },
+        "label": {
+          "ref": "localizedText"
+        },
+        "description": {
+          "ref": "localizedText",
+          "description": "A line under the label."
+        },
+        "unique": {
+          "type": "boolean",
+          "default": false,
+          "description": "No two communities on a deployment hold the same value for this plug-in, and the value is a 'uniqueSettingValue'. An admin who renames it keeps the earlier values, which no other community may take and the plug-in's expressions read as 'aliases.<key>'."
+        },
+        "assigned": {
+          "enum": "settingAssignment",
+          "description": "A unique setting's only: Initiative gives it a value when the community installs the plug-in, which an admin may rename. 'community_name': the letters and digits of the community's name, in lowercase, with a short random suffix when another community holds that value."
+        }
+      },
+      "if": {
+        "required": [
+          "assigned"
+        ]
+      },
+      "then": {
+        "required": [
+          "unique"
+        ],
+        "properties": {
+          "unique": {
+            "const": true
+          }
+        }
+      }
+    },
+    "uniqueSettingValue": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": "uniqueSettingValueLength",
+      "patternFrom": "uniqueSettingValue",
+      "patternForm": "letterFirst",
+      "description": "A unique setting's value: a lowercase letter, then lowercase letters and digits, two to {uniqueSettingValueLength} characters in all. It holds no '-', so a reference such as '<value>-<number>' reads one way."
     },
     "bundledDashboard": {
       "type": "object",
@@ -1847,7 +2137,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": "expressionLength",
-      "description": "A JSONata expression (https://jsonata.org): standard JSONata, with no functions added. It reads one document. On the way out that holds 'params', the call's parameters as the caller sent them; 'connection', the non-secret fields of the connection the request names; 'connections', on an endpoint's requests and map, each connection its 'requires' names that the call has, by its id, holding the same fields; 'now', the time of the call in ISO 8601, which $now() and $millis() also answer; 'steps', each earlier step's answer by its name; and, on the call an action makes, 'item', the item it runs on: {kind, id, title}. On the way back it also holds 'response', the answer being read: {status, headers, body}, with header names in lowercase. Each evaluation is bounded: at most {expressionTimeMs} milliseconds, {expressionDepth} levels of nesting and an answer of {expressionOutputBytes} bytes as JSON. An expression that fails or passes a bound answers 'unavailable: mapping-failed'."
+      "description": "A JSONata expression (https://jsonata.org): standard JSONata, with no functions added. It reads one document. On the way out that holds 'params', the call's parameters as the caller sent them; 'connection', the non-secret fields of the connection the request names; 'connections', on an endpoint's requests and map, each connection its 'requires' names that the call has, by its id, holding the same fields; 'now', the time of the call in ISO 8601, which $now() and $millis() also answer; 'steps', each earlier step's answer by its name; and, on the call an action makes, 'item', the item it runs on: {kind, id, title}, and 'element', the 'ref' of the list element it was run from, if it was. On the way back it also holds 'response', the answer being read: {status, headers, body}, with header names in lowercase. Every expression of a declarative plug-in also reads 'settings', the install's settings by key, and 'aliases', each unique setting's earlier values by key, as a list. Each evaluation is bounded: at most {expressionTimeMs} milliseconds, {expressionDepth} levels of nesting and an answer of {expressionOutputBytes} bytes as JSON. An expression that fails or passes a bound answers 'unavailable: mapping-failed'."
     },
     "host": {
       "type": "string",
@@ -2243,7 +2533,7 @@
     },
     "webhookEvent": {
       "type": "object",
-      "description": "What one kind of delivery does: emit an event, change the plug-in's values, or both. It gives 'emit', 'write' or both, and 'map' exactly when it gives 'emit'. Its expressions read 'headers' (names in lowercase), 'payload' (the parsed body), 'connection' (the routed connection's non-secret fields) and 'now'.",
+      "description": "What one kind of delivery does: emit an event, change the plug-in's values, or both. It gives 'emit', 'write' or both, and 'map' exactly when it gives 'emit'. Its expressions read 'headers' (names in lowercase), 'payload' (the parsed body), 'connection' (the routed connection's non-secret fields), 'now', 'settings' and 'aliases'.",
       "required": [
         "when"
       ],
@@ -2336,7 +2626,12 @@
                 }
               ]
             },
-            "description": "The scopes this plug-in asks a community to grant: what its installation and member tokens act with. The fixed scopes, and 'plugins:<public_id>' for each plug-in this one calls (at most {pluginScopes} of those). The community grants some or all of them when it installs the plug-in, and a token never carries more than was granted. Writing implies reading. Absent means none."
+            "description": "The scopes this plug-in asks a community to grant: what its installation and member tokens act with. The fixed scopes, and 'plugins:<public_id>' for each plug-in this one uses, to call its public endpoints and read the values it shows on items (at most {pluginScopes} of those). The community grants some or all of them when it installs the plug-in, and a token never carries more than was granted. Writing implies reading. Absent means none."
+          },
+          "calls_plugins": {
+            "type": "boolean",
+            "default": false,
+            "description": "This plug-in may act through any plug-in the community lets it use, not only those its scopes name as 'plugins:<public_id>'. When a community installs another plug-in, it is asked there whether this one may use it, which grants 'plugins:<public_id>' for it. Absent: only the plug-ins its scopes name."
           }
         },
         "description": "A container plug-in's service, which Initiative calls. Absent for a declarative plug-in, whose public id is its listing's."
@@ -2485,6 +2780,31 @@
           "ref": "action"
         },
         "description": "What a reader may run on an item: a container plug-in's write endpoints, which its handlers answer, or a declarative plug-in's calls and changes to its values, which Initiative makes."
+      },
+      "settings": {
+        "type": "array",
+        "maxItems": "settings",
+        "items": {
+          "ref": "setting"
+        },
+        "description": "Values the community's admins set on the install, which the plug-in's expressions and its parts' text read. At most {settings}."
+      },
+      "help": {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": "locales",
+        "propertyNames": {
+          "type": "string",
+          "maxLength": "localeTagLength",
+          "patternFrom": "localeTag",
+          "patternForm": "plus"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": "helpLength"
+        },
+        "description": "Help with the plug-in, keyed by language tag: markdown of at most {helpLength} characters in each language. Initiative shows it behind a '?' on the headers of the plug-in's parts and on its settings, in the reader's language, or failing that in any."
       }
     }
   }

@@ -1471,7 +1471,8 @@ export interface ChecklistProgress {
 
 /**
  * One value an installed plug-in shows on an item: a key its pinned
- * version declares as a field there.
+ * version declares as a field there. A list field's value is an array of its
+ * elements, newest first, each with its ``ref``.
  */
 export interface PluginValueSummary {
   plugin_id: number;

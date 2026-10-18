@@ -18,6 +18,11 @@ then, and it comes back with the item (:func:`annotate_plugin_values`). The
 write sets it, and :func:`reconcile_shown` sets it again when the install
 moves to another version.
 
+A key the pinned version declares as a list field on the item's kind holds a
+list of elements, a row each, which a change adds to, merges into and takes
+from by their refs (:func:`write`). Every read answers the list as an array,
+newest first (:func:`assembled`).
+
 The caps are the plug-in kit's (``metadataValueBytes`` and the rest), read
 from the vendored contract.
 """
@@ -74,15 +79,18 @@ from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services.marketplace import contract
 from app.services.marketplace.expressions import UNDEFINED
-from app.services.marketplace.manifest_values import is_metadata_key
+from app.services.marketplace.manifest_values import is_identifier, is_metadata_key
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.services.tenant import guild_plugins, plugin_age
 from app.services.tenant import properties as properties_service
 from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = [
+    "Change",
     "annotate_plugin_values",
     "apply_changes",
+    "assembled",
+    "change",
     "drop_for_items",
     "filter_clause",
     "filter_fields",
@@ -116,6 +124,15 @@ _REROUTE_SECONDS = RLS_CONTEXT_MAX_AGE_SECONDS / 2
 #: The largest id an item's row holds: a change naming one past it names an
 #: item that is not there.
 _MAX_ITEM_ID = 2**31 - 1
+#: Rows one statement writes, within the parameters a statement may bind.
+_WRITE_BATCH = 1000
+#: How a list's elements are read: newest first, then by ref.
+NEWEST_FIRST = (
+    col(PluginMetadata.updated_at).desc(),
+    col(PluginMetadata.ref).collate("C"),
+)
+#: The tones a list's element may take.
+_TONES = contract.enum("tone")
 
 
 def _table(kind: str) -> Table:
@@ -182,7 +199,9 @@ def _number(value: Any) -> Optional[float]:
 def forms(value: Any) -> tuple[Optional[str], Optional[float]]:
     """What a value is compared by: its words and its number
     (:class:`~app.models.tenant.plugin_metadata.PluginMetadata`), from its
-    shape alone, so a version that changes a field's kind needs no rewrite."""
+    shape alone, so a version that changes a field's kind needs no rewrite. A
+    list's element, and a value kept beside its state, is compared by its own
+    ``value`` unless it is a progress bar's."""
     if isinstance(value, bool):
         return None, 1.0 if value else 0.0
     if isinstance(value, (int, float)):
@@ -190,6 +209,9 @@ def forms(value: Any) -> tuple[Optional[str], Optional[float]]:
     if isinstance(value, str):
         return (value or None), _epoch(value)
     if isinstance(value, dict):
+        held = value.get("value")
+        if "max" not in value and isinstance(held, (str, int, float)):
+            return forms(held)
         words = next(
             (
                 value[name]
@@ -210,23 +232,56 @@ async def _readable(session: AsyncSession, kind: str, entity_id: int) -> bool:
     return bool(await session.scalar(exists().where(table.c.id == entity_id).select()))
 
 
-def shown_keys(definition: Any, kind: str) -> frozenset[str]:
-    """The keys a pinned definition declares as fields on ``kind``."""
+def _fields_on(definition: Any, kind: str) -> list[dict[str, Any]]:
+    """The fields a pinned definition declares on ``kind``."""
     fields = definition.get("fields") if isinstance(definition, dict) else None
-    return frozenset(
-        field["key"]
+    return [
+        field
         for field in (fields if isinstance(fields, list) else [])
         if isinstance(field, dict)
         and isinstance(field.get("key"), str)
         and kind in (field.get("on") or ())
+    ]
+
+
+def shown_keys(definition: Any, kind: str) -> frozenset[str]:
+    """The keys a pinned definition declares as fields on ``kind``."""
+    return frozenset(field["key"] for field in _fields_on(definition, kind))
+
+
+def _list_keys(definition: Any, kind: str) -> frozenset[str]:
+    """The keys a pinned definition declares as list fields on ``kind``."""
+    return frozenset(
+        field["key"]
+        for field in _fields_on(definition, kind)
+        if field.get("list") is True
     )
 
 
+def assembled(rows: Iterable[tuple[str, str, Any]]) -> dict[str, Any]:
+    """Values by key, from ``(key, ref, value)`` rows read
+    :data:`NEWEST_FIRST`: a value as it is kept, and a list's elements as an
+    array in the rows' order."""
+    values: dict[str, Any] = {}
+    lists: set[str] = set()
+    for key, ref, value in rows:
+        if ref:
+            if key not in lists:
+                lists.add(key)
+                values[key] = []
+            values[key].append(value)
+        elif key not in lists:
+            values[key] = value
+    return values
+
+
 def _grouped(rows: Iterable[PluginMetadata]) -> dict[tuple[str, int], dict[str, Any]]:
-    grouped: dict[tuple[str, int], dict[str, Any]] = defaultdict(dict)
+    """Each item's values (:func:`assembled`), from its rows read
+    :data:`NEWEST_FIRST`."""
+    held: dict[tuple[str, int], list[tuple[str, str, Any]]] = defaultdict(list)
     for row in rows:
-        grouped[(row.entity_type, row.entity_id)][row.key] = row.value
-    return grouped
+        held[(row.entity_type, row.entity_id)].append((row.key, row.ref, row.value))
+    return {item: assembled(values) for item, values in held.items()}
 
 
 async def read(
@@ -245,11 +300,13 @@ async def read(
     if not entity_ids:
         return []
     rows = await session.exec(
-        select(PluginMetadata).where(
+        select(PluginMetadata)
+        .where(
             PluginMetadata.install_id == context.install_id,
             PluginMetadata.entity_type == kind,
             PluginMetadata.entity_id.in_(set(entity_ids)),
         )
+        .order_by(*NEWEST_FIRST)
     )
     grouped = _grouped(rows)
     return [
@@ -258,26 +315,138 @@ async def read(
     ]
 
 
+def _is_ref(value: Any) -> bool:
+    """Whether ``value`` is a list element's ``ref``: 1 to
+    :data:`LOOKUP_LENGTH` characters."""
+    return isinstance(value, str) and 0 < len(value) <= LOOKUP_LENGTH
+
+
+#: What a list's element may hold, and what each takes (the contract's
+#: ``listElement``).
+_ELEMENT_TERMS: dict[str, Callable[[Any], bool]] = {
+    "ref": _is_ref,
+    "value": lambda value: isinstance(value, (str, int, float)),
+    "url": lambda value: isinstance(value, str),
+    "text": lambda value: isinstance(value, str),
+    "tone": lambda value: isinstance(value, str) and value in _TONES,
+    "max": lambda value: (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+    ),
+    "state": lambda value: (
+        isinstance(value, dict)
+        and all(
+            is_identifier(facet) and is_identifier(key) for facet, key in value.items()
+        )
+    ),
+}
+
+
+def _is_element(value: Any) -> bool:
+    """Whether ``value`` is one element of a list field's value: an object with
+    a ``ref``, holding only :data:`_ELEMENT_TERMS`, each what it takes."""
+    return (
+        isinstance(value, dict)
+        and "ref" in value
+        and all(
+            name in _ELEMENT_TERMS and _ELEMENT_TERMS[name](held)
+            for name, held in value.items()
+        )
+    )
+
+
+@dataclass(frozen=True)
+class Change:
+    """A change to the install's values on one item, or on itself, held to the
+    contract's ``change`` (:func:`change`): ``values`` sets them by key, a
+    ``None`` removing its key, and ``upsert`` and ``remove`` change a list
+    field's elements by their refs (:func:`write`)."""
+
+    values: Mapping[str, Any]
+    upsert: Mapping[str, Sequence[Mapping[str, Any]]]
+    remove: Mapping[str, Sequence[str]]
+
+
+def change(*, values: Any = None, upsert: Any = None, remove: Any = None) -> Change:
+    """``values``, ``upsert`` and ``remove`` held to the contract's ``change``:
+    at least one of the three, each an object by metadata key, and each key in
+    one of them; ``upsert`` gives a list of elements under each key, and
+    ``remove`` a list of refs. Each element, and each value that is not an
+    array, is at most :data:`VALUE_BYTES` as JSON. Whether an array is a list's
+    elements or one value is the item's to say, and :func:`write` measures it
+    then."""
+    given = [ops for ops in (values, upsert, remove) if ops is not None]
+    if not given or not all(isinstance(ops, dict) for ops in given):
+        raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+    keys = [key for ops in given for key in ops]
+    for key in keys:
+        _check_key(key)
+    if len(set(keys)) < len(keys):
+        raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+    for elements in (upsert or {}).values():
+        if not isinstance(elements, list) or not all(map(_is_element, elements)):
+            raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+    measured = [
+        *(element for elements in (upsert or {}).values() for element in elements),
+        *(
+            one
+            for value in (values or {}).values()
+            if value is not None
+            for one in (value if isinstance(value, list) else [value])
+        ),
+    ]
+    if any(_size(one) > VALUE_BYTES for one in measured):
+        raise PluginChannelError(
+            PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
+        )
+    for refs in (remove or {}).values():
+        if not isinstance(refs, list) or not all(map(_is_ref, refs)):
+            raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
+    return Change(values=values or {}, upsert=upsert or {}, remove=remove or {})
+
+
+def _merged(held: Any, given: Mapping[str, Any]) -> dict[str, Any]:
+    """An upserted element over the one with its ref: the properties given
+    replace its own, the rest stay, and its ``state`` merges facet by facet."""
+    if not isinstance(held, dict):
+        return dict(given)
+    merged = {**held, **given}
+    if isinstance(held.get("state"), dict) and "state" in given:
+        merged["state"] = {**held["state"], **given["state"]}
+    return merged
+
+
 async def write(
     session: AsyncSession,
     context: InstallContext,
     kind: str,
     entity_id: Optional[int],
-    values: Mapping[str, Any],
+    changes: Sequence[Change],
     pinned: Callable[[], Awaitable[Any]],
     *,
-    made: Optional[Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]] = None,
+    made: Optional[Callable[[dict[str, Any]], Awaitable[Sequence[Change]]]] = None,
 ) -> dict[str, Any]:
-    """Write some of the install's values on one item, or on itself; a
-    ``None`` removes its key. Answers every value it keeps there now.
+    """Make ``changes``, in turn, to the install's values on one item, or on
+    itself. Answers every value it keeps there now (:func:`assembled`).
 
-    With ``made``, the values written are those it answers when given what
-    the install holds there, by key, under the item's lock, so writes made at
-    once each read what the one before left.
+    A key the pinned version declares as a list field on the item's kind holds
+    a list of elements, a row each: ``values`` replaces them with a list of
+    elements, or with none for a ``None``; ``upsert`` adds an element with a
+    ref the list does not hold, and merges into the one it does (the
+    properties given replace its own, the rest stay, and its ``state`` merges
+    facet by facet); ``remove`` takes the elements with those refs, and a ref
+    the list does not hold changes nothing. Any other key holds one value,
+    which ``values`` sets and a ``None`` removes. Each value, and each element,
+    is at most :data:`VALUE_BYTES` as JSON; a list counts as one key, and its
+    elements' bytes add up.
+
+    With ``made``, the changes made are those it answers when given what the
+    install holds there (:func:`assembled`), under the item's lock, so writes
+    made at once each read what the one before left.
 
     ``pinned`` reads the install's pinned definition, whose fields on the
-    item's kind say which values are shown; a value on the install itself is
-    never shown, and its definition is not read.
+    item's kind say which values are shown and which keys hold lists; a value
+    on the install itself is never shown and holds no list, and its definition
+    is not read.
 
     On an item, the install needs its tool's read scope and to be able to read
     it: the values are the install's own, and writing them changes nothing on
@@ -300,6 +469,7 @@ async def write(
         max_keys, max_bytes = ITEM_KEYS, ITEM_BYTES
 
     shown: Collection[str] = frozenset()
+    lists: Collection[str] = frozenset()
     if kind != INSTALL_METADATA_KIND:
         # Lock order: the install's fields lock (shared here), then the item's
         # lock. Holding the first while the definition is read, to the commit,
@@ -307,7 +477,8 @@ async def write(
         # runs either before this read, which then sees the new definition,
         # or after this commit, and corrects what it wrote.
         await _lock_fields(session, context.guild_id, context.install_id, shared=True)
-        shown = shown_keys(await pinned(), kind)
+        definition = await pinned()
+        shown, lists = shown_keys(definition, kind), _list_keys(definition, kind)
 
     # Writes to one item take turns, so the caps hold across them.
     await advisory_lock(
@@ -320,71 +491,115 @@ async def write(
         PluginMetadata.entity_type == kind,
         PluginMetadata.entity_id == entity_id,
     )
-    kept = {
-        row.key: row.value
-        for row in await session.exec(select(PluginMetadata).where(*where))
+    stored = {
+        (key, ref): (value, updated_at)
+        for key, ref, value, updated_at in await session.exec(
+            select(
+                PluginMetadata.key,
+                PluginMetadata.ref,
+                PluginMetadata.value,
+                PluginMetadata.updated_at,
+            )
+            .where(*where)
+            .order_by(*NEWEST_FIRST)
+        )
     }
     if made is not None:
-        values = await made(dict(kept))
+        changes = await made(
+            assembled((key, ref, value) for (key, ref), (value, _) in stored.items())
+        )
     # The keys an item ends up with are counted below; a write may remove every
     # key it holds and set as many again, and no more.
-    if len(values) > 2 * max_keys:
+    named = {
+        key
+        for each in changes
+        for ops in (each.values, each.upsert, each.remove)
+        for key in ops
+    }
+    if len(named) > 2 * max_keys:
         raise PluginChannelError(
             PluginChannelMessages.METADATA_LIMIT_REACHED, status_code=409
         )
-    sizes: dict[str, int] = {}
-    for key, value in values.items():
-        _check_key(key)
-        if value is not None:
-            sizes[key] = _size(value)
-            if sizes[key] > VALUE_BYTES:
-                raise PluginChannelError(
-                    PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
-                )
+    # What the item holds as each change is made, by key: its value under the
+    # ref '', or its list's elements by their refs.
+    held: dict[str, dict[str, Any]] = defaultdict(dict)
+    for (key, ref), (value, _) in stored.items():
+        held[key][ref] = value
+    written: set[tuple[str, str]] = set()
+    for each in changes:
+        for key, value in each.values.items():
+            if key not in lists:
+                held[key] = {} if value is None else {"": value}
+            elif value is None or (
+                isinstance(value, list) and all(map(_is_element, value))
+            ):
+                held[key] = {element["ref"]: element for element in value or ()}
+            else:
+                raise PluginChannelError(PluginChannelMessages.METADATA_LIST_MISMATCH)
+            written.update((key, ref) for ref in held[key])
+        for key in (*each.upsert, *each.remove):
+            if key not in lists:
+                raise PluginChannelError(PluginChannelMessages.METADATA_LIST_MISMATCH)
+        for key, elements in each.upsert.items():
+            held[key].pop("", None)
+            for element in elements:
+                ref = element["ref"]
+                held[key][ref] = _merged(held[key].get(ref), element)
+                written.add((key, ref))
+        for key, refs in each.remove.items():
+            for ref in refs:
+                held[key].pop(ref, None)
 
-    after = {key: value for key, value in kept.items() if key not in values}
-    after.update({key: value for key, value in values.items() if value is not None})
-    total = sum(
-        sizes[key] if key in sizes else _size(value) for key, value in after.items()
-    )
-    if len(after) > max_keys or total > max_bytes:
+    rows = [
+        (key, ref, value)
+        for key, values in held.items()
+        for ref, value in values.items()
+    ]
+    sizes = {(key, ref): _size(value) for key, ref, value in rows}
+    if any(sizes[item] > VALUE_BYTES for item in written if item in sizes):
+        raise PluginChannelError(
+            PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
+        )
+    if (
+        sum(1 for values in held.values() if values) > max_keys
+        or sum(sizes.values()) > max_bytes
+    ):
         raise PluginChannelError(
             PluginChannelMessages.METADATA_LIMIT_REACHED, status_code=409
         )
 
-    removed = [key for key, value in values.items() if value is None and key in kept]
-    if removed:
+    gone = [item for item in stored if item not in sizes]
+    if gone:
         await session.exec(
             delete(PluginMetadata).where(
-                *where,
-                PluginMetadata.key.in_(removed),
+                *where, tuple_(PluginMetadata.key, PluginMetadata.ref).in_(gone)
             )
         )
     now = datetime.now(timezone.utc)
-    written = []
-    for key, value in values.items():
-        if value is None:
-            continue
-        text_form, number_form = forms(value)
-        written.append(
-            {
-                "install_id": context.install_id,
-                "entity_type": kind,
-                "entity_id": entity_id,
-                "key": key,
-                "value": value,
-                "lookup": _lookup(value),
-                "text_form": text_form,
-                "number_form": number_form,
-                "shown": key in shown,
-                "updated_at": now,
-            }
+    fresh = [row for row in rows if row[:2] in written]
+    for start in range(0, len(fresh), _WRITE_BATCH):
+        statement = insert(PluginMetadata).values(
+            [
+                {
+                    "install_id": context.install_id,
+                    "entity_type": kind,
+                    "entity_id": entity_id,
+                    "key": key,
+                    "ref": ref,
+                    "value": value,
+                    "lookup": ref or _lookup(value),
+                    "text_form": text_form,
+                    "number_form": number_form,
+                    "shown": key in shown,
+                    "updated_at": now,
+                }
+                for key, ref, value in fresh[start : start + _WRITE_BATCH]
+                for text_form, number_form in [forms(value)]
+            ]
         )
-    if written:
-        statement = insert(PluginMetadata).values(written)
         await session.exec(
             statement.on_conflict_do_update(
-                index_elements=["install_id", "entity_type", "entity_id", "key"],
+                index_elements=["install_id", "entity_type", "entity_id", "key", "ref"],
                 set_={
                     "value": statement.excluded.value,
                     "lookup": statement.excluded.lookup,
@@ -396,15 +611,22 @@ async def write(
             )
         )
     await session.commit()
-    return after
+    # Newest first, then by ref, as a read answers them.
+    rows.sort(key=lambda row: row[1])
+    rows.sort(
+        key=lambda row: now if row[:2] in written else stored[row[:2]][1],
+        reverse=True,
+    )
+    return assembled(rows)
 
 
 async def find(
     session: AsyncSession, context: InstallContext, key: str, value: str
 ) -> list[tuple[str, int, dict[str, Any]]]:
-    """The items the install can read holding ``value`` under ``key``, with
-    the values it keeps on each: at most :data:`FIND_LIMIT`, in kind and id
-    order. The install's own values are not an item."""
+    """The items the install can read holding ``value`` under ``key``, a list
+    holding it as an element's ref, with the values it keeps on each: at most
+    :data:`FIND_LIMIT`, in kind and id order. The install's own values are not
+    an item."""
     _check_key(key)
     if len(value) > LOOKUP_LENGTH:
         return []
@@ -427,7 +649,8 @@ async def find(
     for entity_type, entity_id in matches:
         by_kind[entity_type].append(entity_id)
     rows = await session.exec(
-        select(PluginMetadata).where(
+        select(PluginMetadata)
+        .where(
             PluginMetadata.install_id == context.install_id,
             or_(
                 *(
@@ -439,6 +662,7 @@ async def find(
                 )
             ),
         )
+        .order_by(*NEWEST_FIRST)
     )
     grouped = _grouped(rows)
     return [
@@ -473,32 +697,33 @@ def _is_target(target: Any) -> bool:
     )
 
 
-def _targeted(answer: Any) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+def _targeted(answer: Any) -> list[tuple[dict[str, Any], Change]]:
     """What a declarative plug-in's ``write`` answered, held to the contract's
     ``targetedChange``: a list of at most :data:`WRITE_TARGETS`, each a target
-    and the values it sets, where a value is at most :data:`VALUE_BYTES` as
-    JSON and a null removes its key. Nothing answered is no change. An answer
+    and a change (:func:`change`). Nothing answered is no change. An answer
     that is not that is refused whole, before anything is written."""
     if answer is UNDEFINED:
         return []
     if not isinstance(answer, list) or len(answer) > WRITE_TARGETS:
         raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
-    changes: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for change in answer:
+    changes: list[tuple[dict[str, Any], Change]] = []
+    for raw in answer:
         if not (
-            isinstance(change, dict)
-            and set(change) == {"target", "set"}
-            and _is_target(change["target"])
-            and isinstance(change["set"], dict)
+            isinstance(raw, dict)
+            and set(raw) <= {"target", "set", "upsert", "remove"}
+            and _is_target(raw.get("target"))
         ):
             raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
-        for key, value in change["set"].items():
-            _check_key(key)
-            if value is not None and _size(value) > VALUE_BYTES:
-                raise PluginChannelError(
-                    PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
-                )
-        changes.append((change["target"], change["set"]))
+        changes.append(
+            (
+                raw["target"],
+                change(
+                    values=raw.get("set"),
+                    upsert=raw.get("upsert"),
+                    remove=raw.get("remove"),
+                ),
+            )
+        )
     return changes
 
 
@@ -556,17 +781,16 @@ async def apply_changes(
     ``answer`` is held to the contract first (:func:`_targeted`). Each target
     is then found as the install: one item, the install itself, or every item
     the install holds a value on, at most :data:`FIND_LIMIT` (:func:`find`).
-    An item more than one change reaches is written once, with the later
-    change's values over the earlier's, which is what writing them in turn
-    leaves. Each item is written by :func:`write`, under its checks, caps and
-    locks, and committed; one the install cannot read, or that is not there,
-    is skipped.
+    An item more than one change reaches is written once, its changes made in
+    the order they were answered. Each item is written by :func:`write`, under
+    its checks, caps and locks, and committed; one the install cannot read, or
+    that is not there, is skipped.
 
     Raises :class:`PluginChannelError` for an answer that is not targeted
     changes, an install that may not act, and a write refused for any other
     reason. The items written before a refusal keep what was written: every
-    change sets values, so making the same changes again leaves the same
-    values.
+    change sets, merges or removes values, so making the same changes again
+    leaves the same values.
     """
     changes = _targeted(answer)
     if not changes:
@@ -574,8 +798,8 @@ async def apply_changes(
     async with _as_install(plugin, registration, guild_id) as (session, route, pinned):
         context = await route()
         routed = time.monotonic()
-        targets: dict[tuple[str, int], dict[str, Any]] = {}
-        for target, values in changes:
+        targets: dict[tuple[str, int], list[Change]] = {}
+        for target, made in changes:
             if "holding" in target:
                 found = [
                     (kind, entity_id)
@@ -593,14 +817,14 @@ async def apply_changes(
             else:
                 found = []
             for item in found:
-                targets.setdefault(item, {}).update(values)
+                targets.setdefault(item, []).append(made)
 
-        for (kind, entity_id), values in targets.items():
+        for (kind, entity_id), made in targets.items():
             if time.monotonic() - routed > _REROUTE_SECONDS:
                 context = await route()
                 routed = time.monotonic()
             try:
-                await write(session, context, kind, entity_id, values, pinned)
+                await write(session, context, kind, entity_id, made, pinned)
             except PluginChannelError as exc:
                 if exc.code not in (
                     PluginMessages.SCOPE_REQUIRED,
@@ -626,17 +850,17 @@ async def change_item(
     install cannot read, or that is not there, is refused rather than
     skipped."""
 
-    async def values(held: dict[str, Any]) -> Mapping[str, Any]:
+    async def changes(held: dict[str, Any]) -> list[Change]:
         answer = await made(held)
         if answer is None:
-            return {}
+            return []
         ((_, changed),) = _targeted(
             [{**answer, "target": {"kind": kind, "id": entity_id}}]
         )
-        return changed
+        return [changed]
 
     async with _as_install(plugin, registration, guild_id) as (session, route, pinned):
-        await write(session, await route(), kind, entity_id, {}, pinned, made=values)
+        await write(session, await route(), kind, entity_id, [], pinned, made=changes)
 
 
 async def drop_for_items(
@@ -745,12 +969,13 @@ class _Offered:
 
 @dataclass(frozen=True)
 class FilterField:
-    """A plug-in field a reader may filter tasks by: its kind, and the
-    initiatives where they are drawn it."""
+    """A plug-in field a reader may filter tasks by: its kind, the facets of
+    its states, and the initiatives where they are drawn it."""
 
     install_id: int
     key: str
     kind: str
+    facets: frozenset[str]
     initiatives: frozenset[int]
 
 
@@ -785,22 +1010,24 @@ async def filter_fields(
     )
     offered = _Offered(context)
     reach: dict[tuple[int, str], set[int]] = defaultdict(set)
-    kinds: dict[tuple[int, str], str] = {}
+    # Each field's kind and the facets of its states.
+    declared: dict[tuple[int, str], tuple[str, frozenset[str]]] = {}
     for install_id, definition, initiative_id, roles in rows.all():
-        declared = definition.get("fields") if isinstance(definition, dict) else None
-        for field in declared if isinstance(declared, list) else ():
-            if not isinstance(field, dict) or "task" not in (field.get("on") or ()):
-                continue
-            pair = (install_id, str(field.get("key")))
+        for field in _fields_on(definition, "task"):
+            pair = (install_id, field["key"])
             if pair not in wanted:
                 continue
-            kinds[pair] = str(field.get("kind"))
+            states = field.get("states")
+            declared[pair] = (
+                str(field.get("kind")),
+                frozenset(map(str, states if isinstance(states, dict) else ())),
+            )
             if await offered(
                 install_id, initiative_id, roles, definition.get("minimum_age")
             ):
                 reach[pair].add(initiative_id)
     return {
-        wanted[pair]: FilterField(pair[0], pair[1], kinds[pair], frozenset(found))
+        wanted[pair]: FilterField(pair[0], pair[1], *declared[pair], frozenset(found))
         for pair, found in reach.items()
     }
 
@@ -809,12 +1036,22 @@ async def filter_fields(
 _COMPARED_AS_TEXT = frozenset({"text", "link", "badge"})
 
 
-def filter_clause(field: FilterField, op: FilterOp, value: Any) -> Any:
+def filter_clause(
+    field: FilterField, op: FilterOp, value: Any, facet: Any = None
+) -> Any:
     """A task list's condition on one plug-in field: one probe of the task's
-    row by its key, on a task in an initiative where the reader is drawn the
-    field. ``None`` when the value cannot be compared."""
-    as_text = field.kind in _COMPARED_AS_TEXT
-    form = PluginMetadata.text_form if as_text else PluginMetadata.number_form
+    rows by its key, which a list's element each answers alone, on a task in
+    an initiative where the reader is drawn the field. With ``facet``, one of
+    the facets of the field's states, a value is compared by the key it names
+    for that facet. ``None`` when the value cannot be compared."""
+    form: Any
+    if facet is None:
+        as_text = field.kind in _COMPARED_AS_TEXT
+        form = PluginMetadata.text_form if as_text else PluginMetadata.number_form
+    elif isinstance(facet, str) and facet in field.facets:
+        as_text, form = True, col(PluginMetadata.value)["state"][facet].astext
+    else:
+        return None
 
     def held(*where: Any) -> Any:
         return and_(
@@ -882,9 +1119,10 @@ async def values_on(
     session: AsyncSession, kind: str, initiatives: Mapping[int, Optional[int]]
 ) -> dict[int, list[PluginValueSummary]]:
     """The shown values on items of one kind, by item id, given each item's
-    initiative: those of the installs whose actions the reader could run there
-    — on, placed in the item's initiative with a role the reader holds (or the
-    reader its admin), and the reader old enough for the plug-in
+    initiative, a list's as an array (:func:`assembled`): those of the
+    installs whose actions the reader could run there — on, placed in the
+    item's initiative with a role the reader holds (or the reader its admin),
+    and the reader old enough for the plug-in
     (``guild_plugins.surface_access``). One query for the page.
 
     ``session`` is the reader's, so which values it reads is the table's
@@ -905,6 +1143,7 @@ async def values_on(
                 PluginMetadata.entity_id,
                 PluginMetadata.install_id,
                 PluginMetadata.key,
+                PluginMetadata.ref,
                 PluginMetadata.value,
                 PluginPlacement.initiative_id,
                 PluginPlacement.role_ids,
@@ -923,12 +1162,16 @@ async def values_on(
                     list(initiatives.items())
                 ),
             )
-            .order_by(PluginMetadata.install_id, PluginMetadata.key)
+            .order_by(PluginMetadata.install_id, PluginMetadata.key, *NEWEST_FIRST)
         )
         offered = _Offered(context)
-        for item_id, install_id, key, value, initiative_id, roles, minimum in rows:
+        held: dict[tuple[int, int], list[tuple[str, str, Any]]] = defaultdict(list)
+        for item_id, install_id, key, ref, value, initiative_id, roles, minimum in rows:
             if await offered(install_id, initiative_id, roles, minimum):
-                found[item_id].append(
-                    PluginValueSummary(plugin_id=install_id, key=key, value=value)
-                )
+                held[(item_id, install_id)].append((key, ref, value))
+        for (item_id, install_id), values in held.items():
+            found[item_id].extend(
+                PluginValueSummary(plugin_id=install_id, key=key, value=value)
+                for key, value in assembled(values).items()
+            )
     return found

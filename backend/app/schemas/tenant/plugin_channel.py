@@ -182,13 +182,18 @@ class PluginMetadataItems(SanitizedBaseModel):
 
 
 class PluginMetadataWrite(SanitizedBaseModel):
-    """Some of one item's values, or of the install's own: a ``null`` removes
-    its key. ``entity_id`` names the item; the install's own values need
-    none."""
+    """A change to one item's values, or to the install's own: ``values`` sets
+    them by key, a ``null`` removing its key; ``upsert`` adds a list field's
+    elements by key, or merges each into the element with its ``ref``; and
+    ``remove`` takes the elements with these refs from a list field. At least
+    one of the three, each key in one. ``entity_id`` names the item; the
+    install's own values need none."""
 
     entity_type: MetadataTarget
     entity_id: Optional[int] = None
-    values: Dict[str, Any]
+    values: Optional[Dict[str, Any]] = None
+    upsert: Optional[Dict[str, Any]] = None
+    remove: Optional[Dict[str, Any]] = None
 
 
 class PluginMetadataValues(SanitizedBaseModel):
