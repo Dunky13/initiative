@@ -34,7 +34,7 @@ from sqlmodel import SQLModel, col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.initiative_rls import CONTENT_KIND_TABLES, NAMED_PEOPLE
-from app.models.tenant.calendar_event import CalendarEventAnswer, RSVPStatus
+from app.models.tenant.calendar_event import RSVPStatus
 from app.models.tenant.personal_item import TOOL_KINDS, PersonalItem, ViewSource
 from app.services.tenant.change_log import RETENTION
 
@@ -342,20 +342,27 @@ NAMING = _naming_tables()
 
 
 async def _declined(session: AsyncSession, event_ids: set[int]) -> set[tuple[int, int]]:
-    """``(event, person)`` for everyone who declined an event as a whole: they
-    aren't going, so they are no longer named on it."""
+    """``(event, person)`` for everyone who declined an event: they aren't
+    going, so they are no longer named on it. Read as the event's own answers
+    are (``calendar_occurrences.answers_of``), so an occurrence of a series is
+    answered under the series and its start."""
+    from app.models.tenant.calendar_event import CalendarEvent
+    from app.services.tenant import calendar_occurrences
+
     if not event_ids:
         return set()
-    rows = await session.exec(
-        select(
-            CalendarEventAnswer.calendar_event_id, CalendarEventAnswer.user_id
-        ).where(
-            col(CalendarEventAnswer.calendar_event_id).in_(event_ids),
-            col(CalendarEventAnswer.occurrence_start).is_(None),
-            CalendarEventAnswer.rsvp_status == RSVPStatus.declined,
+    events = (
+        await session.exec(
+            select(CalendarEvent).where(col(CalendarEvent.id).in_(event_ids))
         )
-    )
-    return set(rows.all())
+    ).all()
+    answers = await calendar_occurrences.answers_of(session, events)
+    return {
+        (event_id, person)
+        for event_id, by_person in answers.items()
+        for person, status in by_person.items()
+        if status == RSVPStatus.declined
+    }
 
 
 async def subscribers_of(

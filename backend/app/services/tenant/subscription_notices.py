@@ -172,8 +172,14 @@ async def _tell(
     for row in rows:
         ref = (row["entity_type"], row["entity_id"])
         subscriber = concerns.get(ref)
-        # The verb that says the most, and whoever did that, latest first.
-        done = [entry.split(":") for entry in row["done"] or ()]
+        # The verb that says the most, and whoever did that, latest first. A
+        # plug-in's change is news only to the people named on the item.
+        named = subscriber is not None and subscriber.tie is Tie.named
+        done = [
+            entry
+            for entry in (raw.split(":") for raw in row["done"] or ())
+            if named or not entry[2]
+        ]
         verb = next((v for v in VERB_ORDER if any(d[0] == v for d in done)), None)
         _verb, person, install = next((d for d in done if d[0] == verb), (None, "", ""))
         actor: User | notifications.PluginAuthor | None = (
@@ -184,9 +190,6 @@ async def _tell(
             else None
         )
         if subscriber is None or verb is None or actor is None:
-            continue
-        named = subscriber.tie is Tie.named
-        if not row["by_people"] and not named:
             continue
         line = "assigned" if named else "subscription"
         await notifications.notify(

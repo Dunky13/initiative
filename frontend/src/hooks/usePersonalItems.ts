@@ -373,10 +373,10 @@ export const useToggleSubscription = () => {
     onError: (_error, _args, context) => {
       if (context?.before) qc.setQueryData(context.queryKey, context.before);
     },
-    onSettled: (_data, _error, _args, context) => {
-      if (context) void qc.invalidateQueries({ queryKey: context.queryKey });
-      // The feed's order follows what the reader subscribes to.
-      void invalidate(q.activity());
+    onSettled: () => {
+      // Subscribing to a tool subscribes to what is inside it, so every item's
+      // bell is read again; the feed's order follows it too.
+      void invalidate(q.personalItems(), q.activity());
     },
   });
 };
