@@ -37,6 +37,7 @@ import {
   duplicateTask,
   generateTaskChecklist,
   generateTaskDescription,
+  getListColumnLimitsQueryKey,
   getListTasksQueryKey,
   getReadTaskQueryKey,
   listTasks,
@@ -410,6 +411,13 @@ export const useUpdateTaskInCommunity = (
     onSuccess: (...args) => {
       const [updated, vars, context] = args;
       void invalidate(q.allTasks(), q.task(vars.taskId));
+      // The task's community needn't be the active one, which `invalidate`
+      // keeps to, and how full its columns are changes with its status.
+      if (vars.data.task_status_id != null || vars.data.status_category != null) {
+        void queryClient.invalidateQueries({
+          queryKey: getListColumnLimitsQueryKey(vars.communityId),
+        });
+      }
 
       const previousCategory = (context as { previousCategory?: string | null } | undefined)
         ?.previousCategory;
