@@ -75,6 +75,7 @@ const TitleEditor = ({ item: image, label }: EditorProps) => {
       readOnly={useGalleryImageLayout().readOnly}
       placeholder={image.original_filename || t("sheet.titlePlaceholder")}
       optional
+      follow={{ kind: "gallery_image", id: image.id }}
     />
   );
 };

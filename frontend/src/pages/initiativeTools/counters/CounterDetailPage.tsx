@@ -2,11 +2,11 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ChevronLeft,
   ChevronRight,
+  Eye,
   Minus,
   MoreVertical,
   Pencil,
   Plus,
-  Radar,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -187,6 +187,20 @@ export function CounterDetailPage() {
         >
           {counter.name}
         </h1>
+        {/* On the counter's own colours, so on and off read as full and faded. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-pressed={follow.following}
+          aria-label={follow.following ? t("common:follow.remove") : t("common:follow.add")}
+          title={follow.following ? t("common:follow.remove") : t("common:follow.add")}
+          disabled={!follow.ready}
+          onClick={follow.toggle}
+          className={cn("h-10 w-10", chromeButtonClass)}
+          style={{ color: fg, opacity: follow.following ? 1 : 0.6 }}
+        >
+          <Eye className="h-5 w-5" />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -213,10 +227,6 @@ export function CounterDetailPage() {
             <DropdownMenuItem disabled={!canWrite} onSelect={() => setEditing(counter)}>
               <Pencil className="h-4 w-4" />
               {t("editCounter")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!follow.ready} onSelect={follow.toggle}>
-              <Radar className="h-4 w-4" />
-              {follow.following ? t("common:follow.remove") : t("common:follow.add")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

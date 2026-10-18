@@ -1,4 +1,4 @@
-import { BookText, Eye, MessageSquare, PanelRight, Pencil, Send } from "lucide-react";
+import { BookText, MessageSquare, PanelRight, Pencil, Send } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -182,11 +182,9 @@ export const WikiChrome = ({
                 aria-pressed={editing}
                 aria-label={editing ? t("viewMode.read") : t("viewMode.edit")}
               >
-                {editing ? (
-                  <Eye className="size-4" aria-hidden />
-                ) : (
-                  <Pencil className="size-4" aria-hidden />
-                )}
+                {/* The pencil either way: pressed while the page is open
+                    for editing. */}
+                <Pencil className="size-4" aria-hidden />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{editing ? t("viewMode.read") : t("viewMode.edit")}</TooltipContent>

@@ -1,4 +1,4 @@
-import { Radar } from "lucide-react";
+import { Eye } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ContentKind } from "@/api/generated/initiativeAPI.schemas";
@@ -35,7 +35,7 @@ export const FollowButton = ({ kind, entityId, communityId, className }: FollowB
       disabled={!ready}
       onClick={toggle}
     >
-      <Radar className="size-4" aria-hidden />
+      <Eye className="size-4" aria-hidden />
     </button>
   );
 };
