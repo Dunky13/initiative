@@ -65,6 +65,7 @@ from app.services.tenant import (
     guild_plugins,
     plugin_connection_flows,
     plugin_connections,
+    plugin_metadata,
     plugin_revocation,
     plugin_schedules,
 )
@@ -2119,6 +2120,84 @@ class TestDeclarativePlugins:
             )
         ]
         assert vendor.hooks == []
+        [recorded] = await _deliveries(session, seat.guild.id)
+        assert recorded.delivery_id == "delivery-1"
+
+    async def test_a_copy_arriving_while_a_delivery_is_mapped_does_nothing(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
+    ):
+        """The first copy holds the delivery before it makes any change, so a
+        copy arriving meanwhile makes none, and the first records it for 24
+        hours."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        held, release = asyncio.Event(), asyncio.Event()
+        made: list = []
+        apply_changes = plugin_metadata.apply_changes
+
+        async def changing(*args, **kwargs):
+            made.append(args[2])
+            held.set()
+            await release.wait()
+            return await apply_changes(*args, **kwargs)
+
+        monkeypatch.setattr(plugin_metadata, "apply_changes", changing)
+        body, headers = vendor.webhook(_issue())
+        first = asyncio.create_task(
+            client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        )
+        await asyncio.wait_for(held.wait(), 30)
+        second = await asyncio.wait_for(
+            client.post(DECLARATIVE_HOOKS, content=body, headers=headers), 30
+        )
+        release.set()
+        answered = await asyncio.wait_for(first, 30)
+
+        assert [second.status_code, answered.status_code] == [202, 202]
+        assert len(made) == 1
+        [recorded] = await _deliveries(session, seat.guild.id)
+        assert recorded.expires_at > datetime.now(timezone.utc) + timedelta(hours=23)
+
+    async def test_a_delivery_whose_changes_failed_is_owed_again(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
+    ):
+        """Its hold is given back, so the vendor's next copy is mapped."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        apply_changes = plugin_metadata.apply_changes
+        failed = False
+
+        async def failing_once(*args, **kwargs):
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise RuntimeError("the database went away")
+            return await apply_changes(*args, **kwargs)
+
+        monkeypatch.setattr(plugin_metadata, "apply_changes", failing_once)
+        body, headers = vendor.webhook(_issue())
+        with pytest.raises(RuntimeError):
+            await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert await _deliveries(session, seat.guild.id) == []
+
+        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert response.status_code == 202, response.text
+        assert len(await _events(session, seat.guild.id)) == 1
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
 
