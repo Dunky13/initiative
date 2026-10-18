@@ -867,8 +867,15 @@
           "description": "Where the signed JWT is posted, https. The answer's 'token' (or 'access_token') and 'expires_at' (or 'expires_in') are read. May name a vendor value as '{vendor.<key>}' and one of this connection's own fields as '{<key>}'."
         },
         "exchange_body": {
-          "type": "object",
-          "description": "A JSON body posted with the signed JWT, such as the narrower permissions a token is asked for. Absent: none. A string anywhere in it may name a vendor value as '{vendor.<key>}' and one of this connection's own fields as '{<key>}'."
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/expression"
+            }
+          ],
+          "description": "A JSON body posted with the signed JWT, such as the narrower permissions a token is asked for. Absent: none. A string anywhere in it may name a vendor value as '{vendor.<key>}' and one of this connection's own fields as '{<key>}'. Or an expression answering the body, which reads only 'connection': this connection's own non-secret fields by key, its managed values included, as 'after_connect' stored them. A body that names a vendor value is written as an object. An answer that is not an object fails the token request, so the connection cannot be used until the expression answers one."
         },
         "iss": {
           "type": "string",
@@ -2231,7 +2238,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 16384,
-      "description": "A JSONata expression (https://jsonata.org): standard JSONata, with no functions added. It reads one document. On the way out that holds 'params', the call's parameters as the caller sent them; 'connection', the non-secret fields of the connection the request names; 'connections', on an endpoint's requests and map, each connection its 'requires' names that the call has, by its id, holding the same fields; 'now', the time of the call in ISO 8601, which $now() and $millis() also answer; 'steps', each earlier step's answer by its name; and, on the call an action makes, 'item', the item it runs on: {kind, id, title}, and 'element', the 'ref' of the list element it was run from, if it was. On the way back it also holds 'response', the answer being read: {status, headers, body}, with header names in lowercase. Every expression of a declarative plug-in also reads 'settings', the install's settings by key, and 'aliases', each unique setting's earlier values by key, as a list. Each evaluation is bounded: at most 1000 milliseconds, 500 levels of nesting and an answer of 1048576 bytes as JSON. An expression that fails or passes a bound answers 'unavailable: mapping-failed'."
+      "description": "A JSONata expression (https://jsonata.org): standard JSONata, with no functions added. It reads one document. On the way out that holds 'params', the call's parameters as the caller sent them; 'connection', the non-secret fields of the connection the request names; 'connections', on an endpoint's requests and map, each connection its 'requires' names that the call has, by its id, holding the same fields; 'now', the time of the call in ISO 8601, which $now() and $millis() also answer; 'steps', each earlier step's answer by its name; and, on the call an action makes, 'item', the item it runs on: {kind, id, title}, and 'element', the 'ref' of the list element it was run from, if it was. On the way back it also holds 'response', the answer being read: {status, headers, body}, with header names in lowercase. Every expression of a declarative plug-in also reads 'settings', the install's settings by key, and 'aliases', each unique setting's earlier values by key, as a list, except a token's 'exchange_body', which reads only its connection. Each evaluation is bounded: at most 1000 milliseconds, 500 levels of nesting and an answer of 1048576 bytes as JSON. An expression that fails or passes a bound answers 'unavailable: mapping-failed'."
     },
     "host": {
       "type": "string",

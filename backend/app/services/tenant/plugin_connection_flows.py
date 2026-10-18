@@ -41,6 +41,7 @@ address, as an endpoint call does.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import time
@@ -77,7 +78,11 @@ from app.services.auth.oidc._http import (
     OidcHttpStatusError,
     post_form_json_pinned,
 )
-from app.services.marketplace import plugin_installs, registration_lookup
+from app.services.marketplace import (
+    expressions,
+    plugin_installs,
+    registration_lookup,
+)
 from app.services.platform import access_grants as access_grants_service
 from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
@@ -590,13 +595,21 @@ class _Minted:
 
 
 #: Minted tokens, per worker, by the connection and the exact request that
-#: minted them.
+#: minted them. Each token minted drops those past reuse.
 _minted: dict[tuple[Any, ...], _Minted] = {}
 
 
 def clear_token_cache() -> None:
     """Forget every minted token."""
     _minted.clear()
+
+
+def _keep_minted(key: tuple[Any, ...], minted: _Minted) -> None:
+    """Hold ``minted`` under ``key``, and drop every token past reuse."""
+    now = time.monotonic()
+    for stale in [held for held, one in _minted.items() if one.reuse_until <= now]:
+        del _minted[stale]
+    _minted[key] = minted
 
 
 def _parse_expiry(body: Mapping[str, Any], *, now: int) -> Optional[int]:
@@ -615,6 +628,35 @@ def _parse_expiry(body: Mapping[str, Any], *, now: int) -> Optional[int]:
     return _epoch(body.get("expires_in"), now=now)
 
 
+def _filled(value: Any, *, vendor: Mapping[str, str], fields: Mapping[str, Any]) -> Any:
+    """``value`` with ``{vendor.<key>}`` and ``{<key>}`` filled in every string
+    it holds, at any depth."""
+    if isinstance(value, str):
+        return render(value, vendor=vendor, fields=fields, in_url=False)
+    if isinstance(value, dict):
+        return {
+            key: _filled(child, vendor=vendor, fields=fields)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_filled(child, vendor=vendor, fields=fields) for child in value]
+    return value
+
+
+async def _answered_body(text: str, fields: Mapping[str, Any]) -> dict[str, Any]:
+    """What a token's ``exchange_body`` expression answers over the
+    connection's own fields, which must be an object."""
+    try:
+        answer = await expressions.evaluate(text, {"connection": dict(fields)})
+    except expressions.ExpressionError as exc:
+        logger.warning("plug-in connection: the exchange body failed (%s)", exc)
+        raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502) from exc
+    if not isinstance(answer, dict):
+        logger.warning("plug-in connection: the exchange body is not an object")
+        raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502)
+    return answer
+
+
 async def mint_jwt_bearer(
     spec: Mapping[str, Any],
     *,
@@ -624,8 +666,10 @@ async def mint_jwt_bearer(
 ) -> TokenSet:
     """A token for a connection that declares a ``jwt_bearer`` token.
 
-    A JWT signed with the vendor key is posted to the exchange address, and the
-    answer's token is reused until a minute before it expires.
+    A JWT signed with the vendor key is posted to the exchange address, with
+    the token's ``exchange_body`` when it declares one: the object with its
+    names filled, or what its expression answers over the connection's own
+    fields. The answer's token is reused until a minute before it expires.
     """
     url = _render_url(spec.get("exchange_url"), vendor=vendor, fields=fields)
     issuer = render(
@@ -634,10 +678,28 @@ async def mint_jwt_bearer(
     key = render(str(spec.get("key") or ""), vendor=vendor, fields=fields, in_url=False)
     if not issuer or not key:
         raise ConnectionFlowError(GuildPluginMessages.CONNECTION_VENDOR_NOT_CONFIGURED)
-    full_key = (*cache_key, url, issuer)
+    declared = spec.get("exchange_body")
+    body = (
+        _filled(declared, vendor=vendor, fields=fields)
+        if isinstance(declared, dict)
+        else None
+    )
+    # An expression's body is made from the connection's fields alone, so
+    # those key it, and it is evaluated only when no token is held for them.
+    asked = (declared, fields) if isinstance(declared, str) else body
+    full_key = (
+        *cache_key,
+        url,
+        issuer,
+        hashlib.sha256(
+            json.dumps(asked, sort_keys=True, default=str).encode()
+        ).hexdigest(),
+    )
     cached = _minted.get(full_key)
     if cached is not None and cached.reuse_until > time.monotonic():
         return TokenSet(access_token=cached.token, expires_at=cached.expires_at)
+    if isinstance(declared, str):
+        body = await _answered_body(declared, fields)
 
     lifetime = spec.get("lifetime")
     seconds = lifetime if isinstance(lifetime, int) and lifetime > 0 else 540
@@ -663,6 +725,7 @@ async def mint_jwt_bearer(
                 "Accept": "application/json",
                 "Authorization": f"Bearer {assertion}",
             },
+            json=body,
             timeout=VENDOR_TIMEOUT_SECONDS,
             transport=http_transport,
             max_bytes=VENDOR_MAX_RESPONSE_BYTES,
@@ -685,10 +748,13 @@ async def mint_jwt_bearer(
     expires_at = _parse_expiry(body, now=now)
     remaining = (expires_at - now) if expires_at is not None else 0
     if remaining > _MINTED_REUSE_MARGIN_SECONDS:
-        _minted[full_key] = _Minted(
-            token=token,
-            expires_at=expires_at,
-            reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+        _keep_minted(
+            full_key,
+            _Minted(
+                token=token,
+                expires_at=expires_at,
+                reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+            ),
         )
     return TokenSet(access_token=token, expires_at=expires_at)
 

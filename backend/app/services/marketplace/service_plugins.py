@@ -826,10 +826,13 @@ def _check_placeholders(
 
 def _exchange_body(
     raw: Any, *, what: str, vendor_keys: set[str], field_keys: set[str]
-) -> dict[str, Any]:
-    """The JSON object a minted token's assertion is posted with. A string in
-    it, at any depth, may name a vendor value and the connection's own fields,
-    as the token's other values do."""
+) -> dict[str, Any] | str:
+    """The JSON object a minted token's assertion is posted with, or an
+    expression answering it from the connection's own fields. A string in the
+    object, at any depth, may name a vendor value and the connection's own
+    fields, as the token's other values do."""
+    if isinstance(raw, str):
+        return _checked(raw, what=what)
     body = require_mapping(raw, what)
     pending: list[tuple[Any, str]] = [(body, what)]
     while pending:
