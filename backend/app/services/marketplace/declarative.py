@@ -11,15 +11,16 @@ everything around the call reads it the same way.
 It runs the rest of the plug-in the same way, as the SDK's runners do: a
 connection's ``after_connect`` (``runAfterConnect``) and ``health``
 (``runHealth``), what a vendor's delivery emits, changes in the plug-in's
-values and says about a connection (``runWebhook``), and a schedule's read and
-the changes it makes from the answer (``runSchedule``).
+values and says about a connection (``runWebhook``), a schedule's read and the
+changes it makes from the answer (``runSchedule``), and the change an action
+makes to the plug-in's values on its item (``runAction``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
   request's connection as ``connection`` and of each connection the endpoint's
   ``requires`` names that this call holds as ``connections.<id>``, ``now``,
-  each earlier step's answer as ``steps.<name>`` and, once a call is answered,
-  ``response``. A credential never enters one: it is added to the request as
-  the plug-in's ``auth`` says.
+  for an action's call its item as ``item``, each earlier step's answer as
+  ``steps.<name>`` and, once a call is answered, ``response``. A credential
+  never enters one: it is added to the request as the plug-in's ``auth`` says.
 * **Where a request may go**: https, on one of the plug-in's ``hosts``, to a public
   address, following no redirect.
 * **What an answer means**: the endpoint's ``errors`` rows first, then the
@@ -80,10 +81,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "Delivered",
+    "action_change",
     "after_connect",
     "call_endpoint",
     "health_state",
     "map_delivery",
+    "request_refusal",
     "run_endpoint",
     "run_schedule",
 ]
@@ -550,15 +553,17 @@ async def run_endpoint(
     connections: Mapping[str, Mapping[str, Any]],
     credentials: Credentials,
     now: datetime,
+    item: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint's answer: its result, or ``{"unavailable":
     <code>}``.
 
     ``connections`` holds each connection's non-secret fields and
     ``credentials`` its token, by connection id. Expressions read a request's
-    own connection as ``connection`` and every connection the endpoint's
-    ``requires`` names as ``connections.<id>``. A passing failure raises
-    :class:`PluginDataError` as the plug-in being unavailable.
+    own connection as ``connection``, every connection the endpoint's
+    ``requires`` names as ``connections.<id>``, and the ``item`` an action's
+    call is made on. A passing failure raises :class:`PluginDataError` as the
+    plug-in being unavailable.
     """
     run = _Run(
         definition,
@@ -575,6 +580,7 @@ async def run_endpoint(
             if connection_id in connections
         },
         "now": run.now,
+        **({} if item is None else {"item": dict(item)}),
     }
     steps = endpoint.get("steps") or [{"name": "", "request": endpoint["request"]}]
     named = "steps" in endpoint
@@ -744,6 +750,51 @@ async def health_state(
             exc.code or TRANSIENT_CODE,
         )
         return "unavailable"
+
+
+# --- an action's change ------------------------------------------------------
+
+
+async def action_change(
+    write: str,
+    *,
+    item: Mapping[str, Any],
+    held: Mapping[str, Any],
+    result: Any = UNDEFINED,
+    now: Optional[datetime] = None,
+) -> Optional[dict[str, Any]]:
+    """The change a declarative action's ``write`` answers, as the SDK's
+    ``runAction`` reads it: the one Initiative makes to the plug-in's values
+    on the action's own item, or ``None`` when it answers nothing.
+
+    ``write`` reads ``item`` (its ``kind``, ``id`` and ``title``), ``held``
+    (the install's values on it, by key), ``result`` (the endpoint's mapped
+    answer, absent when the action names no endpoint) and ``now``. A change
+    names no target: its item is the action's. The rest of the contract's
+    ``change`` is held where the change is made
+    (``plugin_metadata.apply_changes``). An expression that fails, or an
+    answer that is not a change, raises :class:`PluginDataError` as the
+    plug-in being unavailable.
+    """
+    millis, at = _clock(now or datetime.now(timezone.utc))
+    document: dict[str, Any] = {"item": dict(item), "held": dict(held), "now": at}
+    if result is not UNDEFINED:
+        document["result"] = result
+    try:
+        change = await expressions.evaluate(write, document, millis=millis)
+    except ExpressionError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, f"write: {exc}"
+        ) from exc
+    if change is UNDEFINED:
+        return None
+    if not isinstance(change, dict) or "target" in change:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE,
+            502,
+            f"write answered {_text(change)}, which is not a change",
+        )
+    return change
 
 
 # --- a vendor's deliveries ---------------------------------------------------
@@ -995,6 +1046,41 @@ def _connection_ids(endpoint: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys(name for name in named if isinstance(name, str)))
 
 
+def _refusal(connection: Optional[Mapping[str, Any]]) -> PluginDataError:
+    """A call refused for want of ``connection``: a member's own is theirs to
+    connect, and the community's is its admins' to configure."""
+    return PluginDataError(
+        PluginDataMessages.CONNECTION_REQUIRED
+        if (connection or {}).get("scope") == "interactive"
+        else PluginDataMessages.NEEDS_CONFIGURATION,
+        409,
+    )
+
+
+def request_refusal(
+    definition: Any,
+    endpoint: Mapping[str, Any],
+    refs: Mapping[str, str],
+    actor: Optional[str],
+) -> Optional[PluginDataError]:
+    """Why the endpoint's requests cannot be made as ``actor`` with the
+    handles ``refs``, before any token is asked for: a connection one names
+    that ``definition`` does not declare, a member's own whose handle ``refs``
+    lacks, or, on a member's behalf, the community's when the endpoint's
+    ``requires`` does not name it. ``None`` when they can."""
+    required, _ = _required_connection_ids(endpoint)
+    for connection_id in _connection_ids(endpoint):
+        connection = connection_by_id(definition, connection_id)
+        interactive = (connection or {}).get("scope") == "interactive"
+        if (
+            connection is None
+            or (interactive and connection_id not in refs)
+            or (not interactive and actor == "member" and connection_id not in required)
+        ):
+            return _refusal(connection)
+    return None
+
+
 async def _credentials(
     *,
     registration: RegistrationSnapshot,
@@ -1010,10 +1096,9 @@ async def _credentials(
     A static connection's is the community's, which a call on a member's
     behalf carries only when the endpoint's ``requires`` names it; an
     interactive one's is the acting member's, by the handle the endpoint's
-    ``requires`` resolved for them. Tokens are refreshed or minted as the plug-in
-    channel hands them out.
+    ``requires`` resolved for them (:func:`request_refusal`). Tokens are
+    refreshed or minted as the plug-in channel hands them out.
     """
-    required, _ = _required_connection_ids(endpoint)
     tokens: dict[str, str] = {}
     fields: dict[str, dict[str, Any]] = {}
     member = False
@@ -1028,20 +1113,14 @@ async def _credentials(
             )
         except PluginChannelError as exc:
             raise PluginDataError(exc.code, exc.status_code) from exc
+        refused = request_refusal(install.definition, endpoint, refs, actor)
+        if refused is not None:
+            raise refused
         for connection_id in _connection_ids(endpoint):
             connection = connection_by_id(install.definition, connection_id)
             interactive = (connection or {}).get("scope") == "interactive"
-            refusal = PluginDataError(
-                PluginDataMessages.CONNECTION_REQUIRED
-                if interactive
-                else PluginDataMessages.NEEDS_CONFIGURATION,
-                409,
-            )
+            refusal = _refusal(connection)
             ref = refs.get(connection_id)
-            if connection is None or (interactive and ref is None):
-                raise refusal
-            if not interactive and actor == "member" and connection_id not in required:
-                raise refusal
             try:
                 if interactive:
                     held = await flows.member_token(
@@ -1089,13 +1168,15 @@ async def call_endpoint(
     refs: Mapping[str, str],
     fields: Mapping[str, Mapping[str, Any]],
     actor: Optional[str],
+    item: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint of an install, answered as a container
     answers: ``{endpoint, actor, result}``.
 
     ``fields`` is each satisfied connection's non-secret fields as the
     caller's resolution read them, which the response cache key holds, so
-    the expressions read those.
+    the expressions read those. ``item`` is the item an action's call is made
+    on, which they read too.
 
     Held to the envelope's time and size, as a container's answer is; each
     vendor answer to the connection egress limits.
@@ -1129,6 +1210,7 @@ async def call_endpoint(
                 connections={**used, **fields},
                 credentials=tokens,
                 now=datetime.now(timezone.utc),
+                item=item,
             )
     except TimeoutError as exc:
         raise PluginDataError(

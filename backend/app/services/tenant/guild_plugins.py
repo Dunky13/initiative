@@ -1458,9 +1458,12 @@ def item_openability(
     :func:`surface_openability` measures a page. A field, a part or an action
     is offered while the community's connections it requires hold a value
     (:func:`~app.services.tenant.plugin_config.installation_meets`), and an
-    action while those its endpoint requires do too. An admin-only action, or
-    one whose endpoint is admin-only, is the community's admins' alone, and a
-    frozen community runs none."""
+    action while those its endpoint requires do too. A member's own connection
+    an action requires is theirs to make when they run it, and so is one a
+    declarative plug-in's endpoint requires, whose call may run on it; a
+    container's endpoint is called as the installation. An admin-only action,
+    or one whose endpoint is admin-only, is the community's admins' alone, and
+    a frozen community runs none."""
     definition = plugin.definition if isinstance(plugin.definition, dict) else {}
     initiatives = tuple(
         row.initiative_id
@@ -1478,9 +1481,12 @@ def item_openability(
     if not initiatives:
         return ItemOpenability(initiatives=(), fields=(), parts=(), actions=())
 
-    def met(entry: dict) -> bool:
-        return plugin_config_service.installation_meets(plugin, entry.get("requires"))
+    def met(entry: dict, members_connect: bool = False) -> bool:
+        return plugin_config_service.installation_meets(
+            plugin, entry.get("requires"), members_connect=members_connect
+        )
 
+    declarative = registration_lookup.is_declarative(definition)
     endpoints = {
         endpoint["id"]: endpoint
         for endpoint in _declared(definition, "endpoints", "id")
@@ -1491,14 +1497,16 @@ def item_openability(
             f["key"] for f in _declared(definition, "fields", "key") if met(f)
         ),
         parts=tuple(p["id"] for p in _declared(definition, "parts", "id") if met(p)),
-        # A declarative plug-in's actions are offered once Initiative runs them.
         actions=()
-        if frozen or registration_lookup.is_declarative(definition)
+        if frozen
         else tuple(
             action["id"]
             for action in _declared(definition, "actions", "id")
-            if met(action)
-            and met(endpoints.get(action.get("endpoint")) or {})
+            if met(action, members_connect=True)
+            and met(
+                endpoints.get(action.get("endpoint")) or {},
+                members_connect=declarative,
+            )
             and (
                 is_guild_admin
                 or not (

@@ -441,28 +441,39 @@ def is_satisfied(
     return any(present.values())
 
 
-def installation_meets(plugin: Any, requires: Any) -> bool:
+def installation_meets(
+    plugin: Any, requires: Any, *, members_connect: bool = False
+) -> bool:
     """Whether a call the installation makes meets ``requires``: the
     community's own connections it names hold a value, every one for
     ``all_of`` and one for ``any_of``. A member's connection never answers the
-    installation. Absent, it asks nothing."""
+    installation. With ``members_connect``, one it names counts as held: it is
+    the member's to make when they run what asks for it, and they are asked to
+    then. Absent, it asks nothing."""
     if not isinstance(requires, dict):
         return True
     for key, check in (("all_of", all), ("any_of", any)):
         terms = requires.get(key)
         if isinstance(terms, list):
-            return check(_community_connection_holds(plugin, term) for term in terms)
+            return check(
+                _community_connection_holds(plugin, term, members_connect)
+                for term in terms
+            )
     return True
 
 
-def _community_connection_holds(plugin: Any, connection_id: Any) -> bool:
+def _community_connection_holds(
+    plugin: Any, connection_id: Any, members_connect: bool
+) -> bool:
     connection = (
         connection_by_id(plugin.definition, connection_id)
         if isinstance(connection_id, str)
         else None
     )
-    if connection is None or connection.get("scope") == "interactive":
+    if connection is None:
         return False
+    if connection.get("scope") == "interactive":
+        return members_connect
     return is_satisfied(
         connection,
         (plugin.config or {}).get(connection_id) or {},

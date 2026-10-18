@@ -255,15 +255,27 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
     """The initiatives whose placements admit the viewer; the fields and parts
     whose connections hold a value; and every action there but one that is
     admin-only or whose write endpoint is, which only an admin runs, one whose
-    connections hold nothing, and any while the community is frozen. A
-    declarative plug-in's fields and parts are offered as a container's are,
-    and its actions once Initiative runs them."""
+    community connections hold nothing, and any while the community is
+    frozen. A member's own connection an action requires is theirs to make
+    when they run it, as is one a declarative plug-in's endpoint requires; a
+    container's endpoint is called as the installation, which no member's
+    connection answers. A declarative plug-in's fields, parts and actions are
+    offered as a container's are."""
     definition = {
         **DEFINITION,
+        "connections": [
+            *DEFINITION["connections"],
+            {"id": "account", "scope": "interactive", "fields": []},
+        ],
         "endpoints": [
             {"id": "link", "direction": "write"},
             {"id": "purge", "direction": "write", "admin_only": True},
             {"id": "sync", "direction": "write", "requires": {"all_of": ["admin"]}},
+            {
+                "id": "assign",
+                "direction": "write",
+                "requires": {"all_of": ["admin", "account"]},
+            },
         ],
         "fields": [
             {"key": "ci.state", "on": ["task"]},
@@ -278,9 +290,10 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
                 "id": "audit",
                 "endpoint": "link",
                 "on": ["task"],
-                "requires": {"all_of": ["admin"]},
+                "requires": {"all_of": ["admin", "account"]},
             },
             {"id": "close", "endpoint": "link", "on": ["task"], "admin_only": True},
+            {"id": "assign", "endpoint": "assign", "on": ["task"]},
         ],
         "minimum_age": {"default": 18},
     }
@@ -350,5 +363,11 @@ def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
         [2, 5],
         every_field,
         ["builds"],
+        ["new-link", "purge", "sync", "audit", "close", "assign"],
+    )
+    assert access(context(guild_admin=True), secret_fields={}) == (
+        [2, 5],
+        ["ci.state"],
         [],
+        ["new-link", "purge", "close"],
     )
