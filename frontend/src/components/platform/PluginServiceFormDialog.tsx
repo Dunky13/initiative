@@ -42,6 +42,8 @@ export interface PluginServiceFormValues {
   jwksUri: string;
   mandatory: boolean;
   operationsOnly: boolean;
+  /** One vendor installation may connect to several communities. */
+  sharedRoutes: boolean;
   /** Vendor values that were typed, by key. "" clears one; a key left out is kept. */
   vendorValues: Record<string, string>;
 }
@@ -55,6 +57,7 @@ interface FormState {
   jwksUri: string;
   mandatory: boolean;
   operationsOnly: boolean;
+  sharedRoutes: boolean;
   vendorValues: Record<string, string>;
 }
 
@@ -67,6 +70,7 @@ const EMPTY_FORM: FormState = {
   jwksUri: "",
   mandatory: false,
   operationsOnly: false,
+  sharedRoutes: false,
   vendorValues: {},
 };
 
@@ -134,6 +138,7 @@ export const PluginServiceFormDialog = ({
         jwksUri: editing.jwks_uri ?? "",
         mandatory: editing.mandatory,
         operationsOnly: editing.operations_only,
+        sharedRoutes: editing.shared_routes,
         vendorValues: {},
       });
     } else {
@@ -236,6 +241,7 @@ export const PluginServiceFormDialog = ({
       jwksUri: form.jwksUri.trim(),
       mandatory: form.mandatory,
       operationsOnly: form.operationsOnly,
+      sharedRoutes: form.sharedRoutes,
       vendorValues: Object.fromEntries(
         Object.entries(form.vendorValues).map(([key, value]) => [key, value.trim()])
       ),
@@ -616,6 +622,24 @@ export const PluginServiceFormDialog = ({
                     readOnly
                     className="font-mono text-xs"
                     onFocus={(event) => event.target.select()}
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Label htmlFor="plugin-service-shared-routes" className="font-medium">
+                      {t("pluginServices.sharedRoutesLabel")}
+                    </Label>
+                    <p className="text-muted-foreground text-xs">
+                      {t("pluginServices.sharedRoutesHelp")}
+                    </p>
+                  </div>
+                  <Switch
+                    id="plugin-service-shared-routes"
+                    checked={form.sharedRoutes}
+                    onCheckedChange={(checked) =>
+                      setForm((prev) => ({ ...prev, sharedRoutes: Boolean(checked) }))
+                    }
                   />
                 </div>
               </div>

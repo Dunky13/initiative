@@ -20,6 +20,12 @@ describe("PluginConnectedPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("says the organization is connected to another community", async () => {
+    renderPage(PluginConnectedPage, { routerSearch: { outcome: "taken" } });
+
+    expect(await screen.findByText("Already connected elsewhere")).toBeInTheDocument();
+  });
+
   it("reads an ending it does not know as expired", async () => {
     renderPage(PluginConnectedPage, { routerSearch: { outcome: "whatever" } });
 

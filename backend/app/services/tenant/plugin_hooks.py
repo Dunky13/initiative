@@ -238,7 +238,7 @@ async def _pending(
         ):
             return None
         route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
-        indexed = plugin_installs.hook_route(plugin)
+        indexed = plugin_installs.hook_route(plugin.definition, plugin.config)
         if indexed is None or _route_value(route, headers, body) != indexed:
             return None
         seen = (
@@ -332,7 +332,12 @@ async def _map(
 ) -> int:
     """A declarative plug-in's install: its pinned ``webhooks`` map the delivery
     to an event, emitted as a container's is, and to a connection's state.
-    The delivery is recorded with them, so a redelivery emits nothing.
+    The delivery is recorded with them, so a redelivery emits nothing. A state
+    is set only while the install, read under its row lock, still routes by
+    the value the delivery was routed by. Once that commits, a state that
+    moved, or any ``removed``, is written to the install index from the
+    install as it then stands: a connection reported ``removed`` holds no
+    route.
 
     A mapping that may answer if asked again records nothing and answers 503,
     so the vendor sends it again; one that cannot is recorded beside whatever
@@ -394,11 +399,23 @@ async def _map(
                     install.guild_id,
                     exc.code,
                 )
+        moved = removed = False
         if delivered.status is not None:
             locked = await guild_plugins_service.lock_install(session, plugin.id)
-            if locked is not None and set_connection_state(locked, *delivered.status):
-                session.add(locked)
+            if (
+                locked is not None
+                and plugin_installs.hook_route(locked.definition, locked.config)
+                == install.route
+            ):
+                removed = delivered.status[1] == "removed"
+                if set_connection_state(locked, *delivered.status):
+                    session.add(locked)
+                    moved = True
         await session.commit()
+        if moved or removed:
+            await guild_plugins_service.reindex_install(
+                session, install.guild_id, plugin.id
+            )
     return 202
 
 

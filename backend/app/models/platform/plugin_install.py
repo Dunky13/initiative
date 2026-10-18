@@ -12,7 +12,9 @@ It answers two questions without visiting a guild schema: which installs an
 plug-in has (``GET /plugin-platform/installations``), and which installs a vendor
 delivery belongs to (``POST /plugin-hooks/{public_id}``). ``hook_route`` is the
 stored value of the field the plug-in's ``webhooks.route`` names, written when a
-connect stores it and cleared when it is removed.
+connect stores it and cleared when it is removed. While ``exclusive``, the
+negation of the registration's ``shared_routes``, one community holds each route
+of a listing's installs.
 
 Kept in step by :mod:`app.services.marketplace.plugin_installs`. Reached only by
 the system engine.
@@ -22,13 +24,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, text
 from sqlmodel import Field, SQLModel
 
-__all__ = ["PluginInstall", "HOOK_ROUTE_MAX_LENGTH"]
+__all__ = ["EXCLUSIVE_ROUTE_INDEX", "PluginInstall", "HOOK_ROUTE_MAX_LENGTH"]
 
 #: The widest route value kept.
 HOOK_ROUTE_MAX_LENGTH = 200
+
+#: The index holding each route of an exclusive install to one community.
+EXCLUSIVE_ROUTE_INDEX = "uq_plugin_installs_exclusive_route"
 
 
 class PluginInstall(SQLModel, table=True):
@@ -36,6 +41,13 @@ class PluginInstall(SQLModel, table=True):
     __table_args__ = (
         Index("ix_plugin_installs_hook_route", "listing_uid", "hook_route"),
         Index("ix_plugin_installs_listing", "listing_uid", "guild_id", "install_id"),
+        Index(
+            EXCLUSIVE_ROUTE_INDEX,
+            "listing_uid",
+            "hook_route",
+            unique=True,
+            postgresql_where=text("exclusive AND hook_route IS NOT NULL"),
+        ),
     )
 
     guild_id: int = Field(
@@ -51,6 +63,12 @@ class PluginInstall(SQLModel, table=True):
     hook_route: Optional[str] = Field(
         default=None,
         sa_column=Column(String(length=HOOK_ROUTE_MAX_LENGTH), nullable=True),
+    )
+    #: The negation of its registration's ``shared_routes``: while true, this
+    #: install's route is held by this community alone.
+    exclusive: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
     #: The community's status as its plug-in was last told it, by the
     #: ``community_status`` hook. The community-hook worker compares it with

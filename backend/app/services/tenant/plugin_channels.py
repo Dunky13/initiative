@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
 
@@ -443,18 +444,42 @@ def set_connection_state(plugin: GuildPlugin, connection_id: str, state: str) ->
 
     A state other than ``ok`` is ``invalid``, its detail the connection and
     the state (``workspace_suspended``). ``ok`` clears a verdict about this
-    connection and leaves one about another as it is.
+    connection and leaves one about another as it is. ``removed`` is also
+    kept on the connection's own stored values (``REMOVED_AT``), until ``ok``
+    is read for that connection or it is connected again.
     """
+    marked = _mark_removed(plugin, connection_id, state)
     about = {f"{connection_id}_{other}" for other in CONNECTION_STATES if other != "ok"}
     if state == "ok":
         if plugin.config_state == "invalid" and plugin.config_state_detail not in about:
-            return False
+            return marked
         verdict: tuple[str, Optional[str]] = ("ok", None)
     else:
         verdict = ("invalid", f"{connection_id}_{state}")
     if (plugin.config_state, plugin.config_state_detail) == verdict:
-        return False
+        return marked
     plugin.config_state, plugin.config_state_detail = verdict
+    plugin.updated_at = datetime.now(timezone.utc)
+    return True
+
+
+def _mark_removed(plugin: GuildPlugin, connection_id: str, state: str) -> bool:
+    """Mark a stored connection the vendor reported ``removed``, and unmark it
+    when ``ok`` is read for it. Answers whether that changed it."""
+    stored = (plugin.config or {}).get(connection_id)
+    if not isinstance(stored, dict) or state not in ("ok", "removed"):
+        return False
+    removed = state == "removed"
+    if (plugin_config_service.REMOVED_AT in stored) == removed:
+        return False
+    entry = {
+        key: value
+        for key, value in stored.items()
+        if key != plugin_config_service.REMOVED_AT
+    }
+    if removed:
+        entry[plugin_config_service.REMOVED_AT] = int(time.time())
+    plugin.config = {**(plugin.config or {}), connection_id: entry}
     plugin.updated_at = datetime.now(timezone.utc)
     return True
 

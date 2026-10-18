@@ -93,6 +93,7 @@ export const SettingsPluginServicesPage = () => {
             ...placement,
             mandatory: values.mandatory,
             operations_only: values.operationsOnly,
+            shared_routes: values.sharedRoutes,
             // Only the values that were typed; a secret left alone is kept.
             ...(Object.keys(values.vendorValues).length > 0
               ? { vendor_values: values.vendorValues }

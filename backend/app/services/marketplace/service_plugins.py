@@ -973,7 +973,10 @@ def _connection(
         if field["key"] in seen:
             fail(f"{what}: two fields share the key {field['key']!r}")
         if field["key"] in RESERVED_TOKEN_KEYS:
-            fail(f"{what}: {field['key']!r} is where a flow keeps its tokens")
+            fail(
+                f"{what}: {field['key']!r} is reserved for a flow's tokens and"
+                " the vendor's report that the connection was removed"
+            )
         seen.add(field["key"])
         fields.append(field)
 

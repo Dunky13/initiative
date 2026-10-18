@@ -36,6 +36,9 @@ Some columns exist only because of that split:
   (``app_settings.operations_guild_id``) alone: it is offered nowhere else, the
   mandatory sweep installs it nowhere else, and an install anywhere else is not
   live. With no operations community named, it is live nowhere.
+* ``shared_routes`` — one vendor installation may route to several communities.
+  Off, each route of its installs is held by one community
+  (``plugin_installs.exclusive``).
 
 * ``vendor_values`` — what the operator supplies for the plug-in's vendor client,
   as the listing's manifest declares it under ``vendor``: one Fernet
@@ -247,6 +250,11 @@ class PluginServiceRegistration(SQLModel, table=True):
     )
     # Offered to, installed in and live in the operations community alone.
     operations_only: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    # One vendor installation may route to several communities.
+    shared_routes: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
