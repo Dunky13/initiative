@@ -28,9 +28,7 @@ from sqlalchemy import delete, text, update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.plugin_access_token import seal_install_token
 from app.core.config import settings
-from app.core.security import SESSION_COOKIE_NAME
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
 from app.core.messages import (
     AccessGrantMessages,
@@ -38,8 +36,10 @@ from app.core.messages import (
     PluginChannelMessages,
     PluginDataMessages,
 )
+from app.core.plugin_access_token import seal_install_token
+from app.core.security import SESSION_COOKIE_NAME
 from app.db import cohorts, post_commit
-from app.services.marketplace.registration_lookup import invalidate_registrations
+from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
 from app.models.platform.access_grant import (
     AccessGrant,
@@ -47,22 +47,26 @@ from app.models.platform.access_grant import (
     AccessLevel,
     SettingsLevel,
 )
-from app.models.platform.guild import GuildMembership, CommunityRole
+from app.models.platform.guild import CommunityRole, GuildMembership
+from app.models.platform.community_timer import CommunityTimer
 from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import RegistrationKind
+from app.models.tenant.guild_plugin import GuildPlugin
+from app.models.tenant.guild_plugin_secret import GuildPluginSecret
+from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
 from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.plugin_schedule_run import PluginScheduleRun
-from app.models.tenant.guild_plugin import GuildPlugin
-from app.models.tenant.guild_plugin_secret import GuildPluginSecret
-from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.marketplace import declarative as declarative_service
+from app.services.marketplace import plugin_installs
 from app.services.marketplace import expressions
-from app.services.marketplace.registration_lookup import load_registrations
+from app.services.marketplace.registration_lookup import (
+    invalidate_registrations,
+    load_registrations,
+)
 from app.services.tenant import (
-    guild_plugins,
     plugin_connection_flows,
     plugin_connections,
     plugin_metadata,
@@ -71,12 +75,12 @@ from app.services.tenant import (
 )
 from app.services.tenant.plugin_connections import load_connection_secrets
 from app.testing import (
-    create_plugin_user_connection,
     create_access_grant,
-    create_initiative,
-    create_plugin_service_registration,
     create_guild_plugin,
+    create_initiative,
     create_marketplace_listing,
+    create_plugin_service_registration,
+    create_plugin_user_connection,
     create_project,
     create_resource_grant,
     create_task,
@@ -84,8 +88,6 @@ from app.testing import (
     sealed_vendor_values,
 )
 from app.testing.fake_vendor import FakeVendor, declarative_github
-from app.db.request_context import SystemGuild
-
 
 PUBLIC_ID = "tests.gh"
 LISTING_UID = "TESTAPP0000009"
@@ -292,7 +294,10 @@ async def _member_row(
 async def _indexed(
     session: AsyncSession, guild_id: int, plugin_id: int
 ) -> PluginInstall | None:
-    """The install's row in the install index."""
+    """The install's row in the install index, once the index sweep has
+    visited the community."""
+    await route_session_to_guild(session, guild_id)
+    await plugin_installs.reindex_community(session, guild_id)
     session.expunge_all()
     return await session.get(PluginInstall, (guild_id, plugin_id))
 
@@ -1563,8 +1568,8 @@ class TestRevocation:
         uninstall's transaction and ahead of ``uninstalled`` and ``erase``. The
         tokens wait sealed and are opened only to be sent, and a finished
         revocation keeps none."""
-        from app.models.platform.plugin_community_hook import PluginCommunityHook
         from app.db.request_context import Unattributed
+        from app.models.platform.plugin_community_hook import PluginCommunityHook
         from app.services import sweep_timers
         from app.services.marketplace import plugin_refs
 
@@ -1621,8 +1626,8 @@ class TestRevocation:
         """Once the plug-in's install is gone, a hook finds no name for the
         community and mints none, so a revocation still queued behind an erase
         is settled without bringing one back."""
-        from app.models.platform.identity_ref import IdentityRef
         from app.db.request_context import Unattributed
+        from app.models.platform.identity_ref import IdentityRef
 
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _install(session, a)
@@ -2318,6 +2323,40 @@ class TestDeclarativePlugins:
         )
         assert sorted(states.all()) == sorted(task.id for task in tasks)
 
+    async def test_an_installs_writes_arm_the_index_sweep(
+        self, client: AsyncClient, acting_user, session, declarative
+    ):
+        """Each write to an install arms the index sweep in its community; its
+        visit writes the install's row from the install as it stands. An
+        uninstall drops the row at once."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+
+        installed = await client.post(
+            seat.g("/plugins/"),
+            headers=seat.headers,
+            json={"listing_uid": DECLARATIVE_UID},
+        )
+
+        assert installed.status_code == 201, installed.text
+        plugin_id = installed.json()["id"]
+        armed = await session.exec(
+            select(CommunityTimer).where(
+                CommunityTimer.community_id == seat.guild.id,
+                CommunityTimer.kind == plugin_installs.INDEX_SWEEP,
+            )
+        )
+        assert armed.first() is not None
+        assert await _indexed(session, seat.guild.id, plugin_id) is not None
+
+        removed = await client.delete(
+            seat.g(f"/plugins/{plugin_id}"), headers=seat.headers
+        )
+
+        assert removed.status_code == 204, removed.text
+        session.expunge_all()
+        assert await session.get(PluginInstall, (seat.guild.id, plugin_id)) is None
+
     async def test_a_delivery_keeps_values_as_the_install(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
@@ -2493,15 +2532,17 @@ class TestDeclarativePlugins:
 
             return run
 
-        reindex = guild_plugins.reindex_install
+        reindex = plugin_installs.reindex_community
         mapping = declarative_service.map_delivery
         removed = ("invalid", "workspace_removed", None)
         assert await deliver(0, "suspend") == ("invalid", "workspace_suspended", "42")
         assert await deliver(1, "unsuspend") == ("ok", None, "42")
-        # Reconnected between the state's commit and the index write.
-        monkeypatch.setattr(guild_plugins, "reindex_install", reconnecting(42, reindex))
+        # Reconnected between the state's commit and the index sweep's visit.
+        monkeypatch.setattr(
+            plugin_installs, "reindex_community", reconnecting(42, reindex)
+        )
         assert await deliver(2, "deleted") == ("unverified", None, "42")
-        monkeypatch.setattr(guild_plugins, "reindex_install", reindex)
+        monkeypatch.setattr(plugin_installs, "reindex_community", reindex)
         # Reconnected to installation 43 between routing and the status.
         monkeypatch.setattr(
             declarative_service, "map_delivery", reconnecting(43, mapping)

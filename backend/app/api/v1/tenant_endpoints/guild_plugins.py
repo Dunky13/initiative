@@ -48,10 +48,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.db import post_commit
-from app.db.session import routed_guild_id
 from app.api.deps import (
     AgeViewerDep,
+    CurrentUser,
+    GuildContextDep,
     RLSSessionDep,
     SeatContextDep,
     SeatSessionDep,
@@ -60,36 +60,31 @@ from app.api.deps import (
     require_first_party_session,
     require_grant_writes,
     require_seat,
-    GuildContextDep,
-    CurrentUser,
 )
 from app.core.audit_events import AuditEventType
-from app.core.rate_limit import limiter
-from app.core.plugin_scopes import plugin_scope_target
 from app.core.messages import (
     GuildPluginMessages,
     InitiativeMessages,
     MarketplaceMessages,
 )
+from app.core.plugin_scopes import plugin_scope_target
+from app.core.rate_limit import limiter
+from app.db import post_commit
 from app.db.guild_standing import GuildContext
-from app.services.tenant import plugin_age
-from app.services.tenant.plugin_age import AgeViewer
 from app.db.query import build_paginated_response, paginated_query
+from app.db.session import routed_guild_id
 from app.models.platform.guild import GuildMembership
-from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.initiative import Initiative
+from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.schemas.tenant.guild_plugin import (
-    PluginPlacementRead,
-    PluginPlacementUpdate,
-    CommunityPluginScopesUpdate,
     CommunityPluginConfigUpdate,
     CommunityPluginConnectionSummary,
-    CommunityPluginConsentSummary,
     CommunityPluginConnectStart,
     CommunityPluginConsentAnswer,
     CommunityPluginConsentRead,
+    CommunityPluginConsentSummary,
     CommunityPluginDecline,
     CommunityPluginDetail,
     CommunityPluginHandoff,
@@ -97,10 +92,13 @@ from app.schemas.tenant.guild_plugin import (
     CommunityPluginListResponse,
     CommunityPluginMembersResponse,
     CommunityPluginRead,
+    CommunityPluginScopesUpdate,
     CommunityPluginSettingUpdate,
     CommunityPluginUninstallNotice,
     CommunityPluginUpdate,
     CommunityPluginUpgrade,
+    PluginPlacementRead,
+    PluginPlacementUpdate,
     serialize_consent,
     serialize_guild_plugin,
     serialize_guild_plugin_detail,
@@ -109,30 +107,32 @@ from app.schemas.tenant.guild_plugin import (
     upgrade_asks_read,
 )
 from app.services import audit as audit_service
-from app.services.platform import billing_ping
-from app.services.marketplace import plugin_installs as plugin_installs_service
 from app.services.marketplace import catalog as catalog_service
 from app.services.marketplace import (
     plugin_entitlements,
     registration_lookup,
 )
+from app.services.marketplace import plugin_installs as plugin_installs_service
 from app.services.marketplace.definitions import (
-    PLUGIN_KINDS,
     GUILD_INSTALLABLE_PLUGIN_KINDS,
+    PLUGIN_KINDS,
 )
 from app.services.marketplace.installs import (
     count_install,
     resolve_listing_install,
 )
 from app.services.membership import initiative_scope_clause
+from app.services.platform import billing_ping
+from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_age
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connection_flows as flows_service
 from app.services.tenant import plugin_connections as connections_service
-from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import plugin_handoff as handoff_service
+from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import plugin_schedules as plugin_schedules_service
 from app.services.tenant import plugin_updates as plugin_updates_service
-from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant.plugin_age import AgeViewer
 
 logger = logging.getLogger(__name__)
 
@@ -617,7 +617,6 @@ async def install_community_plugin(
             detail=GuildPluginMessages.ALREADY_INSTALLED,
         ) from exc
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
     await guild_plugins_service.assign_settings(
         session, plugin, guild_id=guild_context.guild_id
     )
@@ -866,7 +865,6 @@ async def update_community_plugin(
         )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
     return await _read(session, plugin, guild_context, viewer)
 
 
@@ -985,7 +983,6 @@ async def update_community_plugin_config(
     )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
 
@@ -1347,9 +1344,6 @@ async def disconnect_community_plugin(
         )
 
     await session.commit()
-    if connection.get("scope") == "static":
-        await session.refresh(plugin)
-        await plugin_installs_service.record(guild_context.guild_id, plugin)
 
 
 # ---------------------------------------------------------------------------

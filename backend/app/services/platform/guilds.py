@@ -1158,7 +1158,7 @@ async def seed_guild_content(
                 guild_id,
             )
         await guild_session.commit()
-        await mandatory_plugins_service.index_installs(
+        await mandatory_plugins_service.assign_install_settings(
             guild_session, guild_id, installed
         )
 

@@ -3,8 +3,8 @@
 ``public.plugin_install_claims``: the values each install holds for its
 plug-in's unique settings, the current one and those it was renamed from, one
 row each. A unique index on ``(listing_uid, key, value)`` keeps two installs
-of a plug-in from holding the same value. A row goes with its install's
-``plugin_installs`` row.
+of a plug-in from holding the same value. A row goes with its community, and
+with its install when that is removed.
 
 RLS enabled and forced, the schema's default grants revoked from the two base
 roles, ``app_admin`` granted DML and ``app_guild_base`` INSERT and SELECT (its
@@ -38,11 +38,7 @@ def upgrade() -> None:
         sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("value", sa.String(length=16), nullable=False),
         sa.Column("listing_uid", sa.String(length=14), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["guild_id", "install_id"],
-            ["plugin_installs.guild_id", "plugin_installs.install_id"],
-            ondelete="CASCADE",
-        ),
+        sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("guild_id", "install_id", "key", "value"),
     )
     op.create_index(INDEX, TABLE, ["listing_uid", "key", "value"], unique=True)

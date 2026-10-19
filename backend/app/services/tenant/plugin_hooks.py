@@ -51,16 +51,17 @@ from sqlmodel import col, delete, select
 from app.core import metrics
 from app.db import cohorts
 from app.db import session as db_session
+from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
 from app.models.platform.marketplace import (
     MarketplaceListing,
     MarketplaceListingVersion,
 )
+from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_hook_delivery import (
     DELIVERY_ID_MAX_LENGTH,
     PluginHookDelivery,
 )
-from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.marketplace import (
     community_hooks,
     declarative,
@@ -76,8 +77,8 @@ from app.services.marketplace.vendor_values import (
     listing_definitions,
     load_vendor_values,
 )
-from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import plugin_metadata
 from app.services.tenant.plugin_channels import (
     PluginChannelError,
@@ -86,7 +87,6 @@ from app.services.tenant.plugin_channels import (
     set_connection_state,
 )
 from app.services.tenant.plugin_config import install_settings, without_tokens
-from app.db.request_context import SystemGuild
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -479,23 +479,16 @@ async def _make(
                     install.guild_id,
                     exc.code,
                 )
-        moved = removed = False
         if delivered.status is not None:
             locked = await guild_plugins_service.lock_install(session, plugin.id)
             if (
                 locked is not None
                 and plugin_installs.hook_route(locked.definition, locked.config)
                 == install.route
+                and set_connection_state(locked, *delivered.status)
             ):
-                removed = delivered.status[1] == "removed"
-                if set_connection_state(locked, *delivered.status):
-                    session.add(locked)
-                    moved = True
+                session.add(locked)
         await session.commit()
-        if moved or removed:
-            await guild_plugins_service.reindex_install(
-                session, install.guild_id, plugin.id
-            )
 
 
 async def receive(public_id: str, headers: Mapping[str, str], body: bytes) -> int:
