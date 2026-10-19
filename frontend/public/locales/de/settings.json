@@ -2117,5 +2117,14 @@
     "openError": "Die Abrechnungskennzahlen konnten nicht geöffnet werden.",
     "notConfigured": "Diese Installation hat keinen Abrechnungsdienst oder keinen Signaturschlüssel für die Übergabe.",
     "platformOnly": "Abrechnungskennzahlen sind für Plattformbetreiber und Eigentümer."
+  },
+  "billingContracts": {
+    "title": "Verträge",
+    "description": "Die Unternehmenskunden, die von Hand abgerechnet werden, außerhalb des Zahlungsanbieters.",
+    "invoices": "Die Bedingungen jedes Vertrags, die in QuickBooks ausgestellten Rechnungen und wann sie bezahlt wurden.",
+    "keys": "Die Registrierungsschlüsseldatei einer eigenen Installation, zum Committen ins Paket-Repository zum Signieren.",
+    "noCommunity": "Sie öffnet keine Community und braucht keine Zugriffsfreigabe. Eine Community kommt über ihre eigene Abrechnungs-Operator-Konsole auf einen Vertrag.",
+    "open": "Verträge öffnen",
+    "openError": "Die Vertragskonsole konnte nicht geöffnet werden."
   }
 }

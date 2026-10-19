@@ -238,12 +238,13 @@ async def gated_listings(
 
 def action_url(guild_id: int, listing_uid: str) -> Optional[str]:
     """Where a community acts on its entitlement for a listing: the
-    deployment's billing portal page for it, or ``None`` with no portal. The
-    client opens it with a portal handoff, as it opens every portal page."""
+    deployment's billing portal, on the community's manage page with the
+    listing's purchase open, or ``None`` with no portal. The client opens it
+    with a portal handoff, as it opens every portal page."""
     base = (settings.BILLING_URL or "").strip().rstrip("/")
     if not base:
         return None
-    return f"{base}/apps/{quote(listing_uid, safe='')}?community={int(guild_id)}"
+    return f"{base}/manage?community={int(guild_id)}&app={quote(listing_uid, safe='')}"
 
 
 async def store_statement(

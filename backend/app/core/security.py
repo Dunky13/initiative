@@ -638,11 +638,35 @@ def create_billing_insights_handoff_token(
     pairwise reference and nothing else: no community and no grant, because
     the page shows nothing about any one community.
     """
+    return _billing_staff_handoff(BILLING_INSIGHTS_AUDIENCE, user_ref, expires_in)
+
+
+BILLING_CONTRACTS_AUDIENCE = "initiative:billing-contracts"
+
+
+def create_billing_contracts_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's contracts console.
+
+    The insights handoff's shape under the contracts audience: a person and no
+    community, because a contract is a payer's and some cover no community
+    here. The audience is what keeps an insights handoff, minted for a
+    read-only page, from opening a console that writes.
+    """
+    return _billing_staff_handoff(BILLING_CONTRACTS_AUDIENCE, user_ref, expires_in)
+
+
+def _billing_staff_handoff(
+    audience: str, user_ref: str, expires_in: timedelta
+) -> tuple[str, int]:
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "jti": str(uuid.uuid4()),
         "sub": user_ref,
-        "aud": BILLING_INSIGHTS_AUDIENCE,
+        "aud": audience,
         "iss": TOKEN_ISSUER,
         "iat": int(now.timestamp()),
         "exp": now + expires_in,

@@ -182,7 +182,7 @@ class TestGating:
         a = await _seat(acting_user)
         expected = {
             "reason": "entitlement_required",
-            "action_url": f"{PORTAL}/apps/{SERVICE_UID}?community={a.guild.id}",
+            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
         }
 
         detail = await client.get(
@@ -364,7 +364,7 @@ class TestUninstallNotice:
         assert response.json() == {
             "managed": True,
             "message": None,
-            "action_url": f"{PORTAL}/apps/{SERVICE_UID}?community={a.guild.id}",
+            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
         }
 
     async def test_an_unreadable_answer_is_neutral_text(

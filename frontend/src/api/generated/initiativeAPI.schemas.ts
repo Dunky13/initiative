@@ -709,6 +709,7 @@ export interface BillingConfig {
   operator_handoff?: boolean;
   manages_plans?: boolean;
   insights?: boolean;
+  contracts?: boolean;
 }
 
 /**
@@ -1987,6 +1988,7 @@ export const Capability = {
   communitiessuspend: "communities.suspend",
   billingsupport: "billing.support",
   billinginsights: "billing.insights",
+  billingcontracts: "billing.contracts",
   announcementsmanage: "announcements.manage",
   rolesassign: "roles.assign",
   databypass: "data.bypass",

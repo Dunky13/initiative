@@ -2117,5 +2117,14 @@
     "openError": "Les indicateurs de facturation n’ont pas pu être ouverts.",
     "notConfigured": "Ce déploiement n’a pas de service de facturation ou pas de clé de signature pour le transfert.",
     "platformOnly": "Les indicateurs de facturation sont réservés aux opérateurs et propriétaires de la plateforme."
+  },
+  "billingContracts": {
+    "title": "Contrats",
+    "description": "Les clients entreprise facturés à la main, hors du prestataire de paiement.",
+    "invoices": "Les conditions de chaque contrat, les factures émises dans QuickBooks et la date de leur paiement.",
+    "keys": "Le fichier de clé d'enregistrement d'un déploiement dédié, à committer dans le dépôt des paquets pour signature.",
+    "noCommunity": "Elle n'ouvre aucune communauté et ne demande aucun accès. Une communauté est rattachée à un contrat depuis sa propre console d'opérations de facturation.",
+    "open": "Ouvrir les contrats",
+    "openError": "La console des contrats n'a pas pu s'ouvrir."
   }
 }

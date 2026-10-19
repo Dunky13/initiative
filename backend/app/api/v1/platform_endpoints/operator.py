@@ -102,6 +102,9 @@ CommunitiesSuspendDep = Annotated[
 BillingInsightsDep = Annotated[
     User, Depends(require_capability(Capability.BILLING_INSIGHTS))
 ]
+BillingContractsDep = Annotated[
+    User, Depends(require_capability(Capability.BILLING_CONTRACTS))
+]
 RolesAssignDep = Annotated[User, Depends(require_capability(Capability.ROLES_ASSIGN))]
 # App-wide configuration (OIDC, SMTP, branding, role labels, platform AI).
 # Owner-only — imported by settings.py / ai_settings.py.
