@@ -2,7 +2,11 @@
 
 import os
 import shutil
+import signal
 import subprocess
+import stat
+import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -81,6 +85,223 @@ class DebianServiceLifecycleTest(unittest.TestCase):
         self.unit.unlink()
         self.postrm("purge")
         self.assertFalse(self.link.is_symlink())
+
+
+@unittest.skipUnless(
+    sys.platform == "linux" and os.geteuid() == 0,
+    "requires root on Linux for real service-identity ownership checks",
+)
+class StateDirectoryOwnershipTest(unittest.TestCase):
+    # Exercise native filesystem operations without changing global users or
+    # directories. Only account/metadata lookups and absolute installation paths
+    # are adapted; install/chown/chmod run unchanged as root.
+    uid = 65534
+    gid = 65534
+    hooks = (
+        "debian/postinst",
+        "alpine/initiative-server.post-install",
+        "alpine/initiative-server.post-upgrade",
+    )
+
+    def fixture(
+        self, directory: str, hook: str, *, barrier: bool = False
+    ) -> tuple[Path, Path, dict[str, str]]:
+        root = Path(directory)
+        root.chmod(0o755)
+        state = root / "var/lib/initiative"
+        config = root / "etc/initiative"
+        config.mkdir(parents=True)
+        (config / "server.env").write_text("operator configuration stays unchanged\n")
+        (root / "var/lib").mkdir(parents=True)
+        (root / "var/log").mkdir(parents=True)
+        tools = root / "tools"
+        tools.mkdir()
+        stubs = {
+            "getent": "exit 0",
+            "id": f"echo {self.uid}",
+            "deb-systemd-helper": "exit 0",
+        }
+        for name, body in stubs.items():
+            (tools / name).write_text(f"#!/bin/sh\n{body}\n")
+            (tools / name).chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{tools}:{os.environ['PATH']}",
+            "DPKG_ROOT": str(root),
+        }
+        if barrier:
+            install = shutil.which("install")
+            assert install
+            env.update(
+                {"INITIATIVE_TEST_ROOT": str(root), "INITIATIVE_TEST_INSTALL": install}
+            )
+            (tools / "install").write_text(
+                "#!/bin/sh\n"
+                ': > "$INITIATIVE_TEST_ROOT/paused"\n'
+                'while [ ! -e "$INITIATIVE_TEST_ROOT/resume" ]; do sleep 0.01; done\n'
+                'exec "$INITIATIVE_TEST_INSTALL" "$@"\n'
+            )
+            (tools / "install").chmod(0o755)
+        source = (HERE / hook).read_text()
+        for name in ("/var/lib/initiative", "/var/log/initiative", "/etc/initiative"):
+            source = source.replace(name, str(root) + name)
+        source = source.replace("root:initiative", f"0:{self.gid}")
+        source = source.replace(
+            "-o initiative -g initiative", f"-o {self.uid} -g {self.gid}"
+        )
+        rewritten = root / "hook"
+        rewritten.write_text(source)
+        return state, rewritten, env
+
+    def as_service(self, code: str, *args: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-c", code, *(str(path) for path in args)],
+            user=self.uid,
+            group=self.gid,
+            extra_groups=[],
+            capture_output=True,
+            text=True,
+        )
+
+    def assert_layout(self, state: Path) -> None:
+        self.assertEqual((state.stat().st_uid, state.stat().st_gid), (0, self.gid))
+        self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o750)
+        uploads = state / "uploads"
+        self.assertEqual(
+            (uploads.stat().st_uid, uploads.stat().st_gid), (self.uid, self.gid)
+        )
+        self.assertEqual(stat.S_IMODE(uploads.stat().st_mode), 0o750)
+        writable = self.as_service(
+            "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('kept upload')",
+            uploads / "saved.txt",
+        )
+        self.assertEqual(writable.returncode, 0, writable.stderr)
+        denied = self.as_service(
+            "import os,sys; os.rename(sys.argv[1], sys.argv[2])",
+            uploads,
+            state / "renamed",
+        )
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("PermissionError", denied.stderr)
+
+    def test_fresh_install_and_reconfigure_seal_parent_keep_uploads_writable(
+        self,
+    ) -> None:
+        for hook in self.hooks:
+            with (
+                self.subTest(hook=hook),
+                tempfile.TemporaryDirectory(prefix="initiative-owner-") as temporary,
+            ):
+                state, script, env = self.fixture(temporary, hook)
+                for _ in range(2):
+                    subprocess.run(
+                        ["/bin/sh", str(script), "configure"],
+                        env=env,
+                        check=True,
+                        capture_output=True,
+                    )
+                    self.assert_layout(state)
+                self.assertEqual(
+                    (state / "uploads/saved.txt").read_text(), "kept upload"
+                )
+                self.assertEqual(
+                    (Path(temporary) / "etc/initiative/server.env").read_text(),
+                    "operator configuration stays unchanged\n",
+                )
+
+    def test_upgrade_locks_old_parent_before_service_can_swap_uploads(self) -> None:
+        for hook in self.hooks:
+            with (
+                self.subTest(hook=hook),
+                tempfile.TemporaryDirectory(prefix="initiative-race-") as temporary,
+            ):
+                state, script, env = self.fixture(temporary, hook, barrier=True)
+                uploads = state / "uploads"
+                uploads.mkdir(parents=True)
+                os.chown(state, self.uid, self.gid)
+                os.chmod(state, 0o770)
+                os.chown(uploads, self.uid, self.gid)
+                (uploads / "legacy.txt").write_text("preserved older upload")
+                os.chown(uploads / "legacy.txt", self.uid, self.gid)
+                victim = Path(temporary) / "victim"
+                victim.mkdir(mode=0o700)
+                before = victim.stat()
+                process = subprocess.Popen(
+                    ["/bin/sh", str(script), "configure"],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+                try:
+                    deadline = time.monotonic() + 10
+                    while not (Path(temporary) / "paused").exists():
+                        if process.poll() is not None:
+                            self.fail(
+                                f"hook exited before the install barrier: {process.communicate()}"
+                            )
+                        if time.monotonic() >= deadline:
+                            self.fail("hook did not reach the install barrier")
+                        time.sleep(0.01)
+                    attack = self.as_service(
+                        "import os,sys; os.rename(sys.argv[1], sys.argv[2]); os.symlink(sys.argv[3], sys.argv[1])",
+                        uploads,
+                        state / "old-uploads",
+                        victim,
+                    )
+                finally:
+                    (Path(temporary) / "resume").touch()
+                    try:
+                        stdout, stderr = process.communicate(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.communicate()
+                        raise
+                after = victim.stat()
+                self.assertEqual(
+                    (after.st_uid, after.st_gid, stat.S_IMODE(after.st_mode)),
+                    (before.st_uid, before.st_gid, stat.S_IMODE(before.st_mode)),
+                    "root followed the raced uploads symlink and changed its target",
+                )
+                self.assertNotEqual(
+                    attack.returncode,
+                    0,
+                    "service replaced uploads after the hook checked it",
+                )
+                self.assertIn("PermissionError", attack.stderr)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
+                self.assert_layout(state)
+                self.assertEqual(
+                    (uploads / "legacy.txt").read_text(), "preserved older upload"
+                )
+
+    def test_existing_upload_symlink_is_rejected_without_touching_target(self) -> None:
+        for hook in self.hooks:
+            with (
+                self.subTest(hook=hook),
+                tempfile.TemporaryDirectory(prefix="initiative-link-") as temporary,
+            ):
+                state, script, env = self.fixture(temporary, hook)
+                state.mkdir()
+                os.chown(state, self.uid, self.gid)
+                victim = Path(temporary) / "victim"
+                victim.mkdir(mode=0o700)
+                before = victim.stat()
+                (state / "uploads").symlink_to(victim)
+                result = subprocess.run(
+                    ["/bin/sh", str(script), "configure"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                after = victim.stat()
+                self.assertEqual(
+                    (after.st_uid, after.st_gid, stat.S_IMODE(after.st_mode)),
+                    (before.st_uid, before.st_gid, stat.S_IMODE(before.st_mode)),
+                )
+                self.assertEqual(state.stat().st_uid, 0)
 
 
 @unittest.skipUnless(

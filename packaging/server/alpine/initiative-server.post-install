@@ -1,13 +1,22 @@
 #!/bin/sh
 set -eu
-# Refuse symlinks before root changes ownership of daemon-writable paths.
-for directory in /var/lib/initiative /var/lib/initiative/uploads /var/log/initiative; do
-    if [ -L "$directory" ]; then
-        echo "Refusing symlink at $directory" >&2
+# /var/lib is root-owned, so the service cannot replace this top-level
+# entry. Revoke its old ownership BEFORE permissions, then inspect children:
+# even a live process with an open directory FD cannot rename them afterward.
+if [ -L /var/lib/initiative ] || { [ -e /var/lib/initiative ] && [ ! -d /var/lib/initiative ]; }; then
+    echo 'Refusing non-directory or symlink at /var/lib/initiative' >&2
+    exit 1
+fi
+mkdir -p /var/lib/initiative
+chown root:initiative /var/lib/initiative
+chmod 0750 /var/lib/initiative
+for directory in /var/lib/initiative/uploads /var/log/initiative; do
+    if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
+        echo "Refusing non-directory or symlink at $directory" >&2
         exit 1
     fi
 done
-install -d -o initiative -g initiative -m 0750 /var/lib/initiative /var/lib/initiative/uploads /var/log/initiative
+install -d -o initiative -g initiative -m 0750 /var/lib/initiative/uploads /var/log/initiative
 chown root:initiative /etc/initiative /etc/initiative/server.env
 chmod 0750 /etc/initiative
 chmod 0640 /etc/initiative/server.env

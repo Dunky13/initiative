@@ -47,6 +47,9 @@ case "$kind" in
 esac
 [ "$(id -u initiative)" -ne 0 ]
 [ "$(stat -c %U /usr/lib/initiative)" = root ]
+[ "$(stat -c %U /var/lib/initiative)" = root ]
+[ "$(stat -c %G /var/lib/initiative)" = initiative ]
+[ "$(stat -c %a /var/lib/initiative)" = 750 ]
 [ "$(stat -c %U /var/lib/initiative/uploads)" = initiative ]
 [ "$(stat -c %a /etc/initiative/server.env)" = 640 ]
 [ ! -e /run/initiative-server.pid ]
@@ -177,6 +180,8 @@ case "$kind" in
     apk) apk add --upgrade "$upgrade" ;;
 esac
 cmp "$work/config-before" /etc/initiative/server.env
+[ "$(stat -c %U /var/lib/initiative)" = root ]
+[ "$(stat -c %a /var/lib/initiative)" = 750 ]
 start_server
 runtime_check
 stop_server

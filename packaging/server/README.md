@@ -69,8 +69,14 @@ libraries. Package publication is handled by CI, not this script.
 ## Lifecycle and configuration
 
 The immutable runtime is root-owned at `/usr/lib/initiative`. Packages create a
-non-login, non-root `initiative` identity and writable `/var/lib/initiative`
-(with `uploads/`) and `/var/log/initiative`. `/etc/initiative/server.env` is
+non-login, non-root `initiative` identity. Its home, `/var/lib/initiative`, is
+root-owned with group `initiative` and mode 0750. The service can write to its
+`uploads/` child and `/var/log/initiative`, which it owns. Hooks transfer ownership
+of an older writable home to root before setting its permissions and inspecting
+children, so a running service cannot replace `uploads/` with a symlink while
+root applies ownership. Existing uploaded data is preserved. Operators must
+create and grant access to any custom storage or export children under the home.
+`/etc/initiative/server.env` is
 root-owned and group-readable by `initiative` (0640 in a 0750 directory).
 It is a Debian conffile; Alpine's protected `/etc` semantics preserve operator
 edits. The default contains no database credentials or application secrets.

@@ -114,12 +114,17 @@ migrations. A package transaction itself does not contact the database.
 | `/usr/lib/initiative` | Package-owned application, dependencies and release assets |
 | `/etc/initiative/server.env` | Operator-owned configuration and secrets |
 | `/var/lib/initiative/uploads` | Uploaded files |
-| `/var/lib/initiative` | Service home and mutable state |
+| `/var/lib/initiative` | Root-owned service home; `initiative` has read/traverse access |
 | `/var/log/initiative` | OpenRC service output; Debian also uses the journal |
 
-Keep local uploads under `/var/lib/initiative`. On Debian, a custom `UPLOADS_DIR`
-outside that directory also needs a systemd override granting `ReadWritePaths`
-for the chosen directory; grant the `initiative` account access to it as well.
+Keep local uploads under `/var/lib/initiative/uploads`, which the service owns.
+The parent `/var/lib/initiative` is owned by root with mode 0750; upgrades also
+secure the parent of an older installation. This prevents the service from
+replacing a storage directory while package hooks apply ownership. For a custom
+storage or export directory under that parent, create it as root and grant the
+`initiative` account access before configuring it. On Debian, a custom
+`UPLOADS_DIR` outside `/var/lib/initiative` also needs a systemd override granting
+`ReadWritePaths` for the chosen directory.
 
 Before upgrading, back up the database, PostgreSQL roles, configuration and uploads
 as described in [Backups and updates](backups-and-updates.md). Install the new
