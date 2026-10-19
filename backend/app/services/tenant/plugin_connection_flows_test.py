@@ -1068,6 +1068,40 @@ class TestTokens:
         assert cleared.status_code == 204, cleared.text
         assert plugin_connection_flows._minted == {}
 
+    async def test_a_clear_while_the_vendor_is_asked_keeps_nothing(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        registration,
+        monkeypatch,
+    ):
+        """A mint waiting for the vendor when the connection is cleared keeps
+        the token it is then given out of the cache."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        parse_expiry = plugin_connection_flows._parse_expiry
+
+        def clearing_first(body, *, now):
+            plugin_connection_flows.forget_minted(a.guild.id, plugin.id, "workspace")
+            return parse_expiry(body, now=now)
+
+        monkeypatch.setattr(plugin_connection_flows, "_parse_expiry", clearing_first)
+
+        minted = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"),
+            headers=_install_headers(a.guild, plugin),
+        )
+
+        assert minted.status_code == 200, minted.text
+        assert plugin_connection_flows._minted == {}
+
     async def test_a_minted_token_asks_for_what_its_body_names(
         self, client: AsyncClient, acting_user, session, vendor, registration
     ):

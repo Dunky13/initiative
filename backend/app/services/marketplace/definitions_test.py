@@ -380,6 +380,22 @@ class TestConnections:
                 ],
             )
 
+    def test_a_value_after_the_host_is_filled_in(self):
+        """A value in the query of an address with no path is not in its host."""
+        [connection] = _normalize(
+            vendor=VENDOR,
+            connections=[
+                {
+                    "id": "account",
+                    "scope": "interactive",
+                    "label": _label(),
+                    "flow": {**FLOW, "authorize_url": "https://vendor.test?as={login}"},
+                    "fields": [_managed("login")],
+                }
+            ],
+        )["connections"]
+        assert connection["flow"]["authorize_url"] == "https://vendor.test?as={login}"
+
     @pytest.mark.parametrize(
         ("change", "problem"),
         [

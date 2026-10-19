@@ -35,6 +35,7 @@ foothold in a guild is a legitimate install with nothing to render.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping, Optional
 
 from app.core.plugin_scopes import ALL_SCOPES, plugin_scope_target
@@ -46,11 +47,11 @@ from app.services.marketplace.manifest_values import (
     MAX_NAME_LENGTH,
     MAX_PATH_LENGTH,
     check_identifier,
-    check_single_line,
     check_json_size,
     check_metadata_key,
     check_path,
     check_public_id,
+    check_single_line,
     check_uid,
     check_url,
     clean_text,
@@ -59,12 +60,12 @@ from app.services.marketplace.manifest_values import (
     require_mapping,
     utf8_bytes,
 )
-from app.services.tenant.plugin_config import RESERVED_TOKEN_KEYS
 from app.services.marketplace.widget_meta import (
     MAX_TEXT_LENGTH,
     localized_text,
     validate_widget_meta,
 )
+from app.services.tenant.plugin_config import RESERVED_TOKEN_KEYS
 
 __all__ = [
     "ACTOR_KINDS",
@@ -798,7 +799,7 @@ def _template(
         if not text.startswith("https://"):
             fail(f"{what} must be an https address")
         # The host is the plug-in's to state; a value is filled in after it.
-        if "{" in text[len("https://") :].split("/", 1)[0]:
+        if "{" in re.split(r"[/?#]", text[len("https://") :], maxsplit=1)[0]:
             fail(f"{what} fills a value into its host")
     _check_placeholders(text, what=what, vendor_keys=vendor_keys, field_keys=field_keys)
     return text
