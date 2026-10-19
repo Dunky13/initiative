@@ -604,7 +604,7 @@ async def upsert_listing(
         )
         session.add(version)
         await session.flush()
-    elif _stored_body(kind, version) != (
+    elif _stored_body(kind, version, public_id=public_id) != (
         definition,
         example,
         release_notes,
@@ -654,13 +654,19 @@ async def upsert_listing(
 
 
 def _stored_body(
-    kind: str, version: MarketplaceListingVersion
+    kind: str, version: MarketplaceListingVersion, *, public_id: str
 ) -> tuple[Any, Any, Any, Any, Any] | None:
     """A published version's content as today's code would write it. A field
     the definition format gained since then takes its default on both sides,
-    so it is the content that is compared, not the format it was saved in."""
+    so it is the content that is compared, not the format it was saved in.
+
+    Normalized under the same ``public_id`` as the incoming manifest: a
+    declarative plug-in is named by its listing and does not normalize without
+    it, which would make every republish of one read as changed."""
     try:
-        definition = normalize_listing_definition(kind, version.definition)
+        definition = normalize_listing_definition(
+            kind, version.definition, public_id=public_id
+        )
         example = normalize_listing_example(kind, version.example, definition)
     except ListingDefinitionError:
         return None

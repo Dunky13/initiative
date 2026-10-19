@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A registry refresh no longer skips the GitHub plug-in.** A plug-in Initiative runs from its listing, like GitHub, was refused as "already published with different content" whenever the registry brought a version this server already had, and the refresh said it stopped. An unchanged version now goes through.
 - **Signing in no longer greets an established account as a new one.** When your communities didn't load the first time, the app showed the setup for new accounts. It now tries again, and if it still can't load them, says so and offers **Try again**.
 - A dashboard tile over a plug-in's rows counted every row for `count(*) FILTER (WHERE …)` and `count(DISTINCT …)`. It now counts what they ask for.
 - **Icons sit the same distance from their labels everywhere.** In some buttons and menus, an icon or badge stood further from its label than usual: on plug-in, marketplace and dashboard buttons, in the table and text-alignment menus of the editor, and in the people and tag pickers.
