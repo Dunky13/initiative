@@ -484,7 +484,15 @@ def _conditions_description(dataset_name: str | None) -> str:
 def _sorting_description(dataset_name: str | None) -> str:
     if dataset_name is None:
         return _SORTING_SHAPE
+    # The fields a client offers that also sort, and the ones declared only to
+    # be sorted on (a date window, a board column, a tag), which the offered
+    # set — a set of filters — never holds.
     names = [f["name"] for f in fields_registry.describe(dataset_name) if f["sortable"]]
+    names += [
+        spec.name
+        for spec in fields_registry.dataset(dataset_name).fields
+        if spec.sortable and not spec.filterable
+    ]
     return (
         f"{_SORTING_SHAPE} Fields: {', '.join(names)}. "
         'Example: [{"field": "due_date", "dir": "asc"}]'

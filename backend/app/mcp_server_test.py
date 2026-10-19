@@ -602,6 +602,24 @@ async def test_every_filtered_list_names_its_fields():
         assert "initiative_ids" in text, name
 
 
+async def test_every_sorted_list_names_its_sorts():
+    tools = await build_mcp_server(app).list_tools()
+    sorted_lists = {
+        t.name: t.parameters["properties"]["sorting"]["description"]
+        for t in tools
+        if "sorting" in t.parameters.get("properties", {})
+    }
+
+    assert sorted_lists
+    for name, text in sorted_lists.items():
+        # What the board and table sort by, including the fields declared only
+        # to be sorted on.
+        for field in ("due_date", "priority", "date_group", "status_position"):
+            assert field in text, f"{name} sorting does not name {field}"
+        # And not the lifecycle columns no client offers.
+        assert "deleted_at" not in text and "hold_id" not in text, name
+
+
 async def test_a_page_is_sized_for_a_model():
     tools = await build_mcp_server(app).list_tools()
     paged = [t for t in tools if "page_size" in t.parameters.get("properties", {})]
