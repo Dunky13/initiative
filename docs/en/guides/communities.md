@@ -119,7 +119,7 @@ The card shows the location exactly as you typed it, and tapping it on your comm
 3. Optionally limit it:
     - **Max uses** — how many people can get in on this one link.
     - **Expires in (days)** — when it stops working.
-4. **Copy it** and send it however you like. Email, chat, read it aloud down the phone.
+4. **Copy it** and send it however you like. Email, chat, read it aloud down the phone. Copy it now: the link is shown once, when you make it.
 
 Anyone who opens it joins after signing in or making an account.
 

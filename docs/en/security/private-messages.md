@@ -44,7 +44,7 @@ The formal version of this, with the rest of the compliance picture, is in [Data
 
 These two things are connected. If the server kept a readable archive so a new phone could catch up on old conversations, that archive would be exactly the thing somebody would ask for.
 
-So there isn't one. Each device keeps its own copy, a device that wasn't there doesn't have the older messages, and signing out takes that device's copy with it. It's a genuine cost, and it's what buys everything above. See [Your messages live on your devices](../guides/messages.md#your-messages-live-on-your-devices).
+So there isn't one. Each device keeps its own copy, a device that wasn't there doesn't have the older messages, and signing out of a browser takes its copy with it. It's a genuine cost, and it's what buys everything above. See [Your messages live on your devices](../guides/messages.md#your-messages-live-on-your-devices).
 
 Two places history moves between devices, and neither changes that: your own other device can send a new one its copy once you've said the new one is yours, and somebody joining a group is sent, by each member, what that member wrote. Both are ordinary encrypted messages, written by a device and read by a device. The server carries them the way it carries everything else, and keeps them no longer.
 

@@ -125,6 +125,8 @@ Type `![[` and pick something, or choose **Embed** from the `/` menu. Hover any 
 
 Like a chip, it reads live. Rewrite the task's description and every page embedding it says the new thing.
 
+**Embed settings** changes what an embed shows. **Show as** a **Card** (the whole thing) or **Chosen details**, just the few fields that matter. Or embed **Tasks matching a filter** instead of one thing, from a project or every project in the initiative, shown as a **List**, a **Table** or a **Count**: a page that says "Open launch tasks: 7" and means it, today and next week.
+
 The arrow in the embed's corner folds it down to its name. Folding a callout or an embed is saved with the page, so everyone who opens it sees it folded; somebody who can only read the page can still open it for themselves.
 
 An embedded page's own embeds show as names only, so two pages embedding each other don't go on forever.

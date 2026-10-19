@@ -95,7 +95,7 @@ Nobody in the list yet, or somebody missing from it? The **+** goes and finds th
 Somebody who takes no messages is shown like anybody else and simply offers nothing to click. They're there, and they're not reachable, and the row says both.
 
 !!! screenshot "My Messages"
-    **Show:** the conversation list with a request waiting above it, a folded group, and the new-conversation picker open over the top.
+    **Show:** the conversation list, newest first with an unread dot on one, and the new-conversation picker open over the top.
 
     Save as `en/images/your-space/my-messages.png`, then replace this box with:
     `![My Messages](../images/your-space/my-messages.png)`
