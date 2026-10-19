@@ -214,8 +214,13 @@ async def queue_install_revocations(
     Read from ``plugin.config``, ``secrets`` and ``plugin.definition`` as they are,
     so it is called before any of them changes.
     """
+    # Imported here: the flow module reads connection rows, whose own module
+    # queues intents here.
+    from app.services.tenant import plugin_connection_flows as flows
+
     guild_id = routed_guild_id(session)
     for connection_id in sorted(connection_ids):
+        flows.forget_minted(guild_id, plugin.id, connection_id)
         await _queue(
             session,
             _intent_for(

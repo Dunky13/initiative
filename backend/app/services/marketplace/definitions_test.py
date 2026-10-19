@@ -380,6 +380,22 @@ class TestConnections:
                 ],
             )
 
+    def test_a_value_after_the_host_is_filled_in(self):
+        """A value in the query of an address with no path is not in its host."""
+        [connection] = _normalize(
+            vendor=VENDOR,
+            connections=[
+                {
+                    "id": "account",
+                    "scope": "interactive",
+                    "label": _label(),
+                    "flow": {**FLOW, "authorize_url": "https://vendor.test?as={login}"},
+                    "fields": [_managed("login")],
+                }
+            ],
+        )["connections"]
+        assert connection["flow"]["authorize_url"] == "https://vendor.test?as={login}"
+
     @pytest.mark.parametrize(
         ("change", "problem"),
         [
@@ -388,6 +404,11 @@ class TestConnections:
             (
                 {"token_url": "https://vendor.test/{tenant}/token"},
                 "not a field of this connection",
+            ),
+            ({"token_url": "https://{login}.vendor.test/token"}, "into its host"),
+            (
+                {"authorize_url": "https://{vendor.app_slug}.vendor.test/oauth"},
+                "into its host",
             ),
             ({"revoke": "rfc7009"}, "revoke_url"),
             ({"revoke": "github_grant"}, "revoke_url"),
@@ -398,6 +419,8 @@ class TestConnections:
             "plain http",
             "an undeclared vendor value",
             "an undeclared field",
+            "a field filled into the host",
+            "a vendor value filled into the host",
             "rfc7009 with nowhere to post",
             "github_grant with nowhere to send",
             "an unknown revocation",

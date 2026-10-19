@@ -133,6 +133,7 @@ __all__ = [
     "call_hook",
     "callback_url",
     "clear_token_cache",
+    "forget_minted",
     "complete_callback",
     "complete_setup",
     "flow_of",
@@ -597,11 +598,23 @@ class _Minted:
 #: Minted tokens, per worker, by the connection and the exact request that
 #: minted them. Each token minted drops those past reuse.
 _minted: dict[tuple[Any, ...], _Minted] = {}
+#: How many times each connection's minted tokens were forgotten, so a mint
+#: that was waiting on the vendor when they were keeps nothing.
+_forgotten: dict[tuple[Any, ...], int] = {}
 
 
 def clear_token_cache() -> None:
     """Forget every minted token."""
     _minted.clear()
+
+
+def forget_minted(guild_id: int, install_id: int, connection_id: str) -> None:
+    """Forget the tokens minted for one community connection, as its stored
+    values go, those a mint still waiting for will answer included."""
+    connection = (guild_id, install_id, connection_id)
+    _forgotten[connection] = _forgotten.get(connection, 0) + 1
+    for key in [held for held in _minted if held[:3] == connection]:
+        del _minted[key]
 
 
 def _keep_minted(key: tuple[Any, ...], minted: _Minted) -> None:
@@ -698,6 +711,7 @@ async def mint_jwt_bearer(
     cached = _minted.get(full_key)
     if cached is not None and cached.reuse_until > time.monotonic():
         return TokenSet(access_token=cached.token, expires_at=cached.expires_at)
+    forgotten = _forgotten.get(cache_key[:3], 0)
     if isinstance(declared, str):
         body = await _answered_body(declared, fields)
 
@@ -747,7 +761,9 @@ async def mint_jwt_bearer(
         raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502)
     expires_at = _parse_expiry(body, now=now)
     remaining = (expires_at - now) if expires_at is not None else 0
-    if remaining > _MINTED_REUSE_MARGIN_SECONDS:
+    if remaining > _MINTED_REUSE_MARGIN_SECONDS and forgotten == _forgotten.get(
+        cache_key[:3], 0
+    ):
         _keep_minted(
             full_key,
             _Minted(

@@ -1022,15 +1022,15 @@ async def run_schedule(
         )
         if params is not UNDEFINED and not isinstance(params, dict):
             raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED)
+        tokens, fields, _ = await _credentials(
+            registration=registration,
+            plugin=plugin,
+            guild_id=guild_id,
+            endpoint=endpoint,
+            refs={},
+            actor="installation",
+        )
         async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-            tokens, fields, _ = await _credentials(
-                registration=registration,
-                plugin=plugin,
-                guild_id=guild_id,
-                endpoint=endpoint,
-                refs={},
-                actor="installation",
-            )
             result = await run_endpoint(
                 plugin.definition,
                 endpoint,
@@ -1236,16 +1236,18 @@ async def call_endpoint(
     )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
+    # The credentials come first, outside the call's budget: a refresh that
+    # the budget cut short would lose what the vendor had just issued.
+    tokens, used, member = await _credentials(
+        registration=registration,
+        plugin=plugin,
+        guild_id=guild_id,
+        endpoint=endpoint,
+        refs=refs,
+        actor=actor,
+    )
     try:
         async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-            tokens, used, member = await _credentials(
-                registration=registration,
-                plugin=plugin,
-                guild_id=guild_id,
-                endpoint=endpoint,
-                refs=refs,
-                actor=actor,
-            )
             result = await run_endpoint(
                 plugin.definition,
                 endpoint,

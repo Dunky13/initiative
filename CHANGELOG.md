@@ -96,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A plug-in's sign-in, token and revocation addresses state their host in the manifest; one that would fill a value into the host is refused when the plug-in is published. A community connection's minted tokens are forgotten when the connection is cleared or the plug-in removed, and a member's credential is refreshed outside a call's time budget, so a refresh cut short no longer loses it.
 - **Database URLs with encoded characters.** Startup migrations accept percent-encoded passwords and Unix socket paths without Alembic treating their percent signs as configuration interpolation.
 - **A key limited to one community lists only that community.** `GET /communities/` with a personal API key used to list every community its owner belongs to. It now lists only the ones the key can reach: the one it is limited to, and none that turned off the owner's API access.
 - **A registry refresh no longer skips the GitHub plug-in.** A plug-in Initiative runs from its listing, like GitHub, was refused as "already published with different content" whenever the registry brought a version this server already had, and the refresh said it stopped. An unchanged version now goes through.
