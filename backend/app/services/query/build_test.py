@@ -560,12 +560,12 @@ class TestADateStaysADistance:
 
     def test_ahead_of_now(self):
         assert self.where({"relative": 30}) == (
-            "due_date <= (now() + CAST('30 days' AS interval))"
+            "due_date <= now() + CAST('30 days' AS interval)"
         )
 
     def test_behind_it(self):
         assert self.where({"relative": -30}, FilterOp.gte) == (
-            "due_date >= (now() - CAST('30 days' AS interval))"
+            "due_date >= now() - CAST('30 days' AS interval)"
         )
 
     def test_today(self):

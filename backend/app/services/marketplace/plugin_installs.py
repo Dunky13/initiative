@@ -222,12 +222,12 @@ async def reindex_community(session: AsyncSession, guild_id: int) -> None:
         if locked is not None:
             await record(guild_id, locked)
         await session.commit()
-    async with db_session.SystemSessionLocal() as index:
+    async with db_session.SystemSessionLocal() as system_session:
         held: set[int] = set()
         for table in (PluginInstall, PluginInstallClaim):
             held.update(
                 (
-                    await index.exec(
+                    await system_session.exec(
                         select(table.install_id).where(table.guild_id == guild_id)
                     )
                 ).all()
@@ -235,12 +235,12 @@ async def reindex_community(session: AsyncSession, guild_id: int) -> None:
         present = set((await session.exec(select(GuildPlugin.id))).all())
         gone = sorted(held - present)
         for table in (PluginInstall, PluginInstallClaim) if gone else ():
-            await index.exec(
+            await system_session.exec(
                 delete(table).where(
                     table.guild_id == guild_id, col(table.install_id).in_(gone)
                 )
             )
-        await index.commit()
+        await system_session.commit()
 
 
 async def forget(guild_id: int, install_id: int) -> None:
