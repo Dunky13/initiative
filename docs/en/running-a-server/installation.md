@@ -22,20 +22,25 @@ A machine (yours, or a cloud box) with:
 ## Quick start
 
 ```bash
-# 1. Download the example compose file
-curl -O https://raw.githubusercontent.com/beyonders-studio/initiative/main/docker-compose.example.yml
-cp docker-compose.example.yml docker-compose.yml
+# 1. Download the compose file
+curl -o docker-compose.yml https://raw.githubusercontent.com/beyonders-studio/initiative/main/docker-compose.example.yml
 
-# 2. Edit configuration — set a strong SECRET_KEY and POSTGRES_PASSWORD
-nano docker-compose.yml
+# 2. Write your settings beside it: your address, and two secrets
+cat > .env <<EOF
+APP_URL=https://initiative.example.com
+SECRET_KEY=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$(openssl rand -hex 32)
+EOF
 
 # 3. Start it
 docker compose up -d
-
-# 4. Open http://localhost:8173 — the first person to register becomes the owner
 ```
 
-The example file ships **PostgreSQL 17** and sensible defaults already wired together, so it works as-is once you set a `SECRET_KEY` and a `POSTGRES_PASSWORD`. It refuses to start without either. Initiative listens on port **8173** by default.
+Then point your reverse proxy (Caddy, nginx, Traefik, Nginx Proxy Manager, a Cloudflare Tunnel) at port **8173** on this machine, with WebSockets allowed, and open your address. The first person to register becomes the owner.
+
+The compose file brings **PostgreSQL 17** with it and reads everything you choose from `.env`, so you never edit it, and updating it later is downloading it again. It refuses to start without the two secrets. A proxy on this machine or your LAN, or Cloudflare in front of it, is recognised with nothing else to set; see [Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy) for the one setup that needs more.
+
+**Just trying it on your own computer?** Leave `APP_URL` out of `.env` and open `http://localhost:8173`.
 
 !!! warning "Choose both secrets once, and keep them"
     Make **`SECRET_KEY`** and **`POSTGRES_PASSWORD`** strong and unique. `openssl rand -hex 32` makes a good one of each.
@@ -148,8 +153,6 @@ docker buildx imagetools inspect ghcr.io/beyonders-studio/initiative:stable --fo
 Once it's running:
 
 - [ ] **Register the first account** — it becomes the [owner](platform-roles.md).
-- [ ] Put Initiative behind **HTTPS** for any real use (a reverse proxy such as Caddy, Traefik, or nginx).
-- [ ] Set **`APP_URL`** to your public address (needed for single sign-on and links). See [Configuration](configuration.md).
 - [ ] Configure **email** so invites and reminders can be sent. See [Email](email.md).
 - [ ] Set up **[backups](backups-and-updates.md)**.
 
