@@ -175,10 +175,16 @@ class ListenerTest(unittest.TestCase):
         args = self.launch.command(self.config)
         self.assertEqual(args[args.index("--host") + 1], "127.0.0.1")
         self.assertIn("--no-proxy-headers", args)
-        self.assertEqual(args[args.index("--forwarded-allow-ips") + 1], "127.0.0.1,::1")
+        self.assertEqual(
+            args[args.index("--forwarded-allow-ips") + 1], self.launch.LOCAL_NETWORKS
+        )
         self.assertEqual(
             args[args.index("--env-file") + 1], "/etc/initiative/server.env"
         )
+
+    def test_trusts_the_proxies_the_image_trusts(self) -> None:
+        start = (build.REPO / "backend/start.sh").read_text()
+        self.assertIn(f"FORWARDED_ALLOW_IPS:-{self.launch.LOCAL_NETWORKS}}}", start)
 
     def test_proxy_setting_and_shell_text_remain_single_argv_values(self) -> None:
         args = self.launch.command(
