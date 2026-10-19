@@ -78,6 +78,7 @@ def _plugin(**overrides) -> SimpleNamespace:
             "config_state": "ok",
             "config_state_detail": None,
             "granted_scopes": [],
+            "settings": {},
             "created_by": 11,
             "created_at": now,
             "updated_at": now,

@@ -91,6 +91,7 @@ async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypa
         "operator_handoff": False,
         "manages_plans": False,
         "insights": False,
+        "contracts": False,
     }
 
 

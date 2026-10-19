@@ -26,7 +26,7 @@ from app.models.platform.plugin_service_registration import (
     RegistrationKind,
 )
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import plugin_oauth
+from app.services.marketplace import plugin_installs, plugin_oauth
 from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import plugin_updates
@@ -825,6 +825,9 @@ async def test_a_paused_install_is_listed_as_inactive(
             )
         )
     await session.commit()
+    # The index follows the install on the index sweep's next visit.
+    await route_session_to_guild(session, installed.guild.id)
+    await plugin_installs.reindex_community(session, installed.guild.id)
 
     response = await client.get(
         INSTALLATIONS_URL, headers={"Authorization": f"Bearer {plugin_token}"}
