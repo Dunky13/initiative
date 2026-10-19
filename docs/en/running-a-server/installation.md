@@ -12,35 +12,27 @@ For a headless Debian or Alpine host, including a Proxmox LXC, see
 [Native server packages](native-packages.md). Choose `initiative-server`; the
 existing `initiative-<version>.deb` installs the desktop client.
 
-## Before you start
-
-A machine (yours, or a cloud box) with:
-
-- **Docker** and **Docker Compose** installed.
-- A way to reach it in a browser — `localhost` for a try-out, a domain name for real use.
-
 ## Quick start
 
+This assumes the server you already run: Docker Compose, a domain pointed at it, and a reverse proxy handling HTTPS.
+
 ```bash
-# 1. Download the compose file
 curl -o docker-compose.yml https://raw.githubusercontent.com/beyonders-studio/initiative/main/docker-compose.example.yml
 
-# 2. Write your settings beside it: your address, and two secrets
 cat > .env <<EOF
 APP_URL=https://initiative.example.com
 SECRET_KEY=$(openssl rand -hex 32)
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 EOF
 
-# 3. Start it
 docker compose up -d
 ```
 
-Then point your reverse proxy (Caddy, nginx, Traefik, Nginx Proxy Manager, a Cloudflare Tunnel) at port **8173** on this machine, with WebSockets allowed, and open your address. The first person to register becomes the owner.
+Point your proxy at port **8173**, with WebSockets on, and open your domain. The first person to register becomes the owner.
 
-The compose file brings **PostgreSQL 17** with it and reads everything you choose from `.env`, so you never edit it, and updating it later is downloading it again. It refuses to start without the two secrets. A proxy on this machine or your LAN, or Cloudflare in front of it, is recognised with nothing else to set; see [Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy) for the one setup that needs more.
+That's all of it. PostgreSQL 17 comes in the same file, every setting lives in `.env`, and updating the compose file is downloading it again. A proxy on the same machine or your LAN, or Cloudflare in front of it, needs nothing else; one on another machine over a public address goes in [`FORWARDED_ALLOW_IPS`](configuration.md#running-behind-a-reverse-proxy).
 
-**Just trying it on your own computer?** Leave `APP_URL` out of `.env` and open `http://localhost:8173`.
+Trying it on a laptop first? Leave `APP_URL` out and open `http://localhost:8173`.
 
 !!! warning "Choose both secrets once, and keep them"
     Make **`SECRET_KEY`** and **`POSTGRES_PASSWORD`** strong and unique. `openssl rand -hex 32` makes a good one of each.
