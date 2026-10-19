@@ -929,6 +929,7 @@ async def _call_plugin(
     subject: Optional[Mapping[str, Any]] = None,
     actor: Optional[str] = None,
     item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
 ) -> T:
     """One upstream call, under this worker's in-flight cap for the plug-in, and
     what ``read`` made of its answer. Sent once: nothing here retries.
@@ -939,8 +940,9 @@ async def _call_plugin(
     A declarative plug-in is called by Initiative itself
     (:func:`~app.services.marketplace.declarative.call_endpoint`), with no
     context token and no signature, since there is no plug-in to receive either.
-    Its action's call names the ``actor`` whose credential it runs on and the
-    ``item``, which the endpoint's expressions read.
+    Its action's call names the ``actor`` whose credential it runs on, the
+    ``item`` and the list ``element`` it was run from, which the endpoint's
+    expressions read.
     """
     declarative = is_declarative(plugin.definition)
     if not declarative and not plugin_platform_signing_enabled():
@@ -973,6 +975,7 @@ async def _call_plugin(
                         fields=fields,
                         actor=caller.actor if caller is not None else actor,
                         item=item,
+                        element=element,
                     )
                 )
             )
@@ -1354,11 +1357,18 @@ async def resolve_param_options(
 ) -> tuple[list[dict[str, str]], Optional[str]]:
     """The values one parameter permits, from the read its plug-in named.
 
+    The parameter may be a read's, for a widget's binding, or a write's, for
+    the question an action asks before it runs: either way what is called is
+    the read the parameter's ``options_from`` names, never the endpoint
+    declaring it, so filling in a form is no way to make a plug-in act.
+
     Returns the options and, when there are none, why — never an exception for
     a source that simply would not resolve. The caller draws a menu when there
     is one and leaves the field typeable when there is not.
     """
-    endpoint = find_read_endpoint(plugin.definition, endpoint_id)
+    endpoint = endpoint_by_id(
+        plugin.definition, endpoint_id, directions=("read", "write")
+    )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
     # A form for an endpoint the caller may not read is not theirs to fill in.

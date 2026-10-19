@@ -603,6 +603,7 @@ async def run_endpoint(
     now: datetime,
     installed: Mapping[str, Any],
     item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
     actor: Optional[str] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint's answer: its result, or ``{"unavailable":
@@ -614,9 +615,9 @@ async def run_endpoint(
     actor, the one it names for ``actor``. Expressions read a request's own
     connection as ``connection``, every connection the endpoint's
     ``requires`` names as ``connections.<id>``, the install's ``settings`` and
-    ``aliases`` (``installed``), and the ``item`` an action's call is made on.
-    A passing failure raises :class:`PluginDataError` as the plug-in being
-    unavailable.
+    ``aliases`` (``installed``), the ``item`` an action's call is made on and
+    the ``element`` of a list it was run from. A passing failure raises
+    :class:`PluginDataError` as the plug-in being unavailable.
     """
     run = _Run(
         definition,
@@ -636,6 +637,7 @@ async def run_endpoint(
         "now": run.now,
         **installed,
         **({} if item is None else {"item": dict(item)}),
+        **({} if element is None else {"element": element}),
     }
     try:
         read = await _stepped(
@@ -790,6 +792,8 @@ async def action_change(
     held: Mapping[str, Any],
     installed: Mapping[str, Any],
     result: Any = UNDEFINED,
+    params: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> Optional[dict[str, Any]]:
     """The change a declarative action's ``write`` answers, as the SDK's
@@ -798,10 +802,12 @@ async def action_change(
 
     ``write`` reads ``item`` (its ``kind``, ``id`` and ``title``), ``held``
     (the install's values on it, by key), ``result`` (the endpoint's mapped
-    answer, absent when the action names no endpoint), the install's
-    ``settings`` and ``aliases`` (``installed``) and ``now``. A change
-    names no target: its item is the action's. The rest of the contract's
-    ``change`` is held where the change is made
+    answer, absent when the action names no endpoint), ``params`` (what the
+    reader answered, in the endpoint's declared types), ``element`` (the
+    ``ref`` of the list element the action was run from, absent when it was
+    not), the install's ``settings`` and ``aliases`` (``installed``) and
+    ``now``. A change names no target: its item is the action's. The rest of
+    the contract's ``change`` is held where the change is made
     (``plugin_metadata.apply_changes``). An expression that fails, or an
     answer that is not a change, raises :class:`PluginDataError` as the
     plug-in being unavailable.
@@ -810,11 +816,14 @@ async def action_change(
     document: dict[str, Any] = {
         "item": dict(item),
         "held": dict(held),
+        "params": dict(params or {}),
         **installed,
         "now": at,
     }
     if result is not UNDEFINED:
         document["result"] = result
+    if element is not None:
+        document["element"] = element
     try:
         change = await expressions.evaluate(write, document, millis=millis)
     except ExpressionError as exc:
@@ -1049,7 +1058,9 @@ async def run_schedule(
 # --- the call behind ``_call_plugin`` -------------------------------------------
 
 
-def _typed(endpoint: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, Any]:
+def typed_params(
+    endpoint: Mapping[str, Any], params: Mapping[str, Any]
+) -> dict[str, Any]:
     """The parameters as the caller sent them: the checked values, which
     travel as text to a container, back in their declared types."""
     declared = {
@@ -1202,6 +1213,7 @@ async def _answered(
     fields: Mapping[str, Mapping[str, Any]],
     actor: Optional[str],
     item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> tuple[dict[str, Any], bool]:
     """One endpoint's answer for a call made as ``actor``, and whether a
@@ -1227,6 +1239,7 @@ async def _answered(
                 now=now or datetime.now(timezone.utc),
                 installed=install_settings(plugin),
                 item=item,
+                element=element,
                 actor=actor,
             )
     except TimeoutError as exc:
@@ -1247,6 +1260,7 @@ async def call_endpoint(
     fields: Mapping[str, Mapping[str, Any]],
     actor: Optional[str],
     item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint of an install, answered as a container
     answers: ``{endpoint, actor, result}``.
@@ -1254,7 +1268,7 @@ async def call_endpoint(
     ``fields`` is each satisfied connection's non-secret fields as the
     caller's resolution read them, which the response cache key holds, so
     the expressions read those. ``item`` is the item an action's call is made
-    on, which they read too.
+    on and ``element`` the list element it was run from, which they read too.
 
     Held to the envelope's time and size, as a container's answer is; each
     vendor answer to the connection egress limits.
@@ -1269,11 +1283,12 @@ async def call_endpoint(
         plugin=plugin,
         guild_id=guild_id,
         endpoint=endpoint,
-        params=_typed(endpoint, params),
+        params=typed_params(endpoint, params),
         refs=refs,
         fields=fields,
         actor=actor,
         item=item,
+        element=element,
     )
     if endpoint["direction"] == "write" and set(result) == {"unavailable"}:
         code = result["unavailable"]

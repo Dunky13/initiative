@@ -223,8 +223,20 @@ def _definition() -> dict:
                 "cache_ttl_seconds": 60,
                 "requires": {"all_of": ["github"]},
             },
-            # A write, so a case can prove a tile cannot reach one.
-            {"id": REFUND, "direction": "write", "actors": ["member"]},
+            # A write, so a case can prove a tile cannot reach one. Its
+            # parameter's menu is filled from a read, as an action's form is.
+            {
+                "id": REFUND,
+                "direction": "write",
+                "actors": ["member"],
+                "params": [
+                    _field(
+                        "shop",
+                        "string",
+                        options_from={"endpoint": LIST_SHOPS, "key": "names"},
+                    )
+                ],
+            },
         ],
         "widgets": [
             {
@@ -1196,18 +1208,24 @@ class TestParamOptions:
         assert response.status_code == 200
         assert response.json()["unavailable"] == "unresolved"
 
-    async def test_a_write_cannot_be_configured_through_this(
+    async def test_a_writes_parameter_is_filled_from_its_read(
         self, client, acting_user, session, upstream
     ):
-        """Reads only, the same rule the fetch path keeps: filling in a form
-        must not be a way to make a plug-in act."""
+        """An action's form asks for a write's parameters, and their menus are
+        filled the way a read's are: from the read the parameter names, which
+        is the only thing called. Filling in a form is no way to make a
+        plug-in act."""
         a, plugin, _ = await _workspace(session, acting_user)
+        upstream.rows = [{"names": "north"}]
 
         response = await client.get(
             _options_url(a, plugin, REFUND, "shop"), headers=a.headers
         )
-        assert response.status_code == 404
-        assert response.json()["detail"] == PluginDataMessages.ENDPOINT_NOT_FOUND
+        assert response.status_code == 200, response.text
+        assert [option["value"] for option in response.json()["options"]] == ["north"]
+        assert [json.loads(call.content)["endpoint"] for call in upstream.calls] == [
+            LIST_SHOPS
+        ]
 
 
 class TestListParams:
@@ -1793,7 +1811,10 @@ def _declarative_action_definition() -> dict:
     ``relink`` is the community's admins' alone; ``label`` makes the label
     write as the reader, on the account its request names for the member,
     once they have connected it, and as the installation, on the community's,
-    before; ``garble`` answers a targeted change where a change belongs."""
+    before; ``garble`` answers a targeted change where a change belongs;
+    ``assign`` asks the reader which issue to label and keeps its number;
+    ``drop``, offered on each of the ``links`` list's elements, removes the
+    one it was run from."""
     definition = declarative_plugin(PUBLIC_ID)
     (workspace,) = definition["connections"]
     definition["connections"].append(
@@ -1820,11 +1841,29 @@ def _declarative_action_definition() -> dict:
     definition.update(
         scopes=["projects:read"],
         fields=[
-            {"key": "issue", "name": {"en": "Issue"}, "kind": "number", "on": ["task"]}
+            {"key": "issue", "name": {"en": "Issue"}, "kind": "number", "on": ["task"]},
+            {
+                "key": "links",
+                "name": {"en": "Links"},
+                "kind": "link",
+                "list": True,
+                "on": ["task"],
+                "actions": ["drop"],
+            },
         ],
         actions=[
             {"id": action_id, "name": {"en": action_id}, "on": ["task"], **terms}
             for action_id, terms in (
+                (
+                    "assign",
+                    {
+                        "endpoint": f"plugin.{PUBLIC_ID}.label",
+                        "params": ["repo", "number"],
+                        "write": '{"set": {"issue": params.number,'
+                        ' "repo": params.repo}}',
+                    },
+                ),
+                ("drop", {"write": '{"remove": {"links": [element]}}'}),
                 (
                     "link",
                     {
@@ -2270,4 +2309,114 @@ class TestActions:
         assert response.json()["detail"] == getattr(PluginDataMessages, detail)
         assert vendor.api_requests == []
         await route_session_to_guild(session, admin.guild.id)
+        assert (await session.exec(select(PluginMetadata))).all() == []
+
+    async def test_a_declarative_action_is_sent_what_the_reader_answered(
+        self, client, acting_user, session, monkeypatch
+    ):
+        """The endpoint's call is made with the reader's answers to the
+        parameters the action asks for, and its ``write`` reads them in their
+        declared types."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        vendor.api_answers = [{"body": {"number": 7}}]
+        _admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+
+        response = await client.post(
+            _run(member, plugin, "assign"),
+            headers=member.headers,
+            json={
+                "entity_type": "task",
+                "entity_id": tasks["shared"],
+                "params": {"repo": "acme/widgets", "number": 7},
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"values": {"issue": 7}}
+        (labelled,) = vendor.api_requests
+        assert labelled["url"] == (
+            f"https://{API_HOST}/repos/acme/widgets/issues/7/labels"
+        )
+        await route_session_to_guild(session, member.guild.id)
+        assert {
+            row.key: row.value for row in await session.exec(select(PluginMetadata))
+        } == {"issue": 7, "repo": "acme/widgets"}
+
+    async def test_a_declarative_action_run_from_an_element_reads_it(
+        self, client, acting_user, session, monkeypatch
+    ):
+        """An action a list field offers on its elements reads the ``ref`` of
+        the one it was run from, and the values answered are the list's rest."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        _admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+        await route_session_to_guild(session, member.guild.id)
+        for ref in ("a", "b"):
+            session.add(
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=tasks["shared"],
+                    key="links",
+                    ref=ref,
+                    value={"ref": ref, "url": f"https://x.example/{ref}"},
+                    shown=True,
+                )
+            )
+        await session.commit()
+
+        response = await client.post(
+            _run(member, plugin, "drop"),
+            headers=member.headers,
+            json={"entity_type": "task", "entity_id": tasks["shared"], "element": "a"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "values": {"links": [{"ref": "b", "url": "https://x.example/b"}]}
+        }
+        assert vendor.api_requests == []
+
+    @pytest.mark.parametrize(
+        ("action", "given"),
+        [
+            ("assign", {"params": {"repo": "acme/widgets", "colour": "red"}}),
+            ("assign", {"params": {"repo": "acme/widgets", "number": "seven"}}),
+            ("link", {"params": {"repo": "acme/widgets"}}),
+            ("link", {"element": "a"}),
+            ("drop", {"element": ""}),
+        ],
+        ids=[
+            "an answer the action did not ask for",
+            "an answer not of the parameter's type",
+            "answers for an action that asks nothing",
+            "an element for an action no list offers",
+            "an element that is not a ref",
+        ],
+    )
+    async def test_what_an_action_is_given_is_held_to_what_it_asks(
+        self, client, acting_user, session, monkeypatch, action, given
+    ):
+        """Refused before anything is called or kept."""
+        vendor = FakeVendor()
+        vendor.install(monkeypatch)
+        _admin, member, plugin, tasks = await _action_board(
+            session, acting_user, _declarative_action_definition()
+        )
+
+        response = await client.post(
+            _run(member, plugin, action),
+            headers=member.headers,
+            json={"entity_type": "task", "entity_id": tasks["shared"], **given},
+        )
+
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == PluginDataMessages.INVALID_PARAMS
+        assert vendor.api_requests == []
+        await route_session_to_guild(session, member.guild.id)
         assert (await session.exec(select(PluginMetadata))).all() == []

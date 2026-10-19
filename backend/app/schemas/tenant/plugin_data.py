@@ -252,10 +252,15 @@ ItemKind.__doc__ = "A kind of item a plug-in's fields and actions are offered on
 
 
 class PluginActionRun(SanitizedBaseModel):
-    """The item to run an action on."""
+    """The item to run an action on, and what the reader gave the action."""
 
     entity_type: ItemKind
     entity_id: int
+    #: What the reader answered, by key, for the parameters the action asks
+    #: for; nothing else is taken.
+    params: Optional[Dict[str, Any]] = None
+    #: The ``ref`` of the list element the action was run from, when it was.
+    element: Optional[str] = None
 
 
 class PluginActionResult(SanitizedBaseModel):

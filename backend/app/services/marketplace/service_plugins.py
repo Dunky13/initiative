@@ -2797,8 +2797,9 @@ def _action(
         # Initiative calls the endpoint for the reader. A container's does the
         # work, so it is a write; a declarative plug-in's ``write`` does the
         # work, so its endpoint may also be a read that fetches what the write
-        # keeps. A run sends no params, so the endpoint can ask for none it
-        # needs.
+        # keeps. A run sends what the reader answered for the params the
+        # action asks for, and nothing else, so a param the endpoint requires
+        # is one the action asks for.
         declared = endpoints.get(endpoint)
         if declared is None:
             fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
@@ -2808,15 +2809,11 @@ def _action(
             fail(
                 f"{what}: names {endpoint!r}, which is a {declared['direction']} endpoint"
             )
-        if any(param.get("required") is True for param in declared.get("params") or ()):
-            fail(
-                f"{what}: names {endpoint!r}, which needs params an action cannot send"
-            )
         cleaned["endpoint"] = endpoint
+        asked: list[str] = []
         if action.get("params") is not None:
             # The endpoint's params the reader is asked for, each once.
             takes = {param["key"] for param in declared.get("params") or ()}
-            asked: list[str] = []
             for entry in require_list(
                 action["params"], f"{what} params", MAX_PARAMS_PER_ENDPOINT
             ):
@@ -2829,6 +2826,17 @@ def _action(
             if not asked:
                 fail(f"{what}: params names no parameter")
             cleaned["params"] = asked
+        unasked = [
+            param["key"]
+            for param in declared.get("params") or ()
+            if param.get("required") is True and param["key"] not in asked
+        ]
+        if unasked:
+            fail(
+                f"{what}: names {endpoint!r}, which requires "
+                f"{', '.join(map(repr, unasked))}, which the action does not ask "
+                "the reader for"
+            )
     elif action.get("params") is not None:
         fail(
             f"{what}: an action asks for its endpoint's parameters, and names no "

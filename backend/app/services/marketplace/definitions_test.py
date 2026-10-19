@@ -1319,6 +1319,19 @@ class TestFieldsPartsAndActions:
             }
         ]
 
+    def test_an_action_asks_the_reader_for_what_its_endpoint_requires(self):
+        """A parameter the endpoint requires is sent once the action asks the
+        reader for it."""
+
+        def asking(body: dict) -> None:
+            body["endpoints"][0]["params"] = [
+                {"key": "x", "type": "string", "label": _label(), "required": True},
+                {"key": "y", "type": "int", "label": _label()},
+            ]
+            body["actions"][0]["params"] = ["y", "x"]
+
+        assert _items(asking)["actions"][0]["params"] == ["y", "x"]
+
     def test_a_tree_at_its_bounds_is_kept(self):
         widest = {
             "type": "section",
@@ -1401,7 +1414,7 @@ class TestFieldsPartsAndActions:
                         }
                     ]
                 ),
-                "needs params an action cannot send",
+                "requires 'x', which the action does not ask the reader for",
             ),
             (
                 lambda b: b["actions"][0].update(
