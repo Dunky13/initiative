@@ -5,8 +5,7 @@ name: Registry re-sign
 # day, so the registry is re-signed and republished daily even when nothing
 # merges there. The schedule lives here because GitHub turns a repository's
 # schedules off after 60 days without a commit, and this one is never that
-# quiet. A schedule starts from the workflow on main, so this begins once it
-# ships.
+# quiet. A schedule starts from the workflow on the default branch, dev.
 #
 # The release app needs "Actions: read and write" on initiative-developer.
 
