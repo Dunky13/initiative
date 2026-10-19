@@ -82,15 +82,18 @@ vi.mock("@/hooks/useInitiatives", () => ({
 /** A page the plug-in shows inside initiatives. */
 const initiativePage = { id: "board", path: "/board", scopes: ["initiative"] };
 
+/** A field the plug-in adds to tasks. */
+const taskField = { key: "estimate", kind: "text", on: ["task"] };
+
 /**
  * An install placed in these initiatives, each allowing ``roleIds``. It shows
- * a page inside initiatives unless ``page`` is false.
+ * a page inside initiatives unless ``page`` is false, and the ``fields`` given.
  */
-const plugin = (placed: number[], roleIds: number[] = [], page = true) =>
+const plugin = (placed: number[], roleIds: number[] = [], page = true, fields: object[] = []) =>
   ({
     id: 7,
     name: "Automations",
-    definition: { pages: page ? [initiativePage] : [] },
+    definition: { pages: page ? [initiativePage] : [], fields },
     requested_scopes: ["projects:read"],
     placements: placed.map((initiative_id) => ({ initiative_id, role_ids: roleIds })),
   }) as unknown as CommunityPluginDetail;
@@ -270,6 +273,19 @@ describe("PluginPlacementPanel", () => {
         )
       ).toBeTruthy();
       expect(screen.queryByLabelText("Who can open it in Platform")).toBeNull();
+    });
+
+    it("offers roles for a plug-in with a field on items and no page", async () => {
+      // The roles say who is drawn the field on an item there, as they would
+      // say who opens a page.
+      renderPage(() => <PluginPlacementPanel plugin={plugin([1], [11], false, [taskField])} />);
+
+      expect(
+        await screen.findByText(
+          "This plug-in reads and changes things only in the initiatives you choose."
+        )
+      ).toBeTruthy();
+      expect(screen.getByLabelText("Who can open it in Platform")).toHaveTextContent("1 role");
     });
   });
 });

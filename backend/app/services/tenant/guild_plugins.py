@@ -1550,8 +1550,16 @@ def initiative_surface_ids(definition: Any) -> set[str]:
 
 
 def has_initiative_surfaces(definition: Any) -> bool:
-    """Whether the plug-in has anything to place in an initiative."""
-    return bool(initiative_surface_ids(definition))
+    """Whether the plug-in has anything to place in an initiative: a page
+    rendering there, or a field or a part on items, which are drawn in the
+    item's initiative to whoever its placement admits (:data:`ITEM_SURFACE`)."""
+    if not isinstance(definition, dict):
+        return False
+    return bool(
+        initiative_surface_ids(definition)
+        or _declared(definition, "fields", "key")
+        or _declared(definition, "parts", "id")
+    )
 
 
 def surface_renders_in(page: dict[str, Any], scope: str) -> bool:

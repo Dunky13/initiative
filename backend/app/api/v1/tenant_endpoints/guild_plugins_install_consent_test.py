@@ -261,6 +261,73 @@ class TestTheListingSaysWhatTheDialogAsks:
         assert installed.status_code == 201, installed.text
         assert installed.json()["granted_scopes"] == ["projects:read"]
 
+    @pytest.mark.parametrize(
+        "block",
+        [
+            {
+                "features": ["fields"],
+                "fields": [
+                    {
+                        "key": "estimate",
+                        "name": {"en": "Estimate"},
+                        "kind": "text",
+                        "on": ["task"],
+                    }
+                ],
+            },
+            {
+                "features": ["parts"],
+                "parts": [
+                    {
+                        "id": "summary",
+                        "name": {"en": "Summary"},
+                        "on": ["task"],
+                        "tree": {"type": "stack"},
+                    }
+                ],
+            },
+        ],
+        ids=["field", "part"],
+    )
+    async def test_fields_and_parts_on_items_are_placed_like_a_page(
+        self, client: AsyncClient, acting_user, session: AsyncSession, block
+    ):
+        """A plug-in's fields and parts are drawn on an item to the roles its
+        placement names, as a page is opened, so a plug-in with either and no
+        page has somewhere to be placed and is asked about roles."""
+        uid = marketplace_uid("fieldco")
+        await create_plugin_service_registration(
+            session,
+            public_id="tests.fieldco",
+            listing_uid=uid,
+            base_url=None,
+            allowed_origins=[],
+            jwks={},
+            kind="declarative",
+            scope_ceiling=["projects:read"],
+        )
+        await create_marketplace_listing(
+            session,
+            uid=uid,
+            public_id="tests.fieldco",
+            kind="plugin",
+            name="FieldCo",
+            definition={
+                "plugin_kind": "service",
+                "hosts": ["api.field.test"],
+                "scopes": ["projects:read"],
+                **block,
+            },
+        )
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{uid}"), headers=a.headers
+        )
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["has_initiative_surfaces"] is True
+
 
 class TestAPluginAskingToUseAnother:
     """``plugins:<public_id>`` is asked when that plug-in is installed, not before."""
