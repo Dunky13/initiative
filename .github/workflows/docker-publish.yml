@@ -253,6 +253,16 @@ jobs:
     permissions:
       contents: read
 
+  build-server:
+    needs: decide
+    uses: ./.github/workflows/server-packages.yml
+    permissions:
+      contents: read
+    with:
+      release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # The reusable jobs select ota-release only for production version tags.
+    secrets: inherit
+
   candidate:
     # The tree this run publishes, and whether Release Candidate built it and
     # walked it: then the release publishes that digest rather than a build.
@@ -328,12 +338,13 @@ jobs:
     # above once its walk and journeys passed. Nothing is published unchecked.
     # A release that moves a floor publishes only once that app is built, so
     # no server asks for an app that is not there; a skipped build passes.
-    needs: [decide, candidate, docker-public, walk, journeys, build-android, build-desktop]
+    needs: [decide, candidate, docker-public, walk, journeys, build-android, build-desktop, build-server]
     if: >-
       ${{ !cancelled() && (needs.candidate.outputs.checked == 'true'
       || (needs.walk.result == 'success' && needs.journeys.result == 'success'))
       && needs.build-android.result != 'failure'
-      && needs.build-desktop.result != 'failure' }}
+      && needs.build-desktop.result != 'failure'
+      && needs.build-server.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -369,7 +380,7 @@ jobs:
           docker buildx imagetools inspect "$IMAGE_NAME:latest"
 
   release:
-    needs: [decide, build-android, build-desktop, publish]
+    needs: [decide, build-android, build-desktop, build-server, publish]
     # Run even when the app builds were *skipped* (web-only release). Only the Docker manifest
     # must have been published, from the candidate or a walked build; the APK and the desktop
     # installers are attached opportunistically below. But a build *failure* on a native-change
@@ -380,6 +391,7 @@ jobs:
       && needs.publish.result == 'success'
       && needs.build-android.result != 'failure'
       && needs.build-desktop.result != 'failure'
+      && needs.build-server.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -407,6 +419,24 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: artifacts
+
+      - name: Download native server packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: server-package-release-*
+          merge-multiple: true
+          path: artifacts/server
+
+      - name: Verify native server artifact checksums
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: artifacts/server
+        run: |
+          manifests=( initiative-server-*.sha256 )
+          test "${#manifests[@]}" -eq 4
+          for manifest in "${manifests[@]}"; do
+            sha256sum --check "$manifest"
+          done
 
       - name: Extract changelog for version
         id: changelog
@@ -469,6 +499,12 @@ jobs:
 
           $DESKTOP_SECTION
 
+          ### Native Server Packages
+          Install the \`initiative-server\` .deb on Debian 13 or the .apk on Alpine 3.24, for amd64 or arm64.
+          These packages run the server and are separate from the desktop .deb and Android APK above.
+          The assets include SHA-256 checksums and the Alpine package public signing key.
+          See [native server installation](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/en/running-a-server/native-packages.md) for configuration and service instructions.
+
           ### Docker Image
           \`\`\`bash
           docker pull ${IMAGE_NAME}:${VERSION}
@@ -507,6 +543,7 @@ jobs:
             artifacts/*.exe
             artifacts/*.dmg
             artifacts/*.deb
+            artifacts/server/*
             artifacts/latest*.yml
             artifacts/openapi.json
             artifacts/initiative-plugin-api.json

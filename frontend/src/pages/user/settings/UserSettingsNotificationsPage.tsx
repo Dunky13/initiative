@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Bell, type LucideIcon, Mail, Monitor, Smartphone } from "lucide-react";
+import { Bell, ChevronRight, type LucideIcon, Mail, Monitor, Smartphone } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   CategoryGroup,
   type Channel,
+  type CommunityNotificationSettings,
   type EmailCadence,
   type EmailScheduleInput,
   type NotificationCategoryRead,
@@ -35,6 +36,7 @@ import { useServerForm } from "@/hooks/useServerForm";
 import { useFcmConfig } from "@/hooks/useSettings";
 import { useUpdateNotificationPreferences } from "@/hooks/useUsers";
 import { formatDate } from "@/lib/formatDate";
+import { listFormat } from "@/lib/intl";
 import { toast } from "@/lib/mascotToast";
 
 // Lead-time presets (minutes) for the event reminder. 0 = "at the time of the
@@ -50,7 +52,7 @@ const GROUP_ORDER = Object.values(CategoryGroup);
 // Every channel, in column order.
 const CHANNELS: Channel[] = ["in_app", "email", "push", "desktop"];
 
-// What a column is headed with where its name does not fit.
+// What names a channel beside its switch where the columns do not fit.
 const CHANNEL_ICONS: Record<Channel, LucideIcon> = {
   in_app: Bell,
   email: Mail,
@@ -86,7 +88,7 @@ export const UserSettingsNotificationsPage = ({
   user,
   refreshUser,
 }: UserSettingsNotificationsPageProps) => {
-  const { t } = useTranslation(["settings", "common"]);
+  const { t, i18n } = useTranslation(["settings", "common"]);
   const { permissionStatus, requestPermission, isSupported } = usePushNotifications();
 
   const { data: fcmConfig } = useFcmConfig();
@@ -180,6 +182,19 @@ export const UserSettingsNotificationsPage = ({
     section.rows.filter((row) => row.per_community)
   );
 
+  // What a closed community says about itself: which of its rows it has
+  // switched off, so there is a reason to open it.
+  const communitySummary = (community: CommunityNotificationSettings) => {
+    if (community.muted) return t("notifications.communities.mutedSummary");
+    const off = communityRows
+      .filter((row) => community.off.includes(row.category))
+      .map((row) => t(`notifications.categories.${row.category}`));
+    if (off.length === 0) return t("notifications.communities.followsAbove");
+    return t("notifications.communities.offHere", {
+      rows: listFormat(i18n.resolvedLanguage ?? i18n.language, { type: "conjunction" }).format(off),
+    });
+  };
+
   const isOn = (row: NotificationCategoryRead, channel: Channel) => {
     const stored = preferences?.settings?.[row.category]?.[channel];
     if (typeof stored === "boolean") return stored;
@@ -227,28 +242,26 @@ export const UserSettingsNotificationsPage = ({
     );
   };
 
+  // Wide, the channels are columns under a header. Narrow, a row's text takes
+  // the full width and its switches sit beneath it in one even strip, each
+  // named, because a column of switches beside the text would squeeze the text
+  // into a sliver.
   const gridColumns = { gridTemplateColumns: `1fr repeat(${visibleChannels.length}, auto)` };
+  const stripColumns = {
+    gridTemplateColumns: `repeat(${visibleChannels.length}, minmax(0, 1fr))`,
+  };
 
   const renderGrid = () => (
     <div className="space-y-1">
-      <div className="grid items-center gap-2 border-b pb-2 sm:gap-4" style={gridColumns}>
+      <div className="canvas-sm:grid hidden items-center gap-4 border-b pb-2" style={gridColumns}>
         <p className="font-medium text-muted-foreground text-sm">
           {t("notifications.categoryHeader")}
         </p>
-        {visibleChannels.map((channel) => {
-          const Icon = CHANNEL_ICONS[channel];
-          return (
-            <p
-              key={channel}
-              className="flex w-10 justify-center font-medium text-muted-foreground text-sm sm:w-16"
-            >
-              <Icon className="size-4 sm:hidden" aria-hidden />
-              <span className="sr-only sm:not-sr-only">
-                {t(`notifications.channels.${channel}`)}
-              </span>
-            </p>
-          );
-        })}
+        {visibleChannels.map((channel) => (
+          <p key={channel} className="w-16 text-center font-medium text-muted-foreground text-sm">
+            {t(`notifications.channels.${channel}`)}
+          </p>
+        ))}
       </div>
 
       {grouped.map((section) => (
@@ -258,34 +271,55 @@ export const UserSettingsNotificationsPage = ({
           </p>
           {section.rows.map((row) => (
             <div key={row.category} className="border-b last:border-b-0">
-              <div className="grid items-center gap-2 py-3 sm:gap-4" style={gridColumns}>
+              <div
+                className="flex canvas-sm:grid flex-col canvas-sm:items-center canvas-sm:gap-4 gap-3 py-3"
+                style={gridColumns}
+              >
                 <div>
                   <p className="font-medium">{t(`notifications.categories.${row.category}`)}</p>
                   <p className="text-muted-foreground text-sm">
                     {t(`notifications.categoryDescriptions.${row.category}`)}
                   </p>
                 </div>
-                {visibleChannels.map((channel) => {
-                  const mutable = row.mutable_channels.includes(channel);
-                  return (
-                    <div key={channel} className="flex w-10 justify-center sm:w-16">
-                      <Switch
-                        checked={mutable ? isOn(row, channel) : true}
-                        disabled={!mutable || writePreferences.isPending}
-                        aria-label={t("notifications.switchLabel", {
-                          category: t(`notifications.categories.${row.category}`),
-                          channel: t(`notifications.channels.${channel}`),
-                        })}
-                        onCheckedChange={(enabled) =>
-                          writeSwitch({ channels: [{ category: row.category, channel, enabled }] })
-                        }
-                      />
-                    </div>
-                  );
-                })}
+                <div
+                  className="grid canvas-sm:contents rounded-md bg-muted/40"
+                  style={stripColumns}
+                >
+                  {visibleChannels.map((channel) => {
+                    const mutable = row.mutable_channels.includes(channel);
+                    const Icon = CHANNEL_ICONS[channel];
+                    return (
+                      <div
+                        key={channel}
+                        className="flex canvas-sm:w-16 flex-col items-center gap-2 canvas-sm:py-0 py-2.5"
+                      >
+                        <span
+                          className="flex canvas-sm:hidden items-center gap-1.5 text-muted-foreground text-xs"
+                          aria-hidden
+                        >
+                          <Icon className="size-3.5" />
+                          {t(`notifications.channels.${channel}`)}
+                        </span>
+                        <Switch
+                          checked={mutable ? isOn(row, channel) : true}
+                          disabled={!mutable || writePreferences.isPending}
+                          aria-label={t("notifications.switchLabel", {
+                            category: t(`notifications.categories.${row.category}`),
+                            channel: t(`notifications.channels.${channel}`),
+                          })}
+                          onCheckedChange={(enabled) =>
+                            writeSwitch({
+                              channels: [{ category: row.category, channel, enabled }],
+                            })
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               {row.category === "assignments" && (
-                <div className="flex items-center gap-2 pb-3 pl-1">
+                <div className="flex items-center gap-2 pb-3">
                   <Label htmlFor="reminder-lead-time" className="text-muted-foreground text-sm">
                     {t("notifications.reminderLeadTime.label")}
                   </Label>
@@ -552,9 +586,20 @@ export const UserSettingsNotificationsPage = ({
         >
           <div className="space-y-3">
             {preferences?.communities?.map((community) => (
-              <details key={community.community_id} className="rounded-md border">
-                <summary className="flex cursor-pointer items-center justify-between gap-4 p-3">
-                  <span className="font-medium">{community.community_name}</span>
+              <details key={community.community_id} className="group rounded-md border">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-md p-3 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{community.community_name}</span>
+                      <span className="block text-muted-foreground text-xs">
+                        {communitySummary(community)}
+                      </span>
+                    </span>
+                  </span>
                   <span className="flex items-center gap-2 text-muted-foreground text-sm">
                     <span aria-hidden>{t("notifications.communities.mute")}</span>
                     <Switch

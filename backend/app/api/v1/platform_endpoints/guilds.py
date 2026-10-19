@@ -40,6 +40,7 @@ from app.api.deps import (
 from app.api.v1.platform_endpoints.password_recheck import (
     require_password_or_recent_proof,
 )
+from app.core import auth_context
 from app.core.intake import IntakeStream
 from app.db.query import build_paginated_response
 from app.core.capabilities import Capability, user_has_capability
@@ -355,6 +356,13 @@ async def list_communities(
     session: UserSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> List[CommunityRead]:
+    """The communities the caller belongs to, in the order they keep them.
+
+    Every community-scoped route takes one of these ids as its
+    ``community_id``. A personal API key is shown the communities it can
+    address: one limited to a community sees that one alone, and a community
+    that turned off this member's API access is left out.
+    """
     # A suspended account keeps every membership it had and reaches none of
     # them, so its guild list is empty — the same thing a suspended guild does
     # to its members' lists, and it keeps the app coherent rather than offering
@@ -365,6 +373,17 @@ async def list_communities(
     memberships = await guilds_service.list_memberships(
         session, user_id=current_user.id
     )
+    # The same narrowing the cross-guild views apply
+    # (``cross_guild.member_guild_ids``): a community ``/c/{community_id}``
+    # would refuse this key is not one to offer it.
+    recorded = auth_context.current()
+    if recorded.api_key_credential:
+        pinned = recorded.api_key_guild_id
+        memberships = [
+            (guild, *rest, accepts_api_keys)
+            for guild, *rest, accepts_api_keys in memberships
+            if accepts_api_keys and (pinned is None or guild.id == pinned)
+        ]
     # One query for the whole list, and only the digests — a guild list is
     # every guild the caller is in, and a banner is a third of a megabyte.
     images = await images_service.image_urls(

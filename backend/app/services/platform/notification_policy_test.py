@@ -147,7 +147,7 @@ async def test_a_redacted_line_says_the_kind_of_thing_and_stops() -> None:
     title, body = notification_policy.redacted_line(
         category_of(NotificationType.mention), "en"
     )
-    assert title == "You were mentioned"
+    assert title == "You were mentioned or answered"
     assert body == "Open Initiative to see where."
 
 
@@ -207,7 +207,7 @@ async def test_a_redacting_community_sends_the_kind_of_thing(
     user = await create_user(session, email="redacts@example.com")
 
     assert await _mention_push(session, user, guild.id) == (
-        "You were mentioned",
+        "You were mentioned or answered",
         "Open Initiative to see where.",
     )
 
@@ -232,7 +232,7 @@ async def test_a_redacted_push_reads_the_recipients_language(
     user = await create_user(session, email="french-push@example.com", locale="fr")
 
     title, _body = await _mention_push(session, user, guild.id)
-    assert title == "Vous avez été mentionné"
+    assert title == "Vous avez été mentionné ou on vous a répondu"
 
 
 # --- the email seam ----------------------------------------------------------
@@ -286,7 +286,7 @@ async def test_a_redacting_community_stores_no_more_than_the_mail_will(
     await session.commit()
 
     (row,) = await _outbox(session, user.id)
-    assert row.subject == "You were mentioned"
+    assert row.subject == "You were mentioned or answered"
     assert row.body == "Open Initiative to see where."
     assert "Q3 budget" not in row.subject + row.headline + row.body
     # The way back is not the content, so it survives.
@@ -385,4 +385,7 @@ async def test_the_next_transaction_reads_the_switches_again(
     second, _body = await _mention_push(session, user, guild.id)
 
     assert reads == [guild.id, guild.id]
-    assert [first, second] == ["Ana mentioned you in Q3 budget", "You were mentioned"]
+    assert [first, second] == [
+        "Ana mentioned you in Q3 budget",
+        "You were mentioned or answered",
+    ]

@@ -102,6 +102,7 @@ nav = [
   { "Running a server" = [
     "en/running-a-server/index.md",
     "en/running-a-server/installation.md",
+    "en/running-a-server/native-packages.md",
     "en/running-a-server/configuration.md",
     "en/running-a-server/single-sign-on.md",
     "en/running-a-server/email.md",

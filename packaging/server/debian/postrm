@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+# Preserve state, logs and the system identity even on purge; uploads and an
+# externally managed database can outlive removal. dpkg owns conffile purging.
+if [ "${1:-}" = purge ]; then
+    # The helper works offline and remembers links after dpkg removes the unit.
+    deb-systemd-helper purge initiative-server.service
+fi
+case "${1:-}" in
+    remove|purge)
+        if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then systemctl daemon-reload; fi
+        ;;
+esac

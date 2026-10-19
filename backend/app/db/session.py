@@ -710,7 +710,8 @@ def _get_alembic_config() -> Config:
     config = Config(str(ALEMBIC_INI_PATH))
     config.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
     # Use superuser URL for migrations (needs CREATE ROLE and DDL privileges)
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # Alembic uses ConfigParser interpolation; escape literal URL percent signs.
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
     config.attributes["configure_logger"] = False
     config.attributes["url_configured"] = True
     return config

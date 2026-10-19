@@ -14,8 +14,8 @@ name: CLA
 # has no checkout step and must never get one. The action reads the pull
 # request's commit authors and comments through the API, nothing else.
 #
-# GitHub runs both events from the default branch's copy of this file, so
-# the check starts once it reaches main.
+# GitHub runs both events from the default branch's copy of this file (dev's),
+# so a change to it applies once it merges.
 #
 # The action (CLA Assistant Lite) is archived upstream; v2.6.1 is its last
 # release.

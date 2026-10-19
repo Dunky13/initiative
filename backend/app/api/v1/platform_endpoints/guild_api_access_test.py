@@ -416,3 +416,50 @@ async def test_a_key_limited_to_one_guild_reads_only_that_guild_across_guilds(
     by_key = await client.get("/api/v1/me/projects", headers=key_headers)
     assert by_key.status_code == 200, by_key.text
     assert {p["name"] for p in by_key.json()["items"]} == {names[pinned_id]}
+
+
+async def test_the_community_list_leaves_out_a_guild_that_declines_the_member(
+    client: AsyncClient, session: AsyncSession
+):
+    """A key is shown the communities it can address: listing one that would
+    refuse it offers a door that does not open."""
+    user = await create_user(session)
+    open_guild = await create_guild(session, creator=user, name="Open")
+    closed = await create_guild(session, creator=user, name="Closed")
+    for guild in (open_guild, closed):
+        await create_guild_membership(
+            session,
+            user=user,
+            guild=guild,
+            role=CommunityRole.member,
+            api_keys_allowed=guild is open_guild,
+        )
+    headers = get_auth_headers(user)
+    key_headers = await _key_headers(client, headers)
+
+    by_session = await client.get("/api/v1/communities/", headers=headers)
+    assert {c["name"] for c in by_session.json()} == {"Open", "Closed"}
+
+    by_key = await client.get("/api/v1/communities/", headers=key_headers)
+    assert {c["name"] for c in by_key.json()} == {"Open"}
+
+
+async def test_a_key_limited_to_one_guild_lists_only_that_guild(
+    client: AsyncClient, session: AsyncSession
+):
+    user = await create_user(session)
+    pinned = await create_guild(session, creator=user, name="Pinned")
+    other = await create_guild(session, creator=user, name="Other")
+    for guild in (pinned, other):
+        await create_guild_membership(
+            session, user=user, guild=guild, role=CommunityRole.member
+        )
+    headers = get_auth_headers(user)
+    key_headers = await _key_headers(client, headers, community_id=pinned.id)
+    unpinned_headers = await _key_headers(client, headers)
+
+    by_key = await client.get("/api/v1/communities/", headers=key_headers)
+    assert [c["name"] for c in by_key.json()] == ["Pinned"]
+
+    by_unpinned = await client.get("/api/v1/communities/", headers=unpinned_headers)
+    assert {c["name"] for c in by_unpinned.json()} == {"Pinned", "Other"}

@@ -36,7 +36,8 @@ if config.config_file_name is not None and config.attributes.get(
 # run_migrations(), _get_alembic_config() already sets the URL and marks
 # url_configured=True so we don't override it here.
 if not config.attributes.get("url_configured"):
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # Alembic uses ConfigParser interpolation; escape literal URL percent signs.
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 target_metadata = SQLModel.metadata
 

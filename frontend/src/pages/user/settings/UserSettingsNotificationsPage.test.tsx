@@ -46,13 +46,13 @@ describe("UserSettingsNotificationsPage", () => {
 
   it("offers the bell as a channel", async () => {
     renderPage();
-    expect(await screen.findByText("Bell")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Mentions and replies on Bell")).toBeInTheDocument();
   });
 
   it("offers the desktop on a server with no phone push", async () => {
     renderPage();
-    expect(await screen.findByText("Desktop")).toBeInTheDocument();
-    expect(screen.queryByText("Mobile")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Mentions and replies on Desktop")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Mentions and replies on Mobile")).not.toBeInTheDocument();
   });
 
   it("leaves the bell on and unswitchable for account notices", async () => {
@@ -113,11 +113,19 @@ describe("UserSettingsNotificationsPage", () => {
       );
     });
 
+    it("says, closed, which of a community's rows are off", async () => {
+      serve(false);
+      renderPage();
+
+      expect(await screen.findByText("Off here: Subscribed")).toBeInTheDocument();
+    });
+
     it("says a muted community says nothing, in place of its rows", async () => {
       serve(true);
       renderPage();
 
       expect(await screen.findByLabelText("Mute Acme")).toBeChecked();
+      expect(screen.getByText("Muted")).toBeInTheDocument();
       expect(screen.getByText(/This community says nothing at all/)).toBeInTheDocument();
       expect(screen.queryByLabelText("Mentions and replies in Acme")).not.toBeInTheDocument();
     });

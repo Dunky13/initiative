@@ -1,0 +1,296 @@
+name: Native Server Packages
+
+# PR builds carry disposable test keys and are never downloaded by Release.
+on:
+  # Manual builds are test artifacts only; production signing is enabled solely
+  # by the trusted version-tag release caller below.
+  workflow_dispatch:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/server-packages.yml'
+      - '.github/workflows/docker-publish.yml'
+      - '.github/actions/setup-frontend/**'
+      - 'packaging/server/**'
+      - 'scripts/build-server-assets.sh'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'VERSION'
+      - 'MIN_NATIVE_VERSION'
+      - 'MIN_DESKTOP_VERSION'
+      - 'NOTICE.md'
+      - 'CHANGELOG.md'
+  workflow_call:
+    inputs:
+      release:
+        description: Build production packages, requiring a version tag and ota-release signing keys.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  packaging-tooling:
+    name: Package tooling checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.11.21"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+          save-cache: false
+      - name: Install only lock-pinned package tooling
+        # Keep the package builder checks independent of the app dependencies
+        # and the more expensive browser/editor/OTA asset build.
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import subprocess
+          import tomllib
+
+          tooling = Path(os.environ["RUNNER_TEMP"]) / "server-tooling"
+          locked = tomllib.loads(Path("backend/uv.lock").read_text())
+          names = ("python-dotenv", "ruff", "ty")
+          versions = {package["name"]: package["version"] for package in locked["package"] if package["name"] in names}
+          requirements = [f"{name}=={versions[name]}" for name in names]
+          subprocess.run(["uv", "venv", "--python", "3.13", str(tooling)], check=True)
+          subprocess.run(["uv", "pip", "install", "--python", str(tooling / "bin/python"), *requirements], check=True)
+          with open(os.environ["GITHUB_PATH"], "a") as path_file:
+              path_file.write(str(tooling / "bin") + "\n")
+          PYTHON
+      - name: Test package tooling
+        run: python -m unittest discover -s packaging/server -p '*_test.py'
+      - name: Lint and check package tooling formatting
+        run: |
+          ruff check packaging/server
+          ruff format --check packaging/server
+      - name: Type check package tooling
+        run: |
+          python - <<'PYTHON'
+          from pathlib import Path
+          import subprocess
+          import dotenv
+
+          subprocess.run(["ty", "check", "packaging/server", "--extra-search-path", str(Path(dotenv.__file__).parent.parent)], check=True)
+          PYTHON
+
+  assets:
+    # A caller cannot opt a pull request or branch into production signing.
+    if: ${{ !inputs.release || (github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: ${{ inputs.release && 'ota-release' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-frontend
+      - name: Require tag to match packaged source
+        if: inputs.release
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+      - name: Build disposable test assets
+        if: ${{ !inputs.release }}
+        run: scripts/build-server-assets.sh --channel dev --output "$RUNNER_TEMP/server-assets"
+      - name: Build production assets with the trusted OTA key
+        if: inputs.release
+        env:
+          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
+        run: |
+          test -n "$OTA_SIGNING_KEY" || { echo '::error::ota-release requires OTA_SIGNING_KEY'; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/server-ota-signing"
+          trap 'rm -rf "$RUNNER_TEMP/server-ota-signing"' EXIT
+          printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/server-ota-signing/ota.pem"
+          unset OTA_SIGNING_KEY
+          scripts/build-server-assets.sh --channel release --output "$RUNNER_TEMP/server-assets" \
+            --signing-key "$RUNNER_TEMP/server-ota-signing/ota.pem"
+      - name: Archive public assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-assets-${{ inputs.release && 'release' || 'test' }}
+          path: ${{ runner.temp }}/server-assets/
+          if-no-files-found: error
+          retention-days: 2
+      - name: Remove any remaining OTA private key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/server-ota-signing"
+
+  packages:
+    needs: assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - format: deb
+            arch: amd64
+            runner: ubuntu-24.04
+            image: debian:13-slim
+          - format: deb
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            image: debian:13-slim
+          - format: apk
+            arch: amd64
+            runner: ubuntu-24.04
+            image: alpine:3.24
+          - format: apk
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            image: alpine:3.24
+    name: Server ${{ matrix.format }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    environment: ${{ inputs.release && matrix.format == 'apk' && 'ota-release' || '' }}
+    env:
+      PACKAGE_FORMAT: ${{ matrix.format }}
+      PACKAGE_ARCH: ${{ matrix.arch }}
+      BUILD_IMAGE: ${{ matrix.image }}
+      BUILD_CHANNEL: ${{ inputs.release && 'release' || 'dev' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download shared assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: server-assets-${{ inputs.release && 'release' || 'test' }}
+          path: ${{ runner.temp }}/server-assets
+      - name: Restore target dependency cache
+        id: dependencies
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # No fallback across lockfiles, distributions, or architectures.
+          # Cache only dependencies, never package payloads or signing keys.
+          path: |
+            ${{ runner.temp }}/server-dependency-cache/uv
+            ${{ runner.temp }}/server-dependency-cache/pip
+            ${{ runner.temp }}/server-dependency-cache/cargo/registry
+            ${{ runner.temp }}/server-dependency-cache/cargo/git
+            ${{ runner.temp }}/server-dependency-cache/cargo-target
+          key: server-dependencies-v1-${{ runner.os }}-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles('backend/uv.lock', 'backend/uv-requirements.txt', 'packaging/server/**/build-dependencies.txt') }}
+      - name: Prepare disposable APK test key
+        if: ${{ matrix.format == 'apk' && !inputs.release }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/server-apk-signing"
+          openssl genrsa -out "$RUNNER_TEMP/server-apk-signing/initiative-server.rsa" 2048
+      - name: Require production APK signing key
+        if: ${{ matrix.format == 'apk' && inputs.release }}
+        env:
+          SERVER_APK_SIGNING_KEY: ${{ secrets.SERVER_APK_SIGNING_KEY }}
+        run: |
+          test -n "$SERVER_APK_SIGNING_KEY" || { echo '::error::ota-release requires SERVER_APK_SIGNING_KEY (RSA PEM)'; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/server-apk-signing"
+          printf '%s\n' "$SERVER_APK_SIGNING_KEY" > "$RUNNER_TEMP/server-apk-signing/initiative-server.rsa"
+          unset SERVER_APK_SIGNING_KEY
+          openssl rsa -in "$RUNNER_TEMP/server-apk-signing/initiative-server.rsa" -check -noout
+      - name: Derive APK public trust key
+        if: matrix.format == 'apk'
+        run: |
+          openssl rsa -in "$RUNNER_TEMP/server-apk-signing/initiative-server.rsa" -pubout \
+            -out "$RUNNER_TEMP/server-apk-signing/initiative-server.rsa.pub"
+      - name: Build packages using the target native Python and libc
+        # These are disposable build environments; installed servers need no
+        # container engine, Node, compiler, package resolver, or download step.
+        run: |
+          mkdir -p "$RUNNER_TEMP/server-output" "$RUNNER_TEMP/server-apk-signing" "$RUNNER_TEMP/server-dependency-cache"
+          docker run --rm \
+            -v "$PWD:/source:ro" \
+            -v "$RUNNER_TEMP/server-assets:/assets:ro" \
+            -v "$RUNNER_TEMP/server-output:/output" \
+            -v "$RUNNER_TEMP/server-apk-signing:/run/server-signing:ro" \
+            -v "$RUNNER_TEMP/server-dependency-cache:/root/.cache" \
+            -e CARGO_HOME=/root/.cache/cargo \
+            -e CARGO_TARGET_DIR=/root/.cache/cargo-target \
+            -e PACKAGE_FORMAT -e BUILD_CHANNEL \
+            -e APK_SIGNING_KEY=/run/server-signing/initiative-server.rsa \
+            "$BUILD_IMAGE" sh -euc '
+              if [ "$PACKAGE_FORMAT" = deb ]; then
+                apt-get update
+                xargs apt-get install -y --no-install-recommends < /source/packaging/server/debian/build-dependencies.txt
+              else
+                xargs apk add --no-cache < /source/packaging/server/alpine/build-dependencies.txt
+              fi
+              python3 -m unittest discover -s /source/packaging/server -p lifecycle_test.py -v
+              sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output --channel "$BUILD_CHANNEL" --revision 1
+              sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output/upgrade --channel "$BUILD_CHANNEL" --revision 2
+            '
+      - name: Make build outputs and dependency cache readable by the runner
+        # Change only the outer artifact files; package-internal root ownership
+        # is part of the archive and remains untouched.
+        run: |
+          sudo chown -R --no-dereference "$(id -u):$(id -g)" \
+            "$RUNNER_TEMP/server-dependency-cache" "$RUNNER_TEMP/server-output"
+          chmod -R u+rwX "$RUNNER_TEMP/server-dependency-cache" "$RUNNER_TEMP/server-output"
+      - name: Save target dependency cache
+        # PRs may restore trusted caches but never save their own. A successful
+        # dependency/package build is reusable even if the runtime smoke fails.
+        if: >-
+          ${{ steps.dependencies.outputs.cache-hit != 'true'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+          && !startsWith(github.ref, 'refs/pull/') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/server-dependency-cache/uv
+            ${{ runner.temp }}/server-dependency-cache/pip
+            ${{ runner.temp }}/server-dependency-cache/cargo/registry
+            ${{ runner.temp }}/server-dependency-cache/cargo/git
+            ${{ runner.temp }}/server-dependency-cache/cargo-target
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Install, upgrade, and exercise the package in a clean target
+        # No source checkout, assets, build tools, or private key in this target.
+        run: |
+          docker run --rm \
+            -v "$PWD/packaging/server/smoke-test.sh:/smoke-test.sh:ro" \
+            -v "$RUNNER_TEMP/server-output:/packages:ro" \
+            -e PACKAGE_FORMAT \
+            "$BUILD_IMAGE" sh -euc '
+              if [ "$PACKAGE_FORMAT" = deb ]; then
+                apt-get update
+                apt-get install -y --no-install-recommends bash
+              else
+                apk add --no-cache bash
+              fi
+              set -- /packages/*."$PACKAGE_FORMAT"
+              test "$#" -eq 1 && test -f "$1"
+              package=$1
+              set -- /packages/upgrade/*."$PACKAGE_FORMAT"
+              test "$#" -eq 1 && test -f "$1"
+              if [ "$PACKAGE_FORMAT" = apk ]; then
+                export APK_TRUSTED_KEY=/packages/initiative-server.rsa.pub
+              fi
+              bash /smoke-test.sh "$PACKAGE_FORMAT" "$package" "$1"
+            '
+      - name: Checksum release deliverables
+        run: |
+          cd "$RUNNER_TEMP/server-output"
+          # Only package files and their public verification key are archived.
+          files=( *."$PACKAGE_FORMAT" )
+          if [[ "$PACKAGE_FORMAT" == apk ]]; then
+            files+=( initiative-server.rsa.pub )
+          fi
+          sha256sum "${files[@]}" > "initiative-server-$PACKAGE_FORMAT-$PACKAGE_ARCH.sha256"
+      - name: Archive server packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-package-${{ inputs.release && 'release' || 'test' }}-${{ matrix.format }}-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/server-output/*.${{ matrix.format }}
+            ${{ runner.temp }}/server-output/*.pub
+            ${{ runner.temp }}/server-output/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove APK private keys
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/server-apk-signing"

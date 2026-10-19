@@ -415,7 +415,10 @@
       "mute": "Stummschalten",
       "muteLabel": "{{community}} stummschalten",
       "rowLabel": "{{row}} in {{community}}",
-      "mutedHelp": "Diese Community sagt gar nichts — auch nicht, wenn dich jemand direkt nennt."
+      "mutedHelp": "Diese Community sagt gar nichts — auch nicht, wenn dich jemand direkt nennt.",
+      "mutedSummary": "Stummgeschaltet",
+      "followsAbove": "Folgt deinen Einstellungen oben",
+      "offHere": "Hier aus: {{rows}}"
     },
     "timing": {
       "title": "Wann du davon erfährst",
