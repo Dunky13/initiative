@@ -340,3 +340,24 @@ def test_a_proxy_not_trusted_is_pointed_out_where_one_is_expected(monkeypatch, c
 
     [hint] = [r.getMessage() for r in caplog.records]
     assert "Set FORWARDED_ALLOW_IPS to the proxy's address" in hint
+
+
+def test_cloudflare_in_front_of_a_local_proxy_is_pointed_out(monkeypatch, caplog):
+    """The local proxy is read and names Cloudflare's edge, so every visitor
+    resolves to one of Cloudflare's addresses; a request naming its visitor in
+    CF-Connecting-IP says so. One resolving to the visitor says nothing."""
+    monkeypatch.setattr(settings, "BEHIND_PROXY", True)
+    through = Headers(
+        {
+            "x-forwarded-for": "198.51.100.20, 162.158.1.2",
+            "cf-connecting-ip": "198.51.100.20",
+        }
+    )
+    with caplog.at_level(logging.WARNING, logger=request_audit.logger.name):
+        for resolved in ("198.51.100.20", "162.158.1.2"):
+            monkeypatch.setattr(request_audit, "_forwarded_hint_at", None)
+            request_audit._note_ignored_forwarded_header(through, resolved)
+
+    [hint] = [r.getMessage() for r in caplog.records]
+    assert "162.158.1.2, one of Cloudflare's addresses" in hint
+    assert "Cloudflare's ranges" in hint

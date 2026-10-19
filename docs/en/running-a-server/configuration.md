@@ -147,10 +147,19 @@ For any real deployment you'll put Initiative behind a reverse proxy that handle
 | Variable | What it does | Default |
 |---|---|---|
 | `BEHIND_PROXY` | Trust `X-Forwarded-*` headers from your proxy (so client IPs and HTTPS are detected correctly). | `false` |
-| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Set it when your proxy reaches the app from a public address. | Loopback, private and link-local ranges |
+| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Setting it replaces the default, so list your own proxy too. | Loopback, private and link-local ranges |
 
 !!! warning "Only enable proxy trust behind an actual proxy"
-    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them. It believes them from the machine itself, its container network and your LAN; a proxy that reaches the app from anywhere else goes in `FORWARDED_ALLOW_IPS`, and the log says so on the first request that shows one.
+    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them. It believes them from the machine itself, its container network and your LAN, which covers a proxy on the same host or in your compose file, and a Cloudflare Tunnel.
+
+    Two setups need `FORWARDED_ALLOW_IPS`, and the log says so when it sees either:
+
+    | Your setup | Set `FORWARDED_ALLOW_IPS` to |
+    |---|---|
+    | Cloudflare's proxied DNS (the orange cloud) in front of your own proxy, without a tunnel | Your proxy's address, plus [Cloudflare's ranges](https://www.cloudflare.com/ips/) |
+    | A proxy on another machine, reaching the app over a public address | That proxy's address |
+
+    Without it, every visitor looks like the same few addresses, so they share one rate limit and sign-in records show the proxy.
 
 ## The app association files
 

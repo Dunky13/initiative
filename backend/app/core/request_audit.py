@@ -98,6 +98,12 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     does: for a peer on the local network, and with ``BEHIND_PROXY`` set for
     any peer. It is a hint about configuration: the header decides nothing
     here, and this changes no behaviour.
+
+    Cloudflare's proxy in front of a local one is the case that resolves
+    quietly to the wrong address: the local proxy is read, and the hop it
+    names is Cloudflare's edge. A request Cloudflare passed on names the
+    visitor in ``CF-Connecting-IP``, so a public address resolved in its
+    place is pointed out too.
     """
     global _forwarded_hint_at
     if resolved is None:
@@ -107,6 +113,22 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
         _forwarded_hint_at is not None
         and now - _forwarded_hint_at < _FORWARDED_HINT_INTERVAL_SECONDS
     ):
+        return
+    visitor = (headers.get("cf-connecting-ip") or "").strip()
+    if (
+        settings.BEHIND_PROXY
+        and visitor
+        and visitor != resolved
+        and not _is_local_network_peer(resolved)
+    ):
+        _forwarded_hint_at = now
+        logger.warning(
+            "Requests come through Cloudflare, and every client resolves to %s, "
+            "one of Cloudflare's addresses. Set FORWARDED_ALLOW_IPS to your "
+            "proxy's address and Cloudflare's ranges (cloudflare.com/ips) so "
+            "rate limits and recorded sign-in addresses are per-visitor.",
+            resolved,
+        )
         return
     forwarded = headers.get("x-forwarded-for")
     if not forwarded:
