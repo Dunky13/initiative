@@ -399,8 +399,9 @@ const useHorizontalDragScroll = (ref: React.RefObject<HTMLDivElement | null>) =>
     let scrollStart = 0;
     let pointerId: number | null = null;
 
+    // An icon inside a control is an SVG element, not an HTML one.
     const shouldIgnoreEvent = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) {
+      if (!(target instanceof Element)) {
         return false;
       }
       return Boolean(target.closest('[data-kanban-scroll-lock="true"]'));

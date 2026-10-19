@@ -5,6 +5,7 @@
  * the state behind it.
  */
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -205,6 +206,40 @@ describe("a grouped board", () => {
     }
     expect(await screen.findAllByText("Draw the map")).toHaveLength(1);
     expect(screen.getByRole("combobox", { name: /group by/i })).toHaveTextContent(/priority/i);
+  });
+
+  it("folds a band and opens it again", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { group_by: "priority" },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+    const user = userEvent.setup();
+    board();
+    await screen.findAllByText("Draw the map");
+
+    await user.click(screen.getByRole("button", { name: "Medium" }));
+
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    expect(screen.queryByText("Draw the map")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Medium" }));
+
+    expect(await screen.findByText("Draw the map")).toBeInTheDocument();
   });
 });
 
