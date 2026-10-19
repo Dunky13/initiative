@@ -23,8 +23,10 @@ xargs apt-get install -y --no-install-recommends < packaging/server/debian/build
 apk add $(cat packaging/server/alpine/build-dependencies.txt)
 ```
 
-Prepare browser, server editor and signed OTA assets with
-`scripts/build-server-assets.sh` (see its usage). The supplied directory must
+A release takes its browser, server editor and signed OTA assets from the
+release's checked image (`/app/static`, `/app/editor`, `/app/ota`; see
+`server-packages.yml`). For a test package, build them from source with
+`scripts/build-server-assets.sh --output DIR`. The supplied directory must
 contain `browser/` (including `index.html` and `THIRD_PARTY_NOTICES.txt`),
 `editor/editor.js`, and `ota/{bundle.zip,bundle.sha256,statement.json,statement.sig}`.
 The bundle checksum, version and both native version floors must agree with the

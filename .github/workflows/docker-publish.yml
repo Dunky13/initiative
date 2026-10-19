@@ -253,16 +253,6 @@ jobs:
     permissions:
       contents: read
 
-  build-server:
-    needs: decide
-    uses: ./.github/workflows/server-packages.yml
-    permissions:
-      contents: read
-    with:
-      release: ${{ startsWith(github.ref, 'refs/tags/v') }}
-    # The reusable jobs select ota-release only for production version tags.
-    secrets: inherit
-
   candidate:
     # The tree this run publishes, and whether Release Candidate built it and
     # walked it: then the release publishes that digest rather than a build.
@@ -271,19 +261,27 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      actions: read  # the candidate's server packages, in its run
     outputs:
+      image: ${{ steps.find.outputs.image }}
       tree: ${{ steps.find.outputs.tree }}
       checked: ${{ steps.find.outputs.checked }}
       digest: ${{ steps.find.outputs.digest }}
+      packages-run: ${{ steps.find.outputs.packages-run }}
+      packages-artifact: ${{ steps.find.outputs.packages-artifact }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Find this tree's candidate
         id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.decide.outputs.version }}
         run: |
           # GHCR repository names are lowercase; the owner's login may not be.
           IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/initiative"
+          echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
           tree=$(git rev-parse 'HEAD^{tree}' | cut -c1-12)
           echo "tree=$tree" >> "$GITHUB_OUTPUT"
           # Resolved once, here: what is published is this digest, whatever
@@ -295,7 +293,24 @@ jobs:
             echo "Publishing candidate-$tree ($digest)"
           else
             echo "No checked candidate for this tree ($tree); building and walking one."
+            exit 0
           fi
+          # The server packages built from that image, in a Release Candidate
+          # run on this release's branch that passed. Without them (they
+          # expire after 30 days) they are built from the image below.
+          artifact="server-package-release-${digest#sha256:}"
+          want=$(printf '%s\t%s\t%s\t%s' .github/workflows/release-candidate.yml push "release/v$VERSION" success)
+          for run in $(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$artifact-deb-amd64" \
+              --jq '.artifacts[] | select(.expired | not) | .workflow_run.id'); do
+            if [[ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" \
+                --jq '[.path, .event, .head_branch, .conclusion] | @tsv')" == "$want" ]]; then
+              echo "packages-run=$run" >> "$GITHUB_OUTPUT"
+              echo "packages-artifact=$artifact" >> "$GITHUB_OUTPUT"
+              echo "Attaching the server packages from run $run"
+              exit 0
+            fi
+          done
+          echo "No server packages from the candidate's run; building them from it."
 
   docker-public:
     # Without a checked candidate for this tree (a tag on a tree no release
@@ -333,6 +348,23 @@ jobs:
     with:
       image: ${{ needs.docker-public.outputs.image }}@${{ needs.docker-public.outputs.digest }}
 
+  build-server:
+    # The server packages, built from the image this run publishes when
+    # Release Candidate's run did not leave them (see candidate).
+    needs: [candidate, docker-public]
+    if: >-
+      ${{ !cancelled() && needs.candidate.outputs.packages-run == ''
+      && (needs.candidate.outputs.checked == 'true' || needs.docker-public.result == 'success') }}
+    permissions:
+      contents: read
+      packages: read  # the pull of the image's web assets
+    uses: ./.github/workflows/server-packages.yml
+    with:
+      image: ${{ needs.candidate.outputs.image }}@${{ needs.candidate.outputs.checked == 'true' && needs.candidate.outputs.digest || needs.docker-public.outputs.digest }}
+    # inherit, not a list: the called job's environment secrets
+    # (SERVER_APK_SIGNING_KEY) read as empty without it.
+    secrets: inherit
+
   publish:
     # Tags the checked image as the release: the candidate, or the build
     # above once its walk and journeys passed. Nothing is published unchecked.
@@ -344,7 +376,7 @@ jobs:
       || (needs.walk.result == 'success' && needs.journeys.result == 'success'))
       && needs.build-android.result != 'failure'
       && needs.build-desktop.result != 'failure'
-      && needs.build-server.result == 'success' }}
+      && (needs.candidate.outputs.packages-run != '' || needs.build-server.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -380,7 +412,7 @@ jobs:
           docker buildx imagetools inspect "$IMAGE_NAME:latest"
 
   release:
-    needs: [decide, build-android, build-desktop, build-server, publish]
+    needs: [decide, candidate, build-android, build-desktop, build-server, publish]
     # Run even when the app builds were *skipped* (web-only release). Only the Docker manifest
     # must have been published, from the candidate or a walked build; the APK and the desktop
     # installers are attached opportunistically below. But a build *failure* on a native-change
@@ -391,11 +423,12 @@ jobs:
       && needs.publish.result == 'success'
       && needs.build-android.result != 'failure'
       && needs.build-desktop.result != 'failure'
-      && needs.build-server.result == 'success'
+      && (needs.candidate.outputs.packages-run != '' || needs.build-server.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read  # the candidate's server packages, in its run
 
     steps:
       - name: Checkout repository
@@ -424,9 +457,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: server-package-release-*
+          pattern: ${{ needs.candidate.outputs.packages-artifact || needs.build-server.outputs.artifact }}-*
           merge-multiple: true
           path: artifacts/server
+          # Release Candidate's run when the packages came from it, else this one.
+          run-id: ${{ needs.candidate.outputs.packages-run || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Verify native server artifact checksums
         if: startsWith(github.ref, 'refs/tags/v')

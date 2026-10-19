@@ -5,8 +5,11 @@ name: Release Candidate
 # in both setups (upgrade.yml), and tagged candidate-<tree> once that passes.
 # The walk and the tag name the build by its digest, so another build of the
 # same tree moving unchecked-<tree> cannot change what is checked or tagged.
+# The native server packages are built from that image too, and the candidate
+# is checked only once they install, upgrade and run.
 # At tag time Build and Release retags candidate-<tree> as the release when the
-# tag holds the same tree, so the image users pull is the one checked here.
+# tag holds the same tree, and attaches this run's server packages, so what
+# users install is what was checked here.
 
 on:
   push:
@@ -81,9 +84,22 @@ jobs:
     with:
       image: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
 
+  server-packages:
+    name: Server packages
+    needs: build
+    permissions:
+      contents: read
+      packages: read  # the pull of the candidate's web assets
+    uses: ./.github/workflows/server-packages.yml
+    with:
+      image: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+    # inherit, not a list: the called job's environment secrets
+    # (SERVER_APK_SIGNING_KEY) read as empty without it.
+    secrets: inherit
+
   checked:
     name: Mark it checked
-    needs: [identify, build, walk, journeys]
+    needs: [identify, build, walk, journeys, server-packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
