@@ -59,7 +59,7 @@ import { useCommunityPath } from "@/lib/communityUrl";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { formatDate } from "@/lib/formatDate";
 import { toast } from "@/lib/mascotToast";
-import { declaredPages } from "@/lib/pluginSurfaces";
+import { hasInitiativeSurfaces } from "@/lib/pluginSurfaces";
 import { cn } from "@/lib/utils";
 
 export function SettingsCommunityPluginsPage() {
@@ -353,7 +353,7 @@ function PluginDetailPanels({ pluginId, canManage }: { pluginId: number; canMana
           <PluginSettingsPanel pluginId={pluginId} settings={detail.data.settings ?? []} />
 
           {/* Only a plug-in with an initiative surface has somewhere to place. */}
-          {declaredPages(detail.data.definition, "initiative").length > 0 && (
+          {hasInitiativeSurfaces(detail.data.definition) && (
             <PluginPlacementPanel plugin={detail.data} />
           )}
 

@@ -30,7 +30,7 @@ import { useInitiativeRoles } from "@/hooks/useInitiativeRoles";
 import { useCommunityInitiatives } from "@/hooks/useInitiatives";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
-import { declaredPages } from "@/lib/pluginSurfaces";
+import { declaredPages, hasInitiativeSurfaces } from "@/lib/pluginSurfaces";
 
 export interface PluginPlacementPanelProps {
   plugin: CommunityPluginDetail;
@@ -67,8 +67,10 @@ export function PluginPlacementPanel({ plugin }: PluginPlacementPanelProps) {
   const outstanding = useRef(0);
 
   const roster = initiatives.data ?? [];
-  // Roles decide who opens the plug-in's page, so only a plug-in with one has them.
   const hasPage = declaredPages(plugin.definition, "initiative").length > 0;
+  // Roles decide who opens the plug-in's page and who is drawn its fields,
+  // sections or actions on items, so a plug-in with any of those has them.
+  const offersRoles = hasInitiativeSurfaces(plugin.definition);
   // The roles each stored placement allows, by initiative.
   const placedRoles = new Map(
     (plugin.placements ?? []).map((one) => [one.initiative_id, one.role_ids] as const)
@@ -147,7 +149,7 @@ export function PluginPlacementPanel({ plugin }: PluginPlacementPanelProps) {
         </div>
       </RadioGroup>
 
-      {mode === "all" && hasPage && placedRoles.size > 0 && (
+      {mode === "all" && offersRoles && placedRoles.size > 0 && (
         <div className="space-y-2 border-l pl-4">
           {roster
             .filter((initiative) => placedRoles.has(initiative.id))
@@ -187,14 +189,16 @@ export function PluginPlacementPanel({ plugin }: PluginPlacementPanelProps) {
                   {initiative.name}
                 </Label>
                 {/* Only a placement the server holds has roles to choose. */}
-                {hasPage && chosen.includes(initiative.id) && placedRoles.has(initiative.id) && (
-                  <PlacementRoles
-                    pluginId={plugin.id}
-                    initiativeId={initiative.id}
-                    initiativeName={initiative.name}
-                    roleIds={placedRoles.get(initiative.id) ?? []}
-                  />
-                )}
+                {offersRoles &&
+                  chosen.includes(initiative.id) &&
+                  placedRoles.has(initiative.id) && (
+                    <PlacementRoles
+                      pluginId={plugin.id}
+                      initiativeId={initiative.id}
+                      initiativeName={initiative.name}
+                      roleIds={placedRoles.get(initiative.id) ?? []}
+                    />
+                  )}
               </div>
             ))
           )}

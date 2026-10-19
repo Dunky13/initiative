@@ -148,8 +148,9 @@ class MarketplaceListingDetail(MarketplaceListingSummary):
     #: use goes by, keyed by that plug-in's public id. Its public id when the
     #: catalog has no name for it.
     plugin_names: Dict[str, str] = {}
-    #: Whether the plug-in offers a surface inside initiatives, and so has
-    #: somewhere to be placed.
+    #: Whether the plug-in offers a surface inside initiatives — a page there,
+    #: or fields, sections or actions on items — and so has somewhere to be
+    #: placed.
     has_initiative_surfaces: bool = False
     #: For a plug-in: the installs here that ask to use it, which the install
     #: dialog asks the seat about.

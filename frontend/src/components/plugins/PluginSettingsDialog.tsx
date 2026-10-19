@@ -40,7 +40,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPluginDetail } from "@/hooks/useCommunityPluginDetail";
-import { declaredPages } from "@/lib/pluginSurfaces";
+import { hasInitiativeSurfaces } from "@/lib/pluginSurfaces";
 
 export interface PluginSettingsDialogProps {
   pluginId: number;
@@ -61,13 +61,13 @@ export function PluginSettingsDialog({
   const detail = useCommunityPluginDetail(pluginId);
   const plugin = detail.data;
 
-  // Placement is where the plug-in has a page and where it may reach content, so
-  // a plug-in with either has one to choose.
+  // Placement is where the plug-in has a page, or fields, sections or actions
+  // on items, and where it may reach content, so a plug-in with either has one
+  // to choose.
   const showsPlacement =
     isCommunityAdmin &&
     !!plugin &&
-    (declaredPages(plugin.definition, "initiative").length > 0 ||
-      (plugin.requested_scopes ?? []).length > 0);
+    (hasInitiativeSurfaces(plugin.definition) || (plugin.requested_scopes ?? []).length > 0);
   // Install management, which the seat holds — not the manifest's
   // admin-visible surfaces above, which ask whether you administer the
   // community and are a different question.
