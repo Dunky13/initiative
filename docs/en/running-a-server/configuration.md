@@ -4,7 +4,7 @@ icon: lucide/sliders-horizontal
 
 # Configuration
 
-Initiative is configured with **environment variables**, set in your `docker-compose.yml`, a `.env` file, or your container environment. This page covers what you're most likely to touch; the complete list is `backend/.env.example` in the source.
+Initiative is configured with **environment variables**, set in your `docker-compose.yml`, a `.env` file, or your container environment. This page covers what you're most likely to touch, and `backend/.env.example` in the source lists the rest.
 
 !!! tip "Some things are configured in the app, not here"
     Email, single sign-on, branding colors and AI are all set up from **Settings → Platform** in the running app, by the [owner](platform-roles.md) — friendlier than environment variables, and covered on their own pages. Environment variables are for the foundational settings below.
@@ -233,7 +233,6 @@ Nothing to set. Your server follows the Initiative registry from the moment it s
     | `MARKETPLACE_REGISTRY_TTL_SECONDS` | How often the server checks for updates. At least 60. | `900` |
     | `MARKETPLACE_REGISTRY_ROOT` | A path to a different signing key. The server then trusts a registry somebody else signs, in place of the Initiative registry. | The key built into Initiative |
     | `PLUGIN_SERVICES_CONFIG` | A JSON file of plug-in services to set up at every start, in place of the form. See [Setting it up from a file](plugins.md#setting-it-up-from-a-file). | — |
-    | `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` / `PLUGIN_PLATFORM_SIGNING_KEY_ID` | Your own key for signing what Initiative sends plug-ins. Unset, Initiative makes and keeps one itself. | — |
     | `EXPRESSION_WORKERS` | How many small helper processes each server process may run for plug-ins Initiative runs itself. They start on first use, and an idle one leaves after five minutes. 1 to 16. | `2` |
 
 ## Your own marketplace listings

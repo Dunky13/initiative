@@ -12,30 +12,27 @@ For a headless Debian or Alpine host, including a Proxmox LXC, see
 [Native server packages](native-packages.md). Choose `initiative-server`; the
 existing `initiative-<version>.deb` installs the desktop client.
 
-## Before you start
-
-A machine (yours, or a cloud box) with:
-
-- **Docker** and **Docker Compose** installed.
-- A way to reach it in a browser — `localhost` for a try-out, a domain name for real use.
-
 ## Quick start
 
+This assumes the server you already run: Docker Compose, a domain pointed at it, and a reverse proxy handling HTTPS.
+
 ```bash
-# 1. Download the example compose file
-curl -O https://raw.githubusercontent.com/beyonders-studio/initiative/main/docker-compose.example.yml
-cp docker-compose.example.yml docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/beyonders-studio/initiative/main/docker-compose.example.yml
 
-# 2. Edit configuration — set a strong SECRET_KEY and POSTGRES_PASSWORD
-nano docker-compose.yml
+cat > .env <<EOF
+APP_URL=https://initiative.example.com
+SECRET_KEY=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$(openssl rand -hex 32)
+EOF
 
-# 3. Start it
 docker compose up -d
-
-# 4. Open http://localhost:8173 — the first person to register becomes the owner
 ```
 
-The example file ships **PostgreSQL 17** and sensible defaults already wired together, so it works as-is once you set a `SECRET_KEY` and a `POSTGRES_PASSWORD`. It refuses to start without either. Initiative listens on port **8173** by default.
+Point your proxy at port **8173**, with WebSockets on, and open your domain. The first person to register becomes the owner.
+
+That's all of it. PostgreSQL 17 comes in the same file, every setting lives in `.env`, and updating the compose file is downloading it again. A proxy on the same machine or your LAN, or Cloudflare in front of it, needs nothing else; one on another machine over a public address goes in [`FORWARDED_ALLOW_IPS`](configuration.md#running-behind-a-reverse-proxy).
+
+Trying it on a laptop first? Leave `APP_URL` out and open `http://localhost:8173`.
 
 !!! warning "Choose both secrets once, and keep them"
     Make **`SECRET_KEY`** and **`POSTGRES_PASSWORD`** strong and unique. `openssl rand -hex 32` makes a good one of each.
@@ -148,8 +145,6 @@ docker buildx imagetools inspect ghcr.io/beyonders-studio/initiative:stable --fo
 Once it's running:
 
 - [ ] **Register the first account** — it becomes the [owner](platform-roles.md).
-- [ ] Put Initiative behind **HTTPS** for any real use (a reverse proxy such as Caddy, Traefik, or nginx).
-- [ ] Set **`APP_URL`** to your public address (needed for single sign-on and links). See [Configuration](configuration.md).
 - [ ] Configure **email** so invites and reminders can be sent. See [Email](email.md).
 - [ ] Set up **[backups](backups-and-updates.md)**.
 

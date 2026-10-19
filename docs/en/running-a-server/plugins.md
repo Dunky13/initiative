@@ -130,9 +130,6 @@ Rather click nothing? `PLUGIN_SERVICES_CONFIG` names a JSON file Initiative read
 
 What the plug-in *is* comes from its listing, so an entry naming its image, its scopes or its listing is refused. An entry for a plug-in whose listing hasn't arrived waits for it. And a plug-in you switched off stays off, whatever the file says.
 
-??? techspec "Initiative's own signing key"
-    Initiative signs what it sends plug-ins with a key it makes and keeps itself. To supply your own instead, set `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` (an Ed25519 PEM from `openssl genpkey -algorithm ed25519`) and `PLUGIN_PLATFORM_SIGNING_KEY_ID`. Most servers never touch either.
-
 ## Related
 
 - [Configuration](configuration.md#the-initiative-registry-and-plug-ins) — every setting on this page.

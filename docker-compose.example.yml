@@ -1,3 +1,13 @@
+# Put the settings you choose in a .env file beside this one, and this file
+# never needs editing:
+#
+#   APP_URL=https://initiative.example.com
+#   SECRET_KEY=        (openssl rand -hex 32)
+#   POSTGRES_PASSWORD= (openssl rand -hex 32)
+#
+# Then `docker compose up -d`, and point your reverse proxy at port 8173.
+# Left unset, APP_URL is http://localhost:8173, for trying it out.
+
 services:
   db:
     image: postgres:17
@@ -60,10 +70,11 @@ services:
       # every 15 minutes. Both are optional; these are the defaults.
       # AUTH_ACCESS_TTL_MINUTES: 15
       # AUTH_REFRESH_TTL_DAYS: 30
-      # Set true when something else sits in front of this (nginx, Traefik,
-      # Caddy, Cloudflare) so each visitor's own address reaches the app —
-      # what the per-IP rate limits and recorded sign-in addresses use.
-      # BEHIND_PROXY: "true"
+      # A reverse proxy in front (Caddy, nginx, Traefik, a Cloudflare Tunnel or
+      # Cloudflare's proxy) passes on each visitor's address. Only a
+      # proxy on this machine or your LAN, or Cloudflare in front of it, is
+      # believed; set BEHIND_PROXY=false in .env if nothing sits in front.
+      BEHIND_PROXY: ${BEHIND_PROXY:-true}
       # How much the app says about itself on stderr (DEBUG, INFO, WARNING,
       # ERROR). The audit stream on stdout is not governed by this.
       # LOG_LEVEL: INFO
