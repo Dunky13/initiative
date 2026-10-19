@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **MCP answers take less of an assistant's context.** A page of tasks is about 40% smaller: fields with no value, avatars and repeated property options are left out of tool results. The tool list a client loads on connecting is about 85% smaller, and tools no longer take a `session_token` argument.
 - **Notification settings fit a phone.** Each row's description takes the full width, with its channel switches underneath, each named, instead of the text squeezed beside three columns of switches.
 - **My Messages lists conversations newest first.** One list, ordered by the latest message on your device, with a dot on anything unread. The Favorites and Connections sections are gone, and so is starring people: search finds anybody, from the list or with **+**.
 - **Ready-made dashboards use the new charts.** Team activity shows workload: open work by person split by priority, and what each person has due week by week, with overdue work in the current week. Delivery timeline adds a **Finished so far** burn-up, Project health splits open work by person by project, and Event planner adds **Coming up, week by week**, stacked by calendar. Dashboards installed from them offer the update.

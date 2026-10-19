@@ -8,13 +8,19 @@ edge, and nothing destructive, bulk, AI-generating, sharing, or property/tag.
 """
 
 import json
+from types import SimpleNamespace
 
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
 from app.core.tools import Tool
 from app.main import app
-from app.mcp_server import Base64FilterMiddleware, _redact_base64, build_mcp_server
+from app.mcp_server import (
+    TrimResultMiddleware,
+    _free_form_keys,
+    _trim,
+    build_mcp_server,
+)
 
 # A tool is a "write" if its operationId begins with one of these verbs.
 _WRITE_PREFIXES = (
@@ -279,45 +285,155 @@ async def test_the_tool_writes_stop_short_of_these():
     assert "update_task_status" not in writes
 
 
-def test_redact_base64_nulls_suffixed_keys_recursively():
+def test_trim_leaves_out_what_a_caller_never_acts_on():
     payload = {
         "title": "t",
+        "due_date": None,
+        "tags": [],
+        "can": {},
+        "archived": False,
+        "comment_count": 0,
         "guild": {"id": 3, "name": "g", "avatar_base64": "AAAA"},
         "assignees": [
-            {"id": 1, "email": "a@example.com", "avatar_base64": "BBBB"},
-            {"id": 2, "email": "b@example.com", "avatar_base64": None},
+            {"id": 1, "avatar_url": "https://example.com/a.png", "avatar_base64": None},
         ],
-        "count_base64_ish": "kept",  # only an exact suffix match is redacted
+        "count_base64_ish": "kept",  # only an exact suffix match is left out
+        "color": "#2563eb",
+        "icon": "circle",
+        "position": 2.5,
     }
-    redacted = _redact_base64(payload)
+    trimmed = _trim(payload)
 
-    # Keys are kept but nulled — so the structured output still satisfies a
-    # schema that declares (and may require) these fields.
-    assert redacted["guild"] == {"id": 3, "name": "g", "avatar_base64": None}
-    assert [a["avatar_base64"] for a in redacted["assignees"]] == [None, None]
-    # Non-base64 fields (including a lookalike key) keep their values.
-    assert redacted["assignees"][0]["email"] == "a@example.com"
-    assert redacted["count_base64_ish"] == "kept"
+    assert trimmed == {
+        "title": "t",
+        # A false and a zero are answers, not absences.
+        "archived": False,
+        "comment_count": 0,
+        "guild": {"id": 3, "name": "g"},
+        "assignees": [{"id": 1}],
+        "count_base64_ish": "kept",
+        # The write tools set these, so they are kept.
+        "color": "#2563eb",
+        "icon": "circle",
+        "position": 2.5,
+    }
     # Input is not mutated.
     assert payload["guild"]["avatar_base64"] == "AAAA"
+    assert payload["due_date"] is None
 
 
-async def test_base64_filter_middleware_redacts_content_and_structured():
-    payload = {"guild": {"avatar_base64": "AAAA", "name": "g"}}
-    result = ToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload))],
-        structured_content=payload,
-    )
+def test_trim_shows_a_property_s_options_once_per_result():
+    options = [{"value": "bug", "label": "Bug", "color": "#DB0000"}]
+    row = {"property_id": 2, "type": "multi_select", "options": options}
+    other = {"property_id": 5, "type": "select", "options": options}
+    payload = {
+        "items": [
+            {"id": 1, "properties": [{**row, "value": ["bug"]}]},
+            {"id": 2, "properties": [{**row, "value": []}, {**other, "value": "bug"}]},
+        ]
+    }
+    first, second = _trim(payload, frozenset({"value"}))["items"]
+
+    assert first["properties"][0]["options"] == options
+    # Seen already: the second row carries the value without the definition.
+    assert "options" not in second["properties"][0]
+    # A different property's options are its own, shown the first time.
+    assert second["properties"][1]["options"] == options
+
+
+def test_trim_keeps_another_community_s_options_under_the_same_id():
+    # Property ids are numbered per community, and ``list_my_tasks`` lists
+    # tasks from all of them: the same id can be two different properties.
+    ours = [{"value": "bug", "label": "Bug"}]
+    theirs = [{"value": "low", "label": "Low"}]
+    payload = {
+        "items": [
+            {"community_id": 1, "properties": [{"property_id": 1, "options": ours}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+        ]
+    }
+    first, second, third = _trim(payload)["items"]
+
+    assert first["properties"][0]["options"] == ours
+    assert second["properties"][0]["options"] == theirs
+    # Once both have been shown, a repeat of either carries the value alone.
+    assert "options" not in third["properties"][0]
+
+
+def test_trim_passes_free_form_fields_through_verbatim():
+    content = {"type": "doc", "attrs": {"level": None}, "content": []}
+    payload = {"id": 1, "content": content, "description": None}
+
+    trimmed = _trim(payload, frozenset({"content"}))
+
+    # Inside a document a null can mean something, so it is left alone.
+    assert trimmed == {"id": 1, "content": content}
+
+
+def test_free_form_keys_are_read_off_the_response_schema():
+    schema = {
+        "type": "object",
+        "properties": {
+            "result": {"type": "array", "items": {"$ref": "#/$defs/Read"}},
+        },
+        "$defs": {
+            "Read": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "content": {"anyOf": [{"type": "object"}, {"type": "null"}]},
+                    "value": {},
+                    "owner": {"$ref": "#/$defs/Owner"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            "Owner": {"type": "object", "properties": {"name": {"type": "string"}}},
+        },
+    }
+
+    assert _free_form_keys(schema) == {"content", "value"}
+    assert _free_form_keys(None) == frozenset()
+
+
+async def test_the_server_records_each_tool_s_free_form_fields():
+    server = build_mcp_server(app)
+    (trim,) = [m for m in server.middleware if isinstance(m, TrimResultMiddleware)]
+
+    # A document's body and a dashboard's config are the thing's own, and
+    # reach the caller untouched.
+    assert "content" in trim._free_form_keys["read_file"]
+    assert "config" in trim._free_form_keys["read_dashboard"]
+    # A task has none, so all of it is trimmed.
+    assert not trim._free_form_keys["read_task"] - {"value"}
+
+
+async def test_trim_middleware_trims_the_result_and_its_text():
+    payload = {"guild": {"avatar_base64": "AAAA", "name": "g", "icon": None}}
+    result = ToolResult(structured_content=payload)
 
     async def call_next(_context):
         return result
 
-    out = await Base64FilterMiddleware().on_call_tool(None, call_next)
+    context = SimpleNamespace(message=SimpleNamespace(name="read_guild"))
+    out = await TrimResultMiddleware().on_call_tool(context, call_next)
 
-    assert out.structured_content == {"guild": {"avatar_base64": None, "name": "g"}}
-    assert json.loads(out.content[0].text) == {
-        "guild": {"avatar_base64": None, "name": "g"}
-    }
+    assert out.structured_content == {"guild": {"name": "g"}}
+    # The text a client without structured content reads says the same, and
+    # is serialized compactly.
+    assert out.content[0].text == '{"guild":{"name":"g"}}'
+
+
+async def test_trim_middleware_passes_through_non_json_text():
+    result = ToolResult(content=[TextContent(type="text", text="plain not json")])
+
+    async def call_next(_context):
+        return result
+
+    context = SimpleNamespace(message=SimpleNamespace(name="read_file"))
+    out = await TrimResultMiddleware().on_call_tool(context, call_next)
+
+    assert out.content[0].text == "plain not json"
 
 
 async def test_list_tools_expose_conditions_and_sorting_as_json_strings():
@@ -340,12 +456,56 @@ async def test_list_tools_expose_conditions_and_sorting_as_json_strings():
     assert seen, "expected at least one tool exposing conditions/sorting"
 
 
-async def test_base64_filter_middleware_passes_through_non_json_text():
-    result = ToolResult(content=[TextContent(type="text", text="plain not json")])
+async def test_tools_publish_no_output_schema():
+    """The response schema is for validating a result, not for a model to read.
 
-    async def call_next(_context):
-        return result
+    It was four fifths of ``tools/list``, and against it a trimmed result
+    would fail validation for the keys it leaves out.
+    """
+    tools = await build_mcp_server(app).list_tools()
 
-    out = await Base64FilterMiddleware().on_call_tool(None, call_next)
+    assert [t.name for t in tools if t.output_schema is not None] == []
 
-    assert out.content[0].text == "plain not json"
+
+def _schema_titles(schema, path="$"):
+    """Every ``title`` annotation in ``schema``, by where it sits."""
+    found = []
+    if isinstance(schema, dict):
+        if isinstance(schema.get("title"), str):
+            found.append(path)
+        for name, sub in (schema.get("properties") or {}).items():
+            found += _schema_titles(sub, f"{path}.{name}")
+        for name, sub in (schema.get("$defs") or {}).items():
+            found += _schema_titles(sub, f"{path}.$defs.{name}")
+        for key in ("items", "additionalProperties", "not"):
+            found += _schema_titles(schema.get(key), f"{path}.{key}")
+        for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
+            for i, sub in enumerate(schema.get(key) or ()):
+                found += _schema_titles(sub, f"{path}.{key}[{i}]")
+    return found
+
+
+async def test_tool_inputs_carry_only_what_a_caller_supplies():
+    tools = await build_mcp_server(app).list_tools()
+
+    for tool in tools:
+        params = tool.parameters or {}
+        props = params.get("properties", {})
+        # The browser's session cookie: a caller authenticates with its key.
+        assert "session_token" not in props, tool.name
+        assert "session_token" not in params.get("required", []), tool.name
+        # Titles that only restate a field's name.
+        assert _schema_titles(params) == [], tool.name
+        # Definitions nothing points at any more.
+        body = json.dumps({k: v for k, v in params.items() if k != "$defs"})
+        defs = params.get("$defs", {})
+        for name in defs:
+            reached = f'"#/$defs/{name}"' in body or any(
+                f'"#/$defs/{name}"' in json.dumps(d) for d in defs.values()
+            )
+            assert reached, f"{tool.name} keeps unused $defs/{name}"
+
+    # A *property* called ``title`` is not an annotation, and stays.
+    (create_task,) = [t for t in tools if t.name == "create_task"]
+    assert "title" in create_task.parameters["properties"]
+    assert "title" in create_task.parameters["required"]

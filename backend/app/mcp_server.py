@@ -22,12 +22,14 @@ become a tool:
     per-write permission prompt. Destructive (delete, archive, reset), bulk
     (reorder, batch, archive-all, replacing a thing's links wholesale),
     AI-generation, sharing (grants), and property/tag routes are deliberately
-    excluded.
+    excluded. A tool's create still takes its initial ``grants``, as it does in
+    the app: who a new thing is shared with is part of making it.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -36,7 +38,7 @@ from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
+from fastmcp.utilities.openapi.models import HTTPRoute
 
 from app.api.v1.tenant_endpoints.tool_lists import TOOL_LISTS
 from app.core.config import PROJECT_NAME
@@ -274,52 +276,91 @@ _ROUTE_MAPS = [
 ]
 
 
-# Base64 image blobs can dwarf the useful part of a payload — a single
-# ``avatar_base64`` is often larger than the rest of a task read combined.
-# They're never actionable to an MCP client, so redact any ``*_base64`` field
-# before the result reaches the caller, keeping the context they consume for
-# the fields that matter.
+# A tool result is read by a model, and every field it carries is context the
+# caller pays for. The route JSON is shaped for the app, so before it reaches
+# the caller the result is trimmed of what a model never acts on:
 #
-# We null the value rather than *drop the key*: a tool's structured output is
-# validated against the tool's output schema, and these fields are declared
-# there (``json_schema_serialization_defaults_required=True`` even lists them as
-# required — nullable, but present). Removing the key makes the structured
-# content violate its own schema, which the client rejects ("'avatar_base64' is
-# a required property"); nulling keeps it schema-valid while dropping the blob.
+#   * an absent value — a ``null``, an empty list, an empty object. Most of a
+#     task row's fields are unset most of the time; leaving the key out says
+#     the same thing.
+#   * pictures — any ``*_base64`` data URI (a single avatar is often larger
+#     than the rest of a task read combined) and any ``avatar_url``. Neither is
+#     anything a caller can open or act on.
+#   * a property's option list after the first row that carried it. A task list
+#     repeats each property's whole definition — every option, label and colour
+#     — on every row, which was nearly a quarter of a page of tasks. The first
+#     row keeps it, so the caller still learns what the property accepts. A
+#     repeat is the same id *and* the same options: ids are numbered per
+#     community, and a cross-community list can hold two properties that share
+#     one.
+#
+# Colours, icons and positions stay: the write tools set them, so a caller can
+# be asked about them.
+#
+# A free-form field — a file's content, a dashboard's config, a property's
+# value — passes through verbatim: what is inside it is the document's own,
+# and a ``null`` there can mean something. Which fields are free-form is read
+# off each tool's response schema when the server is built (see
+# ``_free_form_keys``), so a new one is left alone by construction.
+#
+# Removing keys is possible because the tools publish no output schema (see
+# ``_drop_output_schema``); against one, a missing key fails the client's
+# validation.
 _BASE64_SUFFIX = "_base64"
+_UNREAD_KEYS = frozenset({"avatar_url"})
 
 
-def _redact_base64(value: Any) -> Any:
-    """Recursively null any dict value whose key ends in ``_base64``.
+def _is_absent(value: Any) -> bool:
+    return value is None or value == [] or value == {}
 
-    Returns a new structure; the input is left untouched. Matching by suffix
-    (not a fixed name list) means a future base64 field is redacted by
-    construction, without another edit here. The key is kept (set to ``None``)
-    so the result still satisfies the tool's output schema.
+
+def _trim(
+    value: Any,
+    free_form: frozenset[str] = frozenset(),
+    seen_properties: set[Any] | None = None,
+) -> Any:
+    """Return ``value`` without the fields a caller never acts on.
+
+    Returns a new structure; the input is left untouched. ``free_form`` names
+    the keys whose values pass through as they are; ``seen_properties`` carries
+    the (property id, options) pairs a row earlier in the same result has
+    already shown.
     """
-    if isinstance(value, dict):
-        return {
-            k: (
-                None
-                if isinstance(k, str) and k.endswith(_BASE64_SUFFIX)
-                else _redact_base64(v)
-            )
-            for k, v in value.items()
-        }
+    if seen_properties is None:
+        seen_properties = set()
     if isinstance(value, list):
-        return [_redact_base64(v) for v in value]
-    return value
+        return [_trim(v, free_form, seen_properties) for v in value]
+    if not isinstance(value, dict):
+        return value
+
+    trimmed: dict[str, Any] = {}
+    repeats_options = False
+    if "options" in value and value.get("property_id") is not None:
+        shown = (value["property_id"], json.dumps(value["options"], sort_keys=True))
+        repeats_options = shown in seen_properties
+        seen_properties.add(shown)
+    for key, v in value.items():
+        if key in _UNREAD_KEYS or key.endswith(_BASE64_SUFFIX):
+            continue
+        if key == "options" and repeats_options:
+            continue
+        if key not in free_form:
+            v = _trim(v, free_form, seen_properties)
+        if not _is_absent(v):
+            trimmed[key] = v
+    return trimmed
 
 
-class Base64FilterMiddleware(Middleware):
-    """Redact ``*_base64`` fields (to ``null``) from every tool result.
+class TrimResultMiddleware(Middleware):
+    """Trim every tool result to what a caller acts on (see ``_trim``).
 
-    Route-backed tools return the raw route JSON, which carries avatar/guild
-    icon data URIs. Filtering here — after the route (and its RLS gates) have
-    run — is purely cosmetic to the payload: it nulls only inert image blobs,
-    never anything a caller acts on, and leaves the keys present so structured
-    output stays valid against the tool's schema.
+    Route-backed tools return the raw route JSON. Trimming here — after the
+    route (and its RLS gates) have run — only removes fields from the payload;
+    it never adds, changes or reorders anything.
     """
+
+    def __init__(self, free_form_keys: dict[str, frozenset[str]] | None = None):
+        self._free_form_keys = free_form_keys or {}
 
     async def on_call_tool(
         self,
@@ -327,34 +368,16 @@ class Base64FilterMiddleware(Middleware):
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         result = await call_next(context)
+        if result.structured_content is None:
+            # Not a JSON body (route-backed tools only answer JSON or plain
+            # text); there's nothing to trim.
+            return result
 
-        structured = result.structured_content
-        if structured is not None:
-            structured = _redact_base64(structured)
-
-        content: list[Any] = []
-        for block in result.content:
-            # Text blocks hold the JSON body for route-backed tools; redact the
-            # parsed form and re-serialize. Non-JSON text and non-text blocks
-            # pass through untouched.
-            if isinstance(block, TextContent):
-                try:
-                    parsed = json.loads(block.text)
-                except (ValueError, TypeError):
-                    content.append(block)
-                    continue
-                content.append(
-                    TextContent(
-                        type="text",
-                        text=json.dumps(_redact_base64(parsed), default=str),
-                    )
-                )
-            else:
-                content.append(block)
-
+        free_form = self._free_form_keys.get(context.message.name, frozenset())
+        # The text block is serialized from the trimmed structure, so the two
+        # always say the same thing.
         return ToolResult(
-            content=content,
-            structured_content=structured,
+            structured_content=_trim(result.structured_content, free_form),
             meta=result.meta,
             is_error=result.is_error,
         )
@@ -419,17 +442,173 @@ def _stringify_json_query_params(route: object, component: object) -> None:
             props[name] = {"type": "string", "description": description}
 
 
+# A tool's input schema is what a model reads to call it, so it carries only
+# what a caller supplies. Three things the OpenAPI document holds for other
+# readers are taken out:
+#
+#   * cookie parameters. The browser's session cookie is declared on every
+#     route's auth dependency, which made it an argument on every tool; an MCP
+#     caller authenticates with its key in the ``Authorization`` header.
+#   * ``title`` annotations. Pydantic titles every field after its own name
+#     ("Task Id" on ``task_id``), which tells a model nothing the name doesn't.
+#   * ``$defs`` nothing references any more — the filter and sort models that
+#     ``_stringify_json_query_params`` replaced with a string.
+_SUBSCHEMA_KEYS = ("items", "additionalProperties", "not")
+_SUBSCHEMA_LIST_KEYS = ("anyOf", "oneOf", "allOf", "prefixItems")
+
+
+def _strip_titles(schema: Any) -> None:
+    """Remove ``title`` annotations from ``schema`` and its subschemas, in place.
+
+    Walks schema positions only, so a *property* called ``title`` (a task's) is
+    kept: ``properties`` maps names to schemas, and only the schemas are walked.
+    """
+    if not isinstance(schema, dict):
+        return
+    if isinstance(schema.get("title"), str):
+        del schema["title"]
+    for sub in (schema.get("properties") or {}).values():
+        _strip_titles(sub)
+    for sub in (schema.get("$defs") or {}).values():
+        _strip_titles(sub)
+    for key in _SUBSCHEMA_KEYS:
+        _strip_titles(schema.get(key))
+    for key in _SUBSCHEMA_LIST_KEYS:
+        for sub in schema.get(key) or ():
+            _strip_titles(sub)
+
+
+_DEF_REF = re.compile(r'"#/\$defs/([^"]+)"')
+
+
+def _prune_unused_defs(schema: dict[str, Any]) -> None:
+    """Drop the ``$defs`` entries nothing outside them reaches, in place."""
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict):
+        return
+    body = {k: v for k, v in schema.items() if k != "$defs"}
+    reached: set[str] = set()
+    pending = set(_DEF_REF.findall(json.dumps(body)))
+    while pending:
+        name = pending.pop()
+        if name in reached or name not in defs:
+            continue
+        reached.add(name)
+        pending |= set(_DEF_REF.findall(json.dumps(defs[name])))
+    kept = {k: v for k, v in defs.items() if k in reached}
+    if kept:
+        schema["$defs"] = kept
+    else:
+        del schema["$defs"]
+
+
+def _clean_parameters(route: HTTPRoute, component: object) -> None:
+    """Take out of a tool's input schema what a caller never supplies."""
+    params = getattr(component, "parameters", None)
+    if not isinstance(params, dict):
+        return
+    cookies = {p.name for p in route.parameters if p.location == "cookie"}
+    props = params.get("properties")
+    if isinstance(props, dict):
+        for name in cookies:
+            props.pop(name, None)
+    if isinstance(params.get("required"), list):
+        params["required"] = [n for n in params["required"] if n not in cookies]
+    _strip_titles(params)
+    _prune_unused_defs(params)
+
+
+def _free_form_keys(schema: dict[str, Any] | None) -> frozenset[str]:
+    """The property names whose value ``schema`` leaves free-form.
+
+    A free-form value is one the schema gives no shape to — no type, or an
+    object with no properties: a document's content, a dashboard's config, a
+    property's value. ``_trim`` passes these through verbatim.
+    """
+    if not schema:
+        return frozenset()
+    defs = schema.get("$defs") or {}
+    found: set[str] = set()
+    visited: set[str] = set()
+
+    def resolve(node: Any) -> Any:
+        while isinstance(node, dict) and "$ref" in node:
+            name = node["$ref"].rsplit("/", 1)[-1]
+            node = defs.get(name)
+        return node
+
+    def is_free_form(node: Any) -> bool:
+        node = resolve(node)
+        if not isinstance(node, dict):
+            return False
+        if "anyOf" in node:
+            return any(
+                is_free_form(n) for n in node["anyOf"] if n.get("type") != "null"
+            )
+        shaped = ("properties", "items", "enum", "const", "allOf", "oneOf", "$ref")
+        if "type" not in node:
+            return not any(k in node for k in shaped)
+        return node["type"] == "object" and "properties" not in node
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict) and "$ref" in node:
+            name = node["$ref"].rsplit("/", 1)[-1]
+            if name in visited:
+                return
+            visited.add(name)
+        node = resolve(node)
+        if not isinstance(node, dict):
+            return
+        for key, sub in (node.get("properties") or {}).items():
+            if is_free_form(sub):
+                found.add(key)
+            walk(sub)
+        for key in _SUBSCHEMA_KEYS:
+            walk(node.get(key))
+        for key in _SUBSCHEMA_LIST_KEYS:
+            for sub in node.get(key) or ():
+                walk(sub)
+
+    walk(schema)
+    return frozenset(found)
+
+
+def _drop_output_schema(component: object) -> None:
+    """Publish the tool without an output schema.
+
+    A route's response schema is most of what ``tools/list`` sends — four
+    fifths of it, in one measurement — and is there for a client to validate
+    the structured result against, not for a model to read. Without it the
+    result is still structured, and ``_trim`` may leave out keys the schema
+    would have required.
+    """
+    if getattr(component, "output_schema", None) is not None:
+        component.output_schema = None
+
+
 def build_mcp_server(app: "FastAPI") -> FastMCP:
     """Build the route-backed, read-only MCP server from the FastAPI ``app``.
 
     The app must already have its routers included so the RouteMap can see them.
     """
+    free_form_keys: dict[str, frozenset[str]] = {}
+
+    def shape_tool(route: HTTPRoute, component: object) -> None:
+        _stringify_json_query_params(route, component)
+        _clean_parameters(route, component)
+        name = getattr(component, "name", None)
+        if name is not None:
+            free_form_keys[name] = _free_form_keys(
+                getattr(component, "output_schema", None)
+            )
+        _drop_output_schema(component)
+
     server = FastMCP.from_fastapi(
         app=app,
         name=PROJECT_NAME,
         route_maps=_ROUTE_MAPS,
-        mcp_component_fn=_stringify_json_query_params,
+        mcp_component_fn=shape_tool,
         httpx_client_kwargs={"event_hooks": {"request": [_forward_authorization]}},
     )
-    server.add_middleware(Base64FilterMiddleware())
+    server.add_middleware(TrimResultMiddleware(free_form_keys))
     return server
