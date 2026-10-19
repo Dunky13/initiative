@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
-# Build the shared server payload from source; never extract it from an image.
+# Build test server assets from source, signed with a key made for this build.
+# Release packages take theirs from the checked image (server-packages.yml).
 set -euo pipefail
 
 usage() {
-  echo 'Usage: build-server-assets.sh --output DIR --channel release|dev [--signing-key FILE]' >&2
+  echo 'Usage: build-server-assets.sh --output DIR' >&2
   exit 2
 }
 output=
-channel=
-key=
 while (( $# )); do
   case "$1" in
     --output) (( $# >= 2 )) || usage; output=$2; shift 2 ;;
-    --channel) (( $# >= 2 )) || usage; channel=$2; shift 2 ;;
-    --signing-key) (( $# >= 2 )) || usage; key=$2; shift 2 ;;
     *) usage ;;
   esac
 done
-[[ -n "$output" && "$channel" =~ ^(release|dev)$ ]] || usage
+[[ -n "$output" ]] || usage
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [[ ! -e "$output" ]] || { echo 'Asset output must not already exist.' >&2; exit 1; }
 mkdir -p "$(dirname "$output")"
@@ -26,40 +23,20 @@ work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/initiative-server-assets.XXXXX
 trap 'rm -rf "$work"' EXIT
 umask 077
 
-if [[ "$channel" == release ]]; then
-  [[ -n "$key" && -s "$key" ]] || { echo 'Release assets require the production OTA signing key.' >&2; exit 1; }
-else
-  [[ -z "$key" ]] || { echo 'Dev/test assets always use an ephemeral key.' >&2; exit 1; }
-  key="$work/ota-test.pem"
-  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$key"
-fi
-# Fail before building if the production key is not trusted by the native apps.
-# Only the SPKI public half leaves this process; no private key enters the payload.
-node --input-type=module - "$key" "$root/frontend/src/lib/otaTrust.ts" "$channel" > "$work/public-key" <<'NODE'
+key="$work/ota-test.pem"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$key"
+node --input-type=module - "$key" > "$work/public-key" <<'NODE'
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-const [keyFile, trustFile, channel] = process.argv.slice(2);
-const privateKey = createPrivateKey(readFileSync(keyFile));
-if (privateKey.asymmetricKeyType !== 'ec' || privateKey.asymmetricKeyDetails.namedCurve !== 'prime256v1') {
-  throw new Error('OTA signing requires an ECDSA P-256 key');
-}
-const publicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).toString('base64');
-const declaration = readFileSync(trustFile, 'utf8').match(/const RELEASE_KEYS[^=]*=\s*\[([\s\S]*?)\];/);
-if (channel === 'release' && (!declaration || ![...declaration[1].matchAll(/"([A-Za-z0-9+/=]+)"/g)].some((match) => match[1] === publicKey))) {
-  throw new Error('OTA signing key is not in the native apps RELEASE_KEYS');
-}
-console.log(publicKey);
+const privateKey = createPrivateKey(readFileSync(process.argv[2]));
+console.log(createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).toString('base64'));
 NODE
 
 export VITE_API_URL=/api/v1
-export VITE_VERSION_SUFFIX=
-export VITE_OTA_DEV_PUBLIC_KEY=
-if [[ "$channel" == dev ]]; then
-  # A test payload must never masquerade as a release or update production apps.
-  export VITE_VERSION_SUFFIX="-server-test-${GITHUB_SHA:-local}"
-  VITE_OTA_DEV_PUBLIC_KEY=$(cat "$work/public-key")
-  export VITE_OTA_DEV_PUBLIC_KEY
-fi
+# A test payload names itself as one, and only an app trusting its key takes it.
+export VITE_VERSION_SUFFIX="-server-test-${GITHUB_SHA:-local}"
+VITE_OTA_DEV_PUBLIC_KEY=$(cat "$work/public-key")
+export VITE_OTA_DEV_PUBLIC_KEY
 cd "$root/frontend"
 pnpm build
 mkdir -p "$work/payload/browser" "$work/payload/editor" "$work/payload/ota"

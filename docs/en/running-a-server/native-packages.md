@@ -119,8 +119,7 @@ migrations. A package transaction itself does not contact the database.
 
 Keep local uploads under `/var/lib/initiative/uploads`, which the service owns.
 The parent `/var/lib/initiative` is owned by root with mode 0750; upgrades also
-secure the parent of an older installation. This prevents the service from
-replacing a storage directory while package hooks apply ownership. For a custom
+secure the parent of an older installation. For a custom
 storage or export directory under that parent, create it as root and grant the
 `initiative` account access before configuring it. On Debian, a custom
 `UPLOADS_DIR` outside `/var/lib/initiative` also needs a systemd override granting
@@ -144,21 +143,23 @@ if a newer version changed its schema.
 
 ## Building and releasing packages
 
-The recipes and lifecycle tests live in `packaging/server/`. Build browser/editor
-and OTA assets with `scripts/build-server-assets.sh`, then run
-`packaging/server/build.sh` on the matching target distribution. The
-`server-packages.yml` workflow performs those steps and installs, upgrades and
-removes the resulting packages in clean target environments on both architectures.
-Build-time containers are disposable CI tools; they are not part of the installed
-server.
+The recipes and lifecycle tests live in `packaging/server/`, and
+`server-packages.yml` builds each package on its own distribution, then installs,
+upgrades and removes it in a clean one, on both architectures.
 
-Release builds require the existing `OTA_SIGNING_KEY` in the `ota-release`
-environment and an RSA PEM `SERVER_APK_SIGNING_KEY` in that environment for Alpine
-package signatures. The matching public key is published with the server packages.
-The OTA key must match the release keys trusted by the native applications.
-Production package publication fails if either required key is absent. Private
-keys remain outside the source tree and are never included in artifacts.
+| Build | Where it runs | Browser app, editor and app update |
+| --- | --- | --- |
+| Release | Release Candidate, on the release branch | Copied from that release's Docker image |
+| Test | A pull request touching the packaging, or a run by hand | Built from source by `scripts/build-server-assets.sh` and signed with a key made for the run |
 
-Pull-request builds use disposable test keys and a development channel/version
-suffix. Their artifacts exercise packaging; they are not production updates and
-must not be substituted for signed release packages.
+A release's packages carry exactly the web assets of the image the walk and the
+journeys checked, and the candidate is checked only once its packages pass too.
+Build and Release then attaches that run's packages to the release; without them,
+it builds them from the image it publishes.
+
+Signing an Alpine package needs an RSA PEM `SERVER_APK_SIGNING_KEY` in the
+`ota-release` environment, and a release candidate fails without it. Its public
+half is published beside the packages.
+
+Test packages carry a `-server-test-` version suffix. They exercise the packaging
+and never stand in for a release's packages.
