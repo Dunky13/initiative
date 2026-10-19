@@ -71,6 +71,12 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
+ * The communities the caller belongs to, in the order they keep them.
+ *
+ * Every community-scoped route takes one of these ids as its
+ * ``community_id``. A personal API key is shown the communities it can
+ * address: one limited to a community sees that one alone, and a community
+ * that turned off this member's API access is left out.
  * @summary List Communities
  */
 export const listCommunities = (
