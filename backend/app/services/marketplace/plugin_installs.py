@@ -16,14 +16,15 @@ routes (``shared_routes``): each row's ``exclusive`` is the negation of it, and
 a unique index holds an exclusive route to one row. A connect claims its route
 (:func:`claim`) before it stores the value.
 
-Beside it, ``public.plugin_install_claims`` holds the values each install has
-claimed for its plug-in's unique settings, current and earlier, so no two
-communities hold the same one. A value is claimed here first
-(:func:`claim_assigned`, :func:`claim_setting`) and then stored on the install,
-and given back (:func:`release_setting`) when it could not be. Claims go with
-the install's row (:func:`forget`).
+Beside it, ``public.plugin_install_claims`` holds the values each install holds
+for its plug-in's unique settings, current and earlier, so no two communities
+hold the same one. A value is claimed (:func:`claim_value`,
+:func:`assigned_value`) on the session that stores it, routed into the
+install's community, in the same transaction. Claims go with the install's
+row (:func:`forget`).
 
-Every call runs on the system engine, which alone reaches the tables.
+The index is read and kept on the system engine; a claim is the one write a
+routed session makes here, for its own community.
 """
 
 from __future__ import annotations
@@ -32,16 +33,15 @@ import logging
 import secrets
 import string
 import unicodedata
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 from cryptography.fernet import InvalidToken
-from sqlalchemy import delete, func, tuple_, update
+from sqlalchemy import delete, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import col, select
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.encryption import (
@@ -72,16 +72,13 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "PAGE_LIMIT",
     "IndexedInstall",
-    "SettingClaim",
+    "assigned_value",
     "claim",
-    "claim_assigned",
-    "claim_held",
-    "claim_setting",
+    "claim_value",
     "forget",
     "hook_route",
     "page",
     "record",
-    "release_setting",
     "routed",
 ]
 
@@ -290,17 +287,6 @@ async def routed(listing_uid: str, route_value: str) -> list[IndexedInstall]:
 # --- claims on unique settings -------------------------------------------------
 
 
-@dataclass(frozen=True)
-class SettingClaim:
-    """A value an install claimed for one of its unique settings."""
-
-    key: str
-    value: str
-    #: The install held it already, as an earlier value, so giving the claim
-    #: back keeps it.
-    held: bool
-
-
 def _random(alphabet: str, length: int) -> str:
     """``length`` characters drawn from ``alphabet``."""
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -330,144 +316,55 @@ def _candidates(base: str) -> Iterator[str]:
             )
 
 
-async def _make_current(
-    session: AsyncSession,
-    guild_id: int,
-    install_id: int,
-    key: str,
-    value: Optional[str],
-) -> None:
-    """Mark ``value`` the one the install holds now for ``key``, and every other
-    value it claimed for ``key`` an earlier one; ``None`` marks them all
-    earlier."""
-    current = PluginInstallClaim.value == value
-    await session.exec(
-        update(PluginInstallClaim)
-        .where(
-            col(PluginInstallClaim.guild_id) == guild_id,
-            col(PluginInstallClaim.install_id) == install_id,
-            col(PluginInstallClaim.key) == key,
-            col(PluginInstallClaim.current).is_distinct_from(current),
-        )
-        .values(current=current)
-    )
-
-
-async def _claim_setting(
+async def claim_value(
     session: AsyncSession, guild_id: int, plugin: GuildPlugin, key: str, value: str
-) -> Optional[SettingClaim]:
-    """Claim ``value`` for the install's setting ``key`` and mark it the one it
-    holds now, or ``None`` while another install of the plug-in holds it."""
-    inserted = (
-        await session.exec(
-            pg_insert(PluginInstallClaim)
-            .values(
-                guild_id=guild_id,
-                install_id=plugin.id,
-                key=key,
-                value=value,
-                listing_uid=plugin.listing_uid,
-                current=True,
-                claimed_at=datetime.now(timezone.utc),
-            )
-            .on_conflict_do_nothing()
-            .returning(PluginInstallClaim.value)
+) -> bool:
+    """Whether the install holds ``value`` for its unique setting ``key``:
+    claimed here, in the caller's transaction, or claimed by it before (as
+    an earlier value, or for the setting when it was unique before). ``False``
+    while another install of the plug-in holds it."""
+    if value in ((plugin.setting_aliases or {}).get(key) or []):
+        return True
+    inserted = await session.exec(
+        pg_insert(PluginInstallClaim)
+        .values(
+            guild_id=guild_id,
+            install_id=plugin.id,
+            key=key,
+            value=value,
+            listing_uid=plugin.listing_uid,
         )
-    ).first()
-    if inserted is None:
-        holder = (
-            await session.exec(
-                select(
-                    PluginInstallClaim.guild_id, PluginInstallClaim.install_id
-                ).where(
-                    PluginInstallClaim.listing_uid == plugin.listing_uid,
-                    PluginInstallClaim.key == key,
-                    func.lower(PluginInstallClaim.value) == value.lower(),
-                )
-            )
-        ).first()
-        if holder is None or tuple(holder) != (guild_id, plugin.id):
-            return None
-    await _make_current(session, guild_id, plugin.id, key, value)
-    return SettingClaim(key=key, value=value, held=inserted is None)
+        .on_conflict_do_nothing()
+    )
+    if inserted.rowcount == 1:
+        return True
+    # The community reads its own rows alone, so one found is this install's.
+    own = await session.scalar(
+        select(PluginInstallClaim.value).where(
+            PluginInstallClaim.guild_id == guild_id,
+            PluginInstallClaim.install_id == plugin.id,
+            PluginInstallClaim.key == key,
+            PluginInstallClaim.value == value,
+        )
+    )
+    return own is not None
 
 
-async def claim_setting(
-    guild_id: int, plugin: GuildPlugin, key: str, value: str
-) -> Optional[SettingClaim]:
-    """Claim ``value`` for the install's unique setting ``key``, as the one it
-    holds now. ``None`` while another install of the plug-in holds it, now or
-    as an earlier value."""
-    async with db_session.SystemSessionLocal() as session:
-        claimed = await _claim_setting(session, guild_id, plugin, key, value)
-        await session.commit()
-    return claimed
-
-
-async def claim_held(
-    guild_id: int, plugin: GuildPlugin, values: Mapping[str, str]
-) -> list[SettingClaim]:
-    """Claim each value the install holds for a unique setting, by key, as the
-    one it holds now. A value another install of the plug-in holds, now or as
-    an earlier value, is left out."""
-    if not values:
-        return []
-    async with db_session.SystemSessionLocal() as session:
-        claimed: list[SettingClaim] = []
-        for key, value in values.items():
-            one = await _claim_setting(session, guild_id, plugin, key, value)
-            if one is not None:
-                claimed.append(one)
-        await session.commit()
-    return claimed
-
-
-async def claim_assigned(
-    guild_id: int, plugin: GuildPlugin, keys: Sequence[str]
-) -> list[SettingClaim]:
-    """Claim a value for each of the install's unique settings ``keys``: the
-    community's name (:func:`_name_value`), or that with a short random suffix
-    while another install holds it. A key that no value is claimed for in a few
-    tries is left out, and stays without one."""
-    async with db_session.SystemSessionLocal() as session:
-        name = (
-            await session.exec(select(Guild.name).where(Guild.id == guild_id))
-        ).first()
-        base = _name_value(name or "")
-        claimed: list[SettingClaim] = []
-        for key in keys:
-            for value in _candidates(base):
-                one = await _claim_setting(session, guild_id, plugin, key, value)
-                if one is not None:
-                    claimed.append(one)
-                    break
-            else:
-                logger.warning(
-                    "plug-in settings: no value could be claimed for %s of install "
-                    "%s in guild %s",
-                    key,
-                    plugin.id,
-                    guild_id,
-                )
-        await session.commit()
-    return claimed
-
-
-async def release_setting(
-    guild_id: int, install_id: int, claimed: SettingClaim, *, current: Optional[str]
-) -> None:
-    """Give back a claim the install could not store: its value is forgotten
-    unless the install held it already, and ``current``, the value the install
-    still holds, is its current one again."""
-    async with db_session.SystemSessionLocal() as session:
-        if not claimed.held:
-            await session.exec(
-                delete(PluginInstallClaim).where(
-                    col(PluginInstallClaim.guild_id) == guild_id,
-                    col(PluginInstallClaim.install_id) == install_id,
-                    col(PluginInstallClaim.key) == claimed.key,
-                    col(PluginInstallClaim.value) == claimed.value,
-                )
-            )
-        await _make_current(session, guild_id, install_id, claimed.key, current)
-        await session.commit()
+async def assigned_value(
+    session: AsyncSession, guild_id: int, plugin: GuildPlugin, key: str
+) -> Optional[str]:
+    """A value claimed for the install's unique setting ``key``: the
+    community's name (:func:`_name_value`), or that with a short random
+    suffix while another install holds it. ``None`` when none is claimed in
+    a few tries; the key then stays without one."""
+    name = await session.scalar(select(Guild.name).where(Guild.id == guild_id))
+    for value in _candidates(_name_value(name or "")):
+        if await claim_value(session, guild_id, plugin, key, value):
+            return value
+    logger.warning(
+        "plug-in settings: no value could be claimed for %s of install %s in guild %s",
+        key,
+        plugin.id,
+        guild_id,
+    )
+    return None

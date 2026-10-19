@@ -260,6 +260,9 @@ async def apply_version(
     plugin.config = config
     plugin.definition = definition
     plugin.listing_version = pending.version
+    await guild_plugins_service.claim_newly_unique(
+        session, plugin, previous, guild_id=guild_id
+    )
     # The plug-in has not seen the new configuration shape yet, so whatever it said
     # about the old one is no longer an answer to the current question.
     plugin.config_state = "unverified"

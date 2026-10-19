@@ -16,10 +16,10 @@ connect stores it and cleared when it is removed. While ``exclusive``, the
 negation of the registration's ``shared_routes``, one community holds each route
 of a listing's installs.
 
-Beside it, ``plugin_install_claims`` holds the values each install has claimed
-for its plug-in's unique settings, current and earlier, in one index over every
-community, so no two communities hold the same one. They go with the install's
-row.
+Beside it, ``plugin_install_claims`` holds the values each install holds for
+its plug-in's unique settings, current and earlier, in one index over every
+community, so no two communities hold the same one. An install writes its own
+in the transaction that stores the value; they go with the install's row.
 
 Kept in step by :mod:`app.services.marketplace.plugin_installs`. Reached only by
 the system engine.
@@ -27,13 +27,11 @@ the system engine.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
     Boolean,
     Column,
-    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -109,8 +107,9 @@ class PluginInstall(SQLModel, table=True):
 
 class PluginInstallClaim(SQLModel, table=True):
     """A value one install holds for one of its plug-in's unique settings: the
-    one it holds now, or one it was renamed from. The unique index keeps two
-    installs of a plug-in from holding the same value, compared without case."""
+    one it holds now, or one it was renamed from, written in the transaction
+    that stores it on the install. The unique index keeps two installs of a
+    plug-in from holding the same value; values are kept in lowercase."""
 
     __tablename__ = "plugin_install_claims"
     __table_args__ = (
@@ -120,11 +119,7 @@ class PluginInstallClaim(SQLModel, table=True):
             ondelete="CASCADE",
         ),
         Index(
-            "ix_plugin_install_claims_value",
-            "listing_uid",
-            "key",
-            text("lower(value)"),
-            unique=True,
+            "uq_plugin_install_claims_value", "listing_uid", "key", "value", unique=True
         ),
     )
 
@@ -140,8 +135,3 @@ class PluginInstallClaim(SQLModel, table=True):
     #: The install's listing, so one index holds every community's values for
     #: a plug-in.
     listing_uid: str = Field(sa_column=Column(String(length=14), nullable=False))
-    #: The value the install holds now, rather than an earlier one.
-    current: bool = Field(sa_column=Column(Boolean, nullable=False))
-    claimed_at: datetime = Field(
-        sa_column=Column(DateTime(timezone=True), nullable=False)
-    )
