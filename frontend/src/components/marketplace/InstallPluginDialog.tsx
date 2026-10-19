@@ -10,7 +10,8 @@
  *    a moderator or an admin), which the seat ticks itself; a scope it does
  *    not allow is shown disabled, with the reason.
  * 2. **Where it appears.** Only for a plug-in with a page inside initiatives, or
- *    fields or parts on items: every current initiative, or the ones picked here.
+ *    fields, sections or actions on items: every current initiative, or the
+ *    ones picked here.
  * 3. **Who can open it there.** Built-in roles, moderators by default, applied
  *    to every initiative it is placed in.
  * 4. **Which plug-ins can use it.** The ones already here that ask to, all
@@ -69,8 +70,8 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
 
   const requested = listing.requested_scopes ?? [];
   const grantable = new Set(listing.grantable_scopes ?? []);
-  // A page inside initiatives, or fields or parts on items: the roles chosen
-  // here say who opens the page and who is drawn the fields and parts.
+  // A page inside initiatives, or fields, sections or actions on items: the
+  // roles chosen here say who opens the page and who is drawn the rest.
   const placesInInitiatives = listing.has_initiative_surfaces ?? false;
   const hasPage = declaredPages(listing.definition, "initiative").length > 0;
   // A plug-in reaches content only in the initiatives it is placed in, so one

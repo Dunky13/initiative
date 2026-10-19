@@ -61,8 +61,9 @@ export function PluginSettingsDialog({
   const detail = useCommunityPluginDetail(pluginId);
   const plugin = detail.data;
 
-  // Placement is where the plug-in has a page, fields or parts and where it may
-  // reach content, so a plug-in with either has one to choose.
+  // Placement is where the plug-in has a page, or fields, sections or actions
+  // on items, and where it may reach content, so a plug-in with either has one
+  // to choose.
   const showsPlacement =
     isCommunityAdmin &&
     !!plugin &&

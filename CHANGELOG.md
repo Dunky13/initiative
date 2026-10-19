@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Whoever added a queue item isn't offered to report it.
 - **Encrypted messages:** a "New device signed in" prompt for a device that is gone can be cleared, setup recovers after a reload, a new device's history request sends one notification, and devices are named in words.
 - **Devices:** the phone and desktop apps show as one device each, and browsers whose sign-in expired leave the list.
-- **Members see a plug-in's fields and sections on items once it is placed.** A plug-in that adds fields or sections to items but has no page of its own was placed with no roles, so only community admins saw them. Installing it, and its placement settings, now ask which roles see them in each initiative, as they do for a plug-in's page.
+- **Members see a plug-in's fields, sections and actions on items once it is placed.** A plug-in that adds fields, sections or actions to items but has no page of its own was placed with no roles, so only community admins saw them. Installing it, and its placement settings, now ask which roles see them in each initiative, as they do for a plug-in's page.
 
 ## [0.75.3] - 2026-10-08
 

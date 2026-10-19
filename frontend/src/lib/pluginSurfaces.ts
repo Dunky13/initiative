@@ -123,15 +123,16 @@ export const pluginHasConnections = (definition?: Record<string, unknown> | null
 
 /**
  * Whether a plug-in has anything to place in an initiative: a page rendering
- * there, or a field or a part on items, which the server draws in the item's
- * initiative to whoever the placement's roles admit, as it opens a page. The
- * same rule as a listing's `has_initiative_surfaces`, read off the pinned
- * definition.
+ * there, or fields, sections or actions on items, which the server draws in
+ * the item's initiative to whoever the placement's roles admit, as it opens a
+ * page. The same rule as a listing's `has_initiative_surfaces`, read off the
+ * pinned definition.
  */
 export const hasInitiativeSurfaces = (definition?: Record<string, unknown> | null): boolean =>
   declaredPages(definition, "initiative").length > 0 ||
   (Array.isArray(definition?.fields) && definition.fields.length > 0) ||
-  (Array.isArray(definition?.parts) && definition.parts.length > 0);
+  (Array.isArray(definition?.parts) && definition.parts.length > 0) ||
+  (Array.isArray(definition?.actions) && definition.actions.length > 0);
 
 /**
  * Where a plug-in's community-wide entry leads.

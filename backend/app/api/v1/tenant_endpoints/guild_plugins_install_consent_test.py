@@ -286,15 +286,27 @@ class TestTheListingSaysWhatTheDialogAsks:
                     }
                 ],
             },
+            {
+                "features": ["actions"],
+                "actions": [
+                    {
+                        "id": "ping",
+                        "name": {"en": "Ping"},
+                        "on": ["task"],
+                        "write": '{"set": {"pinged": now}}',
+                    }
+                ],
+            },
         ],
-        ids=["field", "part"],
+        ids=["field", "part", "action"],
     )
-    async def test_fields_and_parts_on_items_are_placed_like_a_page(
+    async def test_what_a_plugin_adds_to_items_is_placed_like_a_page(
         self, client: AsyncClient, acting_user, session: AsyncSession, block
     ):
-        """A plug-in's fields and parts are drawn on an item to the roles its
-        placement names, as a page is opened, so a plug-in with either and no
-        page has somewhere to be placed and is asked about roles."""
+        """A plug-in's fields, sections and actions are drawn on an item to the
+        roles its placement names, as a page is opened, so a plug-in with any
+        of them and no page has somewhere to be placed and is asked about
+        roles."""
         uid = marketplace_uid("fieldco")
         await create_plugin_service_registration(
             session,

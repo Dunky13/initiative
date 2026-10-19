@@ -68,8 +68,8 @@ export function PluginPlacementPanel({ plugin }: PluginPlacementPanelProps) {
 
   const roster = initiatives.data ?? [];
   const hasPage = declaredPages(plugin.definition, "initiative").length > 0;
-  // Roles decide who opens the plug-in's page and who is drawn its fields and
-  // parts on items, so a plug-in with any of those has them.
+  // Roles decide who opens the plug-in's page and who is drawn its fields,
+  // sections or actions on items, so a plug-in with any of those has them.
   const offersRoles = hasInitiativeSurfaces(plugin.definition);
   // The roles each stored placement allows, by initiative.
   const placedRoles = new Map(
