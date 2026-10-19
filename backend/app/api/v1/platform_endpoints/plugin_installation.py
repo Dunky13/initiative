@@ -425,7 +425,6 @@ async def write_installation_metadata(
     payload: PluginMetadataWrite,
     installation: RoutedInstallationDep,
     session: SessionDep,
-    system: SystemSessionDep,
 ) -> PluginMetadataValues:
     """Change this install's values on one item, or on itself: ``values``
     sets them by key, a ``null`` removing its key; ``upsert`` adds a list
@@ -446,7 +445,7 @@ async def write_installation_metadata(
     """
 
     async def pinned() -> Any:
-        return (await _load(system, installation)).definition
+        return await metadata_service.pinned_fields(session, installation.install_id)
 
     values = await metadata_service.write(
         session,

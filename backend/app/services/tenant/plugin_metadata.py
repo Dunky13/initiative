@@ -86,6 +86,8 @@ from app.services.tenant import properties as properties_service
 from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = [
+    "holders",
+    "pinned_fields",
     "Change",
     "annotate_plugin_values",
     "apply_changes",
@@ -232,9 +234,10 @@ async def _readable(session: AsyncSession, kind: str, entity_id: int) -> bool:
     return bool(await session.scalar(exists().where(table.c.id == entity_id).select()))
 
 
-def _fields_on(definition: Any, kind: str) -> list[dict[str, Any]]:
-    """The fields a pinned definition declares on ``kind``."""
-    fields = definition.get("fields") if isinstance(definition, dict) else None
+def _fields_on(declared: Any, kind: str) -> list[dict[str, Any]]:
+    """The fields a pinned definition, or its ``fields`` alone, declares on
+    ``kind``."""
+    fields = declared.get("fields") if isinstance(declared, dict) else declared
     return [
         field
         for field in (fields if isinstance(fields, list) else [])
@@ -443,10 +446,10 @@ async def write(
     install holds there (:func:`assembled`), under the item's lock, so writes
     made at once each read what the one before left.
 
-    ``pinned`` reads the install's pinned definition, whose fields on the
-    item's kind say which values are shown and which keys hold lists; a value
-    on the install itself is never shown and holds no list, and its definition
-    is not read.
+    ``pinned`` reads the fields the install's pinned definition declares
+    (:func:`pinned_fields`): those on the item's kind say which values are
+    shown and which keys hold lists. A value on the install itself is never
+    shown and holds no list, and they are not read.
 
     On an item, the install needs its tool's read scope and to be able to read
     it: the values are the install's own, and writing them changes nothing on
@@ -477,8 +480,8 @@ async def write(
         # runs either before this read, which then sees the new definition,
         # or after this commit, and corrects what it wrote.
         await _lock_fields(session, context.guild_id, context.install_id, shared=True)
-        definition = await pinned()
-        shown, lists = shown_keys(definition, kind), _list_keys(definition, kind)
+        fields = await pinned()
+        shown, lists = shown_keys(fields, kind), _list_keys(fields, kind)
 
     # Writes to one item take turns, so the caps hold across them.
     await advisory_lock(
@@ -620,18 +623,23 @@ async def write(
     return assembled(rows)
 
 
-async def find(
-    session: AsyncSession, context: InstallContext, key: str, value: str
-) -> list[tuple[str, int, dict[str, Any]]]:
+async def holders(
+    session: AsyncSession,
+    context: InstallContext,
+    key: str,
+    value: str,
+    *,
+    limit: Optional[int] = None,
+) -> list[tuple[str, int]]:
     """The items the install can read holding ``value`` under ``key``, a list
-    holding it as an element's ref, with the values it keeps on each: at most
-    :data:`FIND_LIMIT`, in kind and id order. The install's own values are not
-    an item."""
+    holding it as an element's ref, in kind and id order: every one, or the
+    first ``limit``. The install's own values are not an item."""
     _check_key(key)
     if len(value) > LOOKUP_LENGTH:
         return []
-    matches = (
-        await session.exec(
+    return [
+        (entity_type, entity_id)
+        for entity_type, entity_id in await session.exec(
             select(PluginMetadata.entity_type, PluginMetadata.entity_id)
             .where(
                 PluginMetadata.install_id == context.install_id,
@@ -640,9 +648,23 @@ async def find(
                 PluginMetadata.entity_type != INSTALL_METADATA_KIND,
             )
             .order_by(PluginMetadata.entity_type, PluginMetadata.entity_id)
-            .limit(FIND_LIMIT)
+            .limit(limit)
         )
-    ).all()
+    ]
+
+
+async def find(
+    session: AsyncSession,
+    context: InstallContext,
+    key: str,
+    value: str,
+    *,
+    limit: int = FIND_LIMIT,
+) -> list[tuple[str, int, dict[str, Any]]]:
+    """The first ``limit`` items holding ``value`` under ``key``
+    (:func:`holders`), with the values the install keeps on each: the lookup
+    route's page."""
+    matches = await holders(session, context, key, value, limit=limit)
     if not matches:
         return []
     by_kind: dict[str, list[int]] = defaultdict(list)
@@ -758,13 +780,17 @@ async def _as_install(
                 ) from exc
 
         async def pinned() -> Any:
-            return await session.scalar(
-                select(GuildPlugin.definition).where(
-                    GuildPlugin.id == install.install_id
-                )
-            )
+            return await pinned_fields(session, install.install_id)
 
         yield session, route, pinned
+
+
+async def pinned_fields(session: AsyncSession, install_id: int) -> Any:
+    """The fields an install's pinned definition declares, read on a session
+    routed as the install (the plug-in's role reads that column)."""
+    return await session.scalar(
+        select(GuildPlugin.definition["fields"]).where(GuildPlugin.id == install_id)
+    )
 
 
 async def apply_changes(
@@ -801,15 +827,12 @@ async def apply_changes(
         targets: dict[tuple[str, int], list[Change]] = {}
         for target, made in changes:
             if "holding" in target:
-                found = [
-                    (kind, entity_id)
-                    for kind, entity_id, _ in await find(
-                        session,
-                        context,
-                        target["holding"]["key"],
-                        target["holding"]["value"],
-                    )
-                ]
+                found = await holders(
+                    session,
+                    context,
+                    target["holding"]["key"],
+                    target["holding"]["value"],
+                )
             elif "install" in target:
                 found = [(INSTALL_METADATA_KIND, context.install_id)]
             elif target["id"] <= _MAX_ITEM_ID:
@@ -995,25 +1018,32 @@ async def filter_fields(
             wanted[(int(install), key)] = field_id
     if not wanted or context is None or context.guest:
         return {}
-    rows = await session.exec(
+    installs = sorted({install for install, _ in wanted})
+    # Each install's fields and minimum age, read once each.
+    declares = {
+        install_id: (fields, minimum)
+        for install_id, fields, minimum in await session.exec(
+            select(
+                GuildPlugin.id,
+                GuildPlugin.definition["fields"],
+                GuildPlugin.definition["minimum_age"],
+            ).where(GuildPlugin.enabled.is_(True), col(GuildPlugin.id).in_(installs))
+        )
+    }
+    placements = await session.exec(
         select(
-            GuildPlugin.id,
-            GuildPlugin.definition,
+            PluginPlacement.install_id,
             PluginPlacement.initiative_id,
             PluginPlacement.role_ids,
-        )
-        .join(PluginPlacement, PluginPlacement.install_id == GuildPlugin.id)
-        .where(
-            GuildPlugin.enabled.is_(True),
-            col(GuildPlugin.id).in_(sorted({install for install, _ in wanted})),
-        )
+        ).where(col(PluginPlacement.install_id).in_(list(declares)))
     )
     offered = _Offered(context)
     reach: dict[tuple[int, str], set[int]] = defaultdict(set)
     # Each field's kind and the facets of its states.
     declared: dict[tuple[int, str], tuple[str, frozenset[str]]] = {}
-    for install_id, definition, initiative_id, roles in rows.all():
-        for field in _fields_on(definition, "task"):
+    for install_id, initiative_id, roles in placements.all():
+        fields, minimum = declares[install_id]
+        for field in _fields_on(fields, "task"):
             pair = (install_id, field["key"])
             if pair not in wanted:
                 continue
@@ -1022,9 +1052,7 @@ async def filter_fields(
                 str(field.get("kind")),
                 frozenset(map(str, states if isinstance(states, dict) else ())),
             )
-            if await offered(
-                install_id, initiative_id, roles, definition.get("minimum_age")
-            ):
+            if await offered(install_id, initiative_id, roles, minimum):
                 reach[pair].add(initiative_id)
     return {
         wanted[pair]: FilterField(pair[0], pair[1], *declared[pair], frozenset(found))
@@ -1147,7 +1175,6 @@ async def values_on(
                 PluginMetadata.value,
                 PluginPlacement.initiative_id,
                 PluginPlacement.role_ids,
-                GuildPlugin.definition["minimum_age"],
             )
             .join(GuildPlugin, GuildPlugin.id == PluginMetadata.install_id)
             .join(
@@ -1164,10 +1191,24 @@ async def values_on(
             )
             .order_by(PluginMetadata.install_id, PluginMetadata.key, *NEWEST_FIRST)
         )
+        rows = rows.all()
+        # The minimum age of each install drawn, read once for the page rather
+        # than with every row.
+        ages = dict(
+            (
+                await session.exec(
+                    select(GuildPlugin.id, GuildPlugin.definition["minimum_age"]).where(
+                        col(GuildPlugin.id).in_(sorted({row[1] for row in rows}))
+                    )
+                )
+            ).all()
+            if rows
+            else ()
+        )
         offered = _Offered(context)
         held: dict[tuple[int, int], list[tuple[str, str, Any]]] = defaultdict(list)
-        for item_id, install_id, key, ref, value, initiative_id, roles, minimum in rows:
-            if await offered(install_id, initiative_id, roles, minimum):
+        for item_id, install_id, key, ref, value, initiative_id, roles in rows:
+            if await offered(install_id, initiative_id, roles, ages.get(install_id)):
                 held[(item_id, install_id)].append((key, ref, value))
         for (item_id, install_id), values in held.items():
             found[item_id].extend(
