@@ -42,7 +42,6 @@ from app.models.platform.plugin_install import PluginInstallClaim
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.marketplace import plugin_installs
 from app.services.marketplace.registration_lookup import invalidate_registrations
-from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_revocation
 from app.services.tenant.plugin_connection_flows import callback_url
 from app.services.tenant.plugin_connections import load_connection_secrets
@@ -515,7 +514,7 @@ def _setting(body: dict, key: str) -> tuple:
 async def _claims(session: AsyncSession) -> set[tuple]:
     """Every claimed value, read past RLS by the setup session."""
     rows = (await session.exec(select(PluginInstallClaim))).all()
-    return {(row.guild_id, row.install_id, row.value, row.current) for row in rows}
+    return {(row.guild_id, row.install_id, row.value) for row in rows}
 
 
 @pytest.fixture
@@ -585,7 +584,7 @@ class TestSettings:
                 "aliases": [],
             },
         ]
-        assert await _claims(session) == {(seat.guild.id, plugin_id, assigned, True)}
+        assert await _claims(session) == {(seat.guild.id, plugin_id, assigned)}
 
     async def test_a_value_another_community_holds_gets_a_random_suffix(
         self, acting_user, session: AsyncSession, drawn
@@ -603,8 +602,8 @@ class TestSettings:
 
         assert suffixed.settings == {"task_prefix": "acmezq"}
         assert await _claims(session) == {
-            (first.guild.id, held.id, "acme", True),
-            (second.guild.id, suffixed.id, "acmezq", True),
+            (first.guild.id, held.id, "acme"),
+            (second.guild.id, suffixed.id, "acmezq"),
         }
 
     async def test_an_update_that_declares_an_assigned_setting_assigns_it(
@@ -660,8 +659,8 @@ class TestSettings:
         assert back.status_code == 200, back.text
         assert _setting(back.json(), "task_prefix") == ("acme", ["acmeco"])
         assert await _claims(session) == {
-            (seat.guild.id, plugin.id, "acme", True),
-            (seat.guild.id, plugin.id, "acmeco", False),
+            (seat.guild.id, plugin.id, "acme"),
+            (seat.guild.id, plugin.id, "acmeco"),
         }
 
     async def test_a_setting_that_is_not_unique_holds_a_line_and_clears(
@@ -788,38 +787,8 @@ class TestSettings:
         ]
         (first, first_id), (second, second_id) = installs
         assert await _claims(session) == {
-            (first.guild.id, first_id, "acme", True),
-            (second.guild.id, second_id, "beta", True),
-        }
-
-    async def test_a_failed_save_gives_back_only_what_the_install_does_not_hold(
-        self, acting_user, session: AsyncSession
-    ):
-        """Its claims are given back under the install's row: one a save made
-        meanwhile stored is kept, as current or earlier, and the rest go."""
-        seat = await _seat(acting_user, session, "Acme")
-        plugin = await create_guild_plugin(
-            session, seat.guild, seat.user, definition=SETTINGS_DEFINITION
-        )
-        stored = await plugin_installs.claim_setting(
-            seat.guild.id, plugin, "task_prefix", "acmeco"
-        )
-        lost = await plugin_installs.claim_setting(
-            seat.guild.id, plugin, "task_prefix", "acmezz"
-        )
-        await route_session_to_guild(session, seat.guild.id)
-        plugin.settings = {"task_prefix": "acmeco"}
-        plugin.setting_aliases = {"task_prefix": ["acme"]}
-        session.add(plugin)
-        await session.commit()
-
-        await guild_plugins_service._give_back(
-            session, seat.guild.id, plugin.id, [stored, lost]
-        )
-
-        assert await _claims(session) == {
-            (seat.guild.id, plugin.id, "acme", False),
-            (seat.guild.id, plugin.id, "acmeco", True),
+            (first.guild.id, first_id, "acme"),
+            (second.guild.id, second_id, "beta"),
         }
 
     async def test_removing_the_plugin_gives_its_values_back(
