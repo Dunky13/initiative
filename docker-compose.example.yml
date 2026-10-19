@@ -60,9 +60,10 @@ services:
       # every 15 minutes. Both are optional; these are the defaults.
       # AUTH_ACCESS_TTL_MINUTES: 15
       # AUTH_REFRESH_TTL_DAYS: 30
-      # Set true when something else sits in front of this (nginx, Traefik,
-      # Caddy, Cloudflare) so each visitor's own address reaches the app —
-      # what the per-IP rate limits and recorded sign-in addresses use.
+      # Set true when a reverse proxy sits in front of this (nginx, Traefik,
+      # Caddy, a Cloudflare Tunnel or Cloudflare's proxy), so rate limits and
+      # sign-in records see each visitor. A proxy on this machine or your LAN,
+      # and Cloudflare in front of it, need nothing else.
       # BEHIND_PROXY: "true"
       # How much the app says about itself on stderr (DEBUG, INFO, WARNING,
       # ERROR). The audit stream on stdout is not governed by this.
