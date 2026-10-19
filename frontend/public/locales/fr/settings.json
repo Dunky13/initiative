@@ -415,7 +415,10 @@
       "mute": "Mettre en sourdine",
       "muteLabel": "Mettre {{community}} en sourdine",
       "rowLabel": "{{row}} dans {{community}}",
-      "mutedHelp": "Cette communauté ne dit rien du tout — même si quelqu'un vous nomme directement."
+      "mutedHelp": "Cette communauté ne dit rien du tout — même si quelqu'un vous nomme directement.",
+      "mutedSummary": "En sourdine",
+      "followsAbove": "Suit vos réglages ci-dessus",
+      "offHere": "Désactivé ici : {{rows}}"
     },
     "timing": {
       "title": "Quand vous êtes prévenu",

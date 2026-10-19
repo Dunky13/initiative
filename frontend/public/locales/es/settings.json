@@ -415,7 +415,10 @@
       "mute": "Silenciar",
       "muteLabel": "Silenciar {{community}}",
       "rowLabel": "{{row}} en {{community}}",
-      "mutedHelp": "Esta comunidad no dice nada — ni siquiera si alguien te nombra directamente."
+      "mutedHelp": "Esta comunidad no dice nada — ni siquiera si alguien te nombra directamente.",
+      "mutedSummary": "Silenciada",
+      "followsAbove": "Sigue tu configuración de arriba",
+      "offHere": "Desactivado aquí: {{rows}}"
     },
     "timing": {
       "title": "Cuándo te enteras",
