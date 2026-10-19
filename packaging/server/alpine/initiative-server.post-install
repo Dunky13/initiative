@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+# Refuse symlinks before root changes ownership of daemon-writable paths.
+for directory in /var/lib/initiative /var/lib/initiative/uploads /var/log/initiative; do
+    if [ -L "$directory" ]; then
+        echo "Refusing symlink at $directory" >&2
+        exit 1
+    fi
+done
+install -d -o initiative -g initiative -m 0750 /var/lib/initiative /var/lib/initiative/uploads /var/log/initiative
+chown root:initiative /etc/initiative /etc/initiative/server.env
+chmod 0750 /etc/initiative
+chmod 0640 /etc/initiative/server.env
+echo 'Configure /etc/initiative/server.env, then manually rc-update add initiative-server and rc-service initiative-server start.'

@@ -8,6 +8,10 @@ The recommended way to run Initiative is **Docker Compose**. It brings up the ap
 
 Would rather not run a server at all? Completely fair. A paid hosted service is coming — see [Self-host or let us host it](../self-host-or-hosted.md).
 
+For a headless Debian or Alpine host, including a Proxmox LXC, see
+[Native server packages](native-packages.md). Choose `initiative-server`; the
+existing `initiative-<version>.deb` installs the desktop client.
+
 ## Before you start
 
 A machine (yours, or a cloud box) with:
