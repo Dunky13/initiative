@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import build
 
@@ -103,6 +104,26 @@ class AssetIntegrityTest(unittest.TestCase):
 
 
 class RuntimePayloadTest(unittest.TestCase):
+    def test_staged_migrations_exclude_macos_resource_forks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary) / "source"
+            root = Path(temporary) / "installed"
+            for name in ("app", "alembic/versions", "vendor"):
+                (repo / "backend" / name).mkdir(parents=True)
+            (repo / "backend/alembic.ini").write_text("[alembic]\n")
+            migrations = repo / "backend/alembic/versions"
+            (migrations / "revision.py").write_text("revision = 'fixture'\n")
+            (migrations / "._revision.py").write_bytes(b"\x00\x05\x16\x07Mac OS X")
+            (migrations / ".DS_Store").write_bytes(b"metadata")
+            with patch.object(build, "REPO", repo):
+                build.stage_application_source(root)
+            # Alembic discovers every .py file in versions, including dotfiles.
+            staged = list((root / "alembic/versions").glob("*.py"))
+            self.assertEqual([path.name for path in staged], ["revision.py"])
+            for path in staged:
+                compile(path.read_bytes(), str(path), "exec")
+            self.assertFalse((root / "alembic/versions/.DS_Store").exists())
+
     def test_staged_source_loads_vendored_marketplace_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

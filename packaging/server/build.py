@@ -110,7 +110,9 @@ def stage_application_source(root: Path) -> None:
         shutil.copytree(
             REPO / "backend" / name,
             root / name,
-            ignore=shutil.ignore_patterns("__pycache__", "*_test.py", "*.pyc", ".env"),
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*_test.py", "*.pyc", ".env", "._*", ".DS_Store"
+            ),
         )
     for name in ("alembic.ini",):
         copy_file(REPO / "backend" / name, root / name)
@@ -213,7 +215,7 @@ def deb_package(stage: Path, output: Path, version: str, revision: int) -> None:
         f"Package: {PACKAGE}\nVersion: {version}-{revision}\nArchitecture: {arch}\n"
         "Maintainer: Beyonders Studio <jordan@morels.me>\n"
         "Section: web\nPriority: optional\n"
-        "Depends: python3 (>= 3.13), python3 (<< 3.14), python3.13, adduser, "
+        "Depends: python3 (>= 3.13), python3 (<< 3.14), python3.13, adduser, init-system-helpers, "
         "libmagic1t64, libstdc++6, libgcc-s1, ca-certificates\n"
         "Homepage: https://github.com/beyonders-studio/initiative\n"
         "Description: Initiative server with bundled web application\n"
@@ -286,6 +288,23 @@ def apk_package(
     command = ["abuild", "-d", "-m", "-P", str(work / "packages")]
     if os.geteuid() == 0:
         command.append("-F")
+    # Alpine 3.24's default "all" also creates a repository index, which
+    # requires installing the signing key into the builder's global trust.
+    # Run its normal packaging phases explicitly: rootpkg still validates,
+    # assembles and signs the standalone APK; no repository is published here.
+    command.extend(
+        [
+            "validate",
+            "builddeps",
+            "clean",
+            "fetch",
+            "unpack",
+            "prepare",
+            "mkusers",
+            "build",
+            "rootpkg",
+        ]
+    )
     run(command, cwd=recipe, env=env)
     packages = list((work / "packages").rglob(f"{PACKAGE}-{version}-r{revision}.apk"))
     if len(packages) != 1:

@@ -88,7 +88,9 @@ A running managed service is stopped before upgrade/removal. Upgrades preserve
 operator configuration and state and require a manual restart. Removal preserves
 modified configuration, uploads, logs, database and service identity. Debian
 purge removes its packaged configuration but retains uploads, logs, database and
-identity. Alpine `apk del --purge` explicitly removes protected configuration;
+identity. Debian purge also removes recorded service enablement links, including
+when systemd is not running; upgrade and ordinary removal preserve enablement.
+Alpine `apk del --purge` explicitly removes protected configuration;
 do not use it when retaining configuration. An operator must back up the
 database and uploads before upgrades: package rollback does not undo migrations.
 

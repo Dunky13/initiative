@@ -221,6 +221,7 @@ jobs:
               else
                 xargs apk add --no-cache < /source/packaging/server/alpine/build-dependencies.txt
               fi
+              python3 -m unittest discover -s /source/packaging/server -p lifecycle_test.py -v
               sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output --channel "$BUILD_CHANNEL" --revision 1
               sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output/upgrade --channel "$BUILD_CHANNEL" --revision 2
             '
