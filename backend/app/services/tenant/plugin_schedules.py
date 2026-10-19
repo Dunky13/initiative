@@ -57,19 +57,20 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.messages import PluginChannelMessages
 from app.db import cohorts
+from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
-from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
+from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.services.marketplace import community_hooks, declarative
+from app.services.marketplace.plugin_data import PluginDataError
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
     is_declarative,
     load_registrations,
 )
-from app.services.marketplace.plugin_data import PluginDataError
 from app.services.marketplace.service_plugins import schedule_minutes
-from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import plugin_metadata
 from app.services.tenant.plugin_channels import (
     PluginChannelError,
@@ -81,7 +82,6 @@ from app.services.tenant.plugin_config import (
     install_settings,
     without_tokens,
 )
-from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
 
@@ -476,11 +476,7 @@ async def _check_health(
         if locked is None or _made(locked, connection_id) != checked:
             await session.commit()
             return None
-        moved = False
         if set_connection_state(locked, connection_id, state):
             session.add(locked)
-            moved = True
         await session.commit()
-        if moved or state == "removed":
-            await guild_plugins_service.reindex_install(session, guild_id, plugin.id)
     return state

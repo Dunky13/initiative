@@ -130,36 +130,36 @@ def sweeps() -> tuple[Sweep, ...]:
     """Every sweep that runs on timers, read once."""
     from app.core.intake import IntakeStream, meta
     from app.db.soft_delete_filter import SOFT_DELETE_MODELS
+    from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
     from app.models.tenant.content_hold import ContentHold
     from app.models.tenant.engagement_level import EngagementLevel
     from app.models.tenant.event_outbox import EventOutbox
     from app.models.tenant.evidence import Evidence
     from app.models.tenant.export_job import ExportJob, ExportJobStatus
+    from app.models.tenant.guild_plugin import GuildPlugin
     from app.models.tenant.import_job import ImportJob, ImportJobStatus
     from app.models.tenant.intake import IntakeCase
     from app.models.tenant.moderation import ModerationReport
-    from app.models.tenant.reaction_digest import ReactionDigestItem
     from app.models.tenant.personal_item import PersonalItem
-    from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
-    from app.models.tenant.guild_plugin import GuildPlugin
+    from app.models.tenant.reaction_digest import ReactionDigestItem
     from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
     from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
     from app.models.tenant.upload import Upload
     from app.services import notifications
     from app.services.export import worker as export_worker
     from app.services.import_engine import worker as import_worker
-    from app.services.marketplace import community_hooks
+    from app.services.marketplace import community_hooks, plugin_installs
     from app.services.platform import evidence, holds
-    from app.services.tenant import plugin_updates
     from app.services.tenant import (
         change_log,
         engagement_levels,
         expiry,
         outbox_poller,
+        personal_items,
         plugin_hooks,
         plugin_schedules,
+        plugin_updates,
         post_publication,
-        personal_items,
         subscription_notices,
         trash_purge,
     )
@@ -249,6 +249,26 @@ def sweeps() -> tuple[Sweep, ...]:
             visit=subscription_notices.tell_subscribers,
             next_due=subscription_notices.next_due,
             sources=(on_insert("event_outbox", after=minute),),
+        ),
+        Sweep(
+            kind=plugin_installs.INDEX_SWEEP,
+            scope=Scope.PROVISIONED,
+            every=minute,
+            visit=plugin_installs.reindex_community,
+            answers=True,
+            # Nothing is due once the index is written; the daily reconcile
+            # writes it again.
+            next_due=lambda _now: select(func.now()),
+            sources=(
+                on_row(
+                    "guild_plugins",
+                    "now()",
+                    events=(
+                        "INSERT OR UPDATE OF enabled, listing_uid, config, definition"
+                        " OR DELETE"
+                    ),
+                ),
+            ),
         ),
         Sweep(
             kind="plugin_schedules",

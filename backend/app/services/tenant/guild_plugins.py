@@ -43,10 +43,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.plugin_scopes import ordered_scopes, plugin_scope, plugin_scope_target
 from app.core.audit_events import AuditEventType
+from app.core.messages import GuildPluginMessages
+from app.core.plugin_scopes import ordered_scopes, plugin_scope, plugin_scope_target
+from app.db.session import routed_guild_id
 from app.models.platform.marketplace import MarketplaceListing
-from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.calendar import Calendar
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
@@ -55,9 +56,9 @@ from app.models.tenant.initiative import (
     Initiative,
     InitiativeRoleModel,
 )
+from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
-from app.core.messages import GuildPluginMessages
-from app.db.session import routed_guild_id
+from app.schemas.tenant.resource_grant import initiative_readable
 from app.schemas.tenant.tool_layout import PLUGIN_FIELD_PREFIX
 from app.services import audit as audit_service
 from app.services.marketplace import (
@@ -69,7 +70,6 @@ from app.services.marketplace import (
 from app.services.marketplace.manifest_values import is_unique_setting_value
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.platform import guilds as guilds_service
-from app.schemas.tenant.resource_grant import initiative_readable
 from app.services.tenant import calendars as calendars_service
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connections as connections_service
@@ -114,7 +114,6 @@ __all__ = [
     "placement_role_ids",
     "placements_by_install",
     "plugin_callers",
-    "reindex_install",
     "set_granted_scopes",
     "set_placed_initiatives",
     "set_placement_roles",
@@ -262,16 +261,6 @@ async def lock_install(session: AsyncSession, plugin_id: int) -> Optional[GuildP
             .execution_options(populate_existing=True)
         )
     ).first()
-
-
-async def reindex_install(session: AsyncSession, guild_id: int, plugin_id: int) -> None:
-    """Write an install's row in the install index from the install as it
-    stands, holding its row for the write as a connect does while it claims a
-    route, and commit."""
-    locked = await lock_install(session, plugin_id)
-    if locked is not None:
-        await plugin_installs.record(guild_id, locked)
-    await session.commit()
 
 
 async def load_secrets(session: AsyncSession, plugin: GuildPlugin) -> dict[str, Any]:

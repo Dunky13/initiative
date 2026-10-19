@@ -19,10 +19,12 @@ of a listing's installs.
 Beside it, ``plugin_install_claims`` holds the values each install holds for
 its plug-in's unique settings, current and earlier, in one index over every
 community, so no two communities hold the same one. An install writes its own
-in the transaction that stores the value; they go with the install's row.
+in the transaction that stores the value; they go with the community, and with
+the install when it is removed.
 
-Kept in step by :mod:`app.services.marketplace.plugin_installs`. Reached only by
-the system engine.
+Written by the ``plugin_index`` sweep from each community's installs, which
+their writes arm (:mod:`app.services.marketplace.plugin_installs`); a connect
+claims its route first. Reached only by the system engine.
 """
 
 from __future__ import annotations
@@ -33,7 +35,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
-    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -113,17 +114,16 @@ class PluginInstallClaim(SQLModel, table=True):
 
     __tablename__ = "plugin_install_claims"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["guild_id", "install_id"],
-            ["plugin_installs.guild_id", "plugin_installs.install_id"],
-            ondelete="CASCADE",
-        ),
         Index(
             "uq_plugin_install_claims_value", "listing_uid", "key", "value", unique=True
         ),
     )
 
-    guild_id: int = Field(sa_column=Column(Integer, primary_key=True))
+    guild_id: int = Field(
+        sa_column=Column(
+            Integer, ForeignKey("guilds.id", ondelete="CASCADE"), primary_key=True
+        )
+    )
     install_id: int = Field(sa_column=Column(Integer, primary_key=True))
     #: The setting's key in the install's pinned definition.
     key: str = Field(

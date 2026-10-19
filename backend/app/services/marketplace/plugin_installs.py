@@ -41,7 +41,7 @@ from cryptography.fernet import InvalidToken
 from sqlalchemy import delete, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.encryption import (
@@ -51,6 +51,7 @@ from app.core.encryption import (
 )
 from app.db import session as db_session
 from app.db.errors import dbapi_constraint
+from app.models.platform.guild import LIVE_STATUS_VALUES, CommunityStatus, Guild
 from app.models.platform.plugin_install import (
     EXCLUSIVE_ROUTE_INDEX,
     HOOK_ROUTE_MAX_LENGTH,
@@ -58,7 +59,6 @@ from app.models.platform.plugin_install import (
     PluginInstallClaim,
 )
 from app.models.platform.plugin_service_registration import PluginServiceRegistration
-from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.marketplace.manifest_values import (
     MAX_UNIQUE_SETTING_VALUE_LENGTH,
@@ -72,6 +72,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "PAGE_LIMIT",
     "IndexedInstall",
+    "INDEX_SWEEP",
     "assigned_value",
     "claim",
     "claim_value",
@@ -79,11 +80,16 @@ __all__ = [
     "hook_route",
     "page",
     "record",
+    "reindex_community",
     "routed",
 ]
 
 #: The most installs one page lists.
 PAGE_LIMIT = 200
+
+#: The sweep that writes the index from each community's installs, armed by
+#: their writes.
+INDEX_SWEEP = "plugin_index"
 
 #: What a random suffix is drawn from: the letters and digits a unique
 #: setting's value may hold.
@@ -192,15 +198,61 @@ async def record(guild_id: int, plugin: GuildPlugin) -> None:
         await claim(guild_id, plugin, None)
 
 
-async def forget(guild_id: int, install_id: int) -> None:
-    """Remove one install's row, and with it the values it claimed."""
-    async with db_session.SystemSessionLocal() as session:
-        await session.exec(
-            delete(PluginInstall).where(
-                PluginInstall.guild_id == guild_id,
-                PluginInstall.install_id == install_id,
+async def reindex_community(session: AsyncSession, guild_id: int) -> None:
+    """Write the community's rows as its installs stand, and drop the rows
+    and claims of installs it no longer has: the :data:`INDEX_SWEEP` visit,
+    on a session routed into the community. Each write to an install arms
+    it, so the index follows the installs rather than being written beside
+    them.
+
+    Each install is held while its row is written, as a connect holds it
+    while it claims a route, so the row is written from the install as the
+    connect left it. The rows to drop are those the index held before the
+    installs were read and whose install is gone by then: an install made
+    meanwhile is not among them.
+    """
+    for install_id in (await session.exec(select(GuildPlugin.id))).all():
+        locked = (
+            await session.exec(
+                select(GuildPlugin)
+                .where(GuildPlugin.id == install_id)
+                .with_for_update()
             )
-        )
+        ).first()
+        if locked is not None:
+            await record(guild_id, locked)
+        await session.commit()
+    async with db_session.SystemSessionLocal() as index:
+        held: set[int] = set()
+        for table in (PluginInstall, PluginInstallClaim):
+            held.update(
+                (
+                    await index.exec(
+                        select(table.install_id).where(table.guild_id == guild_id)
+                    )
+                ).all()
+            )
+        present = set((await session.exec(select(GuildPlugin.id))).all())
+        gone = sorted(held - present)
+        for table in (PluginInstall, PluginInstallClaim) if gone else ():
+            await index.exec(
+                delete(table).where(
+                    table.guild_id == guild_id, col(table.install_id).in_(gone)
+                )
+            )
+        await index.commit()
+
+
+async def forget(guild_id: int, install_id: int) -> None:
+    """Remove one install's row at once, and the values it claimed; the sweep
+    would drop both on its next visit."""
+    async with db_session.SystemSessionLocal() as session:
+        for table in (PluginInstall, PluginInstallClaim):
+            await session.exec(
+                delete(table).where(
+                    table.guild_id == guild_id, table.install_id == install_id
+                )
+            )
         await session.commit()
 
 

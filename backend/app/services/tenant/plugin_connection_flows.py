@@ -52,25 +52,26 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 import jwt
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.errors import CodedError
 from app.core.config import settings
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
-from app.core.messages import PluginChannelMessages, GuildPluginMessages
+from app.core.errors import CodedError
+from app.core.messages import GuildPluginMessages, PluginChannelMessages
 from app.core.security import PluginPlatformSigningNotConfiguredError
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
+from app.models.platform.access_grant import AccessLevel
 from app.models.platform.guild import (
     LIVE_STATUS_VALUES,
+    CommunityStatus,
     Guild,
     GuildMembership,
-    CommunityStatus,
 )
-from app.models.platform.access_grant import AccessLevel
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.auth.oidc._http import (
@@ -83,7 +84,8 @@ from app.services.marketplace import (
     plugin_installs,
     registration_lookup,
 )
-from app.services.platform import access_grants as access_grants_service
+from app.services.marketplace.community_status import community_status
+from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
     REQUEST_TIMEOUT_SECONDS,
@@ -92,19 +94,12 @@ from app.services.marketplace.plugin_refs import (
     PluginNameRefused,
     ensure_plugin_guild_ref,
 )
-from app.services.marketplace.community_status import community_status
-from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.vendor_values import load_vendor_values
+from app.services.platform import access_grants as access_grants_service
 from app.services.safe_http import ResponseTooLargeError, request_public_target
-from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connections as connections_service
-from app.services.tenant.plugin_config import (
-    install_settings,
-    mint_connection_ref,
-    token_of,
-    without_tokens,
-)
 from app.services.tenant.connection_flow_state import (
     MAX_INSTALLATION_ID_LENGTH,
     ConnectionFlowState,
@@ -114,11 +109,16 @@ from app.services.tenant.connection_flow_state import (
     encode_state,
     new_state,
 )
+from app.services.tenant.plugin_config import (
+    install_settings,
+    mint_connection_ref,
+    token_of,
+    without_tokens,
+)
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
 )
-from app.db.request_context import SystemGuild, Unattributed
 
 logger = logging.getLogger(__name__)
 
@@ -1292,7 +1292,7 @@ async def _store_community(
     The route the values give the install's vendor webhooks is claimed in the
     install index before anything is stored, and nothing is stored when
     another community holds it (``taken``). A store that fails after the claim
-    rewrites the index from what the community holds."""
+    has the index sweep write the row again from what the community holds."""
     plugin = await guild_plugins_service.lock_install(session, plugin_id)
     if plugin is None:
         return "not_recorded"
@@ -1325,8 +1325,15 @@ async def _store_community(
         )
         await session.commit()
     except Exception:
+        # The route was claimed for values that were not stored: the index
+        # sweep writes the row again from what the community holds.
         await session.rollback()
-        await guild_plugins_service.reindex_install(session, guild_id, plugin_id)
+        await session.exec(
+            text("SELECT arm_timer(:kind, now())").bindparams(
+                kind=plugin_installs.INDEX_SWEEP
+            )
+        )
+        await session.commit()
         raise
     return "connected"
 

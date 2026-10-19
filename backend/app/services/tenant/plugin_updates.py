@@ -37,30 +37,30 @@ bought it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from collections.abc import Collection
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import cohorts
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
-from app.models.platform.guild import GuildMembership, CommunityRole
+from app.models.platform.guild import CommunityRole, GuildMembership
 from app.models.platform.notification import NotificationType
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import plugin_installs, registration_lookup
+from app.services.marketplace import registration_lookup
 from app.services.marketplace.definitions import GUILD_INSTALLABLE_PLUGIN_KINDS
 from app.services.marketplace.installs import (
     ListingInstallError,
     resolve_listing_install,
 )
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connections as connections_service
-from app.services.tenant import plugin_revocation as revocation_service
 from app.services.tenant import plugin_metadata, plugin_schedules
-from app.services.tenant import guild_plugins as guild_plugins_service
-from app.db.request_context import SystemGuild, Unattributed
+from app.services.tenant import plugin_revocation as revocation_service
 
 logger = logging.getLogger(__name__)
 
@@ -294,9 +294,6 @@ async def apply_version(
         await guild_plugins_service.placed_initiative_ids(session, plugin.id),
         previous=previous,
     )
-    # The new version may route its webhooks by another value, or have
-    # dropped the connection that held it.
-    await plugin_installs.record(guild_id, plugin)
     return plugin
 
 

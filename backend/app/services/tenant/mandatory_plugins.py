@@ -42,8 +42,8 @@ and a deployment's configuration decides whether anything uses it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import text
@@ -62,8 +62,8 @@ from app.services.marketplace.installs import (
     ListingInstallError,
     resolve_listing_install,
 )
-from app.services.tenant import plugin_schedules
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_schedules
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ __all__ = [
     "BackfillResult",
     "backfill_mandatory_plugins",
     "install_mandatory_plugins",
-    "index_installs",
+    "assign_install_settings",
     "mandatory_grant",
 ]
 
@@ -247,12 +247,12 @@ async def install_mandatory_plugins(
     return installed
 
 
-async def index_installs(
+async def assign_install_settings(
     session: AsyncSession, guild_id: int, listing_uids: Collection[str]
 ) -> None:
-    """Record the community's installs of ``listing_uids`` in the install
-    index, once the transaction that made them has committed, and give their
-    assigned settings their values."""
+    """Give the assigned settings of the community's installs of
+    ``listing_uids`` their values, once the transaction that made the installs
+    has committed."""
     if not listing_uids:
         return
     for plugin in (
@@ -260,7 +260,6 @@ async def index_installs(
             select(GuildPlugin).where(col(GuildPlugin.listing_uid).in_(listing_uids))
         )
     ).all():
-        await plugin_installs.record(guild_id, plugin)
         await guild_plugins_service.assign_settings(session, plugin, guild_id=guild_id)
 
 
@@ -321,8 +320,10 @@ async def backfill_mandatory_plugins() -> BackfillResult:
         visited += 1
         added = await install_mandatory_plugins(session, guild_id=guild_id)
         await session.commit()
-        # Indexed once the install is in, along with any already there.
-        await index_installs(
+        # The next pass reads the index, so it is written now rather than
+        # when the sweep comes.
+        await plugin_installs.reindex_community(session, guild_id)
+        await assign_install_settings(
             session,
             guild_id,
             [
