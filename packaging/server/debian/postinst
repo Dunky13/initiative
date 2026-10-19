@@ -8,9 +8,7 @@ case "${1:-}" in
                 --no-create-home --disabled-login initiative
         fi
         [ "$(id -u initiative)" -ne 0 ]
-        # /var/lib is root-owned, so the service cannot replace this top-level
-        # entry. Revoke its old ownership BEFORE permissions, then inspect children:
-        # even a live process with an open directory FD cannot rename them afterward.
+        # Prepare the root-owned state directory before creating writable storage.
         if [ -L /var/lib/initiative ] || { [ -e /var/lib/initiative ] && [ ! -d /var/lib/initiative ]; }; then
             echo 'Refusing non-directory or symlink at /var/lib/initiative' >&2
             exit 1
