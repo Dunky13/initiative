@@ -318,7 +318,7 @@ async def read(
     ]
 
 
-def _is_ref(value: Any) -> bool:
+def is_ref(value: Any) -> bool:
     """Whether ``value`` is a list element's ``ref``: 1 to
     :data:`LOOKUP_LENGTH` characters."""
     return isinstance(value, str) and 0 < len(value) <= LOOKUP_LENGTH
@@ -327,7 +327,7 @@ def _is_ref(value: Any) -> bool:
 #: What a list's element may hold, and what each takes (the contract's
 #: ``listElement``).
 _ELEMENT_TERMS: dict[str, Callable[[Any], bool]] = {
-    "ref": _is_ref,
+    "ref": is_ref,
     "value": lambda value: isinstance(value, (str, int, float)),
     "url": lambda value: isinstance(value, str),
     "text": lambda value: isinstance(value, str),
@@ -402,7 +402,7 @@ def change(*, values: Any = None, upsert: Any = None, remove: Any = None) -> Cha
             PluginChannelMessages.METADATA_VALUE_TOO_LARGE, status_code=413
         )
     for refs in (remove or {}).values():
-        if not isinstance(refs, list) or not all(map(_is_ref, refs)):
+        if not isinstance(refs, list) or not all(map(is_ref, refs)):
             raise PluginChannelError(PluginChannelMessages.INVALID_PAYLOAD)
     return Change(values=values or {}, upsert=upsert or {}, remove=remove or {})
 

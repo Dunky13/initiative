@@ -26,6 +26,12 @@ plug-in's values on the item as they stand once the call is answered, made to
 them as the install. The checks above and the endpoint's own terms are all
 that decide who may run it.
 
+An action may ask the reader for some of its endpoint's parameters first,
+and a list field may offer an action on each of its elements. Either way the
+endpoint is sent what the reader answered and nothing else, and a declarative
+plug-in's expressions read the answers as ``params`` and the element's
+``ref`` as ``element``; a container's handler is handed the item alone.
+
 Either way the answer is the values the install shows on the item as they
 stand afterwards, and every other reader hears that the item changed from its
 own values' change capture.
@@ -33,6 +39,8 @@ own values' change capture.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import httpx
@@ -49,7 +57,11 @@ from app.db.guild_standing import GuildContext
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.plugin_metadata import PluginMetadata
 from app.services.marketplace import plugin_data
-from app.services.marketplace.declarative import action_change, request_refusal
+from app.services.marketplace.declarative import (
+    action_change,
+    request_refusal,
+    typed_params,
+)
 from app.services.marketplace.expressions import UNDEFINED
 from app.services.marketplace.plugin_data import PluginDataError
 from app.services.marketplace.plugin_refs import PluginNameRefused, ensure_plugin_ref
@@ -120,6 +132,41 @@ def _failed(detail: str) -> PluginDataError:
     return PluginDataError(PluginDataMessages.SERVICE_UNAVAILABLE, 502, detail)
 
 
+def _answers(
+    action: Mapping[str, Any],
+    endpoint: Optional[Mapping[str, Any]],
+    params: Optional[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """What the reader answered for the parameters the action asks for, held
+    to the endpoint's declaration of them (:func:`plugin_data.validate_params`,
+    as a widget's parameters are). An answer the action did not ask for, or
+    one the endpoint requires and the reader left out, is refused."""
+    answered = dict(params or {})
+    if any(key not in (action.get("params") or ()) for key in answered):
+        raise PluginDataError(PluginDataMessages.INVALID_PARAMS, 400)
+    if endpoint is None:
+        return {}
+    sent, _ = plugin_data.validate_params(
+        endpoint, json.dumps(answered) if answered else None
+    )
+    return sent
+
+
+def _on_elements(
+    definition: Optional[Mapping[str, Any]], action_id: str, kind: str, element: str
+) -> bool:
+    """Whether a list field on this kind of item offers the action on each of
+    its elements, and ``element`` is one's ``ref``."""
+    fields = (definition or {}).get("fields")
+    return plugin_metadata.is_ref(element) and any(
+        isinstance(field, dict)
+        and field.get("list") is True
+        and action_id in (field.get("actions") or ())
+        and kind in (field.get("on") or ())
+        for field in (fields if isinstance(fields, list) else [])
+    )
+
+
 async def _actor(
     session: AsyncSession,
     *,
@@ -176,16 +223,18 @@ async def _act(
     action: dict[str, Any],
     endpoint: Optional[dict[str, Any]],
     item: dict[str, Any],
+    params: Mapping[str, Any],
+    element: Optional[str],
     guild_id: int,
     user_id: int,
     transport: httpx.AsyncBaseTransport | None,
 ) -> None:
     """Do what a declarative action declares, as the SDK's ``runAction``
-    does: the call its endpoint makes, when it names one, on the credential
-    :func:`_actor` picks, its expressions reading ``item``; then the change
-    its ``write`` answers, when it has one (:func:`action_change`), reading
-    the plug-in's values on the item as they stand once the call is answered,
-    made to them as the install
+    does: the call its endpoint makes, when it names one, with ``params``,
+    on the credential :func:`_actor` picks, its expressions reading ``item``
+    and ``element``; then the change its ``write`` answers, when it has one
+    (:func:`action_change`), reading the plug-in's values on the item as
+    they stand once the call is answered, made to them as the install
     (:func:`~app.services.tenant.plugin_metadata.change_item`).
 
     The endpoint refusing or answering unavailable, a ``write`` answering
@@ -195,7 +244,6 @@ async def _act(
     """
     result: Any = UNDEFINED
     if endpoint is not None:
-        params, _ = plugin_data.validate_params(endpoint, None)
         actor, refs, fields = await _actor(
             session, plugin=plugin, endpoint=endpoint, user_id=user_id
         )
@@ -223,6 +271,7 @@ async def _act(
                 read=read,
                 actor=actor,
                 item=item,
+                element=element,
             )
         except PluginDataError as exc:
             # A write the vendor refused answers one of the endpoint's codes.
@@ -236,10 +285,17 @@ async def _act(
         return
 
     installed = plugin_config.install_settings(plugin)
+    answered = typed_params(endpoint, params) if endpoint is not None else {}
 
     async def made(held: dict[str, Any]) -> Optional[dict[str, Any]]:
         return await action_change(
-            action["write"], item=item, held=held, installed=installed, result=result
+            action["write"],
+            item=item,
+            held=held,
+            installed=installed,
+            result=result,
+            params=answered,
+            element=element,
         )
 
     try:
@@ -260,6 +316,8 @@ async def run_action(
     context: GuildContext,
     user_id: int,
     age_allows: bool,
+    params: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Run one of the install's actions on one item for the reader, and return
@@ -267,7 +325,9 @@ async def run_action(
 
     ``session`` is the reader's, routed into the community, and ``context``
     their standing there. ``age_allows`` is whether the reader is old enough
-    for the plug-in.
+    for the plug-in. ``params`` is what they answered for the parameters the
+    action asks for, and ``element`` the ``ref`` of the list element they ran
+    it from, when they did.
     """
     declarative = is_declarative(plugin.definition)
     declared = (plugin.definition or {}).get("actions")
@@ -292,6 +352,11 @@ async def run_action(
         declarative and action.get("endpoint") is None and action.get("write")
     ):
         raise PluginDataError(PluginDataMessages.ACTION_NOT_FOUND, 404)
+    sent = _answers(action, endpoint, params)
+    if element is not None and not _on_elements(
+        plugin.definition, action_id, kind, element
+    ):
+        raise PluginDataError(PluginDataMessages.INVALID_PARAMS, 400)
     if not plugin.enabled:
         raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409)
     # A frozen community's content changes through nothing, a plug-in's
@@ -339,13 +404,14 @@ async def run_action(
             action=action,
             endpoint=endpoint,
             item={"kind": kind, "id": entity_id, "title": title},
+            params=sent,
+            element=element,
             guild_id=context.guild_id,
             user_id=user_id,
             transport=transport,
         )
     else:
         assert endpoint is not None  # a container's action names its write
-        params, _ = plugin_data.validate_params(endpoint, None)
         refs, fields = await plugin_data._resolve_connections(
             session,
             plugin=plugin,
@@ -374,7 +440,7 @@ async def run_action(
             plugin=plugin,
             guild_id=context.guild_id,
             endpoint_id=str(endpoint["id"]),
-            params=params,
+            params=sent,
             refs=refs,
             fields=fields,
             transport=transport,

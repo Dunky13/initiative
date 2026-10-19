@@ -865,10 +865,14 @@ export function useReadPluginParamOptions<
  * caller and the item named; Initiative changes nothing itself. A
  * declarative plug-in's action is run by Initiative: the call it names, on
  * the credential the plug-in says, and the change it makes to the plug-in's
- * values on the item. The answer is the values the plug-in shows on the item
- * afterwards. Refused with ``PLUGIN_ACTION_NOT_FOUND`` when the install
- * declares no such action on this kind of item, ``PLUGIN_ACTION_NOT_OFFERED``
- * when it is not offered on this item for the caller,
+ * values on the item. Either way the action's endpoint is sent what the
+ * caller answered for the parameters the action asks for. The answer is the
+ * values the plug-in shows on the item afterwards. Refused with
+ * ``PLUGIN_ACTION_NOT_FOUND`` when the install declares no such action on
+ * this kind of item, ``PLUGIN_ACTION_NOT_OFFERED`` when it is not offered on
+ * this item for the caller, ``PLUGIN_DATA_INVALID_PARAMS`` when what the
+ * caller answered is not what the action asks for or the element is not one
+ * it is offered on,
  * ``PLUGIN_DATA_CONNECTION_REQUIRED`` when it needs the caller's own account
  * and they have connected none, the item's own refusal when the caller
  * cannot read it, and 429 past the allowance.

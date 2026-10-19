@@ -3175,6 +3175,8 @@ export interface CommunityPluginDecline {
 
 export type CommunityPluginDetailDefinition = { [key: string]: unknown };
 
+export type CommunityPluginDetailSettingValues = { [key: string]: unknown };
+
 export type CommunityPluginDetailPluginNames = { [key: string]: string };
 
 /**
@@ -3293,6 +3295,7 @@ export interface CommunityPluginDetail {
   item_fields: string[];
   item_parts: string[];
   item_actions: string[];
+  setting_values: CommunityPluginDetailSettingValues;
   granted_scopes: string[];
   mandatory: boolean;
   available: boolean;
@@ -3349,6 +3352,8 @@ export interface CommunityPluginInstall {
 
 export type CommunityPluginReadDefinition = { [key: string]: unknown };
 
+export type CommunityPluginReadSettingValues = { [key: string]: unknown };
+
 export interface CommunityPluginRead {
   id: number;
   community_id: number;
@@ -3372,6 +3377,7 @@ export interface CommunityPluginRead {
   item_fields: string[];
   item_parts: string[];
   item_actions: string[];
+  setting_values: CommunityPluginReadSettingValues;
   granted_scopes: string[];
   mandatory: boolean;
   available: boolean;
@@ -8469,12 +8475,16 @@ export interface PluginActionResult {
   values: PluginActionResultValues;
 }
 
+export type PluginActionRunParams = { [key: string]: unknown } | null;
+
 /**
- * The item to run an action on.
+ * The item to run an action on, and what the reader gave the action.
  */
 export interface PluginActionRun {
   entity_type: ItemKind;
   entity_id: number;
+  params?: PluginActionRunParams;
+  element?: string | null;
 }
 
 /**

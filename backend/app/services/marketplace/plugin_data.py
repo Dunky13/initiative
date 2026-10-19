@@ -929,6 +929,7 @@ async def _call_plugin(
     subject: Optional[Mapping[str, Any]] = None,
     actor: Optional[str] = None,
     item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
 ) -> T:
     """One upstream call, under this worker's in-flight cap for the plug-in, and
     what ``read`` made of its answer. Sent once: nothing here retries.
@@ -939,8 +940,9 @@ async def _call_plugin(
     A declarative plug-in is called by Initiative itself
     (:func:`~app.services.marketplace.declarative.call_endpoint`), with no
     context token and no signature, since there is no plug-in to receive either.
-    Its action's call names the ``actor`` whose credential it runs on and the
-    ``item``, which the endpoint's expressions read.
+    Its action's call names the ``actor`` whose credential it runs on, the
+    ``item`` and the list ``element`` it was run from, which the endpoint's
+    expressions read.
     """
     declarative = is_declarative(plugin.definition)
     if not declarative and not plugin_platform_signing_enabled():
@@ -973,6 +975,7 @@ async def _call_plugin(
                         fields=fields,
                         actor=caller.actor if caller is not None else actor,
                         item=item,
+                        element=element,
                     )
                 )
             )

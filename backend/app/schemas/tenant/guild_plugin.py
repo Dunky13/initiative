@@ -316,6 +316,8 @@ class CommunityPluginRead(SanitizedBaseModel):
     item_parts: List[str] = []
     #: The declared actions the viewer may run on those items.
     item_actions: List[str] = []
+    #: The install's settings' values by key, which its parts' text names.
+    setting_values: Dict[str, Any] = {}
     #: The scopes the community's seat granted this install: empty until the
     #: seat grants some, and never wider than what the manifest requests or
     #: the registration allows.
@@ -653,6 +655,7 @@ def serialize_guild_plugin(
         item_fields=list(on_items.fields),
         item_parts=list(on_items.parts),
         item_actions=list(on_items.actions),
+        setting_values=dict(plugin.settings or {}),
         granted_scopes=sorted(plugin.granted_scopes or []),
         mandatory=service_state.mandatory,
         available=service_state.available,

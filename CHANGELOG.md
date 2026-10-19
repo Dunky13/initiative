@@ -98,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A plug-in's action that asks for some of its endpoint's parameters is sent what the person answered, and one a list field offers on each of its elements is told which element it was run from; a published plug-in whose action asks for a parameter its endpoint requires is accepted.
 - A plug-in's change aimed at every item holding a value reaches all of them, not the first hundred.
 - A plug-in calling another plug-in's endpoint as a member is answered `actor: member` even when the call carried only the community's connections.
 - A plug-in's sign-in, token and revocation addresses state their host in the manifest; one that would fill a value into the host is refused when the plug-in is published. A community connection's minted tokens are forgotten when the connection is cleared or the plug-in removed, and a member's credential is refreshed outside a call's time budget, so a refresh cut short no longer loses it.
