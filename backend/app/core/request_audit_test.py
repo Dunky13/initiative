@@ -2,6 +2,8 @@
 
 import logging
 
+import pytest
+
 from starlette.datastructures import Headers
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -340,3 +342,40 @@ def test_a_proxy_not_trusted_is_pointed_out_where_one_is_expected(monkeypatch, c
 
     [hint] = [r.getMessage() for r in caplog.records]
     assert "Set FORWARDED_ALLOW_IPS to the proxy's address" in hint
+
+
+@pytest.mark.parametrize(
+    ("behind_proxy", "client", "connecting", "seen"),
+    [
+        (True, "162.158.1.2", "2001:4860:0:0:0:0:0:8888", "2001:4860::8888"),
+        (True, "162.158.1.2", "198.51.100.20", "198.51.100.20"),
+        (True, "162.158.1.2", "not an address", "162.158.1.2"),
+        (True, "203.0.113.7", "198.51.100.20", "203.0.113.7"),
+        (False, "162.158.1.2", "198.51.100.20", "162.158.1.2"),
+    ],
+    ids=[
+        "cloudflare names the visitor, in its own spelling",
+        "cloudflare names the visitor",
+        "cloudflare names no address",
+        "a client that is not cloudflare's",
+        "no proxy in front",
+    ],
+)
+async def test_a_request_through_cloudflare_comes_from_its_visitor(
+    monkeypatch, behind_proxy, client, connecting, seen
+):
+    """Behind Cloudflare's proxy and the deployment's own, the server
+    resolves Cloudflare's edge; the visitor CF-Connecting-IP names is the
+    client every reader sees, the scope's included."""
+    monkeypatch.setattr(settings, "BEHIND_PROXY", behind_proxy)
+    scope = {**_ws_scope(), "client": (client, 443)}
+    scope["headers"] = [*scope["headers"], (b"cf-connecting-ip", connecting.encode())]
+    found = {}
+
+    def inside():
+        found["source_ip"] = audit_context.client_ip()
+
+    await _drive_socket(scope, inside)
+
+    assert found["source_ip"] == seen
+    assert scope["client"][0] == seen

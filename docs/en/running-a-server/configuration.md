@@ -147,10 +147,14 @@ For any real deployment you'll put Initiative behind a reverse proxy that handle
 | Variable | What it does | Default |
 |---|---|---|
 | `BEHIND_PROXY` | Trust `X-Forwarded-*` headers from your proxy (so client IPs and HTTPS are detected correctly). | `false` |
-| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Set it when your proxy reaches the app from a public address. | Loopback, private and link-local ranges |
+| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Only needed for a proxy that reaches the app over a public address. Setting it replaces the default, so list every proxy you trust. | This machine, its container networks and your LAN |
 
 !!! warning "Only enable proxy trust behind an actual proxy"
-    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them. It believes them from the machine itself, its container network and your LAN; a proxy that reaches the app from anywhere else goes in `FORWARDED_ALLOW_IPS`, and the log says so on the first request that shows one.
+    `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them.
+
+    With it on, each visitor is recognised with nothing else to set when your proxy is on the same machine, in your compose file or on your LAN, behind a Cloudflare Tunnel, or behind Cloudflare's proxied DNS (the orange cloud) in front of your own Caddy or nginx.
+
+    The one setup that needs more is a proxy on another machine that reaches Initiative over a public address. List it in `FORWARDED_ALLOW_IPS`; the log names the address to add when it sees one.
 
 ## The app association files
 

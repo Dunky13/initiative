@@ -42,7 +42,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import PlainTextResponse, Response
 
-from app.core import audit_context, metrics
+from app.core import audit_context, cloudflare, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.services import audit as audit_service
@@ -127,6 +127,22 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
         if settings.BEHIND_PROXY
         else "BEHIND_PROXY=true",
     )
+
+
+def _through_cloudflare(scope: Scope, headers: Headers) -> None:
+    """Name the visitor as the request's client when the server resolved it
+    to one of Cloudflare's addresses (:mod:`app.core.cloudflare`), so every
+    reader of the client, the server's own request line included, has the
+    visitor. Only behind a proxy: a deployment reached directly takes its
+    peer as it is."""
+    if not settings.BEHIND_PROXY:
+        return
+    client = scope.get("client")
+    if not client:
+        return
+    visitor = cloudflare.visitor(client[0], headers.get("cf-connecting-ip"))
+    if visitor is not None:
+        scope["client"] = (visitor, client[1])
 
 
 def _reached_ids(scope: Scope) -> dict[str, int]:
@@ -226,6 +242,7 @@ class RequestAuditMiddleware:
             return
 
         headers = Headers(scope=scope)
+        _through_cloudflare(scope, headers)
         context, _token = audit_context.begin(
             request_id=_incoming_request_id(headers) or audit_context.new_request_id(),
             source_ip=(scope.get("client") or (None,))[0],

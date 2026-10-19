@@ -8,6 +8,14 @@ from dotenv import dotenv_values
 ROOT = Path("/usr/lib/initiative")
 ENV_FILE = Path("/etc/initiative/server.env")
 
+#: The proxies trusted to name a request's client when FORWARDED_ALLOW_IPS is
+#: unset: this machine, its container networks and the LAN. The same list as
+#: the image's start.sh.
+LOCAL_NETWORKS = (
+    "127.0.0.0/8,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,"
+    "169.254.0.0/16,fc00::/7,fe80::/10"
+)
+
 
 def command(config: dict[str, str | None]) -> list[str]:
     """Translate explicitly supported listener settings to uvicorn arguments."""
@@ -34,7 +42,7 @@ def command(config: dict[str, str | None]) -> list[str]:
         str(port),
         "--proxy-headers" if proxy == "true" else "--no-proxy-headers",
         "--forwarded-allow-ips",
-        config.get("FORWARDED_ALLOW_IPS") or "127.0.0.1,::1",
+        config.get("FORWARDED_ALLOW_IPS") or LOCAL_NETWORKS,
     ]
     return args
 

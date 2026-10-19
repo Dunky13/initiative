@@ -53,15 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The iPhone and iPad app needs iOS 16 or later.**
 - **A setting that stops the server starting is named**, without printing its value.
 - **Escalate is now Send to the platform**, and reports of something illegal or "Other" need a description.
+- **For plug-in authors:** this release serves plug-in API 8.0, so a plug-in installs or updates only from a release built with initiative-plugin-sdk 8.0, with Ed25519 keys. Installed plug-ins keep working.
 - Smart chips, links and embeds update live; deleting your comment keeps its replies; pictures in documents, wikis and posts open full size; the wiki editor keeps its toolbar in view; layouts fit foldables and tablets; large boards, dates and the links graph are faster; and backups keep each initiative's join policy.
 - **Breaking changes**
-  - **Plug-ins need SDK 8.0.** Installing or updating a plug-in needs a release built with initiative-plugin-sdk 8.0; installed ones keep working.
-  - **Keys on a service boundary are Ed25519.** A plug-in's registered keys, and `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` if you set it, must be Ed25519; a stored RSA platform key is replaced on start. Make one with `openssl genpkey -algorithm ed25519`.
-  - **The marketplace has a new signing root**, which this release trusts. Earlier releases receive no marketplace updates until they upgrade. A server that sets `MARKETPLACE_REGISTRY_ROOT` is unaffected.
-  - **A plug-in's names for a community and its members belong to the plug-in**, kept across a reinstall until the community erases its data. Names handed out before this release are replaced on first use.
-  - **`BEHIND_PROXY=true` trusts forwarded headers from the local network only.** A proxy on a public address needs its addresses in `FORWARDED_ALLOW_IPS`; the log names the address it saw.
+  - **`BEHIND_PROXY=true` reads forwarded headers only from a proxy on this machine or its local network.** A proxy on the same host, in your compose file or on your LAN, a Cloudflare Tunnel, and Cloudflare's proxied DNS in front of your own proxy all need nothing more. A proxy that reaches Initiative over a public address goes in `FORWARDED_ALLOW_IPS`; the log names it.
+  - **`PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM`, if you set it, must be an Ed25519 key.** Make one with `openssl genpkey -algorithm ed25519`.
   - **Server logs are JSON**, one object per line on standard error, request lines included; standard output carries the audit stream alone. Audit lines name people by id only.
-  - **`BUNDLED_SERVICE_PUBLIC_ID` and `BUNDLED_SERVICE_SHARED_SECRET` are removed.**
   - **Only moderators remove other people's comments**, and invite links are shown once, when made.
   - **API:** opens, bookmarks and subscriptions are one API, `/personal-items`, replacing `/recents/`, `GET /projects/favorites` and `POST`/`DELETE /projects/{id}/favorite` (and the MCP `favorite_projects` tool); projects no longer carry `default_view_mode`, `is_favorited` or `last_viewed_at`. `GET /projects/{id}/activity` and `/me/contacts/favorites` are removed. Access grants name people as `user` and `approved_by` in place of their emails. `POST /me/tickets` and its replies take `multipart/form-data`. The full list is in `backend/api-breaking-changes.md`.
 

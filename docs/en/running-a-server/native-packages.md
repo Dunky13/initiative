@@ -65,8 +65,9 @@ in a database URL password. Preserve the same `SECRET_KEY` across upgrades: it
 protects encrypted data as well as sessions.
 
 The server listens on `127.0.0.1:8173` by default. Put a reverse proxy with trusted
-HTTPS and WebSocket support in front of it. Set `BEHIND_PROXY=true` and
-`FORWARDED_ALLOW_IPS` to the specific proxy addresses you trust. To serve another
+HTTPS and WebSocket support in front of it, and set `BEHIND_PROXY=true`. A proxy on
+this machine or your LAN, and Cloudflare in front of it, need nothing more; see
+[Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy) for the one setup that does. To serve another
 interface, explicitly set `INITIATIVE_HOST`; do not expose an unconfigured server
 on a public network.
 
