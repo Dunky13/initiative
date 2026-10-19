@@ -2260,6 +2260,64 @@ class TestDeclarativePlugins:
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
 
+    async def test_a_holding_target_reaches_every_item(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
+    ):
+        """A change aimed at the items holding a value is made on all of them;
+        the lookup route's page is not its bound."""
+        writing = declarative_github(DECLARATIVE_ID)
+        writing.update(scopes=["projects:read"])
+        writing["webhooks"]["events"][0]["write"] = (
+            '[{"target": {"holding": {"key": "github.repo",'
+            ' "value": payload.repository.full_name}},'
+            ' "set": {"github.state": "open"}}]'
+        )
+        await _declarative_listing(session, writing)
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        tasks = [await create_task(session, seat.project) for _ in range(2)]
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=writing,
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        session.add(
+            PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id)
+        )
+        session.add_all(
+            PluginMetadata(
+                install_id=plugin.id,
+                entity_type="task",
+                entity_id=task.id,
+                key="github.repo",
+                value="acme/web",
+                lookup="acme/web",
+            )
+            for task in tasks
+        )
+        await session.commit()
+        monkeypatch.setattr(plugin_metadata, "FIND_LIMIT", 1)
+        body, headers = vendor.webhook(_issue())
+
+        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert response.status_code == 202, response.text
+        states = await session.exec(
+            select(PluginMetadata.entity_id).where(PluginMetadata.key == "github.state")
+        )
+        assert sorted(states.all()) == sorted(task.id for task in tasks)
+
     async def test_a_delivery_keeps_values_as_the_install(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):

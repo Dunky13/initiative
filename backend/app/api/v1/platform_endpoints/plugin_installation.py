@@ -425,7 +425,6 @@ async def write_installation_metadata(
     payload: PluginMetadataWrite,
     installation: RoutedInstallationDep,
     session: SessionDep,
-    system: SystemSessionDep,
 ) -> PluginMetadataValues:
     """Change this install's values on one item, or on itself: ``values``
     sets them by key, a ``null`` removing its key; ``upsert`` adds a list
@@ -446,7 +445,7 @@ async def write_installation_metadata(
     """
 
     async def pinned() -> Any:
-        return (await _load(system, installation)).definition
+        return await metadata_service.pinned_fields(session, installation.install_id)
 
     values = await metadata_service.write(
         session,
@@ -474,5 +473,7 @@ async def find_installation_metadata(
     every value it keeps on each: at most 100, in kind and id order. A value
     is found by its text, a number or a boolean as JSON writes it, and a list
     field's element by its ``ref``."""
-    found = await metadata_service.find(session, installation.context, key, value)
+    found = await metadata_service.find(
+        session, installation.context, key, value, limit=metadata_service.FIND_LIMIT
+    )
     return _items(found)
