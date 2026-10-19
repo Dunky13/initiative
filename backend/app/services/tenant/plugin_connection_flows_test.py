@@ -48,7 +48,7 @@ from app.models.platform.access_grant import (
     SettingsLevel,
 )
 from app.models.platform.community_timer import CommunityTimer
-from app.models.platform.guild import CommunityRole, GuildMembership
+from app.models.platform.guild import CommunityRole, CommunityStatus, GuildMembership
 from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import RegistrationKind
 from app.models.tenant.guild_plugin import GuildPlugin
@@ -2362,6 +2362,46 @@ class TestDeclarativePlugins:
         assert removed.status_code == 204, removed.text
         session.expunge_all()
         assert await session.get(PluginInstall, (seat.guild.id, plugin_id)) is None
+
+    async def test_a_read_only_communitys_delivery_waits_for_it(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """It is queued, and worked through once the community takes writes
+        again."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        seat.guild.status = CommunityStatus.read_only.value
+        session.add(seat.guild)
+        await session.commit()
+        body, headers = vendor.webhook(_issue())
+
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert queued.status_code == 202, queued.text
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
+
+    async def test_a_delivery_for_a_replaced_connection_is_dropped(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """One waiting for installation 42 when the community connects 43
+        instead maps nothing, and its id stays remembered."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        body, headers = vendor.webhook(_issue())
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        vendor.api_answers = [_installations((43, "acme"))]
+        landing = await _connect_installation(client, seat, plugin, vendor, 43)
+        assert landing["outcome"] == "connected"
+
+        await _delivered(session, seat.guild.id)
+
+        assert await _events(session, seat.guild.id) == []
+        [dropped] = await _deliveries(session, seat.guild.id)
+        assert (dropped.delivery_id, dropped.body) == ("delivery-1", None)
 
     async def test_a_delivery_keeps_values_as_the_install(
         self, client: AsyncClient, acting_user, session, vendor, declarative

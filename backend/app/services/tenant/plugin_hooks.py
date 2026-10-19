@@ -338,9 +338,10 @@ async def _claim(session: AsyncSession) -> Optional[Row]:
 
 
 async def _settle(session: AsyncSession, row: Row, *, done: bool) -> None:
-    """Settle a held delivery. Done, its body goes and its id stays
-    remembered; otherwise it waits :data:`RETRY_AFTER`, doubled for each
-    failure, and is given up after :data:`ATTEMPTS`."""
+    """Settle a held delivery, committing it with whatever its work staged
+    on ``session``. Done, its body goes and its id stays remembered;
+    otherwise it waits :data:`RETRY_AFTER`, doubled for each failure, and is
+    given up after :data:`ATTEMPTS`."""
     attempts = row.attempts if done else row.attempts + 1
     if not done and attempts >= ATTEMPTS:
         logger.warning(
@@ -373,15 +374,18 @@ async def _settle(session: AsyncSession, row: Row, *, done: bool) -> None:
 async def run_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
     """Map or forward each of the community's waiting deliveries, on a session
     routed into it, as the version each install is pinned to, and answer
-    when the next comes due. A delivery whose install is gone, off, or no
-    longer the registration's is dropped, its id remembered."""
+    when the next comes due. A delivery whose install is gone, off, no
+    longer the registration's, or no longer routing by the value it came by
+    (the community connected another installation since) is dropped, its id
+    remembered. What a delivery emits and sets is committed with its
+    settlement, so a visit that stops leaves it waiting whole."""
     live = {
         registration.listing_uid: registration
         for registration in (await registration_lookup.load_registrations()).values()
         if registration.live_in(guild_id) and registration.listing_uid
     }
     while (row := await _claim(session)) is not None:
-        plugin = await session.get(GuildPlugin, row.install_id)
+        plugin = await session.get(GuildPlugin, row.install_id, populate_existing=True)
         registration = live.get(plugin.listing_uid or "") if plugin else None
         pinned = (plugin.definition or {}).get("webhooks") if plugin else None
         if (
@@ -390,6 +394,7 @@ async def run_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
             or not isinstance(pinned, dict)
             or not plugin.enabled
             or not owns_install(plugin, registration)
+            or plugin_installs.hook_route(plugin.definition, plugin.config) != row.route
         ):
             await _settle(session, row, done=True)
             continue
@@ -553,7 +558,6 @@ async def _map(
             and set_connection_state(locked, *delivered.status)
         ):
             session.add(locked)
-    await session.commit()
     return True
 
 

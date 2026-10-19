@@ -51,7 +51,7 @@ from app.core.encryption import (
 )
 from app.db import session as db_session
 from app.db.errors import dbapi_constraint
-from app.models.platform.guild import LIVE_STATUS_VALUES, CommunityStatus, Guild
+from app.models.platform.guild import LIVE_STATUS_VALUES, Guild
 from app.models.platform.plugin_install import (
     EXCLUSIVE_ROUTE_INDEX,
     HOOK_ROUTE_MAX_LENGTH,
@@ -313,8 +313,8 @@ async def page(
 
 async def routed(listing_uid: str, route_value: str) -> list[IndexedInstall]:
     """The installs of a listing whose webhooks route by ``route_value``, one
-    per community that connected it: switched on, in a community open to
-    writes."""
+    per community that connected it: switched on, in a community still live.
+    A read-only community's deliveries wait for it to take writes again."""
     statement = (
         select(PluginInstall.guild_id, PluginInstall.install_id)
         .join(Guild, Guild.id == PluginInstall.guild_id)
@@ -322,7 +322,7 @@ async def routed(listing_uid: str, route_value: str) -> list[IndexedInstall]:
             PluginInstall.listing_uid == listing_uid,
             PluginInstall.hook_route == route_value,
             PluginInstall.enabled.is_(True),
-            Guild.status == CommunityStatus.active.value,
+            Guild.status.in_(sorted(LIVE_STATUS_VALUES)),
         )
         .order_by(PluginInstall.guild_id)
     )
