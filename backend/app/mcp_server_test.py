@@ -341,6 +341,26 @@ def test_trim_shows_a_property_s_options_once_per_result():
     assert second["properties"][1]["options"] == options
 
 
+def test_trim_keeps_another_community_s_options_under_the_same_id():
+    # Property ids are numbered per community, and ``list_my_tasks`` lists
+    # tasks from all of them: the same id can be two different properties.
+    ours = [{"value": "bug", "label": "Bug"}]
+    theirs = [{"value": "low", "label": "Low"}]
+    payload = {
+        "items": [
+            {"community_id": 1, "properties": [{"property_id": 1, "options": ours}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+        ]
+    }
+    first, second, third = _trim(payload)["items"]
+
+    assert first["properties"][0]["options"] == ours
+    assert second["properties"][0]["options"] == theirs
+    # Once both have been shown, a repeat of either carries the value alone.
+    assert "options" not in third["properties"][0]
+
+
 def test_trim_passes_free_form_fields_through_verbatim():
     content = {"type": "doc", "attrs": {"level": None}, "content": []}
     payload = {"id": 1, "content": content, "description": None}

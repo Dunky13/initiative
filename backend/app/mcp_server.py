@@ -289,7 +289,10 @@ _ROUTE_MAPS = [
 #   * a property's option list after the first row that carried it. A task list
 #     repeats each property's whole definition — every option, label and colour
 #     — on every row, which was nearly a quarter of a page of tasks. The first
-#     row keeps it, so the caller still learns what the property accepts.
+#     row keeps it, so the caller still learns what the property accepts. A
+#     repeat is the same id *and* the same options: ids are numbered per
+#     community, and a cross-community list can hold two properties that share
+#     one.
 #
 # Colours, icons and positions stay: the write tools set them, so a caller can
 # be asked about them.
@@ -320,7 +323,7 @@ def _trim(
 
     Returns a new structure; the input is left untouched. ``free_form`` names
     the keys whose values pass through as they are; ``seen_properties`` carries
-    the property ids whose options a row earlier in the same result has
+    the (property id, options) pairs a row earlier in the same result has
     already shown.
     """
     if seen_properties is None:
@@ -331,10 +334,11 @@ def _trim(
         return value
 
     trimmed: dict[str, Any] = {}
-    property_id = value.get("property_id")
-    repeats_options = "options" in value and property_id in seen_properties
-    if "options" in value and property_id is not None:
-        seen_properties.add(property_id)
+    repeats_options = False
+    if "options" in value and value.get("property_id") is not None:
+        shown = (value["property_id"], json.dumps(value["options"], sort_keys=True))
+        repeats_options = shown in seen_properties
+        seen_properties.add(shown)
     for key, v in value.items():
         if key in _UNREAD_KEYS or key.endswith(_BASE64_SUFFIX):
             continue
