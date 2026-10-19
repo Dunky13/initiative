@@ -10,12 +10,20 @@ edge, and nothing destructive, bulk, AI-generating, sharing, or property/tag.
 import json
 from types import SimpleNamespace
 
+import httpx
+from fastmcp import Client
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
+from mcp.types import CallToolRequestParams, TextContent
 
 from app.core.tools import Tool
 from app.main import app
+from app.mcp_descriptions import TOOL_DESCRIPTIONS, described_names
 from app.mcp_server import (
+    _FILTER_DATASETS,
+    _MCP_MAX_PAGE_SIZE,
+    _MCP_PAGE_SIZE,
+    _OPEN_TASKS,
+    ArgumentDefaultsMiddleware,
     TrimResultMiddleware,
     _free_form_keys,
     _trim,
@@ -140,6 +148,8 @@ async def test_mcp_tools_are_curated():
         "search",
         # How many of each, for every tool at once.
         "tool_counts",
+        # The caller's communities: where a session learns its community_id.
+        "list_communities",
         *(tool.value for tool in Tool),
         *(tool.plural for tool in Tool),
     )
@@ -509,3 +519,172 @@ async def test_tool_inputs_carry_only_what_a_caller_supplies():
     (create_task,) = [t for t in tools if t.name == "create_task"]
     assert "title" in create_task.parameters["properties"]
     assert "title" in create_task.parameters["required"]
+
+
+async def test_the_community_list_is_exposed_and_nothing_else_of_its_router():
+    """Where a session learns the ``community_id`` every other tool takes. The
+    router's other routes are one community's administration."""
+    tools = await build_mcp_server(app).list_tools()
+    community_routes = [
+        t.name for t in tools if "/communities" in getattr(t, "_route").path
+    ]
+
+    assert community_routes == ["list_communities"]
+
+
+async def test_every_tool_is_described_for_the_model_calling_it():
+    """A tool says what it answers, not only its name — which was all a tool
+    search had to go on for a third of them."""
+    names = {t.name for t in await build_mcp_server(app).list_tools()}
+
+    assert names - described_names() == set(), "tools with no MCP description"
+    # And nothing here describes a tool that is not exposed.
+    assert set(TOOL_DESCRIPTIONS) - names == set(), "descriptions for no tool"
+
+
+async def test_the_templated_list_descriptions_name_real_arguments():
+    tools = {t.name: t for t in await build_mcp_server(app).list_tools()}
+    for tool in Tool:
+        listed = tools[f"list_{tool.plural}"]
+        props = listed.parameters["properties"]
+        for name in ("initiative_id", "search", "tag_ids", "property_filters"):
+            assert name in props, f"{listed.name} has no {name}"
+
+
+async def test_descriptions_carry_no_sphinx_markup_or_class_essays():
+    tools = await build_mcp_server(app).list_tools()
+
+    for tool in tools:
+        texts = [tool.description or ""] + [
+            sub["description"]
+            for sub in _subschemas_of(tool.parameters)
+            if isinstance(sub.get("description"), str)
+        ]
+        for text in texts:
+            assert "``" not in text, f"{tool.name}: {text[:80]}"
+            assert ":func:" not in text and ":class:" not in text, tool.name
+
+    # A nested model's docstring is cut to its summary: the grant row's ran on
+    # for paragraphs about the sharing panel.
+    (create_project,) = [t for t in tools if t.name == "create_project"]
+    grant = create_project.parameters["properties"]["grants"]["items"]
+    assert grant["description"].startswith("One `resource_grants` row")
+    assert "\n\n" not in grant["description"]
+
+
+def _subschemas_of(schema):
+    if isinstance(schema, dict):
+        yield schema
+        for value in schema.values():
+            if isinstance(value, dict):
+                yield from _subschemas_of(value)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from _subschemas_of(item)
+
+
+async def test_every_filtered_list_names_its_fields():
+    """``conditions`` names the fields its list filters on, from the field
+    registry, so a model doesn't guess at columns."""
+    tools = await build_mcp_server(app).list_tools()
+    filtered = {
+        t.name: t.parameters["properties"]["conditions"]["description"]
+        for t in tools
+        if "conditions" in t.parameters.get("properties", {})
+    }
+
+    # A new list that takes conditions is told which dataset they filter.
+    assert set(filtered) == set(_FILTER_DATASETS)
+    for name, text in filtered.items():
+        for field in ("project_id", "status_category", "assignee_ids", "due_date"):
+            assert field in text, f"{name} conditions do not name {field}"
+        # The task lists have no initiative argument, so it is a condition.
+        assert "initiative_ids" in text, name
+
+
+async def test_a_page_is_sized_for_a_model():
+    tools = await build_mcp_server(app).list_tools()
+    paged = [t for t in tools if "page_size" in t.parameters.get("properties", {})]
+
+    assert paged
+    for tool in paged:
+        schema = tool.parameters["properties"]["page_size"]
+        assert 1 <= schema["default"] <= _MCP_PAGE_SIZE, tool.name
+        assert schema["maximum"] <= _MCP_MAX_PAGE_SIZE, tool.name
+        assert schema["minimum"] == 1, tool.name
+
+
+def _call(name: str, arguments: dict | None):
+    return SimpleNamespace(
+        message=CallToolRequestParams(name=name, arguments=arguments),
+        copy=lambda message: SimpleNamespace(message=message),
+    )
+
+
+async def _arguments_after(middleware, name: str, arguments: dict | None) -> dict:
+    seen = {}
+
+    async def call_next(context):
+        seen.update(context.message.arguments)
+        return ToolResult(structured_content={})
+
+    await middleware.on_call_tool(_call(name, arguments), call_next)
+    return seen
+
+
+async def test_my_tasks_left_unfiltered_are_the_open_ones():
+    middleware = ArgumentDefaultsMiddleware(
+        {"list_my_tasks": {"conditions": _OPEN_TASKS}}, {}
+    )
+
+    unfiltered = await _arguments_after(middleware, "list_my_tasks", {})
+    open_categories = json.loads(unfiltered["conditions"])[0]["value"]
+    assert set(open_categories) == {"backlog", "todo", "in_progress"}
+
+    # Asked for, every task comes back, and a filter of the caller's own wins.
+    everything = await _arguments_after(
+        middleware, "list_my_tasks", {"conditions": "[]"}
+    )
+    assert everything["conditions"] == "[]"
+    # Other tools are left alone.
+    assert await _arguments_after(middleware, "list_tasks", None) == {}
+
+
+async def test_a_page_size_is_held_to_its_bounds():
+    middleware = ArgumentDefaultsMiddleware({}, {"list_files": (20, 50)})
+
+    assert (await _arguments_after(middleware, "list_files", {}))["page_size"] == 20
+    # Zero means "everything" to the route; here it means the default page.
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 0}))[
+        "page_size"
+    ] == 20
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 500}))[
+        "page_size"
+    ] == 50
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 7}))[
+        "page_size"
+    ] == 7
+
+
+async def test_the_server_sends_the_defaults_to_the_route():
+    """End to end through the built server: the request a call makes carries
+    the MCP defaults it left out."""
+    server = build_mcp_server(app)
+    requests: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"items": [], "has_next": False})
+
+    for tool in await server.list_tools():
+        if tool.name == "list_my_tasks":
+            tool._client = httpx.AsyncClient(
+                transport=httpx.MockTransport(answer), base_url="http://test"
+            )
+
+    async with Client(server) as client:
+        await client.call_tool_mcp("list_my_tasks", {})
+
+    (request,) = requests
+    assert json.loads(request.url.params["conditions"]) == json.loads(_OPEN_TASKS)
+    assert request.url.params["page_size"] == str(_MCP_PAGE_SIZE)

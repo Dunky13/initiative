@@ -11,8 +11,10 @@ become a tool:
     events, wikis and their pages, notices, dashboards), plus the two comment
     reads that pair with the comment write (a parent's thread and a single
     comment by id), plus the one relationships read, which answers what a thing
-    is linked to, plus the guild's general search, which finds a thing by name. A handful are carved back out: file downloads, who voted and
-    who has read, and the dashboard editor's own palette.
+    is linked to, plus the guild's general search, which finds a thing by name,
+    plus the caller's list of communities, which says what ``community_id``
+    every other tool takes. A handful are carved back out: file downloads, who
+    voted and who has read, and the dashboard editor's own palette.
   * **Writes** — an explicit allow-list, matched by path shape: create and edit
     every tool (projects, files, queues, counters, calendars, wikis,
     notices, dashboards) and the things they hold (tasks, queue items, counters,
@@ -30,7 +32,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 import httpx
 from fastmcp import FastMCP
@@ -42,7 +44,10 @@ from fastmcp.utilities.openapi.models import HTTPRoute
 
 from app.api.v1.tenant_endpoints.tool_lists import TOOL_LISTS
 from app.core.config import PROJECT_NAME
+from app.mcp_descriptions import describe as describe_tool
+from app.models.tenant.task import TaskStatusCategory
 from app.core.tools import Tool
+from app.services import fields as fields_registry
 
 if TYPE_CHECKING:
     import mcp.types as mt
@@ -232,6 +237,16 @@ _RELATIONSHIP_ROUTE_MAPS = [
     RouteMap(methods=["POST"], pattern=r".*/relationships/$", mcp_type=MCPType.TOOL),
 ]
 
+# The caller's communities: the one way to learn the ``community_id`` every
+# other tool takes. Without it a session began by guessing an id and reading
+# the refusal. Matched by path shape, as the reads above are — the router's
+# other GETs are one community's administration (its members, its invites, its
+# settings) rather than a list to start from. The route itself narrows what a
+# key is shown to the communities it can address.
+_COMMUNITY_READ_ROUTE_MAPS = [
+    RouteMap(methods=["GET"], pattern=r".*/communities/$", mcp_type=MCPType.TOOL),
+]
+
 # Carved out of the tag rules below, each for a reason the tag itself cannot
 # express. Ordered ahead of them so the exclusion wins.
 _TOOL_READ_EXCLUSIONS = [
@@ -260,6 +275,7 @@ _ROUTE_MAPS = [
     *_COMMENT_READ_ROUTE_MAPS,
     *_SEARCH_READ_ROUTE_MAPS,
     *_RELATIONSHIP_ROUTE_MAPS,
+    *_COMMUNITY_READ_ROUTE_MAPS,
     *_TOOL_READ_EXCLUSIONS,
     # Carved out of the ``initiatives`` read surface below: a join request names
     # who asked to be let in and carries their free-text note, which is
@@ -405,21 +421,74 @@ async def _forward_authorization(request: httpx.Request) -> None:
 # JSON string instead makes it send a string the builder forwards verbatim (valid
 # JSON the backend parses). This touches only the MCP tool surface; the REST +
 # Orval types keep the rich array schema.
-_JSON_STRING_PARAMS = {
-    "conditions": (
-        "JSON-encoded array of filter conditions, AND-ed together. Each item: "
-        '{"field": "<column>", "op": '
-        '"eq"|"lt"|"lte"|"gt"|"gte"|"in_"|"ilike"|"is_null", "value": <val>}. '
-        'An item with a "conditions" key is a group: '
-        '{"logic": "and"|"or", "conditions": [...]}. '
-        'Example: [{"field": "due_date", "op": "lt", "value": "2026-07-22"}]'
-    ),
-    "sorting": (
-        "JSON-encoded array of sort fields. Each item: "
-        '{"field": "<column>", "dir": "asc"|"desc"}. '
-        'Example: [{"field": "due_date", "dir": "asc"}]'
-    ),
+#
+# The string's description names the fields the list filters and sorts on, read
+# from the field registry (``app.services.fields``) — the same declaration the
+# list compiles its filters through — so a model is not left guessing at
+# ``<column>`` and reading the 400. Which dataset a tool's ``conditions`` filter
+# is not something its route says, so the tools that take one are named here;
+# ``mcp_server_test`` fails for one that is not.
+_FILTER_DATASETS: dict[str, str] = {
+    "list_tasks": "tasks",
+    "list_my_tasks": "tasks",
+    "list_calendar_entries": "tasks",
+    "list_my_calendar_entries": "tasks",
 }
+
+# Fields the app's filter controls don't offer but a caller of these tools
+# needs: the task lists have no ``initiative_id`` argument, so narrowing one to
+# an initiative is this condition.
+_EXTRA_FILTER_FIELDS: dict[str, tuple[str, ...]] = {"tasks": ("initiative_ids",)}
+
+_CONDITIONS_SHAPE = (
+    "JSON-encoded array of filter conditions, AND-ed together. Each item: "
+    '{"field": ..., "op": ..., "value": ...}; "negate": true inverts it. An '
+    'item with a "conditions" key is a group: '
+    '{"logic": "and"|"or", "conditions": [...]}.'
+)
+_SORTING_SHAPE = (
+    'JSON-encoded array of sort fields. Each item: {"field": ..., "dir": "asc"|"desc"}.'
+)
+
+
+def _field_line(name: str, ops: list[str], options: list[str]) -> str:
+    line = f"{name} ({'/'.join(ops)}"
+    if options:
+        line += ": " + ", ".join(options)
+    return line + ")"
+
+
+def _conditions_description(dataset_name: str | None) -> str:
+    """``conditions``, described for one dataset — or by shape alone."""
+    if dataset_name is None:
+        return _CONDITIONS_SHAPE
+    lines = [
+        _field_line(field["name"], field["ops"], field["options"])
+        for field in fields_registry.describe(dataset_name)
+    ]
+    spec = fields_registry.dataset(dataset_name)
+    for name in _EXTRA_FILTER_FIELDS.get(dataset_name, ()):
+        lines.append(
+            _field_line(name, sorted(op.value for op in spec.by_name[name].ops), [])
+        )
+    text = f"{_CONDITIONS_SHAPE} Fields: {'; '.join(lines)}."
+    if "property_values" in spec.by_name:
+        text += (
+            " A custom property: "
+            '{"field": "property_values", "op": "eq", "value": '
+            '{"property_id": <id>, "value": <value>}}.'
+        )
+    return text + ' Example: [{"field": "project_id", "op": "eq", "value": 12}]'
+
+
+def _sorting_description(dataset_name: str | None) -> str:
+    if dataset_name is None:
+        return _SORTING_SHAPE
+    names = [f["name"] for f in fields_registry.describe(dataset_name) if f["sortable"]]
+    return (
+        f"{_SORTING_SHAPE} Fields: {', '.join(names)}. "
+        'Example: [{"field": "due_date", "dir": "asc"}]'
+    )
 
 
 def _stringify_json_query_params(route: object, component: object) -> None:
@@ -428,7 +497,7 @@ def _stringify_json_query_params(route: object, component: object) -> None:
     A FastMCP ``mcp_component_fn`` (build-time): mutates each tool's input schema
     in place so the model passes a JSON string the request builder forwards as
     valid JSON, rather than an array it would mis-serialize. See the note on
-    ``_JSON_STRING_PARAMS``.
+    ``_FILTER_DATASETS``.
     """
     params = getattr(component, "parameters", None)
     if not isinstance(params, dict):
@@ -436,10 +505,14 @@ def _stringify_json_query_params(route: object, component: object) -> None:
     props = params.get("properties")
     if not isinstance(props, dict):
         return
-    for name, description in _JSON_STRING_PARAMS.items():
+    dataset_name = _FILTER_DATASETS.get(getattr(component, "name", ""))
+    for name, describe in (
+        ("conditions", _conditions_description),
+        ("sorting", _sorting_description),
+    ):
         schema = props.get(name)
         if isinstance(schema, dict) and schema.get("type") == "array":
-            props[name] = {"type": "string", "description": description}
+            props[name] = {"type": "string", "description": describe(dataset_name)}
 
 
 # A tool's input schema is what a model reads to call it, so it carries only
@@ -457,25 +530,32 @@ _SUBSCHEMA_KEYS = ("items", "additionalProperties", "not")
 _SUBSCHEMA_LIST_KEYS = ("anyOf", "oneOf", "allOf", "prefixItems")
 
 
-def _strip_titles(schema: Any) -> None:
-    """Remove ``title`` annotations from ``schema`` and its subschemas, in place.
+def _subschemas(schema: Any) -> Iterator[dict[str, Any]]:
+    """``schema`` and every schema nested in it.
 
     Walks schema positions only, so a *property* called ``title`` (a task's) is
-    kept: ``properties`` maps names to schemas, and only the schemas are walked.
+    never mistaken for an annotation: ``properties`` maps names to schemas, and
+    only the schemas are visited.
     """
     if not isinstance(schema, dict):
         return
-    if isinstance(schema.get("title"), str):
-        del schema["title"]
+    yield schema
     for sub in (schema.get("properties") or {}).values():
-        _strip_titles(sub)
+        yield from _subschemas(sub)
     for sub in (schema.get("$defs") or {}).values():
-        _strip_titles(sub)
+        yield from _subschemas(sub)
     for key in _SUBSCHEMA_KEYS:
-        _strip_titles(schema.get(key))
+        yield from _subschemas(schema.get(key))
     for key in _SUBSCHEMA_LIST_KEYS:
         for sub in schema.get(key) or ():
-            _strip_titles(sub)
+            yield from _subschemas(sub)
+
+
+def _strip_titles(schema: Any) -> None:
+    """Remove ``title`` annotations from ``schema`` and its subschemas, in place."""
+    for sub in _subschemas(schema):
+        if isinstance(sub.get("title"), str):
+            del sub["title"]
 
 
 _DEF_REF = re.compile(r'"#/\$defs/([^"]+)"')
@@ -586,21 +666,165 @@ def _drop_output_schema(component: object) -> None:
         component.output_schema = None
 
 
+# A description is read by a model, so it is written for one. The tool's own
+# comes from ``app.mcp_descriptions``. Inside its input schema, a nested model
+# carries its class docstring, which is written for whoever maintains the class
+# — the grant row's alone ran to 800 characters, in nine tools — so it is cut to
+# its first paragraph, which is the summary. An enum's is kept whole: it is
+# where each value is explained. Sphinx markup (``x``, :func:`x`) is reduced to
+# plain backticks everywhere.
+_SPHINX_ROLE = re.compile(r":(?:func|class|data|meth|attr|mod):`([^`]+)`")
+_DOUBLE_BACKTICKS = re.compile(r"``([^`]+)``")
+
+
+def _plain(text: str) -> str:
+    return _DOUBLE_BACKTICKS.sub(r"`\1`", _SPHINX_ROLE.sub(r"`\1`", text))
+
+
+def _model_summaries(openapi: dict[str, Any]) -> dict[str, str]:
+    """Each object model's docstring, mapped to its first paragraph.
+
+    Only the docstrings with more than one paragraph are listed; a field's own
+    description never matches one, so only the class docstrings are cut.
+    """
+    summaries: dict[str, str] = {}
+    for schema in openapi.get("components", {}).get("schemas", {}).values():
+        doc = schema.get("description")
+        if not isinstance(doc, str) or "enum" in schema:
+            continue
+        first, _, rest = doc.partition("\n\n")
+        if rest:
+            summaries[doc] = " ".join(first.split())
+    return summaries
+
+
+def _describe_tool(component: object, model_summaries: dict[str, str]) -> None:
+    """Publish the tool's MCP description, and plain ones inside its schema."""
+    name = getattr(component, "name", None)
+    description = describe_tool(name) if name else None
+    if description is None:
+        description = _plain(getattr(component, "description", None) or "")
+    component.description = description
+    for sub in _subschemas(getattr(component, "parameters", None)):
+        text = sub.get("description")
+        if isinstance(text, str):
+            sub["description"] = _plain(model_summaries.get(text, text))
+
+
+# Arguments a caller is given when it leaves them out, where the route's own
+# default suits the app rather than a model.
+#
+# A page of results is what a call returns, so it is sized for a model's
+# context rather than for a screen: twenty rows unless asked, and never more
+# than fifty — a hundred trimmed tasks is past the 25k tokens Claude Code
+# accepts from one call. A route whose default is "everything" (a
+# ``page_size`` of 0) pages like the rest.
+_MCP_PAGE_SIZE = 20
+_MCP_MAX_PAGE_SIZE = 50
+
+# "My tasks", asked by an assistant, means the work still to do — as it does on
+# the app's own Home — not every task the caller was ever on; a caller after
+# finished work says so.
+_OPEN_TASKS = json.dumps(
+    [
+        {
+            "field": "status_category",
+            "op": "in_",
+            "value": [
+                c.value for c in TaskStatusCategory if c is not TaskStatusCategory.done
+            ],
+        }
+    ]
+)
+_ARGUMENT_DEFAULTS: dict[str, dict[str, Any]] = {
+    "list_my_tasks": {"conditions": _OPEN_TASKS},
+}
+
+
+def _page_size_bounds(component: object) -> tuple[int, int] | None:
+    """Publish the MCP page size on a tool that pages, and return
+    ``(default, maximum)``; ``None`` for a tool that doesn't page."""
+    params = getattr(component, "parameters", None)
+    props = params.get("properties") if isinstance(params, dict) else None
+    schema = props.get("page_size") if isinstance(props, dict) else None
+    if not isinstance(schema, dict):
+        return None
+    route_default = schema.get("default") or 0
+    default = min(int(route_default), _MCP_PAGE_SIZE) or _MCP_PAGE_SIZE
+    maximum = min(int(schema.get("maximum", _MCP_MAX_PAGE_SIZE)), _MCP_MAX_PAGE_SIZE)
+    schema.update(default=default, minimum=1, maximum=maximum)
+    return default, maximum
+
+
+def _publish_defaults(component: object, defaults: dict[str, Any]) -> None:
+    """Say on each defaulted argument what it is left out as."""
+    params = getattr(component, "parameters", None)
+    props = params.get("properties") if isinstance(params, dict) else None
+    if not isinstance(props, dict):
+        return
+    for name, value in defaults.items():
+        schema = props.get(name)
+        if isinstance(schema, dict):
+            schema["description"] = (
+                f"{schema.get('description', '')} Left out: {value}"
+            ).strip()
+
+
+class ArgumentDefaultsMiddleware(Middleware):
+    """Fill in the MCP defaults a call left out, and hold a page size to its
+    bounds, before the call reaches the route."""
+
+    def __init__(
+        self,
+        defaults: dict[str, dict[str, Any]],
+        page_sizes: dict[str, tuple[int, int]],
+    ):
+        self._defaults = defaults
+        self._page_sizes = page_sizes
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        name = context.message.name
+        arguments = dict(context.message.arguments or {})
+        for key, value in self._defaults.get(name, {}).items():
+            if arguments.get(key) is None:
+                arguments[key] = value
+        if name in self._page_sizes:
+            default, maximum = self._page_sizes[name]
+            size = arguments.get("page_size")
+            if not isinstance(size, int) or size < 1:
+                arguments["page_size"] = default
+            elif size > maximum:
+                arguments["page_size"] = maximum
+        message = context.message.model_copy(update={"arguments": arguments})
+        return await call_next(context.copy(message=message))
+
+
 def build_mcp_server(app: "FastAPI") -> FastMCP:
-    """Build the route-backed, read-only MCP server from the FastAPI ``app``.
+    """Build the route-backed MCP server from the FastAPI ``app``.
 
     The app must already have its routers included so the RouteMap can see them.
     """
     free_form_keys: dict[str, frozenset[str]] = {}
+    page_sizes: dict[str, tuple[int, int]] = {}
+    model_summaries = _model_summaries(app.openapi())
 
     def shape_tool(route: HTTPRoute, component: object) -> None:
         _stringify_json_query_params(route, component)
         _clean_parameters(route, component)
+        _describe_tool(component, model_summaries)
         name = getattr(component, "name", None)
         if name is not None:
             free_form_keys[name] = _free_form_keys(
                 getattr(component, "output_schema", None)
             )
+            bounds = _page_size_bounds(component)
+            if bounds is not None:
+                page_sizes[name] = bounds
+            _publish_defaults(component, _ARGUMENT_DEFAULTS.get(name, {}))
         _drop_output_schema(component)
 
     server = FastMCP.from_fastapi(
@@ -610,5 +834,6 @@ def build_mcp_server(app: "FastAPI") -> FastMCP:
         mcp_component_fn=shape_tool,
         httpx_client_kwargs={"event_hooks": {"request": [_forward_authorization]}},
     )
+    server.add_middleware(ArgumentDefaultsMiddleware(_ARGUMENT_DEFAULTS, page_sizes))
     server.add_middleware(TrimResultMiddleware(free_form_keys))
     return server
