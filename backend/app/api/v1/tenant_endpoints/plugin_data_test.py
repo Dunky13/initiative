@@ -223,8 +223,20 @@ def _definition() -> dict:
                 "cache_ttl_seconds": 60,
                 "requires": {"all_of": ["github"]},
             },
-            # A write, so a case can prove a tile cannot reach one.
-            {"id": REFUND, "direction": "write", "actors": ["member"]},
+            # A write, so a case can prove a tile cannot reach one. Its
+            # parameter's menu is filled from a read, as an action's form is.
+            {
+                "id": REFUND,
+                "direction": "write",
+                "actors": ["member"],
+                "params": [
+                    _field(
+                        "shop",
+                        "string",
+                        options_from={"endpoint": LIST_SHOPS, "key": "names"},
+                    )
+                ],
+            },
         ],
         "widgets": [
             {
@@ -1196,18 +1208,24 @@ class TestParamOptions:
         assert response.status_code == 200
         assert response.json()["unavailable"] == "unresolved"
 
-    async def test_a_write_cannot_be_configured_through_this(
+    async def test_a_writes_parameter_is_filled_from_its_read(
         self, client, acting_user, session, upstream
     ):
-        """Reads only, the same rule the fetch path keeps: filling in a form
-        must not be a way to make a plug-in act."""
+        """An action's form asks for a write's parameters, and their menus are
+        filled the way a read's are: from the read the parameter names, which
+        is the only thing called. Filling in a form is no way to make a
+        plug-in act."""
         a, plugin, _ = await _workspace(session, acting_user)
+        upstream.rows = [{"names": "north"}]
 
         response = await client.get(
             _options_url(a, plugin, REFUND, "shop"), headers=a.headers
         )
-        assert response.status_code == 404
-        assert response.json()["detail"] == PluginDataMessages.ENDPOINT_NOT_FOUND
+        assert response.status_code == 200, response.text
+        assert [option["value"] for option in response.json()["options"]] == ["north"]
+        assert [json.loads(call.content)["endpoint"] for call in upstream.calls] == [
+            LIST_SHOPS
+        ]
 
 
 class TestListParams:

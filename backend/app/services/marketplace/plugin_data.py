@@ -1357,11 +1357,18 @@ async def resolve_param_options(
 ) -> tuple[list[dict[str, str]], Optional[str]]:
     """The values one parameter permits, from the read its plug-in named.
 
+    The parameter may be a read's, for a widget's binding, or a write's, for
+    the question an action asks before it runs: either way what is called is
+    the read the parameter's ``options_from`` names, never the endpoint
+    declaring it, so filling in a form is no way to make a plug-in act.
+
     Returns the options and, when there are none, why — never an exception for
     a source that simply would not resolve. The caller draws a menu when there
     is one and leaves the field typeable when there is not.
     """
-    endpoint = find_read_endpoint(plugin.definition, endpoint_id)
+    endpoint = endpoint_by_id(
+        plugin.definition, endpoint_id, directions=("read", "write")
+    )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
     # A form for an endpoint the caller may not read is not theirs to fill in.
