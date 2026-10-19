@@ -20,9 +20,30 @@ import { type LayoutNode, LayoutTree } from "@/lib/layouts/tree";
 import type { TranslateFn } from "@/types/i18n";
 
 const definition = {
+  endpoints: [
+    {
+      id: "plugin.acme.ci.rerun",
+      direction: "write",
+      params: [{ key: "reason", type: "string", label: { en: "Reason" }, required: true }],
+    },
+  ],
   fields: [
     { key: "ci.state", name: { en: "CI" }, kind: "badge", on: ["task"], tone: "positive" },
     { key: "ci.url", name: { en: "Build" }, kind: "link", on: ["task"] },
+    {
+      key: "ci.runs",
+      name: { en: "Runs" },
+      kind: "link",
+      list: true,
+      on: ["task"],
+      actions: ["cancel-run"],
+      states: {
+        status: {
+          name: { en: "Status" },
+          values: { queued: { label: { en: "Queued" }, tone: "warning" } },
+        },
+      },
+    },
     { key: "event.only", name: { en: "Elsewhere" }, kind: "text", on: ["calendar_event"] },
   ],
   parts: [
@@ -34,7 +55,9 @@ const definition = {
         type: "section",
         props: { title: { en: "Builds" } },
         children: [
+          { type: "text", props: { text: { en: "Name a branch {settings.prefix}-{item.id}." } } },
           { type: "field", props: { field: "ci.url" } },
+          { type: "field", props: { field: "ci.runs" } },
           { type: "button", props: { action: "rerun" } },
           { type: "button", props: { action: "purge" } },
         ],
@@ -47,7 +70,10 @@ const definition = {
       name: { en: "Run again" },
       on: ["task"],
       confirm: { en: "Run the build again?" },
+      endpoint: "plugin.acme.ci.rerun",
+      params: ["reason"],
     },
+    { id: "cancel-run", name: { en: "Cancel run" }, on: ["task"] },
     { id: "purge", name: { en: "Purge" }, on: ["task"] },
   ],
 };
@@ -58,9 +84,10 @@ const install = {
   enabled: true,
   definition,
   item_initiatives: [7],
-  item_fields: ["ci.state", "ci.url", "event.only"],
+  item_fields: ["ci.state", "ci.url", "ci.runs", "event.only"],
   item_parts: ["builds"],
-  item_actions: ["rerun"],
+  item_actions: ["rerun", "cancel-run"],
+  setting_values: { prefix: "acme" },
 };
 
 const task = buildTask({
@@ -68,6 +95,14 @@ const task = buildTask({
   plugin_values: [
     { plugin_id: 3, key: "ci.state", value: { text: "passing" } },
     { plugin_id: 3, key: "ci.url", value: { url: "https://ci.example/41", text: "#41" } },
+    {
+      plugin_id: 3,
+      key: "ci.runs",
+      value: [
+        { ref: "r1", url: "https://ci.example/r/1", text: "run 1", state: { status: "queued" } },
+        { ref: "r2", url: "javascript:alert(1)", text: "run 2" },
+      ],
+    },
   ],
 });
 
@@ -101,9 +136,13 @@ describe("pluginsOnItems", () => {
 
     expect([...plugins.keys()]).toEqual([3, 6]);
     const [plugin, unmet] = [plugins.get(3), plugins.get(6)];
-    expect([...(plugin?.fields.keys() ?? [])]).toEqual(["ci.state", "ci.url"]);
+    expect([...(plugin?.fields.keys() ?? [])]).toEqual(["ci.state", "ci.url", "ci.runs"]);
     expect([...(plugin?.parts.keys() ?? [])]).toEqual(["builds"]);
-    expect([...(plugin?.actions.keys() ?? [])]).toEqual(["rerun"]);
+    expect([...(plugin?.actions.keys() ?? [])]).toEqual(["rerun", "cancel-run"]);
+    expect(plugin?.endpoints.get("plugin.acme.ci.rerun")?.map((param) => param.key)).toEqual([
+      "reason",
+    ]);
+    expect(plugin?.settings).toEqual({ prefix: "acme" });
     expect([...(unmet?.fields.keys() ?? [])]).toEqual(["ci.url"]);
     expect(unmet?.parts.size).toBe(0);
     expect(unmet?.actions.size).toBe(0);
@@ -119,9 +158,10 @@ describe("a plug-in on a task's page", () => {
     expect(more).toEqual([
       { type: "field", props: { field: pluginFieldId(3, "ci.state") } },
       { type: "field", props: { field: pluginFieldId(3, "ci.url") } },
+      { type: "field", props: { field: pluginFieldId(3, "ci.runs") } },
       { type: "plugin", props: { plugin: 3, part: "builds" } },
     ]);
-    expect(side(null)?.slice(-3)).toEqual(more);
+    expect(side(null)?.slice(-more.length)).toEqual(more);
     // A saved side holds what it holds.
     expect(side({ header: [], main: [], side: [] })).toEqual([]);
   });
@@ -134,9 +174,9 @@ describe("a plug-in on a task's page", () => {
     });
     const builds = { type: "plugin", props: { plugin: 3, part: "builds" } };
 
-    // The builds part shows ci.url inside its section.
+    // The builds part shows ci.url and ci.runs inside its section.
     expect(fieldsInParts(page({ type: "section", children: [builds] }), plugins)).toEqual(
-      new Set([pluginFieldId(3, "ci.url")])
+      new Set([pluginFieldId(3, "ci.url"), pluginFieldId(3, "ci.runs")])
     );
     // Taken off, or not offered to the reader, a part hides nothing.
     expect(fieldsInParts(page(), plugins)).toEqual(new Set());
@@ -188,7 +228,7 @@ describe("a plug-in on a card", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("asks first, then runs the action on the task", async () => {
+  it("asks what the action needs, then runs it on the task with the answer", async () => {
     let ran: unknown = null;
     server.use(
       http.post("/api/v1/c/1/plugins/3/actions/rerun", async ({ request }) => {
@@ -200,11 +240,43 @@ describe("a plug-in on a card", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Run again" }));
     expect(await screen.findByText("Run the build again?")).toBeInTheDocument();
+    const run = screen.getAllByRole("button", { name: "Run again" }).at(-1) as HTMLElement;
+    // The reason is required, so nothing runs until it is given.
+    expect(run).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/Reason/), "flaky");
     expect(ran).toBeNull();
-    await userEvent.click(
-      screen.getAllByRole("button", { name: "Run again" }).at(-1) as HTMLElement
-    );
+    await userEvent.click(run);
 
-    await waitFor(() => expect(ran).toEqual({ entity_type: "task", entity_id: 41 }));
+    await waitFor(() =>
+      expect(ran).toEqual({ entity_type: "task", entity_id: 41, params: { reason: "flaky" } })
+    );
+  });
+
+  it("draws a list's elements with their states, and runs an action from one", async () => {
+    let ran: unknown = null;
+    server.use(
+      http.post("/api/v1/c/1/plugins/3/actions/cancel-run", async ({ request }) => {
+        ran = await request.json();
+        return HttpResponse.json({ values: {} });
+      })
+    );
+    draw({ type: "card", children: [{ type: "plugin", props: { plugin: 3, part: "builds" } }] });
+
+    expect(screen.getByRole("link", { name: /run 1/ })).toHaveAttribute(
+      "href",
+      "https://ci.example/r/1"
+    );
+    expect(screen.getByText("Queued")).toBeInTheDocument();
+    // An element its kind does not draw is left out, with its actions.
+    expect(screen.queryByText("run 2")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel run" }));
+
+    await waitFor(() => expect(ran).toEqual({ entity_type: "task", entity_id: 41, element: "r1" }));
+  });
+
+  it("fills a part's text with the item and the install's settings", () => {
+    draw({ type: "card", children: [{ type: "plugin", props: { plugin: 3, part: "builds" } }] });
+
+    expect(screen.getByText("Name a branch acme-41.")).toBeInTheDocument();
   });
 });
