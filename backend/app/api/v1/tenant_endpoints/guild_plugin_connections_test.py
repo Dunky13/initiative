@@ -791,6 +791,47 @@ class TestSettings:
             (second.guild.id, second_id, "beta"),
         }
 
+    async def test_a_setting_unique_once_before_keeps_its_value(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """A value the install claimed when the setting was unique is its own
+        when an update makes the setting unique again."""
+        plain = {
+            **MEMBER_ONLY_DEFINITION,
+            "settings": [
+                {"key": "task_prefix", "type": "string", "label": {"en": "P"}}
+            ],
+        }
+        for version, definition in (
+            ("1.0.0", SETTINGS_DEFINITION),
+            ("1.1.0", plain),
+            ("1.2.0", SETTINGS_DEFINITION),
+        ):
+            await create_marketplace_listing(
+                session,
+                uid=SETTINGS_UID,
+                public_id="tests.gh",
+                kind="plugin",
+                version=version,
+                definition=definition,
+            )
+            if version == "1.0.0":
+                seat = await _seat(acting_user, session, "Acme")
+                installed = await client.post(
+                    seat.g("/plugins/"),
+                    headers=seat.headers,
+                    json={"listing_uid": SETTINGS_UID},
+                )
+                plugin_id = installed.json()["id"]
+                continue
+            upgraded = await client.post(
+                seat.g(f"/plugins/{plugin_id}/upgrade"), headers=seat.headers
+            )
+            assert upgraded.status_code == 200, upgraded.text
+
+        assert _setting(upgraded.json(), "task_prefix") == ("acme", [])
+        assert await _claims(session) == {(seat.guild.id, plugin_id, "acme")}
+
     async def test_removing_the_plugin_gives_its_values_back(
         self, client: AsyncClient, acting_user, session: AsyncSession
     ):

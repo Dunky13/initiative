@@ -320,9 +320,9 @@ async def claim_value(
     session: AsyncSession, guild_id: int, plugin: GuildPlugin, key: str, value: str
 ) -> bool:
     """Whether the install holds ``value`` for its unique setting ``key``:
-    held already as an earlier value, which was claimed when it was set, or
-    claimed here, in the caller's transaction. ``False`` while another
-    install of the plug-in holds it."""
+    claimed here, in the caller's transaction, or claimed by it before (as
+    an earlier value, or for the setting when it was unique before). ``False``
+    while another install of the plug-in holds it."""
     if value in ((plugin.setting_aliases or {}).get(key) or []):
         return True
     inserted = await session.exec(
@@ -336,7 +336,18 @@ async def claim_value(
         )
         .on_conflict_do_nothing()
     )
-    return inserted.rowcount == 1
+    if inserted.rowcount == 1:
+        return True
+    # The community reads its own rows alone, so one found is this install's.
+    own = await session.scalar(
+        select(PluginInstallClaim.value).where(
+            PluginInstallClaim.guild_id == guild_id,
+            PluginInstallClaim.install_id == plugin.id,
+            PluginInstallClaim.key == key,
+            PluginInstallClaim.value == value,
+        )
+    )
+    return own is not None
 
 
 async def assigned_value(

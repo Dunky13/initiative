@@ -7,9 +7,9 @@ of a plug-in from holding the same value. A row goes with its install's
 ``plugin_installs`` row.
 
 RLS enabled and forced, the schema's default grants revoked from the two base
-roles, ``app_admin`` granted DML and ``app_guild_base`` INSERT, under the
-registry's policy for the routed community. The table is new and empty, so
-nothing is backfilled.
+roles, ``app_admin`` granted DML and ``app_guild_base`` INSERT and SELECT (its
+read floor SELECT), under the registry's policies for the routed community.
+The table is new and empty, so nothing is backfilled.
 
 Revision ID: 20261018_0525
 Revises: 20261018_0524
@@ -55,7 +55,8 @@ def upgrade() -> None:
         # DML on every new table; both come straight back off.
         f'REVOKE ALL ON TABLE public.{TABLE} FROM app_guild_base, "{base}"',
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.{TABLE} TO app_admin",
-        f"GRANT INSERT ON TABLE public.{TABLE} TO app_guild_base",
+        f"GRANT SELECT, INSERT ON TABLE public.{TABLE} TO app_guild_base",
+        f"GRANT SELECT ON TABLE public.{TABLE} TO app_guild_base_ro",
     ):
         op.execute(statement)
 

@@ -2031,12 +2031,20 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             policies=(
                 # An install claims a value in the transaction that stores it,
                 # for the routed community only; the unique index answers
-                # whether another community holds it.
+                # whether another community holds it, and the community reads
+                # its own rows to tell a value it holds already from one
+                # another holds.
                 Policy(
                     "plugin_install_claims_claim_routed",
                     INSERT,
                     ("app_guild_base",),
                     check=routed_or_pam("guild_id"),
+                ),
+                Policy(
+                    "plugin_install_claims_read_routed",
+                    SELECT,
+                    ("app_guild_base", "app_guild_base_ro"),
+                    using=routed_or_pam("guild_id"),
                 ),
             )
         ),
@@ -2044,8 +2052,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # The system engine reads them with the install index and drops them
             # with its row.
             app_admin=DML,
-            # A routed write claims and never reads one back.
-            app_guild_base=frozenset({INSERT}),
+            # A routed write claims, and reads its own community's rows alone.
+            app_guild_base=frozenset({SELECT, INSERT}),
         ),
     ),
     # The community hooks waiting to reach a plug-in: written at install,
