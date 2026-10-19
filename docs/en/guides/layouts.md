@@ -49,6 +49,8 @@ Nothing changes for anyone until you save, and leaving with unsaved changes asks
 
 A table takes fields and nothing else, since a column is a column.
 
+A table or board layout also says what people may **group by**, what it **starts grouped by**, and which groups to leave out, such as finished sprints. A board's **Column limits** cap how many open tasks a status column holds; once one is full, nobody adds or moves a task into it until one leaves.
+
 A detail layout has three regions: **Header** across the top, **Main** the wide column, **Side** the narrow one beside it. On a phone the regions stack into one column, and the **Phone** preview shows in what order.
 
 Taking a part out hides it. It doesn't delete anything: the values are all still there, and **Add** puts the part back. The title is the one thing every layout keeps.
@@ -59,4 +61,4 @@ Taking a part out hides it. It doesn't delete anything: the values are all still
 
 A list can offer **presets**: named filters, plus a sort on a table, that anyone can pick from **Filters** as a starting point. Picking one makes those filters that person's own, to narrow further if they like. The preset itself stays as it was.
 
-A project's lists start with **Incomplete**, **Unassigned** and **Mine**. The calendar starts with none. Add, rename, reorder or remove them in the editor under **Presets**, up to 20 per list.
+A project's lists start with **Incomplete**, **Unassigned** and **Mine**. The calendar starts with none. Add, rename, reorder or remove them in the editor under **Presets**, up to 20 per list. Picking one puts it in the page's address, so sharing the link shares the preset.

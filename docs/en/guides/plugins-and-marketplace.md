@@ -110,9 +110,9 @@ Some plug-ins add to the things you already work with: an invoice number on a ta
 
 | | What you see |
 |---|---|
-| **Fields** | A labelled value, drawn like Initiative's own: text, a number, a date, a date and time, a link, a colored badge, a progress bar or a tick box. Task fields can be filtered on, like any other. |
+| **Fields** | A labelled value, drawn like Initiative's own: text, a number, a date, a date and time, a link, a colored badge, a progress bar or a tick box. A field can also hold a list, such as every pull request linked to a task, each with badges for what state it's in. Task fields can be filtered on, like any other. |
 | **Sections** | A small panel on the item's page, made of the plug-in's fields and buttons. |
-| **Actions** | A button in a section, or an entry in the item's menu, that asks the plug-in to do something with this one item. Some check with you first. |
+| **Actions** | A button in a section, an entry in the item's menu, or a button beside one entry of a list, that asks the plug-in to do something with this one item. Some check with you first, or ask you a question or two, like which repository. |
 
 The plug-in keeps those values in Initiative, so they show and filter without waiting on it.
 
@@ -128,7 +128,7 @@ The exception is a version that wants **more** than you agreed to: something new
 
 Prefer to read every update first? Turn off **Update automatically** in the plug-in's settings, and each new version waits for you to click **Update to** it.
 
-Some plug-ins come with your server and are added to every community for you. Those can't be removed or turned off from here, and they update without asking. Whoever runs the server decides whether they exist at all.
+Some plug-ins come with your server and are added to every community for you. Those can't be removed or turned off from here, and they update without asking. Whoever runs the server decides whether they exist at all; once one is added, your community decides where it appears and what it may do, like any other.
 
 ### A plug-in can own things
 
@@ -141,7 +141,9 @@ In **Settings → Users**, **Transfer ownership** offers plug-ins beside admins.
 Some plug-ins need a credential — an API key, or a sign-in to another service. Two kinds, and the difference matters:
 
 - **Community credential** — set once by the superadmin, used for everyone. Good for a shared account the whole group works through.
-- **Your account** — each member supplies their own, used only for them. Yours is yours; other members can't see or use it.
+- **Your account** — each member supplies their own, used only for them. Yours is yours: other members, admins included, can't see or use it. The superadmin can see who has connected, and disconnect them.
+
+Some plug-ins also have **settings** of their own, such as the prefix a task's reference starts with. The superadmin changes them in the plug-in's settings.
 
 Each connection shows which service it uses and what it's allowed to do there, so you can decide before you hand anything over.
 

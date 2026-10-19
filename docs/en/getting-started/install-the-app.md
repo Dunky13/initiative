@@ -32,7 +32,7 @@ There are proper apps for iPhone and Android as well. Same Initiative inside, bu
 
 | Phone | Where to get it |
 |---|---|
-| **iPhone or iPad** | The App Store. Search for **Initiative**, by Beyonders Studio. |
+| **iPhone or iPad** | The App Store. Search for **Initiative**, by Beyonders Studio. Needs iOS 16 or later. |
 | **Android** | Google Play, same search. Or [without Google Play](#android-without-google-play), straight from the project. |
 
 The first launch asks which Initiative it's talking to, because there are a lot of them and it can't guess. See [the mobile app](signing-in.md#the-mobile-app).

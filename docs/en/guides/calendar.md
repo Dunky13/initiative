@@ -36,7 +36,7 @@ Every date shows on the calendar, and every date sends its own reminder.
 
 ### Changing one date
 
-Move, rename, re-invite or delete a repeating event — in its settings, or by dragging it on the calendar — and Initiative asks which dates you mean:
+Move, rename, re-invite or delete a repeating event — on its own page, or by dragging it on the calendar — and Initiative asks which dates you mean:
 
 | | |
 |---|---|
@@ -46,7 +46,7 @@ Move, rename, re-invite or delete a repeating event — in its settings, or by d
 
 A few more things live on a repeating event:
 
-- **Skipped dates.** Deleting just one date skips it. The event's settings list every skipped date with **Restore** beside it, for when the cancelled rehearsal turns out to be happening after all.
+- **Skipped dates.** Deleting just one date skips it. The event's page lists every **Skipped date** with **Restore** beside it, for when the cancelled rehearsal turns out to be happening after all.
 - **Extra dates.** **Add a date** puts in a one-off, like the bonus session the week before the show.
 - **Make this its own event** lifts one date out of the series entirely. It keeps everything it had, and the series skips that date.
 
@@ -60,7 +60,7 @@ Pending isn't a rude answer, incidentally. It's the default, and it nearly alway
 
 On a repeating event, each date gets its own answer. Accepting one Tuesday is not accepting every Tuesday until the end of time.
 
-Anyone who can see an event can RSVP to it, and answering adds them to the attendees. For a guest list rather than an open door, turn off **Anyone who can see it may RSVP** under the event's **Settings → Attendees**: then only the people you added can answer. A repeating event's dates all follow the series.
+Anyone who can see an event can RSVP to it, and answering adds them to the attendees. For a guest list rather than an open door, turn off **Anyone who can see it may RSVP** on the event's page: then only the people you added can answer. A repeating event's dates all follow the series.
 
 ## Reminders
 

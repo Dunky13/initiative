@@ -38,12 +38,14 @@ Click **Add task**. Only the **title** is required. Everything else is in the sa
 
 Nothing is saved until **Create task**. Close the dialog and it's gone.
 
+Once a task exists there's no Save button at all: each field saves the moment you change it. A description keeps a draft while you write, and if somebody else edited it meanwhile, you're shown their version before yours goes over it. People who can't edit a task see its values, not a wall of greyed-out boxes.
+
 A task can hold:
 
 | Field | What it's for |
 |---|---|
 | **Title** | A short name. Required. |
-| **Description** | The detail. Formatting works, with a **Preview**, and so do `@`, `#` and `[[ ]]` — see [Mentions & links](mentions-and-links.md). Paste or drag in a screenshot and it lands where your cursor is; take it back out, or leave without saving, and it's gone from storage too. |
+| **Description** | The detail. Formatting works, with a **Preview**, and so do `@`, `#` and `[[ ]]` — see [Mentions & links](mentions-and-links.md). Paste or drag in a screenshot and it lands where your cursor is; take it back out and it's gone from storage too. |
 | **Status** | Where it's got to. |
 | **Priority** | Low, Medium, High, or Urgent. |
 | **Start date** | When work should begin. |
@@ -130,9 +132,10 @@ A spreadsheet-style list. One row per task, with columns for status, priority, d
 **Best for:** scanning a lot of tasks, sorting, and editing several at once.
 
 - Click a column heading to **sort** by it. Hold ++shift++ and click another to sort by both.
-- **Group** rows by **Date window** (Overdue, Today, This Week, This Month, Later) or by **Tag**. A task with three tags turns up under all three.
+- **Group** rows by date window (Overdue, Today, This Week, This Month, Later), status, priority, assignees or tags, or by a property the layout offers. Each group says how many tasks it holds.
 - **Filter** down to exactly what you want.
 - **Select** several rows and edit them together.
+- **Assign to me** in the **Assignees** column takes a task without opening it. Missing the column? Add it in **Edit layouts**.
 
 ![A project in Table view](../images/projects/view-table.png)
 
@@ -144,6 +147,9 @@ Cards in columns, one column per status. Drag a card along as the work moves.
 
 - **Drag and drop** between columns to change status.
 - **Collapse** a column you're deliberately not thinking about.
+- **Group** the board too, and each group becomes a band across the columns: one per person, say, or per priority.
+- A card's menu assigns you, unassigns you, or moves the task to another column.
+- A column with a **limit** counts its open tasks against it in its header ("4 / 5"). Once it's full, nobody can add a task to it or move one in until one leaves. What's already there stays.
 
 What a card shows is up to the project's [layout](#layouts). Take off what this project doesn't use and the cards get shorter and quicker to read.
 
@@ -163,13 +169,13 @@ No wrong answer. A rhythm that works for most people:
 - **Table** when you're tidying up, sorting, or editing a lot at once.
 - **Calendar** when you're planning ahead, or working out how bad next week is going to be.
 
-Your choice is yours alone and it's remembered, so you can settle into one without inflicting it on anybody else. Until you pick, the project opens on whichever one its layouts say.
+Your choice is yours alone, and it follows you to any device, along with your filters, sort, grouping and columns. Until you pick, the project opens on whichever one its layouts say.
 
 ## When a board gets busy
 
 - **Filter** by status, priority, assignee, due date and more.
 - **Sort** by any column. In Table view, hold ++shift++ and click more columns to sort by several at once.
-- **Group** the table by date window or tag.
+- **Group** by a field, and drag a task into another group to change that field. A task with two people or two tags is listed under each, and dragging it moves it out of only the group it came from.
 - **Select several tasks** and act on them together — status, dates, assignees, priority, tags, or archive, all in one go.
 
 !!! tip "Archive things, don't delete them"
@@ -184,11 +190,13 @@ Each of the project's three lists has a layout, and so does a task:
 | Layout | What it decides |
 |---|---|
 | **Table** | Which columns, in what order. |
-| **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. |
+| **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
 | **Calendar** | Only its presets. A calendar is a calendar. |
 | **Task detail** | Where everything sits when a task is open, and in **Create task**. |
 
-Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's.
+Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
+
+The table and board layouts also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 
 Change any of it from **Project settings → Layouts → Edit layouts**. That's for the project's owner, its initiative's managers and community admins; everybody else sees the result. See [Layouts](layouts.md) for the editor.
 

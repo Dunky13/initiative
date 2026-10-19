@@ -43,7 +43,7 @@ The most sensitive stored fields — saved API keys, email addresses, and the li
 
 Direct messages are **end-to-end encrypted**: written on your device, read on theirs, and unreadable everywhere in between. A community admin can't read them, whoever runs the server can't read them, and neither can we — not as a policy, but because no key to them exists outside the two devices talking.
 
-The trade is that your history lives on your devices rather than on a server, so a new device starts from when it arrived and signing out takes that device's copy with it. See [Private messages](private-messages.md).
+The trade is that your history lives on your devices rather than on a server, so a new device starts from when it arrived and signing out of a browser takes its copy with it. See [Private messages](private-messages.md).
 
 ### You stay in control of your account
 

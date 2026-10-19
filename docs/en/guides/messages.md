@@ -100,8 +100,8 @@ A message is delivered to your devices and then **deleted from the server**. The
 
 - **Each device keeps its own copy** of a conversation.
 - **A device that wasn't there doesn't have the history.** Sign in on a new laptop and your conversations are there, but they start from the moment that laptop joined them. Your other device can offer to send it across, and a group will catch you up when you join it — but there's nothing on the server to fall back on.
-- **Signing out takes this device's copy with it.** Exactly what you want on a shared computer, and exactly what you don't want if you were hoping to read them again.
-- **The phone and desktop app hold on through a timeout.** When the app signs you out by itself (it sat in a drawer too long, or your community asks for a fresh sign-in every so often), your messages are there when you sign back in. A browser lets them go either way, because a browser might be the library's. So the app is the place to keep the conversations that matter.
+- **Signing out of a browser takes its copy with it.** Exactly what you want on a shared computer, and exactly what you don't want if you were hoping to read them again.
+- **The phone and desktop apps keep your messages when you sign out**, each account's apart, so you pick up where you left off when you sign back in. A browser lets them go, because a browser might be the library's. So the app is the place to keep the conversations that matter.
 
 If the person you're writing to has never opened Messages, there's no device to deliver to yet, and Initiative tells you so rather than pretending the message went.
 
@@ -117,7 +117,7 @@ When somebody you talk to adds or replaces a device, the conversation says so in
 
 You'll be told that somebody messaged you, and how many times. Never what they said, because nothing outside your own devices is capable of telling you that.
 
-Turn it on or off under **My Settings → Notifications → Direct messages**, like any other category. A flurry of messages arrives as one notification rather than twenty, because twenty would be a punishment.
+Turn it on or off under **My Settings → Notifications → Messages and connections**, like any other row. A flurry of messages arrives as one notification rather than twenty, because twenty would be a punishment.
 
 See [Notifications](notifications.md).
 

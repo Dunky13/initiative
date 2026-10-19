@@ -153,7 +153,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
     Your **timezone** is wrong. It's almost always the timezone. Fix it in **My Settings → Preferences** and everything snaps back into place.
 
 ??? question "I'm getting too many (or too few) emails"
-    Tune them category by category in **My Settings → Notifications** — each has its own **Bell**, **Email**, **Mobile** and **Desktop** switch, and there's no minimum. **Do not disturb**, further down, has **Quiet hours** and **Pause notifications**. See [Notifications](guides/notifications.md).
+    Tune them row by row in **My Settings → Notifications**, one row for each way something involves you, each with its own **Bell**, **Email**, **Mobile** and **Desktop** switch, and there's no minimum. A community you'd rather hear less from has its own switches, and **Mute**. **Do not disturb**, further down, has **Quiet hours** and **Pause notifications**. See [Notifications](guides/notifications.md).
 
 ??? question "How do I leave a group?"
     On the community rail, open the community's menu and choose **Leave community**. Members and admins leave freely. If you're the community's only **superadmin**, you'll be made to hand the seat to somebody else first — you can't simply slip out and leave nobody holding the keys.
@@ -198,7 +198,7 @@ Short answers to what people actually ask, with a pointer to the longer version 
     Yes — start a conversation and keep adding people. Everyone is asked before anything reaches them, nobody can be added to it afterwards, and it's called by who's on it rather than having a name. See [Talking to a few people at once](guides/messages.md#talking-to-a-few-people-at-once).
 
 ??? question "Why don't my messages show up on my new phone?"
-    Because there's no copy on the server for it to catch up from — that's what end-to-end encryption costs. Each device keeps its own history from the moment it joined a conversation, and signing out takes that device's copy with it. See [Your messages live on your devices](guides/messages.md#your-messages-live-on-your-devices).
+    Because there's no copy on the server for it to catch up from — that's what end-to-end encryption costs. Each device keeps its own history from the moment it joined a conversation, and signing out of a browser takes its copy with it. See [Your messages live on your devices](guides/messages.md#your-messages-live-on-your-devices).
 
 ??? question "Somebody posted something that shouldn't be there"
     Use **Report** on it. It's on comments, notices, pictures, profiles and directory listings, and it goes to the right people by itself: anything a community holds reaches that community's moderators, and anything about an account reaches whoever runs the server.

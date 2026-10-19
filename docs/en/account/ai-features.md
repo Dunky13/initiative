@@ -44,7 +44,7 @@ Each connection gets its key one of two ways, decided by **Let members use their
 **My Settings → AI** lists every connection open to you, grouped by community. The tab only appears when there's something there for you to use or set up.
 
 - **Pick one** for each community. It's marked **In use**. Pick nothing and you get whichever is marked the default.
-- **Add your key** where a connection says **Needs your key**. It belongs to that connection in that community, and nowhere else.
+- **Add your key** where a connection says **Needs your key**. It belongs to that connection in that community, and nowhere else. Other admins can't reach it; the community's superadmin can see that you added one, and remove it.
 - **Test** checks the one you picked actually answers.
 
 ![Personal AI settings](../images/account/ai-settings.png)
