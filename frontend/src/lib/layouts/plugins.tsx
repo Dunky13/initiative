@@ -1,5 +1,13 @@
 import { Check, ExternalLink, Minus } from "lucide-react";
-import { createContext, Fragment, type ReactNode, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  type ReactNode,
+  useContext,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -8,10 +16,20 @@ import {
   type PluginValueSummary,
   PropertyType,
 } from "@/api/generated/initiativeAPI.schemas";
+import type { PluginDataParam } from "@/api/pluginData";
+import { PluginParamControl } from "@/components/plugins/PluginParamControl";
 import type { PluginFilterField } from "@/components/properties/PropertyFilter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import contract from "@/contract/manifest.contract.json";
@@ -19,6 +37,7 @@ import { useCommunityPlugins, useRunPluginAction } from "@/hooks/useCommunityPlu
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import { numberFormat } from "@/lib/intl";
 import { cn } from "@/lib/utils";
+import { withParamAnswer } from "@/lib/widgets/pluginParams";
 import { type LocalizedText, localized } from "@/lib/widgets/widgetMeta";
 
 import type { FieldDef, FieldRendererProps } from "./fields";
@@ -44,12 +63,24 @@ export type PluginFieldKind =
   | "progress"
   | "checkbox";
 
+/** One facet of a field's state: the keys a value may name, each a badge. */
+type StateFacet = {
+  name: LocalizedText;
+  values: Record<string, { label: LocalizedText; tone?: Tone }>;
+};
+
 export type PluginFieldDecl = {
   key: string;
   name: LocalizedText;
   kind: PluginFieldKind;
   on: string[];
   tone?: Tone;
+  /** Several values rather than one: each an element with a `ref` of its own. */
+  list?: boolean;
+  /** The states a value may be in, by facet, drawn as badges beside it. */
+  states?: Record<string, StateFacet>;
+  /** On a list, the actions offered on each of its elements, by id. */
+  actions?: string[];
 };
 
 export type PluginPartDecl = {
@@ -60,12 +91,16 @@ export type PluginPartDecl = {
   description?: LocalizedText;
 };
 
-type PluginActionDecl = {
+export type PluginActionDecl = {
   id: string;
   name: LocalizedText;
   on: string[];
   confirm?: LocalizedText;
   menu?: boolean;
+  /** The endpoint the action calls, whose parameters it may ask for. */
+  endpoint?: string;
+  /** The endpoint's parameters the reader is asked for before it runs. */
+  params?: string[];
 };
 
 /** One install as a reader meets it on one kind of item: what it declares
@@ -79,6 +114,11 @@ export type PluginOnItems = {
   fields: ReadonlyMap<string, PluginFieldDecl>;
   parts: ReadonlyMap<string, PluginPartDecl>;
   actions: ReadonlyMap<string, PluginActionDecl>;
+  /** Each endpoint's declared parameters, by endpoint id: what an action's
+   *  question is drawn from. */
+  endpoints: ReadonlyMap<string, PluginDataParam[]>;
+  /** The install's settings by key, which a part's text names. */
+  settings: Record<string, unknown>;
 };
 
 /** The kinds of item whose pages draw plug-ins, as the manifest names them:
@@ -103,6 +143,16 @@ const declared = <T extends { on: string[] }>(
   );
 };
 
+/** Each endpoint's parameters, by id. */
+const endpointParams = (definition: object): ReadonlyMap<string, PluginDataParam[]> => {
+  const entries = (definition as Record<string, unknown>).endpoints;
+  return new Map(
+    (Array.isArray(entries) ? (entries as { id: string; params?: PluginDataParam[] }[]) : [])
+      .filter((entry) => typeof entry?.id === "string")
+      .map((entry) => [entry.id, Array.isArray(entry.params) ? entry.params : []])
+  );
+};
+
 /** The installs whose values, parts and actions a reader meets on one kind of
  *  item in one initiative. */
 export const pluginsOnItems = (
@@ -116,6 +166,7 @@ export const pluginsOnItems = (
     | "item_fields"
     | "item_parts"
     | "item_actions"
+    | "setting_values"
   >[],
   initiativeId: number,
   kind: PluginItemKind = "task"
@@ -151,6 +202,8 @@ export const pluginsOnItems = (
               install.item_actions,
               kind
             ),
+            endpoints: endpointParams(install.definition),
+            settings: install.setting_values ?? {},
           },
         ];
       })
@@ -188,14 +241,15 @@ const FILTERED_AS: Record<PluginFieldKind, PropertyType> = {
   datetime: PropertyType.datetime,
 };
 
-/** The plug-in fields a task list can be filtered by, as the reader is drawn them. */
+/** The plug-in fields a task list can be filtered by, as the reader is drawn
+ *  them. A list holds several values, which one filter does not compare. */
 export const pluginFilterFields = (
   plugins: ReadonlyMap<number, PluginOnItems>,
   language: string
 ): PluginFilterField[] =>
   [...plugins.values()].flatMap(({ id, fields }) =>
     [...fields.values()]
-      .filter((field) => Object.hasOwn(FILTERED_AS, field.kind))
+      .filter((field) => !field.list && Object.hasOwn(FILTERED_AS, field.kind))
       .map((field) => ({
         id: pluginFieldId(id, field.key),
         name: localized(field.name, language) ?? field.key,
@@ -264,18 +318,18 @@ export const pluginFields = (
   plugins: ReadonlyMap<number, PluginOnItems>,
   language: string
 ): FieldDef[] =>
-  [...plugins.values()].flatMap(({ id, fields }) =>
-    [...fields.values()].map(
+  [...plugins.values()].flatMap((plugin) =>
+    [...plugin.fields.values()].map(
       (field): FieldDef => ({
-        id: pluginFieldId(id, field.key),
+        id: pluginFieldId(plugin.id, field.key),
         kind: "plugin",
         source: "plugin",
         label: localized(field.name, language) ?? field.key,
         hideable: true,
-        plugin: { install: id, field },
+        plugin: { install: plugin.id, field, on: plugin },
         value: (task) => {
-          const value = pluginValue(task.plugin_values, id, field.key);
-          return shows(field.kind, value) ? value : null;
+          const value = pluginValue(task.plugin_values, plugin.id, field.key);
+          return draws(field, value) ? value : null;
         },
       })
     )
@@ -287,9 +341,33 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isWebLink = (url: unknown): url is string =>
   typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
 
+/** The kinds whose value is one scalar, which a value kept beside a state,
+ *  and a list's element, hold in `value`. */
+const SCALAR_KINDS = new Set<PluginFieldKind>(["text", "number", "date", "datetime", "checkbox"]);
+
+/** A value as its kind reads it. */
+const scalarOf = (kind: PluginFieldKind, value: unknown): unknown =>
+  SCALAR_KINDS.has(kind) && isObject(value) && "value" in value ? value.value : value;
+
+/** The keys of each state facet a value is in, by facet, when it names any. */
+const stateOf = (value: unknown): Record<string, string> | undefined => {
+  if (!isObject(value) || !isObject(value.state)) return undefined;
+  const states = Object.entries(value.state).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string"
+  );
+  return states.length ? Object.fromEntries(states) : undefined;
+};
+
+/** One element of a list field's value. */
+type Element = { ref: string } & Record<string, unknown>;
+
+const isElement = (value: unknown): value is Element =>
+  isObject(value) && typeof value.ref === "string" && value.ref !== "";
+
 /** Whether a value is one its kind draws. A value of another shape draws
  *  nothing, as an empty one does. */
-const shows = (kind: PluginFieldKind, value: unknown): boolean => {
+const shows = (kind: PluginFieldKind, raw: unknown): boolean => {
+  const value = scalarOf(kind, raw);
   switch (kind) {
     case "text":
     case "date":
@@ -312,6 +390,17 @@ const shows = (kind: PluginFieldKind, value: unknown): boolean => {
       );
   }
 };
+
+/** The elements of a list field's value its kind draws, in the list's order. */
+const elementsOf = (field: PluginFieldDecl, value: unknown): Element[] =>
+  field.list && Array.isArray(value)
+    ? value.filter(isElement).filter((element) => shows(field.kind, element))
+    : [];
+
+/** Whether a field's value draws anything: one of its kind, or a list with
+ *  an element of it. */
+const draws = (field: PluginFieldDecl, value: unknown): boolean =>
+  field.list ? elementsOf(field, value).length > 0 : shows(field.kind, value);
 
 const TEXT_TONE: Record<Tone, string> = {
   accent: "text-primary",
@@ -336,62 +425,146 @@ const toneOf = (tone: unknown, fallback: Tone | undefined): Tone =>
     ? (tone as Tone)
     : (fallback ?? "neutral");
 
-/** A plug-in value, drawn as its kind is. */
-const PluginValue = ({ field, value }: { field: PluginFieldDecl; value: unknown }) => {
+/** One value of a field's kind, with the badge of each state it is in. */
+const PluginScalar = ({ field, value: raw }: { field: PluginFieldDecl; value: unknown }) => {
   const { t, i18n } = useTranslation("common");
-  if (!shows(field.kind, value)) return null;
-  switch (field.kind) {
-    case "text":
-      return <span className="wrap-break-word">{value as string}</span>;
-    case "number":
-      return <span>{numberFormat(i18n.language).format(value as number)}</span>;
-    case "date":
-      return <span>{formatDate(value)}</span>;
-    case "datetime":
-      return <span>{formatDateTime(value)}</span>;
-    case "checkbox":
-      return value ? (
-        <Check className="h-4 w-4" aria-label={t("yes")} />
-      ) : (
-        <Minus className="h-4 w-4 text-muted-foreground" aria-label={t("no")} />
-      );
-    case "link": {
-      const link = value as { url: string; text?: unknown };
-      return (
-        <a
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-w-0 items-center gap-1 text-primary underline-offset-4 hover:underline"
+  if (!shows(field.kind, raw)) return null;
+  const value = scalarOf(field.kind, raw);
+  const states = Object.entries(stateOf(raw) ?? {}).flatMap(([facet, key]) => {
+    const state = field.states?.[facet]?.values[key];
+    return state ? [{ facet, key, ...state }] : [];
+  });
+  const drawn = (() => {
+    switch (field.kind) {
+      case "text":
+        return <span className="wrap-break-word">{value as string}</span>;
+      case "number":
+        return <span>{numberFormat(i18n.language).format(value as number)}</span>;
+      case "date":
+        return <span>{formatDate(value)}</span>;
+      case "datetime":
+        return <span>{formatDateTime(value)}</span>;
+      case "checkbox":
+        return value ? (
+          <Check className="h-4 w-4" aria-label={t("yes")} />
+        ) : (
+          <Minus className="h-4 w-4 text-muted-foreground" aria-label={t("no")} />
+        );
+      case "link": {
+        const link = value as { url: string; text?: unknown };
+        return (
+          <a
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-w-0 items-center gap-1 text-primary underline-offset-4 hover:underline"
+          >
+            <span className="truncate">
+              {typeof link.text === "string" && link.text ? link.text : link.url}
+            </span>
+            <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+          </a>
+        );
+      }
+      case "badge": {
+        const badge = value as { text: string; tone?: unknown };
+        return (
+          <Badge variant="outline" className={BADGE_TONE[toneOf(badge.tone, field.tone)]}>
+            {badge.text}
+          </Badge>
+        );
+      }
+      case "progress": {
+        const progress = value as { value: number; max: number };
+        const percent = Math.min(100, Math.max(0, (progress.value / progress.max) * 100));
+        return (
+          <Progress
+            value={percent}
+            aria-label={field.key}
+            className="w-24"
+            title={`${numberFormat(i18n.language).format(progress.value)} / ${numberFormat(i18n.language).format(progress.max)}`}
+          />
+        );
+      }
+    }
+  })();
+  if (!states.length) return drawn;
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+      {drawn}
+      {states.map((state) => (
+        <Badge
+          key={state.facet}
+          variant="outline"
+          className={BADGE_TONE[toneOf(state.tone, "neutral")]}
         >
-          <span className="truncate">
-            {typeof link.text === "string" && link.text ? link.text : link.url}
-          </span>
-          <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
-        </a>
-      );
-    }
-    case "badge": {
-      const badge = value as { text: string; tone?: unknown };
-      return (
-        <Badge variant="outline" className={BADGE_TONE[toneOf(badge.tone, field.tone)]}>
-          {badge.text}
+          {localized(state.label, i18n.language) ?? state.key}
         </Badge>
-      );
-    }
-    case "progress": {
-      const progress = value as { value: number; max: number };
-      const percent = Math.min(100, Math.max(0, (progress.value / progress.max) * 100));
-      return (
-        <Progress
-          value={percent}
-          aria-label={field.key}
-          className="w-24"
-          title={`${numberFormat(i18n.language).format(progress.value)} / ${numberFormat(i18n.language).format(progress.max)}`}
-        />
-      );
-    }
-  }
+      ))}
+    </span>
+  );
+};
+
+/** The actions a list field offers on each of its elements, and how to run
+ *  one from an element. */
+type ElementActions = {
+  offered: PluginActionDecl[];
+  start: (action: PluginActionDecl, ref: string) => void;
+  pending: boolean;
+};
+
+const elementActions = (
+  plugin: PluginOnItems,
+  field: PluginFieldDecl,
+  start: (plugin: PluginOnItems, action: PluginActionDecl, element?: string) => void,
+  pending: boolean
+): ElementActions | undefined => {
+  const offered = (field.actions ?? []).flatMap((id) => {
+    const action = plugin.actions.get(id);
+    return action ? [action] : [];
+  });
+  return offered.length
+    ? { offered, start: (action, ref) => start(plugin, action, ref), pending }
+    : undefined;
+};
+
+/** A plug-in value, drawn as its kind is: one value, or a list's elements,
+ *  each with the actions the list offers on it where there is a way to run
+ *  them. */
+const PluginValue = ({
+  field,
+  value,
+  elements,
+}: {
+  field: PluginFieldDecl;
+  value: unknown;
+  elements?: ElementActions;
+}) => {
+  const { i18n } = useTranslation();
+  if (!field.list) return <PluginScalar field={field} value={value} />;
+  const drawn = elementsOf(field, value);
+  if (!drawn.length) return null;
+  return (
+    <ul className="space-y-1">
+      {drawn.map((element) => (
+        <li key={element.ref} className="flex min-w-0 flex-wrap items-center gap-2">
+          <PluginScalar field={field} value={element} />
+          {elements?.offered.map((action) => (
+            <Button
+              key={action.id}
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={elements.pending}
+              onClick={() => elements.start(action, element.ref)}
+            >
+              {localized(action.name, i18n.language) ?? action.id}
+            </Button>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
 };
 
 /** A plug-in field as a view draws it: its value in a cell, and its name
@@ -409,52 +582,162 @@ export const PluginField = ({ value, field, variant }: FieldRendererProps) => {
 };
 
 /** A plug-in field on a detail: its name above its value, which the
- *  plug-in alone changes. */
+ *  plug-in alone changes, and the actions a list offers on each element. */
 export const PluginFieldOnDetail = ({ field, item }: { field: FieldDef; item: PluginItem }) => {
   const inParts = useContext(FieldsInParts);
+  const runner = useActionRunner(field.plugin?.on.kind ?? "task", item.id);
   if (!field.plugin || inParts.has(field.id)) return null;
-  const { install, field: declared } = field.plugin;
+  const { install, field: declared, on } = field.plugin;
   const value = pluginValue(item.plugin_values, install, declared.key);
-  if (!shows(declared.kind, value)) return null;
+  if (!draws(declared, value)) return null;
   return (
     <div className="space-y-1">
       <p className="text-muted-foreground text-xs">{field.label}</p>
       <div className="text-sm">
-        <PluginValue field={declared} value={value} />
+        <PluginValue
+          field={declared}
+          value={value}
+          elements={elementActions(on, declared, runner.start, runner.pending)}
+        />
       </div>
+      {runner.dialog}
     </div>
   );
 };
 
 // -- Actions --------------------------------------------------------------------
 
-/** Runs a plug-in's actions on an item, asking first when the action says to. */
+/** An action about to run, once the reader has answered what it asks. */
+type Asking = { plugin: PluginOnItems; action: PluginActionDecl; element?: string };
+
+/** What an action asks the reader for: the parameters it names, as its
+ *  endpoint declares them. */
+const askedParams = ({ plugin, action }: Asking): PluginDataParam[] =>
+  (plugin.endpoints.get(action.endpoint ?? "") ?? []).filter((param) =>
+    action.params?.includes(param.key)
+  );
+
+/** An action's question: a form for the parameters it asks for, with what it
+ *  says to confirm, if anything, above them. */
+const PluginActionDialog = ({
+  asking,
+  onClose,
+  onRun,
+}: {
+  asking: Asking;
+  onClose: () => void;
+  onRun: (params: Record<string, unknown>) => void;
+}) => {
+  const { t, i18n } = useTranslation("common");
+  const formId = useId();
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const params = askedParams(asking);
+  const ready = params.every((param) => !param.required || values[param.key] !== undefined);
+  const name = localized(asking.action.name, i18n.language) ?? asking.action.id;
+  const confirm = localized(asking.action.confirm, i18n.language);
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{name}</DialogTitle>
+          {confirm ? <DialogDescription>{confirm}</DialogDescription> : null}
+        </DialogHeader>
+        <form
+          id={formId}
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (ready) onRun(values);
+          }}
+        >
+          {params.map((param) => (
+            <PluginParamControl
+              key={param.key}
+              param={param}
+              pluginId={asking.plugin.id}
+              endpointId={asking.action.endpoint}
+              values={values}
+              open
+              onChange={(key, value) =>
+                setValues((current) => withParamAnswer(params, current, key, value))
+              }
+            />
+          ))}
+        </form>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            {t("cancel")}
+          </Button>
+          <Button type="submit" form={formId} disabled={!ready}>
+            {name}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+/** Runs a plug-in's actions on an item, asking first when the action says
+ *  to, or asks for something. */
 const useActionRunner = (kind: PluginItemKind, itemId: number) => {
   const { t, i18n } = useTranslation("common");
   const run = useRunPluginAction();
-  const [asking, setAsking] = useState<{ plugin: number; action: PluginActionDecl } | null>(null);
-  const start = (plugin: number, action: PluginActionDecl) => {
-    if (action.confirm) setAsking({ plugin, action });
-    else run.mutate({ pluginId: plugin, actionId: action.id, kind, itemId });
+  const [asking, setAsking] = useState<Asking | null>(null);
+  const start = (plugin: PluginOnItems, action: PluginActionDecl, element?: string) => {
+    if (action.confirm || action.params?.length) setAsking({ plugin, action, element });
+    else run.mutate({ pluginId: plugin.id, actionId: action.id, kind, itemId, element });
   };
+  const close = () => setAsking(null);
+  const asks = asking !== null && (asking.action.params?.length ?? 0) > 0;
   const dialog = (
-    <ConfirmDialog
-      open={asking !== null}
-      onOpenChange={(open) => {
-        if (!open) setAsking(null);
-      }}
-      title={asking ? (localized(asking.action.confirm, i18n.language) ?? "") : ""}
-      confirmLabel={
-        asking ? (localized(asking.action.name, i18n.language) ?? asking.action.id) : ""
-      }
-      cancelLabel={t("cancel")}
-      onConfirm={() => {
-        if (asking) {
-          run.mutate({ pluginId: asking.plugin, actionId: asking.action.id, kind, itemId });
+    <>
+      {asking && asks && (
+        <PluginActionDialog
+          key={`${asking.plugin.id}:${asking.action.id}`}
+          asking={asking}
+          onClose={close}
+          onRun={(params) => {
+            run.mutate({
+              pluginId: asking.plugin.id,
+              actionId: asking.action.id,
+              kind,
+              itemId,
+              params,
+              element: asking.element,
+            });
+            close();
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={asking !== null && !asks}
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
+        title={asking ? (localized(asking.action.confirm, i18n.language) ?? "") : ""}
+        confirmLabel={
+          asking ? (localized(asking.action.name, i18n.language) ?? asking.action.id) : ""
         }
-        setAsking(null);
-      }}
-    />
+        cancelLabel={t("cancel")}
+        onConfirm={() => {
+          if (asking) {
+            run.mutate({
+              pluginId: asking.plugin.id,
+              actionId: asking.action.id,
+              kind,
+              itemId,
+              element: asking.element,
+            });
+          }
+          close();
+        }}
+      />
+    </>
   );
   return { start, pending: run.isPending, dialog };
 };
@@ -469,14 +752,14 @@ export const usePluginMenuActions = (
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, true, kind);
   const runner = useActionRunner(kind, itemId);
-  const items = [...plugins.values()].flatMap(({ id, actions }) =>
-    [...actions.values()]
+  const items = [...plugins.values()].flatMap((plugin) =>
+    [...plugin.actions.values()]
       .filter((action) => action.menu)
       .map((action) => (
         <DropdownMenuItem
-          key={`${id}:${action.id}`}
+          key={`${plugin.id}:${action.id}`}
           disabled={runner.pending}
-          onSelect={() => runner.start(id, action)}
+          onSelect={() => runner.start(plugin, action)}
         >
           {localized(action.name, i18n.language) ?? action.id}
         </DropdownMenuItem>
@@ -490,11 +773,28 @@ export const usePluginMenuActions = (
 const GAP = { none: "gap-0", small: "gap-1", medium: "gap-2", large: "gap-4" };
 const BUTTON_VARIANT = { primary: "default", secondary: "outline", ghost: "ghost" } as const;
 
+/** What a part's text may name: the item's id, and one of the install's
+ *  settings. */
+const PLACEHOLDER = /\{item\.id\}|\{settings\.([^}]+)\}/g;
+
+/** A part's text with its placeholders filled in. A setting with no value
+ *  fills in as nothing. */
+export const filledText = (
+  text: string,
+  item: PluginItem,
+  settings: Record<string, unknown>
+): string =>
+  text.replace(PLACEHOLDER, (_match, key?: string) => {
+    if (key === undefined) return String(item.id);
+    const value = settings[key];
+    return value === undefined || value === null ? "" : String(value);
+  });
+
 type Drawing = {
   plugin: PluginOnItems;
   item: PluginItem;
   language: string;
-  start: (plugin: number, action: PluginActionDecl) => void;
+  start: (plugin: PluginOnItems, action: PluginActionDecl, element?: string) => void;
   pending: boolean;
 };
 
@@ -536,8 +836,14 @@ const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
       const field = plugin.fields.get(String(props.field));
       if (!field) return null;
       const value = pluginValue(item.plugin_values, plugin.id, field.key);
-      if (!shows(field.kind, value)) return null;
-      const drawn = <PluginValue field={field} value={value} />;
+      if (!draws(field, value)) return null;
+      const drawn = (
+        <PluginValue
+          field={field}
+          value={value}
+          elements={elementActions(plugin, field, drawing.start, drawing.pending)}
+        />
+      );
       if (node.type === "value") return drawn;
       return (
         <div className="space-y-1">
@@ -552,7 +858,7 @@ const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
       const text = localized(props.text as LocalizedText | undefined, language);
       return text ? (
         <p className={cn("wrap-break-word text-sm", TEXT_TONE[toneOf(props.tone, "neutral")])}>
-          {text}
+          {filledText(text, item, plugin.settings)}
         </p>
       ) : null;
     }
@@ -568,7 +874,7 @@ const drawPart = (node: LayoutNode, drawing: Drawing): ReactNode => {
             "outline"
           }
           disabled={drawing.pending}
-          onClick={() => drawing.start(plugin.id, action)}
+          onClick={() => drawing.start(plugin, action)}
         >
           {localized(action.name, language) ?? action.id}
         </Button>

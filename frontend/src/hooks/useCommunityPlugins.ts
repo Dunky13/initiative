@@ -162,15 +162,29 @@ const ITEM_READS: Record<DetailLayoutReadKind, (id: number) => Spec[]> = {
   post: (id) => [q.allPosts(), q.post(id)],
 };
 
-/** Run one of a plug-in's actions on an item. The plug-in does the work; the
- *  item is read again for the values it shows afterwards. */
+/** Run one of a plug-in's actions on an item, with what the reader answered
+ *  for the parameters it asks for and the list element it was run from. The
+ *  plug-in does the work; the item is read again for the values it shows
+ *  afterwards. */
 export const useRunPluginAction = () =>
   useCommunityMutation<
     PluginActionResult,
-    { pluginId: number; actionId: string; kind: DetailLayoutReadKind; itemId: number }
+    {
+      pluginId: number;
+      actionId: string;
+      kind: DetailLayoutReadKind;
+      itemId: number;
+      params?: Record<string, unknown>;
+      element?: string;
+    }
   >({
-    mutationFn: (communityId, { pluginId, actionId, kind, itemId }) =>
-      runPluginAction(communityId, pluginId, actionId, { entity_type: kind, entity_id: itemId }),
+    mutationFn: (communityId, { pluginId, actionId, kind, itemId, params, element }) =>
+      runPluginAction(communityId, pluginId, actionId, {
+        entity_type: kind,
+        entity_id: itemId,
+        ...(params ? { params } : {}),
+        ...(element ? { element } : {}),
+      }),
     invalidate: (_data, { kind, itemId }) => invalidate(...ITEM_READS[kind](itemId)),
     errorKey: "plugins:error",
   });

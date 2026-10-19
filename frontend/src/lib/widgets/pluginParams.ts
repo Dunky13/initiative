@@ -74,3 +74,48 @@ export function asDeclaredList(
 /** The text a control shows for a stored value, which is always a string. */
 export const asControlValue = (value: unknown): string =>
   value === undefined || value === null ? "" : String(value);
+
+/**
+ * ``params`` with ``key`` answered ``value``. An emptied answer (nothing,
+ * null, "" or an empty list) is absent rather than sent: "none of them" is a
+ * parameter left out, and the proxy refuses an empty list. A real change
+ * clears every answer chosen *from* it: a menu filled through `needs` was
+ * filled for the sibling's old value — an aisle belongs to the shop that was
+ * chosen when it was picked — so leaving it behind is how a form ends up
+ * naming an aisle of a shop it no longer reads. Cleared to a fixpoint, because
+ * a dependent can itself have dependents. Re-picking the value that was
+ * already there clears nothing.
+ */
+export function withParamAnswer(
+  declared: readonly Pick<PluginDataParam, "key" | "options_from">[],
+  params: Record<string, unknown>,
+  key: string,
+  value: unknown
+): Record<string, unknown> {
+  const next = { ...params };
+  const emptied =
+    value === undefined ||
+    value === null ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0);
+  if (emptied) delete next[key];
+  else next[key] = value;
+
+  if (JSON.stringify(params[key] ?? null) !== JSON.stringify(next[key] ?? null)) {
+    const stale = new Set([key]);
+    let spreading = true;
+    while (spreading) {
+      spreading = false;
+      for (const candidate of declared) {
+        if (stale.has(candidate.key)) continue;
+        const needs = Object.values(candidate.options_from?.needs ?? {});
+        if (needs.some((sibling) => stale.has(sibling))) {
+          stale.add(candidate.key);
+          delete next[candidate.key];
+          spreading = true;
+        }
+      }
+    }
+  }
+  return next;
+}

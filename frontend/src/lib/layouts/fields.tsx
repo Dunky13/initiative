@@ -32,7 +32,7 @@ import { truncateText } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
 
-import { PluginField, type PluginFieldDecl } from "./plugins";
+import { PluginField, type PluginFieldDecl, type PluginOnItems } from "./plugins";
 
 /** What a view draws. Tasks for now; other kinds join as their tools move. */
 export type LayoutItem = TaskListRead;
@@ -72,8 +72,9 @@ export type FieldDef = {
   value: (item: LayoutItem) => unknown;
   /** A title cannot be hidden: a card with no title is not a card. */
   hideable: boolean;
-  /** A plug-in field's install and declaration. */
-  plugin?: { install: number; field: PluginFieldDecl };
+  /** A plug-in field's install and declaration, and the install as the
+   *  reader meets it on this kind of item. */
+  plugin?: { install: number; field: PluginFieldDecl; on: PluginOnItems };
   /** A property field's definition. */
   property?: PropertyDefinitionRead;
   /** The sentence the value sits in, as an i18n key ("Due: {{date}}"). */
