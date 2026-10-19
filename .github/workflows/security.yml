@@ -7,7 +7,8 @@ name: Security
 # inversion by adopting their pattern here.
 #
 # Two Trivy jobs, on PR/push to main and dev plus a weekly cron (so CVEs newly
-# disclosed against unchanged inputs surface without a code change):
+# disclosed against unchanged inputs surface without a code change). The cron
+# scans main, the code people run, rather than the default branch:
 #
 #   trivy-fs    — the source tree: vulnerable dependencies (backend/uv.lock,
 #                 frontend/pnpm-lock.yaml), Dockerfile / IaC misconfig, and
@@ -47,6 +48,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || '' }}
 
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -67,6 +70,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'main' || '' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
