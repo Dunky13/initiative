@@ -59,7 +59,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Mapping, Optional, TypeVar
+from typing import Any, Collection, Mapping, Optional, TypeVar
 
 import httpx
 from sqlmodel import select
@@ -201,23 +201,37 @@ def _endpoints(definition: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     return [entry for entry in declared if isinstance(entry, dict)]
 
 
-def find_read_endpoint(
-    definition: Mapping[str, Any] | None, endpoint_id: str
+def endpoint_by_id(
+    definition: Mapping[str, Any] | None,
+    endpoint_id: Any,
+    *,
+    directions: Optional[Collection[str]] = None,
 ) -> Optional[dict[str, Any]]:
-    """One readable endpoint from the *pinned* definition, or None.
+    """One endpoint of the *pinned* definition by its id, of one of
+    ``directions`` (any, when none are given), or None.
 
     Pinned rather than current on purpose: what an install offers is the version
     its guild chose, so publishing a new one never silently widens what an
     existing install will answer.
+    """
+    for endpoint in _endpoints(definition):
+        if endpoint.get("id") == endpoint_id and (
+            directions is None or endpoint.get("direction") in directions
+        ):
+            return endpoint
+    return None
+
+
+def find_read_endpoint(
+    definition: Mapping[str, Any] | None, endpoint_id: str
+) -> Optional[dict[str, Any]]:
+    """One readable endpoint from the pinned definition, or None.
 
     Readable rather than declared, because this is the fetch path. A write and
     an emission are both real endpoints and neither is reachable from here — a
     dashboard rendering a tile must not be a way to make a plug-in act.
     """
-    for endpoint in _endpoints(definition):
-        if endpoint.get("id") == endpoint_id and endpoint.get("direction") == "read":
-            return endpoint
-    return None
+    return endpoint_by_id(definition, endpoint_id, directions=("read",))
 
 
 # --- reading an answer through what was declared ----------------------------
@@ -485,25 +499,28 @@ async def _resolve_connections(
     ``actor`` is set on a call made as one of the endpoint's actors:
     ``installation`` has no member (``user_id`` is ``None``), so a per-member
     connection is never satisfied, and ``member`` hands on only the member's
-    own handles, not the community's. A call made as ``member`` also needs
-    each of the member's own connections its requests carry
-    (:func:`_connection_ids`), as an ``all_of`` term would, which a request
-    naming one per actor need not name in ``requires``.
+    own handles, not the community's. A call made as an actor also needs
+    each connection of that actor's its requests carry
+    (:func:`_connection_ids`): the member's own, or the community's, as an
+    ``all_of`` term would, which a request naming one per actor need not name
+    in ``requires``.
     """
     required, needs_all = _required_connection_ids(endpoint)
-    #: The member's own connections a call made as the member carries beyond
-    #: those ``requires`` names, every one needed.
+    #: The actor's own connections the call carries beyond those ``requires``
+    #: names, every one needed.
     own = [
         connection_id
         for connection_id in (
-            _connection_ids(endpoint, actor) if actor == "member" else ()
+            _connection_ids(endpoint, actor)
+            if actor in ("member", "installation")
+            else ()
         )
         if connection_id not in required
         and (
             plugin_config_service.connection_by_id(plugin.definition, connection_id)
             or {}
         ).get("scope")
-        == "interactive"
+        == ("interactive" if actor == "member" else "static")
     ]
     if not required and not own:
         return {}, {}
