@@ -271,6 +271,23 @@ def sweeps() -> tuple[Sweep, ...]:
             ),
         ),
         Sweep(
+            kind="plugin_deliveries",
+            scope=Scope.ACTIVE,
+            every=minute,
+            calls_out=True,
+            visit=plugin_hooks.run_due,
+            answers=True,
+            next_due=plugin_hooks.next_due,
+            sources=(
+                on_row(
+                    "plugin_hook_deliveries",
+                    "COALESCE({row}.taken_until, now())",
+                    events="INSERT OR UPDATE OF taken_until",
+                    when="NEW.body IS NOT NULL",
+                ),
+            ),
+        ),
+        Sweep(
             kind="plugin_schedules",
             scope=Scope.ACTIVE,
             every=minute,
