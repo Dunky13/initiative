@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+name="Initiative server"
+description="Initiative project management server"
+command="/usr/bin/initiative-server"
+command_user="initiative:initiative"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=5
+respawn_period=60
+pidfile="/run/initiative-server.pid"
+directory="/usr/lib/initiative"
+output_log="/var/log/initiative/server.log"
+error_log="/var/log/initiative/server.err"
+umask=0027
+export HOME=/var/lib/initiative
+
+depend() {
+    need net
+    after postgresql
+}

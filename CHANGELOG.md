@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native server packages.** Releases include separate `initiative-server` packages for Debian 13 and Alpine 3.24, with systemd/OpenRC services, matching web/editor and signed mobile-update assets, and configuration and uploads preserved during upgrades.
 - **Group a project's table or board by any field.** Group by date window, status, priority, assignees or tags, and by a select, multi-select, person or checkbox property once **Edit layouts** offers it. A table shows each group as a header row; a board shows it as a band across its status columns, with a band for every priority or option even before a task is in it. Each group says how many tasks it holds. Drag a task into another group to change that field, and on a board into another column at the same time. A task with two people or tags is listed under each, and dragging it moves it out of only the group it came from. In **Edit layouts**, choose what a table or board offers to group by, what it starts grouped by, and which groups it leaves out, such as finished sprints.
 - **Column limits on a board.** In **Edit layouts**, give a board's column a limit, and its header counts its open tasks against it ("4 / 5"), whatever filters are on. Once a column is full, nobody can add a task to it or move one into it until one leaves, from the board, the table, a task's page, a bulk edit, the task lists on Home or through MCP; what is already in it stays. Automations, plug-ins working on their own, and repeating tasks are not held to it.
 - **Change one option of a multi-select (API).** `PUT /properties/{target}/{id}` with `merge` takes `options`, each putting options on and taking them off one multi-select value, against what it holds when the change is written.
@@ -95,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Database URLs with encoded characters.** Startup migrations accept percent-encoded passwords and Unix socket paths without Alembic treating their percent signs as configuration interpolation.
 - **A key limited to one community lists only that community.** `GET /communities/` with a personal API key used to list every community its owner belongs to. It now lists only the ones the key can reach: the one it is limited to, and none that turned off the owner's API access.
 - **A registry refresh no longer skips the GitHub plug-in.** A plug-in Initiative runs from its listing, like GitHub, was refused as "already published with different content" whenever the registry brought a version this server already had, and the refresh said it stopped. An unchanged version now goes through.
 - **Signing in no longer greets an established account as a new one.** When your communities didn't load the first time, the app showed the setup for new accounts. It now tries again, and if it still can't load them, says so and offers **Try again**.

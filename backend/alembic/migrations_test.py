@@ -111,7 +111,7 @@ _MIGRATIONS_ROLE_PREFIX = f"migtest_{CHECKOUT_ID}_{_WORKER}_"
 def _alembic_config(database_url: str) -> Config:
     config = Config(str(ALEMBIC_INI_PATH))
     config.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
-    config.set_main_option("sqlalchemy.url", database_url)
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     config.attributes["url_configured"] = True
     config.attributes["configure_logger"] = False
     return config

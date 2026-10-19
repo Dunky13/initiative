@@ -1,0 +1,15 @@
+alpine-sdk
+python3
+python3-dev
+py3-pip
+cargo
+rust
+perl
+pkgconf
+libffi-dev
+openssl-dev
+libmagic
+gcompat
+libgcc
+libstdc++
+ca-certificates

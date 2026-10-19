@@ -1,0 +1,23 @@
+[Unit]
+Description=Initiative server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=initiative
+Group=initiative
+WorkingDirectory=/usr/lib/initiative
+Environment=HOME=/var/lib/initiative
+ExecStart=/usr/bin/initiative-server
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/initiative /var/log/initiative
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
