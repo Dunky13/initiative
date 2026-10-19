@@ -283,15 +283,10 @@ async def run_action(
     )
     # A container's action names the write its handler answers; a declarative
     # plug-in's names a read or a write, its own ``write``, or both.
-    endpoint = next(
-        (
-            entry
-            for entry in plugin_data._endpoints(plugin.definition)
-            if entry.get("id") == action.get("endpoint")
-            and entry.get("direction")
-            in (("read", "write") if declarative else ("write",))
-        ),
-        None,
+    endpoint = plugin_data.endpoint_by_id(
+        plugin.definition,
+        action.get("endpoint"),
+        directions=("read", "write") if declarative else ("write",),
     )
     if endpoint is None and not (
         declarative and action.get("endpoint") is None and action.get("write")

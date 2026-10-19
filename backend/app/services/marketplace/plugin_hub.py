@@ -115,15 +115,9 @@ def _callable_endpoint(
     definition: Mapping[str, Any] | None, endpoint_id: str
 ) -> Optional[dict[str, Any]]:
     """One endpoint of the pinned definition a caller may invoke, or None."""
-    declared = (definition or {}).get("endpoints")
-    for endpoint in declared if isinstance(declared, list) else []:
-        if (
-            isinstance(endpoint, dict)
-            and endpoint.get("id") == endpoint_id
-            and endpoint.get("direction") in _CALLABLE_DIRECTIONS
-        ):
-            return endpoint
-    return None
+    return plugin_data.endpoint_by_id(
+        definition, endpoint_id, directions=_CALLABLE_DIRECTIONS
+    )
 
 
 async def _target_registration(public_id: str, guild_id: int) -> RegistrationSnapshot:

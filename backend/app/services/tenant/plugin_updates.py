@@ -44,6 +44,7 @@ from typing import Any, Iterable, Optional
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db import cohorts
 from app.db.session import set_rls_context
 from app.models.platform.guild import GuildMembership, CommunityRole
 from app.models.platform.notification import NotificationType
@@ -59,7 +60,7 @@ from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant import plugin_revocation as revocation_service
 from app.services.tenant import plugin_metadata, plugin_schedules
 from app.services.tenant import guild_plugins as guild_plugins_service
-from app.db.request_context import Unattributed
+from app.db.request_context import SystemGuild, Unattributed
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,14 @@ async def reconcile_repinned(
     once it has moved: its schedules, and which of its values are shown.
 
     ``session`` is the community's system session, routed, whose caller
-    commits; without one each is written on a system session of its own."""
+    commits; without one both are written and committed on one system
+    session of their own."""
+    if session is None:
+        async with cohorts.system_session(guild_id) as own:
+            await set_rls_context(own, SystemGuild(guild_id))
+            await reconcile_repinned(guild_id, plugin, session=own)
+            await own.commit()
+        return
     await plugin_schedules.reconcile(
         guild_id, plugin.id, plugin.definition, session=session
     )

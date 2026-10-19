@@ -44,6 +44,7 @@ schedule's changes, which are the install's.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from datetime import datetime, timedelta, timezone
@@ -324,7 +325,12 @@ async def run_due(session: AsyncSession, guild_id: int) -> datetime | None:
                 # the changes; the row is settled after them.
                 await session.commit()
                 succeeded = await _run_schedule(
-                    plugin, registration, schedule, since=since, guild_id=guild_id
+                    session,
+                    plugin,
+                    registration,
+                    schedule,
+                    since=since,
+                    guild_id=guild_id,
                 )
                 await _settle(
                     session, run, every=every, started=started, succeeded=succeeded
@@ -373,6 +379,7 @@ def _made(plugin: GuildPlugin, connection_id: str) -> dict[str, Any]:
 
 
 async def _run_schedule(
+    session: AsyncSession,
     plugin: GuildPlugin,
     registration: RegistrationSnapshot,
     schedule: Mapping[str, Any],
@@ -387,6 +394,7 @@ async def _run_schedule(
     while a community connection its read names is not made."""
     try:
         writes = await declarative.run_schedule(
+            session,
             registration=registration,
             plugin=plugin,
             guild_id=guild_id,
@@ -449,13 +457,20 @@ async def _check_health(
         )
         state = "unavailable"
     else:
-        state = await declarative.health_state(
-            plugin.definition,
-            health,
-            fields=without_tokens(stored),
-            access_token=token.access_token,
-            installed=install_settings(plugin),
-        )
+        # Nothing is held while the vendor is asked: the visit's transaction
+        # ends first, and the check is held to a call's time.
+        await session.commit()
+        try:
+            async with asyncio.timeout(declarative.REQUEST_TIMEOUT_SECONDS):
+                state = await declarative.health_state(
+                    plugin.definition,
+                    health,
+                    fields=without_tokens(stored),
+                    access_token=token.access_token,
+                    installed=install_settings(plugin),
+                )
+        except TimeoutError:
+            state = "unavailable"
     if state == "ok" or run.failures >= 1:
         locked = await guild_plugins_service.lock_install(session, plugin.id)
         if locked is None or _made(locked, connection_id) != checked:

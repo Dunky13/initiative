@@ -42,11 +42,12 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 from urllib.parse import parse_qsl, quote, urljoin, urlsplit
 
 import httpx
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.messages import PluginChannelMessages, PluginDataMessages
 from app.db import cohorts
@@ -54,12 +55,14 @@ from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.marketplace import expressions
 from app.services.marketplace.plugin_data import (
-    MAX_RESPONSE_BYTES,
-    REQUEST_TIMEOUT_SECONDS,
-    PluginDataError,
     _connection_ids,
+    endpoint_by_id,
+    MAX_RESPONSE_BYTES,
+    PluginDataError,
     _request_connection,
+    REQUEST_TIMEOUT_SECONDS,
     _required_connection_ids,
+    _resolve_connections,
 )
 from app.services.marketplace.expressions import UNDEFINED, ExpressionError
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
@@ -76,7 +79,6 @@ from app.services.tenant.plugin_channels import PluginChannelError, load_install
 from app.services.tenant.plugin_config import (
     connection_by_id,
     install_settings,
-    installation_meets,
     without_tokens,
 )
 from app.services.webhook_target_url import (
@@ -556,6 +558,41 @@ def _fits(answer: Any, returns: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
+async def _stepped(
+    run: _Run,
+    spec: Mapping[str, Any],
+    base: dict[str, Any],
+    where: str,
+    *,
+    connection: Optional[Callable[[Mapping[str, Any]], dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Make ``spec``'s request, or its named steps in turn, over ``base``, and
+    answer what its map reads: ``base``, each earlier step's answer as
+    ``steps.<name>`` and the last answer as ``response``. With ``connection``,
+    each request's expressions also read the connection it carries."""
+    steps = spec.get("steps") or [{"name": "", "request": spec["request"]}]
+    named = "steps" in spec
+    answers: dict[str, Any] = {}
+    read: dict[str, Any] = base
+    for index, step in enumerate(steps):
+        request = step["request"]
+        read = {
+            **base,
+            **({"connection": connection(request)} if connection else {}),
+            **({"steps": dict(answers)} if named else {}),
+        }
+        at = f"{where}steps/{index}/request" if named else f"{where}request"
+        response = (await run.perform(request, read, at)).read()
+        if named:
+            answers[step["name"]] = response
+        read = {
+            **read,
+            **({"steps": dict(answers)} if named else {}),
+            "response": response,
+        }
+    return read
+
+
 async def run_endpoint(
     definition: Mapping[str, Any],
     endpoint: Mapping[str, Any],
@@ -600,29 +637,16 @@ async def run_endpoint(
         **installed,
         **({} if item is None else {"item": dict(item)}),
     }
-    steps = endpoint.get("steps") or [{"name": "", "request": endpoint["request"]}]
-    named = "steps" in endpoint
-    answers: dict[str, Any] = {}
-    read: dict[str, Any] = base
     try:
-        for index, step in enumerate(steps):
-            request = step["request"]
-            read = {
-                **base,
-                "connection": dict(
-                    connections.get(_request_connection(request, actor) or "") or {}
-                ),
-                **({"steps": dict(answers)} if named else {}),
-            }
-            where = f"steps/{index}/request" if named else "request"
-            response = await run.perform(request, read, where)
-            if named:
-                answers[step["name"]] = response.read()
-            read = {
-                **read,
-                **({"steps": dict(answers)} if named else {}),
-                "response": response.read(),
-            }
+        read = await _stepped(
+            run,
+            endpoint,
+            base,
+            "",
+            connection=lambda request: dict(
+                connections.get(_request_connection(request, actor) or "") or {}
+            ),
+        )
         answer = await run.value(endpoint["map"], read, "map")
         if isinstance(answer, dict) and "unavailable" in answer:
             code = answer["unavailable"]
@@ -682,26 +706,8 @@ async def after_connect(
         now=now or datetime.now(timezone.utc),
     )
     base: dict[str, Any] = {"params": dict(params), "now": run.now, **installed}
-    steps = after.get("steps") or [{"name": "", "request": after["request"]}]
-    named = "steps" in after
-    answers: dict[str, Any] = {}
-    read: dict[str, Any] = base
     try:
-        for index, step in enumerate(steps):
-            read = {**base, **({"steps": dict(answers)} if named else {})}
-            where = (
-                f"after_connect/steps/{index}/request"
-                if named
-                else "after_connect/request"
-            )
-            response = (await run.perform(step["request"], read, where)).read()
-            if named:
-                answers[step["name"]] = response
-            read = {
-                **base,
-                **({"steps": dict(answers)} if named else {}),
-                "response": response,
-            }
+        read = await _stepped(run, after, base, "after_connect/")
         result = await run.value(after["map"], read, "after_connect/map")
         if not isinstance(result, dict):
             raise _Outcome(
@@ -943,6 +949,7 @@ async def map_delivery(
 
 
 async def run_schedule(
+    session: AsyncSession,
     *,
     registration: RegistrationSnapshot,
     plugin: GuildPlugin,
@@ -976,33 +983,28 @@ async def run_schedule(
     answers something other than an object; and otherwise as
     :func:`call_endpoint` refuses a call or finds the plug-in unavailable.
     """
-    endpoint = next(
-        (
-            entry
-            for entry in (plugin.definition or {}).get("endpoints") or []
-            if isinstance(entry, dict) and entry.get("id") == schedule["endpoint"]
-        ),
-        None,
-    )
+    endpoint = endpoint_by_id(plugin.definition, schedule["endpoint"])
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
-    stored = plugin.config or {}
-    for connection_id in _connection_ids(endpoint, "installation"):
-        declared = connection_by_id(plugin.definition, connection_id) or {}
-        if declared.get("scope") == "static" and not stored.get(connection_id):
-            raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
-    if not installation_meets(plugin, endpoint.get("requires")):
-        raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409)
-    required = {
-        connection_id: without_tokens(stored.get(connection_id))
-        for connection_id in _required_connection_ids(endpoint)[0]
-        if installation_meets(plugin, {"all_of": [connection_id]})
-    }
+    try:
+        refs, required = await _resolve_connections(
+            session,
+            plugin=plugin,
+            endpoint=endpoint,
+            user_id=None,
+            actor="installation",
+        )
+    except PluginDataError as exc:
+        # A community connection the read names is not made: the run is
+        # skipped rather than failed, until it is.
+        raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409) from exc
     now = datetime.now(timezone.utc)
     run = _Run(plugin.definition, None, credentials={}, now=now)
     steps = endpoint.get("steps") or [{"request": endpoint["request"]}]
     connection = without_tokens(
-        stored.get(_request_connection(steps[0]["request"], "installation") or "")
+        (plugin.config or {}).get(
+            _request_connection(steps[0]["request"], "installation") or ""
+        )
     )
     installed = install_settings(plugin)
     try:
@@ -1022,25 +1024,17 @@ async def run_schedule(
         )
         if params is not UNDEFINED and not isinstance(params, dict):
             raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED)
-        tokens, fields, _ = await _credentials(
+        result, _ = await _answered(
             registration=registration,
             plugin=plugin,
             guild_id=guild_id,
             endpoint=endpoint,
-            refs={},
+            params={} if params is UNDEFINED else params,
+            refs=refs,
+            fields=required,
             actor="installation",
+            now=now,
         )
-        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-            result = await run_endpoint(
-                plugin.definition,
-                endpoint,
-                params={} if params is UNDEFINED else params,
-                connections={**fields, **required},
-                credentials=tokens,
-                now=now,
-                installed=installed,
-                actor="installation",
-            )
         if set(result) == {"unavailable"}:
             raise PluginDataError(result["unavailable"], _STATE_REFUSED)
         return await run.value(
@@ -1048,10 +1042,6 @@ async def run_schedule(
             {"result": result, "since": since, "now": run.now, **installed},
             "write",
         )
-    except TimeoutError as exc:
-        raise PluginDataError(
-            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
-        ) from exc
     except _Outcome as exc:
         raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED) from exc
 
@@ -1201,6 +1191,51 @@ async def _credentials(
     return tokens, fields, member
 
 
+async def _answered(
+    *,
+    registration: RegistrationSnapshot,
+    plugin: GuildPlugin,
+    guild_id: int,
+    endpoint: Mapping[str, Any],
+    params: Mapping[str, Any],
+    refs: Mapping[str, str],
+    fields: Mapping[str, Mapping[str, Any]],
+    actor: Optional[str],
+    item: Optional[Mapping[str, Any]] = None,
+    now: Optional[datetime] = None,
+) -> tuple[dict[str, Any], bool]:
+    """One endpoint's answer for a call made as ``actor``, and whether a
+    member's own connection was used. The credentials come first, outside
+    the call's budget: a refresh the budget cut short would lose what the
+    vendor had just issued. The pages are held to it."""
+    tokens, used, member = await _credentials(
+        registration=registration,
+        plugin=plugin,
+        guild_id=guild_id,
+        endpoint=endpoint,
+        refs=refs,
+        actor=actor,
+    )
+    try:
+        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
+            result = await run_endpoint(
+                plugin.definition,
+                endpoint,
+                params=params,
+                connections={**used, **fields},
+                credentials=tokens,
+                now=now or datetime.now(timezone.utc),
+                installed=install_settings(plugin),
+                item=item,
+                actor=actor,
+            )
+    except TimeoutError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
+        ) from exc
+    return result, member
+
+
 async def call_endpoint(
     *,
     registration: RegistrationSnapshot,
@@ -1224,51 +1259,28 @@ async def call_endpoint(
     Held to the envelope's time and size, as a container's answer is; each
     vendor answer to the connection egress limits.
     """
-    endpoint = next(
-        (
-            entry
-            for entry in (plugin.definition or {}).get("endpoints") or []
-            if isinstance(entry, dict)
-            and entry.get("id") == endpoint_id
-            and entry.get("direction") in ("read", "write")
-        ),
-        None,
+    endpoint = endpoint_by_id(
+        plugin.definition, endpoint_id, directions=("read", "write")
     )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
-    # The credentials come first, outside the call's budget: a refresh that
-    # the budget cut short would lose what the vendor had just issued.
-    tokens, used, member = await _credentials(
+    result, member = await _answered(
         registration=registration,
         plugin=plugin,
         guild_id=guild_id,
         endpoint=endpoint,
+        params=_typed(endpoint, params),
         refs=refs,
+        fields=fields,
         actor=actor,
+        item=item,
     )
-    try:
-        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-            result = await run_endpoint(
-                plugin.definition,
-                endpoint,
-                params=_typed(endpoint, params),
-                connections={**used, **fields},
-                credentials=tokens,
-                now=datetime.now(timezone.utc),
-                installed=install_settings(plugin),
-                item=item,
-                actor=actor,
-            )
-    except TimeoutError as exc:
-        raise PluginDataError(
-            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
-        ) from exc
     if endpoint["direction"] == "write" and set(result) == {"unavailable"}:
         code = result["unavailable"]
         raise PluginDataError(code, _WRITE_STATUS.get(code, _STATE_REFUSED))
     body = {
         "endpoint": endpoint_id,
-        "actor": "member" if member else "installation",
+        "actor": actor or ("member" if member else "installation"),
         "result": result,
     }
     if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > MAX_RESPONSE_BYTES:
