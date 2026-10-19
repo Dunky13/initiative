@@ -415,7 +415,10 @@
       "mute": "Mute",
       "muteLabel": "Mute {{community}}",
       "rowLabel": "{{row}} in {{community}}",
-      "mutedHelp": "This community says nothing at all — including if somebody names you directly."
+      "mutedHelp": "This community says nothing at all — including if somebody names you directly.",
+      "mutedSummary": "Muted",
+      "followsAbove": "Follows your settings above",
+      "offHere": "Off here: {{rows}}"
     },
     "timing": {
       "title": "When you hear about it",
