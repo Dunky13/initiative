@@ -44,6 +44,7 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     "access.request",
     "announcements.manage",
     "billing.insights",
+    "billing.contracts",
     "content.moderate",
     "data.bypass",
     "billing.support",

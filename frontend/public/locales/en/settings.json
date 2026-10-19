@@ -2117,5 +2117,14 @@
     "openError": "Billing insights could not be opened.",
     "notConfigured": "This deployment has no billing service to open, or no handoff signing key.",
     "platformOnly": "Billing insights are for platform operators and owners."
+  },
+  "billingContracts": {
+    "title": "Contracts",
+    "description": "The enterprise customers invoiced by hand, outside the payment processor.",
+    "invoices": "Each contract's terms, the invoices issued in QuickBooks, and when they were paid.",
+    "keys": "A dedicated deployment's registration key file, to commit to the packages repository for signing.",
+    "noCommunity": "It opens no community and needs no access grant. A community is put on a contract from its own billing operations console.",
+    "open": "Open contracts",
+    "openError": "The contracts console could not be opened."
   }
 }

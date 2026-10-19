@@ -1,18 +1,26 @@
 /**
- * The operator dashboard's Billing tab: the way into the billing service's
- * insights page — how the business is doing, across every community.
+ * The operator dashboard's Billing tab: the ways into the billing service's
+ * platform-wide pages.
  *
- * Unlike the per-community billing buttons on the Communities tab, this opens
- * no community and takes no access grant: the page shows the payment
- * processor's account-wide figures and counts that name no community, so the
- * handoff names only the person opening it (`billing.insights`).
+ * - **Insights** (`billing.insights`): how the business is doing, across every
+ *   community. Read-only.
+ * - **Contracts** (`billing.contracts`): the enterprise payers invoiced by
+ *   hand — their terms, their invoices, and a dedicated deployment's
+ *   registration key file. It writes, so it is its own capability.
+ *
+ * Unlike the per-community billing buttons on the Communities tab, neither
+ * opens a community or takes an access grant: the handoff names only the
+ * person opening it, and each page's audience is its own.
  */
 
-import { BarChart3, ExternalLink } from "lucide-react";
+import { BarChart3, ExternalLink, FileText } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createBillingInsightsHandoff } from "@/api/generated/settings/settings";
+import {
+  createBillingContractsHandoff,
+  createBillingInsightsHandoff,
+} from "@/api/generated/settings/settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAppConfig } from "@/hooks/useAppConfig";
@@ -21,63 +29,111 @@ import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import { Capability, hasCapability } from "@/lib/permissions";
 
+type Door = "insights" | "contracts";
+
+const MINT: Record<Door, () => Promise<{ handoff_token: string }>> = {
+  insights: createBillingInsightsHandoff,
+  contracts: createBillingContractsHandoff,
+};
+
 export const OperatorDashboardBillingPage = () => {
   const { t, i18n } = useTranslation("settings");
   const { user } = useAuth();
   const { billing } = useAppConfig();
-  const [opening, setOpening] = useState(false);
+  const [opening, setOpening] = useState<Door | null>(null);
 
-  if (!hasCapability(user, Capability.billingInsights)) {
+  const canInsights = hasCapability(user, Capability.billingInsights);
+  const canContracts = hasCapability(user, Capability.billingContracts);
+  if (!canInsights && !canContracts) {
     return <p className="text-muted-foreground text-sm">{t("billingInsights.platformOnly")}</p>;
   }
 
-  const open = async () => {
+  const open = async (door: Door) => {
     if (!billing) return;
-    setOpening(true);
+    setOpening(door);
     // Opened inside the click, before the request, so it is not a popup.
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
     try {
-      const { handoff_token } = await createBillingInsightsHandoff();
+      const { handoff_token } = await MINT[door]();
       const lang = i18n.resolvedLanguage ?? i18n.language;
       // The token rides in the fragment, which never leaves the browser.
-      const url = `${billing.url.replace(/\/+$/, "")}/insights?lang=${encodeURIComponent(
+      const url = `${billing.url.replace(/\/+$/, "")}/${door}?lang=${encodeURIComponent(
         lang
-      )}#insights_handoff=${encodeURIComponent(handoff_token)}`;
+      )}#${door}_handoff=${encodeURIComponent(handoff_token)}`;
       if (tab) tab.location.href = url;
       else window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       tab?.close();
-      toast.error(getErrorMessage(err, "settings:billingInsights.openError"));
+      toast.error(
+        getErrorMessage(
+          err,
+          door === "insights"
+            ? "settings:billingInsights.openError"
+            : "settings:billingContracts.openError"
+        )
+      );
     } finally {
-      setOpening(false);
+      setOpening(null);
     }
   };
 
   return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5" aria-hidden />
-          {t("billingInsights.title")}
-        </CardTitle>
-        <CardDescription>{t("billingInsights.description")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
-          <li>{t("billingInsights.fromPaddle")}</li>
-          <li>{t("billingInsights.fromBilling")}</li>
-          <li>{t("billingInsights.noCommunity")}</li>
-        </ul>
-        {billing?.insights ? (
-          <Button onClick={() => void open()} disabled={opening}>
-            <ExternalLink className="h-4 w-4" aria-hidden />
-            {opening ? t("billingInsights.opening") : t("billingInsights.open")}
-          </Button>
-        ) : (
-          <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      {canInsights && (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" aria-hidden />
+              {t("billingInsights.title")}
+            </CardTitle>
+            <CardDescription>{t("billingInsights.description")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
+              <li>{t("billingInsights.fromPaddle")}</li>
+              <li>{t("billingInsights.fromBilling")}</li>
+              <li>{t("billingInsights.noCommunity")}</li>
+            </ul>
+            {billing?.insights ? (
+              <Button onClick={() => void open("insights")} disabled={opening !== null}>
+                <ExternalLink className="h-4 w-4" aria-hidden />
+                {opening === "insights" ? t("billingInsights.opening") : t("billingInsights.open")}
+              </Button>
+            ) : (
+              <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {canContracts && (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" aria-hidden />
+              {t("billingContracts.title")}
+            </CardTitle>
+            <CardDescription>{t("billingContracts.description")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
+              <li>{t("billingContracts.invoices")}</li>
+              <li>{t("billingContracts.keys")}</li>
+              <li>{t("billingContracts.noCommunity")}</li>
+            </ul>
+            {billing?.contracts ? (
+              <Button onClick={() => void open("contracts")} disabled={opening !== null}>
+                <ExternalLink className="h-4 w-4" aria-hidden />
+                {opening === "contracts"
+                  ? t("billingInsights.opening")
+                  : t("billingContracts.open")}
+              </Button>
+            ) : (
+              <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 };

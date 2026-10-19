@@ -70,6 +70,14 @@ class Capability(str, Enum):
     # along.
     BILLING_INSIGHTS = "billing.insights"
 
+    # Opening the billing service's contracts console: the enterprise payers
+    # invoiced by hand, their terms and invoices, and a dedicated deployment's
+    # registration key file. Like insights it reaches no community and needs
+    # no grant — a contract is a payer's, and some cover no community here —
+    # but unlike insights it writes money records, so it is its own capability
+    # rather than riding along with the read-only page.
+    BILLING_CONTRACTS = "billing.contracts"
+
     # Writing the notices every user of this deployment is shown (see
     # ``app.services.platform.announcements``). Product communication rather
     # than configuration, so it sits a rung below ``config.manage``: an
@@ -122,6 +130,7 @@ _MODERATOR: FrozenSet[Capability] = _SUPPORT | {
 _OPERATOR: FrozenSet[Capability] = _MODERATOR | {
     Capability.COMMUNITIES_MANAGE,
     Capability.BILLING_INSIGHTS,
+    Capability.BILLING_CONTRACTS,
     Capability.ANNOUNCEMENTS_MANAGE,
     Capability.USERS_DELETE,
     Capability.DATA_BYPASS,

@@ -17,6 +17,7 @@ from app.api.deps import (
 )
 from app.api.v1.platform_endpoints.access_grants import check_second_factor
 from app.api.v1.platform_endpoints.operator import (
+    BillingContractsDep,
     BillingInsightsDep,
     CommunitiesReadDep,
     CommunitiesSuspendDep,
@@ -98,6 +99,7 @@ from app.core.messages import (
 from app.core.security import (
     BillingSupportHandoffNotConfiguredError,
     HandoffSigningNotConfiguredError,
+    create_billing_contracts_handoff_token,
     create_billing_insights_handoff_token,
     create_billing_support_handoff_token,
 )
@@ -1686,6 +1688,46 @@ async def create_billing_insights_handoff(
         ) from exc
     logger.info(
         "billing insights: operator %s (%s) opened the insights page",
+        operator.id,
+        operator.role.value,
+    )
+    return BillingPortalHandoffResponse(
+        handoff_token=token,
+        expires_in_seconds=expires_in_seconds,
+    )
+
+
+@router.post(
+    "/billing/contracts-handoff",
+    response_model=BillingPortalHandoffResponse,
+)
+async def create_billing_contracts_handoff(
+    operator: BillingContractsDep,
+) -> BillingPortalHandoffResponse:
+    """Mint the handoff into the billing service's contracts console.
+
+    Backs the operator dashboard's Billing tab (``billing.contracts``). Like
+    the insights handoff it names no community and needs no access grant: a
+    contract is a payer's, and some cover no community here. The person is
+    named by billing's pairwise reference, which is what billing attributes
+    every change in the console to.
+    """
+    if not app_config.BILLING_URL:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BillingMessages.PORTAL_NOT_CONFIGURED,
+        )
+    try:
+        token, expires_in_seconds = create_billing_contracts_handoff_token(
+            user_ref=await billing_ref(IdentityEntity.user, operator.id),
+        )
+    except HandoffSigningNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=BillingMessages.PORTAL_SIGNING_NOT_CONFIGURED,
+        ) from exc
+    logger.info(
+        "billing contracts: operator %s (%s) opened the contracts console",
         operator.id,
         operator.role.value,
     )

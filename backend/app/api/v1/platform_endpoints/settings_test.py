@@ -1143,6 +1143,7 @@ _CONFIG_MANAGE = "config.manage"  # owner only
 _GUILDS_MANAGE = "communities.manage"  # operator and owner
 _GUILDS_READ = "communities.read"  # support and above
 _BILLING_INSIGHTS = "billing.insights"  # operator and owner
+_BILLING_CONTRACTS = "billing.contracts"  # operator and owner
 
 #: (capability, method, path — ``{community_id}`` is filled in, json body or None)
 _ROUTES: list[tuple[str, str, str, dict | None]] = [
@@ -1173,6 +1174,7 @@ _ROUTES: list[tuple[str, str, str, dict | None]] = [
         None,
     ),
     (_BILLING_INSIGHTS, "post", "/api/v1/settings/billing/insights-handoff", None),
+    (_BILLING_CONTRACTS, "post", "/api/v1/settings/billing/contracts-handoff", None),
 ]
 
 #: The tiers each capability sits above.
@@ -1186,6 +1188,7 @@ _BELOW_THE_BAR: dict[str, list[UserRole]] = {
     _GUILDS_MANAGE: [UserRole.member, UserRole.support, UserRole.moderator],
     _GUILDS_READ: [UserRole.member],
     _BILLING_INSIGHTS: [UserRole.member, UserRole.support, UserRole.moderator],
+    _BILLING_CONTRACTS: [UserRole.member, UserRole.support, UserRole.moderator],
 }
 
 
@@ -1396,21 +1399,28 @@ async def test_cookie_consent_is_owner_only(client, operator):
 # --- Operator dashboard: the billing insights page ---
 
 _INSIGHTS = "/api/v1/settings/billing/insights-handoff"
+_CONTRACTS = "/api/v1/settings/billing/contracts-handoff"
 
 
+@pytest.mark.parametrize(
+    "path,audience",
+    [
+        (_INSIGHTS, "initiative:billing-insights"),
+        (_CONTRACTS, "initiative:billing-contracts"),
+    ],
+)
 async def test_the_insights_handoff_names_a_person_and_no_community(
-    client: AsyncClient, operator, monkeypatch, handoff_signing_key
+    client: AsyncClient, operator, monkeypatch, handoff_signing_key, path, audience
 ) -> None:
-    """EdDSA under the portal's key, its own audience, and nothing about any
-    community or grant — the page it opens shows none."""
+    """EdDSA under the portal's key, each door its own audience, and nothing
+    about any community or grant — neither page is about one."""
     import jwt
 
     from app.core.config import settings as app_settings
-    from app.core.security import BILLING_INSIGHTS_AUDIENCE
 
     monkeypatch.setattr(app_settings, "BILLING_URL", "https://billing.example.com")
 
-    resp = await client.post(_INSIGHTS, headers=operator.headers)
+    resp = await client.post(path, headers=operator.headers)
 
     assert resp.status_code == 200, resp.text
     token = resp.json()["handoff_token"]
@@ -1418,7 +1428,7 @@ async def test_the_insights_handoff_names_a_person_and_no_community(
         token,
         handoff_signing_key,
         algorithms=["EdDSA"],
-        audience=BILLING_INSIGHTS_AUDIENCE,
+        audience=audience,
         issuer="initiative",
     )
     assert payload["sub"].startswith("ubil_")
@@ -1468,3 +1478,4 @@ async def test_the_app_config_says_whether_insights_can_open(
 
     assert resp.status_code == 200
     assert resp.json()["billing"]["insights"] is signing
+    assert resp.json()["billing"]["contracts"] is signing
