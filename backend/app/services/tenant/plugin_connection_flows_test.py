@@ -15,6 +15,7 @@ import base64
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import cryptography.fernet
@@ -2402,6 +2403,58 @@ class TestDeclarativePlugins:
         assert await _events(session, seat.guild.id) == []
         [dropped] = await _deliveries(session, seat.guild.id)
         assert (dropped.delivery_id, dropped.body) == ("delivery-1", None)
+
+    async def test_a_delivery_waits_as_long_as_it_must(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """One that has waited past the day a finished id is remembered is
+        neither forgotten nor passed over; its day starts when it is done."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        body, headers = vendor.webhook(_issue())
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await route_session_to_guild(session, seat.guild.id)
+        long_ago = datetime.now(timezone.utc) - timedelta(days=2)
+        await session.exec(update(PluginHookDelivery).values(expires_at=long_ago))
+        await session.commit()
+        async with cohorts.system_session(seat.guild.id) as worker:
+            await set_rls_context(worker, SystemGuild(seat.guild.id))
+            await plugin_hooks.expire_deliveries(
+                worker, SimpleNamespace(now=datetime.now(timezone.utc))
+            )
+            await worker.commit()
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
+
+        await _delivered(session, seat.guild.id)
+
+        assert len(await _events(session, seat.guild.id)) == 1
+        [done] = await _deliveries(session, seat.guild.id)
+        assert done.body is None
+        assert done.expires_at > datetime.now(timezone.utc) + timedelta(hours=23)
+
+    async def test_an_install_switched_on_is_delivered_to_at_once(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """The index may still say the install is off until its sweep comes;
+        the install row says it is on, and that is what queues the delivery."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        session.expunge_all()
+        indexed = await session.get(PluginInstall, (seat.guild.id, plugin.id))
+        indexed.enabled = False
+        session.add(indexed)
+        await session.commit()
+        body, headers = vendor.webhook(_issue())
+
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert queued.status_code == 202, queued.text
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
 
     async def test_a_delivery_keeps_values_as_the_install(
         self, client: AsyncClient, acting_user, session, vendor, declarative

@@ -313,15 +313,16 @@ async def page(
 
 async def routed(listing_uid: str, route_value: str) -> list[IndexedInstall]:
     """The installs of a listing whose webhooks route by ``route_value``, one
-    per community that connected it: switched on, in a community still live.
-    A read-only community's deliveries wait for it to take writes again."""
+    per community that connected it, in a community still live. Whether each
+    is switched on is the install row's answer, not this index's, which the
+    sweep brings up to date; a read-only community's deliveries wait for it
+    to take writes again."""
     statement = (
         select(PluginInstall.guild_id, PluginInstall.install_id)
         .join(Guild, Guild.id == PluginInstall.guild_id)
         .where(
             PluginInstall.listing_uid == listing_uid,
             PluginInstall.hook_route == route_value,
-            PluginInstall.enabled.is_(True),
             Guild.status.in_(sorted(LIVE_STATUS_VALUES)),
         )
         .order_by(PluginInstall.guild_id)

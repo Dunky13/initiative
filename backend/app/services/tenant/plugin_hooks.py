@@ -15,8 +15,10 @@ the vendor. :func:`receive` takes each delivery through four steps:
 3. For each matched install, read as the version it is pinned to, the delivery
    is queued in its community (``plugin_hook_deliveries``) by the vendor's
    delivery id, with its body and the vendor's ``x-`` headers; a copy already
-   there, or one the install has had, is left as it is. The write arms the
-   community's delivery sweep, and the vendor is answered 202.
+   there, or one the install has had in the last 24 hours, is left as it is.
+   The write arms the community's delivery sweep, and the vendor is answered
+   202. Whether the install is on is the install row's answer, read here,
+   not the index's, which a sweep brings up to date.
 4. The sweep's visit (:func:`run_due`) takes each waiting delivery in turn, as
    the version the install is pinned to. A container's install has the body
    and headers sent to its ``webhook`` hook with a ``lifecycle`` token naming
@@ -96,7 +98,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["DELIVERY_TTL", "expire_deliveries", "next_due", "receive", "run_due"]
 
-#: How long a delivery id is remembered.
+#: How long a delivery id is remembered once its work is done.
 DELIVERY_TTL = timedelta(hours=24)
 #: How long a visit holds a delivery while it is mapped or forwarded; one
 #: whose visit stopped without finishing is taken again after it.
@@ -274,20 +276,19 @@ async def _queue(
 
 
 async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
-    """Forget the delivery ids whose 24 hours have run out."""
+    """Forget the delivery ids whose 24 hours have run out. One still waiting
+    for its work is kept, however long it has waited."""
     await session.exec(
         delete(PluginHookDelivery).where(  # type: ignore[arg-type]
-            col(PluginHookDelivery.expires_at) < expiring.now
+            col(PluginHookDelivery.expires_at) < expiring.now,
+            col(PluginHookDelivery.body).is_(None),
         )
     )
 
 
 def _waiting(now: datetime) -> list[Any]:
     """The conditions of a delivery still waiting for its work."""
-    return [
-        col(PluginHookDelivery.body).is_not(None),
-        col(PluginHookDelivery.expires_at) > now,
-    ]
+    return [col(PluginHookDelivery.body).is_not(None)]
 
 
 def next_due(now: datetime) -> Any:
@@ -339,9 +340,9 @@ async def _claim(session: AsyncSession) -> Optional[Row]:
 
 async def _settle(session: AsyncSession, row: Row, *, done: bool) -> None:
     """Settle a held delivery, committing it with whatever its work staged
-    on ``session``. Done, its body goes and its id stays remembered;
-    otherwise it waits :data:`RETRY_AFTER`, doubled for each failure, and is
-    given up after :data:`ATTEMPTS`."""
+    on ``session``. Done, its body goes and its id stays remembered for
+    :data:`DELIVERY_TTL` from now; otherwise it waits :data:`RETRY_AFTER`,
+    doubled for each failure, and is given up after :data:`ATTEMPTS`."""
     attempts = row.attempts if done else row.attempts + 1
     if not done and attempts >= ATTEMPTS:
         logger.warning(
@@ -352,7 +353,12 @@ async def _settle(session: AsyncSession, row: Row, *, done: bool) -> None:
         )
         done = True
     values: dict[str, Any] = (
-        {"body": None, "taken_until": None, "attempts": attempts}
+        {
+            "body": None,
+            "taken_until": None,
+            "attempts": attempts,
+            "expires_at": datetime.now(timezone.utc) + DELIVERY_TTL,
+        }
         if done
         else {
             "attempts": attempts,
