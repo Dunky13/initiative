@@ -12,21 +12,20 @@ the vendor. :func:`receive` takes each delivery through four steps:
    (:func:`plugin_installs.routed`). An install is matched only when the route
    of the version it is pinned to reads its value. A delivery nothing matches
    is answered 202 and nothing is stored.
-3. For each matched install, in its own community and several communities at
-   once, read as the version that install is pinned to: a delivery id the
-   install has already accepted (``plugin_hook_deliveries``) is skipped.
-   Otherwise a container's install has the raw body and the vendor's ``x-``
-   headers sent to its ``webhook`` hook with a ``lifecycle`` token naming that
-   install, and a 2xx records the id for 24 hours. A declarative plug-in's install
-   maps it with its ``events`` and ``status``: the id is held while it is
-   mapped, so a copy arriving meanwhile is skipped, the changes to its values
-   are made as the install, the event goes to the outbox as a container's
-   emission does, the state to the install's configuration state, and the id
-   is recorded with them. A mapping that cannot succeed is logged and recorded;
-   one that may succeed if asked again records nothing.
-4. 202 when every matched install accepted it or already had; otherwise 503
-   when a mapping is to be asked again, or 502, so the vendor's redelivery
-   reaches only the ones that did not.
+3. For each matched install, read as the version it is pinned to, the delivery
+   is queued in its community (``plugin_hook_deliveries``) by the vendor's
+   delivery id, with its body and the vendor's ``x-`` headers; a copy already
+   there, or one the install has had, is left as it is. The write arms the
+   community's delivery sweep, and the vendor is answered 202.
+4. The sweep's visit (:func:`run_due`) takes each waiting delivery in turn, as
+   the version the install is pinned to. A container's install has the body
+   and headers sent to its ``webhook`` hook with a ``lifecycle`` token naming
+   that install. A declarative plug-in's install maps it with its ``events``
+   and ``status``: the changes to its values are made as the install, the
+   event goes to the outbox as a container's emission does, and the state to
+   the install's configuration state. Work that may succeed if tried again
+   waits, a little longer each time; a mapping that cannot succeed is logged.
+   Either way the id stays remembered for 24 hours.
 
 The index row that routes a delivery is written only when a community's
 connect stored the routed value, which the plug-in's ``after_connect`` hook
@@ -35,7 +34,6 @@ checked at the vendor.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -44,8 +42,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
-from sqlalchemy import update
+from sqlalchemy import func, or_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import Row
 from sqlmodel import col, delete, select
 
 from app.core import metrics
@@ -95,16 +94,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DELIVERY_TTL", "receive"]
+__all__ = ["DELIVERY_TTL", "expire_deliveries", "next_due", "receive", "run_due"]
 
-#: How long an accepted delivery id is remembered.
+#: How long a delivery id is remembered.
 DELIVERY_TTL = timedelta(hours=24)
-#: How long a declarative install holds a delivery while it maps it: a copy
-#: that arrives meanwhile does nothing, and one whose holder stopped without
-#: finishing is taken again after it.
+#: How long a visit holds a delivery while it is mapped or forwarded; one
+#: whose visit stopped without finishing is taken again after it.
 DELIVERY_LEASE = timedelta(minutes=5)
-#: How many communities one delivery is forwarded to at once.
-FORWARD_CONCURRENCY = 8
+#: How long a delivery whose work failed waits to be tried again: this,
+#: doubled for each failure.
+RETRY_AFTER = timedelta(minutes=1)
+#: How many times a delivery's work is tried before it is given up.
+ATTEMPTS = 8
 
 _DIGESTS = {"hmac_sha256": hashlib.sha256, "hmac_sha1": hashlib.sha1}
 
@@ -221,19 +222,21 @@ async def _routed(
     return [found[key] for key in sorted(found)]
 
 
-async def _pending(
+async def _queue(
     install: plugin_installs.IndexedInstall,
     registration: RegistrationSnapshot,
     delivery_id: str,
     *,
     headers: Mapping[str, str],
     body: bytes,
-) -> Optional[GuildPlugin]:
-    """The install a delivery is still owed to, as it is pinned, or ``None``
-    when there is no install of this plug-in to take it, its pinned route does not
-    read the value it is indexed by from this delivery, or it already has it."""
+) -> None:
+    """Queue a delivery for an install it is owed to: as it is pinned, the
+    install is on, the registration's, and routes by the value the delivery
+    was found by. A copy already there, or one the install has had, is left
+    as it is. One system session routed into the community, whose write arms
+    the delivery sweep."""
     async with cohorts.system_session(install.guild_id) as session:
-        await set_rls_context(session, SystemGuild(install.guild_id, read_only=True))
+        await set_rls_context(session, SystemGuild(install.guild_id))
         plugin = (
             await session.exec(
                 select(GuildPlugin).where(GuildPlugin.id == install.install_id)
@@ -244,37 +247,30 @@ async def _pending(
             or not plugin.enabled
             or not owns_install(plugin, registration)
         ):
-            return None
-        route = ((plugin.definition or {}).get("webhooks") or {}).get("route")
+            return
+        pinned = (plugin.definition or {}).get("webhooks")
         indexed = plugin_installs.hook_route(plugin.definition, plugin.config)
-        if indexed is None or _route_value(route, headers, body) != indexed:
-            return None
-        seen = (
-            await session.exec(
-                select(PluginHookDelivery.delivery_id).where(
-                    PluginHookDelivery.install_id == install.install_id,
-                    PluginHookDelivery.delivery_id == delivery_id,
-                    PluginHookDelivery.expires_at > datetime.now(timezone.utc),
-                )
+        if (
+            not isinstance(pinned, dict)
+            or indexed is None
+            or _route_value(pinned["route"], headers, body) != indexed
+        ):
+            return
+        now = datetime.now(timezone.utc)
+        await session.exec(
+            pg_insert(PluginHookDelivery)
+            .values(
+                install_id=install.install_id,
+                delivery_id=delivery_id,
+                expires_at=now + DELIVERY_TTL,
+                received_at=now,
+                body=body,
+                headers=_vendor_headers(headers, str(pinned["verify"]["header"])),
+                route=install.route,
             )
-        ).first()
-    return None if seen is not None else plugin
-
-
-def _remember(
-    install_id: int, delivery_id: str, *, held: timedelta = DELIVERY_TTL
-) -> Any:
-    """The statement recording a delivery an install accepted, for ``held``:
-    its id, unless one still remembered holds it."""
-    expires_at = datetime.now(timezone.utc) + held
-    statement = pg_insert(PluginHookDelivery).values(
-        install_id=install_id, delivery_id=delivery_id, expires_at=expires_at
-    )
-    return statement.on_conflict_do_update(
-        index_elements=[PluginHookDelivery.install_id, PluginHookDelivery.delivery_id],
-        set_={"expires_at": expires_at},
-        where=col(PluginHookDelivery.expires_at) <= datetime.now(timezone.utc),
-    ).returning(PluginHookDelivery.delivery_id)
+            .on_conflict_do_nothing()
+        )
+        await session.commit()
 
 
 async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
@@ -286,44 +282,151 @@ async def expire_deliveries(session: AsyncSession, expiring: Expiring) -> None:
     )
 
 
-async def _take(install: plugin_installs.IndexedInstall, delivery_id: str) -> bool:
-    """Hold a delivery for :data:`DELIVERY_LEASE` while it is mapped, or
-    ``False`` when another copy of it holds it or has recorded it."""
-    async with cohorts.system_session(install.guild_id) as session:
-        await set_rls_context(session, SystemGuild(install.guild_id))
-        taken = (
-            await session.exec(
-                _remember(install.install_id, delivery_id, held=DELIVERY_LEASE)
-            )
-        ).first()
-        await session.commit()
-    return taken is not None
+def _waiting(now: datetime) -> list[Any]:
+    """The conditions of a delivery still waiting for its work."""
+    return [
+        col(PluginHookDelivery.body).is_not(None),
+        col(PluginHookDelivery.expires_at) > now,
+    ]
 
 
-async def _let_go(install: plugin_installs.IndexedInstall, delivery_id: str) -> None:
-    """Give back a delivery held while it was mapped and not recorded, so a
-    copy of it is owed again."""
-    async with cohorts.system_session(install.guild_id) as session:
-        await set_rls_context(session, SystemGuild(install.guild_id))
-        await session.exec(
-            delete(PluginHookDelivery).where(  # type: ignore[arg-type]
-                col(PluginHookDelivery.install_id) == install.install_id,
-                col(PluginHookDelivery.delivery_id) == delivery_id,
-                col(PluginHookDelivery.expires_at)
-                <= datetime.now(timezone.utc) + DELIVERY_LEASE,
-            )
+def next_due(now: datetime) -> Any:
+    """When the community's next waiting delivery is due: now, or when the
+    visit holding it lets go."""
+    return select(func.min(func.coalesce(PluginHookDelivery.taken_until, now))).where(
+        *_waiting(now)
+    )
+
+
+async def _claim(session: AsyncSession) -> Optional[Row]:
+    """Hold the community's oldest waiting delivery no visit holds, or
+    return ``None``."""
+    now = datetime.now(timezone.utc)
+    due = (
+        select(PluginHookDelivery.install_id, PluginHookDelivery.delivery_id)
+        .where(
+            *_waiting(now),
+            or_(
+                col(PluginHookDelivery.taken_until).is_(None),
+                col(PluginHookDelivery.taken_until) <= now,
+            ),
         )
-        await session.commit()
+        .order_by(col(PluginHookDelivery.received_at))
+        .limit(1)
+        .with_for_update(skip_locked=True)
+        .cte("due")
+    )
+    result = await session.exec(
+        update(PluginHookDelivery)
+        .where(
+            col(PluginHookDelivery.install_id) == due.c.install_id,
+            col(PluginHookDelivery.delivery_id) == due.c.delivery_id,
+        )
+        .values(taken_until=now + DELIVERY_LEASE)
+        .returning(
+            PluginHookDelivery.install_id,
+            PluginHookDelivery.delivery_id,
+            PluginHookDelivery.body,
+            PluginHookDelivery.headers,
+            PluginHookDelivery.route,
+            PluginHookDelivery.attempts,
+        )
+    )
+    claimed = result.first()
+    await session.commit()
+    return claimed
 
 
-async def _record(install: plugin_installs.IndexedInstall, delivery_id: str) -> None:
-    async with cohorts.system_session(install.guild_id) as session:
-        await set_rls_context(session, SystemGuild(install.guild_id))
-        await session.exec(_remember(install.install_id, delivery_id))
+async def _settle(session: AsyncSession, row: Row, *, done: bool) -> None:
+    """Settle a held delivery. Done, its body goes and its id stays
+    remembered; otherwise it waits :data:`RETRY_AFTER`, doubled for each
+    failure, and is given up after :data:`ATTEMPTS`."""
+    attempts = row.attempts if done else row.attempts + 1
+    if not done and attempts >= ATTEMPTS:
+        logger.warning(
+            "plug-in hooks: delivery %s for install %s was given up after %s tries",
+            row.delivery_id,
+            row.install_id,
+            attempts,
+        )
+        done = True
+    values: dict[str, Any] = (
+        {"body": None, "taken_until": None, "attempts": attempts}
+        if done
+        else {
+            "attempts": attempts,
+            "taken_until": datetime.now(timezone.utc)
+            + RETRY_AFTER * 2 ** (attempts - 1),
+        }
+    )
+    await session.exec(
+        update(PluginHookDelivery)
+        .where(
+            col(PluginHookDelivery.install_id) == row.install_id,
+            col(PluginHookDelivery.delivery_id) == row.delivery_id,
+        )
+        .values(**values)
+    )
+    await session.commit()
+
+
+async def run_due(session: AsyncSession, guild_id: int) -> Optional[datetime]:
+    """Map or forward each of the community's waiting deliveries, on a session
+    routed into it, as the version each install is pinned to, and answer
+    when the next comes due. A delivery whose install is gone, off, or no
+    longer the registration's is dropped, its id remembered."""
+    live = {
+        registration.listing_uid: registration
+        for registration in (await registration_lookup.load_registrations()).values()
+        if registration.live_in(guild_id) and registration.listing_uid
+    }
+    while (row := await _claim(session)) is not None:
+        plugin = await session.get(GuildPlugin, row.install_id)
+        registration = live.get(plugin.listing_uid or "") if plugin else None
+        pinned = (plugin.definition or {}).get("webhooks") if plugin else None
+        if (
+            plugin is None
+            or registration is None
+            or not isinstance(pinned, dict)
+            or not plugin.enabled
+            or not owns_install(plugin, registration)
+        ):
+            await _settle(session, row, done=True)
+            continue
+        # Nothing is held here while the install's own sessions do the work.
         await session.commit()
+        install = plugin_installs.IndexedInstall(
+            guild_id=guild_id, install_id=row.install_id, active=True, route=row.route
+        )
+        # A declarative registration has no hook to forward to, whatever
+        # version an install is still pinned to.
+        declared = registration.declarative or is_declarative(plugin.definition)
+        hand = _map if declared else _forward
+        try:
+            done = await hand(
+                session,
+                install,
+                registration,
+                plugin,
+                pinned,
+                delivery_id=row.delivery_id,
+                headers=dict(row.headers or {}),
+                body=bytes(row.body),
+            )
+        except Exception:
+            logger.exception(
+                "plug-in hooks: delivery %s for guild %s failed; it waits",
+                row.delivery_id,
+                guild_id,
+            )
+            await session.rollback()
+            done = False
+        await _settle(session, row, done=done)
+    return (await session.exec(next_due(datetime.now(timezone.utc)))).first()
 
 
 async def _forward(
+    session: AsyncSession,
     install: plugin_installs.IndexedInstall,
     registration: RegistrationSnapshot,
     plugin: GuildPlugin,
@@ -332,9 +435,9 @@ async def _forward(
     delivery_id: str,
     headers: Mapping[str, str],
     body: bytes,
-) -> int:
+) -> bool:
     """A container's install: the delivery goes to its ``webhook`` hook, as
-    its pinned ``webhooks`` describe it."""
+    its pinned ``webhooks`` describe it. Whether it was accepted."""
     try:
         await community_hooks.call_now(
             "webhook",
@@ -344,23 +447,24 @@ async def _forward(
             install_id=install.install_id,
             body={
                 "connection": webhooks["route"]["connection"],
-                "headers": _vendor_headers(headers, str(webhooks["verify"]["header"])),
+                "headers": dict(headers),
                 "body": body.decode("utf-8", errors="replace"),
             },
         )
     except flows.HookError as exc:
         logger.warning(
-            "plug-in hooks: %s did not accept a delivery for guild %s (%s)",
+            "plug-in hooks: %s did not accept delivery %s for guild %s (%s)",
             registration.public_id,
+            delivery_id,
             install.guild_id,
             exc,
         )
-        return 502
-    await _record(install, delivery_id)
-    return 202
+        return False
+    return True
 
 
 async def _map(
+    session: AsyncSession,
     install: plugin_installs.IndexedInstall,
     registration: RegistrationSnapshot,
     plugin: GuildPlugin,
@@ -369,22 +473,13 @@ async def _map(
     delivery_id: str,
     headers: Mapping[str, str],
     body: bytes,
-) -> int:
+) -> bool:
     """A declarative plug-in's install: its pinned ``webhooks`` map the delivery
     to changes to the plug-in's values, made as the install
     (:func:`plugin_metadata.apply_changes`), to an event, emitted as a
-    container's is, and to a connection's state. The delivery is recorded with
-    the event and the state, so a redelivery does none of it again.
-
-    A mapping that may answer if asked again records nothing and answers 503,
-    so the vendor sends it again; one that cannot, and changes that are
-    refused, are logged, and the delivery is recorded beside whatever did
-    map. The delivery is held (:func:`_take`) before any change is made, so a
-    copy of it that arrives meanwhile does nothing, and recorded once the
-    changes are made, on the install's own sessions. One whose work fails is
-    given back (:func:`_let_go`), and one whose holder stopped is taken again
-    once its hold runs out, so a delivery whose changes did not finish is
-    still owed. A recorded delivery is not mapped again (:func:`_pending`)."""
+    container's is, and to a connection's state. Whether it is done: a
+    mapping that may answer if asked again is not, and waits; one that
+    cannot, and changes that are refused, are logged and done."""
     try:
         payload: Any = json.loads(body)
     except ValueError:
@@ -393,20 +488,20 @@ async def _map(
     try:
         delivered = await declarative.map_delivery(
             plugin.definition,
-            headers=_vendor_headers(headers, str(webhooks["verify"]["header"])),
+            headers=headers,
             payload=payload,
             connection=without_tokens((plugin.config or {}).get(route["connection"])),
             installed=install_settings(plugin),
         )
     except ExpressionError as exc:
         logger.warning(
-            "plug-in hooks: %s will map delivery %s for guild %s when it comes again (%s)",
+            "plug-in hooks: %s will map delivery %s for guild %s again (%s)",
             registration.public_id,
             delivery_id,
             install.guild_id,
             type(exc).__name__,
         )
-        return 503
+        return False
     for failure in delivered.failures:
         logger.warning(
             "plug-in hooks: %s could not map delivery %s for guild %s (%s)",
@@ -415,26 +510,6 @@ async def _map(
             install.guild_id,
             failure,
         )
-    if not await _take(install, delivery_id):
-        return 202
-    try:
-        await _make(install, registration, plugin, delivered, delivery_id=delivery_id)
-    except Exception:
-        await _let_go(install, delivery_id)
-        raise
-    return 202
-
-
-async def _make(
-    install: plugin_installs.IndexedInstall,
-    registration: RegistrationSnapshot,
-    plugin: GuildPlugin,
-    delivered: declarative.Delivered,
-    *,
-    delivery_id: str,
-) -> None:
-    """Make a held delivery's changes, then record it with its event and its
-    connection's state."""
     try:
         await plugin_metadata.apply_changes(
             plugin, registration, delivered.writes, guild_id=install.guild_id
@@ -448,47 +523,38 @@ async def _make(
             install.guild_id,
             exc.code,
         )
-    async with cohorts.system_session(install.guild_id) as session:
-        await set_rls_context(session, SystemGuild(install.guild_id))
-        await session.exec(
-            update(PluginHookDelivery)
-            .where(
-                col(PluginHookDelivery.install_id) == install.install_id,
-                col(PluginHookDelivery.delivery_id) == delivery_id,
+    if delivered.event is not None:
+        event_type, event = delivered.event
+        try:
+            await keep_event(
+                session,
+                plugin,
+                registration,
+                event_type=event_type,
+                payload=event,
+                initiative_id=None,
             )
-            .values(expires_at=datetime.now(timezone.utc) + DELIVERY_TTL)
-        )
-        if delivered.event is not None:
-            event_type, event = delivered.event
-            try:
-                await keep_event(
-                    session,
-                    plugin,
-                    registration,
-                    event_type=event_type,
-                    payload=event,
-                    initiative_id=None,
-                )
-            except PluginChannelError as exc:
-                logger.warning(
-                    "plug-in hooks: %s emitted %s from delivery %s for guild %s, "
-                    "which was refused (%s)",
-                    registration.public_id,
-                    event_type,
-                    delivery_id,
-                    install.guild_id,
-                    exc.code,
-                )
-        if delivered.status is not None:
-            locked = await guild_plugins_service.lock_install(session, plugin.id)
-            if (
-                locked is not None
-                and plugin_installs.hook_route(locked.definition, locked.config)
-                == install.route
-                and set_connection_state(locked, *delivered.status)
-            ):
-                session.add(locked)
-        await session.commit()
+        except PluginChannelError as exc:
+            logger.warning(
+                "plug-in hooks: %s emitted %s from delivery %s for guild %s, "
+                "which was refused (%s)",
+                registration.public_id,
+                event_type,
+                delivery_id,
+                install.guild_id,
+                exc.code,
+            )
+    if delivered.status is not None:
+        locked = await guild_plugins_service.lock_install(session, plugin.id)
+        if (
+            locked is not None
+            and plugin_installs.hook_route(locked.definition, locked.config)
+            == install.route
+            and set_connection_state(locked, *delivered.status)
+        ):
+            session.add(locked)
+    await session.commit()
+    return True
 
 
 async def receive(public_id: str, headers: Mapping[str, str], body: bytes) -> int:
@@ -525,35 +591,7 @@ async def receive(public_id: str, headers: Mapping[str, str], body: bytes) -> in
     delivery_id = headers.get(str(webhooks["dedup"]).lower(), "")
     if not delivery_id or len(delivery_id) > DELIVERY_ID_MAX_LENGTH:
         return 400
-    limit = asyncio.Semaphore(FORWARD_CONCURRENCY)
-
-    async def bounded(install: plugin_installs.IndexedInstall) -> int:
-        async with limit:
-            plugin = await _pending(
-                install, registration, delivery_id, headers=headers, body=body
-            )
-            if plugin is None:
-                return 202
-            pinned = (plugin.definition or {}).get("webhooks")
-            if not isinstance(pinned, dict):
-                return 202
-            # A declarative registration has no hook to forward to, whatever
-            # version an install is still pinned to.
-            declared = registration.declarative or is_declarative(plugin.definition)
-            hand = _map if declared else _forward
-            return await hand(
-                install,
-                registration,
-                plugin,
-                pinned,
-                delivery_id=delivery_id,
-                headers=headers,
-                body=body,
-            )
-
-    # The worst answer stands: 503 when one install will map it once it comes
-    # again, 502 when one did not accept it.
-    status = max(await asyncio.gather(*(bounded(install) for install in installs)))
-    outcome = "delivered" if status == 202 else "failed"
-    metrics.plugin_hook_deliveries.labels(outcome=outcome).inc()
-    return status
+    for install in installs:
+        await _queue(install, registration, delivery_id, headers=headers, body=body)
+    metrics.plugin_hook_deliveries.labels(outcome="queued").inc()
+    return 202

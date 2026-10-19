@@ -47,8 +47,8 @@ from app.models.platform.access_grant import (
     AccessLevel,
     SettingsLevel,
 )
-from app.models.platform.guild import CommunityRole, GuildMembership
 from app.models.platform.community_timer import CommunityTimer
+from app.models.platform.guild import CommunityRole, GuildMembership
 from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import RegistrationKind
 from app.models.tenant.guild_plugin import GuildPlugin
@@ -60,8 +60,7 @@ from app.models.tenant.plugin_metadata import PluginMetadata
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.services.marketplace import declarative as declarative_service
-from app.services.marketplace import plugin_installs
-from app.services.marketplace import expressions
+from app.services.marketplace import expressions, plugin_installs
 from app.services.marketplace.registration_lookup import (
     invalidate_registrations,
     load_registrations,
@@ -69,6 +68,7 @@ from app.services.marketplace.registration_lookup import (
 from app.services.tenant import (
     plugin_connection_flows,
     plugin_connections,
+    plugin_hooks,
     plugin_metadata,
     plugin_revocation,
     plugin_schedules,
@@ -1718,6 +1718,24 @@ async def _deliveries(session: AsyncSession, guild_id: int) -> list[PluginHookDe
     return list((await session.exec(select(PluginHookDelivery))).all())
 
 
+async def _delivered(session: AsyncSession, guild_id: int) -> None:
+    """The delivery sweep's visit to the community, as a minute pass makes it."""
+    async with cohorts.system_session(guild_id) as worker:
+        await set_rls_context(worker, SystemGuild(guild_id))
+        await plugin_hooks.run_due(worker, guild_id)
+
+
+async def _deliveries_due(session: AsyncSession, guild_id: int) -> None:
+    """Bring every waiting delivery in the community due again."""
+    await route_session_to_guild(session, guild_id)
+    await session.exec(
+        update(PluginHookDelivery).values(
+            taken_until=datetime.now(timezone.utc) - timedelta(seconds=1)
+        )
+    )
+    await session.commit()
+
+
 class TestVendorWebhooks:
     def test_the_limit_is_kept_per_plugin_and_sending_address(self):
         from starlette.requests import Request
@@ -1751,13 +1769,12 @@ class TestVendorWebhooks:
         vendor,
         registration,
         listing,
-        monkeypatch,
     ):
         """One community connected installation 42 and a third connected 7.
         The second's connect of 42 is refused, storing nothing, until the
         registration shares routes, and then goes through. A delivery for 42
-        is forwarded to each of the two at once, on a lifecycle token naming
-        that install, and a redelivery forwards nothing."""
+        is queued in each of the two, and each one's visit forwards it on a
+        lifecycle token naming that install; a redelivery forwards nothing."""
         seats = [
             await acting_user(guild_role=CommunityRole.superadmin) for _ in range(3)
         ]
@@ -1785,19 +1802,13 @@ class TestVendorWebhooks:
         indexed = await _indexed(session, guild_id, install_id)
         assert (indexed.hook_route, indexed.exclusive) == ("42", False)
 
-        # Each forward waits for the other, so both go only when sent together.
-        both = asyncio.Barrier(2)
-        call_hook = plugin_connection_flows.call_hook
-
-        async def together(*args, **kwargs):
-            await asyncio.wait_for(both.wait(), timeout=1)
-            return await call_hook(*args, **kwargs)
-
-        monkeypatch.setattr(plugin_connection_flows, "call_hook", together)
         body, headers = vendor.webhook({"action": "opened", "installation": {"id": 42}})
 
         response = await client.post(HOOK_ROUTE, content=body, headers=headers)
         assert response.status_code == 202, response.text
+        assert [name for name, _, _ in vendor.hooks if name == "webhook"] == []
+        for seat in seats[:2]:
+            await _delivered(session, seat.guild.id)
 
         forwarded = [
             (call, token) for name, call, token in vendor.hooks if name == "webhook"
@@ -1823,6 +1834,8 @@ class TestVendorWebhooks:
 
         again = await client.post(HOOK_ROUTE, content=body, headers=headers)
         assert again.status_code == 202
+        for seat in seats[:2]:
+            await _delivered(session, seat.guild.id)
         assert len([name for name, _, _ in vendor.hooks if name == "webhook"]) == 2
         assert await _deliveries(session, seats[2].guild.id) == []
 
@@ -1843,25 +1856,30 @@ class TestVendorWebhooks:
         assert [name for name, _, _ in vendor.hooks] == []
         assert await _deliveries(session, seat.guild.id) == []
 
-    async def test_a_forward_that_fails_is_retried_by_the_vendor(
+    async def test_a_forward_that_fails_is_tried_again(
         self, client: AsyncClient, acting_user, session, vendor, listing
     ):
-        """A community whose plug-in did not accept a delivery records nothing, so
-        the vendor's redelivery reaches it."""
+        """A delivery the plug-in did not accept waits in the community, and
+        the next visit forwards it again."""
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _install(session, seat, config=_connected("42"))
         body, headers = vendor.webhook({"installation": {"id": 42}})
+        queued = await client.post(HOOK_ROUTE, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
 
         vendor.hook_status = 500
-        failed = await client.post(HOOK_ROUTE, content=body, headers=headers)
-        assert failed.status_code == 502
-        assert await _deliveries(session, seat.guild.id) == []
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert waiting.taken_until > datetime.now(timezone.utc)
 
         vendor.hook_status = 200
-        retried = await client.post(HOOK_ROUTE, content=body, headers=headers)
-        assert retried.status_code == 202
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
+
+        assert len([name for name, _, _ in vendor.hooks if name == "webhook"]) == 2
         [recorded] = await _deliveries(session, seat.guild.id)
-        assert recorded.delivery_id == "delivery-1"
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
 
     async def test_a_delivery_is_described_by_the_version_each_install_pinned(
         self, client: AsyncClient, acting_user, session, vendor, registration
@@ -1893,6 +1911,7 @@ class TestVendorWebhooks:
         response = await client.post(HOOK_ROUTE, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         [(name, call, _)] = vendor.hooks
         assert (name, call["connection"]) == ("webhook", "workspace")
 
@@ -2175,6 +2194,7 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
 
         assert await _events(session, seat.guild.id) == [
             (
@@ -2187,49 +2207,31 @@ class TestDeclarativePlugins:
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
 
-    async def test_a_copy_arriving_while_a_delivery_is_mapped_does_nothing(
-        self,
-        client: AsyncClient,
-        acting_user,
-        session,
-        vendor,
-        declarative,
-        monkeypatch,
+    async def test_a_copy_of_a_waiting_delivery_is_queued_once(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
-        """The first copy holds the delivery before it makes any change, so a
-        copy arriving meanwhile makes none, and the first records it for 24
-        hours."""
+        """A redelivery of a waiting delivery's id changes nothing: one row,
+        mapped once, remembered for 24 hours."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _declarative_install(session, seat, config=_connected("42"))
-        held, release = asyncio.Event(), asyncio.Event()
-        made: list = []
-        apply_changes = plugin_metadata.apply_changes
-
-        async def changing(*args, **kwargs):
-            made.append(args[2])
-            held.set()
-            await release.wait()
-            return await apply_changes(*args, **kwargs)
-
-        monkeypatch.setattr(plugin_metadata, "apply_changes", changing)
         body, headers = vendor.webhook(_issue())
-        first = asyncio.create_task(
-            client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        )
-        await asyncio.wait_for(held.wait(), 30)
-        second = await asyncio.wait_for(
-            client.post(DECLARATIVE_HOOKS, content=body, headers=headers), 30
-        )
-        release.set()
-        answered = await asyncio.wait_for(first, 30)
+        for _ in range(2):
+            response = await client.post(
+                DECLARATIVE_HOOKS, content=body, headers=headers
+            )
+            assert response.status_code == 202, response.text
+        [queued] = await _deliveries(session, seat.guild.id)
+        assert queued.body is not None
 
-        assert [second.status_code, answered.status_code] == [202, 202]
-        assert len(made) == 1
+        await _delivered(session, seat.guild.id)
+
+        assert len(await _events(session, seat.guild.id)) == 1
         [recorded] = await _deliveries(session, seat.guild.id)
+        assert recorded.body is None
         assert recorded.expires_at > datetime.now(timezone.utc) + timedelta(hours=23)
 
-    async def test_a_delivery_whose_changes_failed_is_owed_again(
+    async def test_a_delivery_whose_changes_failed_is_tried_again(
         self,
         client: AsyncClient,
         acting_user,
@@ -2238,7 +2240,7 @@ class TestDeclarativePlugins:
         declarative,
         monkeypatch,
     ):
-        """Its hold is given back, so the vendor's next copy is mapped."""
+        """Its work waits, and the next visit makes it."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _declarative_install(session, seat, config=_connected("42"))
@@ -2254,16 +2256,19 @@ class TestDeclarativePlugins:
 
         monkeypatch.setattr(plugin_metadata, "apply_changes", failing_once)
         body, headers = vendor.webhook(_issue())
-        with pytest.raises(RuntimeError):
-            await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        assert await _deliveries(session, seat.guild.id) == []
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert await _events(session, seat.guild.id) == []
 
-        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
 
-        assert response.status_code == 202, response.text
         assert len(await _events(session, seat.guild.id)) == 1
         [recorded] = await _deliveries(session, seat.guild.id)
-        assert recorded.delivery_id == "delivery-1"
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
 
     async def test_a_holding_target_reaches_every_item(
         self,
@@ -2318,6 +2323,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         states = await session.exec(
             select(PluginMetadata.entity_id).where(PluginMetadata.key == "github.state")
         )
@@ -2454,6 +2460,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
             ISSUE_OPENED
         ]
@@ -2484,6 +2491,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         assert await _events(session, seat.guild.id) == []
         assert vendor.hooks == []
 
@@ -2515,6 +2523,7 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+            await _delivered(session, seat.guild.id)
             stored = await _reload(session, seat.guild.id, plugin.id)
             indexed = await _indexed(session, seat.guild.id, plugin.id)
             return (stored.config_state, stored.config_state_detail, indexed.hook_route)
@@ -2568,6 +2577,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         [(_, _, payload)] = await _events(session, seat.guild.id)
         assert payload["repository"] == "acme/web"
 
@@ -2580,8 +2590,8 @@ class TestDeclarativePlugins:
         declarative,
         monkeypatch,
     ):
-        """No evaluator answered: nothing is recorded and the vendor is told
-        to send it again, and the delivery maps when it comes back."""
+        """No evaluator answered: the delivery waits, and maps on the next
+        visit."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _declarative_install(session, seat, config=_connected("42"))
@@ -2596,12 +2606,16 @@ class TestDeclarativePlugins:
         monkeypatch.setattr(expressions, "holds", once_busy)
         body, headers = vendor.webhook(_issue())
 
-        first = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        assert first.status_code == 503, first.text
-        assert await _deliveries(session, seat.guild.id) == []
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert await _events(session, seat.guild.id) == []
 
-        again = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        assert again.status_code == 202, again.text
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
+
         assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
             ISSUE_OPENED
         ]
@@ -2634,13 +2648,14 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
 
         assert await _events(session, seat.guild.id) == []
         assert (await session.exec(select(PluginMetadata))).all() == []
         stored = await _reload(session, seat.guild.id, plugin.id)
         assert stored.config_state_detail == "workspace_removed"
         [recorded] = await _deliveries(session, seat.guild.id)
-        assert recorded.delivery_id == "delivery-1"
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
         for failed in (
             "could not map delivery",
             "could not make the changes of delivery",
@@ -2680,6 +2695,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
             ISSUE_OPENED
         ]
