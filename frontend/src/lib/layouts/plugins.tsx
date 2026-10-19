@@ -37,6 +37,7 @@ import { useCommunityPlugins, useRunPluginAction } from "@/hooks/useCommunityPlu
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import { numberFormat } from "@/lib/intl";
 import { cn } from "@/lib/utils";
+import { withParamAnswer } from "@/lib/widgets/pluginParams";
 import { type LocalizedText, localized } from "@/lib/widgets/widgetMeta";
 
 import type { FieldDef, FieldRendererProps } from "./fields";
@@ -663,12 +664,7 @@ const PluginActionDialog = ({
               values={values}
               open
               onChange={(key, value) =>
-                setValues((current) => {
-                  const next = { ...current };
-                  if (value === undefined) delete next[key];
-                  else next[key] = value;
-                  return next;
-                })
+                setValues((current) => withParamAnswer(params, current, key, value))
               }
             />
           ))}

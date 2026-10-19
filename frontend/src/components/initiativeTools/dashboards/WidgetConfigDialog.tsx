@@ -61,6 +61,7 @@ import { useWidgetMeta } from "@/hooks/useWidgetMeta";
 import { getErrorMessage } from "@/lib/errorMessage";
 import type { WidgetSource } from "@/lib/widgets/dataShapes";
 import { catalogEntry, type DefinitionWidget, isPluginWidgetType } from "@/lib/widgets/definition";
+import { withParamAnswer } from "@/lib/widgets/pluginParams";
 import { canDraw, resolveMapping } from "@/lib/widgets/shape";
 import { shapeFor } from "@/lib/widgets/shapes";
 import {
@@ -244,37 +245,12 @@ export function WidgetConfigDialog({
    */
   const setPluginParam = (key: string, value: unknown) =>
     setBinding((current) => {
-      const params = (current.params ?? {}) as Record<string, unknown>;
-      const next = { ...params };
-      const emptied =
-        value === undefined ||
-        value === null ||
-        value === "" ||
-        (Array.isArray(value) && value.length === 0);
-
-      if (emptied) delete next[key];
-      else next[key] = value;
-
-      // Only a real change invalidates anything. Re-picking the value that was
-      // already there must not throw away the choices made under it.
-      if (JSON.stringify(params[key] ?? null) !== JSON.stringify(next[key] ?? null)) {
-        const declared = pluginEndpoint?.params ?? [];
-        const stale = new Set([key]);
-        let spreading = true;
-        while (spreading) {
-          spreading = false;
-          for (const candidate of declared) {
-            if (stale.has(candidate.key)) continue;
-            const needs = Object.values(candidate.options_from?.needs ?? {});
-            if (needs.some((sibling) => stale.has(sibling))) {
-              stale.add(candidate.key);
-              delete next[candidate.key];
-              spreading = true;
-            }
-          }
-        }
-      }
-
+      const next = withParamAnswer(
+        pluginEndpoint?.params ?? [],
+        (current.params ?? {}) as Record<string, unknown>,
+        key,
+        value
+      );
       return { ...current, params: Object.keys(next).length ? next : undefined };
     });
 
