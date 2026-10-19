@@ -117,6 +117,10 @@ migrations. A package transaction itself does not contact the database.
 | `/var/lib/initiative` | Service home and mutable state |
 | `/var/log/initiative` | OpenRC service output; Debian also uses the journal |
 
+Keep local uploads under `/var/lib/initiative`. On Debian, a custom `UPLOADS_DIR`
+outside that directory also needs a systemd override granting `ReadWritePaths`
+for the chosen directory; grant the `initiative` account access to it as well.
+
 Before upgrading, back up the database, PostgreSQL roles, configuration and uploads
 as described in [Backups and updates](backups-and-updates.md). Install the new
 package with your distribution's package manager. It stops the running service so

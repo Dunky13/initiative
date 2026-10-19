@@ -288,7 +288,7 @@ def _alembic_config() -> Config:
     """Alembic config pointed at this worker's test database."""
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL.replace("%", "%%"))
     config.attributes["configure_logger"] = False
     config.attributes["url_configured"] = True
     return config

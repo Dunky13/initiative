@@ -96,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Database URLs with encoded characters.** Startup migrations accept percent-encoded passwords and Unix socket paths without Alembic treating their percent signs as configuration interpolation.
 - **A key limited to one community lists only that community.** `GET /communities/` with a personal API key used to list every community its owner belongs to. It now lists only the ones the key can reach: the one it is limited to, and none that turned off the owner's API access.
 - **A registry refresh no longer skips the GitHub plug-in.** A plug-in Initiative runs from its listing, like GitHub, was refused as "already published with different content" whenever the registry brought a version this server already had, and the refresh said it stopped. An unchanged version now goes through.
 - **Signing in no longer greets an established account as a new one.** When your communities didn't load the first time, the app showed the setup for new accounts. It now tries again, and if it still can't load them, says so and offers **Try again**.

@@ -164,6 +164,19 @@ jobs:
         with:
           name: server-assets-${{ inputs.release && 'release' || 'test' }}
           path: ${{ runner.temp }}/server-assets
+      - name: Restore target dependency cache
+        id: dependencies
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # No fallback across lockfiles, distributions, or architectures.
+          # Cache only dependencies, never package payloads or signing keys.
+          path: |
+            ${{ runner.temp }}/server-dependency-cache/uv
+            ${{ runner.temp }}/server-dependency-cache/pip
+            ${{ runner.temp }}/server-dependency-cache/cargo/registry
+            ${{ runner.temp }}/server-dependency-cache/cargo/git
+            ${{ runner.temp }}/server-dependency-cache/cargo-target
+          key: server-dependencies-v1-${{ runner.os }}-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles('backend/uv.lock', 'backend/uv-requirements.txt', 'packaging/server/**/build-dependencies.txt') }}
       - name: Prepare disposable APK test key
         if: ${{ matrix.format == 'apk' && !inputs.release }}
         run: |
@@ -190,12 +203,15 @@ jobs:
         # These are disposable build environments; installed servers need no
         # container engine, Node, compiler, package resolver, or download step.
         run: |
-          mkdir -p "$RUNNER_TEMP/server-output" "$RUNNER_TEMP/server-apk-signing"
+          mkdir -p "$RUNNER_TEMP/server-output" "$RUNNER_TEMP/server-apk-signing" "$RUNNER_TEMP/server-dependency-cache"
           docker run --rm \
             -v "$PWD:/source:ro" \
             -v "$RUNNER_TEMP/server-assets:/assets:ro" \
             -v "$RUNNER_TEMP/server-output:/output" \
             -v "$RUNNER_TEMP/server-apk-signing:/run/server-signing:ro" \
+            -v "$RUNNER_TEMP/server-dependency-cache:/root/.cache" \
+            -e CARGO_HOME=/root/.cache/cargo \
+            -e CARGO_TARGET_DIR=/root/.cache/cargo-target \
             -e PACKAGE_FORMAT -e BUILD_CHANNEL \
             -e APK_SIGNING_KEY=/run/server-signing/initiative-server.rsa \
             "$BUILD_IMAGE" sh -euc '
@@ -208,6 +224,29 @@ jobs:
               sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output --channel "$BUILD_CHANNEL" --revision 1
               sh /source/packaging/server/build.sh "$PACKAGE_FORMAT" --assets /assets --output /output/upgrade --channel "$BUILD_CHANNEL" --revision 2
             '
+      - name: Make build outputs and dependency cache readable by the runner
+        # Change only the outer artifact files; package-internal root ownership
+        # is part of the archive and remains untouched.
+        run: |
+          sudo chown -R --no-dereference "$(id -u):$(id -g)" \
+            "$RUNNER_TEMP/server-dependency-cache" "$RUNNER_TEMP/server-output"
+          chmod -R u+rwX "$RUNNER_TEMP/server-dependency-cache" "$RUNNER_TEMP/server-output"
+      - name: Save target dependency cache
+        # PRs may restore trusted caches but never save their own. A successful
+        # dependency/package build is reusable even if the runtime smoke fails.
+        if: >-
+          ${{ steps.dependencies.outputs.cache-hit != 'true'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+          && !startsWith(github.ref, 'refs/pull/') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/server-dependency-cache/uv
+            ${{ runner.temp }}/server-dependency-cache/pip
+            ${{ runner.temp }}/server-dependency-cache/cargo/registry
+            ${{ runner.temp }}/server-dependency-cache/cargo/git
+            ${{ runner.temp }}/server-dependency-cache/cargo-target
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
       - name: Install, upgrade, and exercise the package in a clean target
         # No source checkout, assets, build tools, or private key in this target.
         run: |
