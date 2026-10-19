@@ -473,7 +473,5 @@ async def find_installation_metadata(
     every value it keeps on each: at most 100, in kind and id order. A value
     is found by its text, a number or a boolean as JSON writes it, and a list
     field's element by its ``ref``."""
-    found = await metadata_service.find(
-        session, installation.context, key, value, limit=metadata_service.FIND_LIMIT
-    )
+    found = await metadata_service.find(session, installation.context, key, value)
     return _items(found)

@@ -86,6 +86,7 @@ from app.services.tenant import properties as properties_service
 from app.services.tenant.plugin_channels import PluginChannelError
 
 __all__ = [
+    "holders",
     "pinned_fields",
     "Change",
     "annotate_plugin_values",
@@ -622,23 +623,23 @@ async def write(
     return assembled(rows)
 
 
-async def find(
+async def holders(
     session: AsyncSession,
     context: InstallContext,
     key: str,
     value: str,
     *,
     limit: Optional[int] = None,
-) -> list[tuple[str, int, dict[str, Any]]]:
+) -> list[tuple[str, int]]:
     """The items the install can read holding ``value`` under ``key``, a list
-    holding it as an element's ref, with the values it keeps on each, in kind
-    and id order: every one, or the first ``limit`` (the lookup route's
-    :data:`FIND_LIMIT`). The install's own values are not an item."""
+    holding it as an element's ref, in kind and id order: every one, or the
+    first ``limit``. The install's own values are not an item."""
     _check_key(key)
     if len(value) > LOOKUP_LENGTH:
         return []
-    matches = (
-        await session.exec(
+    return [
+        (entity_type, entity_id)
+        for entity_type, entity_id in await session.exec(
             select(PluginMetadata.entity_type, PluginMetadata.entity_id)
             .where(
                 PluginMetadata.install_id == context.install_id,
@@ -649,7 +650,21 @@ async def find(
             .order_by(PluginMetadata.entity_type, PluginMetadata.entity_id)
             .limit(limit)
         )
-    ).all()
+    ]
+
+
+async def find(
+    session: AsyncSession,
+    context: InstallContext,
+    key: str,
+    value: str,
+    *,
+    limit: int = FIND_LIMIT,
+) -> list[tuple[str, int, dict[str, Any]]]:
+    """The first ``limit`` items holding ``value`` under ``key``
+    (:func:`holders`), with the values the install keeps on each: the lookup
+    route's page."""
+    matches = await holders(session, context, key, value, limit=limit)
     if not matches:
         return []
     by_kind: dict[str, list[int]] = defaultdict(list)
@@ -812,15 +827,12 @@ async def apply_changes(
         targets: dict[tuple[str, int], list[Change]] = {}
         for target, made in changes:
             if "holding" in target:
-                found = [
-                    (kind, entity_id)
-                    for kind, entity_id, _ in await find(
-                        session,
-                        context,
-                        target["holding"]["key"],
-                        target["holding"]["value"],
-                    )
-                ]
+                found = await holders(
+                    session,
+                    context,
+                    target["holding"]["key"],
+                    target["holding"]["value"],
+                )
             elif "install" in target:
                 found = [(INSTALL_METADATA_KIND, context.install_id)]
             elif target["id"] <= _MAX_ITEM_ID:
@@ -945,25 +957,17 @@ class _Offered:
     """Whether a reader is drawn an install's values in an initiative: it is
     placed there with a role the reader holds (or the reader is the
     community's admin), and the reader is old enough for it. Each pair is
-    decided once, an install's minimum age read once, and the reader's age
-    only if a plug-in asks for one."""
+    decided once, and the reader's age read only if a plug-in asks for one."""
 
-    def __init__(self, session: AsyncSession, context: GuildContext) -> None:
-        self._session = session
+    def __init__(self, context: GuildContext) -> None:
         self._context = context
         self._viewer: Optional[plugin_age.AgeViewer] = None
         self._known: dict[tuple[int, int], bool] = {}
-        self._minimum: dict[int, Any] = {}
 
-    async def __call__(self, install_id: int, initiative_id: int, roles: Any) -> bool:
+    async def __call__(
+        self, install_id: int, initiative_id: int, roles: Any, minimum: Any
+    ) -> bool:
         if (install_id, initiative_id) not in self._known:
-            if install_id not in self._minimum:
-                self._minimum[install_id] = await self._session.scalar(
-                    select(GuildPlugin.definition["minimum_age"]).where(
-                        GuildPlugin.id == install_id
-                    )
-                )
-            minimum = self._minimum[install_id]
             old_enough = True
             if minimum is not None:
                 self._viewer = self._viewer or await plugin_age.current_viewer(
@@ -1015,28 +1019,31 @@ async def filter_fields(
     if not wanted or context is None or context.guest:
         return {}
     installs = sorted({install for install, _ in wanted})
-    fields = dict(
-        (
-            await session.exec(
-                select(GuildPlugin.id, GuildPlugin.definition["fields"]).where(
-                    GuildPlugin.enabled.is_(True), col(GuildPlugin.id).in_(installs)
-                )
-            )
-        ).all()
-    )
+    # Each install's fields and minimum age, read once each.
+    declares = {
+        install_id: (fields, minimum)
+        for install_id, fields, minimum in await session.exec(
+            select(
+                GuildPlugin.id,
+                GuildPlugin.definition["fields"],
+                GuildPlugin.definition["minimum_age"],
+            ).where(GuildPlugin.enabled.is_(True), col(GuildPlugin.id).in_(installs))
+        )
+    }
     placements = await session.exec(
         select(
             PluginPlacement.install_id,
             PluginPlacement.initiative_id,
             PluginPlacement.role_ids,
-        ).where(col(PluginPlacement.install_id).in_(list(fields)))
+        ).where(col(PluginPlacement.install_id).in_(list(declares)))
     )
-    offered = _Offered(session, context)
+    offered = _Offered(context)
     reach: dict[tuple[int, str], set[int]] = defaultdict(set)
     # Each field's kind and the facets of its states.
     declared: dict[tuple[int, str], tuple[str, frozenset[str]]] = {}
     for install_id, initiative_id, roles in placements.all():
-        for field in _fields_on(fields[install_id], "task"):
+        fields, minimum = declares[install_id]
+        for field in _fields_on(fields, "task"):
             pair = (install_id, field["key"])
             if pair not in wanted:
                 continue
@@ -1045,7 +1052,7 @@ async def filter_fields(
                 str(field.get("kind")),
                 frozenset(map(str, states if isinstance(states, dict) else ())),
             )
-            if await offered(install_id, initiative_id, roles):
+            if await offered(install_id, initiative_id, roles, minimum):
                 reach[pair].add(initiative_id)
     return {
         wanted[pair]: FilterField(pair[0], pair[1], *declared[pair], frozenset(found))
@@ -1184,10 +1191,24 @@ async def values_on(
             )
             .order_by(PluginMetadata.install_id, PluginMetadata.key, *NEWEST_FIRST)
         )
-        offered = _Offered(session, context)
+        rows = rows.all()
+        # The minimum age of each install drawn, read once for the page rather
+        # than with every row.
+        ages = dict(
+            (
+                await session.exec(
+                    select(GuildPlugin.id, GuildPlugin.definition["minimum_age"]).where(
+                        col(GuildPlugin.id).in_(sorted({row[1] for row in rows}))
+                    )
+                )
+            ).all()
+            if rows
+            else ()
+        )
+        offered = _Offered(context)
         held: dict[tuple[int, int], list[tuple[str, str, Any]]] = defaultdict(list)
         for item_id, install_id, key, ref, value, initiative_id, roles in rows:
-            if await offered(install_id, initiative_id, roles):
+            if await offered(install_id, initiative_id, roles, ages.get(install_id)):
                 held[(item_id, install_id)].append((key, ref, value))
         for (item_id, install_id), values in held.items():
             found[item_id].extend(
