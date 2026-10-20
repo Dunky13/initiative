@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-10-20
+
 ### Added
 
 - **Home.** The page you land on after signing in is a page of widgets you arrange with **Customize**: Focus, My tasks, your calendar, recent items and activity, your communities, progress, Bookmarks, and a clock and timer. Keep several views as tabs, from a blank page or a ready-made one. My Tasks is now Home in the sidebar, and shows what My Tasks did until you change it. Server owners can publish ready-made views as `home_layout` listings.
