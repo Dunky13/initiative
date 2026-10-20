@@ -133,6 +133,33 @@ unavailable. No skipped review is represented as approval.
 No production migration, release or deployment was attempted. External calendar
 clients and device WebViews were not exercised.
 
+## Calendar expansion CI follow-up
+
+The [backend run on the review-fix head](https://github.com/beyonders-studio/initiative/actions/runs/39480736350/job/118828685988)
+finished with **1 failed, 11,849 passed and 371 skipped**. Its sole failure,
+`calendar_entries_test.py::test_guild_entries_give_each_occurrence_of_a_repeat`,
+reproduced locally: lowering the occurrence limit to seven still returned
+eight events with HTTP 200 instead of the expected 422.
+
+`calendar_events.occurrences` had captured `recurrence.MAX_EXPANDED` in a default
+argument at import time. It now resolves that default at call time, while
+retaining an explicitly supplied remaining budget, including zero. The existing
+rejection assertions remain in place. Added boundary checks accept windows
+that fit exactly and reject windows that exhaust the budget across guilds.
+
+The original failing test was reproduced before the fix. After the fix, the
+combined calendar aggregate, calendar event, recurrence core and task-series
+batch passed **192 tests**:
+
+```sh
+cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
+  app/api/v1/tenant_endpoints/calendar_entries_test.py \
+  app/api/v1/tenant_endpoints/calendar_events_test.py \
+  app/core/recurrence_test.py \
+  app/services/tenant/task_series_test.py --tb=short -q
+```
+
 
 ## Reproducible checks
 
