@@ -54,9 +54,10 @@ services:
     environment:
       # Optional: Run as a specific UID/GID (default: 1000/1000).
       # The image starts as root, creates that user, chowns ./uploads to it
-      # and drops privileges. A compose `user:` override instead starts it as
-      # that user from the outset: PUID/PGID are then ignored and nothing is
-      # chowned, so ./uploads must already belong to that user.
+      # and drops privileges. To never start as root, use a compose `user:`
+      # instead: PUID/PGID are then ignored and nothing is chowned, so
+      # ./uploads must already belong to that user. See "The user it runs as"
+      # in docs/en/running-a-server/installation.md.
       # Unraid users: set PUID=99 PGID=100 for nobody:users
       # PUID: 1000
       # PGID: 1000

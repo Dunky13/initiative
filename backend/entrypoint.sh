@@ -6,13 +6,24 @@ set -e
 # persists the old container's env on upgrade, clobbering the image's ENV PATH).
 export PATH="/app/.venv/bin:$PATH"
 
-# Started as non-root: the runtime has already chosen who this runs as (a
-# Kubernetes runAsUser, a Docker `--user`), and only root could switch to
-# anyone else. So there is no user to create and nothing to chown; PUID and
-# PGID do not apply. Whatever the app writes to, such as /app/uploads, has to
-# be writable by that user already: a Kubernetes fsGroup, or a bind mount
-# the same user owns.
+# Two ways to start, like the database's one owner URL and its three named
+# logins (docs/en/running-a-server/installation.md):
+#
+# * As root, the default. It creates the PUID/PGID user, makes /app/uploads
+#   theirs and drops to them before anything else runs, so a bind-mounted
+#   folder works without the operator touching its ownership.
+# * As a non-root user the runtime chose (a Kubernetes runAsUser, Docker's
+#   `--user`), for a deployment that must never start as root. Only root
+#   could switch to anyone else, so there is no user to create and nothing to
+#   chown; PUID and PGID do not apply, and /app/uploads must already be
+#   writable by that user (a Kubernetes fsGroup, or a folder they own).
+#
+# Either way it says which, once, at the top of the log.
 if [ "$(id -u)" -ne 0 ]; then
+    echo "container user: $(id -u):$(id -g) from the start (no PUID/PGID, no chown)" >&2
+    if [ -n "${PUID:-}" ] || [ -n "${PGID:-}" ]; then
+        echo "container user: PUID/PGID are set and ignored: only a container started as root can switch user" >&2
+    fi
     exec "$@"
 fi
 
@@ -51,4 +62,5 @@ fi
 chown -R "$APP_UID:$APP_GID" /app/uploads
 
 # Run the command as the requested UID (numeric avoids name-resolution issues)
+echo "container user: root at start, then $APP_UID:$APP_GID (PUID/PGID)" >&2
 exec gosu "$APP_UID:$APP_GID" "$@"

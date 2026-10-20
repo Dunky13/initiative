@@ -94,13 +94,27 @@ Each password in it is the SCRAM hash Postgres keeps, never the password itself,
 
 To go back to one URL, point `DATABASE_URL` at the owner, delete the other three, and restart.
 
-## Running as a specific user (PUID / PGID)
+## The user it runs as
 
-By default the container **starts as root** so it can create its runtime user and fix file ownership on the uploads volume, then drops privileges and runs the app unprivileged (UID/GID `1000:1000` by default).
+The container starts as root, creates its own user, makes the uploads folder that user's, and then runs Initiative as that user. Nothing runs as root after that first moment, and you don't have to set up the folder's ownership yourself. The user is UID/GID `1000:1000` unless you say otherwise.
 
-To run as a different user — for example, to match the account that owns the uploads folder on a NAS — set **`PUID`** and **`PGID`**. (Setting them to `0`/root is rejected.)
+To match the account that owns the uploads folder on a NAS, set **`PUID`** and **`PGID`**, for example `PUID=99` and `PGID=100` for Unraid's `nobody:users`. `0` (root) is refused.
 
-You can also start the container as a non-root user from the outset, with Docker's `user:` (Compose) or `--user` (run), or a Kubernetes `runAsUser`. It then runs as that user and does nothing as root: `PUID` and `PGID` are ignored, and nothing is chowned, so the uploads folder must already be writable by that user (on Kubernetes, give the pod an `fsGroup`).
+The first line of the container's log says which way it started: `container user: root at start, then 1000:1000 (PUID/PGID)`.
+
+### Starting it as that user yourself
+
+Some setups must never start a container as root: a Kubernetes cluster that enforces the `restricted` Pod Security profile, or a security policy that says so. For those, start it as a non-root user from the outset:
+
+| Where | How |
+|---|---|
+| Docker Compose | `user: "1000:1000"` |
+| `docker run` | `--user 1000:1000` |
+| Kubernetes | `runAsUser`, `runAsGroup`, and `fsGroup` for the uploads volume |
+
+Then Initiative runs as that user and does nothing as root. `PUID` and `PGID` don't apply, and nothing is chowned, so the uploads folder must already be writable by that user. The first log line says `container user: 1000:1000 from the start (no PUID/PGID, no chown)`, and names `PUID`/`PGID` if they're set and being ignored.
+
+To go back, remove the `user:` (or `--user`) and restart.
 
 ## Docker images
 
