@@ -181,6 +181,13 @@
 #for (idx, task) in tasks.enumerate() {
   if idx > 0 { pagebreak() }
 
+  // The group the task is listed under, when the list was grouped.
+  let group = task.at("group", default: none)
+  if group != none {
+    text(size: 9pt, fill: luma(110), weight: "medium", group)
+    v(2pt)
+  }
+
   text(size: 16pt, weight: "bold", task.at("title", default: ""))
   v(3pt)
 

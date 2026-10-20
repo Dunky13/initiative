@@ -25,7 +25,7 @@ from app.api.deps import (
 )
 from app.core import recurrence
 from app.core.audit_events import AuditEventType
-from app.core.messages import ChecklistMessages, TaskMessages
+from app.core.messages import ChecklistMessages, QueryMessages, TaskMessages
 from app.db.query import build_paginated_response, paginated_query
 from app.db.session import routed_guild_id
 from app.models.platform.user import User
@@ -36,6 +36,7 @@ from app.schemas.ai_generation import (
     GenerateChecklistResponse,
     GenerateDescriptionResponse,
 )
+from app.schemas.query import DateBucket, GroupRead, GroupsResponse
 from app.schemas.recurrence import OccurrenceScope
 from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.tenant.task import (
@@ -57,6 +58,7 @@ from app.services import ai_generation as ai_generation_service
 from app.services import audit as audit_service
 from app.services import notifications as notifications_service
 from app.services.ai_settings import resolve_ai_settings
+from app.services.fields.grouping import GroupingError, group_rows
 from app.services.tenant import archive as archive_service
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import column_limits
@@ -391,6 +393,53 @@ async def create_task(
     await properties_service.write_on_create(session, task, task_in.properties)
     await session.commit()
     return await _response(session, task.id)
+
+
+@router.get("/groups", response_model=GroupsResponse)
+async def list_task_groups(
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsRead,
+    group_by: str = Query(
+        max_length=64,
+        description=(
+            "The field the list is grouped by, as the field catalog's "
+            "``groupings`` name it, or ``property:<id>``"
+        ),
+    ),
+    bucket: Optional[DateBucket] = Query(
+        default=None, description="For a date: the bucket of the calendar it groups by"
+    ),
+    conditions: Optional[str] = Query(default=None),
+    include_archived: bool = Query(default=False),
+    tz: Optional[str] = Query(default=None),
+) -> GroupsResponse:
+    """The groups of the task list these filters answer with, in the order the
+    list shows them, and the groups each task is in."""
+    q = await task_queries.parse_task_list_query(session, conditions, None, tz)
+    if current_user is None:
+        task_queries.refuse_person_filters(q)
+    build = await task_queries.guild_task_query_builder(
+        session, current_user, guild_context, q=q, include_archived=include_archived
+    )
+    ids = list(await session.exec(build(select(Task.id)))) if build else []
+    try:
+        grouping = await group_rows(
+            session, "tasks", group_by, ids, bucket=bucket, tz=q.tz
+        )
+    except GroupingError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=QueryMessages.INVALID_GROUPING,
+        )
+    return GroupsResponse(
+        groups=[GroupRead(key=g.key, label=g.label) for g in grouping.listed()],
+        rows={
+            row_id: [group.key for group in held]
+            for row_id, held in grouping.groups.items()
+            if held
+        },
+    )
 
 
 @router.get("/column-limits", response_model=List[ColumnFillRead])

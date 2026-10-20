@@ -62,5 +62,44 @@
   "fallback": {
     "untitled": "(untitled)",
     "formerMember": "Former member"
+  },
+  "fields": {
+    "tag_ids": "Tags",
+    "assignee_ids": "Assignees",
+    "task_status_id": "Status",
+    "priority": "Priority",
+    "date_group": "Date window",
+    "project_id": "Project",
+    "created_by": "Created by",
+    "archived_at": "Archived",
+    "completed_at": "Completed",
+    "created_at": "Created",
+    "due_date": "Due",
+    "start_date": "Start",
+    "updated_at": "Updated"
+  },
+  "groups": {
+    "empty": {
+      "tag_ids": "Untagged",
+      "assignee_ids": "Unassigned",
+      "created_by": "No author"
+    },
+    "none": "No {{name}}",
+    "true": "{{name}}: yes",
+    "false": "{{name}}: no",
+    "bucket": {
+      "day": "{{date}}",
+      "week": "Week of {{date}}",
+      "month": "{{year}}-{{month}}",
+      "quarter": "Q{{quarter}} {{year}}",
+      "year": "{{year}}"
+    }
+  },
+  "date_group": {
+    "0": "Overdue",
+    "1": "Today",
+    "2": "This week",
+    "3": "This month",
+    "4": "Later"
   }
 }

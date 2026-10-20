@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel
@@ -32,6 +32,7 @@ from app.models.tenant.file import File, FileVersion
 from app.models.tenant.gallery import GalleryImageVersion
 from app.models.tenant.project import Project
 from app.models.tenant.task import Task
+from app.schemas.query import DateBucket
 from app.services.export.contract import RenderItem, RenderRequest
 from app.services.export.engine import ExportError
 from app.services.export.i18n import et, export_locale
@@ -68,6 +69,71 @@ def selection_ids(params: dict, *, single_key: str, multi_key: str) -> list[int]
     except (TypeError, ValueError):
         raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
     return list(dict.fromkeys(ids))
+
+
+async def grouped_for_export(
+    session: AsyncSession,
+    dataset_name: str,
+    params: dict,
+    rows: list[Any],
+    locale: str,
+) -> tuple[str | None, list[tuple[str | None, Any]]]:
+    """``rows`` as the list they came from groups them, when ``params`` names
+    a grouping (``group_by``, a field of ``dataset_name``, a date's with its
+    ``bucket``): what the group column is headed with, and each row under the
+    heading of every group it is in, less the ``hidden_groups`` the list
+    leaves out. Ungrouped, no heading and each row once."""
+    from app.services.fields.grouping import NO_GROUP, GroupingError, group_rows
+
+    field = params.get("group_by")
+    if field is None:
+        return None, [(None, row) for row in rows]
+    hidden = params.get("hidden_groups") or []
+    if not isinstance(field, str) or not isinstance(hidden, list):
+        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
+    try:
+        bucket = DateBucket(params["bucket"]) if params.get("bucket") else None
+        grouping = await group_rows(
+            session,
+            dataset_name,
+            field,
+            [row.id for row in rows],
+            bucket=bucket,
+            tz=params.get("tz"),
+        )
+    except (GroupingError, ValueError):
+        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
+    label = grouping.name or et(f"fields.{field}", locale)
+
+    def heading(group: Any) -> str:
+        if group.label is not None:
+            return group.label
+        if bucket is not None and group.key != NO_GROUP:
+            start = date.fromisoformat(group.key)
+            return et(
+                f"groups.bucket.{bucket.value}",
+                locale,
+                date=group.key,
+                year=start.year,
+                month=f"{start.month:02d}",
+                quarter=(start.month - 1) // 3 + 1,
+            )
+        if group.key == NO_GROUP:
+            # A field with a name for its empty group of its own ("Untagged"),
+            # and every other one's "No …".
+            key = f"groups.empty.{field}"
+            named = et(key, locale) if grouping.name is None else key
+            return named if named != key else et("groups.none", locale, name=label)
+        if grouping.name is not None:
+            # A checkbox property, the one property whose values have no label.
+            return et(f"groups.{group.key}", locale, name=label)
+        return et(f"{field}.{group.key}", locale)
+
+    return label, [
+        (heading(group), row)
+        for group, row in grouping.ordered(rows, lambda r: r.id)
+        if group.key not in hidden
+    ]
 
 
 async def require_may_leave(

@@ -6,8 +6,9 @@ session (that query IS the authorization) — then shapes rows into the
 backend-agnostic data payload the ``task-table`` template reads.
 
 ``params`` is the user's own filter selector, exactly what the list endpoint
-accepts: ``{"conditions", "sorting", "tz", "include_archived"}``. It is what
-an ExportJob row persists, and what the worker replays here at render time.
+accepts: ``{"conditions", "sorting", "tz", "include_archived"}``, and the
+field their view of the list is grouped by (``group_by``). It is what an
+ExportJob row persists, and what the worker replays here at render time.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from app.core.identity_boundary import STORED_MENTION
 from app.core.references import TEXT_REFERENCE, kind_for_trigger
 from app.models.platform.user import User
 from app.models.tenant.task import Task, TaskStatusCategory
-from app.services.export.adapters._common import require_may_leave
+from app.services.export.adapters._common import grouped_for_export, require_may_leave
 from app.services.export.contract import RenderItem, RenderRequest
 from app.services.export.i18n import et, export_locale
 from app.services.export.markdown import blocks_from_markdown
@@ -118,13 +119,19 @@ class TasksTableAdapter:
         )
         reach = await require_may_leave(session, _reach(tasks))
         loc = export_locale(user)
+        group_label, grouped = await grouped_for_export(
+            session, "tasks", params, tasks, loc
+        )
+        columns = _columns(loc)
+        if group_label is not None:
+            columns.insert(0, {"key": "group", "label": group_label, "width": "1fr"})
         data = {
             "title": et("title.tasks", loc),
             "subtitle": et("summary.tasks", loc, count=len(tasks)),
             "footer": et("footer.tasks", loc),
             "page_of": et("pageOf", loc),
-            "columns": _columns(loc),
-            "rows": [_row(t, loc) for t in tasks],
+            "columns": columns,
+            "rows": [_row(t, loc) | {"group": group} for group, t in grouped],
             "empty_message": et("empty.tasks", loc),
             "untitled": et("fallback.untitled", loc),
         }
@@ -151,6 +158,9 @@ class TasksTableAdapter:
         )
         reach = await require_may_leave(session, _reach(tasks))
         loc = export_locale(user)
+        group_label, grouped = await grouped_for_export(
+            session, "tasks", params, tasks, loc
+        )
         named = await mention_namer(
             session,
             [
@@ -180,7 +190,11 @@ class TasksTableAdapter:
                 "checklist": et("detail.checklist", loc),
                 "comments": et("detail.comments", loc),
             },
-            "tasks": [_detail(t, comments.get(t.id, []), loc, named) for t in tasks],
+            "tasks": [
+                _detail(t, comments.get(t.id, []), loc, named)
+                | {"group": group and f"{group_label}: {group}"}
+                for group, t in grouped
+            ],
         }
         return RenderRequest(
             guild_id=guild_id,

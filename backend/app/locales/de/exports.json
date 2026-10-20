@@ -62,5 +62,44 @@
   "fallback": {
     "untitled": "(ohne Titel)",
     "formerMember": "Ehemaliges Mitglied"
+  },
+  "fields": {
+    "tag_ids": "Tags",
+    "assignee_ids": "Zuständige",
+    "task_status_id": "Status",
+    "priority": "Priorität",
+    "date_group": "Zeitraum",
+    "project_id": "Projekt",
+    "created_by": "Erstellt von",
+    "archived_at": "Archiviert",
+    "completed_at": "Erledigt",
+    "created_at": "Erstellt",
+    "due_date": "Fällig",
+    "start_date": "Beginn",
+    "updated_at": "Geändert"
+  },
+  "groups": {
+    "empty": {
+      "tag_ids": "Ohne Tag",
+      "assignee_ids": "Nicht zugewiesen",
+      "created_by": "Ohne Ersteller"
+    },
+    "none": "Kein Wert für {{name}}",
+    "true": "{{name}}: ja",
+    "false": "{{name}}: nein",
+    "bucket": {
+      "day": "{{date}}",
+      "week": "Woche ab {{date}}",
+      "month": "{{month}}/{{year}}",
+      "quarter": "Q{{quarter}} {{year}}",
+      "year": "{{year}}"
+    }
+  },
+  "date_group": {
+    "0": "Überfällig",
+    "1": "Heute",
+    "2": "Diese Woche",
+    "3": "Diesen Monat",
+    "4": "Später"
   }
 }

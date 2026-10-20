@@ -69,6 +69,15 @@ class DefaultFilter(SanitizedBaseModel):
     value: Any = None
 
 
+class GroupingDescription(SanitizedBaseModel):
+    """A field a list of the dataset can be grouped by."""
+
+    name: str
+    kind: str
+    #: Whether it groups by a bucket of the calendar, which the grouping names.
+    bucket: bool = False
+
+
 class FieldCatalogResponse(SanitizedBaseModel):
     """Every field a dataset offers, in the order a client lists them."""
 
@@ -83,3 +92,6 @@ class FieldCatalogResponse(SanitizedBaseModel):
     #: question it was keeping out. The trash is NOT here; the query surface
     #: removes it in the database, and nothing can ask for it back.
     default_filters: List[DefaultFilter] = []
+    #: The fields a list of it can be grouped by, beside the custom
+    #: properties that group (``property:<id>``).
+    groupings: List[GroupingDescription] = []

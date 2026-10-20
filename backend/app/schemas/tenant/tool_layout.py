@@ -34,7 +34,7 @@ from pydantic import AfterValidator, ConfigDict, Field, field_validator, model_v
 from app.core.tools import Tool
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.base import SanitizedBaseModel
-from app.schemas.query import FilterOp, SortDir
+from app.schemas.query import DateBucket, FilterOp, SortDir
 from app.services.marketplace import contract
 from app.services.marketplace.manifest_values import (
     IDENTIFIER_CHARS,
@@ -277,30 +277,24 @@ NamedFieldId = Annotated[str, AfterValidator(_named_field)]
 CardFieldId = Union[TaskFieldId, NamedFieldId]
 
 
-class TaskGroupingId(str, Enum):
-    """What a project's tasks are grouped by beside their properties: their
-    date window and status, which are not fields, and the built-in fields whose
-    values group. In the order a list offers them as shipped: the two a table
-    always offered first."""
-
-    date = "date"
-    tags = "tags"
-    status = "status"
-    priority = "priority"
-    assignees = "assignees"
+#: The characters a built-in field's name is written in.
+_FIELD_NAME = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
-def _property_field(value: str) -> str:
-    if value.startswith(PROPERTY_FIELD_PREFIX) and _is_row_id(
-        value.removeprefix(PROPERTY_FIELD_PREFIX)
-    ):
+def _grouping_field(value: str) -> str:
+    """A built-in field's name, or ``property:<id>``. Whether the list's
+    items can be grouped by it is the field registry's answer, asked when the
+    layout is written."""
+    if value.startswith(PROPERTY_FIELD_PREFIX):
+        if _is_row_id(value.removeprefix(PROPERTY_FIELD_PREFIX)):
+            return value
+    elif 0 < len(value) <= 64 and set(value) <= _FIELD_NAME:
         return value
-    raise ValueError("a grouping is a built-in one or 'property:<id>'")
+    raise ValueError("a grouping is a field's name or 'property:<id>'")
 
 
-#: A grouping: a built-in one, or a property's, which only a select,
-#: multi-select, person or checkbox property makes.
-GroupingId = Union[TaskGroupingId, Annotated[str, AfterValidator(_property_field)]]
+#: What a list is grouped by: a field of what it lists, or a custom property.
+GroupingField = Annotated[str, AfterValidator(_grouping_field)]
 
 
 # The built-in fields each place draws, named for the generated client.
@@ -550,9 +544,11 @@ class LayoutGrouping(_Strict):
     """One way a list offers to group its tasks, and the groups it leaves out
     while grouped by it."""
 
-    field: GroupingId
-    #: Each by its key: a status's, a person's or a tag's id, an option, or
-    #: "" for the tasks with none.
+    field: GroupingField
+    #: For a date, the bucket of the calendar it groups by.
+    bucket: Optional[DateBucket] = None
+    #: Each by its key: a status's, a person's or a tag's id, an option, a
+    #: bucket's first day, or "" for the tasks with none.
     hidden: List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]] = Field(
         default_factory=list, max_length=MAX_HIDDEN_GROUPS
     )
@@ -569,8 +565,8 @@ class ListLayoutDefinition(_Strict):
     """How a list draws its items, and the presets and groupings it offers.
     What it leaves out is drawn as shipped: a board with no ``card`` draws the
     shipped card, a table with no ``columns`` the shipped columns, a list with
-    no ``presets`` the shipped presets and none with no ``groupings`` the
-    built-in groupings."""
+    no ``presets`` the shipped presets and none with no ``groupings`` every
+    field of what it lists that groups without a bucket."""
 
     card: Optional[CardPart] = None
     columns: Optional[List[ColumnFieldId]] = None
@@ -580,7 +576,7 @@ class ListLayoutDefinition(_Strict):
     )
     #: What everyone starts grouped by, one of the groupings the list offers;
     #: none starts ungrouped. A person's own choice is kept over it.
-    group_by: Optional[GroupingId] = None
+    group_by: Optional[GroupingField] = None
     #: A board's columns that take at most so many open tasks.
     limits: Optional[List[ColumnLimit]] = Field(
         default=None, max_length=MAX_LIMITED_COLUMNS
@@ -588,14 +584,16 @@ class ListLayoutDefinition(_Strict):
 
     @model_validator(mode="after")
     def _offers_what_it_starts_on(self) -> "ListLayoutDefinition":
-        offered = (
-            [grouping.field for grouping in self.groupings]
-            if self.groupings is not None
-            else list(TaskGroupingId)
-        )
+        # With no groupings of its own, what a list offers is the registry's
+        # answer, which the write checks against.
+        offered = [grouping.field for grouping in self.groupings or ()]
         if len(set(offered)) != len(offered):
             raise ValueError("each grouping is offered once")
-        if self.group_by is not None and self.group_by not in offered:
+        if (
+            self.groupings is not None
+            and self.group_by is not None
+            and self.group_by not in offered
+        ):
             raise ValueError("a list starts grouped by a grouping it offers")
         limited = [entry.status_id for entry in self.limits or ()]
         if len(set(limited)) != len(limited):

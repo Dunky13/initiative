@@ -33,7 +33,14 @@ from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import DeclarativeBase
 
 from app.schemas.query import FilterOp
-from app.services.fields.spec import ControlKind, FieldSpec, column, computed
+from app.services.fields.spec import (
+    MEMBERSHIP,
+    ORDERED,
+    ControlKind,
+    FieldSpec,
+    column,
+    computed,
+)
 
 #: Which picker a reference gets, by the table it references.
 #:
@@ -142,6 +149,7 @@ def derive_fields(
     *,
     internal: frozenset[str] = frozenset(),
     references: Mapping[str, str] = MappingProxyType({}),
+    descending: frozenset[str] = frozenset(),
 ) -> tuple[FieldSpec, ...]:
     """Everything *model* itself implies: its columns, and its tags.
 
@@ -150,6 +158,10 @@ def derive_fields(
     counter, say. They stay filterable by a stored definition and are not
     offered as controls, which is the same treatment a column gets when its
     meaning is real but its audience is the code.
+
+    *descending* names the columns whose values read highest first, which an
+    enum's declared order cannot say: a list grouped by priority starts with
+    the most urgent.
 
     *references* supplies what a foreign key would have said, for a model over
     something that holds none. It is still a derivation and not a control list:
@@ -167,6 +179,8 @@ def derive_fields(
                 col.name,
                 getattr(model, col.name),
                 kind=control,
+                # A row's own key names rows: "these rows" is a list of them.
+                ops=ORDERED | MEMBERSHIP if col.primary_key else None,
                 sortable=not isinstance(_base_type(col.type), _UNSORTABLE)
                 and referenced is None
                 and _referenced_table(col) is None,
@@ -176,6 +190,7 @@ def derive_fields(
                 # either. Both stay nameable by a statement.
                 offer=col.name not in internal and control is not ControlKind.reference,
                 options=options_for(col),
+                descending=col.name in descending,
             )
         )
     tags = _tag_field(model)

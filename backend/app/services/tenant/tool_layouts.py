@@ -270,10 +270,7 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
             raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
         if write.kind != "board" and "limits" in stored:
             raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
-        # A board's columns are its statuses already, so its bands never are.
-        grouped_by = [g["field"] for g in stored.get("groupings") or ()]
-        if write.kind == "board" and "status" in [*grouped_by, stored.get("group_by")]:
-            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+        _check_groupings(write.kind, definition)
         _within_limits(
             stored,
             [definition.card] if definition.card is not None else [],
@@ -284,6 +281,38 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
 
 #: The lists that group their tasks: a project's table and board.
 GROUPED_LISTS = ("table", "board")
+#: What a grouped list lists, as the field registry names it.
+_GROUPED_DATASET = "tasks"
+#: A board's columns are its statuses already, so its bands never are.
+_BOARD_COLUMNS = "task_status_id"
+
+
+def _check_groupings(kind: str, definition: ListLayoutDefinition) -> None:
+    """Each grouping a field the list's items group by, a date's with its
+    bucket and nothing else's with one."""
+    from app.services.fields.grouping import describe_groupings
+
+    groupable = {
+        entry["name"]: entry["bucket"] for entry in describe_groupings(_GROUPED_DATASET)
+    }
+    for grouping in definition.groupings or ():
+        if _of_property(grouping.field):
+            continue
+        if grouping.field not in groupable or groupable[grouping.field] != (
+            grouping.bucket is not None
+        ):
+            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+    offered = (
+        [grouping.field for grouping in definition.groupings]
+        if definition.groupings is not None
+        else [name for name, bucket in groupable.items() if not bucket]
+    )
+    if definition.group_by is not None and definition.group_by not in offered:
+        raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+    explicit = [grouping.field for grouping in definition.groupings or ()]
+    if kind == "board" and _BOARD_COLUMNS in [*explicit, definition.group_by]:
+        raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+
 
 #: The filters a tool's presets hold: the shape its list filters by.
 PRESET_FILTERS: dict[Tool, type[TaskFilterSpec] | type[CalendarFilterSpec]] = {
@@ -427,7 +456,7 @@ def _copied_hidden(
     """The groups a copied grouping leaves out: a status grouping's are the
     copy's own statuses."""
     hidden = grouping.get("hidden", [])
-    if grouping.get("field") != "status":
+    if grouping.get("field") != _BOARD_COLUMNS:
         return hidden
     return [
         str(status_mapping[int(key)])

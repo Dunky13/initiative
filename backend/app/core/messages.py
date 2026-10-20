@@ -994,6 +994,8 @@ class ImportEngineMessages:
 class QueryMessages:
     INVALID_CONDITIONS = "QUERY_INVALID_CONDITIONS"
     INVALID_SORT_FIELDS = "QUERY_INVALID_SORT_FIELDS"
+    #: A field the list cannot be grouped by, or a bucket it does not take.
+    INVALID_GROUPING = "QUERY_INVALID_GROUPING"
     #: A view the tool does not have, such as templates of a tool with none.
     UNKNOWN_VIEW = "QUERY_UNKNOWN_VIEW"
 

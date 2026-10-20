@@ -225,6 +225,7 @@ def _computed() -> tuple[FieldSpec, ...]:
             sort=_date_group,
             filterable=False,
             sortable=True,
+            buckets=True,
         ),
         # Orderings with nothing to filter: a status is picked by its id or
         # category, and a tag by its id.
@@ -332,6 +333,9 @@ def build() -> Dataset:
         model=Task,
         tool=Tool.project,
         name_override="tasks",
-        fields=derive_fields(Task, internal=_INTERNAL) + _computed(),
+        fields=derive_fields(
+            Task, internal=_INTERNAL, descending=frozenset({"priority"})
+        )
+        + _computed(),
         relations=_RELATIONS,
     )
