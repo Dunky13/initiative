@@ -18,14 +18,6 @@
     "showsAgain_other": "shows {{count}} more times",
     "zoomImage": "View this picture full size"
   },
-  "update": {
-    "title": "Version {{version}} is available",
-    "whatsNew": "What's new",
-    "noDetailedChanges": "No detailed changes were listed for this release.",
-    "viewAllChanges": "View all changes",
-    "later": "Later",
-    "reloadNow": "Reload now"
-  },
   "operator": {
     "subtitle": "Notices shown to people using this deployment. Each one is shown once and remembered per person.",
     "new": "New announcement",

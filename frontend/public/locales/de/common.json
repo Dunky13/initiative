@@ -329,6 +329,12 @@
     "title": "Seite nicht gefunden",
     "description": "Unter dieser Adresse gibt es nichts. Der Link ist vielleicht falsch geschrieben, oder die Seite wurde verschoben."
   },
+  "appUpdate": {
+    "ready": "Version {{version}} ist bereit. Lade neu, um sie zu verwenden.",
+    "reload": "Neu laden",
+    "updated": "Auf Version {{version}} aktualisiert.",
+    "whatsNew": "Was ist neu"
+  },
   "nativeUpdate": {
     "unsigned": "Das Update dieses Servers wurde nicht von Initiative veröffentlicht, deshalb bleibt die App auf Version {{version}}.",
     "desktopReady": "Initiative hat das Update heruntergeladen. Starte neu, um es abzuschließen.",
