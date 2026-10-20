@@ -112,7 +112,7 @@ HOME_WIDGET_SPECS: dict[str, HomeWidgetSpec] = {
     "greeting": HomeWidgetSpec(4, 2, single=True, options={"yonder": _boolean}),
     "gettingStarted": HomeWidgetSpec(4, 4, single=True),
     "focus": HomeWidgetSpec(4, 3, single=True),
-    "tasks": HomeWidgetSpec(5, 5, single=True),
+    "tasks": HomeWidgetSpec(5, 5),
     "comingUp": HomeWidgetSpec(3, 4, options={"days": _one_of(3, 7, 14, 30)}),
     "calendar": HomeWidgetSpec(5, 7, single=True),
     "recent": HomeWidgetSpec(

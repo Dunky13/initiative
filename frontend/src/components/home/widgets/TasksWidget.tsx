@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
+import type { ColumnVisibilityState } from "@tanstack/react-table";
 import { Inbox, SquareCheckBig } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type TaskListRead, Tool } from "@/api/generated/initiativeAPI.schemas";
@@ -49,14 +50,17 @@ const MY_TASKS_LAYOUTS = ["table", "calendar"] as const;
 /**
  * The reader's tasks from every community, as a table or a calendar: what the
  * My Tasks page was, now one widget of the home page. Its view — layout,
- * filters, sort, grouping, columns — is the reader's own and kept where My
- * Tasks kept it, so nobody's table changed when the page became a widget.
+ * sort, grouping — is the reader's own and kept where My Tasks kept it, so
+ * nobody's table changed when the page became a widget. Its filters and
+ * columns are the widget's own, so two of them can show different tasks, or
+ * the same ones two ways; one that has never had them changed shows the ones
+ * My Tasks kept.
  *
  * Its own options name a list to add to, which puts a line for a new task at
  * the top; a reader with nothing assigned yet is told what lands here, and
  * offered that line, rather than shown an empty table.
  */
-export const TasksWidget = ({ options, onConfigure }: HomeWidgetProps) => {
+export const TasksWidget = ({ options, onOptionsChange, onConfigure }: HomeWidgetProps) => {
   const { t } = useTranslation(["tasks", "dates", "common", "projects", "home"]);
 
   const { communities } = useCommunities();
@@ -74,7 +78,10 @@ export const TasksWidget = ({ options, onConfigure }: HomeWidgetProps) => {
   const [calendarFocusDate, setCalendarFocusDate] = useState(() => new Date());
   const weekStartsOn = (user?.week_starts_on ?? 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-  const table = useGlobalTasksTable();
+  const table = useGlobalTasksTable({
+    stored: options.filters,
+    onChange: (filters) => onOptionsChange({ ...options, filters }),
+  });
   const focus = useFocusPreferences();
   const list = listOf(options);
   // Offered only while the list is there to add to.
@@ -115,8 +122,8 @@ export const TasksWidget = ({ options, onConfigure }: HomeWidgetProps) => {
     () => [...fields.values()].filter((field) => field.source === "property").map(({ id }) => id),
     [fields]
   );
-  const { columns: keptColumns, setColumns: setColumnVisibility, setGrouping } = view;
-  const tableState = { grouping: view.grouping };
+  const { setGrouping } = view;
+  const keptColumns = columnsOf(options) ?? view.columns;
   // A column they never chose about is shown, but for the date window, the
   // community ("guild", the id the stored state is keyed by) and properties.
   const effectiveColumnVisibility = useMemo(() => {
@@ -126,6 +133,14 @@ export const TasksWidget = ({ options, onConfigure }: HomeWidgetProps) => {
     }
     return next;
   }, [keptColumns, propertyHiddenIds]);
+  const setColumnVisibility = useCallback(
+    (next: ColumnVisibilityState | ((prev: ColumnVisibilityState) => ColumnVisibilityState)) =>
+      onOptionsChange({
+        ...options,
+        columns: typeof next === "function" ? next(effectiveColumnVisibility) : next,
+      }),
+    [onOptionsChange, options, effectiveColumnVisibility]
+  );
 
   const columns = useMemo(
     () =>
@@ -300,12 +315,12 @@ export const TasksWidget = ({ options, onConfigure }: HomeWidgetProps) => {
                 groupingOptions={groupingOptions}
                 columnVisibility={effectiveColumnVisibility}
                 onColumnVisibilityChange={setColumnVisibility}
+                // Sort and grouping are shared by every tasks widget on the
+                // page, so each table follows them rather than its own copy.
+                grouping={view.grouping}
                 onGroupingChange={setGrouping}
-                initialState={{
-                  grouping: tableState.grouping,
-                  expanded: true,
-                }}
-                initialSorting={table.initialSorting}
+                initialState={{ expanded: true }}
+                sorting={table.initialSorting}
                 enableFilterInput
                 filterInputColumnKey="title"
                 filterInputPlaceholder={t("filters.filterPlaceholder")}
@@ -357,6 +372,15 @@ const listOf = (options: Record<string, unknown>): HomeTaskList | null => {
     typeof list.projectId === "number"
     ? { communityId: list.communityId, initiativeId: list.initiativeId, projectId: list.projectId }
     : null;
+};
+
+/** The columns this widget shows and hides, once its reader has chosen any. */
+const columnsOf = (options: Record<string, unknown>): ColumnVisibilityState | null => {
+  const columns = options.columns;
+  if (!columns || typeof columns !== "object" || Array.isArray(columns)) return null;
+  return Object.fromEntries(
+    Object.entries(columns).filter(([, shown]) => typeof shown === "boolean")
+  ) as ColumnVisibilityState;
 };
 
 /** How many lists the picker asks for at a time; typing narrows on the server. */

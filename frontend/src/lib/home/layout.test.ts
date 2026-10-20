@@ -41,11 +41,12 @@ describe("readHomeLayout", () => {
         { type: "clock", grid: { x: 0, y: 0, w: 4, h: 4 } },
         { id: "tasks", type: "clock", grid: { x: 0, y: 0, w: 4, h: 4 } },
         // A second copy of a widget that may appear once.
-        { id: "tasks-2", type: "tasks", grid: { x: 0, y: 20, w: 12, h: 10 } },
+        { id: "focus", type: "focus", grid: { x: 0, y: 20, w: 12, h: 5 } },
+        { id: "focus-2", type: "focus", grid: { x: 0, y: 25, w: 12, h: 5 } },
         "garbage",
       ],
     });
-    expect(layout?.widgets.map((widget) => widget.id)).toEqual(["tasks"]);
+    expect(layout?.widgets.map((widget) => widget.id)).toEqual(["tasks", "focus"]);
   });
 
   it("fits every grid to the canvas and the widget's minimum", () => {
@@ -98,10 +99,19 @@ describe("addWidget", () => {
   });
 
   it("adds a once-only widget only once", () => {
-    const start = layoutOf({ id: "tasks", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } });
-    expect(canAddWidget(start, "tasks")).toBe(false);
-    expect(addWidget(start, "tasks")).toBe(start);
+    const start = layoutOf({ id: "focus", type: "focus", grid: { x: 0, y: 0, w: 12, h: 5 } });
+    expect(canAddWidget(start, "focus")).toBe(false);
+    expect(addWidget(start, "focus")).toBe(start);
     expect(canAddWidget(start, "clock")).toBe(true);
+  });
+
+  it("adds a second tasks widget beside the first", () => {
+    const start = layoutOf({ id: "tasks", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } });
+    expect(canAddWidget(start, "tasks")).toBe(true);
+    expect(addWidget(start, "tasks").widgets.map((widget) => widget.id)).toEqual([
+      "tasks",
+      "tasks-2",
+    ]);
   });
 
   it("stops marking the page as a starting layout once it changes", () => {

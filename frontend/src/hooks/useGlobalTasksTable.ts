@@ -97,7 +97,16 @@ export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
 
 const PAGE_SIZE = 20;
 
-export function useGlobalTasksTable() {
+/** Filters kept somewhere of the caller's own (a home widget's options) in
+ *  place of the reader's view. */
+export interface OwnTaskFilters {
+  /** What was kept, or `undefined` while nothing has been: the reader's view
+   *  shows until then. */
+  stored: unknown;
+  onChange: (next: TaskFilterSpec) => void;
+}
+
+export function useGlobalTasksTable(own?: OwnTaskFilters) {
   const { t } = useTranslation(["tasks", "dates", "common"]);
   const { activeCommunityId } = useCommunities();
   const localQueryClient = useQueryClient();
@@ -109,10 +118,19 @@ export function useGlobalTasksTable() {
   // --- This person's view of My Tasks: their filters and the table's sort ---
   const view = useListView(MY_TASKS_VIEW);
   const preferencesLoaded = view.loaded;
-  const filters = view.filters;
+  const ownStored = own?.stored;
+  const ownFilters = useMemo(
+    () => (ownStored !== undefined ? readMyTasksFilters(ownStored) : null),
+    [ownStored]
+  );
+  const filters = ownFilters ?? view.filters;
   const sorting = useMemo(() => taskSortFields(view.sorting), [view.sorting]);
   const { setFilters: keepFilters, setSorting: keepSorting } = view;
-  const setFilters = useCallback((next: TaskFilterSpec) => keepFilters(next), [keepFilters]);
+  const keepOwn = own?.onChange;
+  const setFilters = useCallback(
+    (next: TaskFilterSpec) => (keepOwn ? keepOwn(next) : keepFilters(next)),
+    [keepOwn, keepFilters]
+  );
 
   // Closed until asked for. The filter button carries a count of what's set, so
   // a narrowed list still says so with the panel shut.
@@ -128,8 +146,12 @@ export function useGlobalTasksTable() {
       : filters.status_categories,
   });
 
-  /** Back to what someone who narrowed nothing sees. */
-  const clearFilters = useCallback(() => keepFilters(null), [keepFilters]);
+  /** Back to what someone who narrowed nothing sees. Kept filters of the
+   *  caller's own say so outright, rather than falling back to the view's. */
+  const clearFilters = useCallback(
+    () => (keepOwn ? keepOwn(FILTER_DEFAULTS) : keepFilters(null)),
+    [keepOwn, keepFilters]
+  );
 
   // --- Pagination state ---
   const [page, setPageState] = useState(() => searchParams.page ?? 1);

@@ -31,7 +31,7 @@ export interface HomeWidgetSize {
   minW: number;
   minH: number;
   /** At most one on a page: the widget keeps its state in one place of the
-   *  reader's own (the tasks table's view, the focus card's pins). */
+   *  reader's own (the calendar's view, the focus card's pins). */
   single?: boolean;
 }
 
@@ -39,7 +39,8 @@ export const HOME_WIDGET_SIZES: Record<HomeWidgetType, HomeWidgetSize> = {
   greeting: { w: 12, h: 2, minW: 4, minH: 2, single: true },
   gettingStarted: { w: 12, h: 5, minW: 4, minH: 4, single: true },
   focus: { w: 12, h: 5, minW: 4, minH: 3, single: true },
-  tasks: { w: 12, h: 10, minW: 5, minH: 5, single: true },
+  // Each keeps its own columns; the filters and sort are the reader's, shared.
+  tasks: { w: 12, h: 10, minW: 5, minH: 5 },
   comingUp: { w: 4, h: 8, minW: 3, minH: 4 },
   // One calendar view and one set of filters, the reader's own, as on My Calendar.
   calendar: { w: 12, h: 11, minW: 5, minH: 7, single: true },
