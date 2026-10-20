@@ -14,6 +14,7 @@ export const CalendarWidget = () => {
   const { t } = useTranslation("home");
   return (
     <MyCalendar
+      framed={false}
       frame={({ filters, body }) => (
         <HomeWidgetCard
           icon={CalendarDays}

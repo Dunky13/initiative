@@ -85,7 +85,7 @@ export const GreetingWidget = ({ options }: HomeWidgetProps) => {
         </div>
       ) : null}
       <div className="flex min-w-0 flex-col justify-center gap-2">
-        <h2 className="truncate font-semibold text-2xl tracking-tight sm:text-3xl">
+        <h2 className="text-balance break-words font-semibold text-2xl tracking-tight sm:text-3xl">
           {isNew
             ? t("widgets.greeting.welcome", { name })
             : t(`widgets.greeting.${partOfDay(now.getHours())}`, { name })}
