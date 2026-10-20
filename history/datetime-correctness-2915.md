@@ -249,7 +249,7 @@ Fresh `dev` at `c3a6d27bd2517b17e83be76c829be3fb142ff604` contains the shared
 anchor helper, pure next-date lookup and conditional row normalization. It also
 contains the equivalent dependency fix in upstream commit
 [`f5893a1b4`](https://github.com/beyonders-studio/initiative/commit/f5893a1b46a940ad6f27b97917046323f5b48126).
-The installed version and lockfile integrity match the locally validated patch
+The locked version and integrity match the locally validated patch
 exactly, so no follow-up PR was needed. The independently validated patch and
 its evidence remain published in the working branch.
 
