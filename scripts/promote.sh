@@ -19,6 +19,7 @@ DRY_RUN=false
 AUTO_CONFIRM=false
 FORCE_NATIVE=false   # force MIN_NATIVE_VERSION bump even if no native change is detected
 CLEANUP_BRANCH=""
+CLEANUP_REMOTE=""      # a release branch pushed before its pull request opened
 ALEMBIC_HEAD=""        # resolved by resolve_migration_freeze
 FROZEN_MIGRATION=""     # RELEASED_MIGRATION as it stands, same
 ALLOWED_OWNERS=("jordandrako" "LeeJMorel")
@@ -31,6 +32,10 @@ info() { echo -e "${GREEN}$*${NC}"; }
 dim()  { echo -e "${DIM}$*${NC}"; }
 
 cleanup() {
+    if [[ -n "$CLEANUP_REMOTE" ]]; then
+        warn "Removing $CLEANUP_REMOTE from origin, since its pull request was not opened..."
+        git push origin --delete "$CLEANUP_REMOTE" 2>/dev/null || true
+    fi
     if [[ -n "$CLEANUP_BRANCH" ]]; then
         warn "Cleaning up branch $CLEANUP_BRANCH..."
         git cherry-pick --abort 2>/dev/null || true
@@ -39,6 +44,19 @@ cleanup() {
     fi
 }
 trap cleanup EXIT INT TERM
+
+# A release branch left on origin by a release whose pull request was closed
+# without merging would refuse this run's push. One with an open pull request is
+# a release in progress, and stops the run.
+clear_stale_release_branch() {
+    local branch="$1"
+    git ls-remote --exit-code --heads origin "$branch" &>/dev/null || return 0
+    local open
+    open=$(gh pr list --head "$branch" --state open --json url -q '.[0].url')
+    [[ -n "$open" ]] && die "$branch already has an open pull request: $open"
+    warn "  $branch is left on origin from a release that never merged; deleting it"
+    git push origin --delete "$branch" || die "Could not delete the stale $branch from origin"
+}
 
 confirm() {
     if $AUTO_CONFIRM; then return 0; fi
@@ -588,6 +606,7 @@ do_release() {
     confirm "Create release branch, bump version, and open PR?" || { echo "Aborted."; exit 0; }
 
     local branch="release/v$new_version"
+    clear_stale_release_branch "$branch"
     CLEANUP_BRANCH="$branch"
 
     git checkout -b "$branch" origin/dev
@@ -611,6 +630,7 @@ do_release() {
 
     git push -u origin "$branch"
     CLEANUP_BRANCH=""
+    CLEANUP_REMOTE="$branch"
 
     local pr_url
     pr_url=$(gh pr create \
@@ -631,6 +651,7 @@ Tag \`v$new_version\` will be created automatically, triggering Docker build + G
 EOF
 )")
 
+    CLEANUP_REMOTE=""
     info "PR created: $pr_url"
     echo ""
     info "After merge:"
@@ -836,6 +857,7 @@ do_cherry_pick() {
 
     confirm "Cherry-pick ${#CHERRY_SHAS[@]} commit(s) to main via '$branch'?" || { echo "Aborted."; exit 0; }
 
+    if [[ "$branch" == release/v* ]]; then clear_stale_release_branch "$branch"; fi
     CLEANUP_BRANCH="$branch"
     git checkout -b "$branch" origin/main
 
@@ -891,6 +913,7 @@ do_cherry_pick() {
 
     git push -u origin "$branch"
     CLEANUP_BRANCH=""
+    if [[ "$branch" == release/v* ]]; then CLEANUP_REMOTE="$branch"; fi
 
     local title="Hotfix: cherry-pick to main"
     [[ -n "$new_version" ]] && title="Hotfix v$new_version"
@@ -910,6 +933,7 @@ $(if [[ -n "$new_version" ]]; then echo -e "\n## Version\nBumped to **v$new_vers
 EOF
 )")
 
+    CLEANUP_REMOTE=""
     info "PR created: $pr_url"
     git checkout dev
 }

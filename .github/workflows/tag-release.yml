@@ -93,3 +93,54 @@ jobs:
             --title "Merge main back into dev after $TAG" \
             --body "Automated PR to sync \`main\` back into \`dev\` after release $TAG." \
             --label "sync"
+
+  # A release pull request closed without merging leaves its branch, which the
+  # next run of the release for that version would refuse to push over. The
+  # candidate still building from it is cancelled, and the branch deleted.
+  discard:
+    if: >-
+      github.event.pull_request.merged == false
+      && startsWith(github.event.pull_request.head.ref, 'release/v')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Cancelling the branch's runs.
+      actions: write
+
+    steps:
+      # Release branches can be deleted only by the release app (the
+      # ruleset's bypass), so the deletion goes through its token.
+      - name: Get the release app's token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Cancel the branch's runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          for status in queued in_progress; do
+            gh api "repos/$REPO/actions/runs?branch=$BRANCH&status=$status" \
+              -q '.workflow_runs[].id' \
+              | xargs -r -I{} gh api -X POST "repos/$REPO/actions/runs/{}/cancel" || true
+          done
+
+      - name: Delete the branch
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$REPO/git/ref/heads/$BRANCH" --silent 2>/dev/null; then
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"
+            echo "Deleted $BRANCH."
+          else
+            echo "$BRANCH is already gone."
+          fi
