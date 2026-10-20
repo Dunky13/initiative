@@ -561,7 +561,12 @@ describe("ExportWizard", () => {
           ids: [3],
           formats: TOOL_EXPORT_FORMATS[Tool.project] ?? [],
           filenameStem: "projects",
-          content: { tasks, taskSorting, taskStatuses: buildDefaultTaskStatuses(3) },
+          content: {
+            tasks,
+            taskSorting,
+            taskColumns: ["title", "priority"],
+            taskStatuses: buildDefaultTaskStatuses(3),
+          },
         }}
         open
         onOpenChange={() => {}}
@@ -579,6 +584,7 @@ describe("ExportWizard", () => {
       tasks: {
         conditions: JSON.stringify(taskSpecConditions(tasks)),
         sorting: JSON.stringify(taskSorting),
+        columns: ["title", "priority"],
         include_archived: true,
       },
     });
