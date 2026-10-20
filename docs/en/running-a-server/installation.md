@@ -96,12 +96,11 @@ To go back to one URL, point `DATABASE_URL` at the owner, delete the other three
 
 ## Running as a specific user (PUID / PGID)
 
-The container **starts as root** so it can create its runtime user and fix file ownership on the uploads volume, then drops privileges and runs the app unprivileged (UID/GID `1000:1000` by default).
+By default the container **starts as root** so it can create its runtime user and fix file ownership on the uploads volume, then drops privileges and runs the app unprivileged (UID/GID `1000:1000` by default).
 
-To run as a different user — for example, to match the account that owns the uploads folder on a NAS — set **`PUID`** and **`PGID`**.
+To run as a different user — for example, to match the account that owns the uploads folder on a NAS — set **`PUID`** and **`PGID`**. (Setting them to `0`/root is rejected.)
 
-!!! warning "Don't override the container's user directly"
-    Don't add a Docker `user:` (Compose) or `--user` (run) override — that starts the entrypoint as non-root and it can't create the runtime user, failing with `fatal: Only root may add a user or group to the system`. Use `PUID`/`PGID` instead. (Setting them to `0`/root is rejected.)
+You can also start the container as a non-root user from the outset, with Docker's `user:` (Compose) or `--user` (run), or a Kubernetes `runAsUser`. It then runs as that user and does nothing as root: `PUID` and `PGID` are ignored, and nothing is chowned, so the uploads folder must already be writable by that user (on Kubernetes, give the pod an `fsGroup`).
 
 ## Docker images
 

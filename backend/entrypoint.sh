@@ -6,6 +6,16 @@ set -e
 # persists the old container's env on upgrade, clobbering the image's ENV PATH).
 export PATH="/app/.venv/bin:$PATH"
 
+# Started as non-root: the runtime has already chosen who this runs as (a
+# Kubernetes runAsUser, a Docker `--user`), and only root could switch to
+# anyone else. So there is no user to create and nothing to chown; PUID and
+# PGID do not apply. Whatever the app writes to, such as /app/uploads, has to
+# be writable by that user already: a Kubernetes fsGroup, or a bind mount
+# the same user owns.
+if [ "$(id -u)" -ne 0 ]; then
+    exec "$@"
+fi
+
 # Default to UID/GID 1000 if not specified
 APP_UID="${PUID:-1000}"
 APP_GID="${PGID:-1000}"
