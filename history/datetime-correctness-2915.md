@@ -5,8 +5,12 @@ Issue: <https://github.com/beyonders-studio/initiative/issues/2915>
 The investigation started after the **valid date/time review on PR #2912**:
 <https://github.com/beyonders-studio/initiative/pull/2912#pullrequestreview-5588710237>.
 That review prompted a wider audit; these findings are not attributed to that PR.
-Its review response is handled separately. This change delivers the audit fixes in
-one PR targeting `dev`; merge, release and deployment are outside this handoff.
+Its review response is handled separately. The audit fixes were delivered in
+[PR #2917](https://github.com/beyonders-studio/initiative/pull/2917), targeting
+`dev`. LeeJMorel merged it on 2026-10-20 at 20:22:49 UTC as
+`98459a81f613d0eef97b70faaab406f8cbbfc0d3`, closing issue #2915. The merged
+changes include both maintainer review fixes from `b90e8068c`. Release and
+production deployment remain outside this task.
 
 ## Finding-to-regression map
 
@@ -238,6 +242,24 @@ pnpm install --frozen-lockfile
 pnpm exec vitest run src/api --maxWorkers=2
 pnpm exec vite build
 ```
+
+## Final upstream verification
+
+Fresh `dev` at `c3a6d27bd2517b17e83be76c829be3fb142ff604` contains the shared
+anchor helper, pure next-date lookup and conditional row normalization. It also
+contains the equivalent dependency fix in upstream commit
+[`f5893a1b4`](https://github.com/beyonders-studio/initiative/commit/f5893a1b46a940ad6f27b97917046323f5b48126).
+The installed version and lockfile integrity match the locally validated patch
+exactly, so no follow-up PR was needed. The independently validated patch and
+its evidence remain published in the working branch.
+
+On that exact `dev` commit, both
+[dependency/configuration/secret scanning](https://github.com/beyonders-studio/initiative/actions/runs/39492463441/job/118870299636)
+and [runtime-image scanning](https://github.com/beyonders-studio/initiative/actions/runs/39492463441/job/118870299907)
+passed. The [general CI run](https://github.com/beyonders-studio/initiative/actions/runs/39492463660)
+was still pending when this handoff was finalized. The local tests above record
+the audit/review branch's validation; they do not claim local validation of all
+subsequent upstream changes.
 
 ## Reproducible checks
 
