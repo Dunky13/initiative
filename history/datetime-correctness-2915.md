@@ -204,6 +204,41 @@ PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
   app/db/task_recurrence_anchor_migration_test.py --tb=short -q
 ```
 
+## Dependency security CI follow-up
+
+The [security scan on the maintainer-fix head](https://github.com/beyonders-studio/initiative/actions/runs/39491006587/job/118863870024)
+flagged `follow-redirects` 1.16.0, reached through Axios in
+`frontend/pnpm-lock.yaml`. The upstream advisories
+[CVE-2026-111755](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-8r9p-f939-6h3c)
+and [CVE-2026-111756](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-q3jh-wrc6-jgq8)
+both identify 1.16.1 as patched. The generated lockfile update changes only
+that package version, integrity and Axios reference; direct dependency ranges
+and security scan policy are unchanged.
+
+The lockfile was regenerated from `frontend` with the pinned pnpm version:
+
+```sh
+pnpm update follow-redirects --depth Infinity --no-save --lockfile-only
+```
+
+Trivy **0.70.0**, matching CI's version and filesystem flags, scanned tracked
+source snapshots with vulnerability, secret and misconfiguration scanning,
+HIGH/CRITICAL severity and `ignore-unfixed`. The original snapshot reproduced
+the two CVEs; replacing only the frontend lockfile produced **zero** findings
+under that policy. The scan kept the checkout's ignored environment files out
+of its input, matching CI's tracked source.
+
+A frozen installation confirmed Axios resolves `follow-redirects` 1.16.1.
+All **50 tests in the three API-client suites** passed and the production Vite
+bundle built:
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm exec vitest run src/api --maxWorkers=2
+pnpm exec vite build
+```
+
 ## Reproducible checks
 
 Run from the repository root with the documented dependencies and PostgreSQL

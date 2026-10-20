@@ -242,6 +242,32 @@ PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
   app/api/v1/tenant_endpoints/calendar_entries_test.py \
   app/db/task_recurrence_anchor_migration_test.py --tb=short -q
 </code></pre>
+<h2>Dependency security CI follow-up</h2>
+<p>The <a href="https://github.com/beyonders-studio/initiative/actions/runs/39491006587/job/118863870024">security scan on the maintainer-fix head</a>
+flagged <code>follow-redirects</code> 1.16.0, reached through Axios in
+<code>frontend/pnpm-lock.yaml</code>. The upstream advisories
+<a href="https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-8r9p-f939-6h3c">CVE-2026-111755</a>
+and <a href="https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-q3jh-wrc6-jgq8">CVE-2026-111756</a>
+both identify 1.16.1 as patched. The generated lockfile update changes only
+that package version, integrity and Axios reference; direct dependency ranges
+and security scan policy are unchanged.</p>
+<p>The lockfile was regenerated from <code>frontend</code> with the pinned pnpm version:</p>
+<pre><code class="language-sh">pnpm update follow-redirects --depth Infinity --no-save --lockfile-only
+</code></pre>
+<p>Trivy <strong>0.70.0</strong>, matching CI's version and filesystem flags, scanned tracked
+source snapshots with vulnerability, secret and misconfiguration scanning,
+HIGH/CRITICAL severity and <code>ignore-unfixed</code>. The original snapshot reproduced
+the two CVEs; replacing only the frontend lockfile produced <strong>zero</strong> findings
+under that policy. The scan kept the checkout's ignored environment files out
+of its input, matching CI's tracked source.</p>
+<p>A frozen installation confirmed Axios resolves <code>follow-redirects</code> 1.16.1.
+All <strong>50 tests in the three API-client suites</strong> passed and the production Vite
+bundle built:</p>
+<pre><code class="language-sh">cd frontend
+pnpm install --frozen-lockfile
+pnpm exec vitest run src/api --maxWorkers=2
+pnpm exec vite build
+</code></pre>
 <h2>Reproducible checks</h2>
 <p>Run from the repository root with the documented dependencies and PostgreSQL
 test environment configured. The pre-push hook executes the same quality checks
