@@ -113,10 +113,14 @@ class BillingCommunityNoticeKind(str, Enum):
 
     trial_ending = "trial_ending"
     trial_ended = "trial_ended"
+    #: The plan is paused, and the community goes on hold on ``day`` unless it
+    #: is resumed. Sent from the pause on, and again as the day nears.
+    pause_reminder = "pause_reminder"
 
 
 #: The sources that send a community notice. Only Paddle's, for now: a trial
-#: is Paddle's, and billing times its notices off the dates Paddle reports.
+#: and a pause are Paddle's, and billing times its notices off the dates Paddle
+#: reports.
 _NOTICE_SOURCES = frozenset({BillingSource.paddle_webhook})
 
 
@@ -137,7 +141,9 @@ class BillingCommunityNotice(SanitizedBaseModel):
     source: BillingSource
     kind: BillingCommunityNoticeKind
     recipient_user_ref: Optional[str] = Field(default=None, max_length=REF_MAX_LENGTH)
-    trial_ends_on: date
+    #: The day the notice is about: the trial's end, or the day a paused
+    #: community goes on hold.
+    day: date
 
     @model_validator(mode="after")
     def _source_sends_notices(self) -> "BillingCommunityNotice":

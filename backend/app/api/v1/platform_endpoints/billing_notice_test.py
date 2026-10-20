@@ -77,7 +77,7 @@ async def _notice(guild_id: int, **fields) -> dict:
         "source": fields.pop("source", "paddle_webhook"),
         "kind": fields.pop("kind", "trial_ending"),
         "recipient_user_ref": fields.pop("recipient_user_ref", None),
-        "trial_ends_on": fields.pop("trial_ends_on", "2026-10-08"),
+        "day": fields.pop("day", "2026-10-08"),
         **fields,
     }
 
@@ -95,6 +95,7 @@ async def _told(session: AsyncSession, user_id: int) -> list[Notification]:
                         [
                             NotificationType.community_trial_ending,
                             NotificationType.community_trial_ended,
+                            NotificationType.community_pause_reminder,
                         ]
                     ),
                 )
@@ -304,6 +305,36 @@ async def test_a_deleted_or_suspended_community_is_recorded_and_told_nothing(
     ).all() == ["evt-gone"]
 
 
+async def test_a_paused_plan_is_told_when_it_goes_on_hold(
+    client: AsyncClient, session: AsyncSession, letters
+):
+    """A pause reminder names the day the community goes on hold, and its
+    button leads to the plan, where it is resumed."""
+    guild_id, owner_id, _, _, _ = await _community(session)
+    owner_ref = await identity_refs.billing_ref(IdentityEntity.user, owner_id)
+
+    response = await _post(
+        client,
+        "community-notice",
+        await _notice(
+            guild_id,
+            kind="pause_reminder",
+            day="2027-04-17",
+            recipient_user_ref=owner_ref,
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    (line,) = await _told(session, owner_id)
+    assert line.type == NotificationType.community_pause_reminder
+    assert line.data["holds_on"] == "2027-04-17"
+    (letter,) = letters
+    pieces = letter["pieces"]
+    assert pieces.subject == "Acme's plan is paused until you resume it"
+    assert "17 April 2027" in pieces.body
+    assert pieces.link.endswith(f"/c/{guild_id}/billing?page=manage")
+
+
 @pytest.mark.parametrize(
     ("fields", "code"),
     [
@@ -311,7 +342,7 @@ async def test_a_deleted_or_suspended_community_is_recorded_and_told_nothing(
         ({"kind": "trial_ending", "message": "free text"}, None),
         ({"source": "platinum_invoice"}, "BILLING_NOTICE_SOURCE_NOT_ALLOWED"),
         ({"source": "made_up"}, "BILLING_INVALID_PAYLOAD"),
-        ({"trial_ends_on": "soon"}, "BILLING_INVALID_PAYLOAD"),
+        ({"day": "soon"}, "BILLING_INVALID_PAYLOAD"),
         ({"event_id": "x" * 129}, "BILLING_INVALID_PAYLOAD"),
     ],
 )
@@ -377,7 +408,7 @@ async def test_an_unknown_community_is_404_and_consumes_nothing(
         "source": "paddle_webhook",
         "kind": "trial_ending",
         "recipient_user_ref": None,
-        "trial_ends_on": "2026-10-08",
+        "day": "2026-10-08",
     }
     response = await _post(client, "community-notice", payload)
     assert response.status_code == 404

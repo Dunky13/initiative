@@ -7554,6 +7554,7 @@ export const NotificationType = {
   community_on_hold: "community_on_hold",
   community_trial_ending: "community_trial_ending",
   community_trial_ended: "community_trial_ended",
+  community_pause_reminder: "community_pause_reminder",
   community_welcome: "community_welcome",
   connection_requested: "connection_requested",
   connection_accepted: "connection_accepted",

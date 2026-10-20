@@ -177,11 +177,11 @@ async def community_notice(
         async with cohorts.system_session(guild_id) as system_session:
             if await billing_service.event_claimed(system_session, payload.event_id):
                 return BillingCommunityNoticeRead(delivered=False)
-            delivered = await guilds_service.queue_trial_notice(
+            delivered = await guilds_service.queue_billing_notice(
                 system_session,
                 guild_id,
                 kind=payload.kind.value,
-                trial_ends_on=payload.trial_ends_on,
+                day=payload.day,
                 owner_user_id=owner_user_id,
             )
     except Exception as exc:

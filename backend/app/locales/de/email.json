@@ -449,6 +449,12 @@
     "body": "Die Testphase von <strong>{{community}}</strong> ist beendet, und die Community ist jetzt schreibgeschützt. Wähle im Abrechnungsportal einen Tarif, um weiter bearbeiten zu können. Es wurde nichts gelöscht.",
     "buttonLabel": "Tarif wählen"
   },
+  "communityPauseReminder": {
+    "subject": "Der Tarif von {{community}} ruht, bis du ihn fortsetzt",
+    "title": "Der Tarif von {{community}} ruht",
+    "body": "Der Tarif von <strong>{{community}}</strong> ruht. Die Mitglieder können weiterhin alles lesen und exportieren, aber nichts Neues hinzufügen, und es wird nichts abgerechnet. Setze den Tarif vor dem <strong>{{date}}</strong> fort, um die Community zu behalten: Danach wird sie pausiert und später gelöscht, sofern ihr Tarif nicht wiederhergestellt wird.",
+    "buttonLabel": "Tarif fortsetzen"
+  },
   "communityWelcome": {
     "subject": "{{community}} ist bereit",
     "title": "{{community}} ist bereit",

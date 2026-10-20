@@ -449,6 +449,12 @@
     "body": "<strong>{{community}}</strong>'s trial has ended and the community is now read-only. Choose a plan in the billing portal to keep editing. Nothing has been deleted.",
     "buttonLabel": "Choose a plan"
   },
+  "communityPauseReminder": {
+    "subject": "{{community}}'s plan is paused until you resume it",
+    "title": "{{community}}'s plan is paused",
+    "body": "<strong>{{community}}</strong>'s plan is paused. Its members can still read and export everything, but nothing new can be added, and nothing is billed. Resume the plan before <strong>{{date}}</strong> to keep the community: after that it goes on hold, and it is deleted later unless its plan is restored.",
+    "buttonLabel": "Resume the plan"
+  },
   "communityWelcome": {
     "subject": "{{community}} is ready",
     "title": "{{community}} is ready",

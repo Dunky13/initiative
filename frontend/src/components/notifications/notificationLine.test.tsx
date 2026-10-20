@@ -96,6 +96,12 @@ describe("notificationText — account notices", () => {
     expect(notificationText(notice("community_trial_ended", { community: "Acme" }), t)).toContain(
       "notifications.communityTrialEnded"
     );
+    const paused = notificationText(
+      notice("community_pause_reminder", { community: "Acme", holds_on: "2027-04-17" }),
+      t
+    );
+    expect(paused).toContain("notifications.communityPauseReminder(");
+    expect(paused).toContain("2027");
     expect(notificationText(notice("community_welcome", { community: "Acme" }), t)).toBe(
       'notifications.communityWelcome({"community":"Acme"})'
     );
@@ -113,6 +119,12 @@ describe("notificationText — account notices", () => {
       expect(notificationText(notice("community_trial_ended", { community: "Acme" }), t)).toBe(
         'notifications.communityTrialEndedInApp({"community":"Acme"})'
       );
+      expect(
+        notificationText(
+          notice("community_pause_reminder", { community: "Acme", holds_on: "2027-04-17" }),
+          t
+        )
+      ).toContain("notifications.communityPauseReminderInApp(");
       expect(notificationText(notice("community_welcome", { community: "Acme" }), t)).toBe(
         'notifications.communityWelcomeInApp({"community":"Acme"})'
       );
