@@ -41,7 +41,9 @@ _OLD_VIEW = {
             "grouping": ["tag group"],
             "sorting": [{"id": "status group", "desc": False}, {"id": "title"}],
             "columns": {"date group": False, "title": True},
-        }
+        },
+        # The table's own state on a device, which 0.76 carried in as a pick.
+        "board": {"grouping": [], "filters": {"tag_ids": [3]}},
     },
 }
 _NEW_VIEW = {
@@ -51,7 +53,8 @@ _NEW_VIEW = {
             "grouping": ["tag_ids group"],
             "sorting": [{"id": "task_status_id group", "desc": False}, {"id": "title"}],
             "columns": {"date_group group": False, "title": True},
-        }
+        },
+        "board": {"filters": {"tag_ids": [3]}},
     },
 }
 
@@ -118,8 +121,10 @@ async def test_groupings_name_their_fields_and_come_back(session) -> None:
 
     await session.run_sync(run(both(False)))
     old_view = json.loads(json.dumps(_OLD_VIEW))
-    # The older "tag group" comes back as the name it was moved to.
+    # The older "tag group" comes back as the name it was moved to, and an
+    # empty grouping stays gone.
     old_view["parts"]["table"]["grouping"] = ["tags group"]
+    del old_view["parts"]["board"]["grouping"]
     assert await stored() == (_OLD_LAYOUT, old_view)
 
 

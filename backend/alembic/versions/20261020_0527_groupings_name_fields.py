@@ -13,6 +13,11 @@ say so, and in each person's view of a project (``view:*:project:*`` in
 the view keeps its grouping, sort and column choices by, are named for the
 field: ``tags group`` (and the older ``tag group``) is ``tag_ids group``.
 
+A view that keeps an empty grouping no longer keeps one, so the list starts
+grouped as its layout says. Nearly all of those were the table's own state on
+a device, which 0.76 copied into the view as though its reader had picked
+"not grouped".
+
 The downgrade names them as they were. A grouping by a field the five ids
 had no name for, and a date's bucket, are left out.
 
@@ -111,7 +116,9 @@ def _part(part: Any, forward: bool) -> Any:
     if not isinstance(part, dict):
         return part
     out = dict(part)
-    if isinstance(part.get("grouping"), list):
+    if forward and part.get("grouping") == []:
+        del out["grouping"]
+    elif isinstance(part.get("grouping"), list):
         out["grouping"] = [_column(column, forward) for column in part["grouping"]]
     if isinstance(part.get("sorting"), list):
         out["sorting"] = [
