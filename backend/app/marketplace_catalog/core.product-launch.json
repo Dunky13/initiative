@@ -8,8 +8,8 @@
   "long_description": "A countdown that starts on the day you install it: the brief, a beta, the docs, the announcement, support, a go or no-go call, launch day itself and a retrospective two weeks after. Pick the kickoff date when you install, and every task lands in the right week.\n\nEach task belongs to product, engineering, marketing or support, so each team can filter to its own part. Move the launch and the rest is yours to drag. The template does not know about your holidays.",
   "avatar_url": "/marketplace/core-product-launch.svg",
   "images": [],
-  "version": "1.0.0",
-  "release_notes": "The first version.",
+  "version": "1.1.0",
+  "release_notes": "The table is grouped by workstream, and each card shows its workstream.",
   "definition": {
     "type": "initiative-project",
     "schema_version": 1,
@@ -397,6 +397,179 @@
             "value_text": "product"
           }
         ]
+      }
+    ],
+    "layouts": [
+      {
+        "kind": "board",
+        "definition": {
+          "card": {
+            "type": "card",
+            "children": [
+              {
+                "type": "stack",
+                "props": {
+                  "align": "start"
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "title"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "description"
+                    }
+                  },
+                  {
+                    "type": "stack",
+                    "props": {
+                      "tone": "muted"
+                    },
+                    "children": [
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "property:1"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "assignees"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "startDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "dueDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "recurrence"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "checklist"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "stack",
+                "props": {
+                  "direction": "row",
+                  "gap": "sm",
+                  "wrap": true
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "priority"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "comments"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "blockers"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "tags"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "groupings": [
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:1"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "table",
+        "definition": {
+          "columns": [
+            "title",
+            "property:1",
+            "assignees",
+            "dueDate",
+            "priority",
+            "comments"
+          ],
+          "groupings": [
+            {
+              "field": "task_status_id"
+            },
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:1"
+            }
+          ],
+          "group_by": "property:1"
+        }
       }
     ]
   }

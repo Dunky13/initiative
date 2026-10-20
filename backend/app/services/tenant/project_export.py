@@ -49,6 +49,7 @@ from app.models.tenant.task import Task, TaskStatus
 from app.schemas.tenant.project_export import (
     ProjectExportComment,
     ProjectExportEnvelope,
+    ProjectExportLayout,
     ProjectExportProject,
     ProjectExportPropertyDefinition,
     ProjectExportChecklistItem,
@@ -63,8 +64,11 @@ from app.services.import_engine.mentions import (
     markdown_mention_ids,
 )
 from app.services.import_engine.references import detach_markdown_references
+from app.core.tools import Tool
+from app.services.import_engine.common import load_initiative_properties
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
+from app.services.tenant import tool_layouts as tool_layouts_service
 
 
 async def build_project_export(
@@ -217,18 +221,59 @@ async def build_project_export(
             )
         )
 
-    definitions = await properties_service.load_definitions_by_ids(
-        session, referenced_property_ids
+    # The initiative's properties are what a layout can name besides those a
+    # value names. Each one exported is written at its place in the envelope,
+    # which is how a layout names it.
+    definitions = {
+        **{
+            definition.id: definition
+            for definition in (
+                await load_initiative_properties(
+                    session, initiative_id=project.initiative_id
+                )
+            ).values()
+        },
+        **await properties_service.load_definitions_by_ids(
+            session, referenced_property_ids
+        ),
+    }
+    property_places: dict[int, int] = {}
+
+    def property_place(property_id: int) -> Optional[int]:
+        if property_id not in definitions:
+            return None
+        return property_places.setdefault(property_id, len(property_places) + 1)
+
+    for property_id in sorted(referenced_property_ids):
+        property_place(property_id)
+    status_places = {s.id: place for place, s in enumerate(statuses_sorted, start=1)}
+    layout_rows = await tool_layouts_service.list_rows(
+        session,
+        tool_layouts_service.Target(Tool.project, project.id, project.initiative_id),
     )
+    layouts = [
+        ProjectExportLayout(
+            kind=row.kind,
+            definition=tool_layouts_service.remapped_definition(
+                row.definition,
+                tool_layouts_service.Remap(
+                    statuses=status_places.get,
+                    properties=property_place,
+                    community=False,
+                ),
+            ),
+        )
+        for row in sorted(layout_rows, key=lambda row: row.kind)
+    ]
     property_definitions = [
         ProjectExportPropertyDefinition(
-            name=definition.name,
-            type=definition.type,
-            position=definition.position,
-            color=definition.color,
-            options=definition.options,
+            name=definitions[property_id].name,
+            type=definitions[property_id].type,
+            position=definitions[property_id].position,
+            color=definitions[property_id].color,
+            options=definitions[property_id].options,
         )
-        for definition in definitions.values()
+        for property_id in property_places
     ]
 
     return ProjectExportEnvelope(
@@ -253,6 +298,7 @@ async def build_project_export(
         task_statuses=statuses,
         property_definitions=property_definitions,
         tasks=tasks,
+        layouts=layouts,
     )
 
 

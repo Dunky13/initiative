@@ -110,11 +110,14 @@ A uid or public id already published by another source — a built-in, or a regi
 
 A project listing's `definition` is the file you get from **Export** in a project's **Settings → Advanced** — the same file that imports back in. So the quickest way to write one is to build the project in Initiative, export it, and paste the file in.
 
-What installs is a new project of the installer's own, called whatever the listing is called. Three things in the file don't travel:
+What installs is a new project of the installer's own, called whatever the listing is called, laid out the way you laid yours out: its board's cards, its table's columns, its task page and the list it opens on. Four things in the file don't travel:
 
-- **People.** Assignees, attendees and person fields are left out, since the people in your community aren't the people in theirs.
+- **People.** Assignees, attendees, person fields and the people a preset picks out are left out, since the people in your community aren't the people in theirs.
+- **Plug-ins** on its layouts. The installer's community has its own, and the ones placed in their initiative show up on the new project.
 - **Links and uploads** pointing at things in your community.
 - **Dates, as dates.** They're kept as distances from each other, and the installer picks a **Start date** that the earliest one lands on. A launch plan with a deadline six weeks in stays six weeks in.
+
+Writing `layouts` by hand? A layout names a status or a property by its place in the file's own lists, counting from 1: a status id of `2` is the second of `task_statuses`, and `property:3` the third of `property_definitions`.
 
 `example` is optional, and is a second export of the same project with some work filled in: a few tasks moving through the board, so the shape makes sense at a glance. The listing's page then shows **Blank** and **Example** side by side, and the installer chooses which to start from.
 

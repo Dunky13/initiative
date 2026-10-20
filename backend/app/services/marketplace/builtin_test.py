@@ -26,6 +26,7 @@ from app.models.platform.guild import CommunityRole
 from app.models.platform.marketplace import MarketplaceListing
 from app.models.tenant.property import PropertyValue
 from app.models.tenant.task import Task
+from app.models.tenant.tool_layout import ToolLayout
 from app.services.marketplace import catalog as catalog_service
 from app.services.marketplace.builtin import (
     load_builtin_manifests,
@@ -231,13 +232,22 @@ class TestShippedManifests:
                     shipped = manifest[
                         "example" if start_from == "example" else "definition"
                     ]
+                    project_id = response.json()["result"]["entity_id"]
                     installed = await _installed_tasks(
-                        session, actor.guild.id, response.json()["result"]["entity_id"]
+                        session, actor.guild.id, project_id
                     )
                     assert installed == _listed_tasks(shipped), (
                         manifest["public_id"],
                         start_from,
                     )
+                    # An import leaves out a layout it cannot keep, so each one
+                    # listed has to land.
+                    layouts = await session.exec(
+                        select(ToolLayout.kind).where(ToolLayout.tool_id == project_id)
+                    )
+                    assert sorted(layouts.all()) == sorted(
+                        layout["kind"] for layout in shipped.get("layouts", [])
+                    ), (manifest["public_id"], start_from)
 
 
 class TestWithdrawingWhatIsNoLongerShipped:

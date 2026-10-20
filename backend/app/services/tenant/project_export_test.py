@@ -14,6 +14,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
+from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.project import Project
 from app.models.tenant.property import (
     PropertyDefinition,
@@ -21,6 +22,7 @@ from app.models.tenant.property import (
     PropertyValue,
 )
 from app.models.tenant.tag import Tag
+from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.import_envelopes import CURRENT_SCHEMA_VERSION
 from app.models.tenant.task import Task, TaskAssignee, TaskStatusCategory
 from app.services.tenant import project_export as export_service
@@ -34,6 +36,7 @@ from app.testing import (
     checklist_items,
     create_guild,
     create_guild_membership,
+    create_guild_plugin,
     create_initiative,
     create_initiative_member,
     create_project,
@@ -41,6 +44,7 @@ from app.testing import (
     create_property_value,
     create_user,
     route_as,
+    route_session_to_guild,
 )
 
 
@@ -242,6 +246,184 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
     assert pv.value_text == "high"
     assert pv.property_definition.name == "Severity"
     assert pv.property_definition.initiative_id == target_initiative.id
+
+
+async def test_a_project_brings_its_layouts(session: AsyncSession):
+    owner, assignee, guild, source_initiative, project = await _seed_populated_project(
+        session
+    )
+    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    todo, done = (
+        next(s for s in statuses if s.category == category)
+        for category in (TaskStatusCategory.todo, TaskStatusCategory.done)
+    )
+    severity = (
+        await session.exec(
+            select(PropertyDefinition).where(PropertyDefinition.name == "Severity")
+        )
+    ).one()
+    # Named by a layout and by no value.
+    stage = await create_property_definition(
+        session, source_initiative, name="Stage", type=PropertyType.text
+    )
+    tag = (await session.exec(select(Tag))).one()
+    plugin = await create_guild_plugin(
+        session,
+        guild,
+        owner,
+        definition={
+            "fields": [
+                {"key": "build", "name": "Build", "kind": "text", "on": ["task"]}
+            ],
+            "parts": [
+                {
+                    "id": "panel",
+                    "name": "Panel",
+                    "on": ["task"],
+                    "tree": {"type": "stack"},
+                }
+            ],
+        },
+    )
+    build = {"type": "field", "props": {"field": f"plugin:{plugin.id}:build"}}
+    panel = {"type": "plugin", "props": {"plugin": plugin.id, "part": "panel"}}
+    title = {"type": "field", "props": {"field": "title"}}
+    await route_session_to_guild(session, guild.id)
+    for kind, definition in {
+        "board": {
+            "card": {
+                "type": "card",
+                "children": [
+                    title,
+                    {"type": "field", "props": {"field": f"property:{stage.id}"}},
+                    build,
+                ],
+            },
+            "presets": [
+                {
+                    "slug": "mine",
+                    "filters": {
+                        "status_ids": [todo.id],
+                        "assignees": ["me", str(assignee.id)],
+                        "tag_ids": [tag.id],
+                    },
+                }
+            ],
+            "limits": [{"status_id": todo.id, "limit": 3}],
+        },
+        "table": {
+            "columns": ["title", f"property:{stage.id}"],
+            "groupings": [
+                {"field": "task_status_id", "hidden": [str(done.id)]},
+                {"field": f"property:{severity.id}", "hidden": ["low"]},
+                {"field": "assignee_ids", "hidden": [str(assignee.id)]},
+            ],
+            "group_by": f"property:{severity.id}",
+        },
+        "task": {
+            "side": [
+                {"type": "field", "props": {"field": f"property:{severity.id}"}},
+                panel,
+            ]
+        },
+        "default": {"kind": "board"},
+    }.items():
+        session.add(
+            ToolLayout(
+                initiative_id=source_initiative.id,
+                tool="project",
+                tool_id=project.id,
+                kind=kind,
+                definition=definition,
+            )
+        )
+    await session.commit()
+
+    envelope = await export_service.build_project_export(
+        session, await get_project_hydrated(session, project.id)
+    )
+
+    # Statuses and properties by their place in the envelope; nothing of the
+    # community's people, tags or plug-ins.
+    exported = {layout.kind: layout.definition for layout in envelope.layouts}
+    place = {p.name: n for n, p in enumerate(envelope.property_definitions, start=1)}
+    todo_place = 1 + [s.name for s in envelope.task_statuses].index(todo.name)
+    assert set(place) == {"Severity", "Stage"}
+    assert exported["board"]["card"]["children"] == [
+        title,
+        {"type": "field", "props": {"field": f"property:{place['Stage']}"}},
+    ]
+    assert exported["board"]["presets"][0]["filters"] == {
+        "status_ids": [todo_place],
+        "assignees": ["me"],
+        "tag_ids": [],
+    }
+    assert exported["board"]["limits"] == [{"status_id": todo_place, "limit": 3}]
+    assert exported["table"]["groupings"][2] == {"field": "assignee_ids", "hidden": []}
+    assert exported["task"]["side"] == [
+        {"type": "field", "props": {"field": f"property:{place['Severity']}"}}
+    ]
+
+    target_initiative = await create_initiative(
+        session, guild, owner, name="Target Initiative"
+    )
+    await route_session_to_guild(session, guild.id)
+    session.add(
+        PluginPlacement(install_id=plugin.id, initiative_id=target_initiative.id)
+    )
+    await session.commit()
+    await route_as(session, user_id=owner.id, guild_id=guild.id)
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target_initiative, importer=owner
+    )
+    await session.commit()
+
+    await route_session_to_guild(session, guild.id)
+    rows = await session.exec(
+        select(ToolLayout).where(ToolLayout.tool_id == result.entity_id)
+    )
+    imported = {row.kind: row.definition for row in rows.all()}
+    new_statuses = {
+        s.name: s.id
+        for s in await task_statuses_service.ensure_default_statuses(
+            session, result.entity_id
+        )
+    }
+    new_properties = {
+        p.name: p.id
+        for p in (
+            await session.exec(
+                select(PropertyDefinition).where(
+                    PropertyDefinition.initiative_id == target_initiative.id
+                )
+            )
+        ).all()
+    }
+    new_build = {"type": "field", "props": {"field": f"plugin:{plugin.id}:build"}}
+    # The new project's own statuses and the initiative's own properties, and
+    # the plug-in placed there shown as it would be on any saved layout.
+    assert imported["board"]["card"]["children"] == [
+        title,
+        {"type": "field", "props": {"field": f"property:{new_properties['Stage']}"}},
+        new_build,
+    ]
+    assert imported["board"]["presets"][0]["filters"]["status_ids"] == [
+        new_statuses[todo.name]
+    ]
+    assert imported["board"]["limits"] == [
+        {"status_id": new_statuses[todo.name], "limit": 3}
+    ]
+    assert imported["table"]["groupings"][0] == {
+        "field": "task_status_id",
+        "hidden": [str(new_statuses[done.name])],
+    }
+    assert imported["table"]["group_by"] == f"property:{new_properties['Severity']}"
+    assert imported["task"]["side"] == [
+        {"type": "field", "props": {"field": f"property:{new_properties['Severity']}"}},
+        new_build,
+        panel,
+    ]
+    assert imported["default"] == {"kind": "board"}
 
 
 async def test_property_type_collision_renames(session: AsyncSession):

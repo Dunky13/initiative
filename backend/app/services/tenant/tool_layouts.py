@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -29,6 +29,8 @@ from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import require_guild_context
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import (
+    ASSIGNEE_ME,
+    ASSIGNEE_NONE,
     MAX_DEFINITION_BYTES,
     PLUGIN_FIELD_PREFIX,
     PROPERTY_FIELD_PREFIX,
@@ -55,6 +57,7 @@ from app.schemas.tenant.tool_layout import (
     StackPart,
     TaskDetailFieldId,
     TaskFilterSpec,
+    ToolLayoutDefaultWrite,
     ToolLayoutRead,
     ToolLayoutWrite,
 )
@@ -392,77 +395,144 @@ async def reset(session: AsyncSession, target: Target, kind: str) -> None:
     await session.flush()
 
 
-def copied_definition(
-    definition: dict[str, Any],
-    status_mapping: dict[int, int],
-    *,
-    same_initiative: bool,
-) -> dict[str, Any]:
-    """``definition`` for a copied project. Status ids are the project's own
-    rows, so a preset's, a status grouping's hidden statuses and a column
-    limit's go through the copy's mapping, and one with no counterpart is
-    dropped. Properties are
-    the initiative's, so a copy into another initiative keeps no property
-    filters and no property groupings."""
+#: A status's, a property's or a row of a tool's id where a layout is written,
+#: or None for one that has no counterpart there and is left out.
+IdMap = Callable[[int], Optional[int]]
+
+#: The groupings whose groups are the community's people, tags or projects.
+_COMMUNITY_GROUPINGS = frozenset(
+    {"assignee_ids", "created_by", "tag_ids", "project_id"}
+)
+
+
+@dataclass(frozen=True)
+class Remap:
+    """What a layout's row ids become where it is written. Statuses are the
+    instance's own rows and properties the initiative's, so each goes through
+    its map, and one with no counterpart is left out; ``properties`` None keeps
+    them as they are, beside the instance. People, tags and plug-in installs
+    are the community's, so a layout leaving it (``community`` False) keeps
+    none of them: their parts, fields, filters and the groups they name."""
+
+    statuses: IdMap
+    properties: Optional[IdMap] = None
+    community: bool = True
+
+
+def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, Any]:
+    """``definition`` with its row ids as ``remap`` has them. Only what it
+    holds is rewritten, so what it leaves out is still drawn as shipped."""
+
+    def field(value: Any) -> Optional[Any]:
+        if _of_property(value):
+            if remap.properties is None:
+                return value
+            mapped = remap.properties(int(value.removeprefix(PROPERTY_FIELD_PREFIX)))
+            return None if mapped is None else f"{PROPERTY_FIELD_PREFIX}{mapped}"
+        if isinstance(value, str) and value.startswith(PLUGIN_FIELD_PREFIX):
+            return value if remap.community else None
+        return value
+
+    def nodes(parts: list[Any]) -> list[Any]:
+        kept: list[Any] = []
+        for node in parts:
+            if not isinstance(node, dict):
+                continue
+            if node.get("type") == "plugin" and not remap.community:
+                continue
+            node = dict(node)
+            if node.get("type") == "field":
+                mapped = field((node.get("props") or {}).get("field"))
+                if mapped is None:
+                    continue
+                node["props"] = {**node["props"], "field": mapped}
+            if isinstance(node.get("children"), list):
+                node["children"] = nodes(node["children"])
+            kept.append(node)
+        return kept
+
+    def statuses(ids: Iterable[Any]) -> list[int]:
+        return [
+            mapped
+            for old in ids
+            if isinstance(old, int) and (mapped := remap.statuses(old)) is not None
+        ]
+
+    def filters(spec: dict[str, Any]) -> dict[str, Any]:
+        spec = dict(spec)
+        if "status_ids" in spec:
+            spec["status_ids"] = statuses(spec["status_ids"])
+        if "properties" in spec:
+            spec["properties"] = [
+                {
+                    **entry,
+                    "property_id": int(mapped.removeprefix(PROPERTY_FIELD_PREFIX)),
+                }
+                for entry in spec["properties"]
+                if (mapped := field(f"{PROPERTY_FIELD_PREFIX}{entry['property_id']}"))
+            ]
+        if not remap.community:
+            for key in ("plugins", "tag_ids", "community_ids"):
+                if key in spec:
+                    spec[key] = []
+            if "assignees" in spec:
+                spec["assignees"] = [
+                    who
+                    for who in spec["assignees"]
+                    if who in (ASSIGNEE_ME, ASSIGNEE_NONE)
+                ]
+        return spec
+
+    def hidden(grouping: dict[str, Any]) -> list[str]:
+        keys = grouping.get("hidden", [])
+        if grouping.get("field") == _BOARD_COLUMNS:
+            return [
+                str(mapped)
+                for key in keys
+                if key.isdigit() and (mapped := remap.statuses(int(key))) is not None
+            ]
+        if grouping.get("field") in _COMMUNITY_GROUPINGS and not remap.community:
+            return []
+        return keys
+
     copy = dict(definition)
-    limits = definition.get("limits")
-    if isinstance(limits, list):
+    for region in ("header", "main", "side"):
+        if isinstance(definition.get(region), list):
+            copy[region] = nodes(definition[region])
+    if isinstance(definition.get("card"), dict):
+        [copy["card"]] = nodes([definition["card"]])
+    if isinstance(definition.get("columns"), list):
+        copy["columns"] = [
+            mapped for column in definition["columns"] if (mapped := field(column))
+        ]
+    if isinstance(definition.get("limits"), list):
         copy["limits"] = [
-            {**entry, "status_id": status_mapping[entry["status_id"]]}
-            for entry in limits
-            if entry.get("status_id") in status_mapping
+            {**entry, "status_id": mapped}
+            for entry in definition["limits"]
+            if (mapped := remap.statuses(entry.get("status_id"))) is not None
         ]
-    groupings = definition.get("groupings")
-    if isinstance(groupings, list):
+    if isinstance(definition.get("groupings"), list):
         copy["groupings"] = [
-            {**grouping, "hidden": _copied_hidden(grouping, status_mapping)}
-            for grouping in groupings
-            if same_initiative or not _of_property(grouping.get("field"))
+            {**grouping, "field": mapped, "hidden": hidden(grouping)}
+            for grouping in definition["groupings"]
+            if (mapped := field(grouping.get("field")))
         ]
-    if not same_initiative and _of_property(definition.get("group_by")):
-        copy.pop("group_by")
-    presets = definition.get("presets")
-    if not isinstance(presets, list):
-        return copy
-
-    def copied(filters: dict[str, Any]) -> dict[str, Any]:
-        statuses = [
-            status_mapping[old]
-            for old in filters.get("status_ids", [])
-            if old in status_mapping
+    if "group_by" in definition:
+        mapped = field(definition["group_by"])
+        if mapped is None:
+            copy.pop("group_by")
+        else:
+            copy["group_by"] = mapped
+    if isinstance(definition.get("presets"), list):
+        copy["presets"] = [
+            {**preset, "filters": filters(preset.get("filters", {}))}
+            for preset in definition["presets"]
         ]
-        return {
-            **filters,
-            "status_ids": statuses,
-            **({} if same_initiative else {"properties": []}),
-        }
-
-    return {
-        **copy,
-        "presets": [
-            {**preset, "filters": copied(preset.get("filters", {}))}
-            for preset in presets
-        ],
-    }
+    return copy
 
 
 def _of_property(field: Any) -> bool:
     return isinstance(field, str) and field.startswith(PROPERTY_FIELD_PREFIX)
-
-
-def _copied_hidden(
-    grouping: dict[str, Any], status_mapping: dict[int, int]
-) -> list[str]:
-    """The groups a copied grouping leaves out: a status grouping's are the
-    copy's own statuses."""
-    hidden = grouping.get("hidden", [])
-    if grouping.get("field") != _BOARD_COLUMNS:
-        return hidden
-    return [
-        str(status_mapping[int(key)])
-        for key in hidden
-        if key.isdigit() and int(key) in status_mapping
-    ]
 
 
 async def copy_layouts(
@@ -480,11 +550,49 @@ async def copy_layouts(
                 tool=copy.tool.value,
                 tool_id=copy.tool_id,
                 kind=row.kind,
-                definition=copied_definition(
+                definition=remapped_definition(
                     row.definition,
-                    status_mapping,
-                    same_initiative=copy.initiative_id == source.initiative_id,
+                    Remap(
+                        statuses=status_mapping.get,
+                        properties=(
+                            None
+                            if copy.initiative_id == source.initiative_id
+                            else lambda _id: None
+                        ),
+                    ),
                 ),
+            )
+        )
+    await session.flush()
+
+
+async def restore_layouts(
+    session: AsyncSession, target: Target, layouts: Iterable[tuple[str, dict[str, Any]]]
+) -> None:
+    """Give a new instance the layouts an import brings, each held to what a
+    write of it would be. One that is not, or that names a kind its tool does
+    not draw, is drawn as shipped."""
+    lists = LIST_LAYOUTS.get(target.tool, ())
+    for kind, definition in layouts:
+        try:
+            if kind == LAYOUT_DEFAULT:
+                stored = ToolLayoutDefaultWrite.model_validate(definition).model_dump()
+                _require(stored["kind"], lists)
+            else:
+                write = ListLayoutWrite if kind in lists else DetailLayoutWrite
+                stored = check(
+                    target,
+                    write.model_validate({"kind": kind, "definition": definition}),
+                )
+        except (HTTPException, CodedError, ValidationError):
+            continue
+        session.add(
+            ToolLayout(
+                initiative_id=target.initiative_id,
+                tool=target.tool.value,
+                tool_id=target.tool_id,
+                kind=kind,
+                definition=stored,
             )
         )
     await session.flush()
@@ -514,12 +622,14 @@ async def add_to_saved_details(
     kind: str,
     initiative_ids: Iterable[int],
     nodes: list[dict[str, Any]],
+    *,
+    only: Optional[Target] = None,
 ) -> None:
     """Add parts to the end of the side of every saved ``kind`` detail in these
     initiatives: what a plug-in shows as it arrives. A detail already holding
     one keeps it where it is, a plug-in's parts stop at its limit, and a detail
     the parts would take past its limits is left as it is. A detail not saved
-    draws them as shipped."""
+    draws them as shipped. ``only`` keeps to one target's."""
     ids = sorted(set(initiative_ids))
     if not ids or not nodes:
         return
@@ -528,6 +638,7 @@ async def add_to_saved_details(
         .where(
             col(ToolLayout.initiative_id).in_(ids),
             ToolLayout.kind == kind,
+            *(_of(only) if only is not None else ()),
         )
         .with_for_update()
     )
@@ -567,13 +678,17 @@ TASK_FIELD_LISTS = ("board", "table")
 
 
 async def add_to_saved_lists(
-    session: AsyncSession, initiative_ids: Iterable[int], fields: list[str]
+    session: AsyncSession,
+    initiative_ids: Iterable[int],
+    fields: list[str],
+    *,
+    only: Optional[Target] = None,
 ) -> None:
     """Add a task's fields to the end of every saved board card and table in
     these initiatives: what a plug-in shows as it arrives. A list already
     showing one keeps it where it is, and a list the fields would take past
     its limits is left as it is. A card or columns not saved draw them as
-    shipped."""
+    shipped. ``only`` keeps to one target's."""
     ids = sorted(set(initiative_ids))
     if not ids or not fields:
         return
@@ -582,6 +697,7 @@ async def add_to_saved_lists(
         .where(
             col(ToolLayout.initiative_id).in_(ids),
             col(ToolLayout.kind).in_(TASK_FIELD_LISTS),
+            *(_of(only) if only is not None else ()),
         )
         .with_for_update()
     )

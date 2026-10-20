@@ -18,9 +18,15 @@ from app.schemas.recurrence import validate_task_recurrence
 
 from app.core import recurrence
 from app.core.relationships import RelationshipType
+from app.core.tools import DETAIL_LAYOUTS, LAYOUT_DEFAULT, LIST_LAYOUTS, Tool
 from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.tenant.import_envelopes import EnvelopePropertyValue, _EnvelopeBase
+from app.schemas.tenant.tool_layout import (
+    DetailLayoutWrite,
+    ListLayoutWrite,
+    ToolLayoutDefaultWrite,
+)
 
 
 #: Where a row's property values are read from. ``property_values`` is what
@@ -186,8 +192,42 @@ class ProjectExportTask(SanitizedBaseModel):
         return self
 
 
+#: The layouts a project carries: each way it lists its tasks, its task's
+#: page, and the list it opens on.
+_PROJECT_LISTS = LIST_LAYOUTS[Tool.project]
+_PROJECT_LAYOUTS = (*_PROJECT_LISTS, *DETAIL_LAYOUTS[Tool.project], LAYOUT_DEFAULT)
+
+
+class ProjectExportLayout(SanitizedBaseModel):
+    """One of the project's layouts, as it was changed from the shipped one.
+
+    Its rows are named by their place in this envelope, counting from 1: a
+    status id is the status's place in ``task_statuses``, and
+    ``property:<n>`` the n-th of ``property_definitions``. People, tags and
+    plug-ins are the community's, so a layout carries none of them; the
+    plug-ins placed where it is imported show on it as they arrive.
+    """
+
+    kind: str
+    definition: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _a_layout(self) -> "ProjectExportLayout":
+        if self.kind not in _PROJECT_LAYOUTS:
+            raise ValueError(f"a project's layouts are {', '.join(_PROJECT_LAYOUTS)}")
+        if self.kind == LAYOUT_DEFAULT:
+            ToolLayoutDefaultWrite.model_validate(self.definition)
+        else:
+            write = (
+                ListLayoutWrite if self.kind in _PROJECT_LISTS else DetailLayoutWrite
+            )
+            write.model_validate({"kind": self.kind, "definition": self.definition})
+        return self
+
+
 class ProjectExportEnvelope(_EnvelopeBase):
-    """A project with its statuses, tags, property definitions and tasks.
+    """A project with its statuses, tags, property definitions, tasks and
+    layouts.
 
     The project's own fields sit under ``project`` rather than at the top
     level as other envelopes' do; exported files and published listings
@@ -208,3 +248,6 @@ class ProjectExportEnvelope(_EnvelopeBase):
     task_statuses: List[ProjectExportTaskStatus]
     property_definitions: List[ProjectExportPropertyDefinition]
     tasks: List[ProjectExportTask]
+    # Empty in an export taken before projects carried their layouts, and for
+    # a project drawn as shipped.
+    layouts: List[ProjectExportLayout] = []
