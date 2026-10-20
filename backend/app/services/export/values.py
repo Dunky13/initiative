@@ -15,12 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date as Date, datetime
+from datetime import date as Date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
 from app.core.user_display import display_name
+from app.core.user_input_validators import resolve_zone
 from app.models.tenant.property import PropertyType
 from app.services.export.i18n import et
 
@@ -83,11 +84,25 @@ def yes_no(value: Any, locale: str) -> str:
     return et("values.yes" if value else "values.no", locale)
 
 
-def property_value(summary: Any, locale: str) -> Any:
-    """A custom property's value as its type shows it: an option by its
-    label, a person by name, a checkbox as yes or no."""
-    if summary is None or summary.value is None:
+def moment(value: Any, tz: str | None) -> str:
+    """A moment in the reader's zone, named: ``YYYY-MM-DD HH:MM`` and the zone."""
+    if isinstance(value, str) and value:
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return str(value)
+    if not isinstance(value, datetime):
         return ""
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return aware.astimezone(resolve_zone(tz)).strftime("%Y-%m-%d %H:%M %Z")
+
+
+def property_value(summary: Any, locale: str, tz: str | None) -> Any:
+    """A custom property's value as its type shows it: an option by its
+    label, a person by name, a checkbox as yes or no, a moment with its
+    time."""
+    if summary is None or summary.value is None:
+        return None
     value = summary.value
     labels = {o.value: o.label for o in summary.options or ()}
     kind = summary.type
@@ -97,7 +112,7 @@ def property_value(summary: Any, locale: str) -> Any:
         return ", ".join(labels.get(each, each) for each in value)
     if kind is PropertyType.user_reference:
         if not isinstance(value, dict):
-            return ""
+            return None
         return display_name(
             SimpleNamespace(
                 username=value.get("username") or "",
@@ -107,29 +122,50 @@ def property_value(summary: Any, locale: str) -> Any:
         )
     if kind is PropertyType.checkbox:
         return yes_no(value, locale)
-    if kind in (PropertyType.date, PropertyType.datetime):
+    if kind is PropertyType.date:
         return date(value)
+    if kind is PropertyType.datetime:
+        return moment(value, tz)
     if kind is PropertyType.number:
         return number(value)
     return text(value)
 
 
-def plugin_value(value: Any, kind: str, locale: str) -> Any:
-    """A plug-in field's value as text: a list's elements one after another,
-    a value kept beside a state by its value."""
+#: The plug-in field kinds whose value is one scalar, which a value kept
+#: beside a state, and a list's element, hold in ``value``.
+_SCALAR_KINDS = frozenset({"text", "number", "date", "datetime", "checkbox"})
+
+
+def plugin_value(value: Any, kind: str, locale: str, tz: str | None) -> Any:
+    """A plug-in field's value as the page draws it, by its kind: a badge by
+    its text, a link by its title, progress out of its most, a list's
+    elements one after another. A value of another shape is none."""
     if isinstance(value, list):
         return ", ".join(
-            str(cell) for cell in (plugin_value(v, kind, locale) for v in value) if cell
+            str(cell)
+            for cell in (plugin_value(v, kind, locale, tz) for v in value)
+            if cell not in (None, "")
         )
-    if isinstance(value, dict):
-        for key in ("value", "title", "label", "name", "url"):
-            if value.get(key) is not None:
-                return plugin_value(value[key], kind, locale)
-        return ""
+    if kind in _SCALAR_KINDS and isinstance(value, dict):
+        value = value.get("value")
+    if kind in ("badge", "link", "progress"):
+        if not isinstance(value, dict):
+            return None
+        if kind == "badge":
+            return value.get("text")
+        if kind == "link":
+            return value.get("title") or value.get("url")
+        if value.get("value") is None or value.get("max") is None:
+            return None
+        return f"{number(value['value'])}/{number(value['max'])}"
+    if value is None:
+        return None
     if kind == "checkbox":
-        return yes_no(value, locale)
-    if kind in ("number", "progress"):
+        return yes_no(value, locale) if isinstance(value, bool) else None
+    if kind == "number":
         return number(value)
-    if kind in ("date", "datetime"):
+    if kind == "date":
         return date(value)
+    if kind == "datetime":
+        return moment(value, tz)
     return text(value)

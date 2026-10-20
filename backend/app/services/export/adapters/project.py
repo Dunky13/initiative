@@ -217,6 +217,7 @@ class ProjectAdapter(ToolExportAdapter):
             getattr(tasks, "columns", None),
             list(reads.values()),
             export_locale(ctx.user),
+            getattr(ctx.now.tzinfo, "key", None),
         )
         return Prepared(kept, reads, columns)
 

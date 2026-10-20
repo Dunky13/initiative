@@ -39,6 +39,7 @@ from app.services.marketplace import contract
 from app.services.marketplace.manifest_values import (
     IDENTIFIER_CHARS,
     MAX_IDENTIFIER_LENGTH,
+    MAX_METADATA_KEY_LENGTH,
     is_metadata_key,
 )
 from app.services.tenant.properties import MAX_PROPERTY_FILTERS
@@ -247,6 +248,10 @@ PLUGIN_FIELD_PREFIX = "plugin:"
 _DIGITS = frozenset("0123456789")
 #: A row id is a Postgres ``integer``: at most ten digits.
 _MAX_ID_DIGITS = 10
+#: The longest field id a layout names: a plug-in's, ``plugin:<install>:<key>``.
+MAX_FIELD_ID_LENGTH = (
+    len(PLUGIN_FIELD_PREFIX) + _MAX_ID_DIGITS + 1 + MAX_METADATA_KEY_LENGTH
+)
 
 
 def _is_row_id(value: str) -> bool:

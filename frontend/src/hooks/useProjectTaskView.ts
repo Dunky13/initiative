@@ -48,7 +48,7 @@ import {
 import { pageParts, type StoredRegions } from "@/lib/layouts/detailLayout";
 import { columnsOf } from "@/lib/layouts/draft";
 import { catalogChoices, viewGrouping } from "@/lib/layouts/grouping";
-import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
+import { pluginFields, shippedPluginParts, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
 import { TASK_LAYOUT } from "@/lib/layouts/tasks";
 
@@ -149,7 +149,10 @@ export function useProjectTaskView({
     return {
       columns: columnsOf((table?.definition ?? {}) as ListLayoutDefinitionInput, fields),
       detail: pageParts(
-        TASK_LAYOUT.tree(detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null)
+        TASK_LAYOUT.tree(
+          detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null,
+          shippedPluginParts(plugins)
+        )
       ),
     };
   }, [layouts, plugins, i18n.language, layoutsQuery.data]);

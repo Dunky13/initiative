@@ -571,7 +571,15 @@ async def test_task_export_shows_the_columns_its_view_shows(
         a,
         "tasks",
         format="md",
-        columns=["priority", f"property:{effort.id}", "recurrence", "property:999"],
+        # The longest id a layout can name: an install's field it no longer
+        # declares, which is left out rather than refused.
+        columns=[
+            "priority",
+            f"property:{effort.id}",
+            "recurrence",
+            "property:999",
+            f"plugin:9999999999:{'k' * 64}",
+        ],
     )
     _assert_export(
         resp,

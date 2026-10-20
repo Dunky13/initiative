@@ -42,7 +42,7 @@ from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.initiative import Initiative
 from app.schemas.query import DateBucket
 from app.schemas.tenant.backup_export import BackupEstimate
-from app.schemas.tenant.tool_layout import MAX_HIDDEN_GROUPS, MAX_SLUG_LENGTH
+from app.schemas.tenant.tool_layout import MAX_FIELD_ID_LENGTH, MAX_HIDDEN_GROUPS
 from app.services.export.adapters.tasks_table import MAX_COLUMNS
 from app.schemas.tenant.export_job import (
     ExportJobRead,
@@ -181,7 +181,9 @@ async def export_tasks(
         max_length=MAX_HIDDEN_GROUPS,
         description="The keys of the groups the list leaves out",
     ),
-    columns: Optional[List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]]] = Query(
+    columns: Optional[
+        List[Annotated[str, Field(max_length=MAX_FIELD_ID_LENGTH)]]
+    ] = Query(
         default=None,
         max_length=MAX_COLUMNS,
         description=(
@@ -190,7 +192,9 @@ async def export_tasks(
             "The status follows them, as the table draws it."
         ),
     ),
-    detail: Optional[List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]]] = Query(
+    detail: Optional[
+        List[Annotated[str, Field(max_length=MAX_FIELD_ID_LENGTH)]]
+    ] = Query(
         default=None,
         max_length=MAX_COLUMNS,
         description=(

@@ -138,6 +138,8 @@ _DEFAULT_DETAIL = (
 
 _WIDE = frozenset({"title", "description"})
 
+_MAX_ROW_ID = 2**31 - 1
+
 
 class TasksTableAdapter:
     source = "tasks"
@@ -224,6 +226,7 @@ class TasksTableAdapter:
                     + (["startDate", "dueDate"] if "dates" in detail else []),
                     tasks,
                     loc,
+                    params.get("tz"),
                 )
             }
             placed = {
@@ -285,7 +288,12 @@ class TasksTableAdapter:
                         ]
                         if part == "properties":
                             lines = [
-                                (summary.name, values.property_value(summary, loc))
+                                (
+                                    summary.name,
+                                    values.property_value(
+                                        summary, loc, params.get("tz")
+                                    ),
+                                )
                                 for summary in task.properties
                                 if str(summary.property_id) not in placed
                             ]
@@ -316,7 +324,9 @@ class TasksTableAdapter:
             ]
             template_id = self.detail_template_id
         else:
-            columns = await task_columns(session, params.get("columns"), tasks, loc)
+            columns = await task_columns(
+                session, params.get("columns"), tasks, loc, params.get("tz")
+            )
             group = [{"key": "group", "label": group_label, "width": "1fr"}]
             data |= {
                 "columns": (group if group_label else []) + values.head(columns),
@@ -350,6 +360,7 @@ async def task_columns(
     names: Optional[list[str]],
     tasks: list[TaskListRead],
     locale: str,
+    tz: Optional[str],
 ) -> list[values.Column]:
     """The columns a table of ``tasks`` shows: the layout fields ``names``
     (the shipped few where none), the title first, the project after it where
@@ -365,11 +376,13 @@ async def task_columns(
         [[t.description_excerpt] for t in tasks],
         missing=et("fallback.formerMember", locale),
     )
+    # A row id is a Postgres ``integer``; a longer one names no row.
     property_ids = {
         name: int(name.removeprefix(PROPERTY_FIELD_PREFIX))
         for name in names
         if name.startswith(PROPERTY_FIELD_PREFIX)
         and name.removeprefix(PROPERTY_FIELD_PREFIX).isdigit()
+        and int(name.removeprefix(PROPERTY_FIELD_PREFIX)) <= _MAX_ROW_ID
     }
     definitions = await properties_service.load_definitions_by_ids(
         session, list(property_ids.values())
@@ -379,7 +392,7 @@ async def task_columns(
         for name in names
         if name.startswith(PLUGIN_FIELD_PREFIX)
         for install, _, key in [name.removeprefix(PLUGIN_FIELD_PREFIX).partition(":")]
-        if install.isdigit() and key
+        if install.isdigit() and int(install) <= _MAX_ROW_ID and key
     }
     declared = dict(
         await session.exec(
@@ -409,7 +422,9 @@ async def task_columns(
             pid = property_ids[name]
             title = definitions[pid].name
             cell = lambda t, pid=pid: values.property_value(  # noqa: E731
-                next((p for p in t.properties if p.property_id == pid), None), locale
+                next((p for p in t.properties if p.property_id == pid), None),
+                locale,
+                tz,
             )
         elif name in plugin_keys:
             install, key = plugin_keys[name]
@@ -447,6 +462,7 @@ async def task_columns(
                     ),
                     str(kind or "text"),
                     locale,
+                    tz,
                 )
             )
         else:
