@@ -237,8 +237,9 @@ async def community_names(
     The batch of ``/community-name``, and read the same way: each guild's name
     on the billing session routed to that guild, one at a time, so the role
     reads exactly the rows it would one call each. A reference that names no
-    guild, or one deleted since, is left out; when none of them names one,
-    nothing was read and the jti stays unredeemed, like the single read's 404.
+    guild, or one purged since (a purge removes the guild before its
+    references), is left out. When no name comes back, nothing was read and
+    the jti stays unredeemed, like the single read's 404.
     """
     claims, payload = await _verify_and_parse(request, BillingCommunityNamesRequest)
     refs = list(dict.fromkeys(payload.community_refs))
@@ -257,7 +258,7 @@ async def community_names(
         name = await billing_service.guild_display_name(session, guild_id)
         if name is not None:
             names.append(BillingCommunityNameRead(community_ref=ref, name=name))
-    if burned:
+    if names:
         await session.commit()  # persist the one-shot jti redemption
     return BillingCommunityNamesRead(names=names)
 
