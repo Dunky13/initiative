@@ -60,6 +60,7 @@ export interface ProjectListingTask {
   completed_at?: string | null;
   recurrence?: string | Record<string, unknown> | null;
   recurrence_strategy?: RecurrenceStrategy;
+  recurrence_limit?: number | null;
   recurrence_shift?: number;
   recurrence_occurrence_count?: number;
   recurrence_anchor?: string | null;
@@ -217,6 +218,7 @@ export const projectListingBoard = (
       // A repeat published before RRULE keeps a shape the board does not read.
       recurrence: typeof task.recurrence === "string" ? task.recurrence : null,
       recurrence_strategy: task.recurrence_strategy ?? "fixed",
+      recurrence_limit: task.recurrence_limit ?? null,
       recurrence_shift: task.recurrence_shift ?? 0,
       recurrence_occurrence_count: task.recurrence_occurrence_count ?? 0,
       recurrence_anchor: shifted(task.recurrence_anchor, shift),

@@ -276,7 +276,15 @@
     },
     "lastDay": "Last",
     "months": "Months",
-    "nextDates": "Next:"
+    "nextDates": "Next:",
+    "hourlyAfterCompletion": "Hourly (after completion)",
+    "frequencyHourly": "Hourly",
+    "repeatEveryHours": "hours",
+    "dailyLimit": "Maximum per day (optional)",
+    "unlimited": "Unlimited",
+    "hourlyCompletionHelp": "Each completion schedules the next task after the selected number of hours. Leave the maximum blank to repeat continuously. With a maximum, reaching it or crossing midnight starts the next day at the first task’s time, delayed if needed to preserve the gap. Daily counts use the timezone of the person completing the task.",
+    "limitInvalid": "Not saved. Enter a whole daily maximum from 1 to 24, or leave it blank for no limit.",
+    "hourlyNeedsDueDate": "Set a due date and time for the first task before saving an hourly repeat."
   },
   "progressLabel": "Project progress",
   "preview": {

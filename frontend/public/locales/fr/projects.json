@@ -276,7 +276,15 @@
     },
     "lastDay": "Dernier",
     "months": "Mois",
-    "nextDates": "Prochaines :"
+    "nextDates": "Prochaines :",
+    "hourlyAfterCompletion": "Toutes les heures (après achèvement)",
+    "frequencyHourly": "Toutes les heures",
+    "repeatEveryHours": "heures",
+    "dailyLimit": "Maximum par jour (facultatif)",
+    "unlimited": "Sans limite",
+    "hourlyCompletionHelp": "Chaque achèvement programme la tâche suivante après le nombre d’heures choisi. Laissez le maximum vide pour répéter en continu. Avec un maximum, lorsqu’il est atteint ou que minuit est dépassé, le jour suivant commence à l’heure de la première tâche, plus tard si nécessaire pour respecter le délai. Le décompte quotidien utilise le fuseau horaire de la personne qui termine la tâche.",
+    "limitInvalid": "Non enregistré. Saisissez un maximum quotidien entier de 1 à 24, ou laissez le champ vide pour ne pas fixer de limite.",
+    "hourlyNeedsDueDate": "Définissez une date et une heure d’échéance pour la première tâche avant d’enregistrer une répétition horaire."
   },
   "progressLabel": "Progression du projet",
   "preview": {

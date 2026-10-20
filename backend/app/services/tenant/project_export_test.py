@@ -214,7 +214,9 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
     assert new_task.recurrence_anchor == datetime(2026, 10, 5, 9, tzinfo=timezone.utc)
     from app.services.tenant.task_series import next_dates
 
-    dates = next_dates(new_task, now=new_task.due_date, user_timezone="UTC")
+    dates = await next_dates(
+        session, new_task, now=new_task.due_date, user_timezone="UTC"
+    )
     assert dates is not None
     assert dates[1] == datetime(2026, 10, 12, 9, tzinfo=timezone.utc)
     await tags_service.annotate_tags(session, [new_task])
@@ -508,8 +510,11 @@ async def test_legacy_envelope_keeps_carried_dates_and_consumed_count(session):
     assert restored.recurrence_anchor_count == 2
     from app.services.tenant.task_series import next_dates
 
-    dates = next_dates(
-        restored, now=datetime(2026, 10, 10, tzinfo=timezone.utc), user_timezone="UTC"
+    dates = await next_dates(
+        session,
+        restored,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        user_timezone="UTC",
     )
     assert dates is not None
     assert dates[1] == datetime(2026, 10, 14, 9, tzinfo=timezone.utc)

@@ -196,6 +196,7 @@ async def build_project_export(
                 recurrence_anchor_count=task.recurrence_anchor_count,
                 recurrence_strategy=task.recurrence_strategy,
                 recurrence_occurrence_count=task.recurrence_occurrence_count,
+                recurrence_limit=task.recurrence_limit,
                 series=task.series_id,
                 recurrence_carry=carry,
                 position=task.position,

@@ -36,7 +36,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import { type RecurrenceRule, rulePayload } from "@/lib/recurrence";
+import {
+  isHourlyRule,
+  isValidTaskRecurrence,
+  rulePayload,
+  type TaskRecurrenceValue,
+} from "@/lib/recurrence";
 import { PRIORITY_ORDER } from "@/lib/sorting";
 
 export type TaskBulkUpdate = {
@@ -49,6 +54,7 @@ export type TaskBulkUpdate = {
   /** The zone the rule's days are in; each task's rule is stored from its own start. */
   tz: string;
   recurrence_strategy: RecurrenceStrategy;
+  recurrence_limit: number | null;
 };
 
 interface TaskBulkEditDialogProps {
@@ -78,8 +84,13 @@ export const TaskBulkEditDialog = ({
   const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
   const [statusId, setStatusId] = useState<string>("");
   const [priority, setPriority] = useState<string>("");
-  const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(null);
-  const [recurrenceStrategy, setRecurrenceStrategy] = useState<RecurrenceStrategy>("fixed");
+  const [repeat, setRepeat] = useState<TaskRecurrenceValue>({
+    rule: null,
+    strategy: "fixed",
+    limit: null,
+  });
+  const { rule: recurrence, strategy: recurrenceStrategy, limit } = repeat;
+  const hasDueDate = Boolean(dueDate) || selectedTasks.every((task) => Boolean(task.due_date));
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -107,8 +118,10 @@ export const TaskBulkEditDialog = ({
     }
 
     if (recurrence) {
+      if (!isValidTaskRecurrence(repeat) || (isHourlyRule(recurrence) && !hasDueDate)) return;
       Object.assign(changes, rulePayload(recurrence));
       changes.recurrence_strategy = recurrenceStrategy;
+      changes.recurrence_limit = limit;
     }
 
     if (Object.keys(changes).length > 0) {
@@ -217,9 +230,11 @@ export const TaskBulkEditDialog = ({
                 <RecurrenceEditor
                   kind="task"
                   value={recurrence}
-                  onChange={setRecurrence}
+                  onChange={(rule) => setRepeat({ ...repeat, rule })}
                   strategy={recurrenceStrategy}
-                  onStrategyChange={setRecurrenceStrategy}
+                  limit={limit}
+                  onTaskChange={setRepeat}
+                  hasDueDate={hasDueDate}
                 />
               </div>
             </AccordionContent>

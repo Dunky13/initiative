@@ -1493,6 +1493,7 @@ export interface TaskListRead {
   due_date: string | null;
   recurrence: string | null;
   recurrence_strategy: RecurrenceStrategy;
+  recurrence_limit: number | null;
   description_excerpt: string | null;
   has_description: boolean;
   id: number;
@@ -10440,6 +10441,7 @@ export interface TaskCreate {
   due_date?: string | null;
   recurrence?: string | null;
   recurrence_strategy?: RecurrenceStrategy;
+  recurrence_limit?: number | null;
   description?: string | null;
   project_id: number;
   tz?: string | null;
@@ -10482,6 +10484,7 @@ export interface TaskRead {
   due_date: string | null;
   recurrence: string | null;
   recurrence_strategy: RecurrenceStrategy;
+  recurrence_limit: number | null;
   description: string | null;
   id: number;
   project_id: number;
@@ -10587,6 +10590,7 @@ export interface TaskUpdate {
   recurrence?: string | null;
   tz?: string | null;
   recurrence_strategy?: RecurrenceStrategy | null;
+  recurrence_limit?: number | null;
   tag_ids?: number[] | null;
   checklist?: ChecklistItemInput[] | null;
   scope?: TaskUpdateScope;
