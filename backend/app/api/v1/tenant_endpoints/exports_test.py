@@ -443,7 +443,7 @@ def _grouped_rows(resp: Response) -> list[tuple[str, ...]]:
 
 
 async def test_task_export_grouped_by_tag_lists_a_task_under_each_tag(
-    client: AsyncClient, acting_user, session
+    client: AsyncClient, acting_user, session, monkeypatch
 ):
     """Grouped by tag, as the table shows it: a task under every tag it has,
     the tags by name and the untagged last, each group in the list's order."""
@@ -475,6 +475,12 @@ async def test_task_export_grouped_by_tag_lists_a_task_under_each_tag(
         hidden_groups=[str(alpha.id), ""],
     )
     assert _grouped_rows(resp)[1:] == [("Beta", "Both")]
+
+    # Three tasks are four rows grouped, and the ceiling counts the rows.
+    monkeypatch.setattr(export_limits, "EXPORT_MAX_ROWS", 3)
+    resp = await _export(client, a, "tasks", format="md", group_by="tag_ids")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "EXPORT_TOO_LARGE"
 
 
 async def test_task_export_groups_by_each_kind_of_field(

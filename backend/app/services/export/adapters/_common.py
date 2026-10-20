@@ -71,6 +71,44 @@ def selection_ids(params: dict, *, single_key: str, multi_key: str) -> list[int]
     return list(dict.fromkeys(ids))
 
 
+async def _export_grouping(
+    session: AsyncSession, dataset_name: str, params: dict, ids: list[int]
+) -> Any:
+    """The grouping ``params`` names (``group_by``, a field of
+    ``dataset_name``, a date's with its ``bucket``) of ``ids``, or ``None``
+    for an ungrouped export."""
+    from app.services.fields.grouping import GroupingError, group_rows
+
+    field = params.get("group_by")
+    if field is None:
+        return None
+    if not isinstance(field, str) or not isinstance(
+        params.get("hidden_groups") or [], list
+    ):
+        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
+    try:
+        bucket = DateBucket(params["bucket"]) if params.get("bucket") else None
+        return await group_rows(
+            session, dataset_name, field, ids, bucket=bucket, tz=params.get("tz")
+        )
+    except (GroupingError, ValueError):
+        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
+
+
+async def grouped_row_count(
+    session: AsyncSession, dataset_name: str, params: dict, ids: list[int]
+) -> int:
+    """How many rows an export of ``ids`` renders: each once, or grouped, one
+    under every group it is in that the list shows."""
+    grouping = await _export_grouping(session, dataset_name, params, ids)
+    if grouping is None:
+        return len(ids)
+    hidden = params.get("hidden_groups") or []
+    return sum(
+        1 for group, _ in grouping.ordered(ids, lambda i: i) if group.key not in hidden
+    )
+
+
 async def grouped_for_export(
     session: AsyncSession,
     dataset_name: str,
@@ -79,30 +117,19 @@ async def grouped_for_export(
     locale: str,
 ) -> tuple[str | None, list[tuple[str | None, Any]]]:
     """``rows`` as the list they came from groups them, when ``params`` names
-    a grouping (``group_by``, a field of ``dataset_name``, a date's with its
-    ``bucket``): what the group column is headed with, and each row under the
+    a grouping: what the group column is headed with, and each row under the
     heading of every group it is in, less the ``hidden_groups`` the list
     leaves out. Ungrouped, no heading and each row once."""
-    from app.services.fields.grouping import NO_GROUP, GroupingError, group_rows
+    from app.services.fields.grouping import NO_GROUP
 
-    field = params.get("group_by")
-    if field is None:
+    grouping = await _export_grouping(
+        session, dataset_name, params, [row.id for row in rows]
+    )
+    if grouping is None:
         return None, [(None, row) for row in rows]
+    field = params["group_by"]
     hidden = params.get("hidden_groups") or []
-    if not isinstance(field, str) or not isinstance(hidden, list):
-        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
-    try:
-        bucket = DateBucket(params["bucket"]) if params.get("bucket") else None
-        grouping = await group_rows(
-            session,
-            dataset_name,
-            field,
-            [row.id for row in rows],
-            bucket=bucket,
-            tz=params.get("tz"),
-        )
-    except (GroupingError, ValueError):
-        raise ExportError(ExportMessages.EXPORT_INVALID_PARAMS)
+    bucket = DateBucket(params["bucket"]) if params.get("bucket") else None
     label = grouping.name or et(f"fields.{field}", locale)
 
     def heading(group: Any) -> str:

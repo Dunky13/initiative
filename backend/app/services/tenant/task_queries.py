@@ -1152,6 +1152,31 @@ async def count_tasks_for_export(
     return (await session.exec(select(func.count()).select_from(count_subq))).one()
 
 
+async def task_ids_for_export(
+    session,
+    current_user: User,
+    *,
+    conditions: Optional[str] = None,
+    sorting: Optional[str] = None,
+    tz: Optional[str] = None,
+    include_archived: bool = False,
+    limit: int,
+) -> list[int]:
+    """The ids an export snapshot holds, up to ``limit``: what a grouped
+    export counts its rows from."""
+    q = await parse_task_list_query(session, conditions, sorting, tz)
+    build = await guild_task_query_builder(
+        session,
+        current_user,
+        require_guild_context(session),
+        q=q,
+        include_archived=include_archived,
+    )
+    if build is None:
+        return []
+    return list(await session.exec(build(select(Task.id)).limit(limit)))
+
+
 async def query_tasks_for_export(
     session,
     current_user: User,

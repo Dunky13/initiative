@@ -20,11 +20,9 @@ import {
   type TaskStatusRead,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import {
-  deviceJSON,
   type ListViewSpec,
   NO_PART_VIEW,
   partOf,
@@ -51,46 +49,6 @@ import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
 const TASK_DEFAULTS = { filters: EMPTY_TASK_FILTERS, ...NO_PART_VIEW };
 
-/** What an older release kept for a project: its view under the project's id
- *  alone (`layout` or `view`, then filters and sort by layout), each layout's
- *  table grouping on the device, and the calendar's month or week, which was
- *  the same on every calendar. */
-const carryProjectView = (
-  items: Readonly<Record<string, unknown>>,
-  projectId: number
-): StoredListView | null => {
-  const old = (items[`project:${projectId}:views`] ?? {}) as {
-    layout?: unknown;
-    view?: unknown;
-    filters?: Record<string, unknown>;
-    sorting?: Record<string, unknown>;
-  };
-  const parts: NonNullable<StoredListView["parts"]> = {};
-  for (const kind of ["table", "board", "calendar"]) {
-    const grouping = (
-      deviceJSON(`initiative-project-${projectId}-${kind}-task-table`) as {
-        grouping?: unknown;
-      } | null
-    )?.grouping;
-    const entry = {
-      ...(old.filters?.[kind] !== undefined ? { filters: old.filters[kind] } : {}),
-      ...(old.sorting?.[kind] !== undefined ? { sorting: old.sorting[kind] } : {}),
-      ...(Array.isArray(grouping) ? { grouping } : {}),
-    };
-    if (Object.keys(entry).length > 0) parts[kind] = entry;
-  }
-  const layout = old.layout ?? old.view;
-  const mode = items[CALENDAR_VIEW_MODE_KEY];
-  if (Object.keys(parts).length === 0 && typeof layout !== "string" && typeof mode !== "string") {
-    return null;
-  }
-  return {
-    layout: typeof layout === "string" ? layout : null,
-    mode: typeof mode === "string" ? mode : null,
-    parts,
-  };
-};
-
 /** Where one person's view of a project's tasks is kept, and what it holds. */
 export const projectViewSpec = (
   communityId: number,
@@ -99,7 +57,6 @@ export const projectViewSpec = (
   key: viewKey(communityId, "project", projectId),
   read: readTaskFilters,
   defaults: TASK_DEFAULTS,
-  carryOver: (items) => carryProjectView(items, projectId),
 });
 
 /** What the URL names: `?layout=` and `?preset=`, which a link means for

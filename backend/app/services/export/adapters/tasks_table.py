@@ -24,7 +24,11 @@ from app.core.identity_boundary import STORED_MENTION
 from app.core.references import TEXT_REFERENCE, kind_for_trigger
 from app.models.platform.user import User
 from app.models.tenant.task import Task, TaskStatusCategory
-from app.services.export.adapters._common import grouped_for_export, require_may_leave
+from app.services.export.adapters._common import (
+    grouped_for_export,
+    grouped_row_count,
+    require_may_leave,
+)
 from app.services.export.contract import RenderItem, RenderRequest
 from app.services.export.i18n import et, export_locale
 from app.services.export.markdown import blocks_from_markdown
@@ -92,9 +96,18 @@ class TasksTableAdapter:
         params: dict,
         format: str,
     ) -> int:
-        return await task_queries.count_tasks_for_export(
-            session, user, **_selector(params)
+        if params.get("group_by") is None:
+            return await task_queries.count_tasks_for_export(
+                session, user, **_selector(params)
+            )
+        # Grouped, a task is a row under every group it is in, so the rows are
+        # counted from the groups; past the ceiling, the count is over it.
+        ids = await task_queries.task_ids_for_export(
+            session, user, **_selector(params), limit=export_limits.EXPORT_MAX_ROWS + 1
         )
+        if len(ids) > export_limits.EXPORT_MAX_ROWS:
+            return len(ids)
+        return await grouped_row_count(session, "tasks", params, ids)
 
     async def build(
         self,
