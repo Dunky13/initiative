@@ -116,18 +116,20 @@ def ical_from_export_dicts(
     worker replay where only JSON survives.
 
     Times are UTC and an all-day event's days are its UTC dates, as stored, so
-    every client shows the file in its own zone. ``name`` and ``tz`` are the
-    calendar's own: what a subscribing app calls it, and the zone it lists it
-    in (``X-WR-TIMEZONE``), which moves no event."""
+    every client shows the file in its own zone. ``name`` and ``tz`` are a
+    subscription's: what the subscribing app calls the calendar, and the zone
+    it lists it in (``X-WR-TIMEZONE``). An app that honours that header reads
+    a UTC start as a time in its zone, which would put a repeat on that zone's
+    daylight saving, so a subscription anchors no repeat in UTC it can avoid,
+    and names no zone when one is left."""
     cal = icalendar.Calendar()
     cal.add("prodid", "-//Initiative//EN")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
     if name:
         cal.calendar_name = name
-    if tz:
-        cal.add("x-wr-timezone", tz)
     fixed_zones: set[str] = set()
+    anchored_in_utc = False
 
     for event in events:
         vevent = icalendar.Event()
@@ -155,21 +157,29 @@ def ical_from_export_dicts(
             # A repeat's days are where it was picked, so the start is written
             # in a fixed offset that puts it on that day.
             zone = _picked_zone(start_at, event.get("recurrence_shift") or 0)
+            if tz and event.get("recurrence") and zone is timezone.utc:
+                if recurrence.of_hours(recurrence.parse(event["recurrence"]).rule):
+                    # A rule of hours keeps its exact offset, UTC.
+                    anchored_in_utc = True
+                else:
+                    # A repeat of days, an hour either side of UTC that keeps
+                    # its start on its date: the same days, the same instants.
+                    zone = ZoneInfo("Etc/GMT-1" if start_at.hour < 23 else "Etc/GMT+1")
             if isinstance(zone, timezone) and zone is not timezone.utc:
                 # datetime.timezone has no IANA name for add_missing_timezones
                 # to resolve. Define its constant offset for other clients too.
-                name = str(zone)
-                if name not in fixed_zones:
+                tzid = str(zone)
+                if tzid not in fixed_zones:
                     fixed = icalendar.Timezone()
-                    fixed.add("tzid", name)
+                    fixed.add("tzid", tzid)
                     standard = icalendar.TimezoneStandard()
                     standard.add("dtstart", datetime(1970, 1, 1))
                     standard.add("tzoffsetfrom", zone.utcoffset(None))
                     standard.add("tzoffsetto", zone.utcoffset(None))
-                    standard.add("tzname", name)
+                    standard.add("tzname", tzid)
                     fixed.add_component(standard)
                     cal.add_component(fixed)
-                    fixed_zones.add(name)
+                    fixed_zones.add(tzid)
             vevent.add("dtstart", start_at.astimezone(zone))
             vevent.add("dtend", end_at.astimezone(zone))
 
@@ -218,6 +228,8 @@ def ical_from_export_dicts(
 
         cal.add_component(vevent)
 
+    if tz and not anchored_in_utc:
+        cal.add("x-wr-timezone", tz)
     cal.add_missing_timezones()
     return cal.to_ical()
 

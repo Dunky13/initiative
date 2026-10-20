@@ -228,12 +228,18 @@ def normalize(text: str, *, kind: RecurrenceKind) -> str:
     return lines
 
 
+def of_hours(rule: dict[str, list]) -> bool:
+    """Whether a rule picks hours rather than days: its shift is then an exact
+    offset, not whole days."""
+    return rule["FREQ"][0] == "HOURLY" or "BYHOUR" in rule
+
+
 def shift_for(text: str, start: datetime, zone: tzinfo) -> int:
     """The shift of a rule picked in ``zone`` for a series starting at
     ``start``: whole days for a rule of days, the offset for a rule of hours."""
     rule = parse(text).rule
     local = start.astimezone(zone)
-    if rule["FREQ"][0] == "HOURLY" or "BYHOUR" in rule:
+    if of_hours(rule):
         return int((local.utcoffset() or timedelta(0)).total_seconds() // 60)
     return (local.date() - start.astimezone(timezone.utc).date()).days * 1440
 
