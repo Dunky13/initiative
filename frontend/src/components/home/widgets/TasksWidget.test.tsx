@@ -97,6 +97,48 @@ describe("TasksWidget saved sort", () => {
   });
 });
 
+describe("TasksWidget beside another", () => {
+  it("shows the shared sort on both widgets' headers when one changes it", async () => {
+    const user = userEvent.setup();
+    stubTasks();
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, { items: {} });
+    const widget = (id: string) => (
+      <Widget
+        widget={{ id, type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+        options={{}}
+        onOptionsChange={() => undefined}
+        stacked={false}
+        onConfigure={() => undefined}
+        onRemove={() => undefined}
+      />
+    );
+    renderPage(
+      () => (
+        <>
+          {widget("tasks")}
+          {widget("tasks-2")}
+        </>
+      ),
+      { queryClient }
+    );
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("columnheader", { name: /priority/i })).toHaveLength(2)
+    );
+    const [first] = screen.getAllByRole("columnheader", { name: /priority/i });
+    await user.click(within(first).getByRole("button"));
+
+    await waitFor(() => {
+      for (const header of screen.getAllByRole("columnheader", { name: /priority/i })) {
+        expect(within(header).getByRole("button").querySelector("svg")).not.toHaveClass(
+          "lucide-arrow-up-down"
+        );
+      }
+    });
+  });
+});
+
 describe("TasksWidget grouping", () => {
   it("remembers the grouping choice for the next visit", async () => {
     const user = userEvent.setup();

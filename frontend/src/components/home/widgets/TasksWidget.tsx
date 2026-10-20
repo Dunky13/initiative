@@ -124,7 +124,6 @@ export const TasksWidget = ({ options, onOptionsChange, onConfigure }: HomeWidge
   );
   const { setGrouping } = view;
   const keptColumns = columnsOf(options) ?? view.columns;
-  const tableState = { grouping: view.grouping };
   // A column they never chose about is shown, but for the date window, the
   // community ("guild", the id the stored state is keyed by) and properties.
   const effectiveColumnVisibility = useMemo(() => {
@@ -316,12 +315,12 @@ export const TasksWidget = ({ options, onOptionsChange, onConfigure }: HomeWidge
                 groupingOptions={groupingOptions}
                 columnVisibility={effectiveColumnVisibility}
                 onColumnVisibilityChange={setColumnVisibility}
+                // Sort and grouping are shared by every tasks widget on the
+                // page, so each table follows them rather than its own copy.
+                grouping={view.grouping}
                 onGroupingChange={setGrouping}
-                initialState={{
-                  grouping: tableState.grouping,
-                  expanded: true,
-                }}
-                initialSorting={table.initialSorting}
+                initialState={{ expanded: true }}
+                sorting={table.initialSorting}
                 enableFilterInput
                 filterInputColumnKey="title"
                 filterInputPlaceholder={t("filters.filterPlaceholder")}
