@@ -35,6 +35,7 @@ from app.core.user_input_validators import resolve_zone
 from app.db.session import require_guild_context
 from app.models.platform.user import User
 from app.schemas.tenant.project_export import ProjectExportEnvelope
+from app.schemas.tenant.tool_layout import MAX_NODES
 from app.services.export.adapters._common import (
     BuildContext,
     ToolExportAdapter,
@@ -43,7 +44,7 @@ from app.services.export.adapters._common import (
     get_for_export,
 )
 from app.services.export import values
-from app.services.export.adapters.tasks_table import MAX_COLUMNS, task_columns
+from app.services.export.adapters.tasks_table import task_columns
 from app.services.export.contract import RenderItem
 from app.services.export.filters import narrow, parse_filters
 from app.services.export.i18n import et, export_locale
@@ -61,7 +62,7 @@ class TaskFilters(BaseModel):
     include_archived: bool = False
     #: The layout fields the reader's table of the project shows, which its
     #: report shows (``tasks_table.task_columns``).
-    columns: list[str] | None = Field(default=None, max_length=MAX_COLUMNS)
+    columns: list[str] | None = Field(default=None, max_length=MAX_NODES)
 
     @field_validator("conditions")
     @classmethod

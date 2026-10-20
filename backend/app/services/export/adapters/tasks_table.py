@@ -115,9 +115,6 @@ TASK_EXPORT_FIELDS: dict[
     ),
 }
 
-#: The most fields one export's view may name.
-MAX_COLUMNS = 100
-
 #: What a table export shows when its view names no columns: an export queued
 #: before views sent them.
 _DEFAULT_COLUMNS = ("title", "assignees", "dueDate", "priority")

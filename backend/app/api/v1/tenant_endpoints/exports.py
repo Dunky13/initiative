@@ -42,8 +42,11 @@ from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.initiative import Initiative
 from app.schemas.query import DateBucket
 from app.schemas.tenant.backup_export import BackupEstimate
-from app.schemas.tenant.tool_layout import MAX_FIELD_ID_LENGTH, MAX_HIDDEN_GROUPS
-from app.services.export.adapters.tasks_table import MAX_COLUMNS
+from app.schemas.tenant.tool_layout import (
+    MAX_FIELD_ID_LENGTH,
+    MAX_HIDDEN_GROUPS,
+    MAX_NODES,
+)
 from app.schemas.tenant.export_job import (
     ExportJobRead,
     CommunityExportStatus,
@@ -185,7 +188,7 @@ async def export_tasks(
         List[Annotated[str, Field(max_length=MAX_FIELD_ID_LENGTH)]]
     ] = Query(
         default=None,
-        max_length=MAX_COLUMNS,
+        max_length=MAX_NODES,
         description=(
             "The layout fields the list's table shows, in order (``title``, "
             "``dueDate``, ``property:<id>``, ``plugin:<install>:<key>``). "
@@ -196,7 +199,7 @@ async def export_tasks(
         List[Annotated[str, Field(max_length=MAX_FIELD_ID_LENGTH)]]
     ] = Query(
         default=None,
-        max_length=MAX_COLUMNS,
+        max_length=MAX_NODES,
         description=(
             "For the detailed PDF: the task page's parts in its order, its "
             "fields and ``status``, ``dates``, ``properties``, ``description``, "

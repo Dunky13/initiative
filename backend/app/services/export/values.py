@@ -13,6 +13,7 @@ typed.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date as Date, datetime, timezone
@@ -139,7 +140,8 @@ _SCALAR_KINDS = frozenset({"text", "number", "date", "datetime", "checkbox"})
 def plugin_value(value: Any, kind: str, locale: str, tz: str | None) -> Any:
     """A plug-in field's value as the page draws it, by its kind: a badge by
     its text, a link by its title, progress out of its most, a list's
-    elements one after another. A value of another shape is none."""
+    elements one after another. A value of another shape draws nothing, as on
+    the page."""
     if isinstance(value, list):
         return ", ".join(
             str(cell)
@@ -152,20 +154,34 @@ def plugin_value(value: Any, kind: str, locale: str, tz: str | None) -> Any:
         if not isinstance(value, dict):
             return None
         if kind == "badge":
-            return value.get("text")
+            return value.get("text") if isinstance(value.get("text"), str) else None
         if kind == "link":
-            return value.get("title") or value.get("url")
-        if value.get("value") is None or value.get("max") is None:
+            url = value.get("url")
+            if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+                return None
+            title = value.get("title")
+            return title if isinstance(title, str) and title else url
+        done, most = value.get("value"), value.get("max")
+        if not (_is_number(done) and _is_number(most) and most > 0):
             return None
-        return f"{number(value['value'])}/{number(value['max'])}"
-    if value is None:
-        return None
+        return f"{number(done)}/{number(most)}"
     if kind == "checkbox":
         return yes_no(value, locale) if isinstance(value, bool) else None
     if kind == "number":
-        return number(value)
+        return number(value) if _is_number(value) else None
+    if not isinstance(value, str) or not value:
+        return None
     if kind == "date":
         return date(value)
     if kind == "datetime":
         return moment(value, tz)
-    return text(value)
+    return value
+
+
+def _is_number(value: Any) -> bool:
+    """A finite number, as a plug-in's number reads one; ``True`` is not."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )

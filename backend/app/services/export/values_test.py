@@ -18,6 +18,11 @@ def test_a_plug_in_value_is_written_as_the_page_draws_its_kind():
     assert plugin_value(
         [{"ref": "a", "value": 0}, {"ref": "b", "value": 5}], "number", "en", None
     ) == ("0, 5")
+    # A value of another shape draws nothing, as on the page, rather than
+    # failing the export.
+    assert plugin_value("pending", "number", "en", None) is None
+    assert plugin_value({"value": "x", "max": 4}, "progress", "en", None) is None
+    assert plugin_value({"url": "javascript:x"}, "link", "en", None) is None
     # An unset checkbox is no value, not "No".
     assert plugin_value(None, "checkbox", "en", None) is None
     assert plugin_value(False, "checkbox", "en", None) == "No"
