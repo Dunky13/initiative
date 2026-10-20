@@ -22,7 +22,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from sqlmodel import select
 
-from app.services.tenant.task_creation import advance_recurrence_if_needed
+from app.services.tenant.task_series import advance_recurrence_if_needed
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import Task, TaskStatusCategory
 from app.models.tenant.resource_grant import ResourceAccessLevel

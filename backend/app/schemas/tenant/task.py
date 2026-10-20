@@ -1,6 +1,6 @@
 from datetime import datetime
 from string import ascii_letters, digits
-from typing import Final, List, Literal, Optional
+from typing import Final, List, Optional
 from uuid import uuid4
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
@@ -31,7 +31,7 @@ from app.schemas.tenant.property import (
 )
 
 from app.core.intake import Conversation, IntakeStream
-from app.models.tenant.task import TaskPriority, TaskStatusCategory
+from app.models.tenant.task import RecurrenceStrategy, TaskPriority, TaskStatusCategory
 from app.models.platform.user import UserStatus
 
 
@@ -122,7 +122,7 @@ class TaskBase(SanitizedBaseModel):
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     recurrence: Optional[str] = None
-    recurrence_strategy: Literal["fixed", "rolling"] = "fixed"
+    recurrence_strategy: RecurrenceStrategy = RecurrenceStrategy.fixed
 
 
 class TaskCreate(TaskBase, PropertiesOnCreate):
@@ -167,7 +167,7 @@ class TaskUpdate(PropertiesOnUpdate):
     #: The zone ``recurrence``'s days were picked in, and ``recurrence_shift``
     #: is taken from it. Omitted, the rule's days are UTC days.
     tz: Optional[str] = Field(default=None, max_length=64)
-    recurrence_strategy: Optional[Literal["fixed", "rolling"]] = None
+    recurrence_strategy: Optional[RecurrenceStrategy] = None
     # PATCH semantics: None = "leave unchanged"; a list (incl. []) = replace-all.
     tag_ids: Optional[List[int]] = Field(default=None, max_length=100)
     checklist: Optional[List[ChecklistItemInput]] = None

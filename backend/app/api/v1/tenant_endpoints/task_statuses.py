@@ -37,7 +37,7 @@ from app.core.messages import InitiativeMessages, TaskStatusMessages
 from app.services.tenant import initiatives as initiatives_service
 from app.services.tenant import task_statuses as task_statuses_service
 from app.services.tenant import task_completion
-from app.services.tenant import task_creation as task_creation_service
+from app.services.tenant import task_series
 
 router = APIRouter(
     prefix="/projects/{project_id}/task-statuses",
@@ -432,7 +432,7 @@ async def delete_task_status(
         for task in recurring_tasks:
             task.task_status_id = fallback_obj.id  # ty: ignore[invalid-assignment] — persisted row, id is set
             task.task_status = fallback_obj
-            await task_creation_service.advance_recurrence_if_needed(
+            await task_series.advance_recurrence_if_needed(
                 session,
                 task,
                 previous_status_category=target.category,

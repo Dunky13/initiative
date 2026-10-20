@@ -1406,10 +1406,12 @@ export const TaskPriority = {
   urgent: "urgent",
 } as const;
 
-export type TaskListReadRecurrenceStrategy =
-  (typeof TaskListReadRecurrenceStrategy)[keyof typeof TaskListReadRecurrenceStrategy];
+/**
+ * How a repeating task's next date is counted.
+ */
+export type RecurrenceStrategy = (typeof RecurrenceStrategy)[keyof typeof RecurrenceStrategy];
 
-export const TaskListReadRecurrenceStrategy = {
+export const RecurrenceStrategy = {
   fixed: "fixed",
   rolling: "rolling",
 } as const;
@@ -1490,7 +1492,7 @@ export interface TaskListRead {
   start_date: string | null;
   due_date: string | null;
   recurrence: string | null;
-  recurrence_strategy: TaskListReadRecurrenceStrategy;
+  recurrence_strategy: RecurrenceStrategy;
   description_excerpt: string | null;
   has_description: boolean;
   id: number;
@@ -10399,14 +10401,6 @@ export interface TaskCaseRead {
   resource_id?: number | null;
 }
 
-export type TaskCreateRecurrenceStrategy =
-  (typeof TaskCreateRecurrenceStrategy)[keyof typeof TaskCreateRecurrenceStrategy];
-
-export const TaskCreateRecurrenceStrategy = {
-  fixed: "fixed",
-  rolling: "rolling",
-} as const;
-
 export interface TaskCreate {
   properties?: PropertyValueInput[];
   title: string;
@@ -10414,7 +10408,7 @@ export interface TaskCreate {
   start_date?: string | null;
   due_date?: string | null;
   recurrence?: string | null;
-  recurrence_strategy?: TaskCreateRecurrenceStrategy;
+  recurrence_strategy?: RecurrenceStrategy;
   description?: string | null;
   project_id: number;
   tz?: string | null;
@@ -10450,21 +10444,13 @@ export interface TaskProjectSummary {
   is_template: boolean | null;
 }
 
-export type TaskReadRecurrenceStrategy =
-  (typeof TaskReadRecurrenceStrategy)[keyof typeof TaskReadRecurrenceStrategy];
-
-export const TaskReadRecurrenceStrategy = {
-  fixed: "fixed",
-  rolling: "rolling",
-} as const;
-
 export interface TaskRead {
   title: string;
   priority: TaskPriority;
   start_date: string | null;
   due_date: string | null;
   recurrence: string | null;
-  recurrence_strategy: TaskReadRecurrenceStrategy;
+  recurrence_strategy: RecurrenceStrategy;
   description: string | null;
   id: number;
   project_id: number;
@@ -10543,15 +10529,6 @@ export interface TaskStatusUpdate {
   icon?: string | null;
 }
 
-export type TaskUpdateRecurrenceStrategy =
-  | (typeof TaskUpdateRecurrenceStrategy)[keyof typeof TaskUpdateRecurrenceStrategy]
-  | null;
-
-export const TaskUpdateRecurrenceStrategy = {
-  fixed: "fixed",
-  rolling: "rolling",
-} as const;
-
 export type TaskUpdateScope = (typeof TaskUpdateScope)[keyof typeof TaskUpdateScope] | null;
 
 export const TaskUpdateScope = {
@@ -10575,7 +10552,7 @@ export interface TaskUpdate {
   due_date?: string | null;
   recurrence?: string | null;
   tz?: string | null;
-  recurrence_strategy?: TaskUpdateRecurrenceStrategy;
+  recurrence_strategy?: RecurrenceStrategy | null;
   tag_ids?: number[] | null;
   checklist?: ChecklistItemInput[] | null;
   scope?: TaskUpdateScope;

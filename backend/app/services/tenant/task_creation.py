@@ -5,10 +5,9 @@ assignees to notify, which tags and properties to attach) and a row-shaped
 half: find the end of the list, make sure the project has its statuses, decide
 which status the task starts in, and build the row. This module is the second
 half, shared by the task endpoint and the intake writer, together with the
-pieces every task change reaches for: replacing a task's assignees, rolling a
-recurring task forward to its next occurrence when it is completed (from the
-task routes and from a status change that moves tasks between columns), and
-copying tasks (``copy_tasks``), on their own or with their project.
+pieces every task change reaches for: replacing a task's assignees and copying
+tasks (``copy_tasks``), on their own or with their project. A repeating task's
+next task is made in ``task_series``.
 
 Nothing here commits, so a caller can compose it into a larger transaction.
 """
@@ -41,7 +40,6 @@ from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
 from app.services.tenant import task_completion
 from app.services.tenant import task_description as task_description_service
-from app.services.tenant import task_series
 from app.services.tenant import task_statuses as task_statuses_service
 from app.services.tenant.names import copy_name
 from app.services.tenant.task_completion import sync_completed_at
@@ -227,103 +225,6 @@ async def change_task_assignees(
     await session.flush()
     await session.refresh(task, attribute_names=["assignees"])
     return added
-
-
-async def advance_recurrence_if_needed(
-    session: AsyncSession,
-    task: Task,
-    *,
-    previous_status_category: TaskStatusCategory | None,
-    now: datetime,
-    user_timezone: str | None,
-) -> bool:
-    current_category = task.task_status.category if task.task_status else None
-    if (
-        previous_status_category == TaskStatusCategory.done
-        or current_category != TaskStatusCategory.done
-        or not task.recurrence
-        or task.due_date is None
-    ):
-        return False
-
-    try:
-        dates = task_series.next_dates(task, now=now, user_timezone=user_timezone)
-    except ValueError:
-        return False
-    if dates is None:
-        task.recurrence = None
-        return False
-    new_start, next_due = dates
-
-    # An edit of just this task leaves the next one with what it changed from.
-    values = task_series.carried(task)
-    task.series_id = task.series_id or task.id
-    default_status = await task_statuses_service.get_default_status(
-        session, task.project_id
-    )
-    new_task = Task(
-        project_id=task.project_id,
-        task_status_id=default_status.id,
-        title=values.get("title", task.title),
-        description=values.get("description", task.description),
-        priority=values.get("priority", task.priority),
-        start_date=new_start,
-        due_date=next_due,
-        recurrence=task.recurrence,
-        recurrence_shift=task.recurrence_shift,
-        recurrence_strategy=task.recurrence_strategy or "fixed",
-        position=await next_position(session, task.project_id),
-        recurrence_occurrence_count=task.recurrence_occurrence_count + 1,
-        series_id=task.series_id,
-        created_by=task.created_by,
-        checklist=checklist_service.cloned(task.checklist),
-    )
-    sync_completed_at(new_task, default_status.category, now=now)
-    session.add(new_task)
-    await session.flush()
-    assignee_ids = values.get(
-        "assignee_ids", [assignee.id for assignee in task.assignees]
-    )
-    project = await session.get(Project, task.project_id)
-    if project is None:  # the task was just read inside it
-        raise RuntimeError("a recurring task's project is gone")
-    await set_task_assignees(
-        session, new_task, assignee_ids, project=project, carried=True
-    )
-    if "tag_ids" in values:
-        await task_series.retag(session, new_task.id, values["tag_ids"])
-    else:
-        await tags_service.copy_entity_tags(
-            session,
-            tags_service.TAG_LINKS["task"],
-            {task.id: new_task.id},
-        )
-    if new_task.description:
-        await task_description_service.record_references(
-            session, new_task, author_id=task.created_by
-        )
-    await session.flush()
-    # Reload through a select rather than ``session.refresh``: refresh takes no
-    # loader options, so the assignees would come back unloaded and the
-    # serializer would have to emit IO from sync context. ``populate_existing``
-    # applies the freshly loaded rows to the identity-mapped instance.
-    await session.exec(
-        select(Task)
-        .where(Task.id == new_task.id)
-        .options(
-            selectinload(Task.assignees),
-        )
-        .execution_options(populate_existing=True)
-    )
-    await tags_service.annotate_tags(session, [new_task])
-    await properties_service.annotate_properties(session, [new_task])
-
-    task.recurrence = None
-    task.recurrence_strategy = "fixed"
-    task.recurrence_carry = None
-    task.updated_at = now
-    session.add(task)
-    return True
 
 
 def _date_shift(

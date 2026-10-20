@@ -1,4 +1,4 @@
-import type { TaskListReadRecurrenceStrategy } from "@/api/generated/initiativeAPI.schemas";
+import type { RecurrenceStrategy } from "@/api/generated/initiativeAPI.schemas";
 import { dateTimeFormat, listFormat } from "@/lib/intl";
 import { browserTimezone } from "@/lib/timezones";
 import type { TranslateFn } from "@/types/i18n";
@@ -310,7 +310,7 @@ const describeMonthlyDetail = (rule: RecurrenceRule, t: TranslateFn) => {
 
 export const summarizeRecurrence = (
   rule: RecurrenceRule | null,
-  options: { referenceDate?: string | null; strategy?: TaskListReadRecurrenceStrategy } | undefined,
+  options: { referenceDate?: string | null; strategy?: RecurrenceStrategy } | undefined,
   t: TranslateFn
 ): string => {
   if (!rule) {
@@ -773,9 +773,7 @@ const toLocalDateKey = (date: Date) =>
 export const summarizeStored = (
   stored: string | null | undefined,
   start: string | null | undefined,
-  options:
-    | { strategy?: TaskListReadRecurrenceStrategy; shift?: number; allDay?: boolean }
-    | undefined,
+  options: { strategy?: RecurrenceStrategy; shift?: number; allDay?: boolean } | undefined,
   t: TranslateFn
 ): string => {
   const rule = fromStored(stored, start, options?.shift, options?.allDay);

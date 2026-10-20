@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
 from app.api import resource_access
@@ -165,6 +166,21 @@ def _touch_project(project: Project, now: datetime) -> None:
 #: ``tasks`` policy is rendered from, so the routes and the policy cannot
 #: disagree about a task's parent.
 _GOVERNING = resource_access.governing_tool("tasks")
+
+
+async def _writable_series(
+    session: AsyncSession,
+    task: Task,
+    current_user: Optional[User],
+    context: ActorContext,
+) -> list[Task]:
+    """Every other task of the task's series, once the caller may change each."""
+    series = await task_series.others(session, task)
+    for project in {member.project_id: member.project for member in series}.values():
+        resource_access.authorize(
+            _GOVERNING, project, current_user, context=context, access="write"
+        )
+    return series
 
 
 async def _response(session: SessionDep, task_id: int) -> Task:
@@ -595,57 +611,27 @@ async def update_task(
         )
 
     for field, value in update_data.items():
-        if field == "recurrence":
-            if value is None:
-                task.recurrence_occurrence_count = 0
-                setattr(task, field, None)
-                task.recurrence_strategy = "fixed"
-                continue
-        if field == "recurrence_strategy" and value is None:
+        if field == "recurrence" or (field == "recurrence_strategy" and value is None):
             continue
         setattr(task, field, value)
-    start = task.due_date or task.start_date
-    if update_data.get("recurrence"):
-        task.recurrence, task.recurrence_shift = recurrence.stored(
-            update_data["recurrence"], start, picked_in, kind="task"
-        )
-    elif (
-        task.recurrence
-        and previous_start
-        and start
-        and start != previous_start
-        and scope != "this"
-    ):
-        # The repeat moves with its start, its days kept as they were picked.
-        task.recurrence, task.recurrence_shift = recurrence.restarted(
-            task.recurrence, task.recurrence_shift, previous_start, start, picked_in
-        )
+    task_series.repeat_edited(
+        task,
+        update_data.get("recurrence", ...),
+        previous_start=previous_start,
+        tz=picked_in,
+        scope=scope,
+    )
     if checklist_sent:
         task.checklist = checklist_service.normalize(
             task_in.checklist or [], existing=task.checklist
         )
     series: list[Task] = []
     if before is not None:
-        after = task_series.values_after(
-            task, before, assignee_ids=assignee_ids, tag_ids=tag_ids
+        after, moved = task_series.edited(
+            task, before, scope=scope, assignee_ids=assignee_ids, tag_ids=tag_ids
         )
-        moved = task_series.changed(before, after)
-        if scope == "this" and task.recurrence:
-            task_series.keep(task, before, after)
-        else:
-            task_series.release(task, moved)
         if scope == "all":
-            series = await task_series.others(session, task)
-            for project in {
-                member.project_id: member.project for member in series
-            }.values():
-                resource_access.authorize(
-                    _GOVERNING,
-                    project,
-                    current_user,
-                    context=guild_context,
-                    access="write",
-                )
+            series = await _writable_series(session, task, current_user, guild_context)
     now = datetime.now(timezone.utc)
     task.updated_at = now
     sync_completed_at(
@@ -713,7 +699,7 @@ async def update_task(
         )
     # Once the task has everything this edit gives it, so a completion's next
     # task is copied from what was saved.
-    await task_creation_service.advance_recurrence_if_needed(
+    await task_series.advance_recurrence_if_needed(
         session,
         task,
         previous_status_category=previous_status_category,
@@ -875,15 +861,11 @@ async def delete_task(
         )
     )
     if not skipped:
-        series = await task_series.others(session, task) if scope == "all" else []
-        for member in series:
-            resource_access.authorize(
-                _GOVERNING,
-                member.project,
-                current_user,
-                context=guild_context,
-                access="write",
-            )
+        series = (
+            await _writable_series(session, task, current_user, guild_context)
+            if scope == "all"
+            else []
+        )
         for doomed in [task, *series]:
             await trash(session, doomed, deleted_by_user_id=current_user.id)
     _touch_project(project, now)
@@ -996,7 +978,7 @@ async def reorder_tasks(
             task, task.task_status.category if task.task_status else None, now=now
         )
         session.add(task)
-        await task_creation_service.advance_recurrence_if_needed(
+        await task_series.advance_recurrence_if_needed(
             session,
             task,
             previous_status_category=previous_status_category,

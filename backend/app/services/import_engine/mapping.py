@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.core import recurrence
-from app.models.tenant.task import TaskStatusCategory
+from app.models.tenant.task import RecurrenceStrategy, TaskStatusCategory
 
 #: What an imported tag is coloured. A foreign label rarely carries a colour,
 #: so this is the app's own default rather than a translation of anything — a
@@ -123,7 +123,9 @@ def repeat_fields(
     return {
         "recurrence": text,
         "recurrence_shift": shift,
-        "recurrence_strategy": "rolling" if rolling else "fixed",
+        "recurrence_strategy": (
+            RecurrenceStrategy.rolling if rolling else RecurrenceStrategy.fixed
+        ),
     }
 
 

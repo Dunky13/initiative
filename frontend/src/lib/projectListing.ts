@@ -16,8 +16,8 @@ import type {
   PropertyOption,
   PropertySummary,
   PropertyType,
+  RecurrenceStrategy,
   TaskListRead,
-  TaskListReadRecurrenceStrategy,
   TaskPriority,
   TaskStatusCategory,
   TaskStatusRead,
@@ -59,7 +59,7 @@ export interface ProjectListingTask {
   due_date?: string | null;
   completed_at?: string | null;
   recurrence?: string | Record<string, unknown> | null;
-  recurrence_strategy?: TaskListReadRecurrenceStrategy;
+  recurrence_strategy?: RecurrenceStrategy;
   recurrence_shift?: number;
   recurrence_occurrence_count?: number;
   position?: number;

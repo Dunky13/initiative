@@ -3,8 +3,8 @@ import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  RecurrenceStrategy,
   TaskListRead,
-  TaskListReadRecurrenceStrategy,
   TaskPriority,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -48,7 +48,7 @@ export type TaskBulkUpdate = {
   recurrence: string | null;
   /** The zone the rule's days are in; each task's rule is stored from its own start. */
   tz: string;
-  recurrence_strategy: TaskListReadRecurrenceStrategy;
+  recurrence_strategy: RecurrenceStrategy;
 };
 
 interface TaskBulkEditDialogProps {
@@ -79,8 +79,7 @@ export const TaskBulkEditDialog = ({
   const [statusId, setStatusId] = useState<string>("");
   const [priority, setPriority] = useState<string>("");
   const [recurrence, setRecurrence] = useState<RecurrenceRule | null>(null);
-  const [recurrenceStrategy, setRecurrenceStrategy] =
-    useState<TaskListReadRecurrenceStrategy>("fixed");
+  const [recurrenceStrategy, setRecurrenceStrategy] = useState<RecurrenceStrategy>("fixed");
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

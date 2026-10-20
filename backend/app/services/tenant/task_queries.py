@@ -53,7 +53,7 @@ from app.models.tenant.property import (
     PropertyType,
 )
 from app.models.tenant.relationship import EntityRelationship
-from app.models.tenant.task import Task, TaskAssignee, TaskPriority
+from app.models.tenant.task import RecurrenceStrategy, Task, TaskAssignee, TaskPriority
 from app.schemas.query import FilterCondition, FilterGroup, FilterOp, SortDir
 from app.schemas.tenant.task import TaskListRead
 from app.services import fields as fields_registry
@@ -1263,7 +1263,10 @@ def _task_calendar_window_clause(
         if start_before is not None:
             bounds.append(field <= start_before)
         field_clauses.append(and_(*bounds))
-    repeating = [Task.recurrence.isnot(None), Task.recurrence_strategy != "rolling"]
+    repeating = [
+        Task.recurrence.isnot(None),
+        Task.recurrence_strategy != RecurrenceStrategy.rolling,
+    ]
     if start_before is not None:
         repeating.append(Task.due_date <= start_before)
     if start_after is not None:
@@ -1295,7 +1298,11 @@ def projected_occurrences(
         if within(task.start_date) or within(task.due_date):
             placed.append(task)
         due = task.due_date
-        if not task.recurrence or due is None or task.recurrence_strategy == "rolling":
+        if (
+            not task.recurrence
+            or due is None
+            or task.recurrence_strategy == RecurrenceStrategy.rolling
+        ):
             continue
         try:
             starts = recurrence.between(
