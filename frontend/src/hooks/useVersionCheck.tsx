@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useRef, useState } from "react";
 
 import { getVersion } from "@/api/generated/version/version";
@@ -8,6 +9,13 @@ const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const CURRENT_VERSION = __APP_VERSION__;
 const DISMISSED_VERSION_KEY = "initiative-dismissed-version";
 
+/**
+ * Tell a web reader that the server runs a newer version than the page.
+ *
+ * Off in the native app: there the update arrives as a bundle, and
+ * `useNativeUpdate` offers it with a reload button that installs it. Two
+ * prompts for one release would stack, and this one's reload would not.
+ */
 export const useVersionCheck = () => {
   const hasShownNotification = useRef(false);
   const [updateAvailable, setUpdateAvailable] = useState<{
@@ -16,6 +24,10 @@ export const useVersionCheck = () => {
   }>({ show: false, version: "" });
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      return;
+    }
+
     const checkVersion = async () => {
       try {
         const result = await getVersion();

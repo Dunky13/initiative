@@ -18,14 +18,6 @@
     "showsAgain_other": "wird noch {{count}}-mal gezeigt",
     "zoomImage": "Bild in voller Größe ansehen"
   },
-  "update": {
-    "title": "Version {{version}} ist verfügbar",
-    "whatsNew": "Was ist neu",
-    "noDetailedChanges": "Für dieses Release wurden keine Details aufgeführt.",
-    "viewAllChanges": "Alle Änderungen ansehen",
-    "later": "Später",
-    "reloadNow": "Jetzt neu laden"
-  },
   "operator": {
     "subtitle": "Hinweise für alle, die diese Installation nutzen. Jeder wird einmal gezeigt und pro Person gemerkt.",
     "new": "Neue Ankündigung",

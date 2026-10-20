@@ -16,7 +16,6 @@ import { AccountTimeOut } from "@/components/AccountTimeOut";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ActivityDrawer } from "@/components/activity/ActivityDrawer";
 import { AnnouncementCenter } from "@/components/announcements/AnnouncementCenter";
-import { UpdateAnnouncementDialog } from "@/components/announcements/UpdateAnnouncementDialog";
 import { ChooseHandle } from "@/components/ChooseHandle";
 import { CommandCenter } from "@/components/CommandCenter";
 import { ConfirmBirthdate } from "@/components/ConfirmBirthdate";
@@ -33,6 +32,8 @@ import { StartFlow } from "@/components/start/StartFlow";
 import { CreateTaskWizard } from "@/components/tasks/CreateTaskWizard";
 import { FeedbackHost } from "@/components/tickets/FeedbackSheet";
 import { CreateToolWizard } from "@/components/tools/CreateToolWizard";
+import { UpdatedNotice } from "@/components/UpdatedNotice";
+import { UpdateReadyToast } from "@/components/UpdateReadyToast";
 import { Button } from "@/components/ui/button";
 import { DocumentOutlineScope } from "@/components/ui/editor/DocumentOutline";
 import {
@@ -461,14 +462,13 @@ export function AppLayout() {
             </SidebarProvider>
           </DocumentOutlineScope>
         </div>
-        <UpdateAnnouncementDialog
+        <UpdateReadyToast
           open={updateAvailable.show}
           version={updateAvailable.version}
           onClose={closeDialog}
         />
-        {/* Server-side notices queue behind the update prompt: an update is
-            about the page the reader is looking at, so it goes first. */}
-        <AnnouncementCenter enabled={!updateAvailable.show} />
+        <UpdatedNotice />
+        <AnnouncementCenter />
       </div>
     </CreateActionProvider>
   );

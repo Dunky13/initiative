@@ -20,15 +20,17 @@ import { CHANGELOG_URL, RELEASES_URL } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 /**
- * What version this is, and what has changed lately — opened from the sidebar.
+ * What version this is, and what has changed lately — opened from the sidebar,
+ * or from the "updated" toast once a new version is running (see
+ * ``components/UpdatedNotice``).
  *
- * The other half of this dialog used to be the "a newer version is running on
- * the server" prompt. That is an announcement, and now renders as one (see
- * ``components/announcements/UpdateAnnouncementDialog``); what is left here is
- * the reference panel a person opens on purpose.
+ * Pass ``children`` for a trigger, or ``open``/``onOpenChange`` to open it from
+ * elsewhere.
  */
 interface VersionDialogProps {
   children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   currentVersion: string;
   latestVersion?: string | null;
   hasUpdate?: boolean;
@@ -37,6 +39,8 @@ interface VersionDialogProps {
 
 export const VersionDialog = ({
   children,
+  open,
+  onOpenChange,
   currentVersion,
   latestVersion,
   hasUpdate = false,
@@ -44,11 +48,11 @@ export const VersionDialog = ({
 }: VersionDialogProps) => {
   const { t } = useTranslation("communities");
 
-  const { data, isLoading } = useChangelog({ limit: 20 });
+  const { data, isLoading } = useChangelog({ limit: 20 }, { enabled: open ?? true });
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
       <DialogContent className="flex h-[80vh] flex-col gap-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0">
           <DialogTitle>{t("version.versionInformation")}</DialogTitle>

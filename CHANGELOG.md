@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Home on a phone**: customizing no longer piles the view tabs under the Add widget and Banner buttons, a widget's move and remove buttons sit above it instead of over its title, the greeting wraps a long name instead of cutting it off, and the calendar widget is no longer a card inside a card.
+- **Updating the app**: in the phone and desktop apps, a new version shows one prompt instead of two, and its **Reload** button always installs the update.
+
+### Changed
+
+- **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
 
 ## [0.76.0] - 2026-10-20
 

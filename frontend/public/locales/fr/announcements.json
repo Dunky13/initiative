@@ -18,14 +18,6 @@
     "showsAgain_other": "sera affichée encore {{count}} fois",
     "zoomImage": "Voir l'image en grand"
   },
-  "update": {
-    "title": "La version {{version}} est disponible",
-    "whatsNew": "Nouveautés",
-    "noDetailedChanges": "Aucun détail n'a été indiqué pour cette version.",
-    "viewAllChanges": "Voir tous les changements",
-    "later": "Plus tard",
-    "reloadNow": "Recharger maintenant"
-  },
   "operator": {
     "subtitle": "Avis destinés aux personnes qui utilisent cette installation. Chacun s'affiche une fois et reste mémorisé par personne.",
     "new": "Nouvelle annonce",
