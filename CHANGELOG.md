@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Task exports come out the way you see the list.** A PDF, spreadsheet or Markdown export of a grouped table is grouped the same way, with a task under each of its tags and without the groups the layout leaves out (#2911).
 - **Export selected** works again instead of failing with "Invalid filter conditions", and Focus shows your pinned tasks again.
+- **"Starts grouped by" reaches everyone.** A project list opens grouped the way its layout says for anyone who hasn't picked a grouping of their own; until now, most people counted as having picked "not grouped".
 
 - **Running as a non-root user**: the container starts when Docker's `user:`/`--user` or a Kubernetes `runAsUser` already runs it as a non-root user, instead of failing with "Only root may add a user or group to the system". It then runs as that user, without `PUID`/`PGID` or a chown, so the uploads folder must already be writable by it. The first line of the log says which way the container started.
 
