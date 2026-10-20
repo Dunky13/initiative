@@ -1980,21 +1980,25 @@ async def announce_on_hold(session: AsyncSession, guild_id: int) -> None:
 
 
 #: The bell line each billing trial notice writes.
-_TRIAL_NOTICE_TYPES = {
-    "trial_ending": NotificationType.community_trial_ending,
-    "trial_ended": NotificationType.community_trial_ended,
+#: Each billing notice kind: the bell line's type, and the key its day is
+#: kept under in the line's data.
+_BILLING_NOTICES = {
+    "trial_ending": (NotificationType.community_trial_ending, "trial_ends_on"),
+    "trial_ended": (NotificationType.community_trial_ended, "trial_ends_on"),
+    "pause_reminder": (NotificationType.community_pause_reminder, "holds_on"),
 }
 
 
-async def queue_trial_notice(
+async def queue_billing_notice(
     session: AsyncSession,
     guild_id: int,
     *,
     kind: str,
-    trial_ends_on: date,
+    day: date,
     owner_user_id: int | None,
 ) -> bool:
-    """Write down a notice that a community's trial is ending or has ended.
+    """Write down a notice billing asked for: a community's trial is ending
+    or has ended, or its paused plan goes on hold on ``day``.
 
     On the system engine, before billing's event id is claimed: this commits
     the bell lines and the letters to the notice outbox, whose worker delivers
@@ -2030,16 +2034,17 @@ async def queue_trial_notice(
     recipients = [owner_user_id] if owner_user_id in seats else seats
     if not recipients:
         return False
+    notification_type, day_key = _BILLING_NOTICES[kind]
     await _queue_plan_notice(
         session,
         guild,
         recipients,
-        _TRIAL_NOTICE_TYPES[kind],
-        {"trial_ends_on": trial_ends_on.isoformat()},
-        lambda locale: email_service.community_trial_pieces(
+        notification_type,
+        {day_key: day.isoformat()},
+        lambda locale: email_service.community_billing_notice_pieces(
             kind=kind,
             community=guild.name,
-            trial_ends_on=trial_ends_on,
+            day=day,
             guild_id=guild_id,
             locale=locale,
         ),

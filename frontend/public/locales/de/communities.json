@@ -318,6 +318,8 @@
     "communityTrialEndingInApp": "Die Testphase von {{community}} endet am {{date}}. Danach läuft ihr Tarif weiter und wird über die hinterlegte Zahlungsmethode abgerechnet.",
     "communityTrialEnded": "Die Testphase von {{community}} ist beendet, die Community ist jetzt schreibgeschützt. Wähle im Abrechnungsportal einen Tarif, um weiter bearbeiten zu können.",
     "communityTrialEndedInApp": "Die Testphase von {{community}} ist beendet, die Community ist jetzt schreibgeschützt.",
+    "communityPauseReminder": "Der Tarif von {{community}} ruht, die Community ist schreibgeschützt. Setze den Tarif vor dem {{date}} fort, um sie zu behalten; danach wird sie pausiert.",
+    "communityPauseReminderInApp": "Der Tarif von {{community}} ruht, die Community ist schreibgeschützt. Am {{date}} wird sie pausiert.",
     "communityWelcome": "{{community}} ist bereit. Richte den Tarif ein, um loszulegen.",
     "communityWelcomeInApp": "{{community}} ist bereit.",
     "ticketReplied": "Das Team hat auf dein Ticket „{{subject}}“ geantwortet",

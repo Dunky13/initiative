@@ -318,6 +318,8 @@
     "communityTrialEndingInApp": "{{community}}'s trial ends on {{date}}. After that its plan continues and is billed to the payment method on file.",
     "communityTrialEnded": "{{community}}'s trial has ended and it is now read-only. Choose a plan in the billing portal to keep editing.",
     "communityTrialEndedInApp": "{{community}}'s trial has ended and it is now read-only.",
+    "communityPauseReminder": "{{community}}'s plan is paused, so it is read-only. Resume the plan before {{date}} to keep it; after that it goes on hold.",
+    "communityPauseReminderInApp": "{{community}}'s plan is paused, so it is read-only. It goes on hold on {{date}}.",
     "communityWelcome": "{{community}} is ready. Set up its plan to get started.",
     "communityWelcomeInApp": "{{community}} is ready.",
     "ticketReplied": "The team replied on your ticket “{{subject}}”",

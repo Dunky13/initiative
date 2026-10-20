@@ -519,6 +519,16 @@ export const notificationText = (
           : "notifications.communityTrialEnded",
         { community: typeof data.community === "string" ? data.community : "" }
       );
+    case "community_pause_reminder":
+      return t(
+        !sellsHere()
+          ? "notifications.communityPauseReminderInApp"
+          : "notifications.communityPauseReminder",
+        {
+          community: typeof data.community === "string" ? data.community : "",
+          date: formatDate(data.holds_on),
+        }
+      );
     // Never names the moderator, or who reported it.
     case "moderation_removal": {
       const reason = typeof data.reason === "string" ? data.reason : "";

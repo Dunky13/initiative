@@ -977,44 +977,46 @@ def community_on_hold_pieces(
     )
 
 
-#: The section of ``email.json`` each trial notice is written from.
-_TRIAL_NOTICE_SECTIONS = {
-    "trial_ending": "communityTrialEnding",
-    "trial_ended": "communityTrialEnded",
+#: The section of ``email.json`` each billing notice is written from, and the
+#: billing portal page its button leads to.
+_BILLING_NOTICE_SECTIONS: dict[str, tuple[str, Literal["upgrade", "manage"]]] = {
+    "trial_ending": ("communityTrialEnding", "manage"),
+    "trial_ended": ("communityTrialEnded", "upgrade"),
+    "pause_reminder": ("communityPauseReminder", "manage"),
 }
 
 
-def community_trial_pieces(
-    *, kind: str, community: str, trial_ends_on: date, guild_id: int, locale: str
+def community_billing_notice_pieces(
+    *, kind: str, community: str, day: date, guild_id: int, locale: str
 ) -> EmailPieces:
-    """A trial notice as notification mail, in ``locale``.
+    """A billing notice as notification mail, in ``locale``.
 
     ``kind`` is one of the billing notice kinds; the words are this
-    deployment's. The trial is Paddle's: a community in one is already
+    deployment's. A trial is Paddle's: a community in one is already
     subscribed, and its plan is billed when the trial ends unless it is
-    cancelled first. Written into the notice outbox beside the bell line, so
-    the outbox worker sends it and retries it; the button leads to the
-    community's billing page, which signs the reader in and forwards them to
-    the billing portal — to the plan they have while the trial runs, and to
-    choosing one once it has ended without a payment.
+    cancelled first. A pause is its admin's: the community is read-only and
+    unbilled until they resume it, and goes on hold on ``day`` if they do not.
+    Written into the notice outbox beside the bell line, so the outbox worker
+    sends it and retries it; the button leads to the community's billing page,
+    which signs the reader in and forwards them to the billing portal — to the
+    plan they have, where a pause is resumed, or to choosing one once a trial
+    has ended without a payment.
     """
-    section = _TRIAL_NOTICE_SECTIONS[kind]
-    day = email_date(trial_ends_on, locale)
+    section, page = _BILLING_NOTICE_SECTIONS[kind]
+    shown = email_date(day, locale)
     return EmailPieces(
         subject=email_t(
             f"{section}.subject",
             locale=locale,
             community=community,
-            date=day,
+            date=shown,
             escape=False,
         ),
         headline=email_t(
-            f"{section}.title", locale=locale, community=community, date=day
+            f"{section}.title", locale=locale, community=community, date=shown
         ),
-        body=email_t(f"{section}.body", locale=locale, community=community, date=day),
-        link=community_billing_link(
-            guild_id, "manage" if kind == "trial_ending" else "upgrade"
-        ),
+        body=email_t(f"{section}.body", locale=locale, community=community, date=shown),
+        link=community_billing_link(guild_id, page),
         link_label=email_t(f"{section}.buttonLabel", locale=locale),
     )
 
