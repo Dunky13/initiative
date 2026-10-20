@@ -70,6 +70,46 @@
     "posts": "Ankündigungen, die nicht untergehen, mit Umfragen und Lesebestätigungen.",
     "galleries": "Die Fotos vom Tag beisammen statt in sechs verschiedenen Handys."
   },
+  "together": {
+    "titleStart": "Gemacht, um es",
+    "titleHighlight": "gemeinsam zu tun",
+    "description": "Drei Leute gleichzeitig am selben Plan, ohne dass eine Kopie gewinnt und ohne „welche Version ist das?“. Teile eine Seite mit der ganzen Gruppe oder nur dem Ausschuss, gib eine Aufgabe zwei Personen und @erwähne, wer als Nächstes dran ist.",
+    "drawingAria": "Eine Zeichnung von drei Leuten, die gleichzeitig denselben Plan bearbeiten, mit Kommentaren, die am Rand eintreffen",
+    "people": {
+      "maya": "Maya",
+      "dev": "Dev",
+      "priya": "Priya",
+      "hana": "Hana"
+    },
+    "doc": {
+      "title": "Grillplan",
+      "sharedWith": "Geteilt mit dem Ausschuss",
+      "live": "Live",
+      "heading": "Grillfest zum Saisonstart",
+      "line1": "Samstag direkt nach dem Spiel, Riverside Park. Jeder bringt einen Stuhl mit.",
+      "line2Start": "Essen gibt es ab",
+      "line2Selected": "11:30",
+      "line2End": ", Aufbau beginnt also um 9.",
+      "task1": "Den Park wegen des Grillplatzes fragen",
+      "task2": "Klapptische aus dem Gemeindesaal leihen",
+      "typed": "Dev bringt den Grill, Luis das Eis, und"
+    },
+    "comments": {
+      "title": "Kommentare",
+      "justNow": "gerade eben",
+      "mention": "@Luis",
+      "text": "kannst du um 9 da sein und beim Aufbau helfen?",
+      "reply": "Ich komme auch früher, ich habe einen Rollwagen für die Tische"
+    },
+    "points": {
+      "sameTitle": "Buchstäblich auf derselben Seite",
+      "sameBody": "Seiten, Tabellen und Whiteboards aktualisieren sich, während die Leute tippen, mit dem Cursor von allen dort, wo sie gerade sind. Niemand schickt eine Kopie zurück.",
+      "shareTitle": "Teile so viel, wie du willst",
+      "shareBody": "Ein Board für die ganze Gruppe, ein Budget für die drei Leute, die es brauchen. Jeder sieht nur, was er bekommen hat.",
+      "handTitle": "Dinge laut übergeben",
+      "handBody": "Gib eine Aufgabe zwei Personen, @erwähne, wer als Nächstes dran ist, und das Gespräch bleibt an der Sache, um die es geht."
+    }
+  },
   "hangout": {
     "titleStart": "Hier trifft sich deine Community",
     "titleHighlight": "auch einfach so",

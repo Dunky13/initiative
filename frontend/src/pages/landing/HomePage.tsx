@@ -4,7 +4,8 @@
  * It leads with signing up and what a community looks like once it's here,
  * then what's inside: the tools (drawn by the same sketches the create wizard
  * uses, so a new tool shows up here without anybody remembering to add it),
- * the community side of things, and the features every tool shares. Plans
+ * people working on the same page at once, the community side of things, and
+ * the features every tool shares. Plans
  * and the free trial appear only where this deployment sells them.
  *
  * Kept short on purpose, phones most of all: a phone gets the hero and the
@@ -31,6 +32,7 @@ import { DarkBand } from "./DarkBand";
 import { FloatingShape } from "./effects";
 import { HangOut } from "./HangOut";
 import { LandingShell } from "./LandingShell";
+import { Together } from "./Together";
 import { useFrontDoor } from "./useFrontDoor";
 import { usePageMeta } from "./usePageMeta";
 
@@ -263,12 +265,20 @@ const Hero = () => {
             className="font-extrabold text-[2.75rem] leading-[1.02] tracking-tight sm:text-6xl"
             aria-label={t("hero.titleAria")}
           >
-            <span className="block">{t("hero.titleLine1")}</span>
-            <span className="relative inline-block text-amber-400">
-              {t("hero.titleLine2")}
+            <span className="block text-4xl">{t("hero.titleLine1")}</span>
+            {/* The second line types itself out, with a caret that keeps
+                blinking after it. With less motion asked for it stands
+                finished. */}
+            <span className="block whitespace-nowrap text-amber-400">
               <span
-                className="absolute bottom-0 left-0 h-1.5 rounded-full bg-amber-400/35"
-                style={{ animation: "heroLine 1.2s ease-out 1s forwards", width: 0 }}
+                className="landing-type inline-block max-w-full overflow-hidden align-bottom"
+                style={{ animation: "liveWidth 1.1s steps(15, end) 0.6s both" }}
+              >
+                {t("hero.titleLine2")}
+              </span>
+              <span
+                className="landing-type ml-1.5 inline-block h-[0.85em] w-[0.08em] rounded-sm bg-amber-400 align-baseline"
+                style={{ animation: "liveBlink 1s steps(2) infinite" }}
                 aria-hidden="true"
               />
             </span>
@@ -505,6 +515,7 @@ export const HomePage = () => {
     <LandingShell>
       <Hero />
       <Tools />
+      <Together />
       <HangOut />
       <BitsBetween />
       <Safe />

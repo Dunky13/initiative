@@ -70,6 +70,46 @@
     "posts": "Anuncios que no quedan enterrados, con encuestas y confirmaciones de lectura.",
     "galleries": "Las fotos del día juntas, en vez de repartidas en seis móviles distintos."
   },
+  "together": {
+    "titleStart": "Hecho para hacerlo",
+    "titleHighlight": "juntos",
+    "description": "Tres personas en el mismo plan a la vez, sin que gane la copia de nadie y sin «¿qué versión es esta?». Comparte una página con todo el grupo o solo con la comisión, asigna una tarea a dos personas y @menciona a quien le toque.",
+    "drawingAria": "Un dibujo de tres personas editando el mismo plan a la vez, con comentarios que llegan al margen",
+    "people": {
+      "maya": "Maya",
+      "dev": "Dev",
+      "priya": "Priya",
+      "hana": "Hana"
+    },
+    "doc": {
+      "title": "Plan de la parrillada",
+      "sharedWith": "Compartido con la comisión",
+      "live": "En vivo",
+      "heading": "Parrillada de inicio de temporada",
+      "line1": "El sábado justo después del partido, en Riverside Park. Cada uno trae una silla.",
+      "line2Start": "La comida empieza a las",
+      "line2Selected": "11:30",
+      "line2End": ", así que el montaje empieza a las 9.",
+      "task1": "Preguntar al parque por el sitio de la parrilla",
+      "task2": "Pedir mesas plegables al salón parroquial",
+      "typed": "Dev trae la parrilla, Luis el hielo, y"
+    },
+    "comments": {
+      "title": "Comentarios",
+      "justNow": "ahora mismo",
+      "mention": "@Luis",
+      "text": "¿puedes estar a las 9 para ayudar a montar?",
+      "reply": "Yo también llego antes, tengo un carrito para las mesas"
+    },
+    "points": {
+      "sameTitle": "En la misma página, literalmente",
+      "sameBody": "Las páginas, hojas de cálculo y pizarras se actualizan mientras la gente escribe, con el cursor de cada uno donde está. Nadie devuelve una copia por correo.",
+      "shareTitle": "Comparte justo lo que quieras",
+      "shareBody": "Un tablero para todo el grupo, un presupuesto para las tres personas que lo necesitan. Cada uno ve solo lo que se le ha dado.",
+      "handTitle": "Pasa las cosas en voz alta",
+      "handBody": "Asigna una tarea a dos personas, @menciona a quien le toque, y la conversación se queda en el tema del que trata."
+    }
+  },
   "hangout": {
     "titleStart": "Aquí es donde tu comunidad",
     "titleHighlight": "también se junta",

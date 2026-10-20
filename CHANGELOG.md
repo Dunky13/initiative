@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Group by any field.** A table or board groups by any field whose values repeat: status, priority, assignees, tags, who created a task, its project, a select, person or checkbox property, or a date (due, start, created, a date property, and so on) by day, week, month, quarter or year. Pick what each view offers in **Edit layouts**.
 - **Task exports show your table's columns,** properties and plug-in fields included, with the status last as on screen. The detailed PDF lays each task out in the task page's order, and a project's report from its settings shows the same columns as its table.
 - **Hourly repeats after completion**: repeat a task a set number of hours after it is finished, with an optional maximum per day. Daily limits use the completing person’s timezone and resume at the first task’s time, preserving the gap overnight.
+- **The front page shows people working together.** A new section draws three people on the same plan at once: live cursors, a comment landing in the margin, and a task handed to a second person.
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
 
 ### Fixed

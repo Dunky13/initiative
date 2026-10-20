@@ -70,6 +70,46 @@
     "posts": "Announcements that don't get buried, with polls and read receipts.",
     "galleries": "The photos from the day, together instead of in six people's camera rolls."
   },
+  "together": {
+    "titleStart": "Built for doing it",
+    "titleHighlight": "together",
+    "description": "Three people on the same plan at once, with nobody's copy winning and no \"which version is this\". Share a page with the whole group or just the committee, give a task to two people, and @mention whoever's next.",
+    "drawingAria": "A drawing of three people editing the same plan at once, with comments landing in the margin",
+    "people": {
+      "maya": "Maya",
+      "dev": "Dev",
+      "priya": "Priya",
+      "hana": "Hana"
+    },
+    "doc": {
+      "title": "Cookout plan",
+      "sharedWith": "Shared with the committee",
+      "live": "Live",
+      "heading": "Season kickoff cookout",
+      "line1": "Saturday right after the game, Riverside Park. Everyone brings a chair.",
+      "line2Start": "Food gets going at",
+      "line2Selected": "11:30",
+      "line2End": ", so set-up starts at 9.",
+      "task1": "Ask the park about the grill spot",
+      "task2": "Borrow folding tables from the church hall",
+      "typed": "Dev brings the grill, Luis the ice, and"
+    },
+    "comments": {
+      "title": "Comments",
+      "justNow": "just now",
+      "mention": "@Luis",
+      "text": "can you be there by 9 to help set up?",
+      "reply": "I'll come early too, I have a trolley for the tables"
+    },
+    "points": {
+      "sameTitle": "Same page, literally",
+      "sameBody": "Pages, spreadsheets and whiteboards update as people type, with everyone's cursor where they are. Nobody emails back a copy.",
+      "shareTitle": "Share as much as you mean to",
+      "shareBody": "A board for the whole group, a budget for the three people who need it. Everyone sees only what they've been given.",
+      "handTitle": "Hand things over, out loud",
+      "handBody": "Give a task to two people, @mention whoever's next, and the conversation stays on the thing it's about."
+    }
+  },
   "hangout": {
     "titleStart": "This is where your community",
     "titleHighlight": "hangs out",

@@ -212,10 +212,6 @@ export const LANDING_KEYFRAMES = `
     0%, 100% { opacity: 0.4; filter: blur(60px); }
     50% { opacity: 0.7; filter: blur(80px); }
   }
-  @keyframes heroLine {
-    from { width: 0%; }
-    to { width: 100%; }
-  }
   @keyframes ribbonScroll {
     from { transform: translateX(0); }
     to { transform: translateX(-50%); }
@@ -224,6 +220,29 @@ export const LANDING_KEYFRAMES = `
     0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
     50% { transform: translateY(-10px) rotate(var(--tilt, 0deg)); }
   }
+  /* The collaboration drawing. Each piece is styled as the finished picture
+     and animates in from nothing, paused until the drawing is in view. */
+  @keyframes liveWidth {
+    from { max-width: 0; }
+    to { max-width: 100%; }
+  }
+  @keyframes livePop {
+    from { opacity: 0; transform: scale(0.4); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes liveSlideIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes liveIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes liveBlink {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  .landing-live:not(.landing-live--on) [data-live] { animation-play-state: paused; }
   /* The header's in-page links glide rather than jump. Scoped to the landing
      page by living in its own style block, and dropped for anybody who has
      asked the system for less movement. */
@@ -232,5 +251,7 @@ export const LANDING_KEYFRAMES = `
     html { scroll-behavior: auto; }
     .landing-ribbon__track { animation: none !important; }
     .landing-float { animation: none !important; }
+    .landing-live [data-live] { animation: none !important; }
+    .landing-type { animation: none !important; }
   }
 `;
