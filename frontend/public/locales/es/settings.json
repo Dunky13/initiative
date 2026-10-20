@@ -2126,5 +2126,23 @@
     "noCommunity": "No abre ninguna comunidad ni necesita un acceso. Una comunidad se pone en un contrato desde su propia consola de operaciones de facturación.",
     "open": "Abrir contratos",
     "openError": "No se pudo abrir la consola de contratos."
+  },
+  "billingDirectory": {
+    "title": "Directorio",
+    "description": "Cada cuenta que paga, en una sola lista: los clientes de Paddle y los contratos.",
+    "lists": "Las comunidades de cada cuenta, sus planes y estado, el próximo cargo o factura pendiente, la clave de un despliegue dedicado y lo que encontró la conciliación.",
+    "readOnly": "Solo lectura. Actúa sobre una cuenta desde las consolas de facturación de su comunidad, con sus propios permisos de acceso.",
+    "ownersOnly": "Solo para propietarios: nombra a todos los clientes que pagan a la vez.",
+    "open": "Abrir el directorio",
+    "openError": "No se pudo abrir el directorio."
+  },
+  "billingControl": {
+    "title": "Control",
+    "description": "Donde se definen los planes de este servidor: lo que permite cada plan, sus textos en cada idioma y los precios a los que se vende.",
+    "revisions": "Cada cambio se guarda como una nueva revisión del catálogo, con quién lo hizo.",
+    "ownersOnly": "Solo para propietarios: cambia lo que se vende y se permite a cada comunidad.",
+    "noCommunity": "No abre ninguna comunidad ni necesita un acceso.",
+    "open": "Abrir Control",
+    "openError": "No se pudo abrir Control."
   }
 }

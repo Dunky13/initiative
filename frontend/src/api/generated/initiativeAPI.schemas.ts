@@ -710,6 +710,8 @@ export interface BillingConfig {
   manages_plans?: boolean;
   insights?: boolean;
   contracts?: boolean;
+  directory?: boolean;
+  control?: boolean;
 }
 
 /**
@@ -1995,6 +1997,8 @@ export const Capability = {
   billingsupport: "billing.support",
   billinginsights: "billing.insights",
   billingcontracts: "billing.contracts",
+  billingdirectory: "billing.directory",
+  billingcontrol: "billing.control",
   announcementsmanage: "announcements.manage",
   rolesassign: "roles.assign",
   databypass: "data.bypass",

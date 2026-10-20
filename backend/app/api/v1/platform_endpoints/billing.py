@@ -28,6 +28,8 @@ from app.schemas.platform.billing import (
     BillingCommunityNoticeRead,
     BillingCommunityNameRead,
     BillingCommunityNameRequest,
+    BillingCommunityNamesRead,
+    BillingCommunityNamesRequest,
     BillingCommunityStatusRead,
     BillingCommunityStatusRequest,
     BillingCommunityTierApply,
@@ -223,6 +225,42 @@ async def community_name(
         )
     await session.commit()  # persist the one-shot jti redemption
     return BillingCommunityNameRead(community_ref=payload.community_ref, name=name)
+
+
+@router.post("/community-names", response_model=BillingCommunityNamesRead)
+async def community_names(
+    request: Request, session: SessionDep
+) -> BillingCommunityNamesRead:
+    """Signed read: what each of many guilds calls itself, for billing's owner
+    directory, which names every paying community at once.
+
+    The batch of ``/community-name``, and read the same way: each guild's name
+    on the billing session routed to that guild, one at a time, so the role
+    reads exactly the rows it would one call each. A reference that names no
+    guild, or one purged since (a purge removes the guild before its
+    references), is left out. When no name comes back, nothing was read and
+    the jti stays unredeemed, like the single read's 404.
+    """
+    claims, payload = await _verify_and_parse(request, BillingCommunityNamesRequest)
+    refs = list(dict.fromkeys(payload.community_refs))
+    guild_ids = await identity_refs.resolve_billing_refs(refs, IdentityEntity.guild)
+
+    names: list[BillingCommunityNameRead] = []
+    burned = False
+    for ref in refs:
+        guild_id = guild_ids.get(ref)
+        if guild_id is None:
+            continue
+        await set_rls_context(session, Billing(guild_id))
+        if not burned:
+            await _burn_jti(session, claims)
+            burned = True
+        name = await billing_service.guild_display_name(session, guild_id)
+        if name is not None:
+            names.append(BillingCommunityNameRead(community_ref=ref, name=name))
+    if names:
+        await session.commit()  # persist the one-shot jti redemption
+    return BillingCommunityNamesRead(names=names)
 
 
 @router.post("/community-status", response_model=BillingCommunityStatusRead)

@@ -659,6 +659,40 @@ def create_billing_contracts_handoff_token(
     return _billing_staff_handoff(BILLING_CONTRACTS_AUDIENCE, user_ref, expires_in)
 
 
+BILLING_DIRECTORY_AUDIENCE = "initiative:billing-directory"
+
+
+def create_billing_directory_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's owner directory.
+
+    The same shape again under the directory's audience: a person and no
+    community, because the page lists every account. The audience is what
+    keeps an operator's insights or contracts handoff from opening it.
+    """
+    return _billing_staff_handoff(BILLING_DIRECTORY_AUDIENCE, user_ref, expires_in)
+
+
+BILLING_CONTROL_AUDIENCE = "initiative:billing-control"
+
+
+def create_billing_control_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's Control, where owners
+    define the deployment's plans.
+
+    A person and no community, under Control's own audience: what it changes
+    is every community's, and no other door's handoff may open it.
+    """
+    return _billing_staff_handoff(BILLING_CONTROL_AUDIENCE, user_ref, expires_in)
+
+
 def _billing_staff_handoff(
     audience: str, user_ref: str, expires_in: timedelta
 ) -> tuple[str, int]:

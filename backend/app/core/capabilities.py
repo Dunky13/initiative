@@ -78,6 +78,20 @@ class Capability(str, Enum):
     # rather than riding along with the read-only page.
     BILLING_CONTRACTS = "billing.contracts"
 
+    # Opening the billing service's directory: every account that pays, its
+    # communities, what comes next and what reconciliation found. Owners
+    # only: it names every paying customer at once, which no operator task
+    # needs. Read-only — acting on an account goes through the consoles and
+    # their grants.
+    BILLING_DIRECTORY = "billing.directory"
+
+    # Opening the billing service's Control: where the deployment's owners
+    # define its plans (the catalog, its words in each language, the prices
+    # that sell it), and later share them out to communities and answer their
+    # requests for more. Owners only: it changes what every community is sold
+    # and allowed.
+    BILLING_CONTROL = "billing.control"
+
     # Writing the notices every user of this deployment is shown (see
     # ``app.services.platform.announcements``). Product communication rather
     # than configuration, so it sits a rung below ``config.manage``: an
@@ -143,6 +157,8 @@ _OWNER: FrozenSet[Capability] = (
     | {
         Capability.CONFIG_MANAGE,
         Capability.PLUGINS_MANAGE,
+        Capability.BILLING_DIRECTORY,
+        Capability.BILLING_CONTROL,
     }
 ) - {
     # Owners approve access requests; they don't go through the request→approve

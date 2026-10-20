@@ -27,13 +27,14 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from httpx import AsyncClient
-from sqlmodel import select
+from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import config as config_module
 from app.db.jti_blocklist import purge_expired_jtis
 from app.db import session as db_session
 from app.models.platform.billing import BillingEventLog, BillingJti
+from app.models.platform.guild import Guild
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
 from app.services.platform.identity_refs import ensure_ref
 from app.services.tenant.attachments import (
@@ -1145,6 +1146,84 @@ async def test_a_reference_naming_no_guild_has_no_name(client: AsyncClient):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
+
+
+async def test_billing_reads_many_guilds_names_at_once(
+    client: AsyncClient, session: AsyncSession
+):
+    """The owner directory names every paying community: one signed read for
+    the batch, and a reference that names nothing is left out, not refused."""
+    first = await create_guild(session, name="The Tuesday Club")
+    second = await create_guild(session, name="Harbour Rowers")
+    refs = [await billing_guild_ref(g.id) for g in (first, second)]
+
+    response = await _post(
+        client,
+        "community-names",
+        {"community_refs": [refs[0], "gbil_notoneweminted", refs[1], refs[0]]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "names": [
+            {"community_ref": refs[0], "name": "The Tuesday Club"},
+            {"community_ref": refs[1], "name": "Harbour Rowers"},
+        ]
+    }
+
+
+async def test_the_batch_name_read_burns_its_jti(
+    client: AsyncClient, session: AsyncSession
+):
+    guild = await create_guild(session, name="Once Only")
+    ref = await billing_guild_ref(guild.id)
+    body = json.dumps({"community_refs": [ref]}).encode()
+    headers = _signed_headers("/api/v1/billing/community-names", body)
+
+    first = await client.post(
+        "/api/v1/billing/community-names", content=body, headers=headers
+    )
+    second = await client.post(
+        "/api/v1/billing/community-names", content=body, headers=headers
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 403
+    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
+
+
+async def test_a_batch_naming_only_purged_guilds_redeems_nothing(
+    client: AsyncClient, session: AsyncSession
+):
+    """A purge removes the guild before its reference, and a failed cleanup can
+    leave the reference behind. A batch that names nothing but such guilds read
+    no name, so its jti stays unredeemed, like the single read's 404."""
+    guild = await create_guild(session, name="Gone Since")
+    ref = await billing_guild_ref(guild.id)
+    await session.execute(delete(Guild).where(Guild.id == guild.id))
+    await session.commit()
+    body = json.dumps({"community_refs": [ref]}).encode()
+    headers = _signed_headers("/api/v1/billing/community-names", body)
+
+    first = await client.post(
+        "/api/v1/billing/community-names", content=body, headers=headers
+    )
+    again = await client.post(
+        "/api/v1/billing/community-names", content=body, headers=headers
+    )
+
+    assert first.status_code == 200, first.text
+    assert first.json() == {"names": []}
+    assert again.status_code == 200, again.text
+
+
+async def test_the_batch_name_read_is_bounded(client: AsyncClient):
+    """At most a page of guilds a call, and at least one."""
+    too_many = [f"gbil_{n:026d}" for n in range(201)]
+
+    for refs in ([], too_many):
+        response = await _post(client, "community-names", {"community_refs": refs})
+        assert response.status_code == 422
 
 
 # ── a deleted guild ──────────────────────────────────────────────────────────

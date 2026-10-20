@@ -1144,6 +1144,8 @@ _GUILDS_MANAGE = "communities.manage"  # operator and owner
 _GUILDS_READ = "communities.read"  # support and above
 _BILLING_INSIGHTS = "billing.insights"  # operator and owner
 _BILLING_CONTRACTS = "billing.contracts"  # operator and owner
+_BILLING_DIRECTORY = "billing.directory"  # owner only
+_BILLING_CONTROL = "billing.control"  # owner only
 
 #: (capability, method, path — ``{community_id}`` is filled in, json body or None)
 _ROUTES: list[tuple[str, str, str, dict | None]] = [
@@ -1175,6 +1177,8 @@ _ROUTES: list[tuple[str, str, str, dict | None]] = [
     ),
     (_BILLING_INSIGHTS, "post", "/api/v1/settings/billing/insights-handoff", None),
     (_BILLING_CONTRACTS, "post", "/api/v1/settings/billing/contracts-handoff", None),
+    (_BILLING_DIRECTORY, "post", "/api/v1/settings/billing/directory-handoff", None),
+    (_BILLING_CONTROL, "post", "/api/v1/settings/billing/control-handoff", None),
 ]
 
 #: The tiers each capability sits above.
@@ -1189,6 +1193,18 @@ _BELOW_THE_BAR: dict[str, list[UserRole]] = {
     _GUILDS_READ: [UserRole.member],
     _BILLING_INSIGHTS: [UserRole.member, UserRole.support, UserRole.moderator],
     _BILLING_CONTRACTS: [UserRole.member, UserRole.support, UserRole.moderator],
+    _BILLING_DIRECTORY: [
+        UserRole.member,
+        UserRole.support,
+        UserRole.moderator,
+        UserRole.operator,
+    ],
+    _BILLING_CONTROL: [
+        UserRole.member,
+        UserRole.support,
+        UserRole.moderator,
+        UserRole.operator,
+    ],
 }
 
 
@@ -1400,27 +1416,39 @@ async def test_cookie_consent_is_owner_only(client, operator):
 
 _INSIGHTS = "/api/v1/settings/billing/insights-handoff"
 _CONTRACTS = "/api/v1/settings/billing/contracts-handoff"
+_DIRECTORY = "/api/v1/settings/billing/directory-handoff"
+_CONTROL = "/api/v1/settings/billing/control-handoff"
 
 
 @pytest.mark.parametrize(
-    "path,audience",
+    "path,audience,who",
     [
-        (_INSIGHTS, "initiative:billing-insights"),
-        (_CONTRACTS, "initiative:billing-contracts"),
+        (_INSIGHTS, "initiative:billing-insights", "operator"),
+        (_CONTRACTS, "initiative:billing-contracts", "operator"),
+        (_DIRECTORY, "initiative:billing-directory", "owner"),
+        (_CONTROL, "initiative:billing-control", "owner"),
     ],
 )
 async def test_the_insights_handoff_names_a_person_and_no_community(
-    client: AsyncClient, operator, monkeypatch, handoff_signing_key, path, audience
+    client: AsyncClient,
+    operator,
+    owner,
+    monkeypatch,
+    handoff_signing_key,
+    path,
+    audience,
+    who,
 ) -> None:
     """EdDSA under the portal's key, each door its own audience, and nothing
-    about any community or grant — neither page is about one."""
+    about any community or grant — none of these pages is about one."""
     import jwt
 
     from app.core.config import settings as app_settings
 
     monkeypatch.setattr(app_settings, "BILLING_URL", "https://billing.example.com")
+    acting = owner if who == "owner" else operator
 
-    resp = await client.post(path, headers=operator.headers)
+    resp = await client.post(path, headers=acting.headers)
 
     assert resp.status_code == 200, resp.text
     token = resp.json()["handoff_token"]
@@ -1479,3 +1507,5 @@ async def test_the_app_config_says_whether_insights_can_open(
     assert resp.status_code == 200
     assert resp.json()["billing"]["insights"] is signing
     assert resp.json()["billing"]["contracts"] is signing
+    assert resp.json()["billing"]["directory"] is signing
+    assert resp.json()["billing"]["control"] is signing

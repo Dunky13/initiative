@@ -3622,3 +3622,179 @@ export const useCreateBillingContractsHandoff = <
 > => {
   return useMutation(getCreateBillingContractsHandoffMutationOptions(options), queryClient);
 };
+/**
+ * Mint the handoff into the billing service's owner directory.
+ *
+ * Backs the operator dashboard's Billing tab (``billing.directory``, owners
+ * only). Like the insights handoff it names no community and needs no access
+ * grant: the page lists every account, read-only. The person is named by
+ * billing's pairwise reference, which is what billing records each read
+ * under.
+ * @summary Create Billing Directory Handoff
+ */
+export const createBillingDirectoryHandoff = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<BillingPortalHandoffResponse>(
+    { url: `/api/v1/settings/billing/directory-handoff`, method: "POST", signal },
+    options
+  );
+};
+
+export const getCreateBillingDirectoryHandoffMutationKey = () =>
+  ["createBillingDirectoryHandoff"] as const;
+
+export const getCreateBillingDirectoryHandoffMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBillingDirectoryHandoff>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBillingDirectoryHandoff>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = getCreateBillingDirectoryHandoffMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBillingDirectoryHandoff>>,
+    void
+  > = () => {
+    return createBillingDirectoryHandoff(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBillingDirectoryHandoffMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBillingDirectoryHandoff>>
+>;
+
+export type CreateBillingDirectoryHandoffMutationError = ErrorType<HTTPValidationError>;
+
+/**
+ * @summary Create Billing Directory Handoff
+ */
+export const useCreateBillingDirectoryHandoff = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createBillingDirectoryHandoff>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createBillingDirectoryHandoff>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getCreateBillingDirectoryHandoffMutationOptions(options), queryClient);
+};
+/**
+ * Mint the handoff into the billing service's Control.
+ *
+ * Backs the operator dashboard's Billing tab (``billing.control``, owners
+ * only), where the deployment's plans are defined. It names no community
+ * and needs no access grant: a plan is every community's. The person is
+ * named by billing's pairwise reference, which is what billing attributes
+ * each change to.
+ * @summary Create Billing Control Handoff
+ */
+export const createBillingControlHandoff = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<BillingPortalHandoffResponse>(
+    { url: `/api/v1/settings/billing/control-handoff`, method: "POST", signal },
+    options
+  );
+};
+
+export const getCreateBillingControlHandoffMutationKey = () =>
+  ["createBillingControlHandoff"] as const;
+
+export const getCreateBillingControlHandoffMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBillingControlHandoff>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBillingControlHandoff>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = getCreateBillingControlHandoffMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBillingControlHandoff>>,
+    void
+  > = () => {
+    return createBillingControlHandoff(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBillingControlHandoffMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBillingControlHandoff>>
+>;
+
+export type CreateBillingControlHandoffMutationError = ErrorType<HTTPValidationError>;
+
+/**
+ * @summary Create Billing Control Handoff
+ */
+export const useCreateBillingControlHandoff = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createBillingControlHandoff>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createBillingControlHandoff>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getCreateBillingControlHandoffMutationOptions(options), queryClient);
+};
