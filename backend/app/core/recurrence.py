@@ -41,10 +41,10 @@ RecurrenceKind = Literal["task", "event"]
 
 _WEEKDAYS = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
-#: The frequencies each kind may repeat at. Every task occurrence is a new row,
-#: so tasks repeat daily at the most.
+#: Hourly task repeats are restricted to rolling by the task's writer, since
+#: its strategy is stored beside the rule rather than inside RFC 5545.
 _FREQUENCIES: dict[RecurrenceKind, frozenset[str]] = {
-    "task": frozenset({"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
+    "task": frozenset({"HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
     "event": frozenset({"HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
 }
 

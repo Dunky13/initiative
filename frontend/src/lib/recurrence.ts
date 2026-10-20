@@ -3,8 +3,31 @@ import { dateTimeFormat, listFormat } from "@/lib/intl";
 import { browserTimezone } from "@/lib/timezones";
 import type { TranslateFn } from "@/types/i18n";
 
+/** The task's rule, completion strategy and optional daily maximum change together. */
+export type TaskRecurrenceValue = {
+  rule: RecurrenceRule | "custom" | null;
+  strategy: RecurrenceStrategy;
+  limit: number | null;
+};
+
+export const isHourlyRule = (rule: RecurrenceRule | "custom" | null): boolean =>
+  rule !== null && rule !== "custom" && rule.frequency === "hourly";
+
+export const isValidTaskRecurrence = (value: TaskRecurrenceValue): boolean => {
+  const hourly = isHourlyRule(value.rule);
+  if (hourly && value.strategy !== "rolling") return false;
+  if (value.limit === null) return true;
+  return (
+    hourly &&
+    value.strategy === "rolling" &&
+    Number.isInteger(value.limit) &&
+    value.limit >= 1 &&
+    value.limit <= 24
+  );
+};
+
 export type TaskWeekPosition = "first" | "second" | "third" | "fourth" | "fifth" | "last";
-export type RecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
+export type RecurrenceFrequency = "hourly" | "daily" | "weekly" | "monthly" | "yearly";
 export type RecurrenceWeekday =
   | "monday"
   | "tuesday"
@@ -48,6 +71,7 @@ export type RecurrenceRule = {
 
 export type RecurrencePreset =
   | "none"
+  | "hourly"
   | "daily"
   | "weekly"
   | "weekdays"
@@ -76,6 +100,7 @@ const WEEKDAY_ORDER = Object.fromEntries(
 
 /** The `dates:recurrenceSummary.*` unit keys for each frequency. */
 const FREQUENCY_LABELS: Record<RecurrenceFrequency, { singular: string; plural: string }> = {
+  hourly: { singular: "hour", plural: "hours" },
   daily: { singular: "day", plural: "days" },
   weekly: { singular: "week", plural: "weeks" },
   monthly: { singular: "month", plural: "months" },
@@ -137,6 +162,8 @@ export const createRecurrenceFromPreset = (
   switch (preset) {
     case "none":
       return null;
+    case "hourly":
+      return { ...baseRule(), frequency: "hourly" };
     case "daily":
       return baseRule();
     case "weekly":
@@ -175,6 +202,7 @@ export const detectRecurrencePreset = (rule: RecurrenceRule | null): RecurrenceP
   if (!rule) {
     return "none";
   }
+  if (rule.frequency === "hourly" && rule.interval === 1 && rule.ends === "never") return "hourly";
   if (rule.frequency === "daily" && rule.interval === 1 && rule.ends === "never") {
     return "daily";
   }
@@ -310,7 +338,13 @@ const describeMonthlyDetail = (rule: RecurrenceRule, t: TranslateFn) => {
 
 export const summarizeRecurrence = (
   rule: RecurrenceRule | null,
-  options: { referenceDate?: string | null; strategy?: RecurrenceStrategy } | undefined,
+  options:
+    | {
+        referenceDate?: string | null;
+        strategy?: RecurrenceStrategy;
+        limit?: number | null;
+      }
+    | undefined,
   t: TranslateFn
 ): string => {
   if (!rule) {
@@ -323,9 +357,11 @@ export const summarizeRecurrence = (
       ? t(`dates:recurrenceSummary.${frequencyLabel.singular}`)
       : t(`dates:recurrenceSummary.${frequencyLabel.plural}`);
   const schedule =
-    rule.interval === 1
-      ? t("dates:recurrenceSummary.everySingular", { unit })
-      : t("dates:recurrenceSummary.everyPlural", { count: rule.interval, unit });
+    rule.frequency === "hourly" && rule.interval === 1
+      ? t("dates:recurrenceSummary.everyHour")
+      : rule.interval === 1
+        ? t("dates:recurrenceSummary.everySingular", { unit })
+        : t("dates:recurrenceSummary.everyPlural", { count: rule.interval, unit });
 
   let detail = "";
   switch (rule.frequency) {
@@ -366,6 +402,9 @@ export const summarizeRecurrence = (
   const parts = [t("dates:recurrenceSummary.repeats", { schedule })];
   if (options?.strategy === "rolling") {
     parts.push(`(${t("dates:recurrenceSummary.afterCompletion")})`);
+    if (rule.frequency === "hourly" && options.limit != null) {
+      parts.push(t("dates:recurrenceSummary.dailyLimit", { count: options.limit }));
+    }
   }
   if (detail) {
     parts.push(detail);
@@ -492,6 +531,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 /** The longest one step of each frequency takes, in days, as the server counts it. */
 const STEP_DAYS: Record<RecurrenceFrequency, number> = {
+  hourly: 1 / 24,
   daily: 1,
   weekly: 7,
   monthly: 31,
@@ -690,7 +730,8 @@ export const fromStored = (
   stored: string | null | undefined,
   start: string | null | undefined,
   shift = 0,
-  allDay = false
+  allDay = false,
+  allowHourly = false
 ): RecurrenceRule | "custom" | null => {
   if (!stored) return null;
   const raw = parseRule(stored);
@@ -698,7 +739,7 @@ export const fromStored = (
   const parts = start && !allDay ? toLocalParts(raw, new Date(start), shift) : raw;
   if (!parts) return "custom";
   const freq = (parts.get("FREQ")?.[0] ?? "").toLowerCase() as RecurrenceFrequency;
-  if (!(freq in FREQUENCY_LABELS)) return "custom";
+  if (!(freq in FREQUENCY_LABELS) || (freq === "hourly" && !allowHourly)) return "custom";
   const known = new Set([
     "FREQ",
     "INTERVAL",
@@ -809,16 +850,30 @@ const toLocalDateKey = (date: Date) =>
 export const summarizeStored = (
   stored: string | null | undefined,
   start: string | null | undefined,
-  options: { strategy?: RecurrenceStrategy; shift?: number; allDay?: boolean } | undefined,
+  options:
+    | {
+        strategy?: RecurrenceStrategy;
+        shift?: number;
+        allDay?: boolean;
+        limit?: number | null;
+      }
+    | undefined,
   t: TranslateFn
 ): string => {
-  const rule = fromStored(stored, start, options?.shift, options?.allDay);
+  const rule = fromStored(
+    stored,
+    start,
+    options?.shift,
+    options?.allDay,
+    options?.strategy === "rolling"
+  );
   if (rule === "custom") return t("dates:recurrenceSummary.custom");
   return summarizeRecurrence(
     rule,
     {
       referenceDate: options?.allDay && start ? allDayReference(start) : start,
       strategy: options?.strategy,
+      limit: options?.limit,
     },
     t
   );

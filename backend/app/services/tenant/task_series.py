@@ -26,12 +26,12 @@ Nothing here commits.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from types import EllipsisType
 from typing import Any
 
 from sqlalchemy.orm import joinedload, selectinload
-from sqlmodel import select
+from sqlmodel import or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import recurrence
@@ -188,6 +188,7 @@ def repeat_edited(
     if sent is None:
         task.recurrence_occurrence_count = 0
         task.recurrence_strategy = RecurrenceStrategy.fixed
+        task.recurrence_limit = None
     start = task.due_date or task.start_date
     task.recurrence, task.recurrence_shift = recurrence.edited(
         task.recurrence,
@@ -201,8 +202,14 @@ def repeat_edited(
     )
 
 
-def next_dates(
-    task: Task, *, now: datetime, user_timezone: str | None
+async def next_dates(
+    session: AsyncSession,
+    task: Task,
+    *,
+    now: datetime,
+    user_timezone: str | None,
+    skipping: bool = False,
+    completing: bool = True,
 ) -> tuple[datetime | None, datetime] | None:
     """The next task's start and due dates, or ``None`` when the series has no
     more. Raises ``ValueError`` for a rule that does not parse."""
@@ -212,12 +219,18 @@ def next_dates(
     start = values.get("start_date", task.start_date)
     rolling = task.recurrence_strategy == RecurrenceStrategy.rolling
     done = task.recurrence_occurrence_count
-    if rolling:
+    hourly = rule.get("FREQ") == ["HOURLY"]
+    if hourly:
+        if not rolling:
+            raise ValueError("Hourly task recurrence requires rolling")
+        # Sub-minute completion precision does not move an hourly schedule.
+        base = max(now, due) if skipping else now
+        base = base.replace(second=0, microsecond=0)
+    elif rolling:
         # Rolling counts from the completer's local day, at the task's own
         # local time of day: a 5pm LA task is midnight UTC the next day, so a
-        # UTC day would land a day early. The zone is whoever finished it:
-        # the day a completion counts on is theirs, so it is read here and
-        # never stored on the task.
+        # UTC day would land a day early. The zone is the request's, read here
+        # and never stored.
         zone = resolve_zone(user_timezone)
         due_local = due.astimezone(zone)
         base = (
@@ -239,7 +252,8 @@ def next_dates(
     # Fixed tasks keep their anchor: dateutil counts only the rule's starts,
     # before EXDATE/RDATE, as RFC 5545 requires.
     count = rule.get("COUNT", [None])[0]
-    if rolling and count is not None and task.recurrence_occurrence_count + 1 >= count:
+    consumed = task.recurrence_occurrence_count + (1 if completing or skipping else 0)
+    if rolling and count is not None and consumed >= count:
         return None
     next_due = recurrence.next_start(
         task.recurrence,
@@ -251,8 +265,166 @@ def next_dates(
     )
     if next_due is None:
         return None
+    if hourly and task.recurrence_limit is not None:
+        next_due = await _limited_hourly_due(
+            session,
+            task,
+            now=now,
+            due=due,
+            next_due=next_due,
+            user_timezone=user_timezone,
+            skipping=skipping,
+            completing=completing,
+        )
+        if next_due is None:
+            return None
+        if "UNTIL" in rule:
+            until = recurrence.last_start(task.recurrence, due, task.recurrence_shift)
+            if until is not None and next_due > until:
+                return None
     length: timedelta | None = due - start if start and due else None
     return (next_due - length if length is not None else None), next_due
+
+
+async def _limited_hourly_due(
+    session: AsyncSession,
+    task: Task,
+    *,
+    now: datetime,
+    due: datetime,
+    next_due: datetime,
+    user_timezone: str | None,
+    skipping: bool,
+    completing: bool,
+) -> datetime | None:
+    """A cap and daily reset derived only from this series' completion rows.
+
+    Read through the caller's guild/RLS session. Trashed completions still
+    happened, and count until those rows are permanently removed. A skipped
+    task has no completion timestamp and never consumes the daily allowance.
+    """
+    zone = resolve_zone(user_timezone)
+    limit = task.recurrence_limit
+    if limit is None:
+        return next_due
+    local_day = (max(now, due) if skipping else now).astimezone(zone).date()
+    lower = datetime.combine(local_day, time.min, zone).astimezone(timezone.utc)
+    upper = datetime.combine(local_day + timedelta(days=1), time.min, zone).astimezone(
+        timezone.utc
+    )
+    series = task.series_id or task.id
+    history = (
+        await session.exec(
+            select(Task.completed_at, Task.due_date)
+            .where(
+                or_(Task.series_id == series, Task.id == series),
+                Task.id != task.id,
+                Task.completed_at >= lower,
+                Task.completed_at < upper,
+            )
+            .order_by(Task.completed_at, Task.id)
+            .execution_options(include_deleted=True)
+        )
+    ).all()
+    count = len(history) + (1 if completing and not skipping else 0)
+    first_due = next(
+        (historic_due for _, historic_due in history if historic_due is not None), due
+    )
+    if count < limit and next_due.astimezone(zone).date() == local_day:
+        return next_due
+    reset = datetime.combine(
+        local_day + timedelta(days=1), first_due.astimezone(zone).time(), zone
+    ).astimezone(timezone.utc)
+    # Date filters may have moved next_due several days beyond the elapsed
+    # interval. A daily reset starts a new hourly grid on its chosen day.
+    base = max(now, due) if skipping else now
+    parsed = recurrence.parse(task.recurrence)
+    interval = parsed.rule.get("INTERVAL", [1])[0]
+    earliest = base.astimezone(timezone.utc).replace(
+        second=0, microsecond=0
+    ) + timedelta(hours=interval)
+    reset = max(reset, earliest)
+    # Find the next allowed day independently of the elapsed hourly interval;
+    # a long interval's grid must not skip otherwise eligible reset days.
+    days = recurrence.Recurrence(
+        {**parsed.rule, "INTERVAL": [1]}, parsed.exdates, parsed.rdates
+    ).to_lines()
+    starts = recurrence.first(days, reset, task.recurrence_shift, 1)
+    if not starts:
+        return None
+    candidate = starts[0]
+    anchor = datetime.combine(
+        candidate.astimezone(zone).date(), first_due.astimezone(zone).time(), zone
+    ).astimezone(timezone.utc)
+    starts = recurrence.first(
+        task.recurrence, max(anchor, earliest), task.recurrence_shift, 1
+    )
+    return starts[0] if starts else None
+
+
+async def reschedule_hourly(
+    session: AsyncSession,
+    task: Task,
+    *,
+    user_timezone: str | None,
+    due_sent: bool,
+    rule_changed: bool,
+) -> None:
+    """Settings edits recalculate the pending task from its last real completion."""
+    if task.recurrence_strategy != RecurrenceStrategy.rolling or not task.recurrence:
+        return
+    if recurrence.parse(task.recurrence).rule.get("FREQ") != ["HOURLY"]:
+        return
+    series = task.series_id or task.id
+    last = (
+        await session.exec(
+            select(Task.completed_at)
+            .where(
+                or_(Task.series_id == series, Task.id == series),
+                Task.id != task.id,
+                Task.completed_at.isnot(None),
+            )
+            .order_by(Task.completed_at.desc(), Task.id.desc())
+            .limit(1)
+            .execution_options(include_deleted=True)
+        )
+    ).first()
+    if last is None:
+        return
+    dates = await next_dates(
+        session, task, now=last, user_timezone=user_timezone, completing=False
+    )
+    if dates is None:
+        raise ValueError("INVALID_RECURRENCE_LIMIT")
+    _, minimum = dates
+    if due_sent:
+        if task.due_date is None or task.due_date < minimum:
+            raise ValueError("INVALID_RECURRENCE_LIMIT")
+    elif rule_changed:
+        zone = resolve_zone(user_timezone)
+        if task.due_date is not None:
+            # A future day's pending occurrence may have been explicitly skipped.
+            day = task.due_date.astimezone(zone).date()
+            if minimum.astimezone(zone).date() < day:
+                minimum = max(
+                    minimum,
+                    datetime.combine(
+                        day, minimum.astimezone(zone).time(), zone
+                    ).astimezone(timezone.utc),
+                )
+                starts = recurrence.first(
+                    task.recurrence, minimum, task.recurrence_shift, 1
+                )
+                if not starts:
+                    raise ValueError("INVALID_RECURRENCE_LIMIT")
+                minimum = starts[0]
+        length = (
+            task.due_date - task.start_date
+            if task.due_date and task.start_date
+            else None
+        )
+        task.due_date = minimum
+        task.start_date = minimum - length if length is not None else None
 
 
 async def retag(session: AsyncSession, task_id: int, tag_ids: list[int]) -> None:
@@ -282,11 +454,12 @@ async def advance_recurrence_if_needed(
     ):
         return False
     try:
-        dates = next_dates(task, now=now, user_timezone=user_timezone)
+        dates = await next_dates(session, task, now=now, user_timezone=user_timezone)
     except ValueError:
         return False
     if dates is None:
         task.recurrence = None
+        task.recurrence_limit = None
         return False
     new_task = await _next_task(session, task, dates, now=now, in_place=False)
     await session.flush()
@@ -305,6 +478,7 @@ async def advance_recurrence_if_needed(
 
     task.recurrence = None
     task.recurrence_strategy = RecurrenceStrategy.fixed
+    task.recurrence_limit = None
     task.recurrence_carry = None
     task.updated_at = now
     session.add(task)
@@ -319,7 +493,9 @@ async def skip(
     if task.due_date is None:
         return False
     try:
-        dates = next_dates(task, now=now, user_timezone=user_timezone)
+        dates = await next_dates(
+            session, task, now=now, user_timezone=user_timezone, skipping=True
+        )
     except ValueError:
         return False
     if dates is None:
@@ -365,6 +541,7 @@ async def _next_task(
             recurrence_anchor=task.recurrence_anchor,
             recurrence_anchor_count=task.recurrence_anchor_count,
             recurrence_strategy=task.recurrence_strategy,
+            recurrence_limit=task.recurrence_limit,
             position=await next_position(session, task.project_id),
             series_id=task.series_id,
             created_by=task.created_by,

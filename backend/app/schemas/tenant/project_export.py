@@ -11,10 +11,12 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import AliasChoices, AwareDatetime, Field
+from pydantic import AliasChoices, AwareDatetime, Field, model_validator
 
 from app.schemas.base import SanitizedBaseModel
+from app.schemas.recurrence import validate_task_recurrence
 
+from app.core import recurrence
 from app.core.relationships import RelationshipType
 from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
@@ -125,6 +127,7 @@ class ProjectExportTask(SanitizedBaseModel):
     recurrence_anchor_count: int = Field(default=0, ge=0)
     recurrence_strategy: str = "fixed"
     recurrence_occurrence_count: int = 0
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
     #: The repeating series the task is in, as a number the tasks of one series
     #: share in this export; the import gives each series a new one.
     series: Optional[int] = None
@@ -164,6 +167,23 @@ class ProjectExportTask(SanitizedBaseModel):
     assignee_names: List[str] = []
     # The handles the description mentions, as a comment's are.
     mention_handles: List[str] = []
+
+    @model_validator(mode="after")
+    def _valid_recurrence(self) -> "ProjectExportTask":
+        rule, _ = recurrence.imported(
+            self.recurrence,
+            kind="task",
+            start=self.due_date or self.start_date,
+            tz=None,
+            shift=self.recurrence_shift,
+        )
+        validate_task_recurrence(
+            rule=rule,
+            strategy=self.recurrence_strategy,
+            limit=self.recurrence_limit,
+            due=self.due_date,
+        )
+        return self
 
 
 class ProjectExportEnvelope(_EnvelopeBase):

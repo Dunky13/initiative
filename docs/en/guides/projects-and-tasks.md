@@ -80,7 +80,7 @@ Good for the tasks that are secretly three tasks wearing a coat.
 
 For the things that keep coming back: the weekly report, the monthly review, the bins.
 
-Pick the rhythm — daily, every weekday, weekly, monthly, annually, or **Custom…** for the second Tuesday, the last weekday of the month and their friends. The next few dates are listed under the form.
+Pick the rhythm — hourly after completion, daily, every weekday, weekly, monthly, annually, or **Custom…** for the second Tuesday, the last weekday of the month and their friends. For **On schedule** repeats, the next few dates are listed under the form.
 
 Finishing one makes the next, so there's only ever one to deal with. The strategy decides its date:
 
@@ -88,6 +88,14 @@ Finishing one makes the next, so there's only ever one to deal with. The strateg
 |---|---|
 | **On schedule** | Counted from the dates. Pay the rent on the 1st, even if last month's went in on the 9th. |
 | **After completion** | Counted from when you finished. Water the plants a week after you last did, not a week after you meant to. |
+
+For a routine that needs a gap after each completion, choose **Hourly (after completion)**. This uses **After completion**: finishing a task makes the next due the selected number of hours later. **On schedule** tasks repeat daily or less often. Hourly completion times are counted to the minute.
+
+Optionally set **Maximum per day**. Leave it empty for a continuous hourly repeat. With a maximum, reaching it or having the next repeat cross midnight moves the next task to the following day at the first task’s time, delayed when needed to preserve the gap. Set the first task’s due date and time to establish the starting time. The daily count and time are worked out from the series’ tasks in the timezone of whoever completes the task, so teammates can finish it in their own local day.
+
+For example, with a maximum of three per day and a four-hour interval, completing the first at 09:30 makes the next due at 13:30. Finishing that one at 14:00 makes the third due at 18:00. After the third completion, the next reminder resumes the next day using the first task’s time, subject to the gap.
+
+Missed days create no backlog. Skipping does not record a completion. Future dates for **After completion** repeats appear as tasks are created, because later dates depend on actual completions.
 
 Upcoming dates show on calendars too, and open the task you're on now.
 

@@ -151,7 +151,11 @@ const TitleCell = ({
     ? summarizeStored(
         task.recurrence,
         task.due_date || task.start_date,
-        { strategy: task.recurrence_strategy, shift: task.recurrence_shift },
+        {
+          strategy: task.recurrence_strategy,
+          shift: task.recurrence_shift,
+          limit: task.recurrence_limit,
+        },
         env.t
       )
     : null;
@@ -244,7 +248,11 @@ const RecurrenceField = ({ value, item, env }: FieldRendererProps) => {
   const summary = summarizeStored(
     value as string,
     item.due_date || item.start_date,
-    { strategy: item.recurrence_strategy, shift: item.recurrence_shift },
+    {
+      strategy: item.recurrence_strategy,
+      shift: item.recurrence_shift,
+      limit: item.recurrence_limit,
+    },
     env.t
   );
   return summary ? <p>{truncateText(summary, 80)}</p> : null;

@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import recurrence
-from app.core.messages import ProjectExportMessages
+from app.schemas.recurrence import validate_task_recurrence
+from app.core.messages import ImportEngineMessages, ProjectExportMessages
 from app.core.search import SearchEntityType
 from app.models.tenant.comment import Comment
 from app.models.tenant.initiative import Initiative
@@ -275,6 +276,15 @@ async def _import_task(
         tz=importer_zone,
         shift=envelope_task.recurrence_shift,
     )
+    try:
+        validate_task_recurrence(
+            rule=repeat,
+            strategy=envelope_task.recurrence_strategy,
+            limit=envelope_task.recurrence_limit,
+            due=envelope_task.due_date,
+        )
+    except ValueError as exc:
+        raise ImportEngineError(ImportEngineMessages.IMPORT_INVALID_ENVELOPE) from exc
     task = Task(
         project_id=project_id,
         task_status_id=status_id,
@@ -294,6 +304,7 @@ async def _import_task(
         recurrence_anchor_count=envelope_task.recurrence_anchor_count,
         recurrence_strategy=envelope_task.recurrence_strategy,
         recurrence_occurrence_count=envelope_task.recurrence_occurrence_count,
+        recurrence_limit=envelope_task.recurrence_limit,
         position=envelope_task.position,
         archived_at=envelope_task.archived_at,
         completed_at=envelope_task.completed_at,

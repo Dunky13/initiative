@@ -81,11 +81,13 @@ _WEEKLY = "RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY=MO"
             },
         ),
         ("RRULE:FREQ=DAILY;TT_SKIP=HOLIDAY", "0", {}),
+        ("RRULE:FREQ=HOURLY;INTERVAL=4", "0", {}),
         (_WEEKLY, "2", {}),
     ],
     ids=[
         "picked in the task's zone",
         "a rule a task cannot repeat by",
+        "a fixed hourly rule is kept as a one-off",
         "a finished task holds no repeat",
     ],
 )

@@ -276,7 +276,15 @@
     },
     "lastDay": "Último",
     "months": "Meses",
-    "nextDates": "Próximas:"
+    "nextDates": "Próximas:",
+    "hourlyAfterCompletion": "Cada hora (después de completar)",
+    "frequencyHourly": "Cada hora",
+    "repeatEveryHours": "horas",
+    "dailyLimit": "Máximo al día (opcional)",
+    "unlimited": "Sin límite",
+    "hourlyCompletionHelp": "Cada finalización programa la siguiente tarea después del número de horas seleccionado. Deja el máximo en blanco para repetir continuamente. Con un máximo, alcanzarlo o cruzar la medianoche inicia el día siguiente a la hora de la primera tarea, más tarde si es necesario para mantener el intervalo. El recuento diario utiliza la zona horaria de la persona que completa la tarea.",
+    "limitInvalid": "No se ha guardado. Introduce un máximo diario entero de 1 a 24, o déjalo en blanco para no aplicar ningún límite.",
+    "hourlyNeedsDueDate": "Establece una fecha y hora de vencimiento para la primera tarea antes de guardar una repetición por horas."
   },
   "progressLabel": "Progreso del proyecto",
   "preview": {

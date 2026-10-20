@@ -37,7 +37,7 @@ from app.schemas.ai_generation import (
     GenerateDescriptionResponse,
 )
 from app.schemas.query import DateBucket, GroupRead, GroupsResponse
-from app.schemas.recurrence import OccurrenceScope
+from app.schemas.recurrence import OccurrenceScope, validate_task_recurrence
 from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.tenant.task import (
     ChecklistItem,
@@ -592,6 +592,19 @@ async def update_task(
     project = task.project
 
     update_data = task_in.model_dump(exclude_unset=True)
+    if update_data.get("recurrence", task.recurrence) is None:
+        update_data.setdefault("recurrence_limit", None)
+    try:
+        validate_task_recurrence(
+            rule=update_data.get("recurrence", task.recurrence),
+            strategy=update_data.get("recurrence_strategy") or task.recurrence_strategy,
+            limit=update_data.get("recurrence_limit", task.recurrence_limit),
+            due=update_data.get("due_date", task.due_date),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=TaskMessages.INVALID_RECURRENCE_LIMIT
+        ) from exc
     if "description_base" in update_data:
         await overwrites.refuse_written_over(
             session, task, "description", update_data.pop("description_base")
@@ -671,6 +684,23 @@ async def update_task(
         tz=picked_in,
         scope=scope,
     )
+    if {"recurrence", "recurrence_limit", "due_date"}.intersection(update_data):
+        try:
+            await task_series.reschedule_hourly(
+                session,
+                task,
+                user_timezone=current_user.timezone
+                if current_user is not None
+                else None,
+                due_sent="due_date" in update_data,
+                rule_changed=bool(
+                    {"recurrence", "recurrence_limit"}.intersection(update_data)
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=TaskMessages.INVALID_RECURRENCE_LIMIT
+            ) from exc
     if checklist_sent:
         task.checklist = checklist_service.normalize(
             task_in.checklist or [], existing=task.checklist
