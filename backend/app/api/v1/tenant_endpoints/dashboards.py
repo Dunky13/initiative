@@ -461,7 +461,10 @@ def _query_response(result: query_service.QueryResult) -> QueryResponse:
     return QueryResponse(
         columns=[
             QueryColumnDescription(
-                name=column.name, type=column.type, grain=column.grain
+                name=column.name,
+                type=column.type,
+                grain=column.grain,
+                date_only=column.date_only,
             )
             for column in result.columns
         ],

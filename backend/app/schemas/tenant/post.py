@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import Any, List, Optional, TYPE_CHECKING
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, ConfigDict, Field, model_validator
 
 from app.core.identity_boundary import PersonId, with_mention_markup
 from app.schemas.base import LexicalState, MentionStr, SanitizedBaseModel, TitleStr
@@ -60,7 +60,7 @@ class PostCreate(PostBase, PropertiesOnCreate):
     #: When the notice should go up. Omitted (or in the past) posts it now.
     #: Until then it is a draft: only the people who could edit it see it, and
     #: nobody is notified.
-    scheduled_for: Optional[datetime] = None
+    scheduled_for: Optional[AwareDatetime] = None
     #: The question the notice asks, if it asks one. Written with the post
     #: rather than added afterwards, so a notice and its question are one
     #: submission and there is no window where the poll failed to attach.
@@ -74,7 +74,7 @@ class PostUpdate(SanitizedBaseModel):
     #: new instant moves it. Meaningless once the notice is up — a published
     #: post cannot be unpublished, because the people it was announced to have
     #: already been told.
-    scheduled_for: Optional[datetime] = None
+    scheduled_for: Optional[AwareDatetime] = None
 
 
 class PostReactionSettings(SanitizedBaseModel):
@@ -100,7 +100,7 @@ class PostPinUpdate(SanitizedBaseModel):
     pinned: bool = True
     #: Optional; when set the pin lapses at this instant and the post falls
     #: back into the feed by date. Must be in the future.
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[AwareDatetime] = None
 
     @model_validator(mode="after")
     def validate_expiry(self) -> "PostPinUpdate":

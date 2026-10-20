@@ -38,6 +38,8 @@ export interface DataColumn {
   /** For a date the statement rounded with `date_trunc`, the unit it rounded
    *  to. A chart labels its points by this; absent means a plain date. */
   grain?: ColumnGrain;
+  /** A SQL DATE encoded at UTC midnight, whose calendar day is zone independent. */
+  date_only?: boolean;
 }
 
 /** A cell. Dates are epoch milliseconds, like every other timestamp here. */

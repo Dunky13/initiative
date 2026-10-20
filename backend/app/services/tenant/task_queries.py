@@ -1307,11 +1307,11 @@ def projected_occurrences(
         try:
             starts = recurrence.between(
                 task.recurrence,
-                due,
+                task.recurrence_anchor or due,
                 task.recurrence_shift,
                 start_after,
                 start_before,
-                count=False,
+                done=task.recurrence_anchor_count,
                 at_most=recurrence.MAX_EXPANDED - expanded + 1,
             )
         except ValueError:

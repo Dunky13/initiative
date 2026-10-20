@@ -35,6 +35,20 @@ const rule = (overrides: Partial<RecurrenceRule>): RecurrenceRule => ({
 const START = "2026-10-04T22:30:00Z";
 
 describe("toRRule", () => {
+  it.each([29, 30, 31])("keeps every selected yearly month when clamping day %i", (day) => {
+    const picked = rule({ frequency: "yearly", month_days: [day], months: [1, 2, 4, 7] });
+    const stored = toRRule(picked);
+    expect(stored).not.toContain("BYSETPOS");
+    expect(stored).toContain("BYYEARDAY=");
+    expect(fromStored(stored, "2026-01-29T09:00:00Z")).toEqual(picked);
+  });
+
+  it("keeps arbitrary year-day rules custom instead of guessing their intent", () => {
+    expect(
+      fromStored("RRULE:FREQ=YEARLY;BYYEARDAY=1,200;BYMONTH=1,7", "2026-01-01T09:00:00Z")
+    ).toBe("custom");
+  });
+
   it("writes the picked days, and the end of the picked day in UTC", () => {
     expect(toRRule(rule({ weekdays: ["wednesday", "monday"] }))).toBe(
       "RRULE:FREQ=WEEKLY;BYDAY=MO,WE"

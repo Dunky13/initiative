@@ -572,6 +572,7 @@ async def update_task(
         else None
     )
     previous_start = task.due_date or task.start_date
+    previous_repeat = (task.recurrence, task.recurrence_shift, task.recurrence_strategy)
     previous_description = task.description
     previous_status_category = task.task_status.category if task.task_status else None
     new_status_id = update_data.pop("task_status_id", None)
@@ -630,6 +631,23 @@ async def update_task(
         after, moved = task_series.edited(
             task, before, scope=scope, assignee_ids=assignee_ids, tag_ids=tag_ids
         )
+    start = task.due_date or task.start_date
+    if previous_repeat != (
+        task.recurrence,
+        task.recurrence_shift,
+        task.recurrence_strategy,
+    ) or (start != previous_start and scope != "this"):
+        baseline = task_series.carried(task)
+        task.recurrence_anchor = (
+            (
+                baseline.get("due_date", task.due_date)
+                or baseline.get("start_date", task.start_date)
+            )
+            if task.recurrence
+            else None
+        )
+        task.recurrence_anchor_count = task.recurrence_occurrence_count
+    if before is not None:
         if scope == "all":
             series = await _writable_series(session, task, current_user, guild_context)
     now = datetime.now(timezone.utc)

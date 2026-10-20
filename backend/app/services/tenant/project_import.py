@@ -290,6 +290,8 @@ async def _import_task(
         due_date=envelope_task.due_date,
         recurrence=repeat,
         recurrence_shift=shift,
+        recurrence_anchor=envelope_task.recurrence_anchor,
+        recurrence_anchor_count=envelope_task.recurrence_anchor_count,
         recurrence_strategy=envelope_task.recurrence_strategy,
         recurrence_occurrence_count=envelope_task.recurrence_occurrence_count,
         position=envelope_task.position,
@@ -365,6 +367,17 @@ async def _import_task(
                     named_handle_sink.setdefault(uid, handle)
             carry["assignee_ids"] = sorted(carried)
         task.recurrence_carry = carry
+
+    if envelope_task.recurrence_anchor is None and task.recurrence:
+        # Older envelopes have no phase metadata. Match their effective
+        # continuation, including a date kept back by a this-only edit.
+        from app.services.tenant.task_series import carried
+
+        baseline = carried(task)
+        task.recurrence_anchor = baseline.get(
+            "due_date", task.due_date
+        ) or baseline.get("start_date", task.start_date)
+        task.recurrence_anchor_count = task.recurrence_occurrence_count
 
     # Assignees: the account a person mapped the handle to, else a member
     # whose handle is the same string (see ``people.initiative_member_id``).

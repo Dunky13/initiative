@@ -9,7 +9,16 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { addDays, addMonths, addWeeks, addYears, parseISO, startOfWeek } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  addYears,
+  differenceInCalendarDays,
+  format,
+  parseISO,
+  startOfWeek,
+} from "date-fns";
 import {
   Calendar,
   CalendarDays,
@@ -27,6 +36,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { dateTimeFormat } from "@/lib/intl";
+import { parseLocalCalendarDate, resolveLocalDateTime } from "@/lib/localDateTime";
+import { toast } from "@/lib/mascotToast";
 import { cn } from "@/lib/utils";
 
 import { DayView } from "./views/DayView";
@@ -350,6 +361,7 @@ export const CalendarView = ({
   isEntrySelectable,
   onToggleEntrySelection,
 }: CalendarViewProps) => {
+  const { t } = useTranslation("dates");
   const periodLabel = usePeriodLabel(viewMode, focusDate, weekStartsOn);
   const dndEnabled = !!onEntryReschedule;
   const [activeEntry, setActiveEntry] = useState<CalendarEntry | null>(null);
@@ -376,47 +388,47 @@ export const CalendarView = ({
 
       const start = parseISO(entry.startAt);
       if (Number.isNaN(start.getTime())) return;
-      const end = parseISO(entry.endAt);
-      const durationMs = Number.isNaN(end.getTime()) ? 0 : end.getTime() - start.getTime();
-
-      if (drop.type === "day") {
-        // Change the date, keep the time-of-day (local midnight for all-day).
-        const target = parseISO(`${drop.dateKey}T00:00:00`);
-        const newStart = new Date(target);
-        newStart.setHours(start.getHours(), start.getMinutes(), start.getSeconds(), 0);
-        if (dateKey(newStart) === dateKey(start)) return; // no-op
-        const newEnd = new Date(newStart.getTime() + durationMs);
-        onEntryReschedule?.({
-          entry,
-          startAt: newStart.toISOString(),
-          endAt: newEnd.toISOString(),
-          mode: "day",
-        });
+      const parsedEnd = parseISO(entry.endAt);
+      const end = Number.isNaN(parsedEnd.getTime()) ? start : parsedEnd;
+      const time =
+        drop.type === "day" || entry.allDay
+          ? format(start, "HH:mm:ss.SSS")
+          : `${String(drop.hour).padStart(2, "0")}:00:00.000`;
+      const newStart = entry.allDay
+        ? parseLocalCalendarDate(drop.dateKey)
+        : resolveLocalDateTime(drop.dateKey, time, entry.startAt);
+      if (newStart && entry.allDay) {
+        // A calendar day remains valid when its midnight is skipped. Task
+        // markers also retain their existing clock where that day has it.
+        newStart.setHours(
+          start.getHours(),
+          start.getMinutes(),
+          start.getSeconds(),
+          start.getMilliseconds()
+        );
+      }
+      if (!newStart) {
+        toast.error(t("picker.invalidLocalDateTime"));
         return;
       }
-
-      // drop.type === "hour": set the date to the dropped column's day. Timed
-      // entries also move to the dropped hour; all-day markers keep their
-      // (midnight) time and only change date — so dropping a task start/due
-      // marker into a week column reschedules its date. In day view the column
-      // is always the focused day, so only the time changes.
-      const targetDay = parseISO(`${drop.dateKey}T00:00:00`);
-      const newStart = new Date(targetDay);
-      if (entry.allDay) {
-        newStart.setHours(start.getHours(), start.getMinutes(), start.getSeconds(), 0);
-      } else {
-        newStart.setHours(drop.hour, 0, 0, 0);
-      }
-      if (newStart.getTime() === start.getTime()) return; // no-op
-      const newEnd = new Date(newStart.getTime() + durationMs);
+      if (
+        drop.type === "day"
+          ? dateKey(newStart) === dateKey(start)
+          : newStart.getTime() === start.getTime()
+      )
+        return;
+      // All-day spans count calendar days; elapsed time differs across DST.
+      const newEnd = entry.allDay
+        ? addDays(end, differenceInCalendarDays(newStart, start))
+        : new Date(newStart.getTime() + end.getTime() - start.getTime());
       onEntryReschedule?.({
         entry,
         startAt: newStart.toISOString(),
         endAt: newEnd.toISOString(),
-        mode: entry.allDay ? "day" : "time",
+        mode: drop.type === "day" || entry.allDay ? "day" : "time",
       });
     },
-    [onEntryReschedule]
+    [onEntryReschedule, t]
   );
 
   if (isLoading) {

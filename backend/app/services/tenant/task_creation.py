@@ -336,16 +336,24 @@ async def copy_tasks(
             source.due_date,
             source.recurrence,
         )
+        anchor = source.recurrence_anchor
         if date_shift is not None:
             shift = date_shift
             if repeat and (due_date or start_date):
                 # A series moves on its own rule, from its due date or its
                 # start without one, and its dates move with its start.
-                start = due_date or start_date
+                start = anchor or due_date or start_date
                 series = recurrence.moved(
-                    repeat, start, source.recurrence_shift, date_shift
+                    repeat,
+                    start,
+                    source.recurrence_shift,
+                    date_shift,
+                    occurrences=[due_date or start_date],
                 )
-                repeat, shift = series.text, series.start - start
+                repeat = series.text
+                anchor = series.start
+                original = due_date or start_date
+                shift = series.occurrences[original] - original
             start_date = start_date + shift if start_date else None
             due_date = due_date + shift if due_date else None
         copy = Task(
@@ -358,6 +366,8 @@ async def copy_tasks(
             due_date=due_date,
             recurrence=repeat,
             recurrence_shift=source.recurrence_shift,
+            recurrence_anchor=anchor,
+            recurrence_anchor_count=source.recurrence_anchor_count,
             recurrence_strategy=source.recurrence_strategy,
             position=end + index if beside else source.position,
             checklist=checklist_service.cloned(source.checklist, keep_done=keep_done),

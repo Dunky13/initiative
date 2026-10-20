@@ -1,4 +1,4 @@
-import { endOfMonth, format, isToday, startOfDay, startOfMonth } from "date-fns";
+import { addDays, endOfMonth, format, isToday, startOfDay, startOfMonth } from "date-fns";
 import { Clock } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -52,16 +52,18 @@ export function ListView({
       if (Number.isNaN(start.getTime())) continue;
 
       const endDay = Number.isNaN(end.getTime()) ? start : end;
-      const cursor = new Date(startOfDay(start));
-      const last = startOfDay(endDay);
-      let iterations = 0;
+      const cursor = new Date(Math.max(startOfDay(start).getTime(), monthStart.getTime()));
+      const last = new Date(Math.min(startOfDay(endDay).getTime(), monthEnd.getTime()));
 
-      while (cursor <= last && iterations < 90) {
+      while (cursor <= last) {
         if (cursor >= monthStart && cursor <= monthEnd) {
-          result.push({ entry, displayDate: new Date(cursor), isSpanDay: iterations > 0 });
+          result.push({
+            entry,
+            displayDate: new Date(cursor),
+            isSpanDay: cursor > startOfDay(start),
+          });
         }
-        cursor.setDate(cursor.getDate() + 1);
-        iterations++;
+        cursor.setTime(startOfDay(addDays(cursor, 1)).getTime());
       }
     }
 

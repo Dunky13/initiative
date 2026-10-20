@@ -121,6 +121,7 @@ export const NUMBER_FORMATS = [
   "currency",
   "duration",
   "date",
+  "date-only",
 ] as const;
 export type NumberFormat = (typeof NUMBER_FORMATS)[number];
 
@@ -360,6 +361,8 @@ export interface BoardCard {
   chips?: string[];
   /** A date to show on the card. */
   date?: number;
+  /** A calendar day encoded at UTC midnight, rather than a viewer-local instant. */
+  date_only?: boolean;
   /** 0..1, drawn as a hairline across the card's foot — the share of this
    *  card's own checklist that is finished. */
   progress?: number;

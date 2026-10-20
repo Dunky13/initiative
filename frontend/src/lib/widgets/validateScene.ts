@@ -268,6 +268,7 @@ const parseCard = (raw: unknown, budget: CardBudget): BoardCard => {
         ? undefined
         : arrayOf(raw.chips, SCENE_LIMITS.maxColumns).map(text),
     date: optNum(raw.date),
+    date_only: optBool(raw.date_only),
     progress: optNum(raw.progress),
     caption: optText(raw.caption),
     tone: optTone(raw.tone),
