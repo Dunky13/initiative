@@ -684,6 +684,7 @@ async def test_a_status_with_no_look_gets_its_categorys(session: AsyncSession):
             "project": {"name": "From elsewhere"},
             "tags": [],
             "property_definitions": [],
+            "layouts": [],
             "tasks": [],
             "task_statuses": [
                 {"name": c.value, "category": c.value, "position": i}

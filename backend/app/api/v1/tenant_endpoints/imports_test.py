@@ -2017,6 +2017,7 @@ async def test_envelope_link_out_of_the_file_is_counted(client, acting_user, ses
             {"name": "To Do", "category": "todo", "position": 0, "is_default": True}
         ],
         "property_definitions": [],
+        "layouts": [],
         "tasks": [
             {
                 "title": "Fit the door",
@@ -2315,6 +2316,7 @@ def _project_envelope_with_comment(author_handle: str, author_name: str) -> dict
             {"name": "To Do", "category": "todo", "position": 0, "is_default": True}
         ],
         "property_definitions": [],
+        "layouts": [],
         "tasks": [
             {
                 "title": "Fit the door",
@@ -3413,6 +3415,7 @@ async def _restored(session, initiative_id: int) -> dict:
     return {
         "project": project,
         "tasks": tasks,
+        "layouts": [],
         "files": files,
         "counter": counter,
         "post": (

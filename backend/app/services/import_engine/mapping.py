@@ -267,4 +267,5 @@ def build_envelope(
         "task_statuses": statuses,
         "property_definitions": property_definitions or [],
         "tasks": tasks,
+        "layouts": [],
     }

@@ -258,9 +258,9 @@ class ProjectExportEnvelope(_EnvelopeBase):
     task_statuses: List[ProjectExportTaskStatus]
     property_definitions: List[ProjectExportPropertyDefinition]
     tasks: List[ProjectExportTask]
-    # Empty in an export taken before projects carried their layouts, and for
-    # a project drawn as shipped.
-    layouts: List[ProjectExportLayout] = []
+    # The layouts it changed from the shipped ones; a project drawn as shipped
+    # has none.
+    layouts: List[ProjectExportLayout]
 
     @field_validator("layouts")
     @classmethod
