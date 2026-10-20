@@ -44,6 +44,15 @@ class TaskPriority(str, Enum):
     urgent = "urgent"
 
 
+class RecurrenceStrategy(str, Enum):
+    """How a repeating task's next date is counted."""
+
+    #: "On schedule" in the app: from the task's due date.
+    fixed = "fixed"
+    #: "After completion": from when the task was finished.
+    rolling = "rolling"
+
+
 class TaskStatus(CreatedByMixin, table=True):
     __tablename__ = "task_statuses"
 
@@ -146,8 +155,8 @@ class Task(
     recurrence_until: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    recurrence_strategy: str = Field(
-        default="fixed",
+    recurrence_strategy: RecurrenceStrategy = Field(
+        default=RecurrenceStrategy.fixed,
         sa_column=Column(String(length=20), nullable=False, server_default="fixed"),
     )
     recurrence_occurrence_count: int = Field(

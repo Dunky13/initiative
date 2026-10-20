@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type {
   RecurrencePreviewRequest,
-  TaskListReadRecurrenceStrategy,
+  RecurrenceStrategy,
 } from "@/api/generated/initiativeAPI.schemas";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
@@ -70,8 +70,8 @@ type RecurrenceEditorProps = {
   /** The stored rule and its shift, previewed while it is kept as custom. */
   stored?: { rule: string; shift: number } | null;
   /** Tasks only: whether the next one follows the schedule or completion. */
-  strategy?: TaskListReadRecurrenceStrategy;
-  onStrategyChange?: (value: TaskListReadRecurrenceStrategy) => void;
+  strategy?: RecurrenceStrategy;
+  onStrategyChange?: (value: RecurrenceStrategy) => void;
   disabled?: boolean;
 };
 
@@ -494,7 +494,7 @@ export const RecurrenceEditor = ({
           <Label>{t("recurrence.repeatStrategy")}</Label>
           <Select
             value={strategy}
-            onValueChange={(next) => onStrategyChange(next as TaskListReadRecurrenceStrategy)}
+            onValueChange={(next) => onStrategyChange(next as RecurrenceStrategy)}
             disabled={disabled}
           >
             <SelectTrigger>

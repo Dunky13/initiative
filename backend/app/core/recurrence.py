@@ -27,6 +27,7 @@ from datetime import MAXYEAR, date, datetime, time, timedelta, timezone, tzinfo
 from functools import lru_cache
 from heapq import merge
 from itertools import groupby, islice, takewhile
+from types import EllipsisType
 from typing import Iterable, Iterator, Literal
 
 import icalendar
@@ -519,6 +520,28 @@ def restarted(
         tuple(move(value) for value in repeat.rdates),
     ).to_lines()
     return lines, new_shift
+
+
+def edited(
+    text: str | None,
+    shift: int,
+    sent: str | None | EllipsisType,
+    *,
+    moved: bool,
+    old_start: datetime | None,
+    new_start: datetime | None,
+    tz: str | None,
+    kind: RecurrenceKind,
+) -> tuple[str | None, int]:
+    """A task's or an event's repeat after an edit, and its shift. ``sent`` is
+    the rule the edit wrote: ``...`` for none, ``None`` to stop repeating, or a
+    rule, stored from the new start as picked in ``tz``. Without one, an edit
+    that ``moved`` the start takes the repeat with it (:func:`restarted`)."""
+    if sent is not ...:
+        return stored(sent, new_start, tz, kind=kind) if sent else (None, 0)
+    if text and moved and old_start and new_start:
+        return restarted(text, shift, old_start, new_start, tz)
+    return text, shift
 
 
 def rehomed(

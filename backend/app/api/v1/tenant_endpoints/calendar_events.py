@@ -621,33 +621,16 @@ async def _apply_update(
             setattr(event, field, value.strip() if field == "title" else value)
             updated = True
 
-    # An all-day event's days are UTC dates, whatever zone it was made in.
-    picked_in = "UTC" if event.all_day else event_in.tz
+    occurrences_service.repeat_edited(
+        event,
+        update_data.get("recurrence", ...),
+        old_recurrence=old_recurrence,
+        previous_start=previous_start,
+        previous_all_day=previous_all_day,
+        tz=event_in.tz,
+    )
     if "recurrence" in update_data:
-        event.recurrence, event.recurrence_shift = (
-            recurrence.stored(
-                update_data["recurrence"], event.start_at, picked_in, kind="event"
-            )
-            if update_data["recurrence"]
-            else (None, 0)
-        )
-        if event.recurrence:
-            # A rule written without skipped or extra starts keeps them.
-            event.recurrence = recurrence.kept_exceptions(
-                event.recurrence, old_recurrence
-            )
         updated = True
-    elif event.recurrence and (
-        event.start_at != previous_start or event.all_day != previous_all_day
-    ):
-        # The repeat moves with its start, its days kept as they were picked.
-        event.recurrence, event.recurrence_shift = recurrence.restarted(
-            event.recurrence,
-            event.recurrence_shift,
-            previous_start,
-            event.start_at,
-            picked_in,
-        )
 
     if update_data.get("tag_ids") is not None:
         await tags_service.set_entity_tags(
