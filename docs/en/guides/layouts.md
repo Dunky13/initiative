@@ -49,7 +49,7 @@ Nothing changes for anyone until you save, and leaving with unsaved changes asks
 
 A table takes fields and nothing else, since a column is a column.
 
-A table or board layout also says what people may **group by**, what it **starts grouped by**, and which groups to leave out, such as finished sprints. A board's **Column limits** cap how many open tasks a status column holds; once one is full, nobody adds or moves a task into it until one leaves.
+A table or board layout also says what people may **group by**, what it **starts grouped by**, and which groups to leave out, such as finished sprints. A date groups by day, week, month, quarter or year; pick which beside it. A board's **Column limits** cap how many open tasks a status column holds; once one is full, nobody adds or moves a task into it until one leaves.
 
 A detail layout has three regions: **Header** across the top, **Main** the wide column, **Side** the narrow one beside it. On a phone the regions stack into one column, and the **Phone** preview shows in what order.
 

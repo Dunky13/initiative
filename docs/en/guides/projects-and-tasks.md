@@ -132,7 +132,7 @@ A spreadsheet-style list. One row per task, with columns for status, priority, d
 **Best for:** scanning a lot of tasks, sorting, and editing several at once.
 
 - Click a column heading to **sort** by it. Hold ++shift++ and click another to sort by both.
-- **Group** rows by date window (Overdue, Today, This Week, This Month, Later), status, priority, assignees or tags, or by a property the layout offers. Each group says how many tasks it holds.
+- **Group** rows by any field whose values repeat: date window (Overdue, Today, This Week, This Month, Later), status, priority, assignees, tags, who created it, or a select, person or checkbox property. Dates group by day, week, month, quarter or year. Each group says how many tasks it holds.
 - **Filter** down to exactly what you want.
 - **Select** several rows and edit them together.
 - **Assign to me** in the **Assignees** column takes a task without opening it. Missing the column? Add it in **Edit layouts**.
@@ -228,7 +228,7 @@ Next time, start *from* it and skip the fiddling. Its checklists arrive exactly 
 
 **Export a project** to a portable file — an offline copy, a move somewhere else, or a backup of one specific project. It imports back in later. It's in **Project settings → Advanced**, next to deleting it, and it belongs to the same people: whoever owns the project, and anyone who can see everything in its initiative.
 
-The task list has an **Export** of its own: the tasks you've filtered to, or the ones you've selected, as a PDF, a spreadsheet or Markdown.
+The task list has an **Export** of its own: the tasks you've filtered to, or the ones you've selected, as a PDF, a spreadsheet or Markdown. It comes out the way you're looking at it, in your sort and your grouping, minus any groups the layout leaves out. Grouped by tag, a task with two tags turns up under both, same as on screen.
 
 !!! note "People are named by handle"
     An export identifies assignees, event attendees and person-type fields by **handle** (`foobar#1234`), because a handle is the same in every community and an email address isn't.

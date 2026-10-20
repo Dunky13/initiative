@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Group by any field.** A table or board groups by any field whose values repeat: status, priority, assignees, tags, who created a task, its project, a select, person or checkbox property, or a date (due, start, created, a date property, and so on) by day, week, month, quarter or year. Pick what each view offers in **Edit layouts**.
+
 ### Fixed
+
+- **Task exports come out the way you see the list.** A PDF, spreadsheet or Markdown export of a grouped table is grouped the same way, with a task under each of its tags and without the groups the layout leaves out (#2911).
+- **Export selected** works again instead of failing with "Invalid filter conditions", and Focus shows your pinned tasks again.
 
 - **Running as a non-root user**: the container starts when Docker's `user:`/`--user` or a Kubernetes `runAsUser` already runs it as a non-root user, instead of failing with "Only root may add a user or group to the system". It then runs as that user, without `PUID`/`PGID` or a chown, so the uploads folder must already be writable by it. The first line of the log says which way the container started.
 
