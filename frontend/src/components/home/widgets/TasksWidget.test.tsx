@@ -119,6 +119,119 @@ describe("TasksWidget grouping", () => {
   });
 });
 
+describe("TasksWidget columns", () => {
+  it("shows the columns its own options keep", async () => {
+    stubTasks();
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, { items: {} });
+    renderPage(
+      () => (
+        <Widget
+          widget={{ id: "tasks-2", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+          options={{ columns: { priority: false } }}
+          onOptionsChange={() => undefined}
+          stacked={false}
+          onConfigure={() => undefined}
+          onRemove={() => undefined}
+        />
+      ),
+      { queryClient }
+    );
+
+    await screen.findByRole("columnheader", { name: /title|task/i });
+    expect(screen.queryByRole("columnheader", { name: /priority/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps a column change on the widget, not the reader's shared view", async () => {
+    const user = userEvent.setup();
+    stubTasks();
+    const kept = keepViewPreferences();
+    const saved: Record<string, unknown>[] = [];
+    const addTo = { communityId: 4, initiativeId: 2, projectId: 9 };
+    renderPage(
+      () => (
+        <Widget
+          widget={{ id: "tasks", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+          options={{ addTo }}
+          onOptionsChange={(next) => saved.push(next)}
+          stacked={false}
+          onConfigure={() => undefined}
+          onRemove={() => undefined}
+        />
+      ),
+      { queryClient: createTestQueryClient() }
+    );
+
+    await screen.findByRole("columnheader", { name: /priority/i });
+    await user.click(screen.getAllByRole("button", { name: /columns/i })[0]);
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /priority/i }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    // What it kept before stays, and the hidden-by-default columns stay hidden.
+    expect(saved[0]).toEqual({
+      addTo,
+      columns: expect.objectContaining({ priority: false, guild: false, "date group": false }),
+    });
+    expect(kept["view:me:tasks"]).toBeUndefined();
+  });
+});
+
+describe("TasksWidget filters", () => {
+  it("asks for the tasks its own filters name", async () => {
+    const requests = stubTasks();
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, { items: {} });
+    renderPage(
+      () => (
+        <Widget
+          widget={{ id: "tasks-2", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+          options={{ filters: { status_categories: ["done"], priorities: ["high"] } }}
+          onOptionsChange={() => undefined}
+          stacked={false}
+          onConfigure={() => undefined}
+          onRemove={() => undefined}
+        />
+      ),
+      { queryClient }
+    );
+
+    await waitFor(() => expect(tableRequests(requests).length).toBeGreaterThan(0));
+    const conditions = tableRequests(requests)[0].getAll("conditions").join(" ");
+    expect(conditions).toMatch(/done/);
+    expect(conditions).toMatch(/high/);
+    expect(conditions).not.toMatch(/in_progress/);
+  });
+
+  it("clears back to the defaults on the widget, not the reader's shared view", async () => {
+    const user = userEvent.setup();
+    stubTasks();
+    const kept = keepViewPreferences();
+    const saved: Record<string, unknown>[] = [];
+    renderPage(
+      () => (
+        <Widget
+          widget={{ id: "tasks", type: "tasks", grid: { x: 0, y: 0, w: 12, h: 10 } }}
+          options={{ filters: { status_categories: ["done"] } }}
+          onOptionsChange={(next) => saved.push(next)}
+          stacked={false}
+          onConfigure={() => undefined}
+          onRemove={() => undefined}
+        />
+      ),
+      { queryClient: createTestQueryClient() }
+    );
+
+    await user.click(await screen.findByRole("button", { name: /filters/i }));
+    await user.click(await screen.findByRole("button", { name: /clear/i }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0].filters).toMatchObject({
+      status_categories: ["backlog", "todo", "in_progress"],
+    });
+    expect(kept["view:me:tasks"]).toBeUndefined();
+  });
+});
+
 describe("TasksWidget status changes", () => {
   /**
    * One task per community so the per-row rules are observable: checking either
