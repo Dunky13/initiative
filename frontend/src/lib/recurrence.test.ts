@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   fromStored,
+  isValidTaskRecurrence,
   maxOccurrences,
   type RecurrenceRule,
   summarizeStored,
@@ -202,5 +203,54 @@ describe("fromStored", () => {
     expect(summarizeStored("RRULE:FREQ=HOURLY", START, undefined, t)).toBe(
       "dates:recurrenceSummary.custom"
     );
+  });
+});
+
+describe("hourly completion repeat", () => {
+  it("roundtrips a normal hourly RRULE only for consumers that support it", () => {
+    const hourly = rule({ frequency: "hourly", interval: 4 });
+    expect(toRRule(hourly)).toBe("RRULE:FREQ=HOURLY;INTERVAL=4");
+    expect(fromStored(toRRule(hourly), START, 0, false, true)).toEqual(hourly);
+    expect(fromStored(toRRule(hourly), START)).toBe("custom");
+    expect(fromStored("RRULE:FREQ=HOURLY;INTERVAL=4;BYHOUR=9,17", START, 0, false, true)).toBe(
+      "custom"
+    );
+  });
+
+  it("summarises hourly units and an optional daily maximum", () => {
+    const translate = (key: string) => key;
+    const limited = summarizeStored(
+      "RRULE:FREQ=HOURLY;INTERVAL=4",
+      START,
+      { strategy: "rolling", limit: 3 },
+      translate
+    );
+    expect(limited).toContain("dates:recurrenceSummary.afterCompletion");
+    expect(limited).toContain("dates:recurrenceSummary.dailyLimit");
+    expect(
+      summarizeStored(
+        "RRULE:FREQ=HOURLY;INTERVAL=4",
+        START,
+        { strategy: "rolling", limit: null },
+        translate
+      )
+    ).not.toContain("dates:recurrenceSummary.dailyLimit");
+    expect(
+      summarizeStored("RRULE:FREQ=HOURLY", START, { strategy: "rolling" }, translate)
+    ).not.toBe("dates:recurrenceSummary.custom");
+  });
+
+  it("accepts no maximum or any integer maximum from 1 to 24 without promising a daily count", () => {
+    const hourly = rule({ frequency: "hourly", interval: 4 });
+    expect(isValidTaskRecurrence({ rule: hourly, strategy: "rolling", limit: null })).toBe(true);
+    expect(isValidTaskRecurrence({ rule: hourly, strategy: "rolling", limit: 7 })).toBe(true);
+    expect(isValidTaskRecurrence({ rule: hourly, strategy: "rolling", limit: 24 })).toBe(true);
+    for (const limit of [0, 25, 2.5, Number.NaN]) {
+      expect(isValidTaskRecurrence({ rule: hourly, strategy: "rolling", limit })).toBe(false);
+    }
+    expect(isValidTaskRecurrence({ rule: hourly, strategy: "fixed", limit: null })).toBe(false);
+    expect(
+      isValidTaskRecurrence({ rule: rule({ frequency: "daily" }), strategy: "rolling", limit: 3 })
+    ).toBe(false);
   });
 });

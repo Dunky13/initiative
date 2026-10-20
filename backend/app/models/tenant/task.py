@@ -5,6 +5,7 @@ from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import (
     Boolean,
     Column,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -116,6 +117,11 @@ class Task(
     table=True,
 ):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "recurrence_limit BETWEEN 1 AND 24", name="ck_tasks_recurrence_limit"
+        ),
+    )
     _display_field = "title"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -173,6 +179,10 @@ class Task(
     recurrence_occurrence_count: int = Field(
         default=0,
         sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
+    # An optional maximum number of actual completions on the completer's day.
+    recurrence_limit: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
     )
     # The first task of the repeating series this task is in, set when the
     # series first moves on. A name for the series rather than a key: the

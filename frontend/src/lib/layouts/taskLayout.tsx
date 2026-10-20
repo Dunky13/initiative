@@ -1,5 +1,12 @@
 import { format } from "date-fns";
-import { type ReactNode, type RefObject, useContext, useMemo } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -43,7 +50,13 @@ import {
 } from "@/hooks/useTasks";
 import { dateRangeBounds } from "@/lib/dateRange";
 import { toast } from "@/lib/mascotToast";
-import { fromStored, type RecurrenceRule, rulePayload } from "@/lib/recurrence";
+import {
+  fromStored,
+  isHourlyRule,
+  isValidTaskRecurrence,
+  rulePayload,
+  type TaskRecurrenceValue,
+} from "@/lib/recurrence";
 import { referenceRef } from "@/lib/smartChips";
 import { PRIORITY_ORDER } from "@/lib/sorting";
 import { dateTimePattern } from "@/lib/timeFormat";
@@ -350,22 +363,33 @@ const DatesEditor = ({ task }: { task: TaskRead }) => {
   );
 };
 
-type Repeat = { rule: RecurrenceRule | "custom" | null; strategy: TaskRead["recurrence_strategy"] };
+type Repeat = TaskRecurrenceValue;
 
 const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
   const { readOnly, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
   const start = task.due_date ?? task.start_date;
   const saved: Repeat = {
-    rule: fromStored(task.recurrence, start, task.recurrence_shift),
+    rule: fromStored(
+      task.recurrence,
+      start,
+      task.recurrence_shift,
+      false,
+      task.recurrence_strategy === "rolling"
+    ),
     strategy: task.recurrence_strategy ?? "fixed",
+    limit: task.recurrence_limit ?? null,
   };
-  const edit = ({ rule, strategy }: Repeat): TaskEdit => ({
-    patch: { ...rulePayload(rule), recurrence_strategy: rule ? strategy : "fixed" },
+  const edit = ({ rule, strategy, limit }: Repeat): TaskEdit => ({
+    patch: {
+      ...rulePayload(rule),
+      recurrence_strategy: rule ? strategy : "fixed",
+      recurrence_limit: rule && strategy === "rolling" && isHourlyRule(rule) ? limit : null,
+    },
     // The stored rule is the server's to work out from the zone it is sent with.
     shows: rule
-      ? { recurrence_strategy: strategy }
-      : { recurrence: null, recurrence_strategy: "fixed" },
+      ? { recurrence_strategy: strategy, recurrence_limit: limit }
+      : { recurrence: null, recurrence_strategy: "fixed", recurrence_limit: null },
   });
   // A rule this editor cannot show cannot be sent back, so only a rule it can
   // is offered back after it is removed.
@@ -377,12 +401,28 @@ const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
         repeat.rule === null && saved.rule !== "custom"
           ? {
               ...edit(saved),
-              shows: { recurrence: task.recurrence, recurrence_strategy: saved.strategy },
+              shows: {
+                recurrence: task.recurrence,
+                recurrence_strategy: saved.strategy,
+                recurrence_limit: saved.limit,
+              },
             }
           : undefined
       ),
-    sameJson
+    sameJson,
+    (repeat) =>
+      isValidTaskRecurrence(repeat) && (!isHourlyRule(repeat.rule) || Boolean(task.due_date))
   );
+  // Adding the first due date also releases an hourly repeat held until then.
+  const revalidateDueDate = useEffectEvent(() => {
+    if (isHourlyRule(draft.value.rule)) {
+      draft.change(draft.value);
+      draft.finish();
+    }
+  });
+  useEffect(() => {
+    revalidateDueDate();
+  }, [task.due_date]);
   return (
     <FieldFrame label={label} hideLabel save={save} changed={draft.changed} keys={draft.keys}>
       <RecurrenceEditor
@@ -390,7 +430,9 @@ const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
         value={draft.value.rule}
         onChange={(rule) => draft.edit({ ...draft.value, rule })}
         strategy={draft.value.strategy}
-        onStrategyChange={(strategy) => draft.edit({ ...draft.value, strategy })}
+        limit={draft.value.limit}
+        onTaskChange={draft.edit}
+        hasDueDate={Boolean(task.due_date)}
         disabled={readOnly}
         referenceDate={start}
         stored={task.recurrence ? { rule: task.recurrence, shift: task.recurrence_shift } : null}
@@ -546,6 +588,7 @@ export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead =
   due_date: null,
   recurrence: null,
   recurrence_strategy: "fixed",
+  recurrence_limit: null,
   recurrence_occurrence_count: 0,
   recurrence_shift: 0,
   recurrence_anchor: null,

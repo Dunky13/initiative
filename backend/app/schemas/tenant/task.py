@@ -15,7 +15,7 @@ from app.schemas.base import (
     reject_null,
 )
 from app.schemas.query import PageMeta
-from app.schemas.recurrence import OccurrenceScope, TaskRule
+from app.schemas.recurrence import OccurrenceScope, TaskRule, validate_task_recurrence
 
 from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.platform.user import PersonShape, UserPublic
@@ -123,6 +123,7 @@ class TaskBase(SanitizedBaseModel):
     due_date: Optional[datetime] = None
     recurrence: Optional[str] = None
     recurrence_strategy: RecurrenceStrategy = RecurrenceStrategy.fixed
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
 
 
 class TaskCreate(TaskBase, PropertiesOnCreate):
@@ -137,6 +138,16 @@ class TaskCreate(TaskBase, PropertiesOnCreate):
     task_status_id: Optional[int] = None
     tag_ids: List[int] = Field(default_factory=list, max_length=100)
     checklist: List[ChecklistItemInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _valid_recurrence(self) -> "TaskCreate":
+        validate_task_recurrence(
+            rule=self.recurrence,
+            strategy=self.recurrence_strategy,
+            limit=self.recurrence_limit,
+            due=self.due_date,
+        )
+        return self
 
 
 class TaskUpdate(PropertiesOnUpdate):
@@ -168,6 +179,7 @@ class TaskUpdate(PropertiesOnUpdate):
     #: is taken from it. Omitted, the rule's days are UTC days.
     tz: Optional[str] = Field(default=None, max_length=64)
     recurrence_strategy: Optional[RecurrenceStrategy] = None
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
     # PATCH semantics: None = "leave unchanged"; a list (incl. []) = replace-all.
     tag_ids: Optional[List[int]] = Field(default=None, max_length=100)
     checklist: Optional[List[ChecklistItemInput]] = None

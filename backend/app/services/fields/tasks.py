@@ -50,6 +50,7 @@ _INTERNAL = frozenset(
         "recurrence_anchor_count",
         "recurrence_strategy",
         "recurrence_occurrence_count",
+        "recurrence_limit",
         "series_id",
     }
 )

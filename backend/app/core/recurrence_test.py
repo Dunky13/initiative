@@ -41,6 +41,7 @@ def test_yearly_editor_clamps_each_selected_month(day, year_days, interval):
     ("text", "kind", "stored"),
     [
         ("FREQ=MONTHLY;BYDAY=2MO", "task", "RRULE:FREQ=MONTHLY;BYDAY=2MO"),
+        ("FREQ=HOURLY;INTERVAL=4", "task", "RRULE:FREQ=HOURLY;INTERVAL=4"),
         ("RRULE:FREQ=HOURLY;BYHOUR=17,9", "event", "RRULE:FREQ=HOURLY;BYHOUR=17,9"),
         (
             "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE;VALUE=DATE:20261224\n"
@@ -58,7 +59,7 @@ def test_normalize_writes_canonical_lines(text, kind, stored):
 @pytest.mark.parametrize(
     ("text", "kind"),
     [
-        ("FREQ=HOURLY", "task"),
+        ("FREQ=MINUTELY", "task"),
         ("FREQ=DAILY;BYHOUR=9", "task"),
         ("FREQ=MINUTELY", "event"),
         ("FREQ=DAILY;BYMINUTE=5", "event"),

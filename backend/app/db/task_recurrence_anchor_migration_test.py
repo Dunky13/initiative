@@ -151,8 +151,11 @@ async def test_old_tasks_keep_their_existing_continuation_and_consumed_count(
     await session.refresh(
         later, attribute_names=["recurrence_anchor", "recurrence_anchor_count"]
     )
-    dates = next_dates(
-        later, now=datetime(2026, 10, 10, tzinfo=timezone.utc), user_timezone="UTC"
+    dates = await next_dates(
+        session,
+        later,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        user_timezone="UTC",
     )
     assert dates is not None
     assert dates[1] == datetime(2026, 10, 14, 9, tzinfo=timezone.utc)
@@ -161,7 +164,8 @@ async def test_old_tasks_keep_their_existing_continuation_and_consumed_count(
         attribute_names=["recurrence_anchor", "recurrence_anchor_count"],
     )
     assert (
-        next_dates(
+        await next_dates(
+            session,
             without_history,
             now=datetime(2026, 10, 10, tzinfo=timezone.utc),
             user_timezone="UTC",

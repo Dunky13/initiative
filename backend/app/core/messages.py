@@ -388,6 +388,7 @@ class ProjectMessages:
 
 
 class TaskMessages:
+    INVALID_RECURRENCE_LIMIT = "INVALID_RECURRENCE_LIMIT"
     #: The task was not opened by an intake stream.
     NOT_A_CASE = "TASK_NOT_A_CASE"
     #: The board column it would go into holds as many tasks as it takes.

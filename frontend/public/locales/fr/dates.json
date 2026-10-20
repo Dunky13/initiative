@@ -85,6 +85,11 @@
     "onFirstWorkDay": "le premier jour ouvré",
     "onLastWorkDay": "le dernier jour ouvré",
     "onFirstOf": "le premier {{weekdays}}",
-    "onLastOf": "le dernier {{weekdays}}"
+    "onLastOf": "le dernier {{weekdays}}",
+    "hour": "heure",
+    "hours": "heures",
+    "everyHour": "chaque heure",
+    "dailyLimit_one": "au maximum une fois par jour",
+    "dailyLimit_other": "au maximum {{count}} fois par jour"
   }
 }

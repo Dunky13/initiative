@@ -276,7 +276,15 @@
     },
     "lastDay": "Letzter",
     "months": "Monate",
-    "nextDates": "Nächste:"
+    "nextDates": "Nächste:",
+    "hourlyAfterCompletion": "Stündlich (nach Abschluss)",
+    "frequencyHourly": "Stündlich",
+    "repeatEveryHours": "Stunden",
+    "dailyLimit": "Maximum pro Tag (optional)",
+    "unlimited": "Unbegrenzt",
+    "hourlyCompletionHelp": "Jeder Abschluss plant die nächste Aufgabe nach der gewählten Anzahl von Stunden. Lasse das Maximum leer, um fortlaufend zu wiederholen. Mit einem Maximum beginnt der nächste Tag beim Erreichen des Maximums oder beim Überschreiten von Mitternacht zur Uhrzeit der ersten Aufgabe, bei Bedarf später, um den Abstand einzuhalten. Für die Tageszählung gilt die Zeitzone der Person, die die Aufgabe abschließt.",
+    "limitInvalid": "Nicht gespeichert. Gib ein ganzzahliges Tagesmaximum von 1 bis 24 ein oder lasse das Feld für unbegrenzte Wiederholungen leer.",
+    "hourlyNeedsDueDate": "Lege vor dem Speichern einer stündlichen Wiederholung ein Fälligkeitsdatum und eine Uhrzeit für die erste Aufgabe fest."
   },
   "progressLabel": "Projektfortschritt",
   "preview": {

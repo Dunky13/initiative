@@ -118,6 +118,8 @@ def repeat_fields(
         text, shift = recurrence.stored(
             rule, datetime.fromisoformat(due), tz, kind="task"
         )
+        if not rolling and recurrence.parse(text).rule.get("FREQ") == ["HOURLY"]:
+            return {}
     except (ValueError, TypeError):
         return {}
     return {
