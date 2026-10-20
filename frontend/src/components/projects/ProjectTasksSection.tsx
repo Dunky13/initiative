@@ -161,6 +161,7 @@ export const ProjectTasksSection = ({
     setMode: setCalendarMode,
     grouping,
     setGrouping,
+    exportFields,
   } = useProjectTaskView({ projectId, taskStatuses, search });
 
   /** Show the `next` list layout, and come back to it. The URL names it, so
@@ -249,8 +250,9 @@ export const ProjectTasksSection = ({
   // own sort while it is showing, and the project's order in every other
   // layout.
   const tableState = useProjectTaskTableState(grouping, setGrouping, sorting, setSorting);
-  // What an export carries of this person's view: its order, and what it is
-  // grouped by, less the groups the layout leaves out.
+  // What an export carries of this person's view: its order, what it is
+  // grouped by less the groups the layout leaves out, the table's columns and
+  // the task page's parts.
   const { groupings: groupingCatalog } = useFieldCatalog("tasks");
   const exportView = useMemo(() => {
     const fields = taskViewSorting(kind, sorting);
@@ -267,9 +269,11 @@ export const ProjectTasksSection = ({
         bucket: grouped.bucket,
         hidden_groups: grouped.hidden,
       }),
+      columns: exportFields.columns,
+      detail: exportFields.detail,
       tz: browserTimezone(),
     };
-  }, [kind, sorting, grouping, layout, groupingCatalog]);
+  }, [kind, sorting, grouping, layout, groupingCatalog, exportFields]);
   const [isBulkEditDialogOpen, setIsBulkEditDialogOpen] = useState(false);
   const [isBulkEditTagsDialogOpen, setIsBulkEditTagsDialogOpen] = useState(false);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);

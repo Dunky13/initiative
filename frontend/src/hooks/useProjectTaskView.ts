@@ -12,8 +12,10 @@
 
 import type { GroupingState, SortingState } from "@tanstack/react-table";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
+  type ListLayoutDefinitionInput,
   type ListLayoutRead,
   type ListLayoutReadKind,
   type SortField,
@@ -31,9 +33,9 @@ import {
   usePresetLink,
   viewKey,
 } from "@/hooks/useListView";
-import { useProjectTaskStatuses } from "@/hooks/useProjects";
+import { useProject, useProjectTaskStatuses } from "@/hooks/useProjects";
 import { useKnownTagIds } from "@/hooks/useTags";
-import { listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
+import { detailLayoutOf, listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import {
   EMPTY_TASK_FILTERS,
   type StoredTaskFilters,
@@ -43,8 +45,12 @@ import {
   taskFiltersEqual,
   taskSortFields,
 } from "@/lib/filters/taskFilters";
+import { pageParts, type StoredRegions } from "@/lib/layouts/detailLayout";
+import { columnsOf } from "@/lib/layouts/draft";
 import { catalogChoices, viewGrouping } from "@/lib/layouts/grouping";
+import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
+import { TASK_LAYOUT } from "@/lib/layouts/tasks";
 
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
 const TASK_DEFAULTS = { filters: EMPTY_TASK_FILTERS, ...NO_PART_VIEW };
@@ -131,6 +137,22 @@ export function useProjectTaskView({
   const retryLayouts = useCallback(() => void refetchLayouts(), [refetchLayouts]);
   const canConfigure = layoutsQuery.data?.can_configure ?? false;
   const layouts = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
+
+  // What an export of the tasks shows: the table's columns, and the task
+  // page's parts in its order. The shipped ones are the app's, so the export
+  // is told them.
+  const { i18n } = useTranslation();
+  const plugins = usePluginsOnItems(useProject(projectId).data?.initiative_id);
+  const exportFields = useMemo(() => {
+    const table = layouts.find((each) => each.kind === "table");
+    const fields = new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field]));
+    return {
+      columns: columnsOf((table?.definition ?? {}) as ListLayoutDefinitionInput, fields),
+      detail: pageParts(
+        TASK_LAYOUT.tree(detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null)
+      ),
+    };
+  }, [layouts, plugins, i18n.language, layoutsQuery.data]);
 
   const view = useListView(spec, (kept) => layoutShown(search, layouts, kept)?.kind ?? "table");
   const kind = view.part as ListLayoutReadKind;
@@ -232,6 +254,7 @@ export function useProjectTaskView({
     setMode: view.setMode,
     grouping,
     setGrouping: view.setGrouping,
+    exportFields,
   };
 }
 
@@ -270,14 +293,19 @@ export const taskViewSorting = (
  *  the order their view of it shows, with the statuses those filters name. */
 export function useProjectTaskExportView(projectId: number) {
   const taskStatuses = useProjectTaskStatuses(projectId).data ?? EMPTY_STATUSES;
-  const { appliedSpec, kind, sorting } = useProjectTaskView({
+  const { appliedSpec, kind, sorting, exportFields } = useProjectTaskView({
     projectId,
     taskStatuses,
     search: NO_SEARCH,
   });
   return useMemo(
-    () => ({ tasks: appliedSpec, taskSorting: taskViewSorting(kind, sorting), taskStatuses }),
-    [appliedSpec, kind, sorting, taskStatuses]
+    () => ({
+      tasks: appliedSpec,
+      taskSorting: taskViewSorting(kind, sorting),
+      taskColumns: exportFields.columns,
+      taskStatuses,
+    }),
+    [appliedSpec, kind, sorting, exportFields, taskStatuses]
   );
 }
 

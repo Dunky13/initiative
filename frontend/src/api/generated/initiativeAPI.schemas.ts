@@ -12743,6 +12743,14 @@ export type ExportTasksParams = {
    * The keys of the groups the list leaves out
    */
   hidden_groups?: string[] | null;
+  /**
+   * The layout fields the list's table shows, in order (``title``, ``dueDate``, ``property:<id>``, ``plugin:<install>:<key>``). The status follows them, as the table draws it.
+   */
+  columns?: string[] | null;
+  /**
+   * For the detailed PDF: the task page's parts in its order, its fields and ``status``, ``dates``, ``properties``, ``description``, ``checklist`` and ``comments``
+   */
+  detail?: string[] | null;
 };
 
 export type ExportTasksFormat = (typeof ExportTasksFormat)[keyof typeof ExportTasksFormat];
