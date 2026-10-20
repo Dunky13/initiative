@@ -368,3 +368,28 @@ describe("a project listing", () => {
     expect(within(dialog).queryByLabelText("Start from the example")).toBeNull();
   });
 });
+
+describe("a plug-in this community cannot add yet", () => {
+  it("says why instead of offering the button", async () => {
+    listing = {
+      ...pluginListing(),
+      unavailable: { reason: "entitlement_required", action_url: null },
+    };
+    renderPage(MarketplaceListingPage);
+    await screen.findByRole("heading", { name: "Community calendar" });
+
+    expect(screen.getByRole("button", { name: /Add to community/ })).toBeDisabled();
+    expect(
+      screen.getByText("This plug-in has to be set up for your community before it can be added.")
+    ).toBeInTheDocument();
+  });
+
+  it("offers the button again once it can", async () => {
+    listing = { ...pluginListing(), unavailable: null };
+    renderPage(MarketplaceListingPage);
+    await screen.findByRole("heading", { name: "Community calendar" });
+
+    expect(screen.getByRole("button", { name: /Add to community/ })).toBeEnabled();
+    expect(screen.queryByText(/has to be set up for your community/)).toBeNull();
+  });
+});

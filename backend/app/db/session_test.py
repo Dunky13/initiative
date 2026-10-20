@@ -49,8 +49,9 @@ async def test_a_slow_statement_is_logged_with_its_request_and_never_its_values(
     assert REGISTRY.get_sample_value(
         "initiative_db_slow_statements_total", {"engine": "timed"}
     )
-    [line] = [r.getMessage() for r in caplog.records if "timed" in r.getMessage()]
-    assert "request req-slow-1" in line
+    [record] = [r for r in caplog.records if "timed" in r.getMessage()]
+    line = record.getMessage()
+    assert record.log_context["request_id"] == "req-slow-1"
     assert "SELECT" in line
     assert "hunter2" not in line
 

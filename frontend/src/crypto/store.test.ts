@@ -16,8 +16,11 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toBase64 } from "@/lib/base64";
+
 import {
   accountPickle,
+  claimOpen,
   deviceClaim,
   deviceId,
   deviceOwner,
@@ -26,6 +29,7 @@ import {
   peerDeviceChanges,
   peerDeviceKeys,
   peerKeyChanges,
+  pickleKey,
   serveAccount,
   sessionForDevice,
   sessionOrigin,
@@ -58,16 +62,22 @@ describe("the message log", () => {
       mine: false,
     }));
 
+    // Two fresh copies, so both tabs read the same store: the copy the other
+    // tests share keeps whichever account they served last, and empties only
+    // that account's store before each test.
+    vi.resetModules();
+    const tab = await import("./store");
     vi.resetModules();
     const otherTab = await import("./store");
+    await tab.forgetDevice();
 
     await Promise.all(
       messages.map((message, index) =>
-        (index % 2 ? otherTab.messageLog : messageLog).append("conv", message)
+        (index % 2 ? otherTab : tab).messageLog.append("conv", message)
       )
     );
 
-    expect(await messageLog.get("conv")).toHaveLength(12);
+    expect(await tab.messageLog.get("conv")).toHaveLength(12);
     // Deleting the database waits on every open connection; each lets go of
     // its own, and the next call opens afresh.
     await new Promise<void>((resolve, reject) => {
@@ -76,7 +86,7 @@ describe("the message log", () => {
       request.onerror = () => reject(request.error);
       request.onblocked = () => reject(new Error("an open connection held the database"));
     });
-    expect(await messageLog.get("conv")).toEqual([]);
+    expect(await tab.messageLog.get("conv")).toEqual([]);
   });
 
   it("ignores a message it already holds", async () => {
@@ -309,36 +319,59 @@ describe("the account", () => {
     expect(results.filter(Boolean)).toHaveLength(1);
   });
 
-  it("serves the account that wrote it and is wiped for any other", async () => {
-    // A device keeps its store through a lapse, so whoever signs in next may be
-    // somebody else: another account, or the same id on another server.
-    const keep = async () => {
-      await deviceOwner.set(1);
-      await messageLog.append("conv", { id: "a", body: "kept", at: "", mine: true });
-    };
+  it("keeps each account's store, so signing back in finds its messages", async () => {
+    // A device keeps its store through a sign-out, so whoever signs in next may
+    // be somebody else: another account, or the same id on another server.
+    // Neither reads the first account's store, and neither empties it.
     const held = async () => (await messageLog.get("conv")).map((entry) => entry.body);
 
-    await keep();
     serveAccount("https://one.example", 1);
-    expect(await held()).toEqual(["kept"]);
+    await messageLog.append("conv", { id: "a", body: "kept", at: "", mine: true });
+    const key = await pickleKey();
 
     serveAccount("https://one.example", 2);
     expect(await held()).toEqual([]);
-    expect(await deviceOwner.get()).toBeUndefined();
+    expect(await deviceOwner.get()).toBe(2);
+    await messageLog.append("conv", { id: "b", body: "theirs", at: "", mine: true });
 
-    await keep();
-    serveAccount("https://one.example", 1);
     serveAccount("https://two.example", 1);
     expect(await held()).toEqual([]);
 
-    // Signed out and back in on the same server: the owner it records next
-    // carries the server, so another server is still somebody else.
     serveAccount("https://one.example", 1);
-    await forgetDevice();
-    serveAccount("https://one.example", 1);
-    await keep();
-    serveAccount("https://two.example", 1);
-    expect(await held()).toEqual([]);
+    expect(await held()).toEqual(["kept"]);
+    // One device key opens every account's store.
+    expect(await pickleKey()).toBe(key);
+    serveAccount("https://one.example", 2);
+    expect(await held()).toEqual(["theirs"]);
+  });
+
+  it("keeps the keys a device already had when they move to their own database", async () => {
+    // Before each account had its own store, the keys lived in the first one.
+    // Its pickles are sealed with that pickle key, so a fresh one would leave
+    // every message on the device unreadable.
+    const wrap = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, [
+      "encrypt",
+      "decrypt",
+    ]);
+    const raw = crypto.getRandomValues(new Uint8Array(32));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, wrap, raw);
+    const first = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("initiative-dm", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("keys");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = first.transaction("keys", "readwrite");
+      transaction.objectStore("keys").put(wrap, "wrap-key");
+      transaction.objectStore("keys").put({ iv: iv.buffer, data }, "pickle-key");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    first.close();
+
+    expect(await pickleKey()).toBe(toBase64(raw));
   });
 });
 
@@ -463,6 +496,19 @@ describe("the device-registration claim", () => {
 
     expect(await deviceClaim.take()).toBeNull();
     expect(await deviceClaim.read()).toMatchObject({ status: "claiming", token: quick });
+  });
+
+  it("reads as open once handed back or gone stale, and not while fresh or settled", async () => {
+    expect(claimOpen(undefined)).toBe(true);
+    const turn = await take();
+    expect(claimOpen(await deviceClaim.read())).toBe(false);
+    expect(await afterStale(async () => claimOpen(await deviceClaim.read()))).toBe(true);
+
+    await deviceClaim.release(turn);
+    expect(claimOpen(await deviceClaim.read())).toBe(true);
+
+    await deviceClaim.settle(await take(), "device-1", "pickle-1");
+    expect(await afterStale(async () => claimOpen(await deviceClaim.read()))).toBe(false);
   });
 
   /** Take the claim, failing the test rather than the assertion if it is held. */
@@ -738,6 +784,58 @@ describe("the list of changes waiting to be seen", () => {
     expect(left).toMatchObject({ deviceId: "b", asked: true });
     await peerKeyChanges.acknowledge(["b"]);
     expect(await peerKeyChanges.all()).toEqual([]);
+  });
+
+  /** A listing asked for after every hold so far was raised. */
+  const later = () => Date.now() + 1_000;
+
+  it("lets go of a device the account no longer lists", async () => {
+    await hold(7, "a", "b");
+
+    await peerKeyChanges.withdrawUnlisted(7, ["known", "b"], later());
+
+    expect((await peerKeyChanges.all()).map((entry) => entry.deviceId)).toEqual(["b"]);
+  });
+
+  it("leaves other accounts' holds alone", async () => {
+    await hold(7, "a");
+    await hold(8, "c");
+
+    await peerKeyChanges.withdrawUnlisted(7, ["known"], later());
+
+    expect((await peerKeyChanges.all()).map((entry) => entry.deviceId)).toEqual(["c"]);
+  });
+
+  it("keeps a hold raised after the listing was asked for", async () => {
+    // Another tab held a device too new for this tab's listing, and is about
+    // to read that hold to decide what it may send to.
+    const asked = Date.now() - 1_000;
+    await hold(7, "a");
+
+    await peerKeyChanges.withdrawUnlisted(7, ["known"], asked);
+
+    expect((await peerKeyChanges.all()).map((entry) => entry.deviceId)).toEqual(["a"]);
+    expect(
+      await peerDeviceKeys.reconcile(
+        7,
+        [{ deviceId: "a", fingerprint: "fp-a", identityKey: "id-a" }],
+        { hold: true }
+      )
+    ).toEqual([]);
+  });
+
+  it("asks again about a withdrawn device that is listed after all", async () => {
+    await hold(7, "a");
+    await peerKeyChanges.withdrawUnlisted(7, ["known"], later());
+
+    const changes = await peerDeviceKeys.reconcile(
+      7,
+      [{ deviceId: "a", fingerprint: "fp-a", identityKey: "id-a" }],
+      { hold: true }
+    );
+
+    expect(changes.map((change) => change.deviceId)).toEqual(["a"]);
+    expect((await peerKeyChanges.all()).map((entry) => entry.deviceId)).toEqual(["a"]);
   });
 });
 

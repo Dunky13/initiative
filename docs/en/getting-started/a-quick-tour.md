@@ -18,9 +18,9 @@ Can't tell your communities apart from a row of tiny pictures? **Expand communit
 
 ## The logo above them
 
-The **Initiative logo** sits above the community icons, and it isn't one. It's your corner — and you have already been in it, because the page you land on when you sign in is **My Tasks**: everything assigned to you, from every community at once, in one list.
+The **Initiative logo** sits above the community icons, and it isn't one. It's your corner — and you have already been in it, because the page you land on when you sign in is **Home**: everything assigned to you, from every community at once, laid out however you like.
 
-Click the logo from anywhere and the sidebar swaps to your own short list — My Tasks, My Calendar, My Tools, My Messages, My Stats. Click a community icon to go back out.
+Click the logo from anywhere and the sidebar swaps to your own short list — Home, My Calendar, My Tools, My Messages, My Stats. Click a community icon to go back out.
 
 So: **the icons are where the group's work lives, the logo is where yours does.** Belong to four groups and you still only have one list of what you've agreed to. See [Your space](../guides/your-space.md).
 
@@ -32,7 +32,7 @@ It has two tabs. **Initiatives** is the one that matters. Each initiative expand
 
 Click an initiative's *name* for its own page: the name with the initiative's colour running down the side, your role there, the faces of whoever's online, and a tab for each of its tools.
 
-**Favorites** sits at the top of that tab, for the projects you've starred. **Tags** is the other tab, for things you've labelled. **Search** is near the top, though within a week you'll be doing that from the keyboard and this button will become purely decorative.
+**Bookmarks** sits at the top of that tab, for anything you've bookmarked. **Tags** is the other tab, for things you've labelled. **Search** is near the top, though within a week you'll be doing that from the keyboard and this button will become purely decorative.
 
 In a busy community the sidebar gets long. Initiatives collapse, and there's a **Collapse all** for when it has got away from you completely and you'd like to begin again. Too narrow, or too wide? Drag its edge.
 

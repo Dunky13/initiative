@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, List, TypeVar
 
 
 from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, update
-from sqlmodel import select, delete
+from sqlmodel import col, select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
 from app.core.messages import AuthMessages, GuildMessages, UserMessages
 from app.core.audit_events import AuditEventType
 from app.core.capabilities import Capability, roles_with_capability
+from app.core.config import settings
 from app.core import usernames
 from app.core.security import has_usable_password
 from app.core.encryption import (
@@ -37,6 +38,7 @@ from app.models.platform.guild import GuildMembership, CommunityRole
 from app.services import audit as audit_service
 from app.services import email as email_service
 from app.services.auth import addresses
+from app.services.membership import live_membership_clause
 from app.services.auth import identity as identity_service
 from app.services.auth import sessions as session_service
 from app.services.auth import challenges as challenge_service
@@ -49,9 +51,7 @@ from app.services.platform import user_avatars as user_avatars_service
 from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
-from app.models.tenant.project_order import ProjectOrder
-from app.models.tenant.project_favorite import ProjectFavorite
-from app.models.tenant.recent_view import RecentView
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.reaction_digest import ReactionDigestItem
 from app.models.tenant.ai_member_key import GuildAIMemberKey
 
@@ -239,12 +239,8 @@ async def _erase_in_guild(
     await set_rls_context(guild_session, SystemGuild(guild_id))
 
     await guild_session.exec(
-        delete(ProjectOrder).where(ProjectOrder.user_id == user_id)
+        delete(PersonalItem).where(col(PersonalItem.user_id) == user_id)
     )
-    await guild_session.exec(
-        delete(ProjectFavorite).where(ProjectFavorite.user_id == user_id)
-    )
-    await guild_session.exec(delete(RecentView).where(RecentView.user_id == user_id))
     # The ledger that stops an event reminder being sent twice: one row per
     # (event, person), of no use to anyone once the person is gone.
     await guild_session.exec(
@@ -397,7 +393,11 @@ async def deactivate_user(
 
 
 async def request_account_deletion(
-    session: AsyncSession, user_id: int, *, actor_user_id: int | None = None
+    session: AsyncSession,
+    user_id: int,
+    *,
+    actor_user_id: int | None = None,
+    reason: str | None = None,
 ) -> User:
     """Mark an account for erasure and keep it until the window runs out.
 
@@ -416,7 +416,8 @@ async def request_account_deletion(
     the window ends, which is the erasure this used to do immediately.
 
     ``actor_user_id`` is who asked — the account holder, or somebody acting on
-    the account.
+    the account. ``reason`` is why, when it was not simply asked for: ``age``
+    when the account's own age answer closed it (:func:`refuse_account_for_age`).
     """
     user = await session.get(User, user_id)
     if user is None:
@@ -440,10 +441,56 @@ async def request_account_deletion(
         target_user_id=user_id,
         target_type="user",
         target_id=user_id,
-        detail={"self": actor_user_id == user_id},
+        detail={"self": actor_user_id == user_id}
+        | ({"reason": reason} if reason is not None else {}),
     )
     await session.commit()
     return user
+
+
+class DeletionStands(PermissionError):
+    """A sign-in tried to call off a deletion that is not its holder's to call
+    off: the account's age answer closed it (``age_below_account_minimum_at``).
+    """
+
+
+async def refuse_account_for_age(session: AsyncSession, user: User) -> None:
+    """Close an account whose date of birth says it may not exist where it is.
+
+    The answer sign-up gives at the door — under the minimum for an account
+    in this country, so no account — given late, by an account that was made
+    without a date (a sign-in provider asked for none, or the field was left
+    empty) and has now answered. What sign-up refuses to make, this takes away:
+
+    * The answer stands, as every under-age answer does. Both marks are set —
+      under the directory's minimum, since anyone under the account's is, and
+      under the account's, which is the one that closes the account.
+    * The date is not kept. It said the person may not be here, and keeping a
+      child's date of birth is the opposite of what that answer asks for.
+    * The account is scheduled for erasure, exactly as if its holder had asked
+      (:func:`request_account_deletion`): absent from everybody else at once,
+      its sessions ended, everything it holds kept for the deployment's window,
+      and erased by ``account_purge`` when that runs out. Unlike a holder's own
+      deletion, signing in does not call it off (:func:`cancel_account_deletion`
+      refuses while the mark stands, and every way in refuses before that,
+      ``users.may_sign_in``). The way back is the support ticket every
+      under-age answer has: ``users.age_unblock`` clears the marks, and the
+      next sign-in restores the account whole and asks again.
+
+    The window is kept rather than erasing on the spot because the answer is
+    one keystroke from a mistyped year, and an account with years of work in
+    it should survive that long enough for a ticket. Commits.
+    """
+    now = datetime.now(timezone.utc)
+    user.age_below_minimum_at = now
+    user.age_below_account_minimum_at = now
+    # One question, one answer (``ck_users_age_answer``).
+    user.age_confirmed_at = None
+    user.updated_at = now
+    session.add(user)
+    await request_account_deletion(
+        session, user.id, actor_user_id=user.id, reason="age"
+    )
 
 
 async def cancel_account_deletion(
@@ -460,10 +507,18 @@ async def cancel_account_deletion(
 
     Does not commit: a sign-in cancelling a deletion is part of opening that
     session, and the two land together or not at all.
+
+    A deletion the account's own age answer scheduled is not its holder's to
+    call off (:func:`refuse_account_for_age`). Every way in refuses such an
+    account before it gets here (``users.may_sign_in``), so for ``sign_in`` this
+    raises :class:`DeletionStands` rather than returning: a door that forgot
+    the check must not open a session on an account that may not have one.
     """
     user = await session.get(User, user_id)
     if user is None or user.status != UserStatus.deleted:
         return False
+    if via == "sign_in" and user.age_below_account_minimum_at is not None:
+        raise DeletionStands(user_id)
     user.status = UserStatus.active
     user.status_changed_at = datetime.now(timezone.utc)
     user.updated_at = datetime.now(timezone.utc)
@@ -537,7 +592,6 @@ async def _erase_personal_rows(session: AsyncSession, *, user_id: int) -> None:
     from app.models.platform.dm_conversation import DmConversationMember
     from app.models.platform.dm_device import DmDevice
     from app.models.platform.email_outbox import EmailOutboxItem
-    from app.models.platform.profile_favorite import ProfileFavorite
     from app.models.platform.user_cookie_consent import UserCookieConsent
     from app.models.platform.user_decoration import UserDecoration
     from app.models.platform.user_dm_guild_optout import UserDmGuildOptout
@@ -578,14 +632,6 @@ async def _erase_personal_rows(session: AsyncSession, *, user_id: int) -> None:
         delete(UserDmGuildOptout).where(UserDmGuildOptout.user_id == user_id)
     )
     # The social graph, both directions.
-    await session.exec(
-        delete(ProfileFavorite).where(
-            or_(
-                ProfileFavorite.user_id == user_id,
-                ProfileFavorite.favorite_user_id == user_id,
-            )
-        )
-    )
     await session.exec(
         delete(UserIgnore).where(
             or_(UserIgnore.user_id == user_id, UserIgnore.ignored_user_id == user_id)
@@ -1019,17 +1065,34 @@ def visible_to_other_people(status_column=None):
     return column.notin_(sorted(ABSENT_STATUSES, key=lambda s: s.value))
 
 
-def guild_members(statement: _S, *, guild_id: int) -> _S:
+def guild_members(statement: _S, *, guild_id: int, guests: bool = False) -> _S:
     """``statement`` narrowed to the people listed as members of one community.
+    Its guests are listed only with ``guests``, and only while they are in: a
+    picker for content a guest can reach names them, and the roster does not.
 
     ``MemberProfile`` joined to each person's membership row there, so a caller
     may select its columns beside the profile, and the people
     :func:`visible_to_other_people` leaves out left out here too. A statement
     that selects no profile column names ``MemberProfile`` in ``select_from``.
     """
+    return _in_guild(
+        statement,
+        guild_id,
+        live_membership_clause() if guests else GuildMembership.guest_until.is_(None),
+    )
+
+
+def guild_guests(statement: _S, *, guild_id: int) -> _S:
+    """``statement`` narrowed to one community's guests, as
+    :func:`guild_members` narrows it to its members: every guest membership,
+    whether or not it admits its holder now, for the people who run them."""
+    return _in_guild(statement, guild_id, GuildMembership.guest_until.is_not(None))
+
+
+def _in_guild(statement: _S, guild_id: int, rows: ColumnElement[bool]) -> _S:
     return statement.join(
         GuildMembership, GuildMembership.user_id == MemberProfile.id
-    ).where(GuildMembership.guild_id == guild_id, visible_to_other_people())
+    ).where(GuildMembership.guild_id == guild_id, rows, visible_to_other_people())
 
 
 async def _reach(user_ids: List[int]) -> tuple[dict[int, str], set[int]]:
@@ -1111,6 +1174,13 @@ async def to_self_read(session: AsyncSession, user: User) -> "UserRead":
     )
     payload.has_password = has_usable_password(user.hashed_password)
     payload.password_required = await auth_posture.password_confirms(session, user)
+    if settings.DEMO_MODE:
+        from app.demo.copies import account_copy
+
+        copy = await account_copy(user.id)
+        if copy is not None:
+            payload.demo_community_id = copy.guild_id
+            payload.demo_expires_at = copy.expires_at
     return payload
 
 

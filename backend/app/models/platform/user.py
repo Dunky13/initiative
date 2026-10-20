@@ -120,6 +120,21 @@ SIGN_IN_STATUSES: frozenset[UserStatus] = frozenset(
     {UserStatus.active, UserStatus.suspended, UserStatus.deleted}
 )
 
+
+def may_sign_in(user: "User") -> bool:
+    """Whether a sign-in may be completed against this account.
+
+    Its status is one of :data:`SIGN_IN_STATUSES`, and its own age answer has
+    not closed it. An account refused for being under the minimum age for one
+    where it was (``age_below_account_minimum_at``) sits in the erasure window
+    like any deleted account, but the holder coming back is not what calls
+    that off: the answer stands until somebody with ``users.age_unblock``
+    clears it, and only then does a sign-in restore the account. Every way in
+    asks this rather than the set, so the exception has one home.
+    """
+    return user.status in SIGN_IN_STATUSES and user.age_below_account_minimum_at is None
+
+
 #: The statuses whose holder does not appear where people are listed as
 #: somebody to work with — rosters, pickers, search, mention candidates,
 #: presence. Read through ``users.visible_to_other_people()``, which is the
@@ -156,6 +171,12 @@ class User(SQLModel, table=True):
         CheckConstraint(
             "age_confirmed_at IS NULL OR age_below_minimum_at IS NULL",
             name="ck_users_age_answer",
+        ),
+        # Under the minimum for an account is under the directory's minimum
+        # too: the second mark never stands without the first.
+        CheckConstraint(
+            "age_below_account_minimum_at IS NULL OR age_below_minimum_at IS NOT NULL",
+            name="ck_users_age_account_answer",
         ),
     )
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
@@ -279,11 +300,18 @@ class User(SQLModel, table=True):
     )
     # How many recently-opened items the header tabs bar keeps and shows for
     # this user, across all entity types and guilds. Drives both the display
-    # count and the per-guild prune cap (see app.services.recent_views).
+    # count and how many each guild keeps (app.services.tenant.personal_items).
     # Clamped to [1, 100] on write; default 20 preserves the historic behavior.
     recent_tabs_limit: int = Field(
         default=20,
         sa_column=Column(Integer, nullable=False, server_default="20"),
+    )
+    #: Whether what this person opens and changes counts toward the engagement
+    #: levels search orders by (app.services.tenant.engagement_levels). Theirs
+    #: to turn off, and on until they do.
+    count_toward_engagement_ranking: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
     #: When this account said it belongs to somebody old enough to join a
     #: community the whole deployment can browse. NULL means it never has,
@@ -303,6 +331,17 @@ class User(SQLModel, table=True):
     #: Never set at the same time as ``age_confirmed_at``; the two are the two
     #: answers to one question (``ck_users_age_answer``).
     age_below_minimum_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    #: When this account answered the age question as being under the minimum
+    #: for an account at all where it was (``users.ACCOUNT_MINIMUM_AGE``: 13 in
+    #: the US, 16 in Germany), which closes the account rather than the
+    #: directory. Set beside ``age_below_minimum_at`` and never without it
+    #: (``ck_users_age_account_answer``). While it stands the account is
+    #: scheduled for erasure and no sign-in calls that off (:func:`may_sign_in`);
+    #: ``users.age_unblock`` is what clears it.
+    age_below_account_minimum_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
@@ -367,7 +406,7 @@ class User(SQLModel, table=True):
 
     # An account has no standing view of guild content. What refers to a person
     # from inside a guild schema — an assignment, a membership, an ordering, a
-    # favourite — is reached from that content, through ``MemberProfile``, on a
+    # bookmark — is reached from that content, through ``MemberProfile``, on a
     # session routed into the guild that holds it. ``hard_delete_user`` clears
     # those rows itself, guild by guild.
     #

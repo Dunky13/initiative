@@ -12,7 +12,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
 
+from app.db import cohorts
 from app.models.platform.guild import CommunityRole
+from app.models.tenant.engagement_level import LEVEL_MAX, EngagementLevel
 from app.services.tenant.post_publication import publish_due_posts
 from app.testing import (
     create_resource_grant,
@@ -23,8 +25,10 @@ from app.testing import (
     create_project,
     create_tag,
     create_task,
+    create_wiki,
+    create_wiki_page,
     lexical_body,
-    route_session_to_guild,
+    route_system,
 )
 
 
@@ -493,6 +497,40 @@ async def test_archived_work_is_kept_back_until_it_is_asked_for(
     assert {h["entity_id"] for h in asked["items"]} == {live.id, filed.id}
 
 
+async def test_what_cannot_be_archived_goes_with_what_it_is_under(
+    client, session, acting_user: ActingUser
+) -> None:
+    """A comment and a wiki page have no archive of their own: archiving the
+    project or wiki they are under keeps them back with it, and bringing that
+    back brings them back."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    task = await create_task(session, a.project, title="ledger")
+    on_task = await create_comment(session, a.user, task=task, content="walnut note")
+    wiki = await create_wiki(session, a.initiative, a.user)
+    page = await create_wiki_page(session, wiki, a.user, title="walnut page")
+    on_page = await create_comment(
+        session, a.user, wiki_page=page, content="walnut too"
+    )
+    everything = {
+        ("comment", on_task.id),
+        ("wiki_page", page.id),
+        ("comment", on_page.id),
+    }
+
+    async def found() -> set[tuple[str, int]]:
+        body = await _search(client, a, search="walnut", types=["comment", "wiki_page"])
+        return {(h["entity_type"], h["entity_id"]) for h in body["items"]}
+
+    assert await found() == everything
+    for verb, expected in (("archive", set()), ("unarchive", everything)):
+        for kind, row in (("project", a.project), ("wiki", wiki)):
+            moved = await client.post(
+                a.g(f"/{verb}/{kind}/{row.id}"), headers=a.headers
+            )
+            assert moved.status_code == 200, moved.text
+        assert await found() == expected
+
+
 async def test_templates_are_found_by_name_and_pickable_on_their_own(
     client, session, acting_user: ActingUser
 ) -> None:
@@ -676,9 +714,10 @@ async def test_a_scheduled_notice_is_not_searchable_until_it_goes_up(
 
     assert (await _search(client, a, search="embargoed"))["items"] == []
 
-    await route_session_to_guild(session, a.guild.id)
-    await publish_due_posts(session, now=datetime.now(timezone.utc))
-    await session.commit()
+    async with cohorts.system_session(a.guild.id) as system:
+        await route_system(system, guild_id=a.guild.id)
+        await publish_due_posts(system, now=datetime.now(timezone.utc))
+        await system.commit()
 
     body = await _search(client, a, search="embargoed")
     assert [h["entity_id"] for h in body["items"]] == [draft.id]
@@ -829,3 +868,95 @@ async def test_recents_say_where_they_live_too(
 
     rows = await _recent(client, a, types="task")
     assert [row["tool_title"] for row in rows] == ["Harvest"]
+
+
+def _task_ids(rows: list[dict]) -> list[int]:
+    return [row["entity_id"] for row in rows if row["entity_type"] == "task"]
+
+
+async def test_what_more_people_engaged_with_comes_first(
+    client, session, acting_user: ActingUser
+) -> None:
+    """Among equal matches a level lifts the older one above the newer, in the
+    search, the palette and a picker. It adds nothing a search did not find."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    older = await create_task(session, a.project, title="vendor renewal")
+    newer = await create_task(session, a.project, title="vendor renewal")
+    elsewhere = await create_task(session, a.project, title="office chairs")
+
+    found = await _search(client, a, search="vendor")
+    assert _task_ids(found["items"]) == [newer.id, older.id]
+
+    for task in (older, elsewhere):
+        session.add(
+            EngagementLevel(entity_type="task", entity_id=task.id, level=LEVEL_MAX)
+        )
+    await session.commit()
+
+    found = await _search(client, a, search="vendor")
+    assert _task_ids(found["items"]) == [older.id, newer.id]
+    assert found["total_count"] == 2
+    suggested = await _suggest(client, a, search="vendor", types="task")
+    assert _task_ids(suggested) == [older.id, newer.id]
+    picked = await _recent(client, a, types="task")
+    assert _task_ids(picked) == [elsewhere.id, older.id, newer.id]
+
+
+async def test_a_picker_keeps_an_old_popular_item_within_its_limit(
+    client, session, acting_user: ActingUser
+) -> None:
+    """The highest levels come first however old they are, then the newest, and
+    an item that is both is offered once."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    old = await create_task(session, a.project, title="old")
+    middle = [await create_task(session, a.project, title=f"t{i}") for i in range(2)]
+    newest = await create_task(session, a.project, title="newest")
+    for task, level in ((old, LEVEL_MAX), (newest, 3)):
+        session.add(EngagementLevel(entity_type="task", entity_id=task.id, level=level))
+    await session.commit()
+
+    for limit, expected in (
+        (1, [old.id]),
+        (2, [old.id, newest.id]),
+        (3, [old.id, newest.id, middle[1].id]),
+    ):
+        picked = await _recent(client, a, types="task", limit=limit)
+        assert _task_ids(picked) == expected, limit
+
+
+#: What a search for each query must put first, over the items below. The one
+#: thing that catches a ranking change that makes search worse.
+RELEVANCE = (
+    ("login", "Fix the login page"),
+    ("office chairs", "Order office chairs"),
+    ("budget", "Quarterly budget"),
+    ("vendor review", "Vendor review notes"),
+)
+
+
+async def test_each_query_puts_the_hit_it_should_first(
+    client, session, acting_user: ActingUser
+) -> None:
+    """A level lifts a match but not past a much better one: the chairs task,
+    which only mentions the budget in its description, stays below the budget's
+    own title at the highest level."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    await create_project(session, a.initiative, a.user, name="Quarterly budget")
+    await create_task(session, a.project, title="Fix the login page")
+    await create_task(session, a.project, title="Vendor review notes")
+    chairs = await create_task(
+        session,
+        a.project,
+        title="Order office chairs",
+        description="Keep it within the budget.",
+    )
+    session.add(
+        EngagementLevel(entity_type="task", entity_id=chairs.id, level=LEVEL_MAX)
+    )
+    await session.commit()
+
+    for query, first in RELEVANCE:
+        titles = [
+            hit["title"] for hit in (await _search(client, a, search=query))["items"]
+        ]
+        assert titles[:1] == [first], (query, titles)

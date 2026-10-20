@@ -23,6 +23,7 @@ from fastapi import (
     status,
 )
 
+from app.core.errors import CodedError
 from app.api.deps import (
     CommunityIdPath,
     CurrentUser,
@@ -105,7 +106,7 @@ class _Editing:
             resource_access.authorize(
                 self.spec.tool, resolved.governing, user, context=context
             )
-        except HTTPException:
+        except (HTTPException, CodedError):
             return None
         writes = permissions_service.allows(
             resolved.governing, permissions_service.Action.edit
@@ -240,7 +241,12 @@ async def _collaborate(
                 # reader.
                 if not can_write:
                     logger.warning(
-                        f"Collaboration: Read-only user {handle_of(user)} tried to send update"
+                        "Collaboration: read-only user %s tried to send an update "
+                        "to %s %s in guild %s",
+                        user.id,
+                        spec.resource_type,
+                        resource_id,
+                        guild_id,
                     )
                     return
                 if not payload:
@@ -264,7 +270,13 @@ async def _collaborate(
                         room_key, bytes([MSG_UPDATE]) + payload, exclude=websocket
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to apply Yjs update: {e}")
+                    logger.warning(
+                        "Failed to apply Yjs update to %s %s in guild %s (%s)",
+                        spec.resource_type,
+                        resource_id,
+                        guild_id,
+                        type(e).__name__,
+                    )
 
             elif msg_type == MSG_AWARENESS_BINARY:
                 # y-protocols awareness update - relay as-is to other clients
@@ -275,8 +287,12 @@ async def _collaborate(
         await hold_open(sub, on_bytes=on_bytes)
     except Exception as e:
         logger.error(
-            f"Collaboration error for {handle_of(user)} on "
-            f"{spec.resource_type} {resource_id}: {e}"
+            "Collaboration error for user %s on %s %s in guild %s (%s)",
+            user.id,
+            spec.resource_type,
+            resource_id,
+            guild_id,
+            type(e).__name__,
         )
     finally:
         # Idempotent if a re-check already closed it.
@@ -325,13 +341,9 @@ async def _hand_over(
         raise_for_guild_access(exc)
     editing = _Editing(guild_id, spec, resource_id)
     if not await editing(session, user) or editing.resolved is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=spec.tool.not_found_code
-        )
+        raise spec.tool.not_found()
     if not editing.can_write:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=spec.tool.write_required_code
-        )
+        raise spec.tool.write_required()
 
     room = await collaboration_manager.get_or_create_room(
         guild_id, spec.resource_type, resource_id, session

@@ -31,6 +31,10 @@ on the settings rung, so the list is not the content-gated install list. The cal
 is read comes from the pinned definition — and it is the settings rung that
 decides who may ask, the same as the storage figure beside it.
 
+``/plugins/{plugin_id}/actions/{action_id}`` runs one of a plug-in's actions on
+one item for the caller. What it checks before the plug-in is called is
+:mod:`app.services.marketplace.plugin_actions`'s.
+
 ``/plugins/{plugin_id}/endpoints/{endpoint_id}/options`` fills a menu. It is the one
 read here with no dashboard on it, because it exists to fill in a form for a
 widget nobody has placed yet — and what stands in for that gate is that the
@@ -43,6 +47,7 @@ from typing import Annotated, Any, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select
 
+from app.core.errors import CodedError
 from app.api import resource_access
 from app.api.deps import (
     AgeViewerDep,
@@ -52,24 +57,28 @@ from app.api.deps import (
     SettingsAdminContextDep,
     SettingsRLSSessionDep,
 )
+from app.core.audit_events import AuditEventType
 from app.core.messages import GuildPluginMessages, PluginDataMessages
+from app.core.rate_limit import PLUGIN_ACTIONS_PER_MEMBER, take_allowance
 from app.core.tools import Tool
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.schemas.sql_query import QueryColumnDescription
 from app.services.query import rows as rows_query
 from app.schemas.tenant.plugin_data import (
+    PluginActionResult,
+    PluginActionRun,
     PluginDataTable,
     PluginDataResponse,
     PluginEndpointRead,
     PluginParamOption,
     PluginParamOptionsResponse,
     PluginSummaryListResponse,
-    PluginSummaryRead,
-    PluginSummaryReturn,
     PluginWidgetCatalogEntry,
     PluginWidgetCatalogResponse,
     PluginWidgetRead,
 )
+from app.services import audit as audit_service
+from app.services.marketplace import plugin_actions
 from app.services.marketplace import plugin_data as plugin_data_service
 from app.services.marketplace.service_plugins import plugin_widget_type, is_admin_only
 from app.services.tenant import plugin_age
@@ -347,37 +356,14 @@ def _transformed(
     )
 
 
-def _summary_endpoint(plugin: GuildPlugin) -> dict[str, Any] | None:
-    """The read an enabled install names as its ``community_summary``, or None."""
-    endpoint_id = (plugin.definition or {}).get("community_summary")
-    if not plugin.enabled or not isinstance(endpoint_id, str):
-        return None
-    return plugin_data_service.find_read_endpoint(plugin.definition, endpoint_id)
-
-
 @router.get("/summaries", response_model=PluginSummaryListResponse)
 async def list_plugin_summaries(
     session: SettingsRLSSessionDep,
     _guild_context: SettingsAdminContextDep,
 ) -> PluginSummaryListResponse:
     """The installs whose pinned definition names a community summary, with
-    what each declares it returns. Nothing is fetched here: each summary is read
-    on its own, so one slow plug-in holds up only its own card."""
-    plugins = (await session.exec(select(GuildPlugin).order_by(GuildPlugin.id))).all()
-    items: list[PluginSummaryRead] = []
-    for plugin in plugins:
-        endpoint = _summary_endpoint(plugin)
-        returns = (endpoint or {}).get("returns") or []
-        if not returns:
-            continue
-        items.append(
-            PluginSummaryRead(
-                plugin_id=plugin.id,
-                name=plugin.name,
-                returns=[PluginSummaryReturn(**value) for value in returns],
-            )
-        )
-    return PluginSummaryListResponse(items=items)
+    what each declares it returns."""
+    return await plugin_data_service.community_summaries(session)
 
 
 @router.get("/{plugin_id}/summary", response_model=PluginDataResponse)
@@ -393,34 +379,11 @@ async def read_plugin_summary(
     ``community_summary``; an install that names none, or is switched off,
     has nothing to draw and answers 404. A plug-in that does not answer comes
     back as the proxy's own message code, so the page draws "unavailable"
-    rather than failing.
+    rather than failing. The settings rung is the community's admin standing,
+    which is what an admin-only summary asks for.
     """
-    plugin = (
-        await session.exec(select(GuildPlugin).where(GuildPlugin.id == plugin_id))
-    ).first()
-    endpoint = _summary_endpoint(plugin) if plugin else None
-    if plugin is None or endpoint is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=PluginDataMessages.ENDPOINT_NOT_FOUND,
-        )
-
-    result = await plugin_data_service.fetch_plugin_source(
-        session,
-        plugin=plugin,
-        endpoint_id=endpoint["id"],
-        raw_params=None,
-        user_id=current_user.id,
-        # The settings rung is the community's admin standing, which is
-        # what an admin-only summary asks for.
-        is_guild_admin=True,
-    )
-
-    return PluginDataResponse(
-        rows=result.rows,
-        values=result.values,
-        fetched_at=result.fetched_at,
-        cached=result.cached,
+    return await plugin_data_service.read_community_summary(
+        session, plugin_id=plugin_id, user_id=current_user.id
     )
 
 
@@ -496,3 +459,95 @@ async def read_plugin_param_options(
         options=[PluginParamOption(**option) for option in options],
         unavailable=unavailable,
     )
+
+
+#: The counter namespace for actions' allowance.
+_ACTION_LIMIT_NAMESPACE = "plugin-action"
+#: How an action ended, in the audit line, when the plug-in answered.
+_ACTION_OK = "ok"
+
+
+@router.post("/{plugin_id}/actions/{action_id}", response_model=PluginActionResult)
+async def run_plugin_action(
+    plugin_id: int,
+    action_id: str,
+    payload: PluginActionRun,
+    session: RLSSessionDep,
+    current_user: CurrentUser,
+    guild_context: GuildContextDep,
+    viewer: AgeViewerDep,
+) -> PluginActionResult:
+    """Run one of a plug-in's actions on one item.
+
+    A container plug-in does the work, called as its installation with the
+    caller and the item named; Initiative changes nothing itself. A
+    declarative plug-in's action is run by Initiative: the call it names, on
+    the credential the plug-in says, and the change it makes to the plug-in's
+    values on the item. Either way the action's endpoint is sent what the
+    caller answered for the parameters the action asks for. The answer is the
+    values the plug-in shows on the item afterwards. Refused with
+    ``PLUGIN_ACTION_NOT_FOUND`` when the install declares no such action on
+    this kind of item, ``PLUGIN_ACTION_NOT_OFFERED`` when it is not offered on
+    this item for the caller, ``PLUGIN_DATA_INVALID_PARAMS`` when what the
+    caller answered is not what the action asks for or the element is not one
+    it is offered on,
+    ``PLUGIN_DATA_CONNECTION_REQUIRED`` when it needs the caller's own account
+    and they have connected none, the item's own refusal when the caller
+    cannot read it, and 429 past the allowance.
+    """
+    plugin = (
+        await session.exec(select(GuildPlugin).where(GuildPlugin.id == plugin_id))
+    ).first()
+    if plugin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=PluginDataMessages.ACTION_NOT_FOUND,
+        )
+    kind = payload.entity_type.value
+
+    def audit(outcome: str) -> None:
+        audit_service.emit(
+            event_type=AuditEventType.PLUGIN_ACTION,
+            actor_user_id=current_user.id,
+            guild_id=guild_context.guild_id,
+            target_type=kind,
+            target_id=payload.entity_id,
+            detail={
+                "install_id": plugin.id,
+                "listing_uid": plugin.listing_uid,
+                "action": action_id,
+                "outcome": outcome,
+            },
+        )
+
+    if not await take_allowance(
+        PLUGIN_ACTIONS_PER_MEMBER,
+        _ACTION_LIMIT_NAMESPACE,
+        f"{guild_context.guild_id}:{plugin.id}:{current_user.id}",
+    ):
+        audit(PluginDataMessages.RATE_LIMITED)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=PluginDataMessages.RATE_LIMITED,
+        )
+    try:
+        values = await plugin_actions.run_action(
+            session,
+            plugin=plugin,
+            action_id=action_id,
+            kind=kind,
+            entity_id=payload.entity_id,
+            context=guild_context,
+            user_id=current_user.id,
+            age_allows=plugin_age.age_allows(plugin.definition, viewer),
+            params=payload.params,
+            element=payload.element,
+        )
+    except CodedError as exc:
+        audit(exc.code)
+        raise
+    except HTTPException as exc:
+        audit(str(exc.detail))
+        raise
+    audit(_ACTION_OK)
+    return PluginActionResult(values=values)

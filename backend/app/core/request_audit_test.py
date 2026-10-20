@@ -1,17 +1,24 @@
 """Every request is named, and says so on the way out."""
 
-from httpx import AsyncClient
+import logging
+
+import pytest
+
+from starlette.datastructures import Headers
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
-from app.core import audit_context, metrics
+from app.core import audit_context, metrics, request_audit
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.request_audit import (
     REQUEST_ID_HEADER,
     RequestAuditMiddleware,
     record_privileged_edit,
+    server_error,
 )
-from app.testing import emitted
+from app.testing import emitted, in_request_tasks
 
 
 VERSION = "/api/v1/version"
@@ -93,6 +100,44 @@ async def test_a_line_written_by_nobody_carries_no_request(session, capfd):
     assert line["context"] is None
 
 
+async def test_a_request_that_fails_is_answered_and_written_under_its_name(caplog):
+    """The server writes the traceback after the app has raised, in the task
+    it ran the request in, where the request's context is still open; and
+    Starlette's error middleware answers with the request's id."""
+    app = FastAPI()
+    app.add_middleware(RequestAuditMiddleware)
+    app.add_exception_handler(Exception, server_error)
+
+    @app.get("/api/v1/c/{community_id}/tasks/{task_id}")
+    async def boom(community_id: int, task_id: int) -> None:
+        raise RuntimeError("task failed")
+
+    async def run_asgi(scope, receive, send):
+        """What uvicorn does with each request."""
+        try:
+            await app(scope, receive, send)
+        except Exception:
+            logging.getLogger("uvicorn.error").exception(
+                "Exception in ASGI application"
+            )
+
+    with caplog.at_level(logging.ERROR):
+        async with AsyncClient(
+            transport=ASGITransport(app=in_request_tasks(run_asgi)),
+            base_url="http://test",
+        ) as client:
+            answered = await client.get("/api/v1/c/7/tasks/3")
+
+    assert answered.status_code == 500
+    [record] = [r for r in caplog.records if r.name == "uvicorn.error"]
+    assert record.log_context == {
+        "request_id": answered.headers[REQUEST_ID_HEADER],
+        "guild_id": 7,
+        "route": "/api/v1/c/{community_id}/tasks/{task_id}",
+    }
+    assert audit_context.current() is None
+
+
 # --- sockets ------------------------------------------------------------
 
 
@@ -108,7 +153,7 @@ async def _drive_socket(scope: dict, inside) -> None:
     async def send(_message):
         return None
 
-    await RequestAuditMiddleware(app)(scope, receive, send)
+    await in_request_tasks(RequestAuditMiddleware(app))(scope, receive, send)
 
 
 def _ws_scope() -> dict:
@@ -248,3 +293,89 @@ async def test_an_edit_outside_any_session_records_nothing():
         )
         is False
     )
+
+
+async def test_every_429_is_counted_and_nothing_else():
+    """Whichever limit answered it, a 429 is counted against the address."""
+    from app.services.platform import security_signals
+
+    async def answering(status: int):
+        async def app(_scope, _receive, send):
+            await send({"type": "http.response.start", "status": status, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        async def receive():
+            return {"type": "http.request", "body": b""}
+
+        async def send(_message):
+            return None
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/x",
+            "client": ("203.0.113.8", 4000),
+            "headers": [],
+        }
+        await RequestAuditMiddleware(app)(scope, receive, send)
+
+    security_signals.discard()
+    try:
+        await answering(200)
+        assert security_signals.pending() == 0
+        await answering(429)
+        assert "rate_limit_burst" in security_signals._counts.rules
+    finally:
+        security_signals.discard()
+
+
+def test_a_proxy_not_trusted_is_pointed_out_where_one_is_expected(monkeypatch, caplog):
+    """A forwarded header left unread from a public peer is a proxy to name
+    in FORWARDED_ALLOW_IPS when the deployment says one sits in front, and
+    passing traffic otherwise."""
+    forwarded = Headers({"x-forwarded-for": "198.51.100.20"})
+    with caplog.at_level(logging.WARNING, logger=request_audit.logger.name):
+        for behind_proxy in (False, True):
+            monkeypatch.setattr(settings, "BEHIND_PROXY", behind_proxy)
+            monkeypatch.setattr(request_audit, "_forwarded_hint_at", None)
+            request_audit._note_ignored_forwarded_header(forwarded, "93.184.216.34")
+
+    [hint] = [r.getMessage() for r in caplog.records]
+    assert "Set FORWARDED_ALLOW_IPS to the proxy's address" in hint
+
+
+@pytest.mark.parametrize(
+    ("behind_proxy", "client", "connecting", "seen"),
+    [
+        (True, "162.158.1.2", "2001:4860:0:0:0:0:0:8888", "2001:4860::8888"),
+        (True, "162.158.1.2", "198.51.100.20", "198.51.100.20"),
+        (True, "162.158.1.2", "not an address", "162.158.1.2"),
+        (True, "203.0.113.7", "198.51.100.20", "203.0.113.7"),
+        (False, "162.158.1.2", "198.51.100.20", "162.158.1.2"),
+    ],
+    ids=[
+        "cloudflare names the visitor, in its own spelling",
+        "cloudflare names the visitor",
+        "cloudflare names no address",
+        "a client that is not cloudflare's",
+        "no proxy in front",
+    ],
+)
+async def test_a_request_through_cloudflare_comes_from_its_visitor(
+    monkeypatch, behind_proxy, client, connecting, seen
+):
+    """Behind Cloudflare's proxy and the deployment's own, the server
+    resolves Cloudflare's edge; the visitor CF-Connecting-IP names is the
+    client every reader sees, the scope's included."""
+    monkeypatch.setattr(settings, "BEHIND_PROXY", behind_proxy)
+    scope = {**_ws_scope(), "client": (client, 443)}
+    scope["headers"] = [*scope["headers"], (b"cf-connecting-ip", connecting.encode())]
+    found = {}
+
+    def inside():
+        found["source_ip"] = audit_context.client_ip()
+
+    await _drive_socket(scope, inside)
+
+    assert found["source_ip"] == seen
+    assert scope["client"][0] == seen

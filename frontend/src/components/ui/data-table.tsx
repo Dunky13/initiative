@@ -70,7 +70,7 @@ import { cn } from "@/lib/utils";
 
 type TableState = TableStateOf<AppTableFeatures>;
 
-interface GroupingOption {
+export interface GroupingOption {
   id: string;
   label: string;
 }
@@ -79,6 +79,9 @@ interface DataTableProps<TData extends RowData> {
   columns: AppColumnDef<TData>[];
   data: TData[];
   rowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  /** Wraps a group's header row, as ``rowWrapper`` does a row: it renders the
+   *  row element around ``children``. */
+  groupRowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
   enableFilterInput?: boolean;
   filterInputPlaceholder?: string;
   filterInputColumnKey?: string;
@@ -94,7 +97,7 @@ interface DataTableProps<TData extends RowData> {
   /**
    * When provided, the DataTable treats ``columnVisibility`` as controlled
    * state. Use this together with ``onColumnVisibilityChange`` to persist
-   * toggles across sessions (see ``usePersistedColumnVisibility``).
+   * toggles across sessions (in their view, from ``useListView``).
    */
   columnVisibility?: ColumnVisibilityState;
   onColumnVisibilityChange?: (
@@ -106,6 +109,9 @@ interface DataTableProps<TData extends RowData> {
   initialState?: Partial<TableState>;
   pageSizeOptions?: number[];
   groupingOptions?: GroupingOption[];
+  /** Whether the toolbar offers the grouping; false where the caller offers
+   *  it somewhere else. */
+  groupingControl?: boolean;
   helpText?: ReactNode | ((table: AppTable<TData>) => ReactNode);
   enableRowSelection?: boolean;
   onRowSelectionChange?: (selectedRows: TData[]) => void;
@@ -136,6 +142,14 @@ interface DataTableProps<TData extends RowData> {
    */
   sorting?: SortingState;
   onSortingChange?: (sorting: SortingState) => void;
+  /**
+   * Controlled grouping, for a caller that works the grouping out itself (a
+   * layout's default where a person never picked) and hands it back. Without
+   * it the table owns the grouping from ``initialState.grouping`` on, and one
+   * changed from outside would leave the headers on the old grouping while
+   * the caller's rows are shaped for the new one.
+   */
+  grouping?: GroupingState;
   onGroupingChange?: (grouping: GroupingState) => void;
   enableVirtualization?: boolean;
   virtualRowHeight?: number;
@@ -162,6 +176,7 @@ export function DataTable<TData extends RowData>({
   columns,
   data,
   rowWrapper,
+  groupRowWrapper,
   enableFilterInput = false,
   filterInputPlaceholder = "Filter...",
   filterInputColumnKey = "name",
@@ -176,6 +191,7 @@ export function DataTable<TData extends RowData>({
   initialState,
   pageSizeOptions,
   groupingOptions,
+  groupingControl = true,
   helpText,
   enableRowSelection = false,
   onRowSelectionChange,
@@ -191,6 +207,7 @@ export function DataTable<TData extends RowData>({
   manualSorting = false,
   sorting: controlledSorting,
   onSortingChange: externalOnSortingChange,
+  grouping: controlledGrouping,
   onGroupingChange: externalOnGroupingChange,
   enableVirtualization = false,
   virtualRowHeight = 48,
@@ -241,9 +258,10 @@ export function DataTable<TData extends RowData>({
     },
     [externalOnColumnVisibilityChange, isColumnVisibilityControlled]
   );
-  const [grouping, setGrouping] = useState<GroupingState>(() =>
+  const [internalGrouping, setGrouping] = useState<GroupingState>(() =>
     groupingEnabled ? initialGroupingRef.current : []
   );
+  const grouping = controlledGrouping ?? internalGrouping;
   const [pagination, setPagination] = useState<PaginationState>(() => initialPaginationRef.current);
 
   // Sync external pageIndex into the table's internal pagination state when
@@ -267,7 +285,6 @@ export function DataTable<TData extends RowData>({
   const lastSelectedRowIdRef = useRef<string | null>(null);
   const shiftKeyRef = useRef(false);
   const rowCheckboxHandlerRef = useRef<(rowId: string, value: boolean) => void>(() => {});
-  const groupingSelectId = useId();
   const computedInitialState: Partial<TableState> = {
     sorting: initialSortingRef.current,
     ...(initialStateRef.current ?? {}),
@@ -360,13 +377,12 @@ export function DataTable<TData extends RowData>({
   // never rebuilt. Every grouping control routes through here.
   const handleGroupingChange = useCallback(
     (updater: GroupingState | ((old: GroupingState) => GroupingState)) => {
-      setGrouping((prev) => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        externalOnGroupingChange?.(next);
-        return next;
-      });
+      const next = typeof updater === "function" ? updater(grouping) : updater;
+      // A controlled caller answers with a new `grouping` prop.
+      if (controlledGrouping === undefined) setGrouping(next);
+      externalOnGroupingChange?.(next);
     },
-    [externalOnGroupingChange]
+    [externalOnGroupingChange, grouping, controlledGrouping]
   );
 
   const table = useTable({
@@ -440,17 +456,17 @@ export function DataTable<TData extends RowData>({
     }
     return [...normalizedGroupingOptions, ...missing.map((id) => ({ id, label: id }))];
   }, [normalizedGroupingOptions, grouping]);
-  const hasGroupingOptions = groupingChoices.length > 0;
+  const hasGroupingOptions = groupingControl && groupingChoices.length > 0;
   const groupingColumnIdSet = useMemo(
     () => new Set(groupingChoices.map((option) => option.id)),
     [groupingChoices]
   );
   const groupingSelectValue = grouping.length > 0 ? grouping[0] : GROUPING_NONE_VALUE;
   useEffect(() => {
-    if (!groupingEnabled && grouping.length > 0) {
+    if (!groupingEnabled && internalGrouping.length > 0) {
       setGrouping([]);
     }
-  }, [groupingEnabled, grouping, groupingColumnIdSet]);
+  }, [groupingEnabled, internalGrouping]);
   useEffect(() => {
     if (!groupingEnabled || grouping.length > 0) {
       return;
@@ -732,39 +748,18 @@ export function DataTable<TData extends RowData>({
             </div>
             <div className="ml-auto flex items-center justify-end gap-2">
               {/* Desktop: Show controls inline */}
-              <div className="hidden flex-wrap items-center justify-end gap-2 md:flex">
+              <div className="canvas-sm:flex hidden flex-wrap items-center justify-end gap-2">
                 {enableClearSorting && (
                   <Button variant="ghost" onClick={() => table.resetSorting()}>
                     <span className="text-muted-foreground">{t("resetSorting")}</span>
                   </Button>
                 )}
                 {groupingEnabled && hasGroupingOptions ? (
-                  <div className="flex items-center gap-2">
-                    <Label
-                      htmlFor={groupingSelectId}
-                      className="font-medium text-muted-foreground text-sm"
-                    >
-                      {t("groupBy")}
-                    </Label>
-                    <Select
-                      value={groupingSelectValue}
-                      onValueChange={(value) => {
-                        handleGroupingChange(value === GROUPING_NONE_VALUE ? [] : [value]);
-                      }}
-                    >
-                      <SelectTrigger id={groupingSelectId} className="w-40">
-                        <SelectValue placeholder={t("chooseGrouping")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={GROUPING_NONE_VALUE}>{t("none")}</SelectItem>
-                        {groupingChoices.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <GroupBySelect
+                    options={groupingChoices}
+                    value={grouping[0] ?? null}
+                    onChange={(id) => handleGroupingChange(id === null ? [] : [id])}
+                  />
                 ) : null}
                 {enableColumnVisibilityDropdown && (
                   <DropdownMenu>
@@ -801,7 +796,7 @@ export function DataTable<TData extends RowData>({
               {/* Mobile: Show overflow menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="md:hidden">
+                  <Button variant="outline" size="icon" className="canvas-sm:hidden">
                     <MoreVertical className="h-4 w-4" />
                     <span className="sr-only">{t("tableOptions")}</span>
                   </Button>
@@ -961,6 +956,7 @@ export function DataTable<TData extends RowData>({
                         groupingEnabled={groupingEnabled}
                         colSpan={visibleColCount}
                         rowWrapper={rowWrapper}
+                        groupRowWrapper={groupRowWrapper}
                         visibleColumnKey={visibleColumnKey}
                       />
                     );
@@ -977,7 +973,14 @@ export function DataTable<TData extends RowData>({
               ) : (
                 rows.map((row) => {
                   if (groupingEnabled && row.getIsGrouped()) {
-                    return <GroupedRow key={row.id} row={row} colSpan={visibleColCount} />;
+                    return (
+                      <GroupedRow
+                        key={row.id}
+                        row={row}
+                        colSpan={visibleColCount}
+                        wrapper={groupRowWrapper}
+                      />
+                    );
                   }
                   const cells = row
                     .getVisibleCells()
@@ -1013,7 +1016,7 @@ export function DataTable<TData extends RowData>({
           </TableBody>
         </Table>
         {showPagination && (
-          <div className="pp4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="pp4 flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-sm">{t("rowsPerPage")}</span>
               <Select
@@ -1037,7 +1040,7 @@ export function DataTable<TData extends RowData>({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 self-end sm:self-auto">
+            <div className="ml-auto flex items-center gap-2">
               {manualPagination && externalPageCount !== undefined && (
                 <span className="text-muted-foreground text-sm">
                   {t("pageOf", {
@@ -1078,41 +1081,73 @@ export function DataTable<TData extends RowData>({
   );
 }
 
+/** What a list is grouped by, of `options`, or none. A table's toolbar
+ *  holds it, and the board shows the same one above its columns. */
+export function GroupBySelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly GroupingOption[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const { t } = useTranslation("common");
+  const id = useId();
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor={id} className="font-medium text-muted-foreground text-sm">
+        {t("groupBy")}
+      </Label>
+      <Select
+        value={value ?? GROUPING_NONE_VALUE}
+        onValueChange={(next) => onChange(next === GROUPING_NONE_VALUE ? null : next)}
+      >
+        <SelectTrigger id={id} className="w-40">
+          <SelectValue placeholder={t("chooseGrouping")} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={GROUPING_NONE_VALUE}>{t("none")}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function GroupedRow<TData extends RowData>({
   row,
   colSpan,
+  wrapper,
+  virtualIndex,
+  measureRef,
 }: {
   row: AppRow<TData>;
   colSpan: number;
+  wrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  virtualIndex?: number;
+  measureRef?: (el: HTMLElement | null) => void;
 }) {
-  const groupedCell = row.getAllCells().find((cell) => cell.getIsGrouped?.());
-  const groupContent = groupedCell?.column.columnDef.cell
-    ? flexRender(groupedCell.column.columnDef.cell, groupedCell.getContext())
-    : ((groupedCell?.getValue() ?? row.id) as ReactNode);
-  const rawGroupValue = groupedCell?.getValue();
-  const groupLabelText = typeof rawGroupValue === "string" ? rawGroupValue : "grouped rows";
-  const toggleExpandHandler = row.getToggleExpandedHandler?.();
-  const canToggle = typeof toggleExpandHandler === "function";
-  const isExpanded = row.getIsExpanded();
+  const cell = (
+    <TableCell colSpan={colSpan} className="font-medium">
+      <GroupedRowContent row={row} />
+    </TableCell>
+  );
+  if (wrapper) {
+    return <>{wrapper({ row, children: cell, virtualIndex, measureRef })}</>;
+  }
   return (
-    <TableRow key={row.id} className="bg-muted/30" data-state="grouped">
-      <TableCell colSpan={colSpan} className="font-medium">
-        <div className="flex items-center gap-2">
-          {canToggle ? (
-            <button
-              type="button"
-              onClick={toggleExpandHandler}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${groupLabelText}`}
-            >
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
-              />
-            </button>
-          ) : null}
-          <span>{groupContent}</span>
-        </div>
-      </TableCell>
+    <TableRow
+      data-index={virtualIndex}
+      ref={measureRef}
+      className="bg-muted/30"
+      data-state="grouped"
+    >
+      {cell}
     </TableRow>
   );
 }
@@ -1156,6 +1191,7 @@ function VirtualRow<TData extends RowData>({
   groupingEnabled,
   colSpan,
   rowWrapper,
+  groupRowWrapper,
   visibleColumnKey,
 }: {
   row: AppRow<TData>;
@@ -1164,20 +1200,18 @@ function VirtualRow<TData extends RowData>({
   groupingEnabled: boolean;
   colSpan: number;
   rowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
+  groupRowWrapper?: (props: DataTableRowWrapperProps<TData>) => ReactNode;
   visibleColumnKey: string;
 }) {
   if (groupingEnabled && row.getIsGrouped()) {
     return (
-      <TableRow
-        data-index={virtualRow.index}
-        ref={measureElement}
-        className="bg-muted/30"
-        data-state="grouped"
-      >
-        <TableCell colSpan={colSpan} className="font-medium">
-          <GroupedRowContent row={row} />
-        </TableCell>
-      </TableRow>
+      <GroupedRow
+        row={row}
+        colSpan={colSpan}
+        wrapper={groupRowWrapper}
+        virtualIndex={virtualRow.index}
+        measureRef={measureElement}
+      />
     );
   }
 
@@ -1213,14 +1247,14 @@ function VirtualRow<TData extends RowData>({
   );
 }
 
-/** Renders the expand/collapse content for a grouped row. */
+/** A group's header: the toggle that collapses it, named by what the header
+ *  shows, then how many rows it holds. */
 function GroupedRowContent<TData extends RowData>({ row }: { row: AppRow<TData> }) {
+  const labelId = useId();
   const groupedCell = row.getAllCells().find((cell) => cell.getIsGrouped?.());
   const groupContent = groupedCell?.column.columnDef.cell
     ? flexRender(groupedCell.column.columnDef.cell, groupedCell.getContext())
     : ((groupedCell?.getValue() ?? row.id) as ReactNode);
-  const rawGroupValue = groupedCell?.getValue();
-  const groupLabelText = typeof rawGroupValue === "string" ? rawGroupValue : "grouped rows";
   const toggleExpandHandler = row.getToggleExpandedHandler?.();
   const canToggle = typeof toggleExpandHandler === "function";
   const isExpanded = row.getIsExpanded();
@@ -1231,14 +1265,16 @@ function GroupedRowContent<TData extends RowData>({ row }: { row: AppRow<TData> 
           type="button"
           onClick={toggleExpandHandler}
           className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-          aria-label={`${isExpanded ? "Collapse" : "Expand"} ${groupLabelText}`}
+          aria-expanded={isExpanded}
+          aria-labelledby={labelId}
         >
           <ChevronDown
             className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
           />
         </button>
       ) : null}
-      <span>{groupContent}</span>
+      <span id={labelId}>{groupContent}</span>
+      <span className="text-muted-foreground text-sm tabular-nums">{row.subRows.length}</span>
     </div>
   );
 }

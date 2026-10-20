@@ -78,6 +78,7 @@ def _plugin(**overrides) -> SimpleNamespace:
             "config_state": "ok",
             "config_state_detail": None,
             "granted_scopes": [],
+            "settings": {},
             "created_by": 11,
             "created_at": now,
             "updated_at": now,
@@ -187,7 +188,7 @@ def test_surface_access_is_computed_for_the_viewer():
     ``admin_only`` surface."""
     definition = {
         **DEFINITION,
-        "embeds": [
+        "pages": [
             {"id": "board", "path": "/b", "scopes": ["community", "initiative"]},
             {
                 "id": "settings",
@@ -249,3 +250,125 @@ def test_surface_access_is_computed_for_the_viewer():
             "openable_initiatives": [2, 5],
         },
     }
+
+
+def test_item_access_is_where_the_viewer_meets_the_plugin_on_items():
+    """The initiatives whose placements admit the viewer; the fields and parts
+    whose connections hold a value; and every action there but one that is
+    admin-only or whose write endpoint is, which only an admin runs, one whose
+    community connections hold nothing, and any while the community is
+    frozen. A member's own connection an action requires is theirs to make
+    when they run it, as is one a declarative plug-in's endpoint requires; a
+    container's endpoint is called as the installation, which no member's
+    connection answers. A declarative plug-in's fields, parts and actions are
+    offered as a container's are."""
+    definition = {
+        **DEFINITION,
+        "connections": [
+            *DEFINITION["connections"],
+            {"id": "account", "scope": "interactive", "fields": []},
+        ],
+        "endpoints": [
+            {"id": "link", "direction": "write"},
+            {"id": "purge", "direction": "write", "admin_only": True},
+            {"id": "sync", "direction": "write", "requires": {"all_of": ["admin"]}},
+            {
+                "id": "assign",
+                "direction": "write",
+                "requires": {"all_of": ["admin", "account"]},
+            },
+        ],
+        "fields": [
+            {"key": "ci.state", "on": ["task"]},
+            {"key": "ci.owner", "on": ["task"], "requires": {"any_of": ["admin"]}},
+        ],
+        "parts": [{"id": "builds", "on": ["task"], "requires": {"all_of": ["admin"]}}],
+        "actions": [
+            {"id": "new-link", "endpoint": "link", "on": ["task"]},
+            {"id": "purge", "endpoint": "purge", "on": ["task"]},
+            {"id": "sync", "endpoint": "sync", "on": ["task"]},
+            {
+                "id": "audit",
+                "endpoint": "link",
+                "on": ["task"],
+                "requires": {"all_of": ["admin", "account"]},
+            },
+            {"id": "close", "endpoint": "link", "on": ["task"], "admin_only": True},
+            {"id": "assign", "endpoint": "assign", "on": ["task"]},
+        ],
+        "minimum_age": {"default": 18},
+    }
+    rows = [
+        SimpleNamespace(initiative_id=2, role_ids=[40]),
+        SimpleNamespace(initiative_id=5, role_ids=[41]),
+    ]
+
+    def context(**standing):
+        return GuildContext(
+            guild=Guild(id=7, name="g"),
+            user_id=12,
+            guild_id=7,
+            standing_guild_id=7,
+            **standing,
+        )
+
+    def access(standing, viewer=ADULT, **plugin):
+        payload = serialize_guild_plugin(
+            _plugin(definition=definition, **plugin),
+            context=standing,
+            placements=rows,
+            viewer=viewer,
+        )
+        return (
+            payload.item_initiatives,
+            payload.item_fields,
+            payload.item_parts,
+            payload.item_actions,
+        )
+
+    every_field = ["ci.state", "ci.owner"]
+    assert access(context(member_role_ids=(40,))) == (
+        [2],
+        every_field,
+        ["builds"],
+        ["new-link", "sync", "audit"],
+    )
+    assert access(context(guild_admin=True)) == (
+        [2, 5],
+        every_field,
+        ["builds"],
+        ["new-link", "purge", "sync", "audit", "close"],
+    )
+    # The connection holds nothing.
+    assert access(context(guild_admin=True), secret_fields={}) == (
+        [2, 5],
+        ["ci.state"],
+        [],
+        ["new-link", "purge", "close"],
+    )
+    assert access(context(guild_admin=True, content_read_only=True)) == (
+        [2, 5],
+        every_field,
+        ["builds"],
+        [],
+    )
+    assert access(context(member_role_ids=(99,))) == ([], [], [], [])
+    assert access(context(guild_admin=True), AgeViewer(age=15, country="US")) == (
+        [],
+        [],
+        [],
+        [],
+    )
+    del definition["service"]
+    assert access(context(guild_admin=True)) == (
+        [2, 5],
+        every_field,
+        ["builds"],
+        ["new-link", "purge", "sync", "audit", "close", "assign"],
+    )
+    assert access(context(guild_admin=True), secret_fields={}) == (
+        [2, 5],
+        ["ci.state"],
+        [],
+        ["new-link", "purge", "close"],
+    )

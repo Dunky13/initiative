@@ -31,10 +31,10 @@ CEILING = ["comments:read", "projects:read", "tags:read"]
 def _definition(*, inside: bool = True) -> dict:
     """A service plug-in asking for three scopes, one of them above the ceiling,
     with a surface inside initiatives when ``inside``."""
-    embeds = [
+    pages = [
         {
             "id": "board",
-            "path": "/embed/board",
+            "path": "/page/board",
             "scopes": ["initiative"] if inside else ["guild"],
             "admin_only": False,
             "name": {"en": "Board"},
@@ -47,8 +47,8 @@ def _definition(*, inside: bool = True) -> dict:
             "protocol": 1,
             "scopes": ["comments:read", "projects:read", "projects:write"],
         },
-        "features": ["embeds"],
-        "embeds": embeds,
+        "features": ["pages"],
+        "pages": pages,
         "default_name": "ConsentCo",
     }
 
@@ -123,11 +123,6 @@ class TestConsentAtInstall:
             )
             expected.append({"initiative_id": initiative_id, "role_ids": roles})
         assert body["placements"] == expected
-
-        # "Every current initiative", as the placement panel means it: an
-        # initiative created later is the seat's to place.
-        (plugin,) = await _installs(session, a.guild.id)
-        assert plugin.follows_new_initiatives is False
 
     async def test_picked_initiatives_start_with_their_moderators(
         self, client: AsyncClient, acting_user, session: AsyncSession, listing
@@ -220,6 +215,130 @@ class TestTheListingSaysWhatTheDialogAsks:
         ]
         assert body["grantable_scopes"] == ["projects:read", "comments:read"]
         assert body["has_initiative_surfaces"] is True
+
+    async def test_a_declarative_plugin_asks_at_the_top_of_its_manifest(
+        self, client: AsyncClient, acting_user, session: AsyncSession
+    ):
+        """A declarative plug-in has no service block: it asks for its read
+        scopes at the top of its manifest, and the registration its listing
+        applied holds the ceiling the install is granted within."""
+        uid = marketplace_uid("declaredco")
+        await create_plugin_service_registration(
+            session,
+            public_id="tests.declaredco",
+            listing_uid=uid,
+            base_url=None,
+            allowed_origins=[],
+            jwks={},
+            kind="declarative",
+            scope_ceiling=["projects:read"],
+        )
+        await create_marketplace_listing(
+            session,
+            uid=uid,
+            public_id="tests.declaredco",
+            kind="plugin",
+            name="DeclaredCo",
+            definition={
+                "plugin_kind": "service",
+                "features": [],
+                "hosts": ["api.declared.test"],
+                "scopes": ["comments:read", "projects:read"],
+            },
+        )
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{uid}"), headers=a.headers
+        )
+        installed = await _install(
+            client, a, listing_uid=uid, granted_scopes=["projects:read"]
+        )
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["requested_scopes"] == ["projects:read", "comments:read"]
+        assert detail.json()["grantable_scopes"] == ["projects:read"]
+        assert installed.status_code == 201, installed.text
+        assert installed.json()["granted_scopes"] == ["projects:read"]
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            {
+                "features": ["fields"],
+                "fields": [
+                    {
+                        "key": "estimate",
+                        "name": {"en": "Estimate"},
+                        "kind": "text",
+                        "on": ["task"],
+                    }
+                ],
+            },
+            {
+                "features": ["parts"],
+                "parts": [
+                    {
+                        "id": "summary",
+                        "name": {"en": "Summary"},
+                        "on": ["task"],
+                        "tree": {"type": "stack"},
+                    }
+                ],
+            },
+            {
+                "features": ["actions"],
+                "actions": [
+                    {
+                        "id": "ping",
+                        "name": {"en": "Ping"},
+                        "on": ["task"],
+                        "write": '{"set": {"pinged": now}}',
+                    }
+                ],
+            },
+        ],
+        ids=["field", "part", "action"],
+    )
+    async def test_what_a_plugin_adds_to_items_is_placed_like_a_page(
+        self, client: AsyncClient, acting_user, session: AsyncSession, block
+    ):
+        """A plug-in's fields, sections and actions are drawn on an item to the
+        roles its placement names, as a page is opened, so a plug-in with any
+        of them and no page has somewhere to be placed and is asked about
+        roles."""
+        uid = marketplace_uid("fieldco")
+        await create_plugin_service_registration(
+            session,
+            public_id="tests.fieldco",
+            listing_uid=uid,
+            base_url=None,
+            allowed_origins=[],
+            jwks={},
+            kind="declarative",
+            scope_ceiling=["projects:read"],
+        )
+        await create_marketplace_listing(
+            session,
+            uid=uid,
+            public_id="tests.fieldco",
+            kind="plugin",
+            name="FieldCo",
+            definition={
+                "plugin_kind": "service",
+                "hosts": ["api.field.test"],
+                "scopes": ["projects:read"],
+                **block,
+            },
+        )
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{uid}"), headers=a.headers
+        )
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["has_initiative_surfaces"] is True
 
 
 class TestAPluginAskingToUseAnother:
@@ -338,11 +457,11 @@ def _wider(*, surfaces: bool = False) -> dict:
         "tags:read",
     ]
     if surfaces:
-        definition["embeds"] = [
-            *definition["embeds"],
+        definition["pages"] = [
+            *definition["pages"],
             {
                 "id": "planner",
-                "path": "/embed/planner",
+                "path": "/page/planner",
                 "scopes": ["initiative"],
                 "admin_only": False,
                 "name": {"en": "Planner"},

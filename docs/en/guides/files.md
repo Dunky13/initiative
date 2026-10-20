@@ -125,6 +125,8 @@ Type `![[` and pick something, or choose **Embed** from the `/` menu. Hover any 
 
 Like a chip, it reads live. Rewrite the task's description and every page embedding it says the new thing.
 
+**Embed settings** changes what an embed shows. **Show as** a **Card** (the whole thing) or **Chosen details**, just the few fields that matter. Or embed **Tasks matching a filter** instead of one thing, from a project or every project in the initiative, shown as a **List**, a **Table** or a **Count**: a page that says "Open launch tasks: 7" and means it, today and next week.
+
 The arrow in the embed's corner folds it down to its name. Folding a callout or an embed is saved with the page, so everyone who opens it sees it folded; somebody who can only read the page can still open it for themselves.
 
 An embedded page's own embeds show as names only, so two pages embedding each other don't go on forever.
@@ -188,9 +190,9 @@ Anyone who can reply can react. The author gets told — as a periodic summary, 
 
 ## Uploads and version history
 
-An upload keeps a **version history**. Upload a new version and the older ones stay put, each marked with its date.
+An upload keeps a **version history**. **Upload new version** and the older ones stay put, numbered and dated, so the copy from before somebody helpfully reorganised it is one click away to look at or download.
 
-So you can always get back to the copy from before somebody helpfully reorganised it.
+The file's owner can delete a version, for good. Delete the newest and the one before it becomes the file again. The last one left always stays.
 
 ## Attaching files to a project
 

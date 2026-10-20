@@ -19,6 +19,7 @@ from app.testing.factories import (
     TOOL_FACTORIES,
     billing_guild_ref,
     enable_all_tools,
+    create_child_entity,
     create_tool_entity,
     create_plugin_service_registration,
     sealed_vendor_values,
@@ -39,6 +40,8 @@ from app.testing.factories import (
     create_gallery,
     create_gallery_image,
     png_bytes,
+    create_listing_with_terms,
+    entitlement_statement,
     create_marketplace_listing,
     create_profile_pack,
     marketplace_uid,
@@ -54,6 +57,7 @@ from app.testing.factories import (
     guild_administration,
     create_guild_plugin,
     create_plugin_user_connection,
+    create_guest,
     create_guild_membership,
     create_initiative,
     create_initiative_member,
@@ -90,6 +94,7 @@ from app.testing.passkeys import (
 )
 from app.testing.notices import drain_notices
 from app.testing.push import create_push_token, push_switched_on
+from app.testing.server import in_request_tasks
 from app.testing.routing import (
     as_role,
     platform_session,
@@ -100,6 +105,7 @@ from app.testing.routing import (
 from app.testing.schema_harness import guild_of, route_session_to_guild
 
 __all__ = [
+    "in_request_tasks",
     "as_role",
     "captcha_switched_on",
     "drain_notices",
@@ -112,6 +118,7 @@ __all__ = [
     "TOOL_FACTORIES",
     "billing_guild_ref",
     "enable_all_tools",
+    "create_child_entity",
     "create_tool_entity",
     "Actor",
     "guild_url",
@@ -136,6 +143,8 @@ __all__ = [
     "create_gallery",
     "create_gallery_image",
     "png_bytes",
+    "create_listing_with_terms",
+    "entitlement_statement",
     "create_marketplace_listing",
     "create_profile_pack",
     "marketplace_uid",
@@ -152,6 +161,7 @@ __all__ = [
     "guild_administration",
     "create_guild_plugin",
     "create_plugin_user_connection",
+    "create_guest",
     "create_guild_membership",
     "create_initiative",
     "create_initiative_member",

@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -34,7 +35,6 @@ from app.models.tenant.project import Project
 from app.models.tenant.task import Task, TaskAssignee, TaskStatus, TaskStatusCategory
 from app.services import notifications as notifications_service
 from app.services.tenant import relationships
-from app.services.tenant import filter_presets as filter_presets_service
 from app.services.tenant import named_people
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
@@ -73,7 +73,6 @@ async def resolve_start_status(
     somehow arrived without its defaults gets them.
     """
     await task_statuses_service.ensure_default_statuses(session, project_id)
-    await filter_presets_service.ensure_default_presets(session, project_id)
 
     if task_status_id is not None:
         selected = await task_statuses_service.get_project_status(
@@ -169,6 +168,65 @@ async def set_task_assignees(
 
     await session.flush()
     await session.refresh(task, attribute_names=["assignees"])
+
+
+async def change_task_assignees(
+    session: AsyncSession,
+    task: Task,
+    *,
+    add: Sequence[int] = (),
+    remove: Sequence[int] = (),
+    project: Project,
+) -> list[int]:
+    """Put people on a task and take others off, leaving whoever else is on
+    it. Written as the change rather than as a new list, so two changes made
+    at once both land. Someone both added and removed is removed.
+
+    Returns who this change put on the task: not anyone already on it, nor
+    anyone another change put on it meanwhile."""
+    removing = set(remove)
+    adding = [user_id for user_id in dict.fromkeys(add) if user_id not in removing]
+    governing = named_people.Governing.of(Tool.project, project)
+    await named_people.require_readers(session, governing, adding)
+
+    added: list[int] = []
+    if adding:
+        added = list(
+            (
+                await session.exec(
+                    pg_insert(TaskAssignee)
+                    .values(
+                        [{"task_id": task.id, "user_id": user_id} for user_id in adding]
+                    )
+                    .on_conflict_do_nothing(index_elements=["task_id", "user_id"])
+                    .returning(TaskAssignee.user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if removing:
+        removed = (
+            (
+                await session.exec(
+                    delete(TaskAssignee)
+                    .where(
+                        TaskAssignee.task_id == task.id,
+                        TaskAssignee.user_id.in_(sorted(removing)),
+                    )
+                    .returning(TaskAssignee.user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await notifications_service.dequeue_task_assignment_events(
+            session, task_id=task.id, user_ids=sorted(removed)
+        )
+
+    await session.flush()
+    await session.refresh(task, attribute_names=["assignees"])
+    return added
 
 
 async def advance_recurrence_if_needed(
@@ -378,9 +436,17 @@ async def copy_tasks(
             source.recurrence,
         )
         if date_shift is not None:
-            start_date = start_date + date_shift if start_date else None
-            due_date = due_date + date_shift if due_date else None
-            repeat = recurrence.moved(repeat, date_shift) if repeat else None
+            shift = date_shift
+            if repeat and (due_date or start_date):
+                # A series moves on its own rule, from its due date or its
+                # start without one, and its dates move with its start.
+                start = due_date or start_date
+                series = recurrence.moved(
+                    repeat, start, source.recurrence_shift, date_shift
+                )
+                repeat, shift = series.text, series.start - start
+            start_date = start_date + shift if start_date else None
+            due_date = due_date + shift if due_date else None
         copy = Task(
             project_id=target.id,
             title=copy_name(source.title) if beside else source.title,

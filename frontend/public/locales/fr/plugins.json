@@ -17,6 +17,9 @@
     "removeTitle": "Retirer {{name}} ?",
     "removeBody": "Ce qu'il a créé part à la corbeille, d'où cela peut encore être restauré. Tous les identifiants qu'il détenait — ceux de la communauté et ceux de chaque membre — sont supprimés, et le plug-in est prié de cesser de s'en servir.",
     "removed": "{{name}} retiré.",
+    "removeAndErase": "Retirer et effacer",
+    "erase": "Effacer aussi ses données",
+    "eraseHelp": "Le plug-in est invité à supprimer tout ce qu'il conserve sur cette communauté. Si vous l'ajoutez de nouveau, il repartira de zéro.",
     "saved": "Enregistré.",
     "needsConfig": "Configuration à faire",
     "configInvalid": "Problème de configuration",
@@ -30,7 +33,9 @@
     "autoUpdateOff": "Les mises à jour sont désormais appliquées manuellement.",
     "upgradeTo": "Mettre à jour vers {{version}}",
     "upToDate": "À jour",
-    "upgraded": "Mise à jour vers {{version}}."
+    "upgraded": "Mise à jour vers {{version}}.",
+    "removeManagedNeutral": "Les frais de ce plug-in sont gérés par votre fournisseur.",
+    "removeManagedAction": "Gérer"
   },
   "updates": {
     "wants": "La version {{version}} souhaite :",
@@ -60,7 +65,9 @@
       "moderator": "Modérateurs",
       "project_manager": "Chefs de projet",
       "member": "Membres"
-    }
+    },
+    "entitlementRequired": "Ce plug-in doit être activé pour votre communauté avant de pouvoir être ajouté.",
+    "entitlementAction": "Voir les options"
   },
   "connections": {
     "none": "Ce plug-in ne demande aucune configuration.",
@@ -95,6 +102,14 @@
       "expired": "Expirée"
     },
     "expired": "Cette connexion a expiré. Connectez-vous à nouveau pour continuer à l'utiliser."
+  },
+  "installSettings": {
+    "title": "Paramètres",
+    "description": "Ce que ce plug-in lit dans cette communauté.",
+    "notSet": "Non défini",
+    "unique": "Aucune autre communauté de ce serveur ne peut utiliser cette valeur. Utilisez une lettre minuscule, puis des lettres minuscules et des chiffres.",
+    "earlier": "Valeurs précédentes, qui fonctionnent toujours : {{values}}",
+    "saved": "Paramètre enregistré."
   },
   "members": {
     "title": "Membres",
@@ -161,7 +176,7 @@
     "adminTitle": "Paramètres de la communauté",
     "adminDescription": "Ce que la communauté gère pour ce plug-in. Visible uniquement par le superadmin."
   },
-  "embed": {
+  "page": {
     "connecting": "Connexion…",
     "handoffFailed": "Impossible d'ouvrir ce plug-in. Réessayez dans un instant.",
     "failed": "Impossible d'ouvrir ce plug-in",
@@ -212,6 +227,10 @@
     "sign_in_required": {
       "title": "Connectez-vous pour terminer",
       "body": "Terminez la connexion dans le navigateur où vous êtes connecté à Initiative, en tant que la personne qui l'a commencée."
+    },
+    "taken": {
+      "title": "Déjà connectée ailleurs",
+      "body": "Cette organisation est déjà connectée à une autre communauté de ce serveur, rien n'a donc changé ici. Pour la connecter ici, déconnectez-la d'abord là-bas, ou retirez l'application de l'organisation chez l'autre service, puis reconnectez-la."
     },
     "closeTab": "Vous pouvez fermer cet onglet."
   },

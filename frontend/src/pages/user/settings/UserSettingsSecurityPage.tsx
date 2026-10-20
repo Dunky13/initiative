@@ -2,12 +2,19 @@ import { KeyRound, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useReadSecondFactor } from "@/api/generated/auth/auth";
 import type { ApiKeyMetadata } from "@/api/generated/initiativeAPI.schemas";
 import { HeldChangeNotice } from "@/components/settings/HeldChangeNotice";
 import { PasskeysSection } from "@/components/settings/PasskeysSection";
+import { PasswordSection } from "@/components/settings/PasswordSection";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SignedInSection } from "@/components/settings/SignedInSection";
 import { TwoFactorSection } from "@/components/settings/TwoFactorSection";
+import {
+  ReportSecurityProblemButton,
+  SecurityReportDialog,
+  useSecurityReporting,
+} from "@/components/tickets/ReportSecurityProblem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +37,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAppConfig } from "@/hooks/useAppConfig";
+import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCreateApiKey, useDeleteApiKey, useMyApiKeys } from "@/hooks/useSecurity";
 import { formatDateTime } from "@/lib/formatDate";
@@ -154,11 +163,13 @@ const NewApiKeyDialog = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("security.communityAllCommunities")}</SelectItem>
-                  {communities.map((community) => (
-                    <SelectItem key={community.id} value={String(community.id)}>
-                      {community.name}
-                    </SelectItem>
-                  ))}
+                  {communities
+                    .filter((community) => community.can.use_api)
+                    .map((community) => (
+                      <SelectItem key={community.id} value={String(community.id)}>
+                        {community.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <p className="text-muted-foreground text-xs">{t("security.communityHelp")}</p>
@@ -205,9 +216,19 @@ const NewApiKeyDialog = ({
 };
 
 export const UserSettingsSecurityPage = () => {
-  const { t } = useTranslation(["settings", "common"]);
+  const { t } = useTranslation(["settings", "common", "intake"]);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiKeyMetadata | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const securityReporting = useSecurityReporting();
+  const { user, refreshUser } = useAuth();
+  // A way in this deployment does not offer is left off the page.
+  const { passkeyLoginEnabled } = useAppConfig();
+  // An account with no password keeps its recovery codes in the two-factor
+  // section, so that section stays for it even where authenticators are off.
+  const secondFactor = useReadSecondFactor();
+  const showTwoFactor =
+    (secondFactor.data?.offered ?? true) || (secondFactor.data?.passwordless ?? false);
 
   const { communities } = useCommunities();
   const communityName = (id: number) =>
@@ -225,13 +246,19 @@ export const UserSettingsSecurityPage = () => {
   return (
     <div className="space-y-6">
       <HeldChangeNotice />
-      <SettingsSection title={t("passkeys.title")} description={t("passkeys.description")}>
-        <PasskeysSection />
-      </SettingsSection>
+      {user ? <PasswordSection user={user} refreshUser={refreshUser} /> : null}
 
-      <SettingsSection title={t("twoFactor.title")} description={t("twoFactor.description")}>
-        <TwoFactorSection />
-      </SettingsSection>
+      {passkeyLoginEnabled ? (
+        <SettingsSection title={t("passkeys.title")} description={t("passkeys.description")}>
+          <PasskeysSection />
+        </SettingsSection>
+      ) : null}
+
+      {showTwoFactor ? (
+        <SettingsSection title={t("twoFactor.title")} description={t("twoFactor.description")}>
+          <TwoFactorSection />
+        </SettingsSection>
+      ) : null}
 
       <SignedInSection />
 
@@ -292,6 +319,9 @@ export const UserSettingsSecurityPage = () => {
                             })}
                           </Badge>
                         ) : null}
+                        {key.resource_type != null ? (
+                          <Badge variant="outline">{t("security.scopeSubscription")}</Badge>
+                        ) : null}
                         {!key.read_only && key.community_id == null ? (
                           <Badge variant="outline">{t("security.scopeFull")}</Badge>
                         ) : null}
@@ -332,6 +362,17 @@ export const UserSettingsSecurityPage = () => {
           if (deleteTarget) deleteKey.mutate(deleteTarget.id);
         }}
       />
+
+      {/* Where this server takes them: something wrong with it, or with an
+          account that isn't behaving like its owner. */}
+      {securityReporting.form || securityReporting.contact ? (
+        <SettingsSection
+          title={t("intake:security.cardTitle")}
+          description={t("intake:security.cardDescription")}
+          action={<ReportSecurityProblemButton onOpen={() => setReporting(true)} />}
+        />
+      ) : null}
+      <SecurityReportDialog open={reporting} onOpenChange={setReporting} />
     </div>
   );
 };

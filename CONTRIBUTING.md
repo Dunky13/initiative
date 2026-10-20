@@ -159,6 +159,8 @@ Commit the updated generated files alongside your schema changes. CI will fail i
 
 **Important:** Do not hand-edit files in `frontend/src/api/generated/` — they will be overwritten on the next generation run.
 
+**Breaking the API.** CI compares the API with the last release's and fails on a change that would break a client written against that release: a removed route or field, a newly required parameter, a narrower type. Run the same check with `scripts/ci/api-compat` (needs Docker and the GitHub CLI). If the break is intended, add the method, path and message it printed to [`backend/api-breaking-changes.md`](backend/api-breaking-changes.md) under the release it ships in, and say why in the pull request. Each release publishes its spec as `openapi.json` on its GitHub release.
+
 ## Submitting Changes
 
 1. Fork the repo and create a branch from **`dev`**
@@ -284,7 +286,7 @@ Please **do not** open a public issue for security vulnerabilities. See [SECURIT
 
 ## License
 
-This repository is open source under the [AGPL-3.0](LICENSE). Copyright is retained by the maintainers, who retain full commercial rights. Initiative is open core — see [License](README.md#license) for what's open and what isn't.
+This repository is open source under the [AGPL-3.0](LICENSE). Morelitea LLC, doing business as Beyonders Studio, holds the copyright and full commercial rights. Initiative is open core — see [License](README.md#license) for what's open and what isn't.
 
 Contributions are made under the [Contributor License Agreement](./CLA.md) (version 2), which grants Morelitea LLC, doing business as Beyonders Studio, the rights to your contribution, including the right to relicense it. You sign it once, on your first pull request: a CLA check comments asking you to, and you sign by posting this comment on the pull request:
 

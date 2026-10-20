@@ -40,7 +40,7 @@ Initiative is one image, `ghcr.io/beyonders-studio/initiative` (`linux/amd64` an
 | `SECRET_KEY` | At least 32 characters. It encrypts stored data, so don't rotate it casually |
 | `POSTGRES_PASSWORD` | Only read when the database is first created. It goes into the connection URL, so keep it alphanumeric |
 
-The app listens on port 8173. Behind a reverse proxy, uncomment `BEHIND_PROXY`. The first account to register becomes the server owner.
+Run `docker compose up -d` and point your reverse proxy at port 8173. The first account to register becomes the server owner.
 
 Tags are `latest`, `stable` (promoted after a few days with no regressions) and version numbers.
 
@@ -76,7 +76,7 @@ To report a security problem, follow [SECURITY.md](SECURITY.md) rather than open
 
 ## License
 
-Initiative is open core. Everything in this repository, which is the whole app you self-host, is licensed under the [AGPL-3.0](LICENSE). The maintainers keep the copyright and the commercial rights.
+Initiative is open core. Everything in this repository, which is the whole app you self-host, is licensed under the [AGPL-3.0](LICENSE). Morelitea LLC, doing business as Beyonders Studio, holds the copyright and the commercial rights.
 
 | Repository | License | What it is |
 |---|---|---|

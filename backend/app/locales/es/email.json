@@ -100,6 +100,35 @@
       "body": "<strong>{{actor}}</strong> respondió a tu comentario en <strong>{{context}}</strong>"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} cambió",
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "<strong>{{actor}}</strong> cambió <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nuevo comentario en {{context}}",
+      "title": "Nuevo comentario en algo a lo que te suscribiste",
+      "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
+    },
+    "reacted": {
+      "subject": "Nueva reacción en {{context}}",
+      "title": "Nueva reacción en algo a lo que te suscribiste",
+      "body": "<strong>{{actor}}</strong> reaccionó a <strong>{{context}}</strong>"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} cambió",
+      "title": "Algo en lo que participas cambió",
+      "body": "<strong>{{actor}}</strong> cambió <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "Nuevo comentario en {{context}}",
+      "title": "Nuevo comentario en algo en lo que participas",
+      "body": "<strong>{{actor}}</strong> comentó en <strong>{{context}}</strong>"
+    }
+  },
   "post": {
     "published": {
       "subject": "Nueva publicación: {{post}}",
@@ -112,16 +141,6 @@
       "subject": "Tienes una invitación: {{event}}",
       "title": "Nueva invitación a un evento",
       "body": "<strong>{{organizer}}</strong> te invitó a <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
-    },
-    "rescheduled": {
-      "subject": "Evento reprogramado: {{event}}",
-      "title": "Evento reprogramado",
-      "body": "<strong>{{editor}}</strong> reprogramó <strong>{{event}}</strong> para <strong>{{when}}</strong>."
-    },
-    "updated": {
-      "subject": "Evento actualizado: {{event}}",
-      "title": "Evento actualizado",
-      "body": "<strong>{{editor}}</strong> actualizó <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
     },
     "cancelled": {
       "subject": "Evento cancelado: {{event}}",
@@ -156,6 +175,7 @@
     "greeting": "Hola <strong>{{name}}</strong>:",
     "levelRead": "de solo lectura",
     "levelReadWrite": "de lectura y escritura",
+    "levelModerate": "de moderación",
     "levelAdmin": "a los ajustes de la comunidad (administrador)",
     "levelSuperadmin": "a los ajustes de la comunidad (superadministrador)",
     "requested": {
@@ -259,6 +279,11 @@
       "subject": "Se va a desactivar la autenticación en dos pasos",
       "title": "Se va a desactivar la autenticación en dos pasos",
       "body": "La autenticación en dos pasos se desactivará el <strong>{{date}}</strong>. Hasta entonces tu cuenta sigue pidiendo un código al iniciar sesión, y puedes cancelarlo en Seguridad, dentro de tus ajustes."
+    },
+    "recoveryRegenerated": {
+      "subject": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "title": "Se crearon nuevos códigos de recuperación para tu cuenta",
+      "body": "Se creó un nuevo conjunto de códigos de recuperación para tu cuenta y los que tenías ya no funcionan. Guarda los nuevos en un lugar seguro."
     }
   },
   "passwordRemoved": {
@@ -350,24 +375,18 @@
     },
     "noCommunity": {
       "direct_messages": "Mensajes directos",
-      "connections": "Contactos",
       "account": "Tu cuenta",
       "other": "De tus comunidades"
     },
     "category": {
-      "mentions": "Menciones",
-      "replies": "Respuestas",
-      "comments": "Comentarios sobre tu trabajo",
-      "reactions": "Reacciones",
-      "assignments": "Tareas asignadas",
-      "due_dates": "Tareas vencidas",
-      "membership": "Nuevas incorporaciones",
-      "approvals": "Esperan tu decisión",
-      "posts": "Publicaciones",
-      "events": "Eventos",
-      "event_reminders": "Recordatorios de eventos",
-      "direct_messages": "Mensajes directos",
-      "connections": "Contactos",
+      "mentions": "Menciones y respuestas",
+      "assignments": "Asignado a ti",
+      "subscriptions": "Suscrito",
+      "news": "Novedades en tus comunidades",
+      "approvals": "Esperan por ti",
+      "moderation": "Moderación",
+      "cases": "Casos",
+      "direct_messages": "Mensajes y contactos",
       "jobs": "Exportaciones e importaciones",
       "account": "Tu cuenta"
     }
@@ -465,6 +484,38 @@
       "m10": "octubre",
       "m11": "noviembre",
       "m12": "diciembre"
+    }
+  },
+  "moderation": {
+    "removed": {
+      "subject": "Un moderador eliminó algo que escribiste",
+      "title": "Un moderador eliminó algo que escribiste",
+      "body": "Algo que escribiste incumplía las normas de esta comunidad y se retiró. El aviso en la aplicación explica el motivo."
+    },
+    "warned": {
+      "subject": "Un aviso de los moderadores de esta comunidad",
+      "title": "Un aviso de los moderadores de esta comunidad",
+      "body": "Los moderadores escribieron:<br><br>{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "subject": "Se abrió un caso nuevo",
+      "title": "Se abrió un caso nuevo",
+      "body": "Se acaba de abrir un caso donde atiendes casos y nadie lo ha tomado todavía. Ábrelo en Initiative para leerlo."
+    },
+    "replied": {
+      "subject": "Una respuesta en un caso que nadie ha tomado",
+      "title": "Una respuesta en un caso que nadie ha tomado",
+      "body": "Quien presentó un caso respondió en él y nadie lo ha tomado todavía. Ábrelo en Initiative para leerlo."
+    }
+  },
+  "identity": {
+    "fallbackText": "Si no has sido tú, cambia la contraseña de inmediato y avisa a quien gestiona este sitio.",
+    "linked": {
+      "subject": "Una nueva forma de iniciar sesión en tu cuenta",
+      "title": "Una nueva forma de iniciar sesión en tu cuenta",
+      "body": "Ahora se puede iniciar sesión en tu cuenta a través de <strong>{{provider}}</strong>, porque allí se comprobó una de tus direcciones."
     }
   }
 }

@@ -9,8 +9,9 @@
  *    Everything this server allows starts ticked, except a standing (acting as
  *    a moderator or an admin), which the seat ticks itself; a scope it does
  *    not allow is shown disabled, with the reason.
- * 2. **Where it appears.** Only for a plug-in with a page inside initiatives:
- *    every current initiative, or the ones picked here.
+ * 2. **Where it appears.** Only for a plug-in with a page inside initiatives, or
+ *    fields, sections or actions on items: every current initiative, or the
+ *    ones picked here.
  * 3. **Who can open it there.** Built-in roles, moderators by default, applied
  *    to every initiative it is placed in.
  * 4. **Which plug-ins can use it.** The ones already here that ask to, all
@@ -51,7 +52,7 @@ import { getErrorMessage } from "@/lib/errorMessage";
 import { listingShownHere } from "@/lib/marketplaceCuration";
 import { toast } from "@/lib/mascotToast";
 import { STANDING_SCOPES, scopeSentence, toggleScope } from "@/lib/pluginScopes";
-import { communityPluginPath } from "@/lib/pluginSurfaces";
+import { communityPluginPath, declaredPages } from "@/lib/pluginSurfaces";
 import type { DialogProps } from "@/types/dialog";
 
 export interface InstallPluginDialogProps extends DialogProps {
@@ -69,10 +70,13 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
 
   const requested = listing.requested_scopes ?? [];
   const grantable = new Set(listing.grantable_scopes ?? []);
-  const hasPage = listing.has_initiative_surfaces ?? false;
+  // A page inside initiatives, or fields, sections or actions on items: the
+  // roles chosen here say who opens the page and who is drawn the rest.
+  const placesInInitiatives = listing.has_initiative_surfaces ?? false;
+  const hasPage = declaredPages(listing.definition, "initiative").length > 0;
   // A plug-in reaches content only in the initiatives it is placed in, so one
   // that asks for any access is placed too, whether or not it has a page.
-  const placeable = hasPage || requested.length > 0;
+  const placeable = placesInInitiatives || requested.length > 0;
 
   const [name, setName] = useState(listing.name);
   // Every scope the server allows starts ticked, bar a standing; the seat
@@ -96,7 +100,7 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
         name: name.trim() || listing.name,
         granted_scopes: scopes,
         placements: !placeable ? [] : where === "all" ? "all" : picked,
-        role_kinds: hasPage ? roles : [],
+        role_kinds: placesInInitiatives ? roles : [],
         callers: allowedCallers,
       },
       {
@@ -217,7 +221,7 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
           </section>
         )}
 
-        {hasPage && (
+        {placesInInitiatives && (
           <section className="space-y-2" aria-labelledby="install-plugin-who">
             <div>
               <h3 id="install-plugin-who" className="font-medium text-sm">
@@ -285,9 +289,9 @@ export function InstallPluginDialog({ listing, open, onOpenChange }: InstallPlug
           </Button>
           <Button onClick={submit} disabled={install.isPending}>
             {install.isPending ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Download className="mr-1.5 h-4 w-4" />
+              <Download className="h-4 w-4" />
             )}
             {t("plugins:install.action")}
           </Button>

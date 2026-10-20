@@ -1,31 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import { Copy, Download, HandCoins, IdCard, RefreshCcw, Trash2, UserMinus } from "lucide-react";
+import { Download, HandCoins, IdCard, RefreshCcw, UserMinus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  createCommunityInvite,
-  deleteCommunityInvite,
-  useListCommunityInvites,
-} from "@/api/generated/communities/communities";
-import type { CommunityRole, UserCommunityMember } from "@/api/generated/initiativeAPI.schemas";
+  type CommunityRole,
+  SupportTopic,
+  type UserCommunityMember,
+} from "@/api/generated/initiativeAPI.schemas";
+import {
+  CommunityInviteList,
+  InviteLimitFields,
+  NewInviteLink,
+} from "@/components/communities/CommunityInvites";
 import { MemberDisplayNameDialog } from "@/components/communities/MemberDisplayNameDialog";
 import { RemoveCommunityMemberDialog } from "@/components/communities/RemoveCommunityMemberDialog";
 import { TransferContentOwnershipDialog } from "@/components/communities/TransferContentOwnershipDialog";
 import { UnownedContentCard } from "@/components/communities/UnownedContentCard";
-import {
-  FormSkeleton,
-  ListSkeleton,
-  SkeletonRegion,
-  TableSkeleton,
-} from "@/components/skeletons/PageSkeletons";
+import { FormSkeleton, SkeletonRegion, TableSkeleton } from "@/components/skeletons/PageSkeletons";
+import { HelpLink } from "@/components/support/HelpLink";
 import { UserHandle } from "@/components/UserHandle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import {
   Select,
@@ -39,7 +37,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityAuthSettings } from "@/hooks/useCommunityAuthPolicy";
-import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { useCommunityInvites } from "@/hooks/useCommunityInvites";
 import { useServerTableState } from "@/hooks/useServerTableState";
 import {
   useExportCommunityUsersCsv,
@@ -57,34 +55,6 @@ import { getUrlHandle, getUserDisplayName, getUserHandle } from "@/lib/userDispl
 //: neither appoint nor demote one, and the server says so too.
 const COMMUNITY_ROLE_OPTIONS: CommunityRole[] = ["admin", "member"];
 const SEAT_ROLE_OPTIONS: CommunityRole[] = ["superadmin", "admin", "member"];
-const inviteLinkForCode = (code: string) => {
-  const base = import.meta.env.VITE_APP_URL?.trim() || window.location.origin;
-  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  return `${normalizedBase}/invite/${encodeURIComponent(code)}`;
-};
-
-/**
- * Live "N uses · expires M" line for one invite. A component (not an inline
- * hook) so `useRelativeTime` can run per invite inside the invites map.
- */
-const InviteUsesLine = ({
-  uses,
-  maxUses,
-  expiresAt,
-}: {
-  uses: number;
-  maxUses: number | null;
-  expiresAt: string | null;
-}) => {
-  const { t } = useTranslation("communities");
-  const relativeExpiry = useRelativeTime(expiresAt);
-  const expires = expiresAt != null ? relativeExpiry : t("users.neverExpires");
-  return (
-    <p className="text-muted-foreground">
-      {t("users.usesFormat", { uses, max: maxUses ?? "∞", expires })}
-    </p>
-  );
-};
 
 export const SettingsUsersPage = () => {
   const { user } = useAuth();
@@ -122,17 +92,10 @@ export const SettingsUsersPage = () => {
   const atUserLimit = maxUsers !== null && usedSeats >= maxUsers;
   const planName = activeCommunity?.tier_name ?? null;
 
-  const invitesQuery = useListCommunityInvites(activeCommunityId ?? 0, {
-    query: { enabled: managesInvites && activeCommunityId !== null },
-  });
-  const invites = invitesQuery.data ?? [];
-  // What the last create or delete reported; a failed load is the query's own.
-  const [inviteActionError, setInviteActionError] = useState<string | null>(null);
-  const invitesError =
-    inviteActionError ?? (invitesQuery.isError ? t("users.unableToLoadInvites") : null);
-  const [inviteSubmitting, setInviteSubmitting] = useState(false);
-  const [inviteMaxUses, setInviteMaxUses] = useState<number>(1);
-  const [inviteExpiresDays, setInviteExpiresDays] = useState<number>(7);
+  const invites = useCommunityInvites(activeCommunityId, managesInvites);
+  // Guest invites are Settings › Guests'; these are for members.
+  const memberInvites = invites.invites.filter((invite) => invite.guest_days == null);
+  const [inviteLimits, setInviteLimits] = useState({ maxUses: 1, expiresDays: 7 });
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<{
     userId: number;
     email: string;
@@ -368,53 +331,9 @@ export const SettingsUsersPage = () => {
     },
   ];
 
-  const createInvite = async (event: FormEvent<HTMLFormElement>) => {
+  const createInvite = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!activeCommunityId || atUserLimit) {
-      return;
-    }
-    setInviteSubmitting(true);
-    setInviteActionError(null);
-    try {
-      const expiresAt =
-        inviteExpiresDays > 0
-          ? new Date(Date.now() + inviteExpiresDays * 24 * 60 * 60 * 1000).toISOString()
-          : null;
-      const payload = {
-        max_uses: inviteMaxUses > 0 ? inviteMaxUses : null,
-        expires_at: expiresAt,
-      };
-      await createCommunityInvite(activeCommunityId, payload);
-      await invitesQuery.refetch();
-    } catch (error) {
-      console.error(error);
-      setInviteActionError(getErrorMessage(error, "communities:users.unableToCreateInvite"));
-    } finally {
-      setInviteSubmitting(false);
-    }
-  };
-
-  const deleteInvite = async (inviteId: number) => {
-    if (!activeCommunityId) {
-      return;
-    }
-    setInviteActionError(null);
-    try {
-      await deleteCommunityInvite(activeCommunityId, inviteId);
-      await invitesQuery.refetch();
-    } catch (error) {
-      console.error(error);
-      setInviteActionError(t("users.unableToDeleteInvite"));
-    }
-  };
-
-  const copyInviteLink = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(inviteLinkForCode(code));
-      toast.success(t("users.inviteLinkCopied"));
-    } catch (error) {
-      console.error(error);
-    }
+    if (!atUserLimit) void invites.create(inviteLimits);
   };
 
   return (
@@ -426,43 +345,21 @@ export const SettingsUsersPage = () => {
               <CardTitle>{t("users.invitesTitle")}</CardTitle>
               <p className="text-muted-foreground text-sm">{t("users.invitesDescription")}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setInviteActionError(null);
-                void invitesQuery.refetch();
-              }}
-            >
+            <Button variant="ghost" size="icon" onClick={invites.refresh}>
               <RefreshCcw className="h-4 w-4" />
               <span className="sr-only">{t("users.refreshInvites")}</span>
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            <form className="grid gap-4 md:grid-cols-3" onSubmit={createInvite}>
-              <div className="space-y-2">
-                <Label htmlFor="invite-uses">{t("users.maxUsesLabel")}</Label>
-                <Input
-                  id="invite-uses"
-                  type="number"
-                  min={1}
-                  value={inviteMaxUses}
-                  onChange={(event) => setInviteMaxUses(Number(event.target.value))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-days">{t("users.expiresDaysLabel")}</Label>
-                <Input
-                  id="invite-days"
-                  type="number"
-                  min={0}
-                  value={inviteExpiresDays}
-                  onChange={(event) => setInviteExpiresDays(Number(event.target.value))}
-                />
-              </div>
+            <form className="grid grid-cols-fill-48/3 gap-4" onSubmit={createInvite}>
+              <InviteLimitFields
+                idPrefix="invite"
+                value={inviteLimits}
+                onChange={setInviteLimits}
+              />
               <div className="flex items-end">
-                <Button type="submit" disabled={inviteSubmitting || atUserLimit}>
-                  {inviteSubmitting ? t("users.generatingInvite") : t("users.generateInvite")}
+                <Button type="submit" disabled={invites.submitting || atUserLimit}>
+                  {invites.submitting ? t("users.generatingInvite") : t("users.generateInvite")}
                 </Button>
               </div>
             </form>
@@ -478,54 +375,22 @@ export const SettingsUsersPage = () => {
                 </Button>
               </div>
             ) : atUserLimit ? (
-              <p className="text-muted-foreground text-sm">
-                {t("users.inviteSeatsFull", { max: maxUsers })}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-muted-foreground text-sm">
+                  {t("users.inviteSeatsFull", { max: maxUsers })}
+                </p>
+                <HelpLink topic={SupportTopic.community} communityId={activeCommunityId} />
+              </div>
             ) : null}
+            {invites.newInviteCode ? <NewInviteLink code={invites.newInviteCode} /> : null}
             <div className="h-px bg-border" />
-            {invitesQuery.isLoading ? (
-              <SkeletonRegion label={t("users.loadingInvites")}>
-                <ListSkeleton rows={2} avatar={false} />
-              </SkeletonRegion>
-            ) : null}
-            {invitesError ? <p className="text-destructive text-sm">{invitesError}</p> : null}
-            {!invitesQuery.isLoading && !invites.length ? (
-              <p className="text-muted-foreground text-sm">{t("users.noActiveInvites")}</p>
-            ) : null}
-            <div className="space-y-3">
-              {invites.map((invite) => {
-                const link = inviteLinkForCode(invite.code);
-                return (
-                  <div
-                    key={invite.id}
-                    className="flex flex-col gap-3 rounded border bg-muted/30 p-4 text-sm md:flex-row md:items-center md:justify-between"
-                  >
-                    <div>
-                      <p className="font-medium">{link}</p>
-                      <InviteUsesLine
-                        uses={invite.uses}
-                        maxUses={invite.max_uses ?? null}
-                        expiresAt={invite.expires_at ?? null}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => copyInviteLink(invite.code)}
-                      >
-                        <Copy className="h-4 w-4" />
-                        <span className="sr-only">{t("users.copyInviteLink")}</span>
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => deleteInvite(invite.id)}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">{t("users.deleteInviteLink")}</span>
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <CommunityInviteList
+              invites={memberInvites}
+              isLoading={invites.isLoading}
+              error={invites.error}
+              emptyText={t("users.noActiveInvites")}
+              onDelete={(inviteId) => void invites.remove(inviteId)}
+            />
           </CardContent>
         </Card>
       ) : null}

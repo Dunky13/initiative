@@ -27,6 +27,7 @@ from typing import Any, Callable
 from app.services.fields import calendar_events as calendar_events_dataset
 from app.services.fields import members as members_dataset
 from app.services.fields import projects as projects_dataset
+from app.services.fields import properties as property_datasets
 from app.services.fields import task_assignees as task_assignees_dataset
 from app.services.fields import tools as tool_datasets
 from app.services.fields import task_statuses as task_statuses_dataset
@@ -45,6 +46,8 @@ _BUILDERS: dict[str, Callable[[], Dataset]] = {
     "task_statuses": task_statuses_dataset.build,
     "task_assignees": task_assignees_dataset.build,
     "members": members_dataset.build,
+    "property_definitions": property_datasets.build_property_definitions,
+    "property_values": property_datasets.build_property_values,
     # The datasets that are simply a tool. Declared together because there is
     # nothing to say about any of them individually (app.services.fields.tools).
     "files": tool_datasets.build_files,

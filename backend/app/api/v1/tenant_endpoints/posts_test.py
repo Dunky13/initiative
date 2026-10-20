@@ -11,12 +11,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.errors import CodedError
+from app.core.tools import Tool
 from app.models.platform.guild import CommunityRole
 from app.models.platform.notification import Notification, NotificationType
 from app.models.tenant.post import Post
@@ -30,6 +31,7 @@ from app.testing import (
     create_resource_grant,
     lexical_body,
     drain_notices,
+    grant_role_permission,
 )
 from app.testing import route_as
 
@@ -144,7 +146,7 @@ async def test_create_requires_feature_enabled(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "POSTS_NOT_ENABLED"
+    assert response.json() == Tool.post.disabled().body
 
 
 async def test_create_requires_the_create_permission(
@@ -160,7 +162,7 @@ async def test_create_requires_the_create_permission(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "POST_CREATE_PERMISSION_REQUIRED"
+    assert response.json() == Tool.post.create_denied().body
 
 
 async def test_list_carries_bodies_and_read_matches(
@@ -186,6 +188,10 @@ async def test_list_carries_bodies_and_read_matches(
     detail = await client.get(board.g(f"/posts/{post.id}"), headers=board.headers)
     assert detail.status_code == 200
     assert detail.json()["body"] == item["body"]
+    # Its own read carries the plug-ins' values on it; a board's rows leave
+    # them empty.
+    assert detail.json()["plugin_values"] == []
+    assert item["plugin_values"] == []
 
 
 async def test_board_pages_in_fives_by_default(
@@ -976,9 +982,9 @@ async def test_a_draft_cannot_be_exported(draft_scene: _DraftScene, role_session
 
     s = await role_session("app_user")
     await route_as(s, user_id=reader.user.id, guild_id=guild_id)
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(CodedError) as refusal:
         await ADAPTERS["post"].fetch(s, reader.user, guild_id, draft.id)
-    assert excinfo.value.status_code == 404
+    assert refusal.value.status_code == 404
 
 
 async def test_its_author_still_reaches_a_draft_everywhere(
@@ -1200,6 +1206,25 @@ async def test_the_roster_says_who_read_it_and_who_has_not(
     assert [row["id"] for row in body["read"]] == [reader.user.id]
     assert body["read"][0]["read_at"] is not None
     assert [row["id"] for row in body["unread"]] == [waiting.user.id]
+
+
+async def test_the_roster_waits_only_on_who_can_open_it(
+    client: AsyncClient, acting_user, board: Actor, session
+):
+    """Somebody whose role keeps them off the board is not ignoring the
+    notice."""
+    await _joins(acting_user, board, initiative_role="member")
+    post = await create_post(session, board.initiative, board.user, name="Roster")
+    await grant_role_permission(
+        session, board.initiative, Tool.post.view_permission, enabled=False
+    )
+
+    response = await client.get(
+        board.g(f"/posts/{post.id}/reads"), headers=board.headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["unread"] == []
 
 
 async def test_the_roster_waits_only_on_who_it_was_shared_with(

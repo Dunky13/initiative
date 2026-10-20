@@ -134,19 +134,68 @@ Moderators and community admins see one more entry at the top of the initiative 
 | **Reports** | What people have [reported](communities.md#reporting-something) here, **Open** and **Settled**. Each shows what was reported, how many people reported it, and what they said. |
 | **Members** | Who's in, and what each of them may do. |
 | **Sharing** | How widely each thing here is shared. Open one to change it. |
+| **Log** | What moderators have done here, newest first: what was removed and why, what a removed comment said, locks and warnings. **Put back** undoes a removal. |
 
-Open the reported thing to see it where it lives, then come back and settle it: **Dismiss**, **Content removed**, **Member warned**, or **Escalate**, with a note on why if you like. Settling records your decision. It doesn't do the deed — if something needs taking down, take it down first.
+Open the reported thing to see it where it lives, then come back and settle it, with a note on why if you like:
 
-**Escalate** is for the report that isn't this community's to settle. It goes to whoever runs the server, carrying what the reporters wrote.
+- **Dismiss** — nothing to do.
+- **Remove…** — takes it down, for the reason it was reported for unless you pick another. A comment becomes a line saying it was removed and why, and its replies stay; anything else goes to the bin. Whoever wrote it is told why, never by whom.
+- **Warn…** — sends whoever wrote it what you type, as a notice from the moderators. It never says who reported it.
+- **Send to the platform** — below.
+
+A report of something illegal shows **Platform notified**: it went to whoever runs the server as well, and they look at it whatever you decide here.
+
+You don't need a report to act. Moderators and community admins get a shield menu on comments, posts, pictures, wiki pages, queue items, events and tasks:
+
+- **Remove…**, as above.
+- **Warn…** — sends whoever wrote it what you type, as above, and leaves it up.
+- **Clear reactions**, on comments and posts.
+- **Hold for the platform…** — below. You won't see it either once it's held.
+
+**Lock comments**, at the top of any comment thread — on a task, a wiki page or any tool — closes it. The thread still reads, nobody adds to it or edits what's in it, moderators included, and authors can still delete their own comments. Its owner can't unlock it; a moderator can.
+
+A project manager runs the work and doesn't moderate it: they can delete their own comments, not other people's. Give a role **Full access** if it should moderate.
+
+**Send to the platform** is for the report that isn't this community's to settle. It goes to whoever runs the server, carrying what the reporters wrote and attached, and asks one question: while they look, should the reported thing stay up?
+
+- **Leave it up while they look** — everyone can still see it until they decide.
+- **Hide it now, and keep it exactly as it is** — for when the police or a court asked you to keep it, or it may be illegal. Say why, and if you like leave a note for whoever runs the server, such as who asked and a reference number. A report of something illegal starts with this one chosen.
+
+Hidden content is **held for the platform**:
+
+- Nobody in the community can see it, community admins and you included. Anything inside it is held too, like a project's tasks or a wiki's pages, and so are the pictures and files it shows.
+- Nobody here can change it or delete it. Deleting what it's inside leaves it in place, and the bin can't empty it.
+- Replies to a held comment stay, under an **Unavailable** placeholder.
+- Only whoever runs the server can release it: putting it back as it was, moving it to the bin, or deleting it for good.
+- Nobody is told. To its author it simply isn't there.
 
 ## Initiative settings
 
 - **Details** — name, colour, description, and the **Tools** card, where you choose which tools it offers.
 - **Members** — **Joining**, any waiting requests, and who's in with their roles.
 - **Roles** — make roles and set what they can do.
-- **Properties** — custom fields anything in this initiative can carry.
+- **Custom properties** — fields of your own that anything in this initiative can carry. See below.
+- **Layouts** — every layout in the initiative, when each last changed, and the way into each one's editor (managers and above). See [Layouts](layouts.md).
 - **Export** — download the initiative's data (managers and above). **Keep content in this initiative** stops anyone, managers and community admins included, from exporting things from it one at a time, or copying or moving them to another initiative. Copies and moves inside it, this whole-initiative download and the community's own export carry on as normal.
 - **Danger zone** — archive, unarchive, delete.
+
+### Custom properties
+
+A property is a field your initiative needs and Initiative didn't think of: "Budget code", "Squad", "Signed off by". Make one here, or from **Add property** on anything that has properties. Once it exists, every project, task, file, event and the rest in this initiative can carry it.
+
+| Type | Holds |
+|---|---|
+| **Text** | Anything typed. |
+| **Number** | A number, for sorting and filtering by size. |
+| **Checkbox** | Yes or no. |
+| **Date** | A day. |
+| **Date & time** | A day and a time. |
+| **URL** | A link. |
+| **Select** | One option from a list you set, each with a colour. |
+| **Multi-select** | Several options from that list. |
+| **Person** | Somebody who can open the thing it's on. |
+
+Typing a new option into a select adds it to the list. Deleting a property deletes every value set for it in the initiative, so it asks first.
 
 ### Archiving vs. deleting
 

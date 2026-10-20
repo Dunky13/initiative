@@ -14,10 +14,14 @@ import pytest
 
 from app.db.session import set_rls_context
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
+from sqlmodel import select, update
+
 from app.models.tenant.event_outbox import EventOutbox
+from app.models.tenant.webhook_delivery import WebhookDelivery
 from app.models.tenant.webhook_subscription import WebhookSubscription
-from app.services import outbox_ledger
-from app.services.tenant import outbox_poller
+from app.services import outbox_ledger, sweep_timers
+from app.services.guild_sweeps import Scope, each_guild
+from app.services.tenant import change_log, expiry, outbox_poller
 from app.db.request_context import SystemGuild
 
 
@@ -190,7 +194,8 @@ async def test_ledger_delivers_each_transaction_once(
     session, role_session, acting_user, monkeypatch
 ):
     """A drain marks each pending transaction delivered, and a second pass over
-    the same log sends nothing further."""
+    the same log sends nothing further. Past the change log's retention, the
+    changes and their ledger rows go together."""
     from app.models.platform.guild import CommunityRole
     from app.services.tenant import outbox_poller as poller
     from app.testing import create_task
@@ -234,18 +239,30 @@ async def test_ledger_delivers_each_transaction_once(
         "it ineligible on every later pass"
     )
 
+    assert (await session.exec(select(WebhookDelivery))).all()
+    aged = datetime.now(timezone.utc) - change_log.RETENTION - timedelta(hours=1)
+    await session.exec(update(EventOutbox).values(occurred_at=aged))
+    await session.commit()
+    await each_guild(
+        [(Scope.PROVISIONED, await expiry.prepare())], name="test", only=[guild_id]
+    )
+    assert (await session.exec(select(EventOutbox))).all() == []
+    assert (await session.exec(select(WebhookDelivery))).all() == []
 
-async def test_a_refused_batch_is_retried_not_lost(
+
+async def test_a_refused_batch_is_retried_not_lost_or_overtaken(
     session, role_session, acting_user, monkeypatch
 ):
     """A refusal leaves the transaction pending, so it comes back once its
-    backoff expires rather than being skipped."""
+    backoff expires rather than being skipped, and the transaction after it
+    waits for it on every pass, not only the one that was refused."""
     from app.models.platform.guild import CommunityRole
     from app.services.tenant import outbox_poller as poller
     from app.testing import create_task
 
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
     guild_id, user_id = a.guild.id, a.user.id
+    await create_task(session, a.project)
     await create_task(session, a.project)
 
     session.add(
@@ -264,25 +281,31 @@ async def test_a_refused_batch_is_retried_not_lost(
 
     attempts: list[str] = []
 
-    async def _refuse(*, target_url, secret, envelope):
+    async def _refuse_the_first(*, target_url, secret, envelope):
         attempts.append(envelope["event_id"])
-        return False
+        return len(attempts) > 1
 
-    monkeypatch.setattr(poller, "deliver", _refuse)
+    monkeypatch.setattr(poller, "deliver", _refuse_the_first)
 
     system = await role_session("app_admin")
 
-    await poller.drain_guild(system, guild_id, now=datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    await poller.drain_guild(system, guild_id, now=now)
     assert len(attempts) == 1
 
-    # Past the backoff, the same batch is offered again under the same id.
-    later = datetime.now(timezone.utc) + timedelta(hours=2)
-    await poller.drain_guild(system, guild_id, now=later)
-    assert len(attempts) == 2, "a refused batch was dropped instead of retried"
+    # Inside the backoff, the second transaction waits behind the first.
+    await poller.drain_guild(system, guild_id, now=now + timedelta(seconds=1))
+    assert len(attempts) == 1, "a later transaction overtook a refused one"
+
+    # Past the backoff, the same batch is offered again under the same id,
+    # and the second follows it.
+    await poller.drain_guild(system, guild_id, now=now + timedelta(hours=2))
+    assert len(attempts) == 3, "a refused batch was dropped instead of retried"
     assert attempts[0] == attempts[1], (
         "the retry carried a different event_id, so a receiver deduping on it "
         "would treat the redelivery as new work"
     )
+    assert attempts[2] != attempts[0]
 
 
 async def test_repeated_refusals_escalate_the_backoff(
@@ -595,18 +618,14 @@ def test_the_reach_reads_what_the_grant_lets_it_read():
 
 async def test_a_hint_wakes_the_drain_only_where_something_subscribes(monkeypatch):
     """A change in a community with no active subscription is dropped before
-    the drain, which never visits it; a subscription appearing there is what
-    lets the next change through."""
-    monkeypatch.setattr(outbox_poller, "_subscribed", set())
-    monkeypatch.setattr(outbox_poller.drain, "pending", set())
+    the drain, which never visits it."""
+    monkeypatch.setattr(outbox_poller, "_subscribed", {7})
+    monkeypatch.setattr(sweep_timers, "_woken", {})
 
-    await outbox_poller.hint("guild_7:100")
-    assert outbox_poller.drain.pending == set()
-
-    outbox_poller.subscriptions_changed(7)
-    outbox_poller.drain.pending.clear()
+    await outbox_poller.hint("guild_8:100")
     await outbox_poller.hint("guild_7:101")
-    assert outbox_poller.drain.pending == {7}
+
+    assert sweep_timers._woken == {"webhooks": {7}}
 
 
 _GH_EVENT = "plugin.tests.gh.issue_opened"

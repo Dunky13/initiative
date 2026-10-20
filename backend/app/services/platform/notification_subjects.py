@@ -20,7 +20,7 @@ from typing import Any, Mapping, Sequence
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.tools import COMMENT_TARGETS, plural_of
+from app.core.tools import CONTENT_KINDS, plural_of
 from app.models.platform.notification import Notification
 from app.models.tenant._mixins import tool_models
 from app.models.tenant.calendar_event import CalendarEvent
@@ -98,12 +98,12 @@ def _needs(line: Notification) -> list[_Need]:
 
 
 def _entity_spec(entity_type: object) -> tuple[type[Any], str] | None:
-    """The polymorphic ones: a comment names whatever it is on — any tool, or
-    one of the extras that carries a thread of its own — in ``entity_type``,
-    with the id beside it. Its model is the table that kind's plural names,
-    labelled by the model's own display column, so every kind a comment can
-    hang off is named without a list of them here."""
-    if not isinstance(entity_type, str) or entity_type not in COMMENT_TARGETS:
+    """The polymorphic ones: a comment names whatever it is on, and a
+    subscription notice whatever changed — any tool, or anything inside one —
+    in ``entity_type``, with the id beside it. Its model is the table that
+    kind's plural names, labelled by the model's own display column, so every
+    kind is named without a list of them here."""
+    if not isinstance(entity_type, str) or entity_type not in CONTENT_KINDS:
         return None
     model = tool_models()[plural_of(entity_type)]
     return model, model.display_field()

@@ -18,8 +18,7 @@ interface MentionTextProps {
  * For the one-line excerpts a list row shows, which the server cuts down to
  * words and the mentions in them, so that a person is named as they are called
  * now. It is not read as markdown: what is left is words, and parsing them
- * again would read meaning into a stray `*`. The list it sits in resolves the
- * people (`MentionedPeopleScope`).
+ * again would read meaning into a stray `*`.
  */
 export const MentionText = ({ text, communityId, disableLink }: MentionTextProps) => {
   const parts: ReactNode[] = [];

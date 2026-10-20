@@ -31,12 +31,14 @@ from app.db.session import (
 )
 from app.models.platform.guild import CommunityRole, CommunityStatus
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+from app.models.platform.plugin_service_registration import RegistrationKind
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.file import File
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.initiative import PermissionKey
 from app.services.platform.identity_refs import ensure_ref
+from app.services.platform.intake_setup import set_operations_guild
 from app.testing import (
     create_resource_grant,
     create_plugin_service_registration,
@@ -81,21 +83,39 @@ async def _install(
     granted: list[str],
     placed: str = "ab",
     requested: tuple[str, ...] = ALL_SCOPES,
+    declarative: bool = False,
 ) -> _Install:
     """An install placed in ``placed`` (of initiatives A and B), granted
     ``granted`` by the community's seat, with a live registration and a pinned
-    manifest requesting ``requested``."""
+    manifest requesting ``requested``: a container's, or a declarative plug-in's
+    when ``declarative``."""
     seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
     second = await create_initiative(session, seat.guild, seat.user, name="B")
-    definition = {
-        **_PLUGIN_DEFINITION,
-        "service": {**_PLUGIN_DEFINITION["service"], "scopes": list(requested)},
-    }
+    definition = (
+        {"plugin_kind": "service", "hosts": ["api.test"], "scopes": list(requested)}
+        if declarative
+        else {
+            **_PLUGIN_DEFINITION,
+            "service": {**_PLUGIN_DEFINITION["service"], "scopes": list(requested)},
+        }
+    )
     plugin = await create_guild_plugin(
         session, seat.guild, seat.user, definition=definition, listing_uid=LISTING
     )
     await create_plugin_service_registration(
-        session, public_id=CLIENT, listing_uid=LISTING
+        session,
+        public_id=CLIENT,
+        listing_uid=LISTING,
+        **(
+            {
+                "kind": RegistrationKind.DECLARATIVE,
+                "base_url": None,
+                "allowed_origins": [],
+                "jwks": {},
+            }
+            if declarative
+            else {}
+        ),
     )
     install = _Install(seat, plugin, second)
 
@@ -322,7 +342,9 @@ async def _set_guild_status(
         "install_disabled",
         "registration_disabled",
         "registration_keyless",
+        "registration_declarative",
         "publisher_disabled",
+        "operations_only_elsewhere",
         "another_client",
         "guild_suspended",
         "guild_on_hold",
@@ -339,6 +361,10 @@ async def test_an_install_that_may_not_act_is_refused(
         await _set_registration(session, "enabled", False)
     elif reason == "registration_keyless":
         await _set_registration(session, "jwks", None)
+    elif reason == "registration_declarative":
+        # A declarative plug-in's registration stands only for an install
+        # pinned to a declarative version, and this one is a container's.
+        await _set_registration(session, "kind", RegistrationKind.DECLARATIVE)
     elif reason == "publisher_disabled":
         await session.exec(
             text(
@@ -348,6 +374,8 @@ async def test_an_install_that_may_not_act_is_refused(
             ).bindparams(c=CLIENT)
         )
         await session.commit()
+    elif reason == "operations_only_elsewhere":
+        await _set_registration(session, "operations_only", True)
     elif reason == "another_client":
         client = "tests.someone-else"
     elif reason == "guild_suspended":
@@ -376,6 +404,18 @@ async def test_an_install_that_may_not_act_is_refused(
         )
     ).one()
     assert tuple(values) == ("", "", "", "false")
+    await s.rollback()
+
+
+async def test_an_operations_only_install_acts_in_the_operations_community(
+    session, acting_user, role_session
+):
+    install = await _install(session, acting_user, role_session, granted=["files:read"])
+    await _set_registration(session, "operations_only", True)
+    await set_operations_guild(session, install.guild.id)
+
+    s, context = await _route(role_session, install, ["files:read"])
+    assert context.live
     await s.rollback()
 
 
@@ -451,6 +491,31 @@ async def test_the_gates_answer_for_an_install(session, acting_user, role_sessio
     )
     assert set((await narrowed.exec(select(File.name))).all()) == {"Shared A"}
     await narrowed.rollback()
+
+
+async def test_initiative_acts_as_a_declarative_install(
+    session, acting_user, role_session
+):
+    """A declarative plug-in is issued no token: Initiative routes as its
+    install, naming the client its registration is, with the read scopes its
+    manifest asks for at the top. The gates answer for it as for any install."""
+    install = await _install(
+        session,
+        acting_user,
+        role_session,
+        granted=["files:read"],
+        requested=("files:read",),
+        declarative=True,
+    )
+    shared = await create_file(session, install.a, install.seat.user, name="Shared A")
+    await create_resource_grant(session, shared, all_initiative_members=True)
+    await create_file(session, install.a, install.seat.user, name="Private A")
+
+    s, context = await _route(role_session, install, ["files:read"])
+    assert context.live
+    assert (set(context.install_read), context.install_write) == ({"files"}, ())
+    assert (await s.exec(select(File.name))).all() == ["Shared A"]
+    await s.rollback()
 
 
 async def test_an_install_without_a_tool_scope_reads_none_of_it(
@@ -713,13 +778,15 @@ async def test_a_new_transaction_replays_the_install(
                 # Whether it is a declarative plug-in's, which needs no location
                 # or keys to be live.
                 "kind",
+                # Whether it is live outside the operations community.
+                "operations_only",
             },
         ),
         # Whether the registration's publisher is on.
         ("publishers", {"id", "enabled"}),
-        # A member token's standing: the member's own membership row and
-        # whether their account is active.
-        ("guild_memberships", {"guild_id", "user_id"}),
+        # A member token's standing: the member's own membership row, whether
+        # it is live (a guest's ends), and whether their account is active.
+        ("guild_memberships", {"guild_id", "user_id", "guest_until", "role"}),
         ("users", {"id", "status"}),
     ],
 )
@@ -742,13 +809,9 @@ async def test_the_install_floor_reads_only_what_its_standing_needs(
 
 async def _sector_refs(session, install: _Install) -> dict[str, str]:
     """References in and around the install's sector, minted as the system
-    engine would: the seat's and the community's in its own sector, the seat's
-    at another install, and the seat's for billing."""
-    guild_id, install_id, user_id = (
-        install.guild.id,
-        install.plugin.id,
-        install.seat.user.id,
-    )
+    engine would: the seat's and the community's in its own plug-in's sector,
+    the seat's for another plug-in, and the seat's for billing."""
+    guild_id, user_id = install.guild.id, install.seat.user.id
     refs = {
         "own": await ensure_ref(
             session,
@@ -756,7 +819,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=user_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id,
+            sector_plugin=CLIENT,
         ),
         "guild": await ensure_ref(
             session,
@@ -764,7 +827,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=guild_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id,
+            sector_plugin=CLIENT,
         ),
         "other_install": await ensure_ref(
             session,
@@ -772,7 +835,7 @@ async def _sector_refs(session, install: _Install) -> dict[str, str]:
             entity_id=user_id,
             purpose=IdentityPurpose.plugin,
             sector_guild_id=guild_id,
-            sector_id=install_id + 1000,
+            sector_plugin="someone.else",
         ),
         "billing": await ensure_ref(
             session,
@@ -829,7 +892,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
 
     insert = text(
         "INSERT INTO public.identity_refs "
-        "(ref, entity_type, entity_id, purpose, sector_guild_id, sector_id, "
+        "(ref, entity_type, entity_id, purpose, sector_guild_id, sector_plugin, "
         "created_at, retired_at) "
         "VALUES (:ref, :kind, :entity, :purpose, :g, :i, now(), :retired)"
     )
@@ -838,7 +901,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
         entity=install.seat.user.id + 1,
         purpose="plugin",
         g=install.guild.id,
-        i=install.plugin.id,
+        i=CLIENT,
         retired=None,
     )
 
@@ -853,7 +916,7 @@ async def test_the_install_role_reads_and_mints_in_its_own_sector_only(
     assert await attempt(insert, ref="uplu_minted-here", **own_sector)
     for n, refused in enumerate(
         (
-            {"i": install.plugin.id + 1000},
+            {"i": "someone.else"},
             {"g": install.guild.id + 1000},
             {"purpose": "billing"},
             {"kind": "guild", "entity": install.guild.id + 1000},

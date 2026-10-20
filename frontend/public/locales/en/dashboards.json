@@ -167,7 +167,18 @@
     "title": "Title",
     "description": "Description",
     "updated_at": "Updated",
-    "created_by": "Created by"
+    "created_by": "Created by",
+    "property": "Property",
+    "property_id": "Property",
+    "value_text": "Text",
+    "value_number": "Number",
+    "value_boolean": "Checkbox",
+    "value_date": "Date",
+    "value_datetime": "Date and time",
+    "value_user_id": "Person",
+    "value_json": "Choices",
+    "entity_type": "Item type",
+    "entity_id": "Item"
   },
   "filterBuilder": {
     "add": "Add filter",
@@ -243,7 +254,8 @@
     "card": "Card",
     "column": "Column",
     "date": "Date",
-    "total": "Total"
+    "total": "Total",
+    "series": "Split by"
   },
   "builder": {
     "dataset": "Show data from",
@@ -254,8 +266,9 @@
     "asItIs": "Value",
     "exactTime": "Exact time",
     "groupBy": "Group by",
-    "everythingTogether": "Nothing — one total",
-    "groupByHelp": "Rows with the same value become one row; counts and totals are worked out for each.",
+    "groupedBy": "One row for each {{columns}}",
+    "notGrouped": "Every row, as it is",
+    "groupByHelp": "Once a column is a count or a total, it's worked out for each combination of the other columns.",
     "statement": "The statement this builds",
     "tabBuild": "Build",
     "tabSql": "SQL",
@@ -273,7 +286,9 @@
     "sum": "Total",
     "avg": "Average",
     "min": "Lowest",
-    "max": "Highest"
+    "max": "Highest",
+    "running_count": "Running count",
+    "running_sum": "Running total"
   },
   "bucket": {
     "day": "By day",
@@ -288,7 +303,9 @@
     "calendar_events": "Calendar events",
     "counters": "Counters",
     "counter_groups": "Counter groups",
-    "task_statuses": "Task statuses"
+    "task_statuses": "Task statuses",
+    "property_values": "Property values",
+    "property_definitions": "Properties"
   },
   "viewMode": {
     "label": "Run dashboard as",

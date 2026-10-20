@@ -237,9 +237,10 @@ async def test_the_seat_writes_only_its_own_switches(engine):
     """The seat changes what its community asks of the people reaching it, and
     nothing else about the community.
 
-    Five columns: whether a second factor is required, whether the session
-    standard is held to, and the three that say what a notification may leave
-    carrying. A name, an icon, an owner
+    Seven columns: whether a second factor is required, whether the session
+    standard is held to, the three that say what a notification may leave
+    carrying, whether search ranks by engagement, and how long a guest may
+    stay. A name, an icon, an owner
     or a lifecycle status is not the seat's, and a new column on ``guilds`` is
     not either until a migration says so.
     """
@@ -249,6 +250,8 @@ async def test_the_seat_writes_only_its_own_switches(engine):
         "allow_push_notifications",
         "allow_email_notifications",
         "redact_notification_content",
+        "allow_engagement_ranking",
+        "guest_max_days",
     }
     async with engine.connect() as conn:
         held = await conn.scalar(
@@ -917,7 +920,7 @@ async def test_guild_member_view_publishes_the_guild_projection(engine):
     """What a guild-routed session may read of a person is a catalog fact.
 
     ``public.guild_member_profiles`` carries the profile's columns plus
-    ``display_name``, and the guild path holds SELECT on the view and nothing
+    ``display_name``, and the guild path and a guest hold SELECT on the view and nothing
     else — the schema's default privileges would otherwise have granted all
     four verbs (migration 0220).
     """
@@ -942,26 +945,22 @@ async def test_guild_member_view_publishes_the_guild_projection(engine):
             f"{sorted(expected - view_columns)}"
         )
 
-        can_read = (
-            await conn.execute(
-                text(
-                    "SELECT has_table_privilege('app_guild_base', "
-                    "'public.guild_member_profiles', 'SELECT')"
-                )
-            )
-        ).scalar()
-        assert can_read, "app_guild_base must be able to read the guild projection"
-
-        for verb in ("INSERT", "UPDATE", "DELETE"):
-            can_write = (
-                await conn.execute(
-                    text(
-                        "SELECT has_table_privilege('app_guild_base', "
-                        f"'public.guild_member_profiles', '{verb}')"
+        # The guild floor and the guest floor read it; neither writes it.
+        for floor in ("app_guild_base", "guest_base"):
+            for verb in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                held = (
+                    await conn.execute(
+                        text(
+                            "SELECT has_table_privilege(:floor, "
+                            f"'public.guild_member_profiles', '{verb}')"
+                        ),
+                        {"floor": floor},
                     )
+                ).scalar()
+                assert held == (verb == "SELECT"), (
+                    f"{floor} {'lacks' if verb == 'SELECT' else 'holds'} {verb} "
+                    "on the guild projection"
                 )
-            ).scalar()
-            assert not can_write, f"app_guild_base must not hold {verb} on the view"
 
         # The cross-guild profile page reads ``user_profiles``, which has no
         # name in it, so the platform floor has no business with this one.

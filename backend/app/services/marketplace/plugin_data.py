@@ -59,7 +59,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Mapping, Optional, TypeVar
+from typing import Any, Collection, Mapping, Optional, TypeVar
 
 import httpx
 from sqlmodel import select
@@ -78,8 +78,18 @@ from app.core.security import (
 )
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
+from app.schemas.tenant.plugin_data import (
+    PluginDataResponse,
+    PluginSummaryListResponse,
+    PluginSummaryRead,
+    PluginSummaryReturn,
+)
 from app.services.fields.spec import FieldType
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.registration_lookup import (
     RegistrationSnapshot,
@@ -89,7 +99,7 @@ from app.services.marketplace.registration_lookup import (
     service_public_id,
 )
 from app.services.query.rows import RowColumn
-from app.services.marketplace.service_plugins import is_admin_only
+from app.services.marketplace.service_plugins import _requests, is_admin_only
 from app.services.safe_http import build_validated_request
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.webhook_target_url import (
@@ -191,23 +201,37 @@ def _endpoints(definition: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     return [entry for entry in declared if isinstance(entry, dict)]
 
 
-def find_read_endpoint(
-    definition: Mapping[str, Any] | None, endpoint_id: str
+def endpoint_by_id(
+    definition: Mapping[str, Any] | None,
+    endpoint_id: Any,
+    *,
+    directions: Optional[Collection[str]] = None,
 ) -> Optional[dict[str, Any]]:
-    """One readable endpoint from the *pinned* definition, or None.
+    """One endpoint of the *pinned* definition by its id, of one of
+    ``directions`` (any, when none are given), or None.
 
     Pinned rather than current on purpose: what an install offers is the version
     its guild chose, so publishing a new one never silently widens what an
     existing install will answer.
+    """
+    for endpoint in _endpoints(definition):
+        if endpoint.get("id") == endpoint_id and (
+            directions is None or endpoint.get("direction") in directions
+        ):
+            return endpoint
+    return None
+
+
+def find_read_endpoint(
+    definition: Mapping[str, Any] | None, endpoint_id: str
+) -> Optional[dict[str, Any]]:
+    """One readable endpoint from the pinned definition, or None.
 
     Readable rather than declared, because this is the fetch path. A write and
     an emission are both real endpoints and neither is reachable from here — a
     dashboard rendering a tile must not be a way to make a plug-in act.
     """
-    for endpoint in _endpoints(definition):
-        if endpoint.get("id") == endpoint_id and endpoint.get("direction") == "read":
-            return endpoint
-    return None
+    return endpoint_by_id(definition, endpoint_id, directions=("read",))
 
 
 # --- reading an answer through what was declared ----------------------------
@@ -432,6 +456,26 @@ def _required_connection_ids(endpoint: Mapping[str, Any]) -> tuple[list[str], bo
     return [], True
 
 
+def _request_connection(
+    request: Mapping[str, Any], actor: Optional[str]
+) -> Optional[str]:
+    """The connection whose credential ``request`` carries on a call made as
+    ``actor``: the one it names for every call, or, when it names one per
+    actor, the one it names for ``actor``. ``None`` when it names none for
+    ``actor``, as on a call made as no actor."""
+    named = request.get("connection")
+    if isinstance(named, dict):
+        named = named.get(actor) if actor is not None else None
+    return named if isinstance(named, str) else None
+
+
+def _connection_ids(endpoint: Mapping[str, Any], actor: Optional[str]) -> list[str]:
+    """The connections the endpoint's requests carry on a call made as
+    ``actor`` (:func:`_request_connection`), once each."""
+    named = (_request_connection(request, actor) for request in _requests(endpoint))
+    return list(dict.fromkeys(name for name in named if name is not None))
+
+
 async def _resolve_connections(
     session: AsyncSession,
     *,
@@ -452,13 +496,33 @@ async def _resolve_connections(
     someone who has not is told to connect rather than being served the other
     person's view.
 
-    ``actor`` is set on a call another plug-in made: ``installation`` has no
-    member (``user_id`` is ``None``), so a per-member connection is never
-    satisfied, and ``member`` hands on only the member's own handles, not the
-    community's.
+    ``actor`` is set on a call made as one of the endpoint's actors:
+    ``installation`` has no member (``user_id`` is ``None``), so a per-member
+    connection is never satisfied, and ``member`` hands on only the member's
+    own handles, not the community's. A call made as an actor also needs
+    each connection of that actor's its requests carry
+    (:func:`_connection_ids`): the member's own, or the community's, as an
+    ``all_of`` term would, which a request naming one per actor need not name
+    in ``requires``.
     """
     required, needs_all = _required_connection_ids(endpoint)
-    if not required:
+    #: The actor's own connections the call carries beyond those ``requires``
+    #: names, every one needed.
+    own = [
+        connection_id
+        for connection_id in (
+            _connection_ids(endpoint, actor)
+            if actor in ("member", "installation")
+            else ()
+        )
+        if connection_id not in required
+        and (
+            plugin_config_service.connection_by_id(plugin.definition, connection_id)
+            or {}
+        ).get("scope")
+        == ("interactive" if actor == "member" else "static")
+    ]
+    if not required and not own:
         return {}, {}
 
     config = plugin.config or {}
@@ -468,10 +532,11 @@ async def _resolve_connections(
     member_refs: set[str] = set()
     satisfied: list[str] = []
     fields: dict[str, dict[str, Any]] = {}
-    #: The first reason a candidate failed, reported when nothing satisfies.
+    #: The first reason a candidate failed, reported when nothing satisfies:
+    #: the member's own come first, so a call they cannot make says so.
     refusal: PluginDataError | None = None
 
-    for connection_id in required:
+    for connection_id in [*own, *required]:
         connection = plugin_config_service.connection_by_id(
             plugin.definition, connection_id
         )
@@ -507,7 +572,7 @@ async def _resolve_connections(
                 or not plugin_config_service.runs_vendor_flow(connection)
             )
             if not usable or not plugin_config_service.is_satisfied(
-                connection, row.config, row.config_secrets
+                connection, row.config, row.secret_fields
             ):
                 refusal = refusal or PluginDataError(
                     PluginDataMessages.CONNECTION_REQUIRED, 409
@@ -538,9 +603,12 @@ async def _resolve_connections(
             config.get(connection_id)
         )
 
-    if needs_all and len(satisfied) != len(required):
-        raise refusal or PluginDataError(PluginDataMessages.NEEDS_CONFIGURATION, 409)
-    if not needs_all and not satisfied:
+    met = [connection_id for connection_id in required if connection_id in satisfied]
+    if (
+        any(connection_id not in satisfied for connection_id in own)
+        or (needs_all and len(met) != len(required))
+        or (not needs_all and not met)
+    ):
         raise refusal or PluginDataError(PluginDataMessages.NEEDS_CONFIGURATION, 409)
     # For ``any_of`` the handles of every satisfied candidate travel, and the plug-in
     # picks the least-privileged one it recognizes. They are part of the cache
@@ -569,10 +637,14 @@ async def _member_connection(
 
 
 async def _load_registration(
-    public_id: Optional[str], *, plugin: Optional[GuildPlugin] = None
+    public_id: Optional[str],
+    *,
+    guild_id: Optional[int],
+    plugin: Optional[GuildPlugin] = None,
 ) -> RegistrationSnapshot:
-    """Where this plug-in lives and whether the operator still allows it: the
-    registration for ``public_id``, or the one behind ``plugin``.
+    """Where this plug-in lives and whether the operator still allows it in
+    community ``guild_id``: the registration for ``public_id``, or the one
+    behind ``plugin``.
 
     Read from the registration snapshot every request path shares
     (:mod:`app.services.marketplace.registration_lookup`), which an operator's
@@ -588,7 +660,7 @@ async def _load_registration(
     )
     if row is None:
         raise PluginDataError(PluginDataMessages.SERVICE_NOT_REGISTERED, 404)
-    if not row.live:
+    if not row.live_in(guild_id):
         raise PluginDataError(PluginDataMessages.SERVICE_DISABLED, 409)
     return row
 
@@ -659,8 +731,9 @@ def _cache_key(
     }
     if is_declarative(plugin.definition):
         # What a declarative endpoint's expressions read, a member's own
-        # connection's fields among them.
+        # connection's fields and the install's settings among them.
         depends["fields"] = fields
+        depends["installed"] = plugin_config_service.install_settings(plugin)
     fingerprint = hashlib.sha256(
         json.dumps(
             depends,
@@ -852,13 +925,24 @@ async def _call_plugin(
     transport: httpx.AsyncBaseTransport | None,
     read: Callable[[httpx.Request | Answered], Awaitable[T]],
     caller: Optional[CallingPlugin] = None,
+    viewer: Optional[str] = None,
+    subject: Optional[Mapping[str, Any]] = None,
+    actor: Optional[str] = None,
+    item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
 ) -> T:
     """One upstream call, under this worker's in-flight cap for the plug-in, and
     what ``read`` made of its answer. Sent once: nothing here retries.
 
+    ``viewer`` and ``subject`` are a container's action's: the reader who ran
+    it, by this install's reference for them, and the item it was run on.
+
     A declarative plug-in is called by Initiative itself
     (:func:`~app.services.marketplace.declarative.call_endpoint`), with no
     context token and no signature, since there is no plug-in to receive either.
+    Its action's call names the ``actor`` whose credential it runs on, the
+    ``item`` and the list ``element`` it was run from, which the endpoint's
+    expressions read.
     """
     declarative = is_declarative(plugin.definition)
     if not declarative and not plugin_platform_signing_enabled():
@@ -889,26 +973,37 @@ async def _call_plugin(
                         params=params,
                         refs=refs,
                         fields=fields,
-                        actor=caller.actor if caller is not None else None,
+                        actor=caller.actor if caller is not None else actor,
+                        item=item,
+                        element=element,
                     )
                 )
             )
-        # What this install calls the guild, which the token carries.
-        guild_ref = await ensure_plugin_guild_ref(
-            guild_id=guild_id, plugin_install_id=plugin.id
-        )
+        # What this plug-in calls the guild, and where the guild stands, which
+        # the token carries.
+        community = int(guild_id or 0)
+        try:
+            guild_ref = await ensure_plugin_guild_ref(
+                guild_id=community, public_id=public_id
+            )
+        except PluginNameRefused as exc:
+            raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409) from exc
+        status = await community_status(community)
         try:
             token, _ = mint_context_token(
                 public_id=public_id,
                 guild_ref=guild_ref,
                 plugin_install_id=plugin.id,
                 scope="endpoint",
+                community_status=status,
                 endpoint_id=endpoint_id,
                 connection_refs=refs,
                 caller=caller.public_id if caller is not None else None,
                 actor=caller.actor if caller is not None else None,
                 member=caller.member_ref if caller is not None else None,
                 initiative_id=caller.initiative_id if caller is not None else None,
+                viewer=viewer,
+                subject=subject,
             )
         except PluginPlatformSigningNotConfiguredError as exc:
             raise PluginDataError(
@@ -961,7 +1056,7 @@ async def fetch_plugin_source(
     plugin: GuildPlugin,
     endpoint_id: str,
     raw_params: str | None,
-    user_id: int,
+    user_id: int | None,
     is_guild_admin: bool,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> PluginDataResult:
@@ -985,7 +1080,9 @@ async def fetch_plugin_source(
     if not plugin.enabled:
         raise PluginDataError(PluginDataMessages.PLUGIN_DISABLED, 409)
 
-    registration = await _load_registration(None, plugin=plugin)
+    registration = await _load_registration(
+        None, guild_id=routed_guild_id(session), plugin=plugin
+    )
     params, canonical = validate_params(endpoint, raw_params)
     refs, fields = await _resolve_connections(
         session, plugin=plugin, endpoint=endpoint, user_id=user_id
@@ -1066,6 +1163,73 @@ async def cached_call(
         return result, False
     finally:
         _pending.pop(key, None)
+
+
+# --- where the community stands -----------------------------------------------
+#
+# A manifest may name one of its reads as its ``community_summary``: where the
+# community stands with the plug-in (runs used this period, credits left). The
+# community's Usage tab draws it, and so does the operator's sheet for the
+# community. Both read it through these, on a session already routed to the
+# community.
+
+
+def community_summary_endpoint(plugin: GuildPlugin) -> dict[str, Any] | None:
+    """The read an enabled install names as its ``community_summary``, or None."""
+    endpoint_id = (plugin.definition or {}).get("community_summary")
+    if not plugin.enabled or not isinstance(endpoint_id, str):
+        return None
+    return find_read_endpoint(plugin.definition, endpoint_id)
+
+
+async def community_summaries(session: AsyncSession) -> PluginSummaryListResponse:
+    """The installs whose summary declares something it returns, with what it
+    returns. Nothing is fetched here: each summary is read on its own, so one
+    slow plug-in holds up only its own card."""
+    plugins = (await session.exec(select(GuildPlugin).order_by(GuildPlugin.id))).all()
+    items = []
+    for plugin in plugins:
+        returns = (community_summary_endpoint(plugin) or {}).get("returns") or []
+        if returns:
+            items.append(
+                PluginSummaryRead(
+                    plugin_id=plugin.id,
+                    name=plugin.name,
+                    returns=[PluginSummaryReturn(**value) for value in returns],
+                )
+            )
+    return PluginSummaryListResponse(items=items)
+
+
+async def read_community_summary(
+    session: AsyncSession, *, plugin_id: int, user_id: int | None
+) -> PluginDataResponse:
+    """One install's summary, read with the community's admin standing.
+
+    ``user_id`` is the reader when they are one of the community's people, so a
+    per-member connection can answer for them; an operator reads with none. An
+    install that names no summary, or is switched off, answers 404.
+    """
+    plugin = (
+        await session.exec(select(GuildPlugin).where(GuildPlugin.id == plugin_id))
+    ).first()
+    endpoint = community_summary_endpoint(plugin) if plugin else None
+    if plugin is None or endpoint is None:
+        raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
+    result = await fetch_plugin_source(
+        session,
+        plugin=plugin,
+        endpoint_id=endpoint["id"],
+        raw_params=None,
+        user_id=user_id,
+        is_guild_admin=True,
+    )
+    return PluginDataResponse(
+        rows=result.rows,
+        values=result.values,
+        fetched_at=result.fetched_at,
+        cached=result.cached,
+    )
 
 
 # --- filling a menu ---------------------------------------------------------
@@ -1193,11 +1357,18 @@ async def resolve_param_options(
 ) -> tuple[list[dict[str, str]], Optional[str]]:
     """The values one parameter permits, from the read its plug-in named.
 
+    The parameter may be a read's, for a widget's binding, or a write's, for
+    the question an action asks before it runs: either way what is called is
+    the read the parameter's ``options_from`` names, never the endpoint
+    declaring it, so filling in a form is no way to make a plug-in act.
+
     Returns the options and, when there are none, why — never an exception for
     a source that simply would not resolve. The caller draws a menu when there
     is one and leaves the field typeable when there is not.
     """
-    endpoint = find_read_endpoint(plugin.definition, endpoint_id)
+    endpoint = endpoint_by_id(
+        plugin.definition, endpoint_id, directions=("read", "write")
+    )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
     # A form for an endpoint the caller may not read is not theirs to fill in.

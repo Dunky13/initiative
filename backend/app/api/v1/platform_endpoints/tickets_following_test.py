@@ -194,7 +194,7 @@ async def test_someone_elses_ticket_reads_as_missing(client, acting_user, desk):
     for response in (
         await client.get(f"{TICKETS}/{theirs}", headers=filer.headers),
         await client.post(
-            f"{TICKETS}/{theirs}/replies", json={"body": "Hi"}, headers=filer.headers
+            f"{TICKETS}/{theirs}/replies", data={"body": "Hi"}, headers=filer.headers
         ),
     ):
         assert response.status_code == 404
@@ -213,7 +213,7 @@ async def test_answering_a_case_that_waits_on_you_moves_it_back(
 
     response = await client.post(
         f"{TICKETS}/{task_id}/replies",
-        json={"body": "It was in my other bag."},
+        data={"body": "It was in my other bag."},
         headers=filer.headers,
     )
     assert response.status_code == 201, response.text
@@ -248,7 +248,7 @@ async def test_a_closed_case_takes_no_answer(client, session, acting_user, desk)
     assert detail["state"] == "closed"
     assert detail["can_reply"] is False
     response = await client.post(
-        f"{TICKETS}/{task_id}/replies", json={"body": "Hello?"}, headers=filer.headers
+        f"{TICKETS}/{task_id}/replies", data={"body": "Hello?"}, headers=filer.headers
     )
     assert response.status_code == 409
     assert response.json()["detail"] == TicketMessages.REPLY_NOT_TAKEN
@@ -262,7 +262,7 @@ async def test_feedback_waits_for_the_team_to_speak_first(client, acting_user, d
     assert detail["conversation"] == "staff_first"
     assert detail["can_reply"] is False
     refused = await client.post(
-        f"{TICKETS}/{task_id}/replies", json={"body": "Also..."}, headers=filer.headers
+        f"{TICKETS}/{task_id}/replies", data={"body": "Also..."}, headers=filer.headers
     )
     assert refused.status_code == 409
 
@@ -398,7 +398,7 @@ async def test_the_cases_assignees_hear_when_the_filer_answers(
 
     response = await client.post(
         f"{TICKETS}/{task_id}/replies",
-        json={"body": "It was in my other bag."},
+        data={"body": "It was in my other bag."},
         headers=filer.headers,
     )
     assert response.status_code == 201, response.text
@@ -409,19 +409,271 @@ async def test_the_cases_assignees_hear_when_the_filer_answers(
     assert await _comment_notices(session, filer.user.id) == []
 
 
-async def test_an_unassigned_case_tells_nobody_of_the_answer(
+async def test_an_unassigned_case_tells_everyone_who_works_it_of_the_answer(
+    client, session, acting_user, desk
+):
+    """Nobody has taken it, so the people who can read it hear rather than
+    nobody — once, rolled into one line for the case."""
+    filer = await acting_user("member")
+    task_id = await _file(filer.user)
+
+    for body in ("Anyone there?", "Still stuck."):
+        response = await client.post(
+            f"{TICKETS}/{task_id}/replies", data={"body": body}, headers=filer.headers
+        )
+        assert response.status_code == 201, response.text
+
+    staff_id = desk["staff"].user.id
+    assert await _comment_notices(session, staff_id) == []
+    replied = await _case_notices(session, staff_id, NotificationType.case_replied)
+    assert [notice["task_id"] for notice in replied] == [task_id, task_id]
+    assert {notice["rollup_key"] for notice in replied} == {f"case:{task_id}"}
+    assert (
+        await _case_notices(session, filer.user.id, NotificationType.case_replied) == []
+    )
+
+
+async def test_a_taken_case_tells_only_its_assignees_of_the_answer(
     client, session, acting_user, desk
 ):
     filer = await acting_user("member")
     task_id = await _file(filer.user)
+    await _assign(session, desk, task_id, desk["staff"].user.id)
 
     response = await client.post(
-        f"{TICKETS}/{task_id}/replies",
-        json={"body": "Anyone there?"},
-        headers=filer.headers,
+        f"{TICKETS}/{task_id}/replies", data={"body": "Hi."}, headers=filer.headers
     )
     assert response.status_code == 201, response.text
-    assert await _comment_notices(session, desk["staff"].user.id) == []
+    assert (
+        await _case_notices(
+            session, desk["staff"].user.id, NotificationType.case_replied
+        )
+        == []
+    )
+
+
+# ── Telling the people who work it ───────────────────────────────────────────
+
+
+async def _case_notices(
+    session, user_id: int, kind: NotificationType = NotificationType.case_opened
+) -> list[dict]:
+    await set_rls_context(session, Unattributed())
+    rows = (
+        await session.exec(
+            select(NoticeOutboxItem)
+            .where(NoticeOutboxItem.user_id == user_id)
+            .where(NoticeOutboxItem.type == kind.value)
+            .order_by(NoticeOutboxItem.id)
+        )
+    ).all()
+    return [{**row.data, "rollup_key": row.rollup_key} for row in rows]
+
+
+async def _colleague(session, acting_user, desk, *, shared: bool):
+    """A member of the operations community's initiative, with the cases'
+    project shared with them or not."""
+    from app.models.tenant.resource_grant import ResourceAccessLevel
+    from app.testing import create_resource_grant
+
+    staff = desk["staff"]
+    colleague = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=staff.guild,
+        initiative=staff.initiative,
+        initiative_role="member",
+    )
+    if shared:
+        await create_resource_grant(
+            session, staff.project, level=ResourceAccessLevel.write, user=colleague.user
+        )
+    await set_rls_context(session, Unattributed())
+    return colleague
+
+
+async def test_a_new_case_is_told_to_everyone_who_can_read_it(
+    session, acting_user, desk
+):
+    sharer = await _colleague(session, acting_user, desk, shared=True)
+    outsider = await _colleague(session, acting_user, desk, shared=False)
+    filer = await acting_user("member")
+    task_id = await _file(filer.user)
+
+    for reader in (desk["staff"], sharer):
+        (told,) = await _case_notices(session, reader.user.id)
+        assert told["task_id"] == task_id
+        assert told["stream"] == "support"
+        assert told["target_path"] == f"/go/task/{task_id}"
+    assert await _case_notices(session, outsider.user.id) == []
+    assert await _case_notices(session, filer.user.id) == []
+
+
+async def test_a_filer_who_works_cases_is_not_told_of_their_own(
+    session, acting_user, desk
+):
+    sharer = await _colleague(session, acting_user, desk, shared=True)
+    await _file(sharer.user)
+    assert await _case_notices(session, sharer.user.id) == []
+    assert len(await _case_notices(session, desk["staff"].user.id)) == 1
+
+
+async def test_a_repeat_of_an_open_case_tells_nobody_again(session, desk):
+    for _ in range(2):
+        outcome = await open_case(
+            IntakeStream.support, title="A thing went wrong", dedupe_key="same:1"
+        )
+        assert outcome is not None
+    assert len(await _case_notices(session, desk["staff"].user.id)) == 1
+
+
+# ── Taking a case ────────────────────────────────────────────────────────────
+
+
+async def _take(client, actor, task_id: int):
+    return await client.post(
+        actor.g(f"/tasks/{task_id}/case/take"), headers=actor.headers
+    )
+
+
+async def test_taking_a_case_assigns_you_and_puts_it_to_work(
+    client, session, acting_user, desk
+):
+    sharer = await _colleague(session, acting_user, desk, shared=True)
+    filer = await acting_user("member")
+    task_id = await _file(filer.user)
+
+    response = await _take(client, sharer, task_id)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [a["id"] for a in body["assignees"]] == [sharer.user.id]
+    assert body["task_status_id"] == desk["active"]
+
+    # A second person taking it joins rather than replacing; the status, no
+    # longer waiting to be picked up, stays.
+    await _move(session, desk, task_id, desk["awaiting"])
+    response = await _take(client, desk["staff"], task_id)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {a["id"] for a in body["assignees"]} == {
+        sharer.user.id,
+        desk["staff"].user.id,
+    }
+    assert body["task_status_id"] == desk["awaiting"]
+
+    # Taking it again changes nothing.
+    response = await _take(client, sharer, task_id)
+    assert response.status_code == 200
+    assert len(response.json()["assignees"]) == 2
+
+
+async def test_two_people_taking_a_case_at_once_are_both_assigned(
+    session, acting_user, desk, monkeypatch
+):
+    """Each on a session of their own, as two requests would be. The second
+    asks while the first has taken it and not yet committed; it must read who
+    has the case only once the first is done, or it writes the first out."""
+    import asyncio
+
+    from sqlalchemy.orm import selectinload
+
+    from app.services.platform.grant_cases import _as_reader
+    from app.services.tenant import cases as cases_service
+    from app.services.tenant import task_creation
+
+    sharer = await _colleague(session, acting_user, desk, shared=True)
+    filer = await acting_user("member")
+    task_id = await _file(filer.user)
+    taken = asyncio.Event()
+    committed = asyncio.Event()
+    replace = task_creation.set_task_assignees
+
+    async def after_the_first(own, task, assignee_ids, **kwargs):
+        # The second writes only after the first has committed, so a stale
+        # read of who had it would replace them.
+        if desk["staff"].user.id in assignee_ids:
+            await committed.wait()
+        return await replace(own, task, assignee_ids, **kwargs)
+
+    monkeypatch.setattr(task_creation, "set_task_assignees", after_the_first)
+
+    async def take(user, *, first: bool) -> None:
+        own, _guild_id = await _as_reader(user)
+        assert own is not None
+        try:
+            task = (
+                await own.exec(
+                    select(Task)
+                    .where(Task.id == task_id)
+                    .options(selectinload(Task.project))
+                )
+            ).one()
+            if not first:
+                await taken.wait()
+            await cases_service.take(own, task, user.id)
+            if first:
+                taken.set()
+                # Long enough for the second to ask.
+                await asyncio.sleep(0.3)
+            await own.commit()
+            if first:
+                committed.set()
+        finally:
+            await own.close()
+
+    await asyncio.gather(
+        take(sharer.user, first=True), take(desk["staff"].user, first=False)
+    )
+
+    await set_rls_context(session, SystemGuild(desk["guild_id"]))
+    held = set(
+        (
+            await session.exec(
+                select(TaskAssignee.user_id).where(TaskAssignee.task_id == task_id)
+            )
+        ).all()
+    )
+    await set_rls_context(session, Unattributed())
+    assert held == {sharer.user.id, desk["staff"].user.id}
+
+
+async def test_what_leaves_the_app_names_no_case(session, acting_user, desk):
+    """The email and the push say a case opened, never which: its title is
+    read in the app, by whoever can still read it then."""
+    filer = await acting_user("member")
+    await _file(filer.user, subject="Secret subject")
+
+    await set_rls_context(session, Unattributed())
+    (row,) = (
+        await session.exec(
+            select(NoticeOutboxItem)
+            .where(NoticeOutboxItem.user_id == desk["staff"].user.id)
+            .where(NoticeOutboxItem.type == NotificationType.case_opened.value)
+        )
+    ).all()
+    leaving = [row.push_title, row.push_body, row.email_subject, row.email_headline]
+    leaving += [row.email_body]
+    assert any(leaving), "nothing would leave the app to check"
+    for text in filter(None, leaving):
+        assert "Staff title" not in text
+        assert "Secret subject" not in text
+
+
+async def test_taking_needs_write_and_a_case(client, session, acting_user, desk):
+    outsider = await _colleague(session, acting_user, desk, shared=False)
+    filer = await acting_user("member")
+    task_id = await _file(filer.user)
+    assert (await _take(client, outsider, task_id)).status_code == 404
+
+    staff = desk["staff"]
+    created = await client.post(
+        staff.g("/tasks/"),
+        json={"title": "Not a case", "project_id": desk["project_id"]},
+        headers=staff.headers,
+    )
+    assert created.status_code == 201, created.text
+    response = await _take(client, staff, created.json()["id"])
+    assert response.status_code == 404
+    assert response.json()["detail"] == TaskMessages.NOT_A_CASE
 
 
 @pytest.fixture
@@ -478,7 +730,7 @@ async def test_the_requesters_other_tabs_hear_their_own_answer(
 
     response = await client.post(
         f"{TICKETS}/{task_id}/replies",
-        json={"body": "It was in my other bag."},
+        data={"body": "It was in my other bag."},
         headers=filer.headers,
     )
     assert response.status_code == 201, response.text
@@ -646,3 +898,83 @@ async def test_a_reply_keeps_the_audience_of_what_it_answers(client, acting_user
     )
     assert response.status_code == 400
     assert response.json()["detail"] == CommentMessages.AUDIENCE_MISMATCH
+
+
+# ── Where the setting shows ──────────────────────────────────────────────────
+
+
+async def _offers_cases(client, actor) -> bool:
+    response = await client.get(
+        "/api/v1/me/notification-preferences", headers=actor.headers
+    )
+    assert response.status_code == 200, response.text
+    return "cases" in {row["category"] for row in response.json()["categories"]}
+
+
+async def test_the_cases_setting_shows_only_to_people_who_work_cases(
+    client, session, acting_user, desk
+):
+    sharer = await _colleague(session, acting_user, desk, shared=True)
+    outsider = await _colleague(session, acting_user, desk, shared=False)
+    stranger = await acting_user("member")
+
+    assert await _offers_cases(client, desk["staff"])
+    assert await _offers_cases(client, sharer)
+    assert not await _offers_cases(client, outsider)
+    assert not await _offers_cases(client, stranger)
+
+    # A stream that is paused lands nothing, so nobody is offered it.
+    await set_rls_context(session, SystemGuild(desk["guild_id"]))
+    for binding in (await session.exec(select(IntakeBinding))).all():
+        binding.enabled = False
+        session.add(binding)
+    await session.commit()
+    await set_rls_context(session, Unattributed())
+    assert not await _offers_cases(client, desk["staff"])
+
+
+# ── What the audit log says ──────────────────────────────────────────────────
+
+
+async def test_filing_and_answering_are_written_down_without_what_was_said(
+    client, acting_user, desk, capfd
+):
+    import json
+
+    from app.core.audit_events import AuditEventType
+    from app.testing.audit import emitted
+
+    filer = await acting_user("member")
+    emitted(capfd)
+    filed = await client.post(
+        TICKETS,
+        data={
+            "payload": json.dumps(
+                {
+                    "stream": "support",
+                    "type": "account",
+                    "subject": "Locked out of my account",
+                    "body": "Secret details about my account.",
+                }
+            )
+        },
+        headers=filer.headers,
+    )
+    assert filed.status_code == 202, filed.text
+    (line,) = emitted(capfd, AuditEventType.TICKET_FILED)
+    assert line["actor_user_id"] == filer.user.id
+    assert line["detail"] == {"stream": "support", "topic": "account", "attachments": 0}
+
+    task_id = (await client.get(TICKETS, headers=filer.headers)).json()["items"][0][
+        "task_id"
+    ]
+    emitted(capfd)
+    answered = await client.post(
+        f"{TICKETS}/{task_id}/replies",
+        data={"body": "More secret details."},
+        headers=filer.headers,
+    )
+    assert answered.status_code == 201, answered.text
+    (line,) = emitted(capfd, AuditEventType.TICKET_REPLIED)
+    assert line["target"] == {"type": "task", "id": task_id}
+    assert "Secret" not in json.dumps(line)

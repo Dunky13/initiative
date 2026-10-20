@@ -18,7 +18,11 @@ type TaskStatusSelectorProps = {
   projectStatusCache: React.MutableRefObject<
     Map<number, { statuses: TaskStatusRead[]; complete: boolean }>
   >;
+  /** Whether a column is too full to take the task; a full one can't be picked. */
+  isFull?: (statusId: number) => boolean;
 };
+
+const NEVER_FULL = () => false;
 
 export const TaskStatusSelector = ({
   task,
@@ -27,8 +31,9 @@ export const TaskStatusSelector = ({
   changeTaskStatusById,
   fetchProjectStatuses,
   projectStatusCache,
+  isFull = NEVER_FULL,
 }: TaskStatusSelectorProps) => {
-  const { t } = useTranslation("tasks");
+  const { t } = useTranslation(["tasks", "projects"]);
   const [statuses, setStatuses] = useState<TaskStatusRead[]>(() => {
     const cached = projectStatusCache.current.get(task.project_id);
     return cached?.statuses ?? [task.task_status];
@@ -82,11 +87,17 @@ export const TaskStatusSelector = ({
         <TaskStatusOption status={task.task_status} />
       </SelectTrigger>
       <SelectContent>
-        {sortedStatuses.map((status) => (
-          <SelectItem key={status.id} value={String(status.id)}>
-            <TaskStatusOption status={status} />
-          </SelectItem>
-        ))}
+        {sortedStatuses.map((status) => {
+          const full = status.id !== task.task_status.id && isFull(status.id);
+          return (
+            <SelectItem key={status.id} value={String(status.id)} disabled={full}>
+              <TaskStatusOption status={status} />
+              {full ? (
+                <span className="text-muted-foreground text-xs">{t("projects:kanban.full")}</span>
+              ) : null}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );

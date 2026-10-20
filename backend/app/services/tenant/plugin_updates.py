@@ -37,29 +37,30 @@ bought it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from collections.abc import Collection
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db import cohorts
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
-from app.models.platform.guild import GuildMembership, CommunityRole
+from app.models.platform.guild import CommunityRole, GuildMembership
 from app.models.platform.notification import NotificationType
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import plugin_installs, registration_lookup
+from app.services.marketplace import registration_lookup
 from app.services.marketplace.definitions import GUILD_INSTALLABLE_PLUGIN_KINDS
 from app.services.marketplace.installs import (
     ListingInstallError,
     resolve_listing_install,
 )
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connections as connections_service
+from app.services.tenant import plugin_metadata, plugin_schedules
 from app.services.tenant import plugin_revocation as revocation_service
-from app.services.tenant import plugin_schedules
-from app.services.tenant import guild_plugins as guild_plugins_service
-from app.db.request_context import Unattributed
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ __all__ = [
     "apply_version",
     "decline_version",
     "notify_pending_updates",
+    "reconcile_repinned",
     "update_offer",
     "update_version",
     "upgrade_asks",
@@ -132,17 +134,20 @@ def upgrade_asks(
     )
     current = guild_plugins_service.initiative_surface_ids(plugin.definition)
     added_surfaces = tuple(
-        {"id": embed["id"], "name": embed.get("name") or {}}
-        for embed in guild_plugins_service.declared_surfaces(definition)
-        if guild_plugins_service.surface_renders_in(embed, "initiative")
-        and embed["id"] not in current
+        {"id": page["id"], "name": page.get("name") or {}}
+        for page in guild_plugins_service.declared_surfaces(definition)
+        if guild_plugins_service.surface_renders_in(page, "initiative")
+        and page["id"] not in current
     )
     return UpgradeAsks(added_scopes=added_scopes, added_surfaces=added_surfaces)
 
 
-async def _ceiling(definition: dict) -> tuple[str, ...]:
-    """The registration's ceiling for the service a definition names, or none."""
-    registration = await registration_lookup.registration_for_definition(definition)
+async def _ceiling(definition: dict, listing_uid: str) -> tuple[str, ...]:
+    """The registration's ceiling for the plug-in a version of the listing
+    ``listing_uid`` is, or none."""
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
     return tuple(registration.scope_ceiling) if registration is not None else ()
 
 
@@ -168,7 +173,7 @@ async def update_offer(
     asks = upgrade_asks(
         plugin,
         pending.definition,
-        await _ceiling(pending.definition),
+        await _ceiling(pending.definition, plugin.listing_uid),
         await guild_plugins_service.installed_plugin_ids(session),
     )
     return UpdateOffer(update=pending, asks=asks)
@@ -249,12 +254,15 @@ async def apply_version(
     config, secrets, dropped = plugin_config_service.prune_to_definition(
         definition, plugin.config, stored_secrets
     )
-    revocation_service.queue_install_revocations(
+    await revocation_service.queue_install_revocations(
         session, plugin, dropped, secrets=stored_secrets, reason="upgraded"
     )
     plugin.config = config
     plugin.definition = definition
     plugin.listing_version = pending.version
+    await guild_plugins_service.claim_newly_unique(
+        session, plugin, previous, guild_id=guild_id
+    )
     # The plug-in has not seen the new configuration shape yet, so whatever it said
     # about the old one is no longer an answer to the current question.
     plugin.config_state = "unverified"
@@ -279,10 +287,35 @@ async def apply_version(
                 reason="upgraded",
                 definition=previous,
             )
-    # The new version may route its webhooks by another value, or have
-    # dropped the connection that held it.
-    await plugin_installs.record(guild_id, plugin)
+    # What the new version adds to tasks shows where it is placed.
+    await guild_plugins_service.show_on_saved_layouts(
+        session,
+        plugin,
+        await guild_plugins_service.placed_initiative_ids(session, plugin.id),
+        previous=previous,
+    )
     return plugin
+
+
+async def reconcile_repinned(
+    guild_id: int, plugin: GuildPlugin, *, session: Optional[AsyncSession] = None
+) -> None:
+    """Bring what follows an install's pinned definition into line with it
+    once it has moved: its schedules, and which of its values are shown.
+
+    ``session`` is the community's system session, routed, whose caller
+    commits; without one both are written and committed on one system
+    session of their own."""
+    if session is None:
+        async with cohorts.system_session(guild_id) as own:
+            await set_rls_context(own, SystemGuild(guild_id))
+            await reconcile_repinned(guild_id, plugin, session=own)
+            await own.commit()
+        return
+    await plugin_schedules.reconcile(
+        guild_id, plugin.id, plugin.definition, session=session
+    )
+    await plugin_metadata.reconcile_shown(guild_id, plugin.id, session=session)
 
 
 def decline_version(plugin: GuildPlugin, version: str) -> None:
@@ -379,6 +412,10 @@ async def _update_guild(
     is seen, so the caller can tell the seat once it has committed. A version
     the seat declined, or one already pending, is passed over quietly.
     Returns how many installs were moved.
+
+    A version that declares an assigned setting the install holds no value for
+    gives it one (:func:`guild_plugins.assign_settings`), which commits what
+    the pass has done so far.
     """
     candidates = (
         await session.exec(
@@ -404,7 +441,7 @@ async def _update_guild(
         pending = offer.update
         mandatory = (
             await registration_lookup.install_state(
-                plugin.definition, listing_uid=plugin.listing_uid
+                plugin.definition, guild_id=guild_id, listing_uid=plugin.listing_uid
             )
         ).mandatory
         if offer.asks.asks_more and mandatory:
@@ -417,8 +454,9 @@ async def _update_guild(
                 guild_id=guild_id,
                 add_scopes=offer.asks.added_scopes,
             )
-            await plugin_schedules.reconcile(
-                guild_id, plugin.id, plugin.definition, session=session
+            await reconcile_repinned(guild_id, plugin, session=session)
+            await guild_plugins_service.assign_settings(
+                session, plugin, guild_id=guild_id
             )
             applied += 1
             logger.info(
@@ -453,9 +491,8 @@ async def _update_guild(
             continue
         from_version = plugin.listing_version
         await apply_version(session, plugin, pending, guild_id=guild_id)
-        await plugin_schedules.reconcile(
-            guild_id, plugin.id, plugin.definition, session=session
-        )
+        await reconcile_repinned(guild_id, plugin, session=session)
+        await guild_plugins_service.assign_settings(session, plugin, guild_id=guild_id)
         applied += 1
         logger.info(
             "plug-in auto-update: guild=%s plug-in=%s listing=%s %s -> %s",

@@ -27,15 +27,10 @@
   },
   "columns": {
     "done": "Terminado",
-    "task": "Tarea",
     "project": "Proyecto",
-    "startDate": "Fecha de inicio",
-    "dueDate": "Fecha de vencimiento",
     "dateWindow": "Rango de fechas",
     "community": "Comunidad",
     "projectPath": "Ruta del proyecto",
-    "priority": "Prioridad",
-    "tags": "Etiquetas",
     "status": "Estado"
   },
   "checkbox": {
@@ -61,12 +56,8 @@
     "createdAt": "Creada {{time}}",
     "readOnlyNoAccess": "Solo tienes acceso de lectura a este proyecto, por lo que los campos de la tarea están deshabilitados.",
     "readOnlyArchived": "Este proyecto está archivado. Desarchívalo desde la configuración del proyecto para editar tareas.",
-    "descriptionLabel": "Descripción",
     "aiGenerate": "Generar con IA",
     "descriptionPlaceholder": "Agrega contexto adicional o criterios de aceptación. Markdown soportado.",
-    "noDescriptionReadOnly": "Aún no hay descripción.",
-    "saving": "Guardando…",
-    "saveTask": "Guardar tarea",
     "moveToProject": "Mover a proyecto",
     "duplicating": "Duplicando…",
     "duplicateTask": "Duplicar tarea",
@@ -78,7 +69,6 @@
     "deleteTask": "Eliminar tarea",
     "deleteTitle": "¿Eliminar tarea?",
     "deleteDescription": "La tarea se enviará a la papelera. Puedes restaurarla desde Configuración → Papelera antes de que finalice el período de retención.",
-    "taskUpdated": "Tarea actualizada",
     "taskDuplicated": "Tarea duplicada",
     "taskDeleted": "Tarea eliminada",
     "taskArchived": "Tarea archivada",
@@ -88,11 +78,6 @@
     "descriptionGenerated": "Descripción generada",
     "generateDescriptionError": "No se pudo generar la descripción",
     "commentsError": "No se pudieron cargar los comentarios en este momento.",
-    "taskStatusRequired": "El estado de la tarea es obligatorio",
-    "unsavedTitle": "¿Descartar los cambios sin guardar?",
-    "unsavedBody": "Tienes cambios sin guardar en esta tarea. Si sales ahora, se perderán.",
-    "unsavedLeave": "Salir",
-    "unsavedStay": "Quedarme",
     "skipOccurrence": "Omitir esta repetición",
     "taskSkipped": "Se pasó a la siguiente repetición",
     "skipError": "No se pudo omitir esta repetición"
@@ -226,24 +211,14 @@
     "editTags": "Editar etiquetas"
   },
   "taskForm": {
-    "titleLabel": "Título",
     "titlePlaceholder": "Título de la tarea",
-    "descriptionLabel": "Descripción",
-    "descriptionPlaceholder": "Añade más detalles (opcional)",
-    "advancedDetails": "Detalles avanzados",
     "statusLabel": "Estado",
-    "selectStatus": "Seleccionar estado",
-    "priorityLabel": "Prioridad",
-    "assigneesLabel": "Asignados",
     "assigneesEmptyMessage": "No se encontraron miembros",
     "startDateLabel": "Fecha de inicio",
     "dueDateLabel": "Fecha de vencimiento",
-    "tagsLabel": "Etiquetas",
     "tagsPlaceholder": "Añadir etiquetas",
     "sections": {
-      "tracking": "Seguimiento",
-      "schedule": "Programación",
-      "people": "Personas y etiquetas"
+      "schedule": "Programación"
     }
   }
 }

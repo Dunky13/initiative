@@ -91,6 +91,7 @@ export function buildPost(overrides: Partial<PostRead> = {}): PostRead {
     can: ownerCan(),
     comments_enabled: true,
     reactions_enabled: true,
+    comments_locked_at: null,
     comment_count: 0,
     reactions: [],
     tags: [],
@@ -98,6 +99,7 @@ export function buildPost(overrides: Partial<PostRead> = {}): PostRead {
     grants: [],
     // Most notices ask nothing, which is what makes a poll worth noticing.
     poll: null,
+    plugin_values: [],
     ...overrides,
   };
 }

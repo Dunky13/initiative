@@ -284,3 +284,119 @@ describe("a chart over dates", () => {
     expect(scene.xTime).toBeUndefined();
   });
 });
+
+describe("a split", () => {
+  const split = { label: [0], value: [2], series: [1] };
+
+  it("draws one series per value of the third column, in the rows' order", async () => {
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        [
+          ["S1", "Doing", 2],
+          ["S2", "Done", 5],
+          ["S3", "Doing", 3],
+          ["S3", null, 1],
+        ]
+      ),
+      {},
+      undefined,
+      split
+    );
+    expect(scene.series.map((series) => series.name)).toEqual(["Doing", "Done", "None"]);
+    // S2 is only Done's, and still sits between S1 and S3; a series with no
+    // rows for a sprint counts zero there.
+    expect(scene.series[0].points).toEqual([
+      { x: "S1", y: 2 },
+      { x: "S2", y: 0 },
+      { x: "S3", y: 3 },
+    ]);
+    expect(scene.series[1].points.map((point) => point.y)).toEqual([0, 5, 0]);
+    expect(scene.showLegend).toBe(true);
+  });
+
+  it("keeps the largest series and folds the rest into Other", async () => {
+    const statuses = Array.from({ length: 14 }, (_, index) => [`s${index}`, index + 1]);
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        statuses.map(([status, points]) => ["S1", status, points])
+      ),
+      {},
+      undefined,
+      split
+    );
+    expect(scene.series).toHaveLength(12);
+    expect(scene.series.some((series) => series.name === "s0")).toBe(false);
+    expect(scene.series.at(-1)).toEqual({ name: "Other", points: [{ x: "S1", y: 1 + 2 + 3 }] });
+  });
+});
+
+describe("a split past the ceiling, and what it never merges", () => {
+  it("folds each measure into its own Other", async () => {
+    // Seven statuses and two measures is fourteen series: six a measure fit,
+    // so five statuses stay and the last two fold, counts with counts and
+    // hours with hours.
+    const body = Array.from({ length: 7 }, (_, index) => ["S1", `s${index}`, index + 1, 100]);
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "tasks", "hours"],
+        ["text", "text", "number", "number"],
+        body as CellValue[][]
+      ),
+      {},
+      undefined,
+      { label: [0], value: [2, 3], series: [1] }
+    );
+    expect(scene.series).toHaveLength(12);
+    expect(scene.series.slice(-2)).toEqual([
+      { name: "Other · tasks", points: [{ x: "S1", y: 1 + 2 }] },
+      { name: "Other · hours", points: [{ x: "S1", y: 200 }] },
+    ]);
+  });
+
+  it("keeps a blank apart from a value that reads like its label", async () => {
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        [
+          ["S1", null, 1],
+          ["S1", "None", 2],
+        ]
+      ),
+      {},
+      undefined,
+      { label: [0], value: [2], series: [1] }
+    );
+    expect(scene.series.map((series) => series.points[0].y)).toEqual([1, 2]);
+  });
+
+  it("adds a split up into one pie rather than drawing one group as the whole", async () => {
+    const scene = await draw(
+      rows(
+        ["sprint", "status", "points"],
+        ["text", "text", "number"],
+        [
+          ["S1", "Doing", 2],
+          ["S1", "Done", 5],
+          ["S2", "Doing", 3],
+        ]
+      ),
+      { mark: "pie" },
+      undefined,
+      { label: [0], value: [2], series: [1] }
+    );
+    expect(scene.series).toEqual([
+      {
+        name: "points",
+        points: [
+          { x: "S1", y: 7 },
+          { x: "S2", y: 3 },
+        ],
+      },
+    ]);
+  });
+});

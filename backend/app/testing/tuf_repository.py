@@ -3,8 +3,10 @@
 Laid out the way the registry builder lays one out: consistent snapshots
 (``<version>.<role>.json`` metadata, targets served under their sha256), one
 delegated role per publisher with the three terminating patterns, and each
-publisher's record as a target of the top-level ``targets`` role. Every key is
-generated per repository and lives only in memory.
+publisher's record as a target of the top-level ``targets`` role. A repository
+may also delegate the ``package`` role over ``entitlements/*`` and ``grants/*``,
+with or without publishing a role file for it, as a package and the public
+index do. Every key is generated per repository and lives only in memory.
 
 The files are served by :class:`RepositoryFetcher`, which records every URL it
 was asked for.
@@ -95,6 +97,13 @@ class TufRepository:
         self.content: dict[str, dict[str, bytes]] = {"targets": {}}
         #: The files a host serves, by path under the repository root.
         self.files: dict[str, bytes] = {}
+        #: The ``package`` delegation: whether ``targets`` names it, the key
+        #: it names, whether its role file is published, and the key that
+        #: file is actually signed with (another one, to make it fail).
+        self.package_delegated = False
+        self.package_signer: Optional[CryptoSigner] = None
+        self.package_published = False
+        self.package_signed_by: Optional[CryptoSigner] = None
         self._version = 0
         self.root = Root(expires=datetime.now(timezone.utc) + timedelta(days=365))
         for role, signer in self.signers.items():
@@ -206,6 +215,25 @@ class TufRepository:
         files[base + "listing.json"] = _dump(entry)
         return entry
 
+    def add_package(self, *, publish_role: bool = True) -> None:
+        """Delegate the ``package`` role; ``publish_role`` publishes its role
+        file too, which the public index never does."""
+        self.package_delegated = True
+        self.package_signer = self.package_signer or CryptoSigner.generate_ed25519()
+        self.package_published = publish_role
+        self.content.setdefault("package", {})
+
+    def set_terms(self, uid: str, terms: dict[str, Any] | bytes) -> None:
+        """Sign ``entitlements/<uid>.json`` under the package role."""
+        if not self.package_delegated:
+            self.add_package()
+        self.content["package"][f"entitlements/{uid}.json"] = (
+            terms if isinstance(terms, bytes) else _dump(terms)
+        )
+
+    def remove_terms(self, uid: str) -> None:
+        self.content["package"].pop(f"entitlements/{uid}.json", None)
+
     def set_entry(self, prefix: str, uid: str, entry: dict[str, Any]) -> None:
         self.content[prefix][f"publishers/{prefix}/{uid}/listing.json"] = _dump(entry)
 
@@ -254,6 +282,26 @@ class TufRepository:
             metadata.sign(signer)
             self.files[f"metadata/{version}.{prefix}.json"] = metadata.to_bytes()
             snapshot.meta[f"{prefix}.json"] = MetaFile(version=version)
+
+        if self.package_delegated and self.package_signer is not None:
+            signer = self.package_signer
+            keys[signer.public_key.keyid] = signer.public_key
+            roles["package"] = DelegatedRole(
+                name="package",
+                keyids=[signer.public_key.keyid],
+                threshold=1,
+                terminating=True,
+                paths=["entitlements/*", "grants/*"],
+            )
+            if self.package_published:
+                package = Targets(version=version, expires=now + timedelta(days=90))
+                for path, data in self.content["package"].items():
+                    package.targets[path] = TargetFile.from_data(path, data, ["sha256"])
+                self._serve_targets(self.content["package"])
+                metadata = Metadata(package)
+                metadata.sign(self.package_signed_by or signer)
+                self.files[f"metadata/{version}.package.json"] = metadata.to_bytes()
+                snapshot.meta["package.json"] = MetaFile(version=version)
 
         targets = Targets(version=version, expires=now + timedelta(days=365))
         targets.delegations = Delegations(keys=keys, roles=roles)
@@ -311,7 +359,6 @@ def container_registration(**overrides: Any) -> dict[str, Any]:
         "kind": "container",
         "image": "ghcr.io/acme/tracker@sha256:" + "0" * 64,
         "scope_ceiling": ["projects:read", "projects:write"],
-        "reference_sectors": [],
     }
     registration.update(overrides)
     return registration

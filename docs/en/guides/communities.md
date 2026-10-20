@@ -25,15 +25,28 @@ The rail also keeps up with itself. If an admin adds you somewhere, or a group l
 
 ## The community front page
 
-Opening a community drops you on its front page. Its name sits on the banner, with where it is underneath if it has said. Its tools run across the top as circles — pick one, and you get everything of that kind that's reached **you**: shared with you directly, with a role you hold, or with everyone in an initiative you're in.
+Opening a community drops you on its front page. Its name sits on the banner, with where it is underneath if it has said.
 
-Only the tools your initiatives actually use turn up, so a community that has never once needed a queue is not given a Queues circle to look at and feel vaguely guilty about.
+Under the banner is what people have been up to this week: a card per thing, saying what it is, where it lives, and who did what to it. "Ada and 2 others commented and edited", and when. Click a card to go straight to the thing. You only ever see things you can open.
 
-**Search** narrows by name; the **Name**, **Initiative** and **Last updated** headers sort. Both reach everything in the community, not just the rows on screen, so nothing hides on page two. All of it lives in the web address, so you can bookmark or send the exact view you're on.
+Three circles sit on top of it:
 
-Community admins get the same page. Their authority is unchanged — open any initiative and they see all of it — but the front page is a reading list, not an inventory of everything in existence.
+| Circle | Shows |
+|---|---|
+| **All** | Everything that moved this week. It's the one that opens first. |
+| **Yours** | What's happened to your things: what you made, what you're assigned to or going to, and what you changed or commented on this week. |
+| **Comments** | The latest comments themselves, from anywhere in the community: who said it, what they said, where, and the reactions it drew. |
 
-![A community's front page](../images/communities/community-front-page.png)
+It isn't strictly newest first. Something recent comes higher, so does something lots of people are busy with, and so does anything that's yours: the task you're on, the project you [subscribed to](your-space.md#subscribing) or bookmarked, the file you opened yesterday. Anything that changed since you last looked here is marked **New**. That's remembered on this device, so your phone and your laptop each keep their own count.
+
+A few things never make a card. Your own changes, because you were there. Reactions, though a thing that's drawn a pile of them rises a little. And reading a post, voting in a poll or answering an invitation, which are your business, not the community's.
+
+Below that are the community's initiatives, the ones you're in and the ones you could join, and then **Coming up**: everything with a date in the next seven days.
+
+To see every project, file or queue that has reached you, here and in your other communities, open [My Tools](your-space.md#my-tools).
+
+!!! screenshot
+    The community front page: the banner, the All circle with its tray of this week's activity, the initiatives and Coming up. Save as `docs/en/images/communities/community-front-page.png`.
 
 ## Finding a community to join
 
@@ -106,9 +119,11 @@ The card shows the location exactly as you typed it, and tapping it on your comm
 3. Optionally limit it:
     - **Max uses** — how many people can get in on this one link.
     - **Expires in (days)** — when it stops working.
-4. **Copy it** and send it however you like. Email, chat, read it aloud down the phone.
+4. **Copy it** and send it however you like. Email, chat, read it aloud down the phone. Copy it now: the link is shown once, when you make it.
 
 Anyone who opens it joins after signing in or making an account.
+
+Somebody who needs one project for a fortnight rather than the whole community for good? Make them a [guest](../sharing/guests.md) instead.
 
 ![Managing members and invites in Community settings](../images/communities/community-users.png)
 
@@ -153,6 +168,7 @@ Open **Community settings** from the sidebar or the rail:
 | **Community** | Name, description, [location](#saying-where-your-community-is-admins), icon and banner (square, up to 512 KB), and the directory listing. |
 | **Users** | Members, roles, invite links. A superadmin also sees whose personal API keys reach the community, where the server grants it the security standard. |
 | **Initiatives** | Create and manage the community's initiatives. |
+| **Guests** | Guest invites, and the guests here now. Only where the server allows guests and the community takes them. See [Guests](../sharing/guests.md). |
 | **Security** | Who gets in and on what terms: the community's own single sign-on, where its people land, how long a session lasts, and how much a notification says once it leaves the app. Superadmin only, and only where your server has granted it — most communities never see this tab. See [Your community's sign-in and security](../security/community-security.md). |
 | **Integrations** | AI settings and installed plug-ins — see [AI features](../account/ai-features.md) and [Plug-ins & the marketplace](plugins-and-marketplace.md#adding-a-plug-in). |
 | **Trash** | Recently deleted things, restorable. |
@@ -233,7 +249,7 @@ Admins can set or clear a member's from the row menu under **Community settings 
 
 ## Reporting something
 
-Something here that shouldn't be? Comments, notices, pictures, profiles and directory listings all carry a small flag: **Report**. Say what's wrong, add a line if you like, and **Send report**. It isn't offered on your own things, because you can already edit or delete those.
+Something here that shouldn't be? Comments, notices, pictures, wiki pages, queue items, events, profiles and directory listings all carry a small flag: **Report**. Say what's wrong, add a line if you like, and **Send report**. It isn't offered on your own things, because you can already edit or delete those. **Illegal** and **Other** need a line saying what's wrong.
 
 | What you report | Who looks at it |
 |---|---|
@@ -242,11 +258,23 @@ Something here that shouldn't be? Comments, notices, pictures, profiles and dire
 
 The people who look see what you wrote. The thing you reported isn't touched until one of them decides it should be.
 
+Reporting something **illegal** asks which law it breaks, and goes to the community's moderators and to whoever runs the server at once. You can follow it in **My Tickets**. Where the server takes no reports, the thank-you tells you who to contact instead. A child-safety report takes no attachments: say where it is, and it stays where it is for them to deal with.
+
 ## Asking for help
 
-The lifebuoy at the foot of the sidebar is **Ask for help**. Where your server takes help requests from this community, it opens a short form — what it's about, what happened — and it goes to the people who run the server, not to the community's own admins.
+The lifebuoy at the foot of the sidebar is **Ask for help**. Where your server takes help requests, it opens a short form — what it's about, a line to name it, what happened — and it goes to the people who run the server, not to the community's own admins.
 
-Where the server takes no requests from here but has said who to write to, the button gives you that address instead. Where there's neither, the button isn't there, and **Documentation**, the question mark beside it, is where to look.
+What it's about decides what you can ask:
+
+- **Your account**, **billing** or **something else** — wherever the server takes help requests, inside a community or not.
+- **This community** — where the server takes help requests from the community you're in.
+- **A copy of this community's data, or deleting it** — for whoever holds the community's seat, where it takes help requests.
+
+Notices that used to say "contact whoever runs this server" — the age question, a read-only or suspended community, running out of seats — have the same **Ask for help** beside them, opened on what the notice is about.
+
+Where the server takes no requests but has said who to write to, the button gives you that address instead. Where there's neither, the button isn't there, and **Documentation**, the question mark beside it, is where to look.
+
+**Send feedback**, in your account menu and the command palette, tells the people who run the server what you think: an idea, a problem, praise or something else, with screenshots if they help. It shows you where the app was — its version, platform, language, theme, the page (without anything that names what was on it) and the window's size — and sends that with it unless you remove it. A problem you need an answer to has **I need an answer**, which sends it as a help request instead. Feedback lands in **My Tickets** too; the team writes first if they write at all, and you're told when it's been read.
 
 Every request you send lands in **My Tickets**, in the sidebar: where each one stands (**Received**, **In progress**, **Waiting on you**, **Closed**), what the team said, and your replies. You get a notification when it moves, so there's no need to keep checking. A report is listed there too, though the team looks into reports without replying to them.
 

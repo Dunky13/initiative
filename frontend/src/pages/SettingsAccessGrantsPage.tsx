@@ -1,12 +1,16 @@
+import { useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
   AccessGrantRead,
-  AccessGrantStatus,
   BreakGlassCreate,
+  GrantCaseRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { Badge } from "@/components/ui/badge";
+import { AccessGrantStatusBadge } from "@/components/platform/AccessGrantStatusBadge";
+import { CasePicker } from "@/components/platform/CasePicker";
+import { CommunityPicker, type PickedCommunity } from "@/components/platform/CommunityPicker";
+import { UserHandle } from "@/components/UserHandle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,11 +33,13 @@ import {
   useCancelAccessRequest,
   useCreateAccessRequest,
   useDenyAccessGrant,
+  useGrantCases,
   useMyAccessGrants,
   useRevokeAccessGrant,
 } from "@/hooks/useAccessGrants";
 import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
+import type { AccessGrantsForm, AccessGrantsSearch } from "@/lib/accessGrantsSearch";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { minutesLeft } from "@/lib/formatDate";
 import { toast } from "@/lib/mascotToast";
@@ -42,20 +48,14 @@ import { Capability, hasCapability } from "@/lib/permissions";
 import { classifySecondFactorAnswer } from "@/lib/secondFactorAnswer";
 import { getUserDisplayName } from "@/lib/userDisplay";
 
-const STATUS_VARIANT: Record<
-  AccessGrantStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  pending: "secondary",
-  approved: "default",
-  denied: "destructive",
-  revoked: "destructive",
-  expired: "outline",
-};
-
 // Always surface the community id alongside the name so approvers can
 // disambiguate similarly-named communities (and fall back cleanly when the name
 // isn't populated).
+/** Who holds a grant: their handle, or their account number where the
+ *  account is gone. Never their address. */
+const GrantHolder = ({ grant }: { grant: AccessGrantRead }) =>
+  grant.user ? <UserHandle user={grant.user} /> : <>{getUserDisplayName({ id: grant.user_id })}</>;
+
 const communityLabel = (grant: { community_name?: string | null; community_id: number }): string =>
   grant.community_name
     ? `${grant.community_name} (#${grant.community_id})`
@@ -82,6 +82,120 @@ const durationsUpTo = (presets: number[], max: number | undefined): number[] => 
   if (max === undefined) return [];
   const offered = presets.filter((minutes) => minutes <= max);
   return offered.includes(max) ? offered : [...offered, max];
+};
+
+/**
+ * The community a form starts with, when the page was opened for that form
+ * from a row on the Communities tab.
+ */
+const usePreselectedCommunity = (form: AccessGrantsForm): PickedCommunity | null => {
+  const search = useSearch({ strict: false }) as AccessGrantsSearch;
+  if (!search.community || search.form !== form) return null;
+  return { id: search.community, name: search.name ?? null };
+};
+
+/**
+ * The operations case a form is for: the open cases on offer, whether one must
+ * be named, and the one chosen, starting from the case the page was opened
+ * for when it was opened for this form.
+ */
+const useCaseChoice = (form: AccessGrantsForm) => {
+  const search = useSearch({ strict: false }) as AccessGrantsSearch;
+  const cases = useGrantCases();
+  const [caseTaskId, setChosenId] = useState<number | null>(
+    search.form === form ? (search.case ?? null) : null
+  );
+  // A case a search found is not in the first page, so it is kept as chosen.
+  const [found, setFound] = useState<GrantCaseRead | undefined>(undefined);
+  const items = cases.data?.items ?? [];
+  const setCaseTaskId = (taskId: number | null, picked?: GrantCaseRead) => {
+    setChosenId(taskId);
+    setFound(picked);
+  };
+  return {
+    items,
+    loading: cases.isLoading,
+    loaded: cases.isSuccess,
+    required: cases.data?.required ?? false,
+    caseTaskId,
+    setCaseTaskId,
+    chosen:
+      caseTaskId == null
+        ? undefined
+        : (items.find((item) => item.task_id === caseTaskId) ??
+          (found?.task_id === caseTaskId ? found : undefined)),
+  };
+};
+
+type CaseChoice = ReturnType<typeof useCaseChoice>;
+
+/**
+ * The community a form asks about: the one picked, or else the one the chosen
+ * case is about.
+ */
+const formCommunity = (
+  picked: PickedCommunity | null,
+  chosen: GrantCaseRead | undefined
+): PickedCommunity | null =>
+  picked ?? (chosen?.subject_community_id != null ? { id: chosen.subject_community_id } : null);
+
+/** The case picker, what it asks of the form, and a word where the community
+ *  picked is not the one the case is about. The server decides; this only
+ *  says so before it is asked. */
+const CaseField = ({
+  choice,
+  community,
+  optional,
+}: {
+  choice: CaseChoice;
+  community: PickedCommunity | null;
+  optional: boolean;
+}) => {
+  const { t } = useTranslation("settings");
+  const subject = choice.chosen?.subject_community_id ?? null;
+  const otherCommunity = subject != null && community != null && community.id !== subject;
+  let hint: string | null = null;
+  if (choice.caseTaskId == null) {
+    if (optional) hint = t("accessGrants.caseOptionalHint");
+    else if (choice.required) {
+      hint =
+        choice.loaded && choice.items.length === 0
+          ? t("accessGrants.caseRequiredNoneOpen")
+          : t("accessGrants.caseRequiredHint");
+    }
+  }
+  return (
+    <div className="space-y-1">
+      <Label>{t("accessGrants.caseLabel")}</Label>
+      <CasePicker
+        aria-label={t("accessGrants.caseLabel")}
+        cases={choice.items}
+        value={choice.caseTaskId}
+        onChange={choice.setCaseTaskId}
+        optional={optional || !choice.required}
+        loading={choice.loading}
+      />
+      {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
+      {otherCommunity ? (
+        <p className="text-warning text-xs">
+          {t("accessGrants.caseOtherCommunity", { community: subject })}
+        </p>
+      ) : null}
+    </div>
+  );
+};
+
+/** The case a grant was asked for, by its number. */
+const GrantCaseMark = ({ grant }: { grant: AccessGrantRead }) => {
+  const { t } = useTranslation("settings");
+  if (grant.case_task_id == null) return null;
+  // Reaching the case needs the operations community's address, which this
+  // page does not hold, so the number stands alone.
+  return (
+    <span className="shrink-0 text-muted-foreground text-xs">
+      {t("accessGrants.caseMark", { id: grant.case_task_id })}
+    </span>
+  );
 };
 
 export const SettingsAccessGrantsPage = () => {
@@ -127,13 +241,6 @@ const LoadMore = ({
   );
 };
 
-const StatusBadge = ({ grant }: { grant: AccessGrantRead }) => {
-  const { t } = useTranslation("settings");
-  return (
-    <Badge variant={STATUS_VARIANT[grant.status]}>{t(`accessGrants.status.${grant.status}`)}</Badge>
-  );
-};
-
 // Break-glass duration presets (whole hours), offered up to the window the
 // server says the caller may break glass for — a self-approved grant is
 // deliberately short.
@@ -157,7 +264,10 @@ const BreakGlassSection = () => {
   // the sign-in page uses for it.
   const { t } = useTranslation(["settings", "common", "auth"]);
   const { refreshCommunities } = useCommunities();
-  const [communityId, setCommunityId] = useState("");
+  const preselected = usePreselectedCommunity("break_glass");
+  const [pickedCommunity, setCommunity] = useState<PickedCommunity | null>(preselected);
+  const caseChoice = useCaseChoice("break_glass");
+  const community = formCommunity(pickedCommunity, caseChoice.chosen);
   // Null until chosen: the offered windows arrive with the requirements below.
   const [chosenDuration, setDuration] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -190,7 +300,8 @@ const BreakGlassSection = () => {
   const breakGlass = useBreakGlass({
     onSuccess: () => {
       toast.success(t("accessGrants.breakGlass.activated"));
-      setCommunityId("");
+      setCommunity(null);
+      caseChoice.setCaseTaskId(null);
       setReason("");
       setCode("");
       setFactorRefused(false);
@@ -213,14 +324,14 @@ const BreakGlassSection = () => {
 
   /** The request itself, with whatever answered the factor attached. */
   const issue = (answer: Partial<BreakGlassCreate>) => {
-    const gid = Number.parseInt(communityId, 10);
-    if (!gid || !reason.trim() || !duration) return;
+    if (!community || !reason.trim() || !duration) return;
     // No level to choose: breaking glass issues write access to the content
     // and a settings grant at superadmin. Somebody who wants less asks below.
     breakGlass.mutate({
-      community_id: gid,
+      community_id: community.id,
       reason: reason.trim(),
       requested_duration_minutes: Number.parseInt(duration, 10),
+      ...(caseChoice.caseTaskId == null ? {} : { case_task_id: caseChoice.caseTaskId }),
       ...answer,
     });
   };
@@ -235,7 +346,7 @@ const BreakGlassSection = () => {
    *  produces goes out with the request, so the key answers this grant rather
    *  than the session the button was pressed on. */
   const presentAKey = async () => {
-    if (!communityId.trim() || !reason.trim()) return;
+    if (!community || !reason.trim()) return;
     setPresenting(true);
     try {
       issue({ passkey: await assertForBreakGlass() });
@@ -254,18 +365,16 @@ const BreakGlassSection = () => {
         <CardDescription>{t("accessGrants.breakGlass.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        <form className="grid grid-cols-pair gap-4" onSubmit={submit}>
           <div className="space-y-1">
-            <Label htmlFor="bg-community">{t("accessGrants.communityIdLabel")}</Label>
-            <Input
-              id="bg-community"
-              type="number"
-              value={communityId}
-              onChange={(e) => setCommunityId(e.target.value)}
-              placeholder={t("accessGrants.communityIdPlaceholder")}
-              required
+            <Label>{t("accessGrants.communityLabel")}</Label>
+            <CommunityPicker
+              aria-label={t("accessGrants.communityLabel")}
+              value={community}
+              onChange={setCommunity}
             />
           </div>
+          <CaseField choice={caseChoice} community={community} optional />
           <div className="space-y-1">
             <Label htmlFor="bg-duration">{t("accessGrants.durationLabel")}</Label>
             <Select value={duration} onValueChange={setDuration}>
@@ -281,7 +390,7 @@ const BreakGlassSection = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1 sm:col-span-2">
+          <div className="col-span-full space-y-1">
             <Label htmlFor="bg-reason">{t("accessGrants.reasonLabel")}</Label>
             <Textarea
               id="bg-reason"
@@ -292,7 +401,7 @@ const BreakGlassSection = () => {
             />
           </div>
           {needsCode && (
-            <div className="space-y-1 sm:col-span-2">
+            <div className="col-span-full space-y-1">
               <Label htmlFor="bg-code">{t("accessGrants.breakGlass.codeLabel")}</Label>
               <Input
                 id="bg-code"
@@ -312,11 +421,11 @@ const BreakGlassSection = () => {
               </p>
             </div>
           )}
-          <div className="flex flex-wrap gap-2 sm:col-span-2">
+          <div className="col-span-full flex flex-wrap gap-2">
             <Button
               type="submit"
               variant="destructive"
-              disabled={breakGlass.isPending || presenting}
+              disabled={!community || breakGlass.isPending || presenting}
             >
               {breakGlass.isPending ? t("common:submitting") : t("accessGrants.breakGlass.submit")}
             </Button>
@@ -325,7 +434,7 @@ const BreakGlassSection = () => {
                 type="button"
                 variant="outline"
                 onClick={() => void presentAKey()}
-                disabled={breakGlass.isPending || presenting}
+                disabled={!community || breakGlass.isPending || presenting}
               >
                 {presenting
                   ? t("accessGrants.breakGlass.passkeyPresenting")
@@ -339,8 +448,19 @@ const BreakGlassSection = () => {
   );
 };
 
+/** The content rung the request form starts on: the one the link that opened
+ *  it named, where the reader may ask for it, and read-only otherwise. */
+const startingLevel = (search: AccessGrantsSearch, canModerate: boolean): string => {
+  if (search.form !== "request" || !search.level) return "read";
+  return search.level === "moderate" && !canModerate ? "read" : search.level;
+};
+
 const RequestSection = () => {
   const { t } = useTranslation(["settings", "common"]);
+  const { user } = useAuth();
+  // Reading what the platform holds is moderation work: only those who
+  // moderate content may ask for it.
+  const canModerate = hasCapability(user, Capability.contentModerate);
   const myGrants = useMyAccessGrants();
   const limits = useAccessGrantLimits();
   const sortedGrants = useMemo(
@@ -352,11 +472,15 @@ const RequestSection = () => {
     limits.data?.max_duration_minutes
   );
   const defaultDuration = String(durationOptions.includes(240) ? 240 : (durationOptions[0] ?? ""));
-  const [communityId, setCommunityId] = useState("");
+  const search = useSearch({ strict: false }) as AccessGrantsSearch;
+  const preselected = usePreselectedCommunity("request");
+  const [pickedCommunity, setCommunity] = useState<PickedCommunity | null>(preselected);
+  const caseChoice = useCaseChoice("request");
+  const community = formCommunity(pickedCommunity, caseChoice.chosen);
   // Two axes, asked for independently. "none" is how you say you do not want
   // one — clearing up after an incident wants both; having a look wants only
   // the first.
-  const [level, setLevel] = useState("read");
+  const [level, setLevel] = useState<string>(() => startingLevel(search, canModerate));
   const [settingsLevel, setSettingsLevel] = useState("none");
   // Null until chosen: the offered windows arrive with the limits above.
   const [chosenDuration, setDuration] = useState<string | null>(null);
@@ -366,7 +490,8 @@ const RequestSection = () => {
   const createRequest = useCreateAccessRequest({
     onSuccess: () => {
       toast.success(t("accessGrants.requestSubmitted"));
-      setCommunityId("");
+      setCommunity(null);
+      caseChoice.setCaseTaskId(null);
       setReason("");
       setDuration(null);
     },
@@ -378,19 +503,21 @@ const RequestSection = () => {
 
   // A request must name at least one authority.
   const asksForSomething = level !== "none" || settingsLevel !== "none";
+  // And, where the deployment says so, the case it is for.
+  const namesItsCase = !caseChoice.required || caseChoice.caseTaskId != null;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const gid = Number.parseInt(communityId, 10);
-    if (!gid || !reason.trim() || !asksForSomething || !duration) return;
+    if (!community || !reason.trim() || !asksForSomething || !namesItsCase || !duration) return;
     createRequest.mutate({
-      community_id: gid,
-      ...(level === "none" ? {} : { access_level: level as "read" | "read_write" }),
+      community_id: community.id,
+      ...(level === "none" ? {} : { access_level: level as "read" | "read_write" | "moderate" }),
       ...(settingsLevel === "none"
         ? {}
         : { settings_level: settingsLevel as "admin" | "superadmin" }),
       reason: reason.trim(),
       requested_duration_minutes: Number.parseInt(duration, 10),
+      ...(caseChoice.caseTaskId == null ? {} : { case_task_id: caseChoice.caseTaskId }),
     });
   };
 
@@ -401,18 +528,16 @@ const RequestSection = () => {
         <CardDescription>{t("accessGrants.requestDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        <form className="grid grid-cols-pair gap-4" onSubmit={submit}>
           <div className="space-y-1">
-            <Label htmlFor="ag-community">{t("accessGrants.communityIdLabel")}</Label>
-            <Input
-              id="ag-community"
-              type="number"
-              value={communityId}
-              onChange={(e) => setCommunityId(e.target.value)}
-              placeholder={t("accessGrants.communityIdPlaceholder")}
-              required
+            <Label>{t("accessGrants.communityLabel")}</Label>
+            <CommunityPicker
+              aria-label={t("accessGrants.communityLabel")}
+              value={community}
+              onChange={setCommunity}
             />
           </div>
+          <CaseField choice={caseChoice} community={community} optional={false} />
           <div className="space-y-1">
             <Label htmlFor="ag-level">{t("accessGrants.purposeContent")}</Label>
             <Select value={level} onValueChange={setLevel}>
@@ -423,6 +548,9 @@ const RequestSection = () => {
                 <SelectItem value="none">{t("accessGrants.levelNone")}</SelectItem>
                 <SelectItem value="read">{t("accessGrants.levelRead")}</SelectItem>
                 <SelectItem value="read_write">{t("accessGrants.levelReadWrite")}</SelectItem>
+                {canModerate ? (
+                  <SelectItem value="moderate">{t("accessGrants.levelModerate")}</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
             <p className="text-muted-foreground text-xs">{t("accessGrants.purposeContentHelp")}</p>
@@ -456,7 +584,7 @@ const RequestSection = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1 sm:col-span-2">
+          <div className="col-span-full space-y-1">
             <Label htmlFor="ag-reason">{t("accessGrants.reasonLabel")}</Label>
             <Textarea
               id="ag-reason"
@@ -466,8 +594,11 @@ const RequestSection = () => {
               required
             />
           </div>
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={createRequest.isPending || !asksForSomething}>
+          <div className="col-span-full">
+            <Button
+              type="submit"
+              disabled={!community || createRequest.isPending || !asksForSomething || !namesItsCase}
+            >
               {createRequest.isPending ? t("common:submitting") : t("accessGrants.submitRequest")}
             </Button>
             {!asksForSomething && (
@@ -490,7 +621,10 @@ const RequestSection = () => {
                       <p className="truncate text-sm">
                         {communityLabel(grant)} · {grantScope(grant)}
                       </p>
-                      <p className="truncate text-muted-foreground text-xs">{grant.reason}</p>
+                      <p className="flex gap-2 text-muted-foreground text-xs">
+                        <GrantCaseMark grant={grant} />
+                        <span className="truncate">{grant.reason}</span>
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       {grant.is_live && left !== null && (
@@ -498,7 +632,7 @@ const RequestSection = () => {
                           {t("accessGrants.expiresIn", { minutes: left })}
                         </span>
                       )}
-                      <StatusBadge grant={grant} />
+                      <AccessGrantStatusBadge grant={grant} />
                       {grant.status === "pending" && (
                         <Button
                           type="button"
@@ -566,11 +700,13 @@ const ApprovalQueue = () => {
                 <li key={grant.id} className="flex items-center justify-between gap-3 p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm">
-                      {grant.user_email ?? getUserDisplayName({ id: grant.user_id })} →{" "}
-                      {communityLabel(grant)} · {grantScope(grant)} ·{" "}
-                      {t("accessGrants.minutes", { minutes: grant.requested_duration_minutes })}
+                      <GrantHolder grant={grant} /> → {communityLabel(grant)} · {grantScope(grant)}{" "}
+                      · {t("accessGrants.minutes", { minutes: grant.requested_duration_minutes })}
                     </p>
-                    <p className="truncate text-muted-foreground text-xs">{grant.reason}</p>
+                    <p className="flex gap-2 text-muted-foreground text-xs">
+                      <GrantCaseMark grant={grant} />
+                      <span className="truncate">{grant.reason}</span>
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -614,12 +750,15 @@ const ApprovalQueue = () => {
                   <li key={grant.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm">
-                        {grant.user_email ?? getUserDisplayName({ id: grant.user_id })} →{" "}
-                        {communityLabel(grant)} · {grantScope(grant)}
+                        <GrantHolder grant={grant} /> → {communityLabel(grant)} ·{" "}
+                        {grantScope(grant)}
                       </p>
-                      {left !== null && (
-                        <p className="text-muted-foreground text-xs">
-                          {t("accessGrants.expiresIn", { minutes: left })}
+                      {(left !== null || grant.case_task_id != null) && (
+                        <p className="flex gap-2 text-muted-foreground text-xs">
+                          <GrantCaseMark grant={grant} />
+                          {left !== null && (
+                            <span>{t("accessGrants.expiresIn", { minutes: left })}</span>
+                          )}
                         </p>
                       )}
                     </div>

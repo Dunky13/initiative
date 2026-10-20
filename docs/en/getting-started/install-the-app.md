@@ -32,7 +32,7 @@ There are proper apps for iPhone and Android as well. Same Initiative inside, bu
 
 | Phone | Where to get it |
 |---|---|
-| **iPhone or iPad** | The App Store. Search for **Initiative**, by Beyonders Studio. |
+| **iPhone or iPad** | The App Store. Search for **Initiative**, by Beyonders Studio. Needs iOS 16 or later. |
 | **Android** | Google Play, same search. Or [without Google Play](#android-without-google-play), straight from the project. |
 
 The first launch asks which Initiative it's talking to, because there are a lot of them and it can't guess. See [the mobile app](signing-in.md#the-mobile-app).
@@ -46,6 +46,21 @@ The apps only talk to servers on a secure `https://` address. A server on plain 
 [Obtainium](https://github.com/ImranR98/Obtainium) is a free app that watches a project's releases and keeps you updated from them. Install Obtainium first, then tap that button and it fills in the rest, including working back to the most recent release that actually carries an app. Doing it by hand instead: take the newest [release](https://github.com/beyonders-studio/initiative/releases) with an `.apk` on it. That often isn't the top one: the app is only rebuilt when it changes, and the releases in between are web-only.
 
 Either way Android will check that you meant to install something from outside the Play Store. You did. Allow it for whichever app is doing the installing.
+
+### Share things into it
+
+Found the venue's address in a message, a photo of the broken urn, the PDF of last year's minutes, a link to the cheapest bunting in the county? Share it from that app and pick **Initiative** in the share sheet. It asks what the thing should become:
+
+| Pick | And it becomes |
+|---|---|
+| **Task** | A task in whichever project you choose, with the text in its description and the pictures below it |
+| **Document** | A new document, links clickable, pictures in place |
+| **File** | The files themselves, uploaded as they are, each under a name you can change |
+| **Post** | A post on an initiative's board |
+
+Then where it goes, then one last look at what it'll be called before it's made. The place you shared to last time sits at the top of the list, so the next one is quicker.
+
+Not signed in yet? Sign in and the share is waiting on the other side.
 
 ### It keeps itself current
 

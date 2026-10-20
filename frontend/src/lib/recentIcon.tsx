@@ -1,19 +1,20 @@
 import type { ReactNode } from "react";
 
-import { type RecentItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import { type PersonalItemRead, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { fileIcon } from "@/lib/fileIcon";
 import { TOOL_ICONS } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
 /**
- * Render the entity-specific icon for a recent item in the layout tabs bar.
+ * Render the entity-specific icon for a tool in a list of them: a recent tab,
+ * a bookmarked tool.
  *
  * - Projects show the emoji icon set on the project itself.
  * - Files resolve to the same icon + color used in file lists
  *   (via ``fileIcon``).
  * - Every other tool renders its registry icon.
  */
-export function renderRecentIcon(item: RecentItemRead): ReactNode {
+export function renderRecentIcon(item: PersonalItemRead): ReactNode {
   switch (item.entity_type) {
     case Tool.project: {
       if (!item.icon) return null;

@@ -77,7 +77,15 @@ function silentProvider(): Provider {
 
 function withEditor<T>(clientId: number | null, use: (editor: LexicalEditor, doc: Doc) => T): T {
   const editor = buildEditorFromExtensions(
-    documentExtension({ collaborative: true, editable: false })
+    // Content the editor cannot read is refused rather than written as an
+    // empty document.
+    documentExtension({
+      collaborative: true,
+      editable: false,
+      onError: (error) => {
+        throw error;
+      },
+    })
   );
   const doc = new Doc();
   if (clientId !== null) doc.clientID = clientId;

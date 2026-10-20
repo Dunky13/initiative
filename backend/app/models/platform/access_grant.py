@@ -11,6 +11,9 @@ class AccessLevel(str, Enum):
 
     read = "read"
     read_write = "read_write"
+    #: Read, including what the platform holds, for moderation work. No
+    #: edits. Requested only with ``content.moderate``, and never self-issued.
+    moderate = "moderate"
 
 
 class SettingsLevel(str, Enum):
@@ -90,11 +93,12 @@ SETTINGS_LEVELS: tuple[str, ...] = tuple(level.value for level in SettingsLevel)
 LEVEL_LABEL_KEYS: dict[str, str] = {
     "read": "accessGrant.levelRead",
     "read_write": "accessGrant.levelReadWrite",
+    "moderate": "accessGrant.levelModerate",
     "admin": "accessGrant.levelAdmin",
     "superadmin": "accessGrant.levelSuperadmin",
 }
 
-#: What ``access_level`` may say, per purpose. The CHECK in migration 0364
+#: What ``access_level`` may say, per purpose. The CHECK in migration 0472
 #: mirrors this. A billing grant has one level: what its holder may do in the
 #: billing account is the billing service's to decide.
 LEVELS_BY_PURPOSE: dict[str, tuple[str, ...]] = {
@@ -195,6 +199,23 @@ class AccessGrant(SQLModel, table=True):
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     revoked_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    #: The operations case this grant serves: a task in the operations
+    #: community, by id. A weak ref, like every case reference on this plane:
+    #: the case is in a community the grant does not name. What the grant
+    #: does is reported there.
+    case_task_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
+    #: When what the grant did was last reported on its case, while it is
+    #: live.
+    activity_noted_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    #: When the grant's case was told it had ended, with what it did in all.
+    #: Set once; a grant with no case is closed out with nothing to tell.
+    closed_out_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     created_at: datetime = Field(

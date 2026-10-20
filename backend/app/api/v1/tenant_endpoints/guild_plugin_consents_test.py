@@ -59,7 +59,7 @@ async def _asked(client: AsyncClient, installed: InstalledPlugin, member) -> int
         json={
             "member": await ensure_plugin_ref(
                 guild_id=installed.guild.id,
-                plugin_install_id=installed.plugin.id,
+                public_id=installed.public_id,
                 user_id=member.user.id,
             ),
             "purpose": "node-1",

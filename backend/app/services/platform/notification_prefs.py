@@ -22,7 +22,6 @@ from app.core.notification_categories import (
 )
 from app.models.platform.user_notification_prefs import (
     EmailCadence,
-    NotificationLevel,
     UserNotificationPrefs,
 )
 from app.services.platform.presence import IDLE_AFTER_SECONDS
@@ -45,15 +44,23 @@ def _guild_section(prefs: Mapping[str, Any], guild_id: int | None) -> Mapping[st
     return _section(_section(prefs, "guilds"), str(guild_id))
 
 
-def level_for(prefs: Mapping[str, Any], guild_id: int | None) -> NotificationLevel:
-    """How much one community is allowed to say. ``everything`` unless the
-    account has said otherwise, which is what makes a newly joined community
-    need no write."""
-    raw = _guild_section(prefs, guild_id).get("level")
-    try:
-        return NotificationLevel(raw)
-    except ValueError:
-        return NotificationLevel.everything
+def is_muted(prefs: Mapping[str, Any], guild_id: int | None) -> bool:
+    """Whether the account muted this community. Not unless it said so, which
+    is what makes a newly joined community need no write."""
+    return _guild_section(prefs, guild_id).get("muted") is True
+
+
+def row_is_off(
+    prefs: Mapping[str, Any], guild_id: int, category: NotificationCategory
+) -> bool:
+    """Whether the account switched this row off in this community: every
+    channel it could switch is off there."""
+    spec = CATEGORY_SPECS[category]
+    section = _guild_section(prefs, guild_id)
+    return bool(spec.mutable_channels) and all(
+        _override(section, category, channel) is False
+        for channel in spec.mutable_channels
+    )
 
 
 def _override(
@@ -76,25 +83,26 @@ def wants(
 
     Most specific first:
 
-    1. the community's level, where the category belongs to a community
-    2. a per-community override for this category and channel
-    3. the account-wide override
-    4. the category's default from the registry
+    1. a category with nothing to switch, which is not a preference at all
+    2. the community's mute, where the category belongs to a community
+    3. a per-community override for this category and channel: a row the
+       account switched off in that community
+    4. the account-wide override
+    5. the category's default from the registry
 
-    The level is checked before anything else because it is the account's
-    deliberate statement about one community, and ``nothing`` means nothing —
+    The mute is checked before the rest because it is the account's
+    deliberate statement about one community, and it means nothing at all —
     including a direct mention. It cannot reach a category that belongs to no
     community, so an account notice arrives however the communities are set.
     """
     prefs = prefs or EMPTY
     spec = CATEGORY_SPECS[category]
 
-    if spec.guild_scoped and guild_id is not None:
-        level = level_for(prefs, guild_id)
-        if level is NotificationLevel.nothing:
-            return False
-        if level is NotificationLevel.personal and not spec.personal:
-            return False
+    if not spec.mutable_channels:
+        return True
+
+    if spec.guild_scoped and is_muted(prefs, guild_id):
+        return False
 
     # A channel the account cannot switch off is on, and no override for it is
     # read — a stale key from an earlier shape must not decide anything.

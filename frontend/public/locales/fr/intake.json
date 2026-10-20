@@ -86,14 +86,23 @@
     "action": "Demander de l'aide",
     "title": "Demander de l'aide",
     "description": "Dites-nous ce qui se passe et quelqu'un s'en chargera.",
-    "subjectLabel": "De quoi s'agit-il ?",
+    "subjectLabel": "Titre",
     "subjectPlaceholder": "Une ligne, pour pouvoir le retrouver",
     "bodyLabel": "Que s'est-il passé ?",
     "bodyPlaceholder": "Ce que vous faisiez, ce que vous attendiez et ce qui s'est passé à la place.",
     "browseFaq": "Consulter la FAQ",
     "submit": "Envoyer",
     "thanks": "Envoyé. Quelqu'un s'en chargera.",
-    "error": "Impossible d'envoyer. Réessayez dans un instant."
+    "error": "Impossible d'envoyer. Réessayez dans un instant.",
+    "topicLabel": "De quoi s'agit-il ?",
+    "topicPlaceholder": "Choisissez une option",
+    "topics": {
+      "account": "Mon compte",
+      "community": "Cette communauté",
+      "billing": "Facturation",
+      "data_request": "Une copie des données de cette communauté, ou leur suppression",
+      "other": "Autre chose"
+    }
   },
   "contact": {
     "title": "Prendre contact",
@@ -139,6 +148,135 @@
     "replyAndWait": "Envoyer et attendre sa réponse",
     "fromTeam": "L'équipe ({{name}})",
     "someone": "Quelqu'un",
-    "conversationLabel": "Conversation avec {{name}}"
+    "conversationLabel": "Conversation avec {{name}}",
+    "access": {
+      "title": "Accès",
+      "listLabel": "Accès demandés pour ce dossier",
+      "none": "Aucun accès n'a été demandé pour ce dossier.",
+      "request": "Demander l'accès",
+      "endsIn": "se termine dans {{minutes}} min"
+    },
+    "holds": {
+      "title": "Retenues",
+      "none": "Rien n'est retenu dans ce dossier.",
+      "needGrant": "Pour voir et libérer ce qui est retenu dans la communauté {{community}}, demandez-y un accès de modération.",
+      "requestAccess": "Demander l'accès",
+      "holdReported": "Retenir le contenu signalé",
+      "target": "{{type}} {{id}}",
+      "via": {
+        "community": "Retenu par la communauté",
+        "platform": "Retenu par la plateforme"
+      },
+      "reasons": {
+        "legal_request": "Demande légale",
+        "illegal_content": "Peut-être illégal"
+      },
+      "bases": {
+        "child_safety": "Protection de l'enfance",
+        "terrorism": "Terrorisme",
+        "intellectual_property": "Propriété intellectuelle",
+        "fraud": "Fraude",
+        "privacy": "Vie privée",
+        "other": "Autre"
+      },
+      "restore": "Restaurer",
+      "remove": "Retirer",
+      "purge": "Purger",
+      "purgeTitle": "Purger ce contenu ?",
+      "purgeDescription": "Cela le détruit définitivement, avec tout ce qui est retenu avec lui. C'est irréversible.",
+      "released": {
+        "restore": "Libéré : restauré",
+        "remove": "Libéré : retiré",
+        "purge": "Libéré : purgé"
+      }
+    },
+    "topics": {
+      "account": "Son compte",
+      "community": "Sa communauté",
+      "billing": "Facturation",
+      "data_request": "Demande de données",
+      "other": "Autre",
+      "vulnerability": "Vulnérabilité",
+      "account_compromise": "Compte compromis",
+      "idea": "Idée",
+      "problem": "Problème",
+      "praise": "Compliment",
+      "appeal": "Recours contre une suspension"
+    },
+    "take": "Prendre ce dossier",
+    "taken": "Vous suivez ce dossier",
+    "takeFailed": "Impossible de prendre ce dossier."
+  },
+  "evidence": {
+    "attach": "Joindre des fichiers",
+    "limits_one": "Jusqu'à {{count}} fichier, {{size}} au maximum.",
+    "limits_other": "Jusqu'à {{count}} fichiers, {{size}} chacun au maximum.",
+    "remove": "Retirer {{name}}",
+    "tooMany_one": "Vous pouvez joindre {{count}} fichier.",
+    "tooMany_other": "Vous pouvez joindre jusqu'à {{count}} fichiers.",
+    "tooLarge": "{{name}} dépasse {{size}}.",
+    "notAllowed": "Les fichiers comme {{name}} ne sont pas acceptés ici.",
+    "heading": "Pièces jointes",
+    "reveal": "Afficher {{name}}",
+    "view": "Voir {{name}}",
+    "open": "Ouvrir {{name}}",
+    "dropped_one": "{{names}} a été retiré : ce formulaire ne l'accepte pas.",
+    "dropped_other": "{{names}} ont été retirés : ce formulaire ne les accepte pas."
+  },
+  "security": {
+    "action": "Signaler un problème de sécurité",
+    "cardTitle": "Signaler un problème de sécurité",
+    "cardDescription": "Vous avez trouvé une faille dans ce serveur, ou quelqu'un d'autre est entré dans votre compte ? Prévenez ses responsables.",
+    "title": "Signaler un problème de sécurité",
+    "description": "Les responsables de ce serveur le lisent, et vous pouvez le suivre dans Mes tickets.",
+    "topicLabel": "De quoi s'agit-il ?",
+    "topicPlaceholder": "Choisissez",
+    "topics": {
+      "vulnerability": "Une faille dans ce serveur",
+      "account_compromise": "Quelqu'un d'autre est entré dans mon compte",
+      "other": "Autre chose"
+    },
+    "bodyLabel": "Qu'avez-vous trouvé ?",
+    "bodyPlaceholder": "Ce que vous avez vu, où, et comment le revoir.",
+    "softwareNote": "Un problème du logiciel Initiative lui-même, plutôt que de ce serveur, va au projet : voir SECURITY.md.",
+    "submit": "Envoyer le signalement",
+    "thanks": "Envoyé. Vous pouvez le suivre dans Mes tickets.",
+    "error": "Impossible d'envoyer. Réessayez dans un instant."
+  },
+  "feedback": {
+    "action": "Envoyer un avis",
+    "title": "Envoyer un avis",
+    "description": "Dites à celles et ceux qui gèrent ce serveur ce que vous en pensez. Vous pouvez le suivre dans Mes tickets.",
+    "typeLabel": "De quel type d'avis s'agit-il ?",
+    "typePlaceholder": "Choisissez une option",
+    "topics": {
+      "idea": "Une idée",
+      "problem": "Un problème",
+      "praise": "Un compliment",
+      "other": "Autre chose"
+    },
+    "bodyLabel": "Que voulez-vous leur dire ?",
+    "bodyPlaceholder": "Ce que vous aimeriez, ce qui vous a gêné ou ce qui vous a plu.",
+    "needsAnswer": "J'ai besoin d'une réponse",
+    "needsAnswerHelp": "L'envoie plutôt comme demande d'aide, pour que quelqu'un vous réponde.",
+    "submit": "Envoyer l'avis",
+    "thanks": "Merci ! Celles et ceux qui gèrent ce serveur le liront.",
+    "error": "Impossible d'envoyer. Réessayez dans un instant.",
+    "context": {
+      "title": "Envoyé avec",
+      "help": "Où en était l'application, pour qu'ils voient ce que vous avez vu. Rien ici ne vous nomme, ni rien de ce que vous avez ouvert.",
+      "remove": "Retirer",
+      "fields": {
+        "app_version": "Version",
+        "platform": "Plateforme",
+        "locale": "Langue",
+        "theme": "Thème",
+        "route": "Page",
+        "viewport": "Fenêtre"
+      }
+    }
+  },
+  "moderationTopics": {
+    "appeal": "Recours contre votre suspension"
   }
 }

@@ -1,6 +1,6 @@
 import { Link, useSearch } from "@tanstack/react-router";
-import { ChevronRight, Search, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Search, Users } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -14,10 +14,8 @@ import { PrivatePanel, unreachableReason } from "@/components/contacts/Unreachab
 import { NewConversationDialog } from "@/components/messages/NewConversationDialog";
 import { UserHandle } from "@/components/UserHandle";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
-import { useFavoriteContacts } from "@/hooks/useContacts";
 import {
   useAcceptConnection,
   useAcceptMessageRequest,
@@ -28,9 +26,8 @@ import {
   useRemoveConnection,
   useRemoveMessageRequest,
 } from "@/hooks/useDirectMessages";
-import { useConversations, useUnreadMessages } from "@/hooks/useMyMessages";
+import { useConversations, useLatestMessages, useUnreadMessages } from "@/hooks/useMyMessages";
 import { groupName, isGroup, roster } from "@/lib/conversationName";
-import { getItem, setItem } from "@/lib/storage";
 import { getUrlHandle, getUserHandle } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 
@@ -72,12 +69,6 @@ const ROW_MENU = cn(
   "sm:group-focus-within/row:w-7 sm:group-focus-within/row:opacity-100",
   "sm:data-[state=open]:w-7 sm:data-[state=open]:opacity-100"
 );
-
-/** Which sections the reader has folded away. Remembered across visits. */
-const COLLAPSED_KEY = "messages-groups-collapsed";
-
-type GroupId = "unread" | "favorites" | "connections" | "messages";
-const GROUP_ORDER: GroupId[] = ["unread", "favorites", "connections", "messages"];
 
 /**
  * How many faces the space a single avatar occupies will hold, overlapped.
@@ -123,6 +114,8 @@ interface GroupRow {
   waiting: number;
   /** Named on it, but has not answered yet. */
   pending: boolean;
+  /** When its newest message was written, or it was opened: what orders it. */
+  latest: number;
 }
 
 /** One person this list can offer, whether or not a thread is open with them. */
@@ -132,7 +125,15 @@ interface Entry {
   /** Absent until a conversation has actually been opened with them. */
   conversationId?: string;
   waiting: number;
+  /** As a group's. Nothing for somebody with no conversation yet. */
+  latest: number;
 }
+
+/** One row of the list: a person, or a conversation with several. */
+type Thread = { kind: "person"; entry: Entry } | { kind: "group"; row: GroupRow };
+
+const latestOfThread = (thread: Thread) =>
+  thread.kind === "person" ? thread.entry.latest : thread.row.latest;
 
 /**
  * Which agreement a pending request is part of — the only thing that differs
@@ -144,14 +145,6 @@ interface PendingRequest {
   kind: RequestKind;
 }
 
-const readCollapsed = (): Record<string, boolean> => {
-  try {
-    return JSON.parse(getItem(COLLAPSED_KEY) ?? "{}") as Record<string, boolean>;
-  } catch {
-    return {};
-  }
-};
-
 /**
  * Who there is to talk to, wherever that has to be offered.
  *
@@ -161,15 +154,11 @@ const readCollapsed = (): Record<string, boolean> => {
  * be the list rather than an apology for not being one. One component, so the
  * two cannot drift.
  *
- * Four sections, each folded away and remembered: people
- * waiting on an answer, people you starred, people you are connected to, and
- * everyone else you can reach. Unread comes first and takes precedence over
- * the rest — somebody has said something and nothing else on the list is
- * asking for anything. Below it a favourite outranks a connection, because
- * starring is a choice this reader made about this person and being connected
- * is only how the two of them are linked. A section with nobody in it is not
- * drawn, and where only one section has anybody it loses its heading — a label
- * naming everything says nothing.
+ * One list, newest message first: a conversation with one person and one with
+ * several sit together, since what the reader is after is whoever spoke last.
+ * A thread this device holds nothing of goes by when it was opened, and
+ * somebody you may message but have not yet comes last. Requests waiting on an
+ * answer sit above it all.
  *
  * Above all of it, two controls that answer opposite questions. The field
  * narrows what is already here, on the handle, which is the one thing every
@@ -221,6 +210,12 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
     return people;
   }, [rows, reachable]);
   const unread = useUnreadMessages(rows.map((row) => row.id));
+  const latestMessage = useLatestMessages(rows.map((row) => row.id));
+  const latestOf = useCallback(
+    (row: (typeof rows)[number]) =>
+      Date.parse(latestMessage.data?.get(row.id) ?? row.created_at) || 0,
+    [latestMessage.data]
+  );
 
   // Somebody you may message but have not opened a channel with yet.
   const unopened = useMemo(
@@ -285,18 +280,6 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
     acceptConnection.isPending ||
     declineConnection.isPending;
 
-  // The two lists the sections are cut from. Both are cached reads the
-  // actions menu and the picker make too, so most readers already hold them.
-  const favorites = useFavoriteContacts("");
-  const starred = useMemo(
-    () => new Set((favorites.data?.items ?? []).map((contact) => contact.id)),
-    [favorites.data]
-  );
-  const connected = useMemo(
-    () => new Set((connections.data?.accepted ?? []).map((grant) => grant.user_id)),
-    [connections.data]
-  );
-
   const groupRows: GroupRow[] = useMemo(
     () =>
       rows
@@ -307,8 +290,9 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
           members: roster(row),
           waiting: unread.data?.get(row.id) ?? 0,
           pending: Boolean(row.pending),
+          latest: latestOf(row),
         })),
-    [rows, unread.data]
+    [rows, unread.data, latestOf]
   );
 
   const entries: Entry[] = useMemo(
@@ -325,10 +309,16 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
           person: personFor.get(row.other_user_id) as Person,
           conversationId: row.id,
           waiting: unread.data?.get(row.id) ?? 0,
+          latest: latestOf(row),
         })),
-      ...unopened.map((grant) => ({ userId: grant.user_id, person: grant, waiting: 0 })),
+      ...unopened.map((grant) => ({
+        userId: grant.user_id,
+        person: grant,
+        waiting: 0,
+        latest: Number.NEGATIVE_INFINITY,
+      })),
     ],
-    [rows, personFor, unopened, unread.data]
+    [rows, personFor, unopened, unread.data, latestOf]
   );
 
   // One question about everybody listed, not one per row: what the menu on a
@@ -337,53 +327,24 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
   const permissions = useDmPermissions(useMemo(() => entries.map((e) => e.userId), [entries]));
   const answers = permissions.data?.permissions ?? {};
 
-  const grouped = useMemo(() => {
-    const groups: Record<GroupId, Entry[]> = {
-      unread: [],
-      favorites: [],
-      connections: [],
-      messages: [],
-    };
-    for (const entry of entries.filter((entry) => matches(entry.person))) {
-      // Unread wins over where somebody otherwise belongs, so a starred person
-      // with something waiting is read here rather than found further down.
-      const group = entry.waiting
-        ? "unread"
-        : starred.has(entry.userId)
-          ? "favorites"
-          : connected.has(entry.userId)
-            ? "connections"
-            : "messages";
-      groups[group].push(entry);
-    }
-    return groups;
-  }, [entries, starred, connected, matches]);
+  // A term narrows people on their handles and groups on their names, which
+  // is all a group has.
+  const threads: Thread[] = useMemo(() => {
+    const needle = term.trim().toLowerCase();
+    return [
+      ...entries
+        .filter((entry) => matches(entry.person))
+        .map((entry): Thread => ({ kind: "person", entry })),
+      ...groupRows
+        .filter((row) => !needle || row.name.toLowerCase().includes(needle))
+        .map((row): Thread => ({ kind: "group", row })),
+    ].sort((a, b) => latestOfThread(b) - latestOfThread(a));
+  }, [entries, groupRows, matches, term]);
 
-  // A term narrows groups on their names, which is all a group has.
-  const shownGroups = useMemo(
-    () =>
-      term.trim()
-        ? groupRows.filter((row) => row.name.toLowerCase().includes(term.trim().toLowerCase()))
-        : groupRows,
-    [groupRows, term]
-  );
-
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const fold = (group: GroupId, open: boolean) => {
-    const next = { ...collapsed, [group]: !open };
-    setCollapsed(next);
-    setItem(COLLAPSED_KEY, JSON.stringify(next));
-  };
-
-  const filled = GROUP_ORDER.filter((group) => grouped[group].length > 0);
   const searching = term.trim().length > 0;
   const reason = settings.data
     ? unreachableReason(!settings.data.age_answer_required, settings.data.dm_policy)
     : null;
-  // A folded section under a term would hide the one match that was looked
-  // for. The reader's own state is left untouched, so clearing the field puts
-  // the sections back the way they had them.
-  const isOpen = (group: GroupId) => searching || !collapsed[group];
 
   // Whether there is anything to narrow, asked of what the account has rather
   // than of what is left after typing — so the field does not disappear under
@@ -396,65 +357,89 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
       (connections.data?.outgoing?.length ?? 0) >
     0;
 
-  const listFor = (entries: Entry[]) => (
-    <ul>
-      {entries.map((entry) => {
-        const them = entry.person;
-        const handle = getUrlHandle(them);
-        return (
-          <li
-            key={entry.conversationId ?? `u${entry.userId}`}
-            className={cn(
-              "group/row flex items-center rounded-md pe-1 hover:bg-accent",
-              handle === openHandle && "bg-accent"
-            )}
-          >
-            <Link
-              to="/messages"
-              search={{ with: handle }}
-              className={cn(ROW, !entry.conversationId && "text-muted-foreground")}
-            >
-              <ProfileAvatar
-                user={{ ...them, id: them.user_id }}
-                decorations={them.profile_decorations}
-                presence={them.presence}
-                className="size-6"
-              />
-              <UserHandle
-                user={them}
-                className="min-w-0 flex-1"
-                nameClassName="min-w-0 truncate"
-                numberClassName="shrink-0"
-              />
-              {/* A dot carries no text, so the count it stands for is written
+  const personRow = (entry: Entry) => {
+    const them = entry.person;
+    const handle = getUrlHandle(them);
+    return (
+      <li
+        key={entry.conversationId ?? `u${entry.userId}`}
+        className={cn(
+          "group/row flex items-center rounded-md pe-1 hover:bg-accent",
+          handle === openHandle && "bg-accent"
+        )}
+      >
+        <Link
+          to="/messages"
+          search={{ with: handle }}
+          className={cn(ROW, !entry.conversationId && "text-muted-foreground")}
+        >
+          <ProfileAvatar
+            user={{ ...them, id: them.user_id }}
+            decorations={them.profile_decorations}
+            presence={them.presence}
+            className="size-6"
+          />
+          <UserHandle
+            user={them}
+            className="min-w-0 flex-1"
+            nameClassName="min-w-0 truncate"
+            numberClassName="shrink-0"
+          />
+          {/* A dot carries no text, so the count it stands for is written
                   out for anyone not looking at it. */}
-              {entry.waiting ? (
-                <span className="relative ms-auto flex shrink-0 items-center">
-                  <span className="sr-only">{t("unreadHere", { count: entry.waiting })}</span>
-                  <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
-                </span>
-              ) : null}
-              {!entry.conversationId ? (
-                <span className="shrink-0 text-xs">{t("startHint")}</span>
-              ) : null}
-            </Link>
-            {/* Outside the link, because acting on somebody is not the same
+          {entry.waiting ? (
+            <span className="relative ms-auto flex shrink-0 items-center">
+              <span className="sr-only">{t("unreadHere", { count: entry.waiting })}</span>
+              <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
+            </span>
+          ) : null}
+          {!entry.conversationId ? (
+            <span className="shrink-0 text-xs">{t("startHint")}</span>
+          ) : null}
+        </Link>
+        {/* Outside the link, because acting on somebody is not the same
                 gesture as opening what they said. The ways in are left out:
                 the row is one, and clicking it is the conversation. */}
-            <ContactActionsMenu
-              user={{
-                id: them.user_id,
-                username: them.username,
-                discriminator: them.discriminator,
-              }}
-              className={ROW_MENU}
-              permission={answers[String(them.user_id)] ?? null}
-              omit={["message"]}
-            />
-          </li>
-        );
-      })}
-    </ul>
+        <ContactActionsMenu
+          user={{
+            id: them.user_id,
+            username: them.username,
+            discriminator: them.discriminator,
+          }}
+          className={ROW_MENU}
+          permission={answers[String(them.user_id)] ?? null}
+          omit={["message"]}
+        />
+      </li>
+    );
+  };
+
+  const groupRow = (row: GroupRow) => (
+    <li
+      key={row.conversationId}
+      className={cn(
+        "group/row flex items-center rounded-md pe-1 hover:bg-accent",
+        row.conversationId === openThread && "bg-accent"
+      )}
+    >
+      <Link
+        to="/messages"
+        search={{ thread: row.conversationId }}
+        className={cn(ROW, row.pending && "text-muted-foreground")}
+      >
+        <RosterFaces members={row.members} />
+        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+        {row.waiting ? (
+          <span className="relative ms-auto flex shrink-0 items-center">
+            <span className="sr-only">{t("unreadHere", { count: row.waiting })}</span>
+            <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
+          </span>
+        ) : null}
+        {/* Named on it, not yet on it. The row opens the thread, which is
+            where the answer is given. */}
+        {row.pending ? <span className="shrink-0 text-xs">{t("groupThreads.invited")}</span> : null}
+      </Link>
+    </li>
   );
 
   return (
@@ -568,46 +553,7 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
             </section>
           ) : null}
 
-          {shownGroups.length > 0 ? (
-            <section>
-              <h3 className="px-2 py-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                {t("groupThreads.heading")}
-              </h3>
-              <ul>
-                {shownGroups.map((row) => (
-                  <li
-                    key={row.conversationId}
-                    className={cn(
-                      "group/row flex items-center rounded-md pe-1 hover:bg-accent",
-                      row.conversationId === openThread && "bg-accent"
-                    )}
-                  >
-                    <Link
-                      to="/messages"
-                      search={{ thread: row.conversationId }}
-                      className={cn(ROW, row.pending && "text-muted-foreground")}
-                    >
-                      <RosterFaces members={row.members} />
-                      <span className="min-w-0 flex-1 truncate">{row.name}</span>
-                      {row.waiting ? (
-                        <span className="relative ms-auto flex shrink-0 items-center">
-                          <span className="sr-only">{t("unreadHere", { count: row.waiting })}</span>
-                          <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
-                        </span>
-                      ) : null}
-                      {/* Named on it, not yet on it. The row opens the thread,
-                          which is where the answer is given. */}
-                      {row.pending ? (
-                        <span className="shrink-0 text-xs">{t("groupThreads.invited")}</span>
-                      ) : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          {filled.length === 0 && shownGroups.length === 0 ? (
+          {threads.length === 0 ? (
             searching ? (
               // Only when the term found nothing at all. A request matching it
               // is drawn above, and saying "nobody matches" over the top of
@@ -634,28 +580,12 @@ export const ConversationList = ({ explain = false }: { explain?: boolean } = {}
             ) : waiting.length === 0 ? (
               <p className="px-2 py-1 text-muted-foreground text-sm">{t("nobodyYet")}</p>
             ) : null
-          ) : /* One section with everybody in it is just the list, so it is drawn
-                as the list: nothing to fold, and no heading naming "all of them". */
-          filled.length === 1 ? (
-            listFor(grouped[filled[0]])
           ) : (
-            filled.map((group) => (
-              <Collapsible
-                key={group}
-                open={isOpen(group)}
-                onOpenChange={(open) => fold(group, open)}
-              >
-                <CollapsibleTrigger className="flex w-full items-center gap-1 rounded-md px-2 py-1 font-medium text-muted-foreground text-xs uppercase tracking-wide hover:bg-accent">
-                  <ChevronRight
-                    className={cn("size-3.5 transition-transform", isOpen(group) && "rotate-90")}
-                    aria-hidden
-                  />
-                  <span className="flex-1 text-left">{t(`groups.${group}`)}</span>
-                  <span className="tabular-nums">{grouped[group].length}</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent>{listFor(grouped[group])}</CollapsibleContent>
-              </Collapsible>
-            ))
+            <ul>
+              {threads.map((thread) =>
+                thread.kind === "person" ? personRow(thread.entry) : groupRow(thread.row)
+              )}
+            </ul>
           )}
         </>
       )}

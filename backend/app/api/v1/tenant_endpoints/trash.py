@@ -32,9 +32,11 @@ from app.api.deps import (
 from app.core.audit_events import AuditEventType
 from app.core.messages import TrashMessages
 from app.core.tools import TRASH_TARGETS, plural_of
+from app.db.base import MODELS_BY_TABLE
 from app.db.query import build_paginated_response
 from app.db.soft_delete_filter import SOFT_DELETE_MODELS, select_including_deleted
 from app.models.tenant.comment import Comment
+from app.models.tenant.task import Task
 from app.models.platform.guild import CommunityRole
 from app.models.platform.user import User, UserStatus
 from app.models.platform.user_profile_view import MemberProfile
@@ -49,6 +51,7 @@ from app.services.platform import guilds as guilds_service
 from app.services.tenant import ownership as ownership_service
 from app.core.user_display import display_name
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import column_limits
 from app.services.tenant import content_references
 from app.services.tenant.lifecycle_tree import CASCADE_PARENTS
 from app.services.tenant.soft_delete import (
@@ -60,17 +63,19 @@ from app.services.tenant.soft_delete import (
 router = APIRouter()
 
 
+def _entry(target: str) -> tuple[type[SQLModel], str]:
+    model = MODELS_BY_TABLE[plural_of(target)]
+    if model not in SOFT_DELETE_MODELS:  # pragma: no cover — a registry mistake
+        raise RuntimeError(f"{target} names no model with a trash can")
+    return model, model.display_field()
+
+
 #: Wire name -> (model, the column that labels its rows). A target's table is
 #: its own plural and its label is the model's ``display_field``, so neither is
 #: written down here; a target with no soft-deletable model behind it fails at
 #: import rather than at request time.
-_BY_TABLE = {model.__tablename__: model for model in SOFT_DELETE_MODELS}
 ENTITY_REGISTRY: dict[str, tuple[type[SQLModel], str]] = {
-    target: (
-        _BY_TABLE[plural_of(target)],
-        _BY_TABLE[plural_of(target)].display_field(),
-    )
-    for target in TRASH_TARGETS
+    target: _entry(target) for target in TRASH_TARGETS
 }
 
 
@@ -299,6 +304,11 @@ async def restore_trash_entity(
         )
 
     await restore_entity(session, entity)
+    # A task back out of the trash goes back into its column, unless archived.
+    if isinstance(entity, Task) and entity.archived_at is None:
+        await column_limits.refuse_full_columns(
+            session, guild_context, entity.project_id, [entity]
+        )
 
     # A comment back in the conversation puts back what it alone pointed at.
     if isinstance(entity, Comment):

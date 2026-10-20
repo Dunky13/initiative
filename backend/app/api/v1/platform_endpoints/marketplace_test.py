@@ -268,21 +268,6 @@ class TestUploadingAListingFile:
         assert registration["scope_ceiling"] == ["projects:read"]
         assert registration["live"] is False
 
-    async def test_reference_sectors_are_not_taken_from_an_upload(
-        self, client, acting_user
-    ):
-        owner = await acting_user("owner")
-        manifest = _plugin_manifest(
-            registration={"kind": "container", "reference_sectors": ["billing"]}
-        )
-
-        response = await client.post(
-            UPLOAD_URL, json={"manifest": manifest}, headers=owner.headers
-        )
-
-        assert response.status_code == 422
-        assert "reference sectors" in response.json()["problem"]
-
     @pytest.mark.parametrize("tier", ["operator", "member"])
     async def test_uploading_is_the_owners(self, client, acting_user, tier):
         actor = await acting_user(tier)

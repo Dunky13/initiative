@@ -7,7 +7,11 @@ import bcrypt
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key,
+    load_pem_public_key,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -27,6 +31,7 @@ from app.core.config import settings
 # sides to change in the same instant, so the settings that hold one take
 # concatenated PEM blocks and every block is trusted: append the new key,
 # let the peer start signing with it, drop the old block a release later.
+# Every block is an Ed25519 key: the one kind of key on any boundary.
 # ──────────────────────────────────────────────────────────────────────────
 
 #: Marks the start of each block in a concatenated PEM bundle.
@@ -44,17 +49,21 @@ def load_verification_keys(pem_bundle: str) -> tuple[Any, ...]:
     Keyed on the configured text and cached, so a bundle is parsed once rather
     than on every call that verifies against it. A block that will not load
     raises instead of being skipped — a silently dropped block leaves a
-    rotation looking configured while the key it added does nothing.
+    rotation looking configured while the key it added does nothing. So does
+    a block that is not an Ed25519 key.
     """
     blocks = [_PEM_HEADER + rest for rest in pem_bundle.split(_PEM_HEADER)[1:]]
-    keys: list[Any] = []
+    keys: list[ed25519.Ed25519PublicKey] = []
     for index, block in enumerate(blocks):
         try:
-            keys.append(load_pem_public_key(block.encode("utf-8")))
+            key = load_pem_public_key(block.encode("utf-8"))
         except (ValueError, TypeError) as exc:
             raise PublicKeyBundleError(
                 f"PEM block {index + 1} is not a readable public key: {exc}"
             ) from exc
+        if not isinstance(key, ed25519.Ed25519PublicKey):
+            raise PublicKeyBundleError(f"PEM block {index + 1} is not an Ed25519 key")
+        keys.append(key)
     return tuple(keys)
 
 
@@ -62,9 +71,11 @@ def load_verification_keys(pem_bundle: str) -> tuple[Any, ...]:
 #: Tokens this deployment both mints and verifies, and the shared-secret
 #: billing console handoffs: :func:`sign_hs256` / :func:`verify_hs256`.
 JWT_ALGORITHM = "HS256"
-#: Tokens another service verifies against our published public key:
-#: :func:`sign_rs256`.
-HANDOFF_JWT_ALGORITHM = "RS256"
+#: Tokens another service verifies against the public half of one of our
+#: keys (billing handoffs; plug-in context, lifecycle and page handoff
+#: tokens), and the tokens we verify from billing: :func:`sign_eddsa`.
+#: Ed25519, the one kind of key on any boundary.
+PUBLIC_KEY_JWT_ALGORITHM = "EdDSA"
 
 #: ``iss`` on every token this deployment mints that names an issuer. Pinned on
 #: both sides of each boundary — not a deployment knob.
@@ -113,15 +124,15 @@ def verify_hs256(
     )
 
 
-def sign_rs256(
+def sign_eddsa(
     payload: dict[str, Any],
     private_pem: str,
     kid: str | None,
     *,
     typ: str | None = None,
 ) -> str:
-    """Sign ``payload`` as an RS256 JWT for a service that verifies it with
-    the public half of ``private_pem``.
+    """Sign ``payload`` as an EdDSA JWT with an Ed25519 key, for a service
+    that verifies it with the public half of ``private_pem``.
 
     The header carries ``kid`` when there is one, so the receiver picks the
     right key during a rotation, and ``typ`` when the token kind names one.
@@ -132,7 +143,7 @@ def sign_rs256(
     if kid:
         headers["kid"] = kid
     return jwt.encode(
-        payload, private_pem, algorithm=HANDOFF_JWT_ALGORITHM, headers=headers
+        payload, private_pem, algorithm=PUBLIC_KEY_JWT_ALGORITHM, headers=headers
     )
 
 
@@ -526,7 +537,7 @@ def read_handle_offer(token: str | None, name: str) -> int | None:
 
 
 class HandoffSigningNotConfiguredError(RuntimeError):
-    """Raised when a handoff token is requested but no RS256 signing key is
+    """Raised when a handoff token is requested but no Ed25519 signing key is
     configured. The token is verified by a separate service, so there is no
     symmetric fallback — the caller must translate this into a fail-closed
     response (503) rather than mint an unverifiable token."""
@@ -536,20 +547,34 @@ def _resolve_handoff_signing_material() -> tuple[str, str | None]:
     """Return (private_key_pem, kid) for signing handoff JWTs.
 
     Handoff tokens cross a trust boundary: the receiving service verifies them
-    with the public half of this key, so they are always RS256 — never a
+    with the public half of this key, so they are always EdDSA — never a
     symmetric scheme that would force sharing a secret across that boundary.
     Set HANDOFF_SIGNING_KEY_ID for a stable ``kid`` so the receiver can pick
     the right verifying key out of a JWKS during rotation.
 
-    Fails closed (raises) when no key is configured: a deployment that links a
-    companion service must also supply HANDOFF_SIGNING_PRIVATE_KEY_PEM.
+    Fails closed (raises) when no key is configured, or when the one configured
+    is not Ed25519: a deployment that links a companion service must also
+    supply HANDOFF_SIGNING_PRIVATE_KEY_PEM.
     """
     private_pem = settings.HANDOFF_SIGNING_PRIVATE_KEY_PEM
     if not private_pem:
         raise HandoffSigningNotConfiguredError(
             "HANDOFF_SIGNING_PRIVATE_KEY_PEM is required to mint handoff tokens"
         )
+    if not _is_ed25519_private_key(private_pem):
+        raise HandoffSigningNotConfiguredError(
+            "HANDOFF_SIGNING_PRIVATE_KEY_PEM must be an Ed25519 key (EdDSA)"
+        )
     return private_pem, settings.HANDOFF_SIGNING_KEY_ID
+
+
+@lru_cache(maxsize=4)
+def _is_ed25519_private_key(private_pem: str) -> bool:
+    try:
+        key = load_pem_private_key(private_pem.encode("utf-8"), password=None)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(key, ed25519.Ed25519PrivateKey)
 
 
 BILLING_PORTAL_AUDIENCE = "initiative:billing-portal"
@@ -568,7 +593,7 @@ def create_billing_portal_handoff_token(
     guild_ref: str,
     expires_in: timedelta = BILLING_PORTAL_HANDOFF_LIFETIME,
 ) -> tuple[str, int]:
-    """Mint the billing-portal handoff token (RS256; raises if unconfigured).
+    """Mint the billing-portal handoff token (EdDSA; raises if unconfigured).
 
     ``user_ref`` / ``guild_ref`` are the only names for the pair that cross —
     see ``services.platform.identity_refs.billing_refs``. ``sub`` carries the
@@ -588,7 +613,7 @@ def create_billing_portal_handoff_token(
         "user_ref": user_ref,
         "community_ref": guild_ref,
     }
-    token = sign_rs256(payload, *_resolve_handoff_signing_material())
+    token = sign_eddsa(payload, *_resolve_handoff_signing_material())
     return token, int(expires_in.total_seconds())
 
 
@@ -608,21 +633,45 @@ def create_billing_insights_handoff_token(
 ) -> tuple[str, int]:
     """Mint the handoff into the billing service's insights page.
 
-    The same RS256 key as the portal handoff, under its own audience, so
+    The same Ed25519 key as the portal handoff, under its own audience, so
     neither token opens the other's door. It names the person by billing's
     pairwise reference and nothing else: no community and no grant, because
     the page shows nothing about any one community.
     """
+    return _billing_staff_handoff(BILLING_INSIGHTS_AUDIENCE, user_ref, expires_in)
+
+
+BILLING_CONTRACTS_AUDIENCE = "initiative:billing-contracts"
+
+
+def create_billing_contracts_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's contracts console.
+
+    The insights handoff's shape under the contracts audience: a person and no
+    community, because a contract is a payer's and some cover no community
+    here. The audience is what keeps an insights handoff, minted for a
+    read-only page, from opening a console that writes.
+    """
+    return _billing_staff_handoff(BILLING_CONTRACTS_AUDIENCE, user_ref, expires_in)
+
+
+def _billing_staff_handoff(
+    audience: str, user_ref: str, expires_in: timedelta
+) -> tuple[str, int]:
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "jti": str(uuid.uuid4()),
         "sub": user_ref,
-        "aud": BILLING_INSIGHTS_AUDIENCE,
+        "aud": audience,
         "iss": TOKEN_ISSUER,
         "iat": int(now.timestamp()),
         "exp": now + expires_in,
     }
-    token = sign_rs256(payload, *_resolve_handoff_signing_material())
+    token = sign_eddsa(payload, *_resolve_handoff_signing_material())
     return token, int(expires_in.total_seconds())
 
 

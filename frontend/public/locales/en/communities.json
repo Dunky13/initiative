@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Unable to delete invite.",
     "inviteLinkCopied": "Invite link copied to clipboard.",
     "copyInviteLink": "Copy invite link",
+    "newInviteLinkOnce": "Copy this link now. It won't be shown again.",
+    "inviteLinkTitle": "Invite link",
     "deleteInviteLink": "Delete invite",
     "usesFormat": "Uses: {{uses}}/{{max}} · Expires: {{expires}}",
     "neverExpires": "Never",
@@ -243,7 +245,9 @@
     "accountSettings": "Account settings",
     "platformSettings": "Platform settings",
     "shellBackToStart": "Back to start",
-    "logOut": "Log out"
+    "logOut": "Log out",
+    "unavailableTitle": "Couldn't load your communities",
+    "unavailableDescription": "Something went wrong while loading them. Your communities haven't gone anywhere."
   },
   "notifications": {
     "desktop": {
@@ -267,7 +271,6 @@
     "initiativeJoinApproved": "Your request to join {{initiativeName}} was approved.",
     "initiativeJoinDenied": "Your request to join {{initiativeName}} was declined.",
     "projectAdded": "{{projectName}} was added to {{initiativeName}} you’re part of.",
-    "userPendingApproval": "{{email}} is awaiting approval.",
     "mentionComment": "{{mentionedBy}} mentioned you in a comment on {{contextTitle}}.",
     "mentionFile": "{{mentionedBy}} mentioned you in {{fileTitle}}.",
     "mentionTaskDescription": "{{mentionedBy}} mentioned you in {{taskTitle}}.",
@@ -294,8 +297,6 @@
     "accessGrantDenied": "Your access request for {{community}} was denied.",
     "accessGrantRevoked": "Your access to {{community}} was revoked.",
     "eventInvitation": "{{organizer}} invited you to {{eventTitle}}.",
-    "eventUpdated": "{{editor}} updated {{eventTitle}}.",
-    "eventRescheduled": "{{editor}} rescheduled {{eventTitle}}.",
     "eventCancelled": "{{canceller}} cancelled {{eventTitle}}.",
     "eventRsvp": "{{responder}} responded {{status}} to {{eventTitle}}.",
     "eventReminder": "{{eventTitle}} is coming up.",
@@ -339,6 +340,18 @@
     "commentsOnTaskMulti": "{{name}} and {{others}} others left {{count}} comments on {{taskTitle}}",
     "commentsOnResource": "{{name}} left {{count}} comments on {{entityName}}",
     "commentsOnResourceMulti": "{{name}} and {{others}} others left {{count}} comments on {{entityName}}",
+    "subscription": {
+      "created": "{{name}} created {{entityName}}.",
+      "completed": "{{name}} completed {{entityName}}.",
+      "commented": "{{name}} commented on {{entityName}}.",
+      "edited": "{{name}} edited {{entityName}}.",
+      "moved": "{{name}} moved {{entityName}}.",
+      "scheduled": "{{name}} rescheduled {{entityName}}.",
+      "published": "{{name}} published {{entityName}}.",
+      "reacted": "{{name}} reacted to {{entityName}}."
+    },
+    "subscriptionMulti_one": "{{name}} and 1 other changed {{entityName}}.",
+    "subscriptionMulti_other": "{{name}} and {{count}} others changed {{entityName}}.",
     "seeAll": "See all",
     "inbox": {
       "title": "Notifications",
@@ -366,8 +379,26 @@
       "project": "A project",
       "projectIn": "a project",
       "task": "A task",
-      "taskObject": "your task",
-      "user": "A user"
+      "taskObject": "your task"
+    },
+    "moderationRemoved": "A moderator took down something you wrote: {{reason}}",
+    "moderationRemovedLegal": "Something you wrote was taken down for legal reasons",
+    "moderationWarned": "A warning from the moderators: {{message}}",
+    "feedbackRead": "Your feedback was read",
+    "caseOpened": "New {{stream}} case: {{taskTitle}}",
+    "caseReplied": "{{name}} replied on {{taskTitle}}, and nobody has taken it",
+    "caseRepliedMany": "{{name}} left {{count}} replies on {{taskTitle}}, and nobody has taken it",
+    "caseStreams": {
+      "security": "security",
+      "moderation": "moderation",
+      "support": "support",
+      "feedback": "feedback"
+    },
+    "profileCleared": {
+      "display_names": "Your names in communities were cleared by a moderator.",
+      "custom_status": "Your status line was cleared by a moderator.",
+      "decorations": "Your profile decorations were cleared by a moderator.",
+      "other": "Part of your profile was cleared by a moderator."
     }
   },
   "version": {
@@ -437,6 +468,9 @@
     "summaryUnavailable": "Unavailable right now",
     "membersOfMax": "{{used}} of {{max}}",
     "membersOfUnlimited": "{{used}} · Unlimited",
+    "guests": "Guests",
+    "guestsUpTo": "Up to {{max}} at a time",
+    "guestsUnlimited": "Unlimited",
     "currentPlan": "Current plan:",
     "selfHosted": "Self-hosted",
     "upgrade": "Upgrade",
@@ -597,5 +631,38 @@
       "apply": "Show nearby first",
       "clear": "Stop sorting by location"
     }
+  },
+  "guests": {
+    "invitesTitle": "Invite a guest",
+    "invitesDescription": "Make a link for someone who should see only certain initiatives or items, for a set number of days.",
+    "guestDaysLabel": "Days the guest stays",
+    "initiativesLabel": "Initiatives they join",
+    "initiativesPlaceholder": "None",
+    "itemsLabel": "Items they get",
+    "itemsHelp": "Search for a project, file or other item, then choose whether they can view or edit it.",
+    "itemLevel": "Access to {{title}}",
+    "removeItem": "Remove {{title}}",
+    "generateInvite": "Generate guest invite",
+    "noActiveInvites": "No guest invites.",
+    "staysDays_one": "Stays {{count}} day",
+    "staysDays_other": "Stays {{count}} days",
+    "joinsInitiatives": "Joins {{names}}",
+    "givesItems_one": "{{count}} item",
+    "givesItems_other": "{{count}} items",
+    "listTitle": "Guests",
+    "listDescription": "People here for a set number of days. A guest takes no seat and sees only what their invite gave them.",
+    "loading": "Loading guests…",
+    "unableToLoad": "Unable to load guests.",
+    "noGuests": "No guests right now.",
+    "endsColumn": "Time ends",
+    "extend": "Extend",
+    "extendTitle": "Extend {{name}}'s time",
+    "extendDescription": "Their time as a guest ends this many days from now, or sooner if the community or the server allows less.",
+    "extendDaysLabel": "Days from now",
+    "extended": "Guest time extended.",
+    "extendError": "Could not extend their time.",
+    "makeMember": "Make member",
+    "madeMember": "They're a member now.",
+    "makeMemberError": "Could not make them a member."
   }
 }

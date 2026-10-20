@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlsplit
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -66,10 +66,10 @@ from app.testing import (
 SERVICE_ID = "tests.widgetco"
 SERVICE_UID = marketplace_uid("widgetco")
 
-# Generated once for this module: the mint needs a real RS256 key, and a
+# Generated once for this module: the mint needs a real Ed25519 key, and a
 # deployment's own keypair is the one thing it will not improvise.
 _SIGNING_KEY_PEM = (
-    rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    ed25519.Ed25519PrivateKey.generate()
     .private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
@@ -88,8 +88,8 @@ def _service_definition(**overrides) -> dict:
             "protocol": 1,
             "scopes": ["comments:read", "projects:read", "projects:write"],
         },
-        "features": ["embeds"],
-        "embeds": [
+        "features": ["pages"],
+        "pages": [
             {
                 "id": "board",
                 "path": "/embed/board",
@@ -344,7 +344,7 @@ class TestMandatory:
 
 
 # ---------------------------------------------------------------------------
-# The embed handoff
+# The page handoff
 # ---------------------------------------------------------------------------
 
 
@@ -382,7 +382,7 @@ class TestHandoff:
         )
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["embed_url"] == "https://widgetco.example.test/embed/board"
+        assert body["page_url"] == "https://widgetco.example.test/embed/board"
         assert body["allowed_origins"] == ["https://widgetco.example.test"]
         assert body["audience"] == f"initiative-plugin:{SERVICE_ID}"
         assert body["expires_in_seconds"] == 60
@@ -398,7 +398,7 @@ class TestHandoff:
             session,
             registration,
             base_url="http://widgetco.internal:8200",
-            embed_origin="https://widgetco.example.test",
+            page_origin="https://widgetco.example.test",
         )
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _installed(session, a)
@@ -408,9 +408,31 @@ class TestHandoff:
         )
 
         assert response.status_code == 200, response.text
-        assert response.json()["embed_url"] == (
+        assert response.json()["page_url"] == (
             "https://widgetco.example.test/embed/board"
         )
+
+    async def test_the_token_says_where_the_community_stands_now(
+        self, client: AsyncClient, acting_user, session: AsyncSession, registration
+    ):
+        from app.models.platform.guild import CommunityStatus
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _installed(session, a)
+        a.guild.status = CommunityStatus.read_only.value
+        session.add(a.guild)
+        await session.commit()
+
+        response = await client.post(
+            a.g(f"/plugins/{plugin.id}/handoff/board"), headers=a.headers
+        )
+        assert response.status_code == 200, response.text
+        claims = jwt.decode(
+            response.json()["handoff_token"],
+            options={"verify_signature": False},
+            audience=response.json()["audience"],
+        )
+        assert claims["community_status"] == "read_only"
 
     async def test_the_token_names_the_guild_the_install_and_the_surface(
         self, client: AsyncClient, acting_user, session: AsyncSession, registration
@@ -434,9 +456,11 @@ class TestHandoff:
         # The guild by reference for the same reason as the subject below: an
         # index names a row to us, not an entity to somebody else.
         assert claims["community_ref"] == await ensure_plugin_guild_ref(
-            guild_id=a.guild.id, plugin_install_id=plugin.id
+            guild_id=a.guild.id, public_id=plugin.definition["service"]["public_id"]
         )
         assert "guild_id" not in claims
+        # Where the community stands, which every token carries.
+        assert claims["community_status"] == "active"
         assert claims["plugin_install_id"] == plugin.id
         assert claims["surface_id"] == "board"
         assert claims["jti"]
@@ -455,7 +479,9 @@ class TestHandoff:
         # a person is not storing something another plug-in would recognize.
         assert claims["sub"] != str(a.user.id)
         assert claims["sub"] == await ensure_plugin_ref(
-            guild_id=a.guild.id, plugin_install_id=plugin.id, user_id=a.user.id
+            guild_id=a.guild.id,
+            public_id=plugin.definition["service"]["public_id"],
+            user_id=a.user.id,
         )
 
     async def test_a_member_may_not_open_an_admin_surface(
@@ -784,7 +810,7 @@ class TestInitiativeHandoff:
         claims = self._claims(body)
         assert claims["initiative_id"] == a.initiative.id
         assert claims["community_ref"] == await ensure_plugin_guild_ref(
-            guild_id=a.guild.id, plugin_install_id=plugin.id
+            guild_id=a.guild.id, public_id=plugin.definition["service"]["public_id"]
         )
         assert "guild_id" not in claims
         assert claims["plugin_install_id"] == plugin.id

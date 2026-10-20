@@ -144,7 +144,7 @@ const SecondFactorRequirementForm = ({
 
       {unmet && (
         <Alert>
-          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>{t("auth.secondFactorRequirement.unmet")}</span>
             <Button
               size="sm"

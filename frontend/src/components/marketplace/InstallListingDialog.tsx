@@ -244,9 +244,9 @@ export function InstallListingDialog({
           </Button>
           <Button onClick={submit} disabled={nowhereToInstall || !initiativeId || isPending}>
             {isPending ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Download className="mr-1.5 h-4 w-4" />
+              <Download className="h-4 w-4" />
             )}
             {t("marketplace:install.action")}
           </Button>

@@ -24,6 +24,11 @@ from typing import Any, Mapping, Optional, Sequence, Union
 
 from pglast import ast
 from pglast.enums import A_Expr_Kind, BoolExprType, LimitOption, SortByDir
+from pglast.enums.parsenodes import (
+    FRAMEOPTION_END_CURRENT_ROW,
+    FRAMEOPTION_RANGE,
+    FRAMEOPTION_START_UNBOUNDED_PRECEDING,
+)
 from pglast.stream import RawStream
 
 from app.core.messages import QueryMessages
@@ -36,6 +41,17 @@ from app.services.query.resolve import VIEWER, QueryError
 #: What a column may be reduced to. Aggregates only — a window function is a
 #: different question and the validator does not admit one.
 AGGREGATES = frozenset({"count", "sum", "avg", "min", "max"})
+
+#: What a column may be added up as it goes: a running count, a running total.
+RUNNING = frozenset({"count", "sum"})
+
+#: Everything up to and including this row: Postgres's own default frame,
+#: spelled out because a window written in the tree carries its frame.
+_UP_TO_HERE = (
+    FRAMEOPTION_RANGE
+    | FRAMEOPTION_START_UNBOUNDED_PRECEDING
+    | FRAMEOPTION_END_CURRENT_ROW
+)
 
 #: What a date column may be rounded to. The vocabulary ``date_trunc`` takes,
 #: narrowed to the buckets a tile is drawn at.
@@ -64,6 +80,9 @@ class Column:
     #: What the output column is called. Defaults to the field's own name, or
     #: the aggregate's, so a chart's legend reads as something.
     alias: Optional[str] = None
+    #: Add the aggregate up along the grouping, so each row holds everything
+    #: up to it: a burn-up rather than a count per week.
+    running: bool = False
 
 
 @dataclass(frozen=True)
@@ -220,10 +239,33 @@ def _alias(column: Column) -> str:
     if column.alias:
         return column.alias
     if column.aggregate and column.field == "*":
-        return column.aggregate
-    if column.aggregate:
-        return f"{column.field}_{column.aggregate}"
-    return column.field
+        name = column.aggregate
+    elif column.aggregate:
+        name = f"{column.field}_{column.aggregate}"
+    else:
+        return column.field
+    return f"running_{name}" if column.running else name
+
+
+def _running(reduced: ast.Node, keys: Sequence[ast.Node], name: str) -> ast.FuncCall:
+    """*reduced*, added up along the grouping.
+
+    Ordered by the first grouped column and restarted for each value of the
+    rest, which is how a chart reads them: the first is the axis and the next
+    splits the series, so each series climbs on its own.
+    """
+    if not keys:
+        # One row has nothing to add up along.
+        raise QueryError(QueryMessages.UNSUPPORTED_SYNTAX, name)
+    return ast.FuncCall(
+        funcname=(ast.String(sval="sum"),),
+        args=(reduced,),
+        over=ast.WindowDef(
+            partitionClause=tuple(keys[1:]) or None,
+            orderClause=(ast.SortBy(node=keys[0], sortby_dir=SortByDir.SORTBY_ASC),),
+            frameOptions=_UP_TO_HERE,
+        ),
+    )
 
 
 def _viewer_value(dataset_name: str, condition: Condition) -> bool:
@@ -464,6 +506,8 @@ def build(spec: QuerySpec) -> str:
     for column in spec.columns:
         if column.field != "*":
             _check_field(spec.dataset, column.field)
+        if column.running and column.aggregate not in RUNNING:
+            raise QueryError(QueryMessages.UNSUPPORTED_FUNCTION, "running")
     _check_depth(spec.where)
     for condition in _leaves(spec.where):
         _check_field(spec.dataset, condition.field)
@@ -497,26 +541,55 @@ def build(spec: QuerySpec) -> str:
         op=0,
     )
 
-    if spec.group_by:
-        # By output position, because a grouped expression and its select-list
-        # twin have to be the same expression and an ordinal says so outright.
-        positions = []
-        for name in spec.group_by:
-            if name not in aliases:
-                raise QueryError(QueryMessages.UNKNOWN_FIELD, name)
-            positions.append(ast.A_Const(val=ast.Integer(ival=aliases.index(name) + 1)))
-        select.groupClause = tuple(positions)
+    # By output position, because a grouped expression and its select-list
+    # twin have to be the same expression and an ordinal says so outright.
+    # Every column a name matches that is not a count or a total: one date
+    # rounded two ways is two columns under one name, and grouping only the
+    # first leaves the other ungrouped, while an aggregate is never grouped. A
+    # name only an aggregate has is grouped as it always was, and Postgres
+    # refuses it.
+    grouped: list[int] = []
+    for name in spec.group_by:
+        if name not in aliases:
+            raise QueryError(QueryMessages.UNKNOWN_FIELD, name)
+        plain = [
+            position
+            for position, (alias, column) in enumerate(
+                zip(aliases, spec.columns), start=1
+            )
+            if alias == name and not column.aggregate
+        ]
+        grouped += [
+            position
+            for position in plain or [aliases.index(name) + 1]
+            if position not in grouped
+        ]
+    if grouped:
+        select.groupClause = tuple(
+            ast.A_Const(val=ast.Integer(ival=position)) for position in grouped
+        )
 
-    if spec.order_by is None and spec.group_by:
+    for target, column in zip(targets, spec.columns):
+        if column.running:
+            # Each window gets expressions of its own: a node is not shared
+            # between two places in a tree.
+            keys = [
+                _expression(spec.columns[position - 1], base)
+                for position in grouped
+                if not spec.columns[position - 1].aggregate
+            ]
+            target.val = _running(target.val, keys, target.name or "running")
+
+    if spec.order_by is None and grouped:
         # Rows in the order of what they are grouped by, so a time series
         # reads left to right instead of in whatever order the groups were
         # gathered. Ordinal for the same reason as the grouping.
         select.sortClause = tuple(
             ast.SortBy(
-                node=ast.A_Const(val=ast.Integer(ival=aliases.index(name) + 1)),
+                node=ast.A_Const(val=ast.Integer(ival=position)),
                 sortby_dir=SortByDir.SORTBY_ASC,
             )
-            for name in spec.group_by
+            for position in grouped
         )
 
     if spec.order_by is not None:

@@ -11,11 +11,11 @@ between that resource and its initiative (``parents``), because a change is
 rarely interesting only where it happened: a comment moves a thread and the
 count on the card its parent shows.
 
-``initiative_id`` is NOT NULL and resolved by the trigger from the same
-``INITIATIVE_PATHS`` declaration that renders the table's RLS policies, so an
-event is scoped exactly like the row it describes. The outbox itself carries
-initiative-member RLS (``direct()``), which is what lets the poller read it *as
-the subscriber* and get back only the events that subscriber may see.
+``initiative_id`` is resolved by the trigger from the same ``INITIATIVE_PATHS``
+declaration that renders the table's RLS policies, so an event is scoped exactly
+like the row it describes. The outbox's own read policy asks the initiative and
+the sharing of the tool the change names (``dac_tool``/``dac_id``), as a search
+entry's does.
 
 Delivery state is not held here: this is a log, and each subscription tracks its
 own position in it (``webhook_subscriptions.cursor_event_id``). One row can
@@ -33,6 +33,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     String,
+    Text,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -127,4 +128,14 @@ class EventOutbox(SQLModel, table=True):
     parents: list[dict[str, Any]] = Field(
         default_factory=list,
         sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+
+    # The tool instance whose sharing governs the change: the resource itself
+    # when it is a tool, else the outermost tool in ``parents``. Stamped by the
+    # capture trigger, like the pair a search entry carries, so the read policy
+    # asks a person's sharing without walking the chain. NULL for a change that
+    # sits under no tool (a tag), which answers to the initiative gate alone.
+    dac_tool: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    dac_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
     )

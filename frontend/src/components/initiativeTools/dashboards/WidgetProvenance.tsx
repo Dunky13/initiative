@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { WidgetBinding } from "@/hooks/useWidgetData";
+import { dateTimeFormat } from "@/lib/intl";
 import { cn } from "@/lib/utils";
 import type { DataMeta } from "@/lib/widgets/dataShapes";
 import { bindingScope, type EntityLabels, queryScope } from "@/lib/widgets/provenance";
@@ -54,7 +55,7 @@ export function WidgetProvenance({
   const { t, i18n } = useTranslation(["dashboards", "tasks", "common"]);
 
   const _formatDate = useMemo(() => {
-    const format = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" });
+    const format = dateTimeFormat(i18n.language, { dateStyle: "medium" });
     return (epoch: number) => format.format(new Date(epoch));
   }, [i18n.language]);
 
@@ -158,7 +159,7 @@ export function WidgetProvenance({
 
         {onRefresh && (
           <Button variant="outline" size="sm" className="w-full" onClick={onRefresh}>
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            <RefreshCw className="h-3.5 w-3.5" />
             {t("dashboards:provenance.refresh")}
           </Button>
         )}

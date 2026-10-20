@@ -10,15 +10,20 @@ everything around the call reads it the same way.
 
 It runs the rest of the plug-in the same way, as the SDK's runners do: a
 connection's ``after_connect`` (``runAfterConnect``) and ``health``
-(``runHealth``), and what a vendor's delivery emits and says about a
-connection (``runWebhook``).
+(``runHealth``), what a vendor's delivery emits, changes in the plug-in's
+values and says about a connection (``runWebhook``), a schedule's read and the
+changes it makes from the answer (``runSchedule``), and the change an action
+makes to the plug-in's values on its item (``runAction``).
 
 * **What an expression sees**: ``params``, the non-secret fields of the
-  request's connection as ``connection`` and of each connection the endpoint's
-  ``requires`` names that this call holds as ``connections.<id>``, ``now``,
-  each earlier step's answer as ``steps.<name>`` and, once a call is answered,
-  ``response``. A credential never enters one: it is added to the request as
-  the plug-in's ``auth`` says.
+  connection the request carries for the call's actor as ``connection`` and
+  of each connection the endpoint's ``requires`` names that this call holds
+  as ``connections.<id>``, ``now``,
+  for an action's call its item as ``item``, each earlier step's answer as
+  ``steps.<name>`` and, once a call is answered, ``response``. Every
+  expression also reads the install's ``settings`` and ``aliases``
+  (:func:`~app.services.tenant.plugin_config.install_settings`). A credential
+  never enters one: it is added to the request as the plug-in's ``auth`` says.
 * **Where a request may go**: https, on one of the plug-in's ``hosts``, to a public
   address, following no redirect.
 * **What an answer means**: the endpoint's ``errors`` rows first, then the
@@ -37,22 +42,27 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 from urllib.parse import parse_qsl, quote, urljoin, urlsplit
 
 import httpx
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.messages import PluginDataMessages
+from app.core.messages import PluginChannelMessages, PluginDataMessages
 from app.db import cohorts
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.marketplace import expressions
 from app.services.marketplace.plugin_data import (
+    _connection_ids,
+    endpoint_by_id,
     MAX_RESPONSE_BYTES,
-    REQUEST_TIMEOUT_SECONDS,
     PluginDataError,
+    _request_connection,
+    REQUEST_TIMEOUT_SECONDS,
     _required_connection_ids,
+    _resolve_connections,
 )
 from app.services.marketplace.expressions import UNDEFINED, ExpressionError
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
@@ -61,11 +71,16 @@ from app.services.marketplace.service_plugins import (
     DEFAULT_AUTH_PREFIX,
     PLATFORM_CODES,
     TRANSIENT_CODE,
+    _requests,
 )
 from app.services.safe_http import ResponseTooLargeError, request_public_target
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant.plugin_channels import PluginChannelError, load_install
-from app.services.tenant.plugin_config import connection_by_id, without_tokens
+from app.services.tenant.plugin_config import (
+    connection_by_id,
+    install_settings,
+    without_tokens,
+)
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
@@ -75,11 +90,14 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "Delivered",
+    "action_change",
     "after_connect",
     "call_endpoint",
     "health_state",
     "map_delivery",
+    "request_refusal",
     "run_endpoint",
+    "run_schedule",
 ]
 
 MAPPING_FAILED = "mapping-failed"
@@ -268,7 +286,8 @@ Credentials = Mapping[str, str]
 
 
 class _Run:
-    """One endpoint call: its clock, its hosts, its rules and its credentials."""
+    """One endpoint call: its clock, its hosts, its rules, its credentials
+    and who it is made as."""
 
     def __init__(
         self,
@@ -277,6 +296,7 @@ class _Run:
         *,
         credentials: Credentials,
         now: datetime,
+        actor: Optional[str] = None,
     ) -> None:
         auth = definition.get("auth") or {}
         self.hosts: list[str] = list(definition.get("hosts") or [])
@@ -286,6 +306,8 @@ class _Run:
         #: it to neither, for a health check, whose states read every answer.
         self.rules = rules
         self.credentials = credentials
+        #: Which connection a request naming one per actor carries.
+        self.actor = actor
         self.millis, self.now = _clock(now)
 
     async def value(self, text: str, document: Any, where: str) -> Any:
@@ -380,7 +402,7 @@ class _Run:
             "url": str(url),
             "headers": headers,
             "body": body,
-            "connection": request.get("connection"),
+            "connection": _request_connection(request, self.actor),
         }
 
     async def send(self, rendered: dict[str, Any]) -> _Answer:
@@ -536,6 +558,41 @@ def _fits(answer: Any, returns: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
+async def _stepped(
+    run: _Run,
+    spec: Mapping[str, Any],
+    base: dict[str, Any],
+    where: str,
+    *,
+    connection: Optional[Callable[[Mapping[str, Any]], dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Make ``spec``'s request, or its named steps in turn, over ``base``, and
+    answer what its map reads: ``base``, each earlier step's answer as
+    ``steps.<name>`` and the last answer as ``response``. With ``connection``,
+    each request's expressions also read the connection it carries."""
+    steps = spec.get("steps") or [{"name": "", "request": spec["request"]}]
+    named = "steps" in spec
+    answers: dict[str, Any] = {}
+    read: dict[str, Any] = base
+    for index, step in enumerate(steps):
+        request = step["request"]
+        read = {
+            **base,
+            **({"connection": connection(request)} if connection else {}),
+            **({"steps": dict(answers)} if named else {}),
+        }
+        at = f"{where}steps/{index}/request" if named else f"{where}request"
+        response = (await run.perform(request, read, at)).read()
+        if named:
+            answers[step["name"]] = response
+        read = {
+            **read,
+            **({"steps": dict(answers)} if named else {}),
+            "response": response,
+        }
+    return read
+
+
 async def run_endpoint(
     definition: Mapping[str, Any],
     endpoint: Mapping[str, Any],
@@ -544,14 +601,22 @@ async def run_endpoint(
     connections: Mapping[str, Mapping[str, Any]],
     credentials: Credentials,
     now: datetime,
+    installed: Mapping[str, Any],
+    item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
+    actor: Optional[str] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint's answer: its result, or ``{"unavailable":
     <code>}``.
 
     ``connections`` holds each connection's non-secret fields and
-    ``credentials`` its token, by connection id. Expressions read a request's
-    own connection as ``connection`` and every connection the endpoint's
-    ``requires`` names as ``connections.<id>``. A passing failure raises
+    ``credentials`` its token, by connection id. The call is made as
+    ``actor``: a request carries the connection it names, or, naming one per
+    actor, the one it names for ``actor``. Expressions read a request's own
+    connection as ``connection``, every connection the endpoint's
+    ``requires`` names as ``connections.<id>``, the install's ``settings`` and
+    ``aliases`` (``installed``), the ``item`` an action's call is made on and
+    the ``element`` of a list it was run from. A passing failure raises
     :class:`PluginDataError` as the plug-in being unavailable.
     """
     run = _Run(
@@ -559,6 +624,7 @@ async def run_endpoint(
         list(endpoint.get("errors") or []),
         credentials=credentials,
         now=now,
+        actor=actor,
     )
     required, _ = _required_connection_ids(endpoint)
     base = {
@@ -569,30 +635,20 @@ async def run_endpoint(
             if connection_id in connections
         },
         "now": run.now,
+        **installed,
+        **({} if item is None else {"item": dict(item)}),
+        **({} if element is None else {"element": element}),
     }
-    steps = endpoint.get("steps") or [{"name": "", "request": endpoint["request"]}]
-    named = "steps" in endpoint
-    answers: dict[str, Any] = {}
-    read: dict[str, Any] = base
     try:
-        for index, step in enumerate(steps):
-            request = step["request"]
-            read = {
-                **base,
-                "connection": dict(
-                    connections.get(request.get("connection") or "") or {}
-                ),
-                **({"steps": dict(answers)} if named else {}),
-            }
-            where = f"steps/{index}/request" if named else "request"
-            response = await run.perform(request, read, where)
-            if named:
-                answers[step["name"]] = response.read()
-            read = {
-                **read,
-                **({"steps": dict(answers)} if named else {}),
-                "response": response.read(),
-            }
+        read = await _stepped(
+            run,
+            endpoint,
+            base,
+            "",
+            connection=lambda request: dict(
+                connections.get(_request_connection(request, actor) or "") or {}
+            ),
+        )
         answer = await run.value(endpoint["map"], read, "map")
         if isinstance(answer, dict) and "unavailable" in answer:
             code = answer["unavailable"]
@@ -616,10 +672,7 @@ async def run_endpoint(
             ) from outcome
         if outcome.detail:
             logger.info(
-                "plug-in data: %s answered %s (%s)",
-                endpoint.get("id"),
-                outcome.code,
-                outcome.detail,
+                "plug-in data: %s answered %s", endpoint.get("id"), outcome.code
             )
         return {"unavailable": outcome.code}
 
@@ -633,6 +686,7 @@ async def after_connect(
     *,
     params: Mapping[str, str],
     access_token: str,
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> flows.AfterConnect:
     """A declarative ``after_connect``: its request or steps made with the
@@ -640,10 +694,10 @@ async def after_connect(
     refusal with the declared code when ``refuse_when`` holds over the map's
     answer.
 
-    Its expressions read the flow's ``params`` and ``now``, each earlier
-    step's answer as ``steps.<name>`` and, once a call is answered,
-    ``response``. An answer the defaults refuse, a passing failure or an
-    expression that fails raises
+    Its expressions read the flow's ``params``, ``now``, the install's
+    ``settings`` and ``aliases`` (``installed``), each earlier step's answer as
+    ``steps.<name>`` and, once a call is answered, ``response``. An answer the
+    defaults refuse, a passing failure or an expression that fails raises
     :class:`~app.services.tenant.plugin_connection_flows.HookError`, as a hook
     that fails does.
     """
@@ -653,27 +707,9 @@ async def after_connect(
         credentials={"": access_token},
         now=now or datetime.now(timezone.utc),
     )
-    base: dict[str, Any] = {"params": dict(params), "now": run.now}
-    steps = after.get("steps") or [{"name": "", "request": after["request"]}]
-    named = "steps" in after
-    answers: dict[str, Any] = {}
-    read: dict[str, Any] = base
+    base: dict[str, Any] = {"params": dict(params), "now": run.now, **installed}
     try:
-        for index, step in enumerate(steps):
-            read = {**base, **({"steps": dict(answers)} if named else {})}
-            where = (
-                f"after_connect/steps/{index}/request"
-                if named
-                else "after_connect/request"
-            )
-            response = (await run.perform(step["request"], read, where)).read()
-            if named:
-                answers[step["name"]] = response
-            read = {
-                **base,
-                **({"steps": dict(answers)} if named else {}),
-                "response": response,
-            }
+        read = await _stepped(run, after, base, "after_connect/")
         result = await run.value(after["map"], read, "after_connect/map")
         if not isinstance(result, dict):
             raise _Outcome(
@@ -690,7 +726,6 @@ async def after_connect(
     except _Outcome as outcome:
         raise flows.HookError(
             f"after_connect answered {outcome.code or TRANSIENT_CODE}"
-            + (f" ({outcome.detail})" if outcome.detail else "")
         ) from outcome
     except PluginDataError as exc:
         raise flows.HookError(f"after_connect answered {exc.code}") from exc
@@ -703,13 +738,15 @@ async def health_state(
     *,
     fields: Mapping[str, Any],
     access_token: str,
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> str:
     """A connection's health check: its request made with the connection's
     credential, and the state its ``states`` read from the answer.
 
     Its expressions read the connection's non-secret ``fields`` as
-    ``connection``. An answer no row matches is ``ok`` when it is 2xx and
+    ``connection``, and the install's ``settings`` and ``aliases``
+    (``installed``). An answer no row matches is ``ok`` when it is 2xx and
     ``unavailable`` otherwise; a request that could not be made or read is
     ``unavailable``.
     """
@@ -723,6 +760,7 @@ async def health_state(
         "params": {},
         "connection": dict(fields),
         "now": run.now,
+        **installed,
     }
     try:
         answer = await run.perform(health["request"], document, "health/request")
@@ -737,8 +775,70 @@ async def health_state(
             return row["state"]
         return "ok" if 200 <= answer.status <= 299 else "unavailable"
     except (_Outcome, PluginDataError) as exc:
-        logger.info("plug-in health: the check answered no state (%s)", exc)
+        logger.info(
+            "plug-in health: the check answered no state (%s)",
+            exc.code or TRANSIENT_CODE,
+        )
         return "unavailable"
+
+
+# --- an action's change ------------------------------------------------------
+
+
+async def action_change(
+    write: str,
+    *,
+    item: Mapping[str, Any],
+    held: Mapping[str, Any],
+    installed: Mapping[str, Any],
+    result: Any = UNDEFINED,
+    params: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> Optional[dict[str, Any]]:
+    """The change a declarative action's ``write`` answers, as the SDK's
+    ``runAction`` reads it: the one Initiative makes to the plug-in's values
+    on the action's own item, or ``None`` when it answers nothing.
+
+    ``write`` reads ``item`` (its ``kind``, ``id`` and ``title``), ``held``
+    (the install's values on it, by key), ``result`` (the endpoint's mapped
+    answer, absent when the action names no endpoint), ``params`` (what the
+    reader answered, in the endpoint's declared types), ``element`` (the
+    ``ref`` of the list element the action was run from, absent when it was
+    not), the install's ``settings`` and ``aliases`` (``installed``) and
+    ``now``. A change names no target: its item is the action's. The rest of
+    the contract's ``change`` is held where the change is made
+    (``plugin_metadata.apply_changes``). An expression that fails, or an
+    answer that is not a change, raises :class:`PluginDataError` as the
+    plug-in being unavailable.
+    """
+    millis, at = _clock(now or datetime.now(timezone.utc))
+    document: dict[str, Any] = {
+        "item": dict(item),
+        "held": dict(held),
+        "params": dict(params or {}),
+        **installed,
+        "now": at,
+    }
+    if result is not UNDEFINED:
+        document["result"] = result
+    if element is not None:
+        document["element"] = element
+    try:
+        change = await expressions.evaluate(write, document, millis=millis)
+    except ExpressionError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, f"write: {exc}"
+        ) from exc
+    if change is UNDEFINED:
+        return None
+    if not isinstance(change, dict) or "target" in change:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE,
+            502,
+            f"write answered {_text(change)}, which is not a change",
+        )
+    return change
 
 
 # --- a vendor's deliveries ---------------------------------------------------
@@ -746,10 +846,15 @@ async def health_state(
 
 @dataclass(frozen=True)
 class Delivered:
-    """What one delivery emits, and the connection state it sets."""
+    """What one delivery emits, the changes it makes to the plug-in's values,
+    and the connection state it sets."""
 
     #: The emit endpoint's id and its payload.
     event: Optional[tuple[str, dict[str, Any]]] = None
+    #: What the matched row's ``write`` answered: the changes the install makes
+    #: to its values (``plugin_metadata.apply_changes``), :data:`UNDEFINED`
+    #: when the row has no ``write`` or it answered nothing.
+    writes: Any = UNDEFINED
     #: The connection and its state.
     status: Optional[tuple[str, str]] = None
     #: Why ``events`` or ``status`` answered nothing, when an expression of
@@ -764,18 +869,22 @@ async def map_delivery(
     headers: Mapping[str, str],
     payload: Any,
     connection: Mapping[str, Any],
+    installed: Mapping[str, Any],
     now: Optional[datetime] = None,
 ) -> Delivered:
     """One webhook delivery, as a declarative plug-in's ``webhooks`` map it: the
-    event the first ``events`` row whose ``when`` holds emits, its payload held
-    to the emit endpoint's returns, and the state the first matching
-    ``status`` row sets. A delivery nothing matches answers neither.
+    first ``events`` row whose ``when`` holds gives the event it emits, its
+    payload held to the emit endpoint's returns, and the changes its ``write``
+    answers; and the first matching ``status`` row gives the state it sets. A
+    delivery nothing matches answers none of them.
 
     The expressions read ``headers`` (names in lowercase), ``payload``, the
-    routed connection's non-secret fields as ``connection``, and ``now``.
-    ``events`` and ``status`` are read apart: one failing leaves the other's
-    answer, and the failure is in ``failures``. An evaluation that may answer
-    if asked again raises :class:`ExpressionError` with ``transient`` set.
+    routed connection's non-secret fields as ``connection``, ``now``, and the
+    install's ``settings`` and ``aliases`` (``installed``). The event, the
+    changes and the state are read apart: one failing leaves the others'
+    answers, and where it failed is in ``failures``. An evaluation that
+    may answer if asked again raises :class:`ExpressionError` with
+    ``transient`` set.
     """
     millis, at = _clock(now or datetime.now(timezone.utc))
     document = {
@@ -783,6 +892,7 @@ async def map_delivery(
         "payload": payload,
         "connection": dict(connection),
         "now": at,
+        **installed,
     }
     webhooks = definition.get("webhooks") or {}
     returns = {
@@ -801,38 +911,156 @@ async def map_delivery(
             except ExpressionError as exc:
                 if exc.transient:
                     raise
-                failures.append(f"{what}/{index}/when: {exc}")
+                failures.append(f"{what}/{index}/when: the expression failed")
                 return None
         return None
 
     event: Optional[tuple[str, dict[str, Any]]] = None
+    writes: Any = UNDEFINED
     matched = await first("events")
     if matched is not None:
         index, row = matched
-        where = f"events/{index}/map"
-        try:
-            mapped = await expressions.evaluate(row["map"], document, millis=millis)
-        except ExpressionError as exc:
-            if exc.transient:
-                raise
-            failures.append(f"{where}: {exc}")
-        else:
-            problem = _fits(mapped, returns.get(row["emit"]) or [])
-            if problem is None:
-                event = (row["emit"], mapped)
+        if "emit" in row:
+            where = f"events/{index}/map"
+            try:
+                mapped = await expressions.evaluate(row["map"], document, millis=millis)
+            except ExpressionError as exc:
+                if exc.transient:
+                    raise
+                failures.append(f"{where}: the expression failed")
             else:
-                failures.append(f"{where}: the {row['emit']} event {problem}")
+                problem = _fits(mapped, returns.get(row["emit"]) or [])
+                if problem is None:
+                    event = (row["emit"], mapped)
+                else:
+                    failures.append(
+                        f"{where}: the {row['emit']} event does not fit its returns"
+                    )
+        if "write" in row:
+            try:
+                writes = await expressions.evaluate(
+                    row["write"], document, millis=millis
+                )
+            except ExpressionError as exc:
+                if exc.transient:
+                    raise
+                failures.append(f"events/{index}/write: the expression failed")
     status: Optional[tuple[str, str]] = None
     matched = await first("status")
     if matched is not None:
         status = (matched[1]["connection"], matched[1]["state"])
-    return Delivered(event=event, status=status, failures=tuple(failures))
+    return Delivered(
+        event=event, writes=writes, status=status, failures=tuple(failures)
+    )
+
+
+# --- a schedule's run ----------------------------------------------------------
+
+
+async def run_schedule(
+    session: AsyncSession,
+    *,
+    registration: RegistrationSnapshot,
+    plugin: GuildPlugin,
+    guild_id: int,
+    schedule: Mapping[str, Any],
+    since: Optional[str],
+) -> Any:
+    """One run of an install's declarative schedule, as the SDK's
+    ``runSchedule`` makes it: its read is made as the installation, with the
+    params its ``params`` answers, and its ``write`` answers, from the read's
+    answer, the changes the install makes to its values
+    (``plugin_metadata.apply_changes``). Answers what ``write`` answered,
+    :data:`UNDEFINED` for nothing.
+
+    ``params`` reads ``since`` (when the schedule last succeeded in the
+    community, ISO 8601, or null), ``now``, ``connection``, the non-secret
+    fields of the connection the read's first request names, and the install's
+    ``settings`` and ``aliases``, and answers an object or nothing. ``write``
+    reads the read's mapped answer as ``result``, ``since``, ``now``,
+    ``settings`` and ``aliases``. The read is held to the envelope's time, as
+    :func:`call_endpoint`'s is.
+
+    The read's expressions read each community connection its ``requires``
+    names as ``connections.<id>``, as a call the installation makes does.
+
+    Raises :class:`PluginDataError`: with ``CONNECTION_NO_TOKEN``, before
+    anything is asked of the vendor, while a community connection the read
+    names is not stored, or those its ``requires`` names hold no value; with
+    the code the read answered unavailable with;
+    with ``mapping-failed`` when ``params`` or ``write`` fails or ``params``
+    answers something other than an object; and otherwise as
+    :func:`call_endpoint` refuses a call or finds the plug-in unavailable.
+    """
+    endpoint = endpoint_by_id(plugin.definition, schedule["endpoint"])
+    if endpoint is None:
+        raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
+    try:
+        refs, required = await _resolve_connections(
+            session,
+            plugin=plugin,
+            endpoint=endpoint,
+            user_id=None,
+            actor="installation",
+        )
+    except PluginDataError as exc:
+        # A community connection the read names is not made: the run is
+        # skipped rather than failed, until it is.
+        raise PluginDataError(PluginChannelMessages.CONNECTION_NO_TOKEN, 409) from exc
+    now = datetime.now(timezone.utc)
+    run = _Run(plugin.definition, None, credentials={}, now=now)
+    steps = endpoint.get("steps") or [{"request": endpoint["request"]}]
+    connection = without_tokens(
+        (plugin.config or {}).get(
+            _request_connection(steps[0]["request"], "installation") or ""
+        )
+    )
+    installed = install_settings(plugin)
+    try:
+        params = (
+            await run.value(
+                schedule["params"],
+                {
+                    "since": since,
+                    "now": run.now,
+                    "connection": connection,
+                    **installed,
+                },
+                "params",
+            )
+            if "params" in schedule
+            else UNDEFINED
+        )
+        if params is not UNDEFINED and not isinstance(params, dict):
+            raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED)
+        result, _ = await _answered(
+            registration=registration,
+            plugin=plugin,
+            guild_id=guild_id,
+            endpoint=endpoint,
+            params={} if params is UNDEFINED else params,
+            refs=refs,
+            fields=required,
+            actor="installation",
+            now=now,
+        )
+        if set(result) == {"unavailable"}:
+            raise PluginDataError(result["unavailable"], _STATE_REFUSED)
+        return await run.value(
+            schedule["write"],
+            {"result": result, "since": since, "now": run.now, **installed},
+            "write",
+        )
+    except _Outcome as exc:
+        raise PluginDataError(MAPPING_FAILED, _STATE_REFUSED) from exc
 
 
 # --- the call behind ``_call_plugin`` -------------------------------------------
 
 
-def _typed(endpoint: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, Any]:
+def typed_params(
+    endpoint: Mapping[str, Any], params: Mapping[str, Any]
+) -> dict[str, Any]:
     """The parameters as the caller sent them: the checked values, which
     travel as text to a container, back in their declared types."""
     declared = {
@@ -856,10 +1084,44 @@ def _typed(endpoint: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, 
     }
 
 
-def _connection_ids(endpoint: Mapping[str, Any]) -> list[str]:
-    steps = endpoint.get("steps") or [{"request": endpoint.get("request") or {}}]
-    named = [step["request"].get("connection") for step in steps]
-    return list(dict.fromkeys(name for name in named if isinstance(name, str)))
+def _refusal(connection: Optional[Mapping[str, Any]]) -> PluginDataError:
+    """A call refused for want of ``connection``: a member's own is theirs to
+    connect, and the community's is its admins' to configure."""
+    return PluginDataError(
+        PluginDataMessages.CONNECTION_REQUIRED
+        if (connection or {}).get("scope") == "interactive"
+        else PluginDataMessages.NEEDS_CONFIGURATION,
+        409,
+    )
+
+
+def request_refusal(
+    definition: Any,
+    endpoint: Mapping[str, Any],
+    refs: Mapping[str, str],
+    actor: Optional[str],
+) -> Optional[PluginDataError]:
+    """Why the endpoint's requests cannot be made as ``actor`` with the
+    handles ``refs``, before any token is asked for: one naming no connection
+    for ``actor`` (one per actor, on a call made as another or as none), a
+    connection one names that ``definition`` does not declare, a member's own
+    whose handle ``refs`` lacks, or, on a member's behalf, the community's
+    when the endpoint's ``requires`` does not name it. ``None`` when they
+    can."""
+    required, _ = _required_connection_ids(endpoint)
+    for request in _requests(endpoint):
+        connection_id = _request_connection(request, actor)
+        connection = (
+            connection_by_id(definition, connection_id) if connection_id else None
+        )
+        interactive = (connection or {}).get("scope") == "interactive"
+        if (
+            connection is None
+            or (interactive and connection_id not in refs)
+            or (not interactive and actor == "member" and connection_id not in required)
+        ):
+            return _refusal(connection)
+    return None
 
 
 async def _credentials(
@@ -871,16 +1133,16 @@ async def _credentials(
     refs: Mapping[str, str],
     actor: Optional[str],
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]], bool]:
-    """Each connection the endpoint's requests name: its token and non-secret
-    fields, and whether any is a member's own.
+    """Each connection the endpoint's requests carry on a call made as
+    ``actor``: its token and non-secret fields, and whether any is a
+    member's own.
 
     A static connection's is the community's, which a call on a member's
     behalf carries only when the endpoint's ``requires`` names it; an
-    interactive one's is the acting member's, by the handle the endpoint's
-    ``requires`` resolved for them. Tokens are refreshed or minted as the plug-in
-    channel hands them out.
+    interactive one's is the acting member's, by the handle resolved for
+    them (:func:`request_refusal`). Tokens are refreshed or minted as the
+    plug-in channel hands them out.
     """
-    required, _ = _required_connection_ids(endpoint)
     tokens: dict[str, str] = {}
     fields: dict[str, dict[str, Any]] = {}
     member = False
@@ -895,20 +1157,14 @@ async def _credentials(
             )
         except PluginChannelError as exc:
             raise PluginDataError(exc.code, exc.status_code) from exc
-        for connection_id in _connection_ids(endpoint):
+        refused = request_refusal(install.definition, endpoint, refs, actor)
+        if refused is not None:
+            raise refused
+        for connection_id in _connection_ids(endpoint, actor):
             connection = connection_by_id(install.definition, connection_id)
             interactive = (connection or {}).get("scope") == "interactive"
-            refusal = PluginDataError(
-                PluginDataMessages.CONNECTION_REQUIRED
-                if interactive
-                else PluginDataMessages.NEEDS_CONFIGURATION,
-                409,
-            )
+            refusal = _refusal(connection)
             ref = refs.get(connection_id)
-            if connection is None or (interactive and ref is None):
-                raise refusal
-            if not interactive and actor == "member" and connection_id not in required:
-                raise refusal
             try:
                 if interactive:
                     held = await flows.member_token(
@@ -946,6 +1202,53 @@ async def _credentials(
     return tokens, fields, member
 
 
+async def _answered(
+    *,
+    registration: RegistrationSnapshot,
+    plugin: GuildPlugin,
+    guild_id: int,
+    endpoint: Mapping[str, Any],
+    params: Mapping[str, Any],
+    refs: Mapping[str, str],
+    fields: Mapping[str, Mapping[str, Any]],
+    actor: Optional[str],
+    item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> tuple[dict[str, Any], bool]:
+    """One endpoint's answer for a call made as ``actor``, and whether a
+    member's own connection was used. The credentials come first, outside
+    the call's budget: a refresh the budget cut short would lose what the
+    vendor had just issued. The pages are held to it."""
+    tokens, used, member = await _credentials(
+        registration=registration,
+        plugin=plugin,
+        guild_id=guild_id,
+        endpoint=endpoint,
+        refs=refs,
+        actor=actor,
+    )
+    try:
+        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
+            result = await run_endpoint(
+                plugin.definition,
+                endpoint,
+                params=params,
+                connections={**used, **fields},
+                credentials=tokens,
+                now=now or datetime.now(timezone.utc),
+                installed=install_settings(plugin),
+                item=item,
+                element=element,
+                actor=actor,
+            )
+    except TimeoutError as exc:
+        raise PluginDataError(
+            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
+        ) from exc
+    return result, member
+
+
 async def call_endpoint(
     *,
     registration: RegistrationSnapshot,
@@ -956,57 +1259,43 @@ async def call_endpoint(
     refs: Mapping[str, str],
     fields: Mapping[str, Mapping[str, Any]],
     actor: Optional[str],
+    item: Optional[Mapping[str, Any]] = None,
+    element: Optional[str] = None,
 ) -> dict[str, Any]:
     """One declarative endpoint of an install, answered as a container
     answers: ``{endpoint, actor, result}``.
 
     ``fields`` is each satisfied connection's non-secret fields as the
     caller's resolution read them, which the response cache key holds, so
-    the expressions read those.
+    the expressions read those. ``item`` is the item an action's call is made
+    on and ``element`` the list element it was run from, which they read too.
 
     Held to the envelope's time and size, as a container's answer is; each
     vendor answer to the connection egress limits.
     """
-    endpoint = next(
-        (
-            entry
-            for entry in (plugin.definition or {}).get("endpoints") or []
-            if isinstance(entry, dict)
-            and entry.get("id") == endpoint_id
-            and entry.get("direction") in ("read", "write")
-        ),
-        None,
+    endpoint = endpoint_by_id(
+        plugin.definition, endpoint_id, directions=("read", "write")
     )
     if endpoint is None:
         raise PluginDataError(PluginDataMessages.ENDPOINT_NOT_FOUND, 404)
-    try:
-        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
-            tokens, used, member = await _credentials(
-                registration=registration,
-                plugin=plugin,
-                guild_id=guild_id,
-                endpoint=endpoint,
-                refs=refs,
-                actor=actor,
-            )
-            result = await run_endpoint(
-                plugin.definition,
-                endpoint,
-                params=_typed(endpoint, params),
-                connections={**used, **fields},
-                credentials=tokens,
-                now=datetime.now(timezone.utc),
-            )
-    except TimeoutError as exc:
-        raise PluginDataError(
-            PluginDataMessages.SERVICE_UNAVAILABLE, 502, "the call ran out of time"
-        ) from exc
+    result, member = await _answered(
+        registration=registration,
+        plugin=plugin,
+        guild_id=guild_id,
+        endpoint=endpoint,
+        params=typed_params(endpoint, params),
+        refs=refs,
+        fields=fields,
+        actor=actor,
+        item=item,
+        element=element,
+    )
     if endpoint["direction"] == "write" and set(result) == {"unavailable"}:
         code = result["unavailable"]
         raise PluginDataError(code, _WRITE_STATUS.get(code, _STATE_REFUSED))
     body = {
         "endpoint": endpoint_id,
-        "actor": "member" if member else "installation",
+        "actor": actor or ("member" if member else "installation"),
         "result": result,
     }
     if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > MAX_RESPONSE_BYTES:

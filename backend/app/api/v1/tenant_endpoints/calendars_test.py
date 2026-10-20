@@ -6,6 +6,8 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import Tool
+from app.models.platform.api_key import UserApiKey
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.calendar_event import CalendarEvent
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
@@ -102,7 +104,7 @@ async def test_create_calendar_requires_feature_enabled(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "CALENDARS_NOT_ENABLED"
+    assert response.json() == Tool.calendar.disabled().body
 
 
 async def test_create_calendar_non_pm_forbidden(
@@ -391,7 +393,7 @@ async def test_a_write_grant_writes_a_guild_calendar_s_events(
         json={"name": "Mine now"},
     )
     assert renamed.status_code == 403
-    assert renamed.json()["detail"] == "CALENDAR_WRITE_ACCESS_REQUIRED"
+    assert renamed.json() == Tool.calendar.write_required().body
 
     archived = await client.post(
         member.g(f"/archive/calendar/{calendar.id}"), headers=member.headers
@@ -482,7 +484,11 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
     invitee comes along with their answer starting over."""
     from datetime import timedelta
 
-    from app.models.tenant.calendar_event import CalendarEventAttendee, RSVPStatus
+    from app.models.tenant.calendar_event import (
+        CalendarEventAnswer,
+        CalendarEventAttendee,
+        RSVPStatus,
+    )
     from app.testing import route_session_to_guild
 
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
@@ -503,8 +509,9 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
         end_at=week_two + timedelta(hours=3),
         overridden_fields=["title", "start_at", "end_at"],
     )
+    session.add(CalendarEventAttendee(calendar_event_id=weekly.id, user_id=a.user.id))
     session.add(
-        CalendarEventAttendee(
+        CalendarEventAnswer(
             calendar_event_id=weekly.id,
             user_id=a.user.id,
             rsvp_status=RSVPStatus.accepted,
@@ -535,14 +542,19 @@ async def test_a_copy_has_its_series_its_changed_occurrences_and_invitees(
     )
     invited = (
         await session.exec(
-            select(CalendarEventAttendee).where(
+            select(CalendarEventAttendee.user_id).where(
                 CalendarEventAttendee.calendar_event_id == series.id
             )
         )
     ).all()
-    assert [(i.user_id, i.rsvp_status) for i in invited] == [
-        (a.user.id, RSVPStatus.pending)
-    ]
+    assert invited == [a.user.id]
+    # The copy invites them again; what they answered was to the original.
+    answered = await session.exec(
+        select(CalendarEventAnswer).where(
+            CalendarEventAnswer.calendar_event_id == series.id
+        )
+    )
+    assert answered.all() == []
 
 
 async def test_a_copy_elsewhere_lets_go_of_invitees_who_cannot_read_it(
@@ -602,3 +614,139 @@ async def test_a_copy_of_the_communitys_calendar_names_its_initiative(
     assert nowhere.json()["detail"] == "INITIATIVE_NOT_FOUND"
     assert placed.status_code == 201, placed.text
     assert placed.json()["initiative_id"] == a.initiative.id
+
+
+# ---------------------------------------------------------------------------
+# Subscription feed
+# ---------------------------------------------------------------------------
+
+
+async def _feed_link(client: AsyncClient, actor, calendar) -> str:
+    """A subscription link's token, made as the calendar page makes it."""
+    created = await client.post(
+        "/api/v1/me/api-keys",
+        headers=actor.headers,
+        json={
+            "name": calendar.name,
+            "community_id": actor.guild.id,
+            "resource_type": "calendar",
+            "resource_id": calendar.id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["api_key"]["read_only"] is True
+    return created.json()["secret"]
+
+
+def _feed(actor, calendar_id: int, token: str) -> str:
+    return actor.g(f"/calendars/{calendar_id}/feed.ics") + f"?token={token}"
+
+
+async def _member_with_calendar(session, acting_user):
+    """An admin's calendar, shared with the initiative, one event on it, and a
+    member who reads it."""
+    admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    member = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=admin.guild,
+        initiative=admin.initiative,
+        initiative_role="member",
+    )
+    await _calendars_enabled(session, admin.initiative)
+    calendar = await create_calendar(session, admin.initiative, admin.user)
+    await create_calendar_event(session, calendar, admin.user, title="Standup")
+    return admin, member, calendar
+
+
+async def test_a_feed_link_serves_its_calendar_and_nothing_else(
+    client: AsyncClient, acting_user, session
+):
+    admin, member, calendar = await _member_with_calendar(session, acting_user)
+    other = await create_calendar(session, admin.initiative, admin.user)
+    token = await _feed_link(client, member, calendar)
+
+    served = await client.get(_feed(member, calendar.id, token))
+    assert served.status_code == 200, served.text
+    assert served.headers["content-type"].startswith("text/calendar")
+    assert "SUMMARY:Standup" in served.text
+    unchanged = await client.get(
+        _feed(member, calendar.id, token),
+        headers={"If-None-Match": f'"other", W/{served.headers["ETag"]}'},
+    )
+    assert unchanged.status_code == 304
+
+    # The calendar it names, by its feed, and nothing else: not another
+    # calendar's feed, not the same id in another community, and not the API.
+    elsewhere = f"/api/v1/c/{admin.guild.id + 1}/calendars/{calendar.id}/feed.ics"
+    for refused in (
+        await client.get(_feed(member, other.id, token)),
+        await client.get(f"{elsewhere}?token={token}"),
+        await client.get(
+            member.g(f"/calendars/{calendar.id}"),
+            headers={"Authorization": f"Bearer {token}"},
+        ),
+    ):
+        assert refused.status_code == 403
+        assert refused.json()["detail"] == "USER_API_KEY_RESOURCE_ONLY"
+
+    # A key that names no calendar is not a feed link.
+    plain = await client.post(
+        "/api/v1/me/api-keys", headers=member.headers, json={"name": "k"}
+    )
+    assert (
+        await client.get(_feed(member, calendar.id, plain.json()["secret"]))
+    ).status_code == 403
+
+    # A new link replaces the old one.
+    await _feed_link(client, member, calendar)
+    assert (await client.get(_feed(member, calendar.id, token))).status_code == 401
+
+
+async def test_a_feed_follows_the_readers_access_on_every_fetch(
+    client: AsyncClient, acting_user, session
+):
+    admin, member, calendar = await _member_with_calendar(session, acting_user)
+    token = await _feed_link(client, member, calendar)
+    admin_token = await _feed_link(client, admin, calendar)
+
+    # Kept in: refused, as the calendar page's export is.
+    admin.initiative.keep_content_in = True
+    session.add(admin.initiative)
+    await session.commit()
+    kept = await client.get(_feed(admin, calendar.id, admin_token))
+    assert kept.status_code == 403
+    assert kept.json()["detail"] == "INITIATIVE_CONTENT_KEPT_IN"
+    admin.initiative.keep_content_in = False
+    session.add(admin.initiative)
+    await session.commit()
+
+    # No longer shared with them.
+    await strip_non_owner_grants(session, calendar, admin.user.id)
+    assert (await client.get(_feed(member, calendar.id, token))).status_code == 403
+
+    # Out of the community: refused, and the link is gone with them.
+    removed = await client.delete(
+        admin.g(f"/users/{member.user.id}"), headers=admin.headers
+    )
+    assert removed.status_code == 204, removed.text
+    assert (await client.get(_feed(member, calendar.id, token))).status_code == 401
+    assert (
+        await session.exec(
+            select(UserApiKey).where(UserApiKey.user_id == member.user.id)
+        )
+    ).all() == []
+
+
+async def test_a_feeds_rate_limit_counts_each_person(
+    client: AsyncClient, acting_user, session, rate_limit_of_one_per_minute
+):
+    """Calendar apps fetch from a few addresses of their own, so the limit
+    counts the person a link names rather than the address asking."""
+    admin, member, calendar = await _member_with_calendar(session, acting_user)
+    token = await _feed_link(client, member, calendar)
+    admin_token = await _feed_link(client, admin, calendar)
+
+    for _ in range(30):
+        assert (await client.get(_feed(member, calendar.id, token))).status_code == 200
+    assert (await client.get(_feed(member, calendar.id, token))).status_code == 429
+    assert (await client.get(_feed(admin, calendar.id, admin_token))).status_code == 200

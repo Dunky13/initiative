@@ -257,7 +257,7 @@ export function TagPicker({
                         onSelect={startCreating}
                         className="cursor-pointer"
                       >
-                        <Plus className="mr-2 h-4 w-4" />
+                        <Plus className="h-4 w-4" />
                         {t("picker.createTag", { name: search.trim() })}
                       </CommandItem>
                     </CommandGroup>
@@ -284,7 +284,7 @@ export function TagPicker({
                           >
                             <div
                               className={cn(
-                                "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                "flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
                                 isSelected
                                   ? "bg-primary text-primary-foreground"
                                   : "opacity-50 [&_svg]:invisible"
@@ -293,7 +293,7 @@ export function TagPicker({
                               <Check className="h-3 w-3" />
                             </div>
                             <span
-                              className="mr-2 h-3 w-3 rounded-full"
+                              className="h-3 w-3 rounded-full"
                               style={{ backgroundColor: tag.color }}
                             />
                             <span className="truncate">{tag.name}</span>

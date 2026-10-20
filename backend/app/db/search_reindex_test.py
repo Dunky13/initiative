@@ -12,7 +12,7 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlmodel import select
 
-from app.db import cohorts
+from app.db import cohorts, schema_provisioning
 from app.db import session as db_session
 from app.db.schema_provisioning import backfill_guild_search, reindex_guild_search
 from app.db.search_index import search_generation
@@ -171,7 +171,9 @@ async def test_a_write_during_the_sweep_wins(session, acting_user):
     assert [r.title for r in rows] == ["edited"]
 
 
-async def test_the_boot_sweep_reindexes_each_stale_guild(session, acting_user):
+async def test_the_boot_sweep_reindexes_each_stale_guild(
+    session, acting_user, monkeypatch
+):
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
     task = await create_task(session, a.project, title="swept at boot")
     await _wipe(a.guild.id)
@@ -182,3 +184,14 @@ async def test_the_boot_sweep_reindexes_each_stale_guild(session, acting_user):
         for r in await _entries(session, a.guild.id, "task")
         if r.entity_id == task.id
     ] == ["swept at boot"]
+
+    # Once current, the next boot visits nothing.
+    visited: list[int] = []
+
+    async def reindex(_session, guild_id):
+        visited.append(guild_id)
+        return 0
+
+    monkeypatch.setattr(schema_provisioning, "reindex_guild_search", reindex)
+    await backfill_guild_search()
+    assert visited == []

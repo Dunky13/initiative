@@ -236,10 +236,10 @@ export const toolApiPath = (tool: Tool): string => `/api/v1/${toolRouteSegment(t
 
 // ---------------------------------------------------------------------------
 // Routes — a tool entity's URL names the whole chain it belongs to:
-// /c/{community}/i/{initiative}/{tool}/{id}. There is no community-wide tool list; the
-// community home (`/?tool=`) is the cross-initiative browse surface, so a tool's
-// "list" is always one initiative's tab. Every builder here returns a
-// COMMUNITY-relative path — callers prepend the community prefix with `useCommunityPath`.
+// /c/{community}/i/{initiative}/{tool}/{id}. There is no community-wide tool list;
+// My Tools is the cross-initiative browse surface, so a tool's "list" is one
+// initiative's tab, or the community's own for a community-level entity. Every
+// builder here returns a COMMUNITY-relative path — callers prepend the community prefix with `useCommunityPath`.
 // ---------------------------------------------------------------------------
 
 /** Community-relative initiatives list. */
@@ -300,18 +300,6 @@ export const toolSettingsSectionRoute = (
   return section === TOOL_SETTINGS_DEFAULT_SECTION ? base : `${base}/${section}`;
 };
 
-/**
- * Where a tool's entities are browsed ACROSS initiatives: the community home,
- * showing that tool. The only "list" a community-level entity can go back to, and
- * where a tool page lands when it has no initiative to return to.
- */
-export const toolCommunityBrowseTarget = (
-  tool: Tool
-): { to: string; search: { tool: string } } => ({
-  to: "/",
-  search: { tool: toolRouteSegment(tool) },
-});
-
 // --- The tools with a child entity -----------------------------------------
 // Stated here once rather than left to each page: a task belongs to a project,
 // an event to a calendar, a counter to its group, a page to its wiki, and each
@@ -327,13 +315,6 @@ export const eventRoute = (
   calendarId: number,
   eventId: number
 ): string => `${toolDetailRoute(Tool.calendar, initiativeId, calendarId)}/events/${eventId}`;
-
-/** e.g. "/i/1/calendars/2/events/9/settings". */
-export const eventSettingsRoute = (
-  initiativeId: number | null,
-  calendarId: number,
-  eventId: number
-): string => `${eventRoute(initiativeId, calendarId, eventId)}/settings`;
 
 /** e.g. "/i/1/counter-groups/3/counter/7". */
 export const counterRoute = (
@@ -416,6 +397,22 @@ export const toolNavLabelKey = (tool: Tool): ParseKeys<"nav"> =>
 export const toolCreateLabelKey = (tool: Tool): ParseKeys<"nav"> =>
   `create${toolPascalSingular(tool)}` as ParseKeys<"nav">;
 
+/**
+ * The forms of a kind's name (`common:kinds`) that wording about it is filled
+ * in with: `{{kind}}` as a sentence starts with it, `{{thisKind}}` and
+ * `{{kinds}}`. A kind is any addressable thing — a tool, or what lives in one
+ * (mirrors backend `KINDS`) — and `messages_test` holds every locale to naming
+ * each one.
+ */
+export const kindNames = (
+  kind: string,
+  t: (key: string) => string
+): { kind: string; thisKind: string; kinds: string } => ({
+  kind: t(`common:kinds.${kind}.name`),
+  thisKind: t(`common:kinds.${kind}.this`),
+  kinds: t(`common:kinds.${kind}.plural`),
+});
+
 /** Role permission key gating viewing, e.g. "counter_groups_enabled". */
 export const toolViewPermission = (tool: Tool): PermissionKey =>
   `${toolPlural(tool)}_enabled` as PermissionKey;
@@ -484,6 +481,19 @@ export const NO_RELATIONS_PANEL: ReadonlySet<Tool> = new Set<Tool>([
 
 /** Whether this tool's own detail page shows a relations panel. */
 export const showsRelations = (tool: Tool): boolean => !NO_RELATIONS_PANEL.has(tool);
+
+/**
+ * Tools whose pages do NOT carry the activity drawer, and why. Stated as an
+ * exclusion, like {@link NO_RELATIONS_PANEL}, so a tool's activity is beside it
+ * by default and leaving one out has to be written down.
+ */
+export const NO_ACTIVITY_DRAWER: ReadonlySet<Tool> = new Set<Tool>([
+  // A wiki's side of the page is its tree of pages, which is how it is read.
+  Tool.wiki,
+]);
+
+/** Whether this tool's pages carry the activity drawer. */
+export const showsActivity = (tool: Tool): boolean => !NO_ACTIVITY_DRAWER.has(tool);
 
 /**
  * The initiative master-switch field for a tool (same spelling as the view

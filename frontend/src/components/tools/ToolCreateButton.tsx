@@ -48,7 +48,7 @@ export function ToolCreateButton({ tool, initiativeId, variant }: ToolCreateButt
     return (
       <DropdownMenuItem asChild>
         <Link to={to} search={search}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           {label}
         </Link>
       </DropdownMenuItem>
@@ -72,7 +72,7 @@ export function ToolCreateButton({ tool, initiativeId, variant }: ToolCreateButt
         <Button
           variant="ghost"
           size="icon"
-          className="hidden h-6 w-0 shrink-0 overflow-hidden p-0 opacity-0 transition-all group-hover/tool:w-6 group-hover/tool:opacity-100 motion-reduce:transition-none lg:flex"
+          className="hidden h-6 w-0 shrink-0 overflow-hidden p-0 opacity-0 transition-all group-hover/tool:w-6 group-hover/tool:opacity-100 motion-reduce:transition-none md:flex"
           asChild
         >
           <Link to={to} search={search} aria-label={label}>

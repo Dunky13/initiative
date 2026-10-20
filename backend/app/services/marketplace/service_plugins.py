@@ -5,7 +5,8 @@ A ``service`` plug-in is a container the operator runs, or declarative: one with
 expressions in the manifest. One plug-in is never both. Its definition is the
 widest thing this build accepts from a publisher, so it is also the strictest:
 a closed vocabulary, an explicit cap on every string, list and opaque body, and
-unknown keys dropped rather than stored (an endpoint's refused).
+unknown keys dropped rather than stored (an endpoint's and a part's nodes are
+refused).
 
 Three properties hold by construction, and they are why a definition is safe to
 keep and later hand to a guild:
@@ -34,7 +35,8 @@ foothold in a guild is a legitimate install with nothing to render.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import re
+from typing import Any, Mapping, Optional
 
 from app.core.plugin_scopes import ALL_SCOPES, plugin_scope_target
 from app.services.marketplace import contract, expressions, plugin_api
@@ -45,10 +47,11 @@ from app.services.marketplace.manifest_values import (
     MAX_NAME_LENGTH,
     MAX_PATH_LENGTH,
     check_identifier,
-    check_single_line,
     check_json_size,
+    check_metadata_key,
     check_path,
     check_public_id,
+    check_single_line,
     check_uid,
     check_url,
     clean_text,
@@ -57,12 +60,12 @@ from app.services.marketplace.manifest_values import (
     require_mapping,
     utf8_bytes,
 )
-from app.services.tenant.plugin_config import RESERVED_TOKEN_KEYS
 from app.services.marketplace.widget_meta import (
     MAX_TEXT_LENGTH,
     localized_text,
     validate_widget_meta,
 )
+from app.services.tenant.plugin_config import RESERVED_TOKEN_KEYS
 
 __all__ = [
     "ACTOR_KINDS",
@@ -71,12 +74,16 @@ __all__ = [
     "WIDGET_BINDABLE_DIRECTIONS",
     "CONNECTION_SCOPES",
     "DIRECTIONS",
-    "EMBED_CAPABILITIES",
+    "PAGE_CAPABILITIES",
     "FEATURES",
     "FEATURE_BLOCKS",
+    "FIELD_KINDS",
     "FIELD_TYPES",
+    "ITEM_KINDS",
     "PARAM_TYPES",
+    "PART_NODES",
     "SURFACE_SCOPES",
+    "TONES",
     "plugin_widget_type",
     "is_admin_only",
     "normalize_service_plugin_definition",
@@ -182,7 +189,7 @@ def is_admin_only(declared: Any) -> bool:
     return declared.get(RETIRED_AUDIENCE_TERM) == "guild_admin"
 
 
-#: Browser features an embedded surface may ask its frame for.
+#: Browser features a page may ask its frame for.
 #:
 #: A frame is granted nothing it did not name here, so a plug-in that says nothing
 #: gets a frame with every one of these denied. The vocabulary is closed for the
@@ -191,13 +198,13 @@ def is_admin_only(declared: Any) -> bool:
 #:
 #: These are Permissions-Policy feature names, and what a manifest asks for is
 #: what a guild admin is shown at install. ``payment`` is deliberately not
-#: namable — an embedded surface takes no money, and the platform processes
-#: payments on its own pages.
-EMBED_CAPABILITIES: frozenset[str] = contract.enum("embedCapability")
+#: namable — a page takes no money, and the platform processes
+#: payments on its own screens.
+PAGE_CAPABILITIES: frozenset[str] = contract.enum("pageCapability")
 
-#: No surface has a use for the whole vocabulary at once; a manifest reaching
-#: this many is describing something other than an embedded page.
-MAX_EMBED_CAPABILITIES = contract.cap("embedCapabilities")
+#: No page has a use for the whole vocabulary at once; a manifest reaching
+#: this many is describing something other than a page.
+MAX_PAGE_CAPABILITIES = contract.cap("pageCapabilities")
 
 #: Protocol versions this build speaks to a plug-in service. A manifest naming a
 #: newer one is refused by name — the version floor (`min_app_version`) is how a
@@ -278,6 +285,45 @@ ENDPOINT_TERMS: frozenset[str] = frozenset(contract.fields("endpoint"))
 #: The endpoint terms that make it declarative.
 DECLARATIVE_ENDPOINT_TERMS = ("request", "steps", "map", "errors")
 
+#: What a plug-in adds to items: the item kinds a field, part or action is
+#: offered on, what a field's value is and so how it is drawn, and the tones a
+#: badge or a part's text may take.
+ITEM_KINDS: frozenset[str] = contract.enum("itemKind")
+FIELD_KINDS: frozenset[str] = contract.enum("fieldKind")
+TONES: frozenset[str] = contract.enum("tone")
+
+
+def _node_props(name: str) -> dict[str, Any]:
+    return contract.objects()[name]["properties"]["props"]["properties"]
+
+
+#: The components a part is built from, by the ``type`` each node names, and
+#: the contract object that describes it.
+PART_NODES: dict[str, str] = {
+    contract.objects()[entry["ref"]]["properties"]["type"]["const"]: entry["ref"]
+    for entry in contract.objects()["partNode"]["oneOf"]
+}
+#: Every term a node may carry, and every prop. The contract closes both, so
+#: a misspelt term is refused rather than dropped.
+PART_NODE_TERMS: dict[str, frozenset[str]] = {
+    node_type: frozenset(contract.fields(name))
+    for node_type, name in PART_NODES.items()
+}
+PART_NODE_PROPS: dict[str, frozenset[str]] = {
+    node_type: frozenset(_node_props(name)) for node_type, name in PART_NODES.items()
+}
+#: The nodes that hold others.
+PART_CONTAINERS: frozenset[str] = frozenset(
+    node_type for node_type, terms in PART_NODE_TERMS.items() if "children" in terms
+)
+STACK_DIRECTIONS: frozenset[str] = frozenset(
+    _node_props(PART_NODES["stack"])["direction"]["enum"]
+)
+STACK_GAPS: frozenset[str] = frozenset(_node_props(PART_NODES["stack"])["gap"]["enum"])
+BUTTON_VARIANTS: frozenset[str] = frozenset(
+    _node_props(PART_NODES["button"])["variant"]["enum"]
+)
+
 # --- caps -------------------------------------------------------------------
 #
 # Counts first, then bodies. Together they bound what one published version can
@@ -312,7 +358,22 @@ MAX_PARAMS_PER_ENDPOINT = contract.cap("paramsPerEndpoint")
 #: purpose: describing an answer is cheaper than asking for one, and a plug-in
 #: that returns a dozen fields is ordinary where one taking a dozen is not.
 MAX_RETURNS_PER_ENDPOINT = contract.cap("returnsPerEndpoint")
-MAX_EMBEDS = contract.cap("embeds")
+MAX_PAGES = contract.cap("pages")
+MAX_FIELDS = contract.cap("fields")
+MAX_PARTS = contract.cap("parts")
+MAX_ACTIONS = contract.cap("actions")
+#: How many facets a field's states may have, and how many keys each.
+MAX_FACETS = contract.cap("facetsPerField")
+MAX_FACET_VALUES = contract.cap("valuesPerFacet")
+#: How large one part's tree may be: its nodes, and how deep they nest.
+MAX_PART_NODES = contract.cap("partNodes")
+MAX_PART_DEPTH = contract.cap("partDepth")
+#: How many settings a plug-in may declare, what each holds and how its value
+#: is given, and how long its help may be in each language.
+MAX_SETTINGS = contract.cap("settings")
+SETTING_TYPES: frozenset[str] = contract.enum("settingType")
+SETTING_ASSIGNMENTS: frozenset[str] = contract.enum("settingAssignment")
+MAX_HELP_LENGTH = contract.cap("helpLength")
 #: How many countries a minimum age may name, and the oldest it may ask for.
 MAX_MINIMUM_AGE_REGIONS = contract.cap("minimumAgeRegions")
 MAX_MINIMUM_AGE_YEARS = contract.cap("minimumAgeYears")
@@ -347,7 +408,7 @@ MAX_IDENTITY_KEY_PARTS = contract.cap("identityKeyParts")
 MAX_HOSTS = contract.cap("hosts")
 MAX_HOST_LENGTH = contract.cap("hostLength")
 MAX_STEPS = contract.cap("steps")
-MAX_PAGES = contract.cap("pages")
+MAX_PAGES_READ = contract.cap("maxPages")
 MAX_PER_PAGE = contract.cap("perPage")
 MAX_REQUEST_QUERY = contract.cap("requestQuery")
 MAX_REQUEST_HEADERS = contract.cap("requestHeaders")
@@ -734,8 +795,21 @@ def _template(
     if text is None:
         return None
     check_single_line(text, what=what)
-    if https and not text.startswith("https://"):
-        fail(f"{what} must be an https address")
+    if https:
+        if not text.startswith("https://"):
+            fail(f"{what} must be an https address")
+        # The host is the plug-in's to state; a value is filled in after it.
+        if "{" in re.split(r"[/?#]", text[len("https://") :], maxsplit=1)[0]:
+            fail(f"{what} fills a value into its host")
+    _check_placeholders(text, what=what, vendor_keys=vendor_keys, field_keys=field_keys)
+    return text
+
+
+def _check_placeholders(
+    text: str, *, what: str, vendor_keys: set[str], field_keys: set[str]
+) -> None:
+    """Every ``{vendor.<key>}`` and ``{<key>}`` ``text`` names is declared: a
+    vendor field, or one of the connection's own fields."""
     position = 0
     while True:
         start = text.find("{", position)
@@ -753,7 +827,32 @@ def _template(
         elif name not in field_keys:
             fail(f"{what} names {{{name}}}, which is not a field of this connection")
         position = end + 1
-    return text
+
+
+def _exchange_body(
+    raw: Any, *, what: str, vendor_keys: set[str], field_keys: set[str]
+) -> dict[str, Any] | str:
+    """The JSON object a minted token's assertion is posted with, or an
+    expression answering it from the connection's own fields. A string in the
+    object, at any depth, may name a vendor value and the connection's own
+    fields, as the token's other values do."""
+    if isinstance(raw, str):
+        return _checked(raw, what=what)
+    body = require_mapping(raw, what)
+    pending: list[tuple[Any, str]] = [(body, what)]
+    while pending:
+        value, at = pending.pop()
+        if isinstance(value, str):
+            _check_placeholders(
+                value, what=at, vendor_keys=vendor_keys, field_keys=field_keys
+            )
+        elif isinstance(value, dict):
+            pending.extend((child, f"{at}.{key}") for key, child in value.items())
+        elif isinstance(value, list):
+            pending.extend(
+                (child, f"{at}.{index}") for index, child in enumerate(value)
+            )
+    return body
 
 
 def _flow(
@@ -889,7 +988,7 @@ def _token(
         or not 1 <= lifetime <= MAX_TOKEN_LIFETIME_SECONDS
     ):
         fail(f"{what} token.lifetime must be 1..{MAX_TOKEN_LIFETIME_SECONDS} seconds")
-    return {
+    cleaned: dict[str, Any] = {
         "type": token_type,
         "exchange_url": template("exchange_url", https=True),
         "iss": template("iss"),
@@ -897,6 +996,14 @@ def _token(
         "alg": alg,
         "lifetime": lifetime,
     }
+    if token.get("exchange_body") is not None:
+        cleaned["exchange_body"] = _exchange_body(
+            token["exchange_body"],
+            what=f"{what} token.exchange_body",
+            vendor_keys=vendor_keys,
+            field_keys=field_keys,
+        )
+    return cleaned
 
 
 def _connection(
@@ -922,7 +1029,10 @@ def _connection(
         if field["key"] in seen:
             fail(f"{what}: two fields share the key {field['key']!r}")
         if field["key"] in RESERVED_TOKEN_KEYS:
-            fail(f"{what}: {field['key']!r} is where a flow keeps its tokens")
+            fail(
+                f"{what}: {field['key']!r} is reserved for a flow's tokens and"
+                " the vendor's report that the connection was removed"
+            )
         seen.add(field["key"])
         fields.append(field)
 
@@ -1120,13 +1230,23 @@ def _webhooks(
         for index, entry in enumerate(events):
             what = f"service plug-in: webhooks.events.{index}"
             row = require_mapping(entry, what)
-            cleaned["events"].append(
-                {
-                    "when": _checked(row.get("when"), what=f"{what}.when"),
-                    "emit": _endpoint_id_chars(row.get("emit"), what=f"{what}.emit"),
-                    "map": _checked(row.get("map"), what=f"{what}.map"),
-                }
-            )
+            # A row emits an event, changes the plug-in's values, or both, and
+            # an event's payload is its map.
+            if row.get("emit") is None and row.get("write") is None:
+                fail(f"{what}: an event row emits, writes, or both")
+            if (row.get("emit") is None) != (row.get("map") is None):
+                fail(
+                    f"{what}: an event row gives both 'emit' and the 'map' of its payload"
+                )
+            event: dict[str, Any] = {
+                "when": _checked(row.get("when"), what=f"{what}.when")
+            }
+            if row.get("emit") is not None:
+                event["emit"] = _endpoint_id_chars(row["emit"], what=f"{what}.emit")
+                event["map"] = _checked(row["map"], what=f"{what}.map")
+            if row.get("write") is not None:
+                event["write"] = _checked(row["write"], what=f"{what}.write")
+            cleaned["events"].append(event)
     if statuses:
         declared = {entry["id"] for entry in connections}
         cleaned["status"] = []
@@ -1164,23 +1284,76 @@ def schedule_minutes(every: str) -> int:
     return count * 60 if every.endswith("h") else count
 
 
-def _schedules(raw: Any) -> list[dict[str, str]]:
-    """The intervals at which Initiative calls the plug-in's ``schedule`` hook:
-    each a unique id and a whole number of minutes or hours, within the
-    bounds."""
+def _schedules(
+    raw: Any,
+    *,
+    declarative: bool,
+    service_public_id: str,
+    endpoints: dict[str, dict[str, Any]],
+    connection_ids: set[str],
+) -> list[dict[str, str]]:
+    """What Initiative runs on an interval for each community: each a unique id
+    and a whole number of minutes or hours, within the bounds.
+
+    A container's schedule calls its ``schedule`` hook and names nothing more.
+    A declarative plug-in's makes one of its reads as the installation, so the
+    read's ``actors`` take it, and its ``write`` answers the changes made from
+    what the read answered. Its id is no connection's: a connection's health
+    check runs under the connection's id.
+    """
     schedules: list[dict[str, str]] = []
     for entry in require_list(raw, "service plug-in: schedules", MAX_SCHEDULES):
         schedule = require_mapping(entry, "service plug-in: schedule")
         schedule_id = check_identifier(
             schedule.get("id"), what="service plug-in: schedule id"
         )
+        what = f"service plug-in: schedule {schedule_id!r}"
         if any(kept["id"] == schedule_id for kept in schedules):
             fail(f"service plug-in: two schedules share the id {schedule_id!r}")
-        every = _every(
-            schedule.get("every"),
-            what=f"service plug-in: schedule {schedule_id!r} every",
+        cleaned = {
+            "id": schedule_id,
+            "every": _every(schedule.get("every"), what=f"{what} every"),
+        }
+        if not declarative:
+            if any(
+                schedule.get(term) is not None
+                for term in ("endpoint", "params", "write")
+            ):
+                fail(f"{what}: a container plug-in's schedule calls its schedule hook")
+            schedules.append(cleaned)
+            continue
+        if schedule_id in connection_ids:
+            fail(
+                f"{what} has a connection's id, and Initiative keys connection "
+                "health checks by connection id"
+            )
+        if schedule.get("endpoint") is None or schedule.get("write") is None:
+            fail(
+                f"{what}: a declarative plug-in's schedule names the read it makes "
+                "and the write it makes from the answer; there is no hook to call"
+            )
+        endpoint = _endpoint_id(
+            schedule["endpoint"],
+            service_public_id=service_public_id,
+            what=f"{what} endpoint",
         )
-        schedules.append({"id": schedule_id, "every": every})
+        named = endpoints.get(endpoint)
+        if named is None:
+            fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
+        if named["direction"] != "read":
+            fail(
+                f"{what}: names {endpoint!r}, which is a {named['direction']} endpoint"
+            )
+        if "installation" not in named.get("actors", ()):
+            fail(
+                f"{what}: {endpoint!r} does not take the installation as its actor, "
+                "and no person is present when a schedule runs"
+            )
+        cleaned["endpoint"] = endpoint
+        if schedule.get("params") is not None:
+            cleaned["params"] = _checked(schedule["params"], what=f"{what} params")
+        cleaned["write"] = _checked(schedule["write"], what=f"{what} write")
+        schedules.append(cleaned)
     return schedules
 
 
@@ -1319,7 +1492,10 @@ def _paging(
     cleaned: dict[str, Any] = {
         "kind": kind,
         "max_pages": _page_count(
-            paging.get("max_pages"), what=f"{what}.max_pages", low=1, high=MAX_PAGES
+            paging.get("max_pages"),
+            what=f"{what}.max_pages",
+            low=1,
+            high=MAX_PAGES_READ,
         ),
         "on_limit": on_limit,
     }
@@ -1377,8 +1553,9 @@ def _vendor_request(
     """One call to the vendor, rendered from expressions.
 
     ``connection_ids`` is the connections an endpoint's request may name, and
-    it must name one; ``None`` is a connection's own request (``after_connect``
-    and ``health``), which carries that connection's credential and names none.
+    it must name one, or one per actor; ``None`` is a connection's own request
+    (``after_connect`` and ``health``), which carries that connection's
+    credential and names none.
     """
     request = require_mapping(raw, what)
     method = request.get("method")
@@ -1431,11 +1608,24 @@ def _vendor_request(
     if connection_ids is None:
         if connection is not None:
             fail(f"{what}: carries the credential of the connection it belongs to")
+    elif isinstance(connection, dict):
+        # One per actor: which actors, and each connection's scope, are held
+        # to the endpoint's actors (``_endpoint``).
+        if not connection or not set(connection) <= ACTOR_KINDS:
+            fail(
+                f"{what}.connection: names one connection per actor, drawn from "
+                f"{sorted(ACTOR_KINDS)}"
+            )
+        cleaned["connection"] = {
+            actor: _declared_connection(
+                named, what=f"{what}.connection.{actor}", connection_ids=connection_ids
+            )
+            for actor, named in connection.items()
+        }
     else:
-        connection = check_identifier(connection, what=f"{what}.connection")
-        if connection not in connection_ids:
-            fail(f"{what}: {connection!r} is not a connection this plug-in declares")
-        cleaned["connection"] = connection
+        cleaned["connection"] = _declared_connection(
+            connection, what=f"{what}.connection", connection_ids=connection_ids
+        )
     if request.get("paging") is not None:
         cleaned["paging"] = _paging(
             request["paging"],
@@ -1444,6 +1634,14 @@ def _vendor_request(
             steps=steps,
         )
     return cleaned
+
+
+def _declared_connection(raw: Any, *, what: str, connection_ids: set[str]) -> str:
+    """A connection a request names, which the plug-in declares."""
+    connection = check_identifier(raw, what=what)
+    if connection not in connection_ids:
+        fail(f"{what}: {connection!r} is not a connection this plug-in declares")
+    return connection
 
 
 def _request_or_steps(
@@ -1861,19 +2059,43 @@ def _endpoint(
     if requires is not None:
         cleaned["requires"] = requires
     # A member's own connection is resolved for the caller by ``requires``, so
-    # a request carrying one names it there too.
+    # a request carrying one on every call names it there too, and is not one
+    # the installation, which has no member, can make. A write's request may
+    # name one connection per actor instead, for exactly its actors: the
+    # member's own for the member, and the community's for the installation.
     required = {term for terms in (requires or {}).values() for term in terms}
     for request in _requests(cleaned):
         named = request.get("connection")
-        if named in interactive_ids and named not in required:
-            fail(
-                f"{what}: its request uses the member connection {named!r}, "
-                "which requires does not name"
-            )
+        if isinstance(named, dict):
+            if direction != "write":
+                fail(f"{what}: only a write's request names a connection per actor")
+            if set(named) != set(actors):
+                fail(
+                    f"{what}: its request names a connection per actor, one for "
+                    "each of the endpoint's actors and no other"
+                )
+            for actor, connection_id in named.items():
+                if (connection_id in interactive_ids) != (actor == "member"):
+                    scope = "an interactive" if actor == "member" else "a static"
+                    fail(
+                        f"{what}: its request names {connection_id!r} for the "
+                        f"{actor}, which is not {scope} connection"
+                    )
+        elif named in interactive_ids:
+            if named not in required:
+                fail(
+                    f"{what}: its request uses the member connection {named!r}, "
+                    "which requires does not name"
+                )
+            if "installation" in actors:
+                fail(
+                    f"{what}: its request uses the member connection {named!r}, "
+                    "which a call made as the installation does not have"
+                )
     return cleaned
 
 
-def _requests(endpoint: dict[str, Any]) -> list[dict[str, Any]]:
+def _requests(endpoint: Mapping[str, Any]) -> list[dict[str, Any]]:
     """A declarative endpoint's requests, its one or each step's."""
     if "request" in endpoint:
         return [endpoint["request"]]
@@ -2311,7 +2533,7 @@ def _sample_data(raw: Any, *, sources: list[str], what: str) -> dict[str, Any]:
 def _scopes(raw: Any, *, what: str) -> list[str]:
     """Where a surface asked to render, canonically.
 
-    Absent means ``["community"]`` — the placement every embed had before there was
+    Absent means ``["community"]`` — the placement every page had before there was
     anywhere else to put one. Sorted and de-duplicated, so re-publishing the
     same manifest produces the same document.
     """
@@ -2337,47 +2559,441 @@ def _capabilities(raw: Any, *, what: str) -> list[str]:
     """
     if raw is None:
         return []
-    declared = require_list(raw, f"{what} capabilities", MAX_EMBED_CAPABILITIES)
+    declared = require_list(raw, f"{what} capabilities", MAX_PAGE_CAPABILITIES)
     capabilities: set[str] = set()
     for entry in declared:
         # Typed before it is looked up: set membership is defined only for a
         # hashable value, so a name is what this compares.
-        if not isinstance(entry, str) or entry not in EMBED_CAPABILITIES:
+        if not isinstance(entry, str) or entry not in PAGE_CAPABILITIES:
             fail(
-                f"{what}: {entry!r} is not a capability a surface may request "
-                f"(one of {', '.join(sorted(EMBED_CAPABILITIES))})"
+                f"{what}: {entry!r} is not a capability a page may request "
+                f"(one of {', '.join(sorted(PAGE_CAPABILITIES))})"
             )
         capabilities.add(entry)
     return sorted(capabilities)
 
 
-def _embed(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
-    embed = require_mapping(raw, "embed")
-    embed_id = check_identifier(embed.get("id"), what="embed id")
-    what = f"embed {embed_id!r}"
+def _page(raw: Any, *, connection_ids: set[str]) -> dict[str, Any]:
+    page = require_mapping(raw, "page")
+    page_id = check_identifier(page.get("id"), what="page id")
+    what = f"page {page_id!r}"
 
-    _refuse_retired_audience(embed, what=what)
+    _refuse_retired_audience(page, what=what)
 
-    admin_only = _admin_only(embed, what=what)
+    admin_only = _admin_only(page, what=what)
 
     cleaned: dict[str, Any] = {
-        "id": embed_id,
-        "path": check_path(embed.get("path"), what=f"{what} path"),
-        "scopes": _scopes(embed.get("scopes"), what=what),
+        "id": page_id,
+        "path": check_path(page.get("path"), what=f"{what} path"),
+        "scopes": _scopes(page.get("scopes"), what=what),
         # Stored whichever way it was declared, so every pinned surface answers
         # the question the same way.
         "admin_only": admin_only,
-        "name": _label(embed.get("name"), what=what),
+        "name": _label(page.get("name"), what=what),
     }
-    capabilities = _capabilities(embed.get("capabilities"), what=what)
+    capabilities = _capabilities(page.get("capabilities"), what=what)
     if capabilities:
         cleaned["capabilities"] = capabilities
+    requires = _requires(page.get("requires"), connection_ids=connection_ids, what=what)
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+# --- what a plug-in adds to items -------------------------------------------
+
+
+def _item_kinds(raw: Any, *, what: str) -> list[str]:
+    """The item kinds something is offered on, canonically: at least one, each
+    named once, stored sorted."""
+    declared = require_list(raw, f"{what} on", len(ITEM_KINDS))
+    kinds: set[str] = set()
+    for entry in declared:
+        if not isinstance(entry, str) or entry not in ITEM_KINDS:
+            fail(
+                f"{what}: {entry!r} is not an item kind "
+                f"(one of {', '.join(sorted(ITEM_KINDS))})"
+            )
+        if entry in kinds:
+            fail(f"{what}: on names {entry!r} twice")
+        kinds.add(entry)
+    if not kinds:
+        fail(f"{what}: on names no item kind")
+    return sorted(kinds)
+
+
+def _choice(raw: Any, allowed: frozenset[str], *, what: str) -> str:
+    if not isinstance(raw, str) or raw not in allowed:
+        fail(f"{what} must be one of {', '.join(sorted(allowed))}")
+    return raw
+
+
+def _flag(raw: Any, *, what: str) -> bool:
+    if not isinstance(raw, bool):
+        fail(f"{what} must be true or false")
+    return raw
+
+
+def _item_field(
+    raw: Any,
+    *,
+    connection_ids: set[str],
+    action_kinds: dict[str, list[str]],
+    declarative: bool,
+) -> dict[str, Any]:
+    field = require_mapping(raw, "field")
+    key = check_metadata_key(field.get("key"), what="field key")
+    what = f"field {key!r}"
+    kind = field.get("kind")
+    if not isinstance(kind, str) or kind not in FIELD_KINDS:
+        fail(f"{what}: kind must be one of {', '.join(sorted(FIELD_KINDS))}")
+    cleaned: dict[str, Any] = {
+        "key": key,
+        "name": _label(field.get("name"), what=what),
+        "kind": kind,
+        "on": _item_kinds(field.get("on"), what=what),
+    }
+    # Stored only when it is, as admin_only is.
+    if field.get("list") is not None and _flag(field["list"], what=f"{what} list"):
+        cleaned["list"] = True
+    description = localized_text(field.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    if field.get("tone") is not None:
+        cleaned["tone"] = _choice(field["tone"], TONES, what=f"{what} tone")
+    if field.get("states") is not None:
+        cleaned["states"] = _states(field["states"], what=what)
+    if field.get("actions") is not None:
+        cleaned["actions"] = _element_actions(
+            field["actions"],
+            on=cleaned["on"],
+            listed="list" in cleaned,
+            action_kinds=action_kinds,
+            declarative=declarative,
+            what=what,
+        )
     requires = _requires(
-        embed.get("requires"), connection_ids=connection_ids, what=what
+        field.get("requires"), connection_ids=connection_ids, what=what
     )
     if requires is not None:
         cleaned["requires"] = requires
     return cleaned
+
+
+def _states(raw: Any, *, what: str) -> dict[str, Any]:
+    """A field's states: at most :data:`MAX_FACETS` facets by id, each named,
+    with at most :data:`MAX_FACET_VALUES` keys, each with its badge's words and
+    tone."""
+    facets = require_mapping(raw, f"{what} states")
+    if not facets:
+        fail(f"{what}: states names no facet")
+    if len(facets) > MAX_FACETS:
+        fail(f"{what}: states holds more than {MAX_FACETS} facets")
+    cleaned: dict[str, Any] = {}
+    for facet_id, raw_facet in facets.items():
+        check_identifier(facet_id, what=f"{what} state")
+        at = f"{what} state {facet_id!r}"
+        facet = require_mapping(raw_facet, at)
+        values = require_mapping(facet.get("values"), f"{at} values")
+        if not values:
+            fail(f"{at}: values names no key")
+        if len(values) > MAX_FACET_VALUES:
+            fail(f"{at}: values holds more than {MAX_FACET_VALUES} keys")
+        kept: dict[str, Any] = {}
+        for value_key, raw_value in values.items():
+            check_identifier(value_key, what=f"{at} value")
+            named = f"{at} value {value_key!r}"
+            value = require_mapping(raw_value, named)
+            kept[value_key] = {"label": _label(value.get("label"), what=named)}
+            if value.get("tone") is not None:
+                kept[value_key]["tone"] = _choice(
+                    value["tone"], TONES, what=f"{named} tone"
+                )
+        cleaned[facet_id] = {"name": _label(facet.get("name"), what=at), "values": kept}
+    return cleaned
+
+
+def _element_actions(
+    raw: Any,
+    *,
+    on: list[str],
+    listed: bool,
+    action_kinds: dict[str, list[str]],
+    declarative: bool,
+    what: str,
+) -> list[str]:
+    """The actions a list field offers on each of its elements: a declarative
+    plug-in's, each declared and offered on every item kind the field is."""
+    if not declarative:
+        fail(
+            f"{what}: a container plug-in's action is not told which element it "
+            "was run from: its handler is handed the item alone"
+        )
+    if not listed:
+        fail(
+            f"{what}: actions are offered on a list's elements, and this field "
+            "is not a list"
+        )
+    cleaned: list[str] = []
+    for entry in require_list(raw, f"{what} actions", MAX_ACTIONS):
+        action_id = check_identifier(entry, what=f"{what} action")
+        kinds = action_kinds.get(action_id)
+        if kinds is None:
+            fail(f"{what}: {action_id!r} is not declared by this manifest")
+        missing = [kind for kind in on if kind not in kinds]
+        if missing:
+            fail(
+                f"{what}: {action_id!r} is not offered on {', '.join(missing)}, "
+                "where this field is"
+            )
+        if action_id in cleaned:
+            fail(f"{what}: actions names {action_id!r} twice")
+        cleaned.append(action_id)
+    if not cleaned:
+        fail(f"{what}: actions names no action")
+    return cleaned
+
+
+def _action(
+    raw: Any,
+    *,
+    service_public_id: str,
+    endpoints: dict[str, dict[str, Any]],
+    connection_ids: set[str],
+    declarative: bool,
+) -> dict[str, Any]:
+    """One thing a reader runs on an item. A container's names the write
+    endpoint its handler answers. A declarative plug-in's names an endpoint
+    whose call Initiative makes (a read that fetches what its ``write`` keeps,
+    or a write that changes something at the vendor), a ``write`` answering
+    the change Initiative makes to the plug-in's values on the item, or
+    both."""
+    action = require_mapping(raw, "action")
+    action_id = check_identifier(action.get("id"), what="action id")
+    what = f"action {action_id!r}"
+    if declarative:
+        if action.get("endpoint") is None and action.get("write") is None:
+            fail(
+                f"{what}: a declarative plug-in's action names an endpoint, a write, or both"
+            )
+    else:
+        if action.get("endpoint") is None:
+            fail(
+                f"{what}: a container plug-in's action names the write endpoint "
+                "its handler answers"
+            )
+        if action.get("write") is not None:
+            fail(f"{what}: a container plug-in's action is answered by its handler")
+    cleaned: dict[str, Any] = {
+        "id": action_id,
+        "name": _label(action.get("name"), what=what),
+    }
+    if action.get("endpoint") is not None:
+        endpoint = _endpoint_id(
+            action["endpoint"],
+            service_public_id=service_public_id,
+            what=f"{what} endpoint",
+        )
+        # Initiative calls the endpoint for the reader. A container's does the
+        # work, so it is a write; a declarative plug-in's ``write`` does the
+        # work, so its endpoint may also be a read that fetches what the write
+        # keeps. A run sends what the reader answered for the params the
+        # action asks for, and nothing else, so a param the endpoint requires
+        # is one the action asks for.
+        declared = endpoints.get(endpoint)
+        if declared is None:
+            fail(f"{what}: names {endpoint!r}, which this manifest does not declare")
+        if declared["direction"] not in (
+            ("read", "write") if declarative else ("write",)
+        ):
+            fail(
+                f"{what}: names {endpoint!r}, which is a {declared['direction']} endpoint"
+            )
+        cleaned["endpoint"] = endpoint
+        asked: list[str] = []
+        if action.get("params") is not None:
+            # The endpoint's params the reader is asked for, each once.
+            takes = {param["key"] for param in declared.get("params") or ()}
+            for entry in require_list(
+                action["params"], f"{what} params", MAX_PARAMS_PER_ENDPOINT
+            ):
+                key = check_identifier(entry, what=f"{what} param")
+                if key not in takes:
+                    fail(f"{what}: {key!r} is not a parameter of {endpoint!r}")
+                if key in asked:
+                    fail(f"{what}: params names {key!r} twice")
+                asked.append(key)
+            if not asked:
+                fail(f"{what}: params names no parameter")
+            cleaned["params"] = asked
+        unasked = [
+            param["key"]
+            for param in declared.get("params") or ()
+            if param.get("required") is True and param["key"] not in asked
+        ]
+        if unasked:
+            fail(
+                f"{what}: names {endpoint!r}, which requires "
+                f"{', '.join(map(repr, unasked))}, which the action does not ask "
+                "the reader for"
+            )
+    elif action.get("params") is not None:
+        fail(
+            f"{what}: an action asks for its endpoint's parameters, and names no "
+            "endpoint"
+        )
+    if action.get("write") is not None:
+        cleaned["write"] = _checked(action["write"], what=f"{what} write")
+    cleaned["on"] = _item_kinds(action.get("on"), what=what)
+    # Stored whichever way it was declared, so every pinned action answers
+    # where it is offered the same way.
+    cleaned["menu"] = (
+        False
+        if action.get("menu") is None
+        else _flag(action["menu"], what=f"{what} menu")
+    )
+    # Stored only when it is, so an action published before the term reads the
+    # same as one that left it out.
+    if _admin_only(action, what=what):
+        cleaned["admin_only"] = True
+    if action.get("confirm") is not None:
+        cleaned["confirm"] = _label(action["confirm"], what=f"{what} confirm")
+    requires = _requires(
+        action.get("requires"), connection_ids=connection_ids, what=what
+    )
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+def _part(
+    raw: Any,
+    *,
+    field_kinds: dict[str, list[str]],
+    action_kinds: dict[str, list[str]],
+    connection_ids: set[str],
+) -> dict[str, Any]:
+    part = require_mapping(raw, "part")
+    part_id = check_identifier(part.get("id"), what="part id")
+    what = f"part {part_id!r}"
+    on = _item_kinds(part.get("on"), what=what)
+    cleaned: dict[str, Any] = {
+        "id": part_id,
+        "name": _label(part.get("name"), what=what),
+        "on": on,
+        "tree": _part_tree(
+            part.get("tree"),
+            on=on,
+            field_kinds=field_kinds,
+            action_kinds=action_kinds,
+            what=what,
+        ),
+    }
+    description = localized_text(part.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    requires = _requires(part.get("requires"), connection_ids=connection_ids, what=what)
+    if requires is not None:
+        cleaned["requires"] = requires
+    return cleaned
+
+
+def _part_tree(
+    raw: Any,
+    *,
+    on: list[str],
+    field_kinds: dict[str, list[str]],
+    action_kinds: dict[str, list[str]],
+    what: str,
+) -> dict[str, Any]:
+    """A part's tree of Initiative's components, each node closed, at most
+    :data:`MAX_PART_NODES` of them and :data:`MAX_PART_DEPTH` deep.
+
+    A field or a button names something this manifest declares, offered on
+    every item kind the part is: one that is not would draw nothing there.
+    """
+    count = 0
+
+    def offered(name: str, kinds: list[str] | None, *, block: str, at: str) -> None:
+        if kinds is None:
+            fail(f"{at}: names {name!r}, which is not one of this manifest's {block}")
+        missing = [kind for kind in on if kind not in kinds]
+        if missing:
+            fail(
+                f"{at}: {name!r} is not offered on {', '.join(missing)}, "
+                "where this part is"
+            )
+
+    def node(raw: Any, depth: int, at: str) -> dict[str, Any]:
+        nonlocal count
+        count += 1
+        if count > MAX_PART_NODES:
+            fail(f"{what}: tree holds more than {MAX_PART_NODES} nodes")
+        if depth > MAX_PART_DEPTH:
+            fail(f"{at}: nested deeper than {MAX_PART_DEPTH}")
+        entry = require_mapping(raw, at)
+        node_type = entry.get("type")
+        if not isinstance(node_type, str) or node_type not in PART_NODES:
+            fail(f"{at}: type must be one of {', '.join(sorted(PART_NODES))}")
+        unknown = sorted(set(entry) - PART_NODE_TERMS[node_type])
+        if unknown:
+            fail(f"{at}: {', '.join(map(repr, unknown))} is not a term of the contract")
+        props = require_mapping(entry.get("props", {}), f"{at} props")
+        unknown = sorted(set(props) - PART_NODE_PROPS[node_type])
+        if unknown:
+            fail(
+                f"{at}: {', '.join(map(repr, unknown))} is not a prop of a {node_type}"
+            )
+
+        kept: dict[str, Any] = {}
+        if node_type == "section":
+            if props.get("title") is not None:
+                kept["title"] = _label(props["title"], what=f"{at} title")
+            if props.get("collapsed") is not None:
+                kept["collapsed"] = _flag(props["collapsed"], what=f"{at} collapsed")
+        elif node_type == "stack":
+            if props.get("direction") is not None:
+                kept["direction"] = _choice(
+                    props["direction"], STACK_DIRECTIONS, what=f"{at} direction"
+                )
+            if props.get("gap") is not None:
+                kept["gap"] = _choice(props["gap"], STACK_GAPS, what=f"{at} gap")
+            if props.get("wrap") is not None:
+                kept["wrap"] = _flag(props["wrap"], what=f"{at} wrap")
+        elif node_type in ("field", "value"):
+            key = check_metadata_key(props.get("field"), what=f"{at} field")
+            offered(key, field_kinds.get(key), block="fields", at=at)
+            kept["field"] = key
+        elif node_type == "text":
+            kept["text"] = _label(props.get("text"), what=f"{at} text")
+            if props.get("tone") is not None:
+                kept["tone"] = _choice(props["tone"], TONES, what=f"{at} tone")
+        elif node_type == "button":
+            action_id = check_identifier(props.get("action"), what=f"{at} action")
+            offered(action_id, action_kinds.get(action_id), block="actions", at=at)
+            kept["action"] = action_id
+            if props.get("variant") is not None:
+                kept["variant"] = _choice(
+                    props["variant"], BUTTON_VARIANTS, what=f"{at} variant"
+                )
+
+        cleaned: dict[str, Any] = {"type": node_type}
+        if kept:
+            cleaned["props"] = kept
+        if node_type in PART_CONTAINERS:
+            children = [
+                node(child, depth + 1, f"{at}.children.{index}")
+                for index, child in enumerate(
+                    require_list(
+                        entry.get("children"), f"{at} children", MAX_PART_NODES
+                    )
+                )
+            ]
+            if children:
+                cleaned["children"] = children
+        return cleaned
+
+    return node(raw, 1, f"{what} tree")
 
 
 # --- the definition ---------------------------------------------------------
@@ -2409,14 +3025,60 @@ def _service_block(raw: Any) -> dict[str, Any]:
             f"({sorted(PLUGIN_PROTOCOL_VERSIONS)})"
         )
     cleaned: dict[str, Any] = {"public_id": public_id, "protocol": protocol}
-    scopes = _requested_scopes(service.get("scopes"))
+    scopes = _requested_scopes(service.get("scopes"), where="service.scopes")
     if scopes:
         cleaned["scopes"] = scopes
+    if service.get("calls_plugins") is not None and _flag(
+        service["calls_plugins"], what="service plug-in: service.calls_plugins"
+    ):
+        cleaned["calls_plugins"] = True
     return cleaned
 
 
-def _requested_scopes(raw: Any) -> list[str]:
-    """The scopes a service asks a community to grant, canonically.
+def _setting(raw: Any) -> dict[str, Any]:
+    """A value the community's admins set on the install."""
+    setting = require_mapping(raw, "setting")
+    key = check_identifier(setting.get("key"), what="setting key")
+    what = f"setting {key!r}"
+    cleaned: dict[str, Any] = {
+        "key": key,
+        "type": _choice(setting.get("type"), SETTING_TYPES, what=f"{what} type"),
+        "label": _label(setting.get("label"), what=what),
+    }
+    description = localized_text(setting.get("description"), MAX_TEXT_LENGTH)
+    if description is not None:
+        cleaned["description"] = description
+    if setting.get("unique") is not None and _flag(
+        setting["unique"], what=f"{what} unique"
+    ):
+        cleaned["unique"] = True
+    if setting.get("assigned") is not None:
+        if "unique" not in cleaned:
+            fail(f"{what}: only a unique setting's value is assigned")
+        cleaned["assigned"] = _choice(
+            setting["assigned"], SETTING_ASSIGNMENTS, what=f"{what} assigned"
+        )
+    return cleaned
+
+
+def _help(raw: Any) -> dict[str, str]:
+    """Help with the plug-in, in markdown, by language: at most
+    :data:`MAX_HELP_LENGTH` characters in each."""
+    for language, text in require_mapping(raw, "service plug-in: help").items():
+        if isinstance(text, str) and len(text.strip()) > MAX_HELP_LENGTH:
+            fail(
+                f"service plug-in: help in {language!r} is longer than "
+                f"{MAX_HELP_LENGTH} characters"
+            )
+    text = localized_text(raw, MAX_HELP_LENGTH)
+    if text is None:
+        fail("service plug-in: help says nothing in any language")
+    return text
+
+
+def _requested_scopes(raw: Any, *, where: str) -> list[str]:
+    """The scopes a plug-in asks a community to grant, canonically: a
+    container's ``service.scopes``, or a declarative plug-in's ``scopes``.
 
     Absent means none. Each must be in the vocabulary, or a ``plugins:`` scope
     naming another plug-in's public id, and named once; stored sorted, so
@@ -2425,7 +3087,7 @@ def _requested_scopes(raw: Any) -> list[str]:
     if raw is None:
         return []
     declared = require_list(
-        raw, "service plug-in: service.scopes", len(ALL_SCOPES) + MAX_PLUGIN_SCOPES
+        raw, f"service plug-in: {where}", len(ALL_SCOPES) + MAX_PLUGIN_SCOPES
     )
     scopes: set[str] = set()
     plugin_scopes = 0
@@ -2439,12 +3101,10 @@ def _requested_scopes(raw: Any) -> list[str]:
         elif entry not in ALL_SCOPES:
             fail(f"service plug-in: {entry!r} is not a scope a plug-in may request")
         if entry in scopes:
-            fail(f"service plug-in: service.scopes names {entry!r} twice")
+            fail(f"service plug-in: {where} names {entry!r} twice")
         scopes.add(entry)
     if plugin_scopes > MAX_PLUGIN_SCOPES:
-        fail(
-            f"service plug-in: service.scopes names more than {MAX_PLUGIN_SCOPES} plug-ins"
-        )
+        fail(f"service plug-in: {where} names more than {MAX_PLUGIN_SCOPES} plug-ins")
     return sorted(scopes)
 
 
@@ -2563,9 +3223,10 @@ def normalize_service_plugin_definition(
 ) -> dict[str, Any]:
     """Validate and canonicalize a service plug-in's definition.
 
-    A container plug-in names itself in its ``service`` block. A declarative plug-in
-    has none, and is named by its listing's ``public_id``, which its endpoints
-    are namespaced under. One plug-in is never both.
+    A container plug-in names itself in its ``service`` block, and the scopes it
+    asks for there. A declarative plug-in has none, and is named by its
+    listing's ``public_id``, which its endpoints are namespaced under; it asks
+    for read scopes, at the top of its manifest. One plug-in is never both.
     """
     body = require_mapping(definition, "service plug-in definition")
 
@@ -2573,6 +3234,7 @@ def normalize_service_plugin_definition(
     service: dict[str, Any] | None = None
     hosts: list[str] = []
     auth: dict[str, str] | None = None
+    scopes: list[str] = []
     if declarative:
         if public_id is None:
             fail("service plug-in: a declarative plug-in is named by its listing")
@@ -2582,9 +3244,18 @@ def normalize_service_plugin_definition(
             fail("service plug-in: a declarative plug-in names the hosts it calls")
         if body.get("auth") is not None:
             auth = _auth(body["auth"])
-        for term in ("schedules", "embeds"):
-            if body.get(term) is not None:
-                fail(f"service plug-in: a declarative plug-in has no {term}")
+        if body.get("pages") is not None:
+            fail(
+                "service plug-in: a declarative plug-in has no pages; a page is "
+                "served by a container"
+            )
+        scopes = _requested_scopes(body.get("scopes"), where="scopes")
+        if any(not scope.endswith(":read") for scope in scopes):
+            fail(
+                "service plug-in: a declarative plug-in asks only for read scopes: "
+                "it keeps its own values on items it can read, and does not call "
+                "Initiative"
+            )
     else:
         service = _service_block(body.get("service"))
         plugin_public_id = service["public_id"]
@@ -2594,6 +3265,11 @@ def normalize_service_plugin_definition(
                     f"service plug-in: {term!r} is a declarative plug-in's term; a "
                     "container plug-in makes its own calls"
                 )
+        if body.get("scopes") is not None:
+            fail(
+                "service plug-in: a container plug-in declares its scopes in its "
+                "service block"
+            )
     auth_header = (auth or {}).get("header", DEFAULT_AUTH_HEADER)
     vendor = _vendor(body.get("vendor"))
     vendor_keys = {field["key"] for field in (vendor or {}).get("fields", [])}
@@ -2620,7 +3296,6 @@ def normalize_service_plugin_definition(
         connections=connections,
         declarative=declarative,
     )
-    schedules = _schedules(body.get("schedules"))
 
     # One list for every direction, so a caller resolves an id without being
     # told which kind of thing it is first.
@@ -2651,11 +3326,20 @@ def normalize_service_plugin_definition(
         endpoint["id"] for endpoint in endpoints if endpoint["direction"] == "emit"
     }
     for index, event in enumerate((webhooks or {}).get("events", [])):
-        if event["emit"] not in emits:
+        if "emit" in event and event["emit"] not in emits:
             fail(
                 f"service plug-in: webhooks.events.{index} emits {event['emit']!r}, "
                 "which is not an emit endpoint this plug-in declares"
             )
+    by_id = {endpoint["id"]: endpoint for endpoint in endpoints}
+    # After the endpoints, because a declarative plug-in's schedule names one.
+    schedules = _schedules(
+        body.get("schedules"),
+        declarative=declarative,
+        service_public_id=plugin_public_id,
+        endpoints=by_id,
+        connection_ids=connection_ids,
+    )
 
     # A parameter naming where its values come from, checked once every endpoint
     # is known. Nothing downstream refuses a bad one: a form asks this
@@ -2675,17 +3359,83 @@ def normalize_service_plugin_definition(
             fail(f"service plug-in: two widgets share the id {widget['id']!r}")
         widget_ids.add(widget["id"])
 
-    embeds = [
-        _embed(entry, connection_ids=connection_ids)
+    pages = [
+        _page(entry, connection_ids=connection_ids)
         for entry in require_list(
-            body.get("embeds"), "service plug-in: embeds", MAX_EMBEDS
+            body.get("pages"), "service plug-in: pages", MAX_PAGES
         )
     ]
-    embed_ids: set[str] = set()
-    for embed in embeds:
-        if embed["id"] in embed_ids:
-            fail(f"service plug-in: two embeds share the id {embed['id']!r}")
-        embed_ids.add(embed["id"])
+    page_ids: set[str] = set()
+    for page in pages:
+        if page["id"] in page_ids:
+            fail(f"service plug-in: two pages share the id {page['id']!r}")
+        page_ids.add(page["id"])
+
+    actions = [
+        _action(
+            entry,
+            service_public_id=plugin_public_id,
+            endpoints=by_id,
+            connection_ids=connection_ids,
+            declarative=declarative,
+        )
+        for entry in require_list(
+            body.get("actions"), "service plug-in: actions", MAX_ACTIONS
+        )
+    ]
+    action_kinds: dict[str, list[str]] = {}
+    for action in actions:
+        if action["id"] in action_kinds:
+            fail(f"service plug-in: two actions share the id {action['id']!r}")
+        action_kinds[action["id"]] = action["on"]
+
+    # After the actions, because a list field's elements offer them.
+    fields = [
+        _item_field(
+            entry,
+            connection_ids=connection_ids,
+            action_kinds=action_kinds,
+            declarative=declarative,
+        )
+        for entry in require_list(
+            body.get("fields"), "service plug-in: fields", MAX_FIELDS
+        )
+    ]
+    field_kinds: dict[str, list[str]] = {}
+    for field in fields:
+        if field["key"] in field_kinds:
+            fail(f"service plug-in: two fields share the key {field['key']!r}")
+        field_kinds[field["key"]] = field["on"]
+
+    settings = [
+        _setting(entry)
+        for entry in require_list(
+            body.get("settings"), "service plug-in: settings", MAX_SETTINGS
+        )
+    ]
+    setting_keys: set[str] = set()
+    for setting in settings:
+        if setting["key"] in setting_keys:
+            fail(f"service plug-in: two settings share the key {setting['key']!r}")
+        setting_keys.add(setting["key"])
+
+    # After the fields and actions, because a part's nodes name them.
+    parts = [
+        _part(
+            entry,
+            field_kinds=field_kinds,
+            action_kinds=action_kinds,
+            connection_ids=connection_ids,
+        )
+        for entry in require_list(
+            body.get("parts"), "service plug-in: parts", MAX_PARTS
+        )
+    ]
+    part_ids: set[str] = set()
+    for part in parts:
+        if part["id"] in part_ids:
+            fail(f"service plug-in: two parts share the id {part['id']!r}")
+        part_ids.add(part["id"])
 
     cleaned: dict[str, Any] = {
         "plugin_kind": "service",
@@ -2697,6 +3447,8 @@ def normalize_service_plugin_definition(
         cleaned["hosts"] = hosts
         if auth is not None:
             cleaned["auth"] = auth
+        if scopes:
+            cleaned["scopes"] = scopes
     # Empty blocks are left out entirely, so "does this plug-in offer widgets?" has
     # one answer rather than two shapes that mean the same thing.
     if vendor is not None:
@@ -2711,8 +3463,18 @@ def normalize_service_plugin_definition(
         cleaned["endpoints"] = endpoints
     if widgets:
         cleaned["widgets"] = widgets
-    if embeds:
-        cleaned["embeds"] = embeds
+    if pages:
+        cleaned["pages"] = pages
+    if fields:
+        cleaned["fields"] = fields
+    if parts:
+        cleaned["parts"] = parts
+    if actions:
+        cleaned["actions"] = actions
+    if settings:
+        cleaned["settings"] = settings
+    if body.get("help") is not None:
+        cleaned["help"] = _help(body["help"])
 
     # After the widgets and endpoints it can name, because every tile is checked
     # against them — the whole point of bundling rather than publishing

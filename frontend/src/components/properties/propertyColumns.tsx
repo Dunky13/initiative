@@ -1,4 +1,5 @@
 import type { RowData } from "@tanstack/react-table";
+import type { LucideIcon } from "lucide-react";
 
 import type {
   PropertyDefinitionRead,
@@ -90,6 +91,39 @@ const isDefinitionAmbiguous = (
 };
 
 /**
+ * Each definition with its column id and label, two that share a name told
+ * apart. A board's Fields menu names properties through this too, so a
+ * property reads the same in both menus.
+ */
+export const namePropertyColumns = (
+  definitions: PropertyDefinitionRead[]
+): { definition: PropertyDefinitionRead; id: string; label: string }[] => {
+  const ambiguousNames = buildAmbiguousNameSet(definitions);
+  return definitions.map((definition) => {
+    const ambiguous = isDefinitionAmbiguous(definition, ambiguousNames);
+    return {
+      definition,
+      id: propertyColumnId(definition, ambiguous),
+      label: propertyColumnLabel(definition, ambiguous),
+    };
+  });
+};
+
+/** A property column's header: its type's icon and its name. */
+export const PropertyColumnHeader = ({
+  icon: Icon,
+  label,
+}: {
+  icon?: LucideIcon;
+  label: string;
+}) => (
+  <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
+    {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden /> : null}
+    <span className="truncate">{label}</span>
+  </span>
+);
+
+/**
  * Build a TanStack ``ColumnDef`` per property definition. Each column is
  * hidden by default (callers are expected to seed ``columnVisibility``);
  * ``enableSorting`` is off because sort across heterogeneous typed columns
@@ -107,7 +141,6 @@ export function buildPropertyColumns<T extends RowData>(
   const capped = definitions.slice(0, PROPERTY_COLUMN_CAP);
   const ambiguousNames = buildAmbiguousNameSet(capped);
   return capped.map((definition) => {
-    const Icon = iconForPropertyType(definition.type);
     const ambiguous = isDefinitionAmbiguous(definition, ambiguousNames);
     const label = propertyColumnLabel(definition, ambiguous);
     return {
@@ -117,10 +150,7 @@ export function buildPropertyColumns<T extends RowData>(
       // (``property:Status``).
       meta: { label },
       header: () => (
-        <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
-          <Icon className="h-3.5 w-3.5" aria-hidden />
-          <span className="truncate">{label}</span>
-        </span>
+        <PropertyColumnHeader icon={iconForPropertyType(definition.type)} label={label} />
       ),
       cell: ({ row }) => {
         const rowValue = row.original as T;
@@ -142,9 +172,5 @@ export function buildPropertyColumns<T extends RowData>(
  * ``columnVisibility`` map so the default-hidden toggle keys match the
  * column ids actually rendered.
  */
-export const propertyColumnIds = (definitions: PropertyDefinitionRead[]): string[] => {
-  const ambiguousNames = buildAmbiguousNameSet(definitions);
-  return definitions.map((definition) =>
-    propertyColumnId(definition, isDefinitionAmbiguous(definition, ambiguousNames))
-  );
-};
+export const propertyColumnIds = (definitions: PropertyDefinitionRead[]): string[] =>
+  namePropertyColumns(definitions).map(({ id }) => id);

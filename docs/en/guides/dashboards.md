@@ -56,9 +56,9 @@ Usually faster than starting from a blank canvas, and often better, because some
 
 Two steps, and most people never leave the first.
 
-**Build** is clicking. Pick what to read — tasks, files, queue items, notices, events, your community's own people — then which columns, what to group them by, and what to narrow it to. The dashboard writes the query for you.
+**Build** is clicking. Pick what to read — tasks, files, queue items, notices, events, your community's own people, or **Property values**, the initiative's own fields wherever they're set — then which columns, what to group them by, and what to narrow it to. The dashboard writes the query for you.
 
-**SQL** is the tab beside it, for the question clicking can't describe. It's real SQL, with the tables and columns offered as you type and the statement checked as you pause. One thing to know before you start: once you've edited the text, that tile stays in SQL. The builder can't read arbitrary SQL back, so it stops trying rather than quietly mangling what you wrote.
+**SQL** is the tab beside it, for the question clicking can't describe. It's real SQL, with the tables and columns offered as you type and the statement checked as you pause. One thing to know before you start: once you've edited the text, **Build** can't read it back. It offers to build a new query instead, which replaces what you wrote, so it never quietly mangles it.
 
 Either way you can reach what a thing is *attached to* without writing a join. Tasks by the person assigned, by their status, by their project — pick the related column and the rest is worked out.
 
@@ -82,11 +82,20 @@ That doesn't mean you. It means whoever is looking at the tile. Place *My open t
 
 Group a date by **day**, **week**, **month**, **quarter** or **year** and a chart labels each point that way — "Mar 2026", "Q1 2026" — in order, oldest first. A heatmap draws months and quarters as a row per year, and weeks and years as a single strip.
 
+### Targets, burn-ups and splits
+
+- **A target.** Give a chart, stat or progress bar a **Target** and a **Target date**. The chart draws it as a line, the progress bar marks it, and each says whether you've reached it, are on track, behind, or missed it, judged from the trend so far.
+- **A burn-up.** Show a count or total as **Running count** or **Running total**, and each point adds up everything before it.
+- **A split.** Group by a second column (status, say, beside the sprint) and a chart draws one series per value; **Stacked** piles them up. Past twelve series, the smallest fold into Other.
+- **Points per sprint.** Read **Property values**, filter by **Property**, show **Property › Name** and the total of **Number**, and group by the name.
+
+In SQL, the same tables are `property_values` and `property_definitions`, and window functions work: `sum(…) OVER (…)`, `row_number()`, `lag()` and friends.
+
 ### Boards
 
-One of the tiles is a **board**: your tasks dealt into columns, and you say what a column stands for. A status. The people on the work, so everyone gets a column and you can see who is carrying what. Priority, project, tag — or one of your initiative's own properties, which is how you end up with a board columned by "Squad" or "Sprint" or whatever your group actually argues about.
+One of the tiles is a **board**: your tasks dealt into columns, and you say what a column stands for. A status. The people on the work, so everyone gets a column and you can see who is carrying what. Priority. Project. Any column the tile's query returns will do.
 
-A value that exists and has nothing in it still gets its column. An empty **Blocked** is information.
+Each value the tasks actually have gets a column. Tasks with nothing in that column share one more, at the end, named for what they're missing.
 
 Like everything else here it only displays. There's nothing to drag a card onto — moving work between states is still a project's job.
 

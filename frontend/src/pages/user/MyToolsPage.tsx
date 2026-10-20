@@ -1,13 +1,10 @@
 /**
- * My Tools: the community front page with the community boundary taken off.
- *
- * Pick a tool from the rail, see everything of that kind that reaches you —
+ * My Tools: pick a tool from the rail, see everything of that kind that reaches you —
  * across every community you're in, not one at a time. It replaced the
  * separate My Projects and My Files pages, which were the same table twice
  * for two of the six tools.
  *
- * Two things are its own, and the rest is shared with the community front page
- * (the rail, the table, the row builder):
+ * Two things set it apart from a plain list of each tool:
  *
  * - **A tab only appears for a tool you have something of.** `/me/tools/counts`
  *   answers for all six in one request; a reader who has never touched a queue
@@ -28,7 +25,7 @@ import {
   listInitiatives,
 } from "@/api/generated/initiatives/initiatives";
 import { SkeletonRegion, TableSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TOOL_TRAY_SURFACE, ToolRail } from "@/components/toolBrowser/ToolRail";
+import { NodeRail, TRAY_SURFACE } from "@/components/toolBrowser/NodeRail";
 import { CROSS_COMMUNITY_TOOL_SORT_FIELDS, ToolTable } from "@/components/toolBrowser/ToolTable";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -37,6 +34,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCommunities } from "@/hooks/useCommunities";
 import { toolsWithContent, useMyToolCounts, useMyToolRows } from "@/hooks/useMyTools";
 import { useToolBrowserSearch } from "@/hooks/useToolBrowserSearch";
+import { TOOL_ICONS, toolNavLabelKey, toolRouteSegment } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
 const ROUTE = "/my-tools";
@@ -50,6 +48,7 @@ const parseCommunities = (raw: string | undefined): number[] =>
 
 export function MyToolsPage() {
   const { t } = useTranslation("myTools");
+  const { t: tNav } = useTranslation("nav");
   const { communities } = useCommunities();
   const { search, setSearch, selectTool, query, table } = useToolBrowserSearch<{
     made?: string;
@@ -72,6 +71,15 @@ export function MyToolsPage() {
   const tools = useMemo(() => toolsWithContent(countsQuery.data), [countsQuery.data]);
 
   const selected = selectTool(tools);
+  const toolNodes = useMemo(
+    () =>
+      tools.map((tool) => ({
+        segment: toolRouteSegment(tool),
+        icon: TOOL_ICONS[tool],
+        label: tNav(toolNavLabelKey(tool)),
+      })),
+    [tools, tNav]
+  );
 
   const { rows, totalCount, isLoading, isError } = useMyToolRows(
     selected,
@@ -115,7 +123,7 @@ export function MyToolsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="font-semibold text-3xl tracking-tight">{t("title")}</h1>
 
         <div className="flex flex-wrap items-end gap-4">
@@ -185,8 +193,14 @@ export function MyToolsPage() {
         // rising, and everything a tool has to say sits in the same surface
         // underneath them.
         <div>
-          <ToolRail tools={tools} selected={selected} to={ROUTE} label={t("toolRail")} />
-          <div className={cn("rounded-b-2xl px-3 pt-1 pb-3 sm:px-4 sm:pb-4", TOOL_TRAY_SURFACE)}>
+          <NodeRail
+            nodes={toolNodes}
+            selected={toolRouteSegment(selected)}
+            to={ROUTE}
+            param="tool"
+            label={t("toolRail")}
+          />
+          <div className={cn("rounded-b-2xl px-3 pt-1 pb-3 sm:px-4 sm:pb-4", TRAY_SURFACE)}>
             {/* A search that found nothing still renders the table: the box
                 that found nothing is in its toolbar, and taking it away would
                 leave no way to unsay the search. */}

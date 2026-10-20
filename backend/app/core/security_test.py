@@ -14,7 +14,7 @@ import jwt
 import pytest
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from datetime import datetime, timedelta, timezone
 
 from app.core import security
@@ -40,7 +40,7 @@ def _decode_unverified(token: str) -> dict:
     """Return the JWT payload without checking signature/audience.
 
     The tests assert specific claims; signature verification is exercised
-    separately in the RS256 round-trip test.
+    separately in the EdDSA round-trip test.
     """
     return jwt.decode(token, options={"verify_signature": False})
 
@@ -118,7 +118,7 @@ def test_billing_portal_handoff_carries_admin_claims_and_distinct_audience(
         guild_ref="gbil_test7",
     )
     assert seconds == int(BILLING_PORTAL_HANDOFF_LIFETIME.total_seconds())
-    assert jwt.get_unverified_header(token)["alg"] == "RS256"
+    assert jwt.get_unverified_header(token)["alg"] == "EdDSA"
 
     payload = _decode_unverified(token)
     assert payload["aud"] == security.BILLING_PORTAL_AUDIENCE
@@ -135,7 +135,7 @@ def test_billing_portal_handoff_carries_admin_claims_and_distinct_audience(
 
 
 def test_billing_portal_handoff_refuses_to_mint_without_private_key(monkeypatch):
-    """No RS256 key configured -> mint fails closed."""
+    """No Ed25519 key configured -> mint fails closed."""
     monkeypatch.setattr(security.settings, "HANDOFF_SIGNING_PRIVATE_KEY_PEM", None)
     with pytest.raises(HandoffSigningNotConfiguredError):
         security.create_billing_portal_handoff_token(
@@ -143,6 +143,22 @@ def test_billing_portal_handoff_refuses_to_mint_without_private_key(monkeypatch)
             user_ref="ubil_test1",
             guild_ref="gbil_test2",
         )
+
+
+def test_billing_handoff_refuses_to_mint_with_an_rsa_key(monkeypatch):
+    """Ed25519 is the only handoff key: an RSA one is refused, not used."""
+    rsa_pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    monkeypatch.setattr(security.settings, "HANDOFF_SIGNING_PRIVATE_KEY_PEM", rsa_pem)
+    with pytest.raises(HandoffSigningNotConfiguredError, match="Ed25519"):
+        security.create_billing_insights_handoff_token(user_ref="ubil_test1")
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -465,9 +481,7 @@ def test_decode_session_token_rejects_garbage():
 # ──────────────────────────────────────────────────────────────────────────
 
 
-_KEYPAIRS = [
-    rsa.generate_private_key(public_exponent=65537, key_size=2048) for _ in range(3)
-]
+_KEYPAIRS = [ed25519.Ed25519PrivateKey.generate() for _ in range(3)]
 
 
 def private_pem(index: int) -> str:
@@ -499,8 +513,8 @@ def public_bundle(*indexes: int) -> str:
 def test_loader_reads_every_block_in_order():
     keys = security.load_verification_keys(public_bundle(0, 1, 2))
     assert len(keys) == 3
-    assert [k.public_numbers().n for k in keys] == [
-        _KEYPAIRS[i].public_key().public_numbers().n for i in (0, 1, 2)
+    assert [k.public_bytes_raw() for k in keys] == [
+        _KEYPAIRS[i].public_key().public_bytes_raw() for i in (0, 1, 2)
     ]
 
 
@@ -528,6 +542,22 @@ def test_loader_refuses_a_private_key():
     """Only the public half belongs in a verifying setting."""
     with pytest.raises(security.PublicKeyBundleError):
         security.load_verification_keys(private_pem(0))
+
+
+def test_loader_refuses_a_key_that_is_not_ed25519():
+    """An RSA block is refused outright, not trusted beside the others."""
+    rsa_pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    with pytest.raises(security.PublicKeyBundleError) as excinfo:
+        security.load_verification_keys(public_bundle(0) + rsa_pem)
+    assert "block 2 is not an Ed25519 key" in str(excinfo.value)
 
 
 def test_the_sign_in_dummy_bcrypt_cost_is_pinned_not_inherited() -> None:

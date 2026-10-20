@@ -28,7 +28,8 @@ from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, false, func, inspect, true
+from sqlalchemy import ColumnElement, and_, false, func, inspect, or_, true
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, undefer
 from sqlmodel import select
 
@@ -178,26 +179,10 @@ def writable_scope_clause(
 
 @dataclass(frozen=True)
 class DacResource:
-    """One tool's DAC identity: the tool itself, and the three refusals.
-
-    The refusals are derived from ``name`` rather than stored, so a new
-    ``Tool`` member arrives with its full set and none of them can be wired to
-    another tool's code by a copy-paste.
-    """
+    """One tool's DAC identity. Its refusals come from the tool (``Tool``), so
+    a new member arrives with its full set."""
 
     name: Tool
-
-    @property
-    def denied_msg(self) -> str:
-        return self.name.no_access_code
-
-    @property
-    def owner_msg(self) -> str:
-        return self.name.owner_required_code
-
-    @property
-    def write_msg(self) -> str:
-        return self.name.write_required_code
 
 
 #: Every tool, by construction — ``tools_test`` has nothing to catch up on.
@@ -240,22 +225,48 @@ def serialize_grants(row: Any, *, context: ActorContext | None) -> list:
 
 
 async def audience(
-    session: Any, tool: Tool, resource_ids: Iterable[int]
+    session: Any, tool: Tool, rows: Iterable[Any]
 ) -> dict[int, set[int]]:
-    """Who each resource is shared with, by id — the schema's
-    ``resource_audience``: the people a notification may name and a notice is
-    read by. Resources shared with nobody are absent."""
-    from app.db.session import routed_guild_id
+    """Who each of ``rows`` (``tool`` rows) is shared with and can open now, by
+    id: the schema's ``resource_audience``, narrowed to
+    :func:`named_people.readers_of`. The people a notification goes to and a
+    notice is read by. Rows that reach nobody are absent.
 
-    ids = sorted(set(resource_ids))
-    if not ids:
+    Read on :func:`named_people.roster_session` with ``whole``: who a thing
+    reaches is the community's answer, whoever is asking."""
+    from app.db.session import routed_guild_id
+    from app.services.tenant import named_people
+
+    by_id = {row.id: row for row in rows}
+    if not by_id:
         return {}
-    shared = func.resource_audience(
-        tool.value, ids, routed_guild_id(session)
-    ).table_valued("resource_id", "user_id")
-    rows = (await session.exec(select(shared.c.resource_id, shared.c.user_id))).all()
+    guild_id = routed_guild_id(session)
+    if guild_id is None:
+        raise RuntimeError("an audience is read inside a community")
+    shared = func.resource_audience(tool.value, sorted(by_id), guild_id).table_valued(
+        "resource_id", "user_id"
+    )
+    reaches = or_(
+        *(
+            and_(
+                shared.c.resource_id == row_id,
+                shared.c.user_id.in_(
+                    named_people.readers_of(
+                        named_people.Governing.of(tool, row), guild_id
+                    )
+                ),
+            )
+            for row_id, row in by_id.items()
+        )
+    )
+    async with named_people.roster_session(session, whole=True) as reader:
+        pairs = (
+            await reader.exec(
+                select(shared.c.resource_id, shared.c.user_id).where(reaches)
+            )
+        ).all()
     by_resource: dict[int, set[int]] = {}
-    for resource_id, user_id in rows:
+    for resource_id, user_id in pairs:
         by_resource.setdefault(resource_id, set()).add(user_id)
     return by_resource
 
@@ -444,10 +455,7 @@ async def replace_resource_grants(
             permission_key=view_key,
         )
         if valid_users - permitted_users or valid_roles - permitted_roles:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=SharingMessages.grantee_lacks_tool(tool),
-            )
+            raise tool.grantee_lacks_access()
         valid_users, valid_roles = permitted_users, permitted_roles
 
     existing = (
@@ -522,6 +530,57 @@ async def replace_resource_grants(
         )
 
 
+async def grant_to_person(
+    session: Any,
+    *,
+    resource_type: Tool,
+    resource_id: int,
+    guild_id: int,
+    initiative_id: int | None,
+    user_id: int,
+    level: ResourceAccessLevel,
+    actor_user_id: int | None,
+) -> None:
+    """Share one resource with ``user_id`` at ``level``, unless a grant
+    already names them there, which is left as it is. Recorded as a share is.
+    Caller commits."""
+    held = await session.exec(
+        select(ResourceGrant.id).where(
+            ResourceGrant.resource_type == resource_type,
+            ResourceGrant.resource_id == resource_id,
+            ResourceGrant.user_id == user_id,
+        )
+    )
+    if held.first() is not None:
+        return
+    # Two writers can both find none; the unique grantee key keeps one, and
+    # the other is the share the caller asked for.
+    try:
+        async with session.begin_nested():
+            session.add(
+                ResourceGrant(
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    initiative_id=initiative_id,
+                    user_id=user_id,
+                    level=level,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        return
+    await _record_grant_changes(
+        session,
+        actor_user_id=actor_user_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        guild_id=guild_id,
+        initiative_id=initiative_id,
+        before={},
+        after={("user", user_id): _grant_level(level)},
+    )
+
+
 class Action(str, Enum):
     """What somebody may do to one of a tool's rows, beyond reading it — the
     names ``resource_actions`` answers in (``app.db.authorization``)."""
@@ -580,7 +639,7 @@ def allows(row: Any, action: Action) -> bool:
 
 def _refusal(
     resource: DacResource, row: Any, action: Action, context: ActorContext | None
-) -> HTTPException:
+) -> Exception:
     """Which refusal a missing ``action`` is. Only names it: the database
     already decided."""
     if action is Action.export:
@@ -598,9 +657,7 @@ def _refusal(
             ),
         )
     if context is not None and context.content_read_only:
-        return HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=resource.write_msg
-        )
+        return resource.name.write_required()
     # Archived or trashed content is read-only, and so is everything under it.
     # Not a permission answer — the caller may well own it — so it carries its
     # own code and its own status, and the thing to do is bring it back first.
@@ -617,22 +674,15 @@ def _refusal(
         and context is not None
         and context.grant_content is not None
     ):
-        return HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=resource.name.grant_cannot_manage_members_code,
-        )
+        return resource.name.grant_cannot_manage_members()
     if action in (Action.delete, Action.share):
-        return HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=resource.owner_msg
-        )
+        return resource.name.owner_required()
     if action is Action.configure:
         return HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ProjectMessages.CONFIGURE_REQUIRED,
         )
-    return HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN, detail=resource.write_msg
-    )
+    return resource.name.write_required()
 
 
 def require_access(
@@ -690,8 +740,8 @@ def require_project_configure(
     project: Project, *, context: ActorContext | None
 ) -> None:
     """Raise 403 unless the request may configure the project itself — pin it,
-    set its default view, curate its filter presets: a guild admin, a manager of
-    the owning initiative, or the project's owner, on a live project."""
+    set its default view and its views: a guild admin, a manager of the owning initiative, or the
+    project's owner, on a live project."""
     require_access(
         DAC_RESOURCES[Tool.project], project, context=context, action=Action.configure
     )

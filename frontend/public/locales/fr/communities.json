@@ -191,6 +191,8 @@
     "unableToDeleteInvite": "Impossible de supprimer l'invitation.",
     "inviteLinkCopied": "Lien d'invitation copié dans le presse-papiers.",
     "copyInviteLink": "Copier le lien d'invitation",
+    "newInviteLinkOnce": "Copiez ce lien maintenant. Il ne sera plus affiché.",
+    "inviteLinkTitle": "Lien d'invitation",
     "deleteInviteLink": "Supprimer l'invitation",
     "usesFormat": "Utilisations : {{uses}}/{{max}} · Expiration : {{expires}}",
     "neverExpires": "Jamais",
@@ -243,7 +245,9 @@
     "accountSettings": "Paramètres du compte",
     "platformSettings": "Paramètres de la plateforme",
     "shellBackToStart": "Retour à l'accueil",
-    "logOut": "Se déconnecter"
+    "logOut": "Se déconnecter",
+    "unavailableTitle": "Impossible de charger vos communautés",
+    "unavailableDescription": "Un problème est survenu pendant le chargement. Vos communautés sont toujours là."
   },
   "notifications": {
     "desktop": {
@@ -267,7 +271,6 @@
     "initiativeJoinApproved": "Votre demande pour rejoindre {{initiativeName}} a été acceptée.",
     "initiativeJoinDenied": "Votre demande pour rejoindre {{initiativeName}} a été refusée.",
     "projectAdded": "Le projet {{projectName}} a été ajouté à {{initiativeName}}, dont vous faites partie.",
-    "userPendingApproval": "{{email}} attend une approbation.",
     "mentionComment": "{{mentionedBy}} vous a mentionné dans un commentaire sur {{contextTitle}}.",
     "mentionFile": "{{mentionedBy}} vous a mentionné dans {{fileTitle}}.",
     "mentionTaskDescription": "{{mentionedBy}} vous a mentionné dans {{taskTitle}}.",
@@ -294,8 +297,6 @@
     "accessGrantDenied": "Votre demande d'accès à {{community}} a été refusée.",
     "accessGrantRevoked": "Votre accès à {{community}} a été révoqué.",
     "eventInvitation": "{{organizer}} vous a invité à {{eventTitle}}.",
-    "eventUpdated": "{{editor}} a mis à jour {{eventTitle}}.",
-    "eventRescheduled": "{{editor}} a reprogrammé {{eventTitle}}.",
     "eventCancelled": "{{canceller}} a annulé {{eventTitle}}.",
     "eventRsvp": "{{responder}} a répondu {{status}} à {{eventTitle}}.",
     "eventReminder": "{{eventTitle}} approche.",
@@ -339,6 +340,18 @@
     "commentsOnTaskMulti": "{{name}} et {{others}} autres ont laissé {{count}} commentaires sur {{taskTitle}}",
     "commentsOnResource": "{{name}} a laissé {{count}} commentaires sur {{entityName}}",
     "commentsOnResourceMulti": "{{name}} et {{others}} autres ont laissé {{count}} commentaires sur {{entityName}}",
+    "subscription": {
+      "created": "{{name}} a créé {{entityName}}.",
+      "completed": "{{name}} a terminé {{entityName}}.",
+      "commented": "{{name}} a commenté {{entityName}}.",
+      "edited": "{{name}} a modifié {{entityName}}.",
+      "moved": "{{name}} a déplacé {{entityName}}.",
+      "scheduled": "{{name}} a reprogrammé {{entityName}}.",
+      "published": "{{name}} a publié {{entityName}}.",
+      "reacted": "{{name}} a réagi à {{entityName}}."
+    },
+    "subscriptionMulti_one": "{{name}} et 1 autre personne ont modifié {{entityName}}.",
+    "subscriptionMulti_other": "{{name}} et {{count}} autres ont modifié {{entityName}}.",
     "seeAll": "Tout voir",
     "inbox": {
       "title": "Notifications",
@@ -366,8 +379,26 @@
       "project": "Un projet",
       "projectIn": "un projet",
       "task": "Une tâche",
-      "taskObject": "votre tâche",
-      "user": "Un utilisateur"
+      "taskObject": "votre tâche"
+    },
+    "moderationRemoved": "Un modérateur a retiré quelque chose que vous avez écrit : {{reason}}",
+    "moderationRemovedLegal": "Quelque chose que vous avez écrit a été retiré pour des raisons légales",
+    "moderationWarned": "Un avertissement des modérateurs : {{message}}",
+    "feedbackRead": "Votre avis a été lu",
+    "caseOpened": "Nouveau dossier ({{stream}}) : {{taskTitle}}",
+    "caseReplied": "{{name}} a répondu sur {{taskTitle}}, et personne n'a pris le dossier",
+    "caseRepliedMany": "{{name}} a laissé {{count}} réponses sur {{taskTitle}}, et personne n'a pris le dossier",
+    "caseStreams": {
+      "security": "sécurité",
+      "moderation": "modération",
+      "support": "assistance",
+      "feedback": "retours"
+    },
+    "profileCleared": {
+      "display_names": "Vos noms dans les communautés ont été effacés par un modérateur.",
+      "custom_status": "Votre ligne de statut a été effacée par un modérateur.",
+      "decorations": "Les décorations de votre profil ont été retirées par un modérateur.",
+      "other": "Une partie de votre profil a été effacée par un modérateur."
     }
   },
   "version": {
@@ -437,6 +468,9 @@
     "summaryUnavailable": "Indisponible pour le moment",
     "membersOfMax": "{{used}} sur {{max}}",
     "membersOfUnlimited": "{{used}} · Illimité",
+    "guests": "Invités",
+    "guestsUpTo": "Jusqu'à {{max}} à la fois",
+    "guestsUnlimited": "Illimité",
     "currentPlan": "Forfait actuel :",
     "selfHosted": "Auto-hébergé",
     "upgrade": "Mettre à niveau",
@@ -597,5 +631,38 @@
       "apply": "Afficher d’abord les proches",
       "clear": "Ne plus trier par lieu"
     }
+  },
+  "guests": {
+    "invitesTitle": "Inviter un invité",
+    "invitesDescription": "Créez un lien pour quelqu'un qui ne doit voir que certaines initiatives ou certains éléments, pendant un nombre de jours défini.",
+    "guestDaysLabel": "Jours de séjour de l'invité",
+    "initiativesLabel": "Initiatives qu'il rejoint",
+    "initiativesPlaceholder": "Aucune",
+    "itemsLabel": "Éléments qu'il reçoit",
+    "itemsHelp": "Recherchez un projet, un fichier ou un autre élément, puis choisissez s'il peut le voir ou le modifier.",
+    "itemLevel": "Accès à {{title}}",
+    "removeItem": "Retirer {{title}}",
+    "generateInvite": "Générer une invitation d'invité",
+    "noActiveInvites": "Aucune invitation d'invité.",
+    "staysDays_one": "Reste {{count}} jour",
+    "staysDays_other": "Reste {{count}} jours",
+    "joinsInitiatives": "Rejoint {{names}}",
+    "givesItems_one": "{{count}} élément",
+    "givesItems_other": "{{count}} éléments",
+    "listTitle": "Invités",
+    "listDescription": "Des personnes présentes pour un nombre de jours défini. Un invité n'occupe pas de place et ne voit que ce que son invitation lui a donné.",
+    "loading": "Chargement des invités…",
+    "unableToLoad": "Impossible de charger les invités.",
+    "noGuests": "Aucun invité pour le moment.",
+    "endsColumn": "Fin du séjour",
+    "extend": "Prolonger",
+    "extendTitle": "Prolonger le séjour de {{name}}",
+    "extendDescription": "Son séjour en tant qu'invité se termine dans ce nombre de jours, ou plus tôt si la communauté ou le serveur autorise moins.",
+    "extendDaysLabel": "Jours à partir d'aujourd'hui",
+    "extended": "Séjour de l'invité prolongé.",
+    "extendError": "Impossible de prolonger son séjour.",
+    "makeMember": "Rendre membre",
+    "madeMember": "Cette personne est maintenant membre.",
+    "makeMemberError": "Impossible de rendre cette personne membre."
   }
 }

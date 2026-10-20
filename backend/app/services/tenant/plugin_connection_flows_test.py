@@ -15,26 +15,32 @@ import base64
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, urlparse
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import cryptography.fernet
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from httpx import AsyncClient
 from sqlalchemy import delete, text, update
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.plugin_access_token import seal_install_token
 from app.core.config import settings
-from app.core.security import SESSION_COOKIE_NAME
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
-from app.core.messages import AccessGrantMessages, PluginChannelMessages
+from app.core.messages import (
+    AccessGrantMessages,
+    GuildPluginMessages,
+    PluginChannelMessages,
+    PluginDataMessages,
+)
+from app.core.plugin_access_token import seal_install_token
+from app.core.security import SESSION_COOKIE_NAME
 from app.db import cohorts, post_commit
-from app.services.marketplace.registration_lookup import invalidate_registrations
+from app.db.request_context import SystemGuild
 from app.db.session import set_rls_context
 from app.models.platform.access_grant import (
     AccessGrant,
@@ -42,34 +48,47 @@ from app.models.platform.access_grant import (
     AccessLevel,
     SettingsLevel,
 )
-from app.models.platform.guild import GuildMembership, CommunityRole
+from app.models.platform.community_timer import CommunityTimer
+from app.models.platform.guild import CommunityRole, CommunityStatus, GuildMembership
 from app.models.platform.plugin_install import PluginInstall
 from app.models.platform.plugin_service_registration import RegistrationKind
-from app.models.tenant.plugin_event_outbox import PluginEventOutbox
-from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
-from app.models.tenant.plugin_schedule_run import PluginScheduleRun
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
-from app.services.marketplace import expressions
-from app.services.marketplace.registration_lookup import load_registrations
+from app.models.tenant.plugin_event_outbox import PluginEventOutbox
+from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
+from app.models.tenant.plugin_metadata import PluginMetadata
+from app.models.tenant.plugin_placement import PluginPlacement
+from app.models.tenant.plugin_schedule_run import PluginScheduleRun
+from app.services.marketplace import declarative as declarative_service
+from app.services.marketplace import expressions, plugin_installs
+from app.services.marketplace.registration_lookup import (
+    invalidate_registrations,
+    load_registrations,
+)
 from app.services.tenant import (
     plugin_connection_flows,
     plugin_connections,
+    plugin_hooks,
+    plugin_metadata,
     plugin_revocation,
     plugin_schedules,
 )
+from app.services.tenant.plugin_connections import load_connection_secrets
 from app.testing import (
     create_access_grant,
-    create_plugin_service_registration,
     create_guild_plugin,
+    create_initiative,
     create_marketplace_listing,
+    create_plugin_service_registration,
+    create_plugin_user_connection,
+    create_project,
+    create_resource_grant,
+    create_task,
     route_session_to_guild,
     sealed_vendor_values,
 )
 from app.testing.fake_vendor import FakeVendor, declarative_github
-from app.db.request_context import SystemGuild
-
 
 PUBLIC_ID = "tests.gh"
 LISTING_UID = "TESTAPP0000009"
@@ -81,6 +100,15 @@ PRIVATE_KEY_PEM = _KEY.private_bytes(
     serialization.PrivateFormat.PKCS8,
     serialization.NoEncryption(),
 ).decode()
+PLATFORM_KEY_PEM = (
+    ed25519.Ed25519PrivateKey.generate()
+    .private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    .decode()
+)
 PUBLIC_KEY_PEM = (
     _KEY.public_key()
     .public_bytes(
@@ -155,6 +183,18 @@ WORKSPACE = {
     },
 }
 
+
+def _minting(exchange_body: dict | str) -> dict:
+    """:data:`DEFINITION` with the workspace's token minted with
+    ``exchange_body``."""
+    workspace = {
+        **WORKSPACE,
+        "fields": [*WORKSPACE["fields"], _field("owner_type")],
+        "token": {**WORKSPACE["token"], "exchange_body": exchange_body},
+    }
+    return {**DEFINITION, "connections": [ACCOUNT, HOOKED, workspace]}
+
+
 #: A community connection whose tokens Initiative holds and refreshes.
 ORG = {
     "id": "org",
@@ -196,9 +236,10 @@ DEFINITION = {
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    """Initiative signs its hook calls with the plug-in platform's own key."""
+    """Initiative signs its hook calls with the plug-in platform's own key, an
+    Ed25519 key of its own (the RSA key above is the vendor's GitHub App key)."""
     monkeypatch.setattr(
-        settings, "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM", PRIVATE_KEY_PEM
+        settings, "PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM", PLATFORM_KEY_PEM
     )
     monkeypatch.setattr(settings, "PLUGIN_PLATFORM_SIGNING_KEY_ID", "plugin-platform-1")
 
@@ -223,12 +264,14 @@ async def registration(session: AsyncSession):
     )
 
 
-async def _install(session: AsyncSession, actor, **overrides) -> GuildPlugin:
+async def _install(
+    session: AsyncSession, actor, definition: dict = DEFINITION, **overrides
+) -> GuildPlugin:
     return await create_guild_plugin(
         session,
         actor.guild,
         actor.user,
-        definition=DEFINITION,
+        definition=definition,
         listing_uid=LISTING_UID,
         **overrides,
     )
@@ -252,7 +295,10 @@ async def _member_row(
 async def _indexed(
     session: AsyncSession, guild_id: int, plugin_id: int
 ) -> PluginInstall | None:
-    """The install's row in the install index."""
+    """The install's row in the install index, once the index sweep has
+    visited the community."""
+    await route_session_to_guild(session, guild_id)
+    await plugin_installs.reindex_community(session, guild_id)
     session.expunge_all()
     return await session.get(PluginInstall, (guild_id, plugin_id))
 
@@ -304,6 +350,33 @@ def _landing(location: str) -> dict:
     }
 
 
+async def _connect_installation(
+    client: AsyncClient,
+    actor,
+    plugin: GuildPlugin,
+    vendor: FakeVendor,
+    installation: int = 42,
+) -> dict:
+    """The install page, then one authorization, returning ``installation``."""
+    start = await _start(client, actor, plugin, "workspace")
+    setup = await client.get(
+        "/api/v1/plugin-connections/setup",
+        headers=_cookie(actor),
+        params={
+            "state": start["state"],
+            "installation_id": str(installation),
+            "setup_action": "install",
+        },
+    )
+    assert setup.status_code == 303, setup.text
+    query = {
+        key: values[0]
+        for key, values in parse_qs(urlparse(setup.headers["location"]).query).items()
+    }
+    code = vendor.authorize(query["code_challenge"])
+    return await _callback(client, actor, state=query["state"], code=code)
+
+
 def _install_headers(guild, plugin) -> dict[str, str]:
     token, _ = seal_install_token(
         guild_id=guild.id,
@@ -327,24 +400,19 @@ async def _connected_row(
     ref: str = "cr_account_one",
 ) -> GuildPluginUserConnection:
     """A member connection as a completed flow leaves it."""
-    await route_session_to_guild(session, actor.guild.id)
-    row = GuildPluginUserConnection(
-        plugin_id=plugin.id,
+    return await create_plugin_user_connection(
+        session,
+        plugin,
+        actor.user,
         connection_id=connection_id,
-        user_id=actor.user.id,
         connection_ref=ref,
         config={"login": "alice", "expires_at": int(time.time()) + expires_in},
-        config_secrets={
+        secrets={
             "access_token": encrypt_field("gho_stored", SALT_PLUGIN_CONFIG),
             "refresh_token": encrypt_field("ghr_stored", SALT_PLUGIN_CONFIG),
         },
-        status="connected",
         account_label="@alice",
     )
-    session.add(row)
-    await session.commit()
-    await session.refresh(row)
-    return row
 
 
 def _during_refresh(monkeypatch, vendor: FakeVendor, write) -> None:
@@ -424,12 +492,15 @@ class TestMemberFlow:
         assert row.config["login"] == "alice"
         assert isinstance(row.config["expires_at"], int)
         assert row.connection_ref
-        # Sealed, never stored as it came.
-        assert row.config_secrets["access_token"] != body["access_token"]
+        # Sealed, never stored as it came, beside the row; the row says only
+        # which keys hold one.
+        sealed = await load_connection_secrets(session, row)
+        assert sealed["access_token"] != body["access_token"]
         assert (
-            decrypt_field(row.config_secrets["access_token"], SALT_PLUGIN_CONFIG)
+            decrypt_field(sealed["access_token"], SALT_PLUGIN_CONFIG)
             == body["access_token"]
         )
+        assert "access_token" in row.secret_fields
 
     async def test_reconnecting_keeps_the_handle(
         self, client: AsyncClient, acting_user, session, vendor, registration
@@ -824,9 +895,9 @@ class TestTokens:
         assert first.access_token.startswith("gho_access_")
         refreshed = await _member_row(session, a.guild.id, plugin.id)
         assert refreshed is not None
+        sealed = await load_connection_secrets(session, refreshed)
         assert (
-            decrypt_field(refreshed.config_secrets["refresh_token"], SALT_PLUGIN_CONFIG)
-            != "ghr_stored"
+            decrypt_field(sealed["refresh_token"], SALT_PLUGIN_CONFIG) != "ghr_stored"
         )
 
     async def test_a_member_blocked_during_a_refresh_gets_no_token(
@@ -863,9 +934,9 @@ class TestTokens:
         assert vendor.refreshes == 1
         blocked = await _member_row(session, a.guild.id, plugin.id)
         assert blocked is not None
+        sealed = await load_connection_secrets(session, blocked)
         assert (
-            decrypt_field(blocked.config_secrets["refresh_token"], SALT_PLUGIN_CONFIG)
-            == "ghr_stored"
+            decrypt_field(sealed["refresh_token"], SALT_PLUGIN_CONFIG) == "ghr_stored"
         )
 
     async def test_a_community_connection_cleared_during_a_refresh_stays_cleared(
@@ -968,14 +1039,197 @@ class TestTokens:
         assert first.status_code == 200, first.text
         assert first.json()["access_token"].startswith("ghs_installation_")
         assert second.json() == first.json()
-        assert len(vendor.exchanges) == 1
+        [(authorization, body)] = vendor.exchanges
         claims = jwt.decode(
-            vendor.exchanges[0].removeprefix("Bearer "),
+            authorization.removeprefix("Bearer "),
             PUBLIC_KEY_PEM,
             algorithms=["RS256"],
         )
         assert claims["iss"] == "4242"
         assert claims["exp"] - claims["iat"] == 540
+        assert body is None
+
+    async def test_a_cleared_connections_minted_tokens_are_forgotten(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """What was minted for a connection goes with its values."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        minted = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"),
+            headers=_install_headers(a.guild, plugin),
+        )
+        assert minted.status_code == 200, minted.text
+        assert len(plugin_connection_flows._minted) == 1
+
+        cleared = await client.delete(
+            a.g(f"/plugins/{plugin.id}/connections/workspace"), headers=a.headers
+        )
+
+        assert cleared.status_code == 204, cleared.text
+        assert plugin_connection_flows._minted == {}
+
+    async def test_a_clear_while_the_vendor_is_asked_keeps_nothing(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        registration,
+        monkeypatch,
+    ):
+        """A mint waiting for the vendor when the connection is cleared keeps
+        the token it is then given out of the cache."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        parse_expiry = plugin_connection_flows._parse_expiry
+
+        def clearing_first(body, *, now):
+            plugin_connection_flows.forget_minted(a.guild.id, plugin.id, "workspace")
+            return parse_expiry(body, now=now)
+
+        monkeypatch.setattr(plugin_connection_flows, "_parse_expiry", clearing_first)
+
+        minted = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"),
+            headers=_install_headers(a.guild, plugin),
+        )
+
+        assert minted.status_code == 200, minted.text
+        assert plugin_connection_flows._minted == {}
+
+    async def test_a_minted_token_asks_for_what_its_body_names(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An ``exchange_body`` object is posted with the JWT, each name in its
+        strings filled from the vendor values and the connection's fields; a
+        name with no value sends nothing."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting(
+                {
+                    "permissions": {"issues": "write"},
+                    "repositories": ["{owner}"],
+                    "app": "{vendor.app_slug}",
+                    "limit": 5,
+                }
+            ),
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        headers = _install_headers(a.guild, plugin)
+
+        response = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert [body for _, body in vendor.exchanges] == [
+            {
+                "permissions": {"issues": "write"},
+                "repositories": ["acme"],
+                "app": "initiative-test",
+                "limit": 5,
+            }
+        ]
+
+        plugin = await _reload(session, a.guild.id, plugin.id)
+        plugin.config = {"workspace": {"installation_id": "42"}}
+        session.add(plugin)
+        await session.commit()
+        unnamed = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert unnamed.status_code == 409
+        assert (
+            unnamed.json()["detail"]
+            == GuildPluginMessages.CONNECTION_VENDOR_NOT_CONFIGURED
+        )
+        assert len(vendor.exchanges) == 1
+
+    async def test_a_minted_token_asks_for_what_its_expression_answers(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An ``exchange_body`` expression answers the body from the
+        connection's fields, and a token is minted again when they change. A
+        token past reuse is dropped when another is minted."""
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting(
+                '{"permissions": $merge([{"issues": "write"},'
+                ' connection.owner_type = "Organization" ? {"members": "read"} : {}])}'
+            ),
+            config={
+                "workspace": {
+                    "owner": "acme",
+                    "installation_id": "42",
+                    "owner_type": "Organization",
+                }
+            },
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+        headers = _install_headers(a.guild, plugin)
+
+        first = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+        [held] = plugin_connection_flows._minted.values()
+        held.reuse_until = 0.0
+        plugin = await _reload(session, a.guild.id, plugin.id)
+        plugin.config = {
+            "workspace": {"owner": "ada", "installation_id": "42", "owner_type": "User"}
+        }
+        session.add(plugin)
+        await session.commit()
+        second = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"), headers=headers
+        )
+
+        assert first.status_code == second.status_code == 200, second.text
+        assert second.json() != first.json()
+        assert [body for _, body in vendor.exchanges] == [
+            {"permissions": {"issues": "write", "members": "read"}},
+            {"permissions": {"issues": "write"}},
+        ]
+        assert [one.token for one in plugin_connection_flows._minted.values()] == [
+            second.json()["access_token"]
+        ]
+
+    async def test_an_expression_answering_no_object_mints_nothing(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(
+            session,
+            a,
+            _minting("connection.owner"),
+            config={"workspace": {"owner": "acme", "installation_id": "42"}},
+            connection_refs={"workspace": "gcr_workspace"},
+        )
+
+        response = await client.post(
+            TOKEN_ROUTE.format(ref="gcr_workspace"),
+            headers=_install_headers(a.guild, plugin),
+        )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == PluginChannelMessages.TOKEN_UNAVAILABLE
+        assert vendor.exchanges == []
 
     async def test_a_ref_of_another_install_is_not_found(
         self, client: AsyncClient, acting_user, session, vendor, registration
@@ -1289,10 +1543,14 @@ class TestRevocation:
             a.g(f"/plugins/{plugin.id}/connections/hooked"), headers=a.headers
         )
         await post_commit.settle_all()
-
         assert response.status_code == 204
-        name, body, authorization = vendor.hooks[-1]
-        assert name == "revoke"
+        from app.services import sweep_timers
+
+        # Written to the plug-in's hook queue with the delete, and sent by it.
+        assert [hook for hook in vendor.hooks if hook[0] == "revoke"] == []
+        await sweep_timers.process_due_timers(outward=True)
+
+        name, body, authorization = next(h for h in vendor.hooks if h[0] == "revoke")
         assert body == {
             "connection": "hooked",
             "access_token": "gho_stored",
@@ -1303,6 +1561,101 @@ class TestRevocation:
             options={"verify_signature": False},
         )
         assert claims["hook"] == "revoke"
+
+    async def test_an_uninstall_asks_the_plugin_to_revoke_before_it_erases(
+        self, client: AsyncClient, acting_user, session, vendor, registration
+    ):
+        """An uninstall's revocations to the plug-in ride its hook queue, in the
+        uninstall's transaction and ahead of ``uninstalled`` and ``erase``. The
+        tokens wait sealed and are opened only to be sent, and a finished
+        revocation keeps none."""
+        from app.db.request_context import Unattributed
+        from app.models.platform.plugin_community_hook import PluginCommunityHook
+        from app.services import sweep_timers
+        from app.services.marketplace import plugin_refs
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(session, a)
+        await _connected_row(
+            session, a, plugin, expires_in=3600, connection_id="hooked", ref="cr_hooked"
+        )
+        await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=a.guild.id, public_id=PUBLIC_ID
+        )
+
+        response = await client.delete(
+            a.g(f"/plugins/{plugin.id}"), headers=a.headers, params={"erase": "true"}
+        )
+        assert response.status_code == 204, response.text
+        await post_commit.settle_all()
+        assert [hook for hook in vendor.hooks if hook[0] == "revoke"] == []
+
+        async def rows():
+            await set_rls_context(session, Unattributed())
+            found = (
+                await session.exec(
+                    select(PluginCommunityHook)
+                    .where(PluginCommunityHook.guild_id == a.guild.id)
+                    .order_by(PluginCommunityHook.id)
+                    .execution_options(populate_existing=True)
+                )
+            ).all()
+            await session.commit()
+            return found
+
+        queued = await rows()
+        assert [row.hook for row in queued] == ["revoke", "uninstalled", "erase"]
+        assert "gho_stored" not in str(queued[0].body)
+        assert set(queued[0].body["sealed_tokens"]) == {"access_token", "refresh_token"}
+
+        await sweep_timers.process_due_timers(outward=True)
+
+        sent = [name for name, _body, _auth in vendor.hooks]
+        assert sent == ["revoke", "uninstalled", "erase"]
+        name, body, _authorization = next(h for h in vendor.hooks if h[0] == "revoke")
+        assert body == {
+            "connection": "hooked",
+            "access_token": "gho_stored",
+            "refresh_token": "ghr_stored",
+        }
+        revoke = (await rows())[0]
+        assert revoke.done_at is not None and revoke.body == {}
+
+    async def test_a_hook_after_the_install_has_gone_names_nobody(
+        self, acting_user, session, vendor, registration
+    ):
+        """Once the plug-in's install is gone, a hook finds no name for the
+        community and mints none, so a revocation still queued behind an erase
+        is settled without bringing one back."""
+        from app.db.request_context import Unattributed
+        from app.models.platform.identity_ref import IdentityRef
+
+        a = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _install(session, a)
+        guild_id, install_id = a.guild.id, plugin.id
+        await route_session_to_guild(session, guild_id)
+        await session.delete(await session.get(GuildPlugin, install_id))
+        await session.commit()
+
+        with pytest.raises(plugin_connection_flows.HookNameRefused):
+            await plugin_connection_flows.call_hook(
+                "revoke",
+                public_id=PUBLIC_ID,
+                base_url="https://app.example.test",
+                guild_id=guild_id,
+                install_id=install_id,
+                body={"connection": "hooked"},
+            )
+        await set_rls_context(session, Unattributed())
+        minted = (
+            await session.exec(
+                select(IdentityRef).where(
+                    IdentityRef.sector_guild_id == guild_id,
+                    IdentityRef.sector_plugin == PUBLIC_ID,
+                )
+            )
+        ).all()
+        assert minted == []
 
 
 # ---------------------------------------------------------------------------
@@ -1366,6 +1719,24 @@ async def _deliveries(session: AsyncSession, guild_id: int) -> list[PluginHookDe
     return list((await session.exec(select(PluginHookDelivery))).all())
 
 
+async def _delivered(session: AsyncSession, guild_id: int) -> None:
+    """The delivery sweep's visit to the community, as a minute pass makes it."""
+    async with cohorts.system_session(guild_id) as worker:
+        await set_rls_context(worker, SystemGuild(guild_id))
+        await plugin_hooks.run_due(worker, guild_id)
+
+
+async def _deliveries_due(session: AsyncSession, guild_id: int) -> None:
+    """Bring every waiting delivery in the community due again."""
+    await route_session_to_guild(session, guild_id)
+    await session.exec(
+        update(PluginHookDelivery).values(
+            taken_until=datetime.now(timezone.utc) - timedelta(seconds=1)
+        )
+    )
+    await session.commit()
+
+
 class TestVendorWebhooks:
     def test_the_limit_is_kept_per_plugin_and_sending_address(self):
         from starlette.requests import Request
@@ -1392,32 +1763,53 @@ class TestVendorWebhooks:
         assert _key("203.0.113.7") == _key("203.0.113.7")
 
     async def test_a_delivery_reaches_each_community_that_connected_it_once(
-        self, client: AsyncClient, acting_user, session, vendor, listing, monkeypatch
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        registration,
+        listing,
     ):
-        """Two communities connected installation 42 and a third connected 7.
-        A delivery for 42 is forwarded to each of the two at once, on a
-        lifecycle token naming that install, and a redelivery forwards
-        nothing."""
+        """One community connected installation 42 and a third connected 7.
+        The second's connect of 42 is refused, storing nothing, until the
+        registration shares routes, and then goes through. A delivery for 42
+        is queued in each of the two, and each one's visit forwards it on a
+        lifecycle token naming that install; a redelivery forwards nothing."""
         seats = [
             await acting_user(guild_role=CommunityRole.superadmin) for _ in range(3)
         ]
         plugins = [
-            await _install(session, seat, config=_connected(value))
-            for seat, value in zip(seats, ("42", "42", "7"))
+            await _install(session, seats[0], config=_connected("42")),
+            await _install(session, seats[1]),
+            await _install(session, seats[2], config=_connected("7")),
         ]
-        # Each forward waits for the other, so both go only when sent together.
-        both = asyncio.Barrier(2)
-        call_hook = plugin_connection_flows.call_hook
+        vendor.after_connect_answer = {
+            "values": {"owner": "acme", "installation_id": "42"}
+        }
+        guild_id, install_id = seats[1].guild.id, plugins[1].id
 
-        async def together(*args, **kwargs):
-            await asyncio.wait_for(both.wait(), timeout=1)
-            return await call_hook(*args, **kwargs)
+        refused = await _connect_installation(client, seats[1], plugins[1], vendor)
+        assert refused["outcome"] == "taken"
+        stored = await _reload(session, guild_id, install_id)
+        assert not stored.config and not stored.connection_refs
+        assert (await _indexed(session, guild_id, install_id)).hook_route is None
 
-        monkeypatch.setattr(plugin_connection_flows, "call_hook", together)
+        registration.shared_routes = True
+        session.add(registration)
+        await session.commit()
+        connected = await _connect_installation(client, seats[1], plugins[1], vendor)
+        assert connected["outcome"] == "connected"
+        indexed = await _indexed(session, guild_id, install_id)
+        assert (indexed.hook_route, indexed.exclusive) == ("42", False)
+
         body, headers = vendor.webhook({"action": "opened", "installation": {"id": 42}})
 
         response = await client.post(HOOK_ROUTE, content=body, headers=headers)
         assert response.status_code == 202, response.text
+        assert [name for name, _, _ in vendor.hooks if name == "webhook"] == []
+        for seat in seats[:2]:
+            await _delivered(session, seat.guild.id)
 
         forwarded = [
             (call, token) for name, call, token in vendor.hooks if name == "webhook"
@@ -1443,6 +1835,8 @@ class TestVendorWebhooks:
 
         again = await client.post(HOOK_ROUTE, content=body, headers=headers)
         assert again.status_code == 202
+        for seat in seats[:2]:
+            await _delivered(session, seat.guild.id)
         assert len([name for name, _, _ in vendor.hooks if name == "webhook"]) == 2
         assert await _deliveries(session, seats[2].guild.id) == []
 
@@ -1463,25 +1857,30 @@ class TestVendorWebhooks:
         assert [name for name, _, _ in vendor.hooks] == []
         assert await _deliveries(session, seat.guild.id) == []
 
-    async def test_a_forward_that_fails_is_retried_by_the_vendor(
+    async def test_a_forward_that_fails_is_tried_again(
         self, client: AsyncClient, acting_user, session, vendor, listing
     ):
-        """A community whose plug-in did not accept a delivery records nothing, so
-        the vendor's redelivery reaches it."""
+        """A delivery the plug-in did not accept waits in the community, and
+        the next visit forwards it again."""
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _install(session, seat, config=_connected("42"))
         body, headers = vendor.webhook({"installation": {"id": 42}})
+        queued = await client.post(HOOK_ROUTE, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
 
         vendor.hook_status = 500
-        failed = await client.post(HOOK_ROUTE, content=body, headers=headers)
-        assert failed.status_code == 502
-        assert await _deliveries(session, seat.guild.id) == []
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert waiting.taken_until > datetime.now(timezone.utc)
 
         vendor.hook_status = 200
-        retried = await client.post(HOOK_ROUTE, content=body, headers=headers)
-        assert retried.status_code == 202
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
+
+        assert len([name for name, _, _ in vendor.hooks if name == "webhook"]) == 2
         [recorded] = await _deliveries(session, seat.guild.id)
-        assert recorded.delivery_id == "delivery-1"
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
 
     async def test_a_delivery_is_described_by_the_version_each_install_pinned(
         self, client: AsyncClient, acting_user, session, vendor, registration
@@ -1513,6 +1912,7 @@ class TestVendorWebhooks:
         response = await client.post(HOOK_ROUTE, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         [(name, call, _)] = vendor.hooks
         assert (name, call["connection"]) == ("webhook", "workspace")
 
@@ -1549,14 +1949,19 @@ async def _runs(session: AsyncSession, guild_id: int) -> dict[str, PluginSchedul
     return {run.schedule_id: run for run in runs}
 
 
-async def _due(session: AsyncSession, guild_id: int) -> None:
-    """Bring every schedule in the community due."""
+async def _due(
+    session: AsyncSession, guild_id: int, schedule_id: str | None = None
+) -> None:
+    """Bring every schedule in the community due, or only the one named."""
+    now = datetime.now(timezone.utc)
     await route_session_to_guild(session, guild_id)
-    await session.exec(
-        update(PluginScheduleRun).values(
-            next_due_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+    due = update(PluginScheduleRun).values(next_due_at=now - timedelta(seconds=1))
+    if schedule_id is not None:
+        await session.exec(
+            update(PluginScheduleRun).values(next_due_at=now + timedelta(hours=1))
         )
-    )
+        due = due.where(PluginScheduleRun.schedule_id == schedule_id)
+    await session.exec(due)
     await session.commit()
 
 
@@ -1679,6 +2084,7 @@ async def declarative(session: AsyncSession):
         jwks={},
         kind="declarative",
         vendor_values=sealed_vendor_values(VENDOR_VALUES),
+        scope_ceiling=["projects:read"],
     )
 
 
@@ -1732,29 +2138,6 @@ def _issue(**issue) -> dict:
 
 
 class TestDeclarativePlugins:
-    async def _connect(self, client: AsyncClient, actor, plugin: GuildPlugin, vendor):
-        """The install page, then one authorization, returning installation
-        42."""
-        start = await _start(client, actor, plugin, "workspace")
-        setup = await client.get(
-            "/api/v1/plugin-connections/setup",
-            headers=_cookie(actor),
-            params={
-                "state": start["state"],
-                "installation_id": "42",
-                "setup_action": "install",
-            },
-        )
-        assert setup.status_code == 303, setup.text
-        query = {
-            key: values[0]
-            for key, values in parse_qs(
-                urlparse(setup.headers["location"]).query
-            ).items()
-        }
-        code = vendor.authorize(query["code_challenge"])
-        return await _callback(client, actor, state=query["state"], code=code)
-
     async def test_after_connect_finds_the_installation_among_the_persons(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
@@ -1767,7 +2150,7 @@ class TestDeclarativePlugins:
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, a)
 
-        landing = await self._connect(client, a, plugin, vendor)
+        landing = await _connect_installation(client, a, plugin, vendor)
 
         assert landing["outcome"] == "connected"
         assert vendor.hooks == []
@@ -1789,7 +2172,7 @@ class TestDeclarativePlugins:
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, a)
 
-        landing = await self._connect(client, a, plugin, vendor)
+        landing = await _connect_installation(client, a, plugin, vendor)
 
         assert landing["outcome"] == "refused"
         stored = await _reload(session, a.guild.id, plugin.id)
@@ -1812,6 +2195,7 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
 
         assert await _events(session, seat.guild.id) == [
             (
@@ -1824,6 +2208,371 @@ class TestDeclarativePlugins:
         [recorded] = await _deliveries(session, seat.guild.id)
         assert recorded.delivery_id == "delivery-1"
 
+    async def test_a_copy_of_a_waiting_delivery_is_queued_once(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """A redelivery of a waiting delivery's id changes nothing: one row,
+        mapped once, remembered for 24 hours."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        body, headers = vendor.webhook(_issue())
+        for _ in range(2):
+            response = await client.post(
+                DECLARATIVE_HOOKS, content=body, headers=headers
+            )
+            assert response.status_code == 202, response.text
+        [queued] = await _deliveries(session, seat.guild.id)
+        assert queued.body is not None
+
+        await _delivered(session, seat.guild.id)
+
+        assert len(await _events(session, seat.guild.id)) == 1
+        [recorded] = await _deliveries(session, seat.guild.id)
+        assert recorded.body is None
+        assert recorded.expires_at > datetime.now(timezone.utc) + timedelta(hours=23)
+
+    async def test_a_delivery_whose_changes_failed_is_tried_again(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
+    ):
+        """Its work waits, and the next visit makes it."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        apply_changes = plugin_metadata.apply_changes
+        failed = False
+
+        async def failing_once(*args, **kwargs):
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise RuntimeError("the database went away")
+            return await apply_changes(*args, **kwargs)
+
+        monkeypatch.setattr(plugin_metadata, "apply_changes", failing_once)
+        body, headers = vendor.webhook(_issue())
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert await _events(session, seat.guild.id) == []
+
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
+
+        assert len(await _events(session, seat.guild.id)) == 1
+        [recorded] = await _deliveries(session, seat.guild.id)
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
+
+    async def test_a_holding_target_reaches_every_item(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
+    ):
+        """A change aimed at the items holding a value is made on all of them;
+        the lookup route's page is not its bound."""
+        writing = declarative_github(DECLARATIVE_ID)
+        writing.update(scopes=["projects:read"])
+        writing["webhooks"]["events"][0]["write"] = (
+            '[{"target": {"holding": {"key": "github.repo",'
+            ' "value": payload.repository.full_name}},'
+            ' "set": {"github.state": "open"}}]'
+        )
+        await _declarative_listing(session, writing)
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        tasks = [await create_task(session, seat.project) for _ in range(2)]
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=writing,
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        session.add(
+            PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id)
+        )
+        session.add_all(
+            PluginMetadata(
+                install_id=plugin.id,
+                entity_type="task",
+                entity_id=task.id,
+                key="github.repo",
+                value="acme/web",
+                lookup="acme/web",
+            )
+            for task in tasks
+        )
+        await session.commit()
+        monkeypatch.setattr(plugin_metadata, "FIND_LIMIT", 1)
+        body, headers = vendor.webhook(_issue())
+
+        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
+        states = await session.exec(
+            select(PluginMetadata.entity_id).where(PluginMetadata.key == "github.state")
+        )
+        assert sorted(states.all()) == sorted(task.id for task in tasks)
+
+    async def test_an_installs_writes_arm_the_index_sweep(
+        self, client: AsyncClient, acting_user, session, declarative
+    ):
+        """Each write to an install arms the index sweep in its community; its
+        visit writes the install's row from the install as it stands. An
+        uninstall drops the row at once."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+
+        installed = await client.post(
+            seat.g("/plugins/"),
+            headers=seat.headers,
+            json={"listing_uid": DECLARATIVE_UID},
+        )
+
+        assert installed.status_code == 201, installed.text
+        plugin_id = installed.json()["id"]
+        armed = await session.exec(
+            select(CommunityTimer).where(
+                CommunityTimer.community_id == seat.guild.id,
+                CommunityTimer.kind == plugin_installs.INDEX_SWEEP,
+            )
+        )
+        assert armed.first() is not None
+        assert await _indexed(session, seat.guild.id, plugin_id) is not None
+
+        removed = await client.delete(
+            seat.g(f"/plugins/{plugin_id}"), headers=seat.headers
+        )
+
+        assert removed.status_code == 204, removed.text
+        session.expunge_all()
+        assert await session.get(PluginInstall, (seat.guild.id, plugin_id)) is None
+
+    async def test_a_read_only_communitys_delivery_waits_for_it(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """It is queued, and worked through once the community takes writes
+        again."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        seat.guild.status = CommunityStatus.read_only.value
+        session.add(seat.guild)
+        await session.commit()
+        body, headers = vendor.webhook(_issue())
+
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert queued.status_code == 202, queued.text
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
+
+    async def test_a_delivery_for_a_replaced_connection_is_dropped(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """One waiting for installation 42 when the community connects 43
+        instead maps nothing, and its id stays remembered."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        body, headers = vendor.webhook(_issue())
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        vendor.api_answers = [_installations((43, "acme"))]
+        landing = await _connect_installation(client, seat, plugin, vendor, 43)
+        assert landing["outcome"] == "connected"
+
+        await _delivered(session, seat.guild.id)
+
+        assert await _events(session, seat.guild.id) == []
+        [dropped] = await _deliveries(session, seat.guild.id)
+        assert (dropped.delivery_id, dropped.body) == ("delivery-1", None)
+
+    async def test_a_delivery_waits_as_long_as_it_must(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """One that has waited past the day a finished id is remembered is
+        neither forgotten nor passed over; its day starts when it is done."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(session, seat, config=_connected("42"))
+        body, headers = vendor.webhook(_issue())
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await route_session_to_guild(session, seat.guild.id)
+        long_ago = datetime.now(timezone.utc) - timedelta(days=2)
+        await session.exec(update(PluginHookDelivery).values(expires_at=long_ago))
+        await session.commit()
+        async with cohorts.system_session(seat.guild.id) as worker:
+            await set_rls_context(worker, SystemGuild(seat.guild.id))
+            await plugin_hooks.expire_deliveries(
+                worker, SimpleNamespace(now=datetime.now(timezone.utc))
+            )
+            await worker.commit()
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
+
+        await _delivered(session, seat.guild.id)
+
+        assert len(await _events(session, seat.guild.id)) == 1
+        [done] = await _deliveries(session, seat.guild.id)
+        assert done.body is None
+        assert done.expires_at > datetime.now(timezone.utc) + timedelta(hours=23)
+
+    async def test_an_install_switched_on_is_delivered_to_at_once(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """The index may still say the install is off until its sweep comes;
+        the install row says it is on, and that is what queues the delivery."""
+        await _declarative_listing(session)
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        session.expunge_all()
+        indexed = await session.get(PluginInstall, (seat.guild.id, plugin.id))
+        indexed.enabled = False
+        session.add(indexed)
+        await session.commit()
+        body, headers = vendor.webhook(_issue())
+
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert queued.status_code == 202, queued.text
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None
+
+    async def test_a_delivery_keeps_values_as_the_install(
+        self, client: AsyncClient, acting_user, session, vendor, declarative
+    ):
+        """The matched row's ``write`` keeps values, as the install, on a task
+        it reads, on every task holding a value it names, a list's element by
+        its ref, and on the install itself, beside the event the row emits. A
+        task in an initiative the install is not placed in is passed over. A
+        value is shown where the plug-in declares its key as a field, and an
+        upserted element merges into the one with its ref. The write reads the
+        install's settings, and a unique setting's earlier values."""
+        writing = declarative_github(DECLARATIVE_ID)
+        writing.update(
+            scopes=["projects:read"],
+            features=["endpoints", "fields"],
+            fields=[
+                {
+                    "key": "github.issue",
+                    "name": {"en": "Issue"},
+                    "kind": "number",
+                    "on": ["task"],
+                },
+                {
+                    "key": "github.pulls",
+                    "name": {"en": "Pull requests"},
+                    "kind": "link",
+                    "list": True,
+                    "on": ["task"],
+                },
+            ],
+        )
+        writing["webhooks"]["events"][0]["write"] = (
+            '[{"target": {"kind": "task", "id": payload.task},'
+            ' "set": {"github.issue": payload.issue.number}},'
+            ' {"target": {"kind": "task", "id": payload.hidden},'
+            ' "set": {"github.issue": payload.issue.number}},'
+            ' {"target": {"holding": {"key": "github.repo",'
+            ' "value": payload.repository.full_name}},'
+            ' "set": {"github.state": "open"}},'
+            ' {"target": {"holding": {"key": "github.pulls", "value": "812"}},'
+            ' "upsert": {"github.pulls": [{"ref": "812",'
+            ' "state": {"status": "merged"}}]}},'
+            ' {"target": {"install": true},'
+            ' "set": {"github.delivery": headers."x-github-delivery",'
+            ' "github.prefixes": $append(settings.task_prefix, aliases.task_prefix)}}]'
+        )
+        await _declarative_listing(session, writing)
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        task = await create_task(session, seat.project)
+        linked = await create_task(session, seat.project)
+        elsewhere = await create_initiative(session, seat.guild, seat.user, name="B")
+        hidden = await create_task(
+            session, await create_project(session, elsewhere, seat.user)
+        )
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=writing,
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+            settings={"task_prefix": "acme"},
+            setting_aliases={"task_prefix": ["acmeold"]},
+        )
+        pull = {"ref": "812", "url": "https://github.test/acme/web/pull/812"}
+        await route_session_to_guild(session, seat.guild.id)
+        session.add_all(
+            [
+                PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=linked.id,
+                    key="github.repo",
+                    value="acme/web",
+                    lookup="acme/web",
+                ),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=linked.id,
+                    key="github.pulls",
+                    ref="812",
+                    value={**pull, "state": {"status": "open", "review": "approved"}},
+                    lookup="812",
+                ),
+            ]
+        )
+        await session.commit()
+        body, headers = vendor.webhook(
+            {**_issue(), "task": task.id, "hidden": hidden.id}
+        )
+
+        response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+
+        assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
+        assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
+            ISSUE_OPENED
+        ]
+        kept = {
+            (row.entity_type, row.entity_id, row.key, row.ref): (row.value, row.shown)
+            for row in await session.exec(select(PluginMetadata))
+        }
+        assert kept == {
+            ("task", task.id, "github.issue", ""): (12, True),
+            ("task", linked.id, "github.repo", ""): ("acme/web", False),
+            ("task", linked.id, "github.state", ""): ("open", False),
+            ("task", linked.id, "github.pulls", "812"): (
+                {**pull, "state": {"status": "merged", "review": "approved"}},
+                True,
+            ),
+            ("plugin", plugin.id, "github.delivery", ""): ("delivery-1", False),
+            ("plugin", plugin.id, "github.prefixes", ""): (["acme", "acmeold"], False),
+        }
+
     async def test_a_pull_request_is_not_an_opened_issue(
         self, client: AsyncClient, acting_user, session, vendor, declarative
     ):
@@ -1835,20 +2584,31 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         assert await _events(session, seat.guild.id) == []
         assert vendor.hooks == []
 
     async def test_an_installation_event_sets_the_connections_state(
-        self, client: AsyncClient, acting_user, session, vendor, declarative
+        self,
+        client: AsyncClient,
+        acting_user,
+        session,
+        vendor,
+        declarative,
+        monkeypatch,
     ):
+        """A removed installation holds no route, so nothing after it reaches
+        the community. The index is written from the install as it stands once
+        the state commits, so a reconnect landing in between keeps its route,
+        and a status about an installation the community has since reconnected
+        away from changes nothing."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _declarative_install(session, seat, config=_connected("42"))
 
-        states = []
-        for serial, action in enumerate(("deleted", "unsuspend")):
+        async def deliver(serial: int, action: str, installation: int = 42) -> tuple:
             body, headers = vendor.webhook(
-                {"action": action, "installation": {"id": 42}},
+                {"action": action, "installation": {"id": installation}},
                 delivery=f"delivery-{serial}",
             )
             headers["X-GitHub-Event"] = "installation"
@@ -1856,10 +2616,43 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+            await _delivered(session, seat.guild.id)
             stored = await _reload(session, seat.guild.id, plugin.id)
-            states.append((stored.config_state, stored.config_state_detail))
+            indexed = await _indexed(session, seat.guild.id, plugin.id)
+            return (stored.config_state, stored.config_state_detail, indexed.hook_route)
 
-        assert states == [("invalid", "workspace_removed"), ("ok", None)]
+        def reconnecting(installation: int, then):
+            """``then``, once the community has connected ``installation``."""
+
+            async def run(*args, **kwargs):
+                vendor.api_answers = [_installations((installation, "acme"))]
+                landing = await _connect_installation(
+                    client, seat, plugin, vendor, installation
+                )
+                assert landing["outcome"] == "connected"
+                return await then(*args, **kwargs)
+
+            return run
+
+        reindex = plugin_installs.reindex_community
+        mapping = declarative_service.map_delivery
+        removed = ("invalid", "workspace_removed", None)
+        assert await deliver(0, "suspend") == ("invalid", "workspace_suspended", "42")
+        assert await deliver(1, "unsuspend") == ("ok", None, "42")
+        # Reconnected between the state's commit and the index sweep's visit.
+        monkeypatch.setattr(
+            plugin_installs, "reindex_community", reconnecting(42, reindex)
+        )
+        assert await deliver(2, "deleted") == ("unverified", None, "42")
+        monkeypatch.setattr(plugin_installs, "reindex_community", reindex)
+        # Reconnected to installation 43 between routing and the status.
+        monkeypatch.setattr(
+            declarative_service, "map_delivery", reconnecting(43, mapping)
+        )
+        assert await deliver(3, "deleted") == ("unverified", None, "43")
+        monkeypatch.setattr(declarative_service, "map_delivery", mapping)
+        assert await deliver(4, "deleted", 43) == removed
+        assert await deliver(5, "unsuspend", 43) == removed
         assert await _events(session, seat.guild.id) == []
 
     async def test_the_pinned_mapping_is_used_when_the_listing_moved_on(
@@ -1877,6 +2670,7 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         [(_, _, payload)] = await _events(session, seat.guild.id)
         assert payload["repository"] == "acme/web"
 
@@ -1889,8 +2683,8 @@ class TestDeclarativePlugins:
         declarative,
         monkeypatch,
     ):
-        """No evaluator answered: nothing is recorded and the vendor is told
-        to send it again, and the delivery maps when it comes back."""
+        """No evaluator answered: the delivery waits, and maps on the next
+        visit."""
         await _declarative_listing(session)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
         await _declarative_install(session, seat, config=_connected("42"))
@@ -1905,12 +2699,16 @@ class TestDeclarativePlugins:
         monkeypatch.setattr(expressions, "holds", once_busy)
         body, headers = vendor.webhook(_issue())
 
-        first = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        assert first.status_code == 503, first.text
-        assert await _deliveries(session, seat.guild.id) == []
+        queued = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
+        assert queued.status_code == 202, queued.text
+        await _delivered(session, seat.guild.id)
+        [waiting] = await _deliveries(session, seat.guild.id)
+        assert waiting.body is not None and waiting.attempts == 1
+        assert await _events(session, seat.guild.id) == []
 
-        again = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
-        assert again.status_code == 202, again.text
+        await _deliveries_due(session, seat.guild.id)
+        await _delivered(session, seat.guild.id)
+
         assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
             ISSUE_OPENED
         ]
@@ -1918,12 +2716,15 @@ class TestDeclarativePlugins:
     async def test_a_mapping_that_cannot_answer_is_logged_and_the_state_kept(
         self, client: AsyncClient, acting_user, session, vendor, declarative, caplog
     ):
-        """The event's payload does not fit its returns, which no redelivery
-        changes: the delivery is recorded, the failure logged, and the status
-        row it also matched still sets the state."""
+        """The event's payload does not fit its returns, and its write answers
+        one change where a list belongs, neither of which a redelivery changes:
+        the delivery is recorded, each failure logged, nothing written, and the
+        status row it also matched still sets the state."""
         broken = declarative_github(DECLARATIVE_ID)
         broken["webhooks"]["events"][0].update(
-            when="$exists(payload.action)", map='{"number": "twelve"}'
+            when="$exists(payload.action)",
+            map='{"number": "twelve"}',
+            write='{"target": {"install": true}, "set": {"seen": true}}',
         )
         await _declarative_listing(session, broken)
         seat = await acting_user(guild_role=CommunityRole.superadmin)
@@ -1940,18 +2741,25 @@ class TestDeclarativePlugins:
                 DECLARATIVE_HOOKS, content=body, headers=headers
             )
             assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
 
         assert await _events(session, seat.guild.id) == []
+        assert (await session.exec(select(PluginMetadata))).all() == []
         stored = await _reload(session, seat.guild.id, plugin.id)
         assert stored.config_state_detail == "workspace_removed"
         [recorded] = await _deliveries(session, seat.guild.id)
-        assert recorded.delivery_id == "delivery-1"
-        logged = [
-            record.getMessage()
-            for record in caplog.records
-            if "could not map delivery delivery-1" in record.getMessage()
-        ]
-        assert len(logged) == 1 and DECLARATIVE_ID in logged[0]
+        assert (recorded.delivery_id, recorded.body) == ("delivery-1", None)
+        for failed in (
+            "could not map delivery",
+            "could not make the changes of delivery",
+        ):
+            logged = [
+                record.getMessage()
+                for record in caplog.records
+                if f"{failed} delivery-1" in record.getMessage()
+            ]
+            assert len(logged) == 1 and DECLARATIVE_ID in logged[0]
+        assert PluginChannelMessages.INVALID_PAYLOAD in logged[0]
 
     async def test_an_install_pinned_to_an_older_route_is_still_reached(
         self, client: AsyncClient, acting_user, session, vendor, declarative
@@ -1980,34 +2788,109 @@ class TestDeclarativePlugins:
         response = await client.post(DECLARATIVE_HOOKS, content=body, headers=headers)
 
         assert response.status_code == 202, response.text
+        await _delivered(session, seat.guild.id)
         assert [event for event, _, _ in await _events(session, seat.guild.id)] == [
             ISSUE_OPENED
         ]
+
+    async def test_a_check_of_a_connection_made_again_meanwhile_reports_nothing(
+        self, acting_user, session, role_session, vendor, declarative, monkeypatch
+    ):
+        """The check read the installation the connection replaced, so what it
+        found is not written to the new one, whose route stays."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        plugin = await _declarative_install(session, seat, config=_connected("42"))
+        worker = await role_session()
+        vendor.api_answers = [{"status": 404}]
+        await _due(session, guild_id, "workspace")
+        await _run_due(worker, guild_id)
+
+        async def answer(request: httpx.Request) -> httpx.Response:
+            if request.headers.get("host") == vendor.api_host:
+                await route_session_to_guild(session, guild_id)
+                await session.exec(
+                    update(GuildPlugin)
+                    .where(GuildPlugin.id == plugin.id)  # type: ignore[arg-type]
+                    .values(config=_connected("99"))
+                )
+                await session.exec(
+                    update(PluginInstall)
+                    .where(
+                        PluginInstall.guild_id == guild_id,  # type: ignore[arg-type]
+                        PluginInstall.install_id == plugin.id,  # type: ignore[arg-type]
+                    )
+                    .values(hook_route="99")
+                )
+                await session.commit()
+            return vendor.handle(request)
+
+        monkeypatch.setattr(
+            plugin_connection_flows, "http_transport", httpx.MockTransport(answer)
+        )
+        vendor.api_answers = [{"status": 404}]
+        await _due(session, guild_id, "workspace")
+        await _run_due(worker, guild_id)
+
+        stored = await _reload(session, guild_id, plugin.id)
+        indexed = await _indexed(session, guild_id, plugin.id)
+        assert (
+            stored.config_state,
+            stored.config["workspace"]["installation_id"],
+            "removed_at" in stored.config["workspace"],
+            indexed.hook_route,
+        ) == ("unverified", "99", False, "99")
 
     async def test_health_reports_a_failure_read_twice_and_recovery_at_once(
         self, acting_user, session, role_session, vendor, declarative
     ):
         """The check runs with the installation's own token. One answer that
         the installation is gone is not reported; two in a row are, and the
-        first answer that it works again is."""
+        first answer that it works again is. The removed connection holds no
+        route until then: each report of it removed writes the index again,
+        and another connection's report leaves it without one."""
+        mirror = {**DECLARATIVE["connections"][0], "id": "mirror"}
         seat = await acting_user(guild_role=CommunityRole.superadmin)
-        plugin = await _declarative_install(session, seat, config=_connected("42"))
-        assert set(await _runs(session, seat.guild.id)) == {"workspace"}
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition={
+                **DECLARATIVE,
+                "connections": [*DECLARATIVE["connections"], mirror],
+            },
+            config={
+                **_connected("42"),
+                "mirror": {"owner": "acme", "installation_id": "7"},
+            },
+        )
+        assert set(await _runs(session, seat.guild.id)) == {"workspace", "mirror"}
         worker = await role_session()
 
-        states = []
-        for answer in ({"status": 404}, {"status": 404}, {"body": {}}):
+        async def check(connection: str, answer: dict) -> tuple:
             vendor.api_answers = [answer]
-            await _due(session, seat.guild.id)
+            await _due(session, seat.guild.id, connection)
             await _run_due(worker, seat.guild.id)
             stored = await _reload(session, seat.guild.id, plugin.id)
-            states.append((stored.config_state, stored.config_state_detail))
+            indexed = await _indexed(session, seat.guild.id, plugin.id)
+            return (stored.config_state, stored.config_state_detail, indexed.hook_route)
 
-        assert states == [
-            ("unverified", None),
-            ("invalid", "workspace_removed"),
-            ("ok", None),
-        ]
+        removed = ("invalid", "workspace_removed", None)
+        assert await check("workspace", {"status": 404}) == ("unverified", None, "42")
+        assert await check("workspace", {"status": 404}) == removed
+        await session.exec(
+            update(PluginInstall)
+            .where(
+                PluginInstall.guild_id == seat.guild.id,
+                PluginInstall.install_id == plugin.id,
+            )
+            .values(hook_route="42")
+        )
+        await session.commit()
+        assert await check("workspace", {"status": 404}) == removed
+        assert await check("mirror", {"status": 403}) == removed
+        suspended = ("invalid", "mirror_suspended")
+        assert await check("mirror", {"status": 403}) == (*suspended, None)
+        assert await check("workspace", {"body": {}}) == (*suspended, "42")
         assert {request["url"] for request in vendor.api_requests} == {
             "https://api.github.test/installation/repositories"
         }
@@ -2015,3 +2898,275 @@ class TestDeclarativePlugins:
             "Bearer ghs_installation_"
         )
         assert vendor.hooks == []
+
+
+# ---------------------------------------------------------------------------
+# A declarative plug-in's schedules: Initiative makes the read and its changes
+# ---------------------------------------------------------------------------
+
+#: Counts a repository's issues onto the tasks holding the repository, with
+#: when it last succeeded.
+SYNC = {
+    "id": "sync",
+    "every": "30m",
+    "endpoint": f"plugin.{DECLARATIVE_ID}.issues",
+    "params": '{"repo": connection.owner & "/web", "since": since}',
+    "write": (
+        '[{"target": {"holding": {"key": "github.repo", "value": "acme/web"}},'
+        ' "set": {"github.issues": result.total, "github.since": since}}]'
+    ),
+}
+
+
+def _syncing(**schedule: str) -> dict:
+    """:data:`DECLARATIVE` with no health check, its issues read taking
+    ``since`` as a query parameter, and :data:`SYNC` with ``schedule`` over
+    it."""
+    plugin = declarative_github(DECLARATIVE_ID)
+    del plugin["connections"][0]["health"]
+    issues = plugin["endpoints"][0]
+    issues["params"].append(
+        {"key": "since", "type": "string", "label": {"en": "Since"}}
+    )
+    issues["request"]["query"] = {"since": "params.since"}
+    plugin.update(scopes=["projects:read"], schedules=[{**SYNC, **schedule}])
+    return plugin
+
+
+class TestDeclarativeSchedules:
+    async def test_a_schedule_is_a_row_beside_the_health_checks(
+        self, acting_user, session, declarative
+    ):
+        """It goes when the pinned version no longer declares it."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        plugin = await _declarative_install(
+            session, seat, definition={**DECLARATIVE, "schedules": [SYNC]}
+        )
+        assert set(await _runs(session, seat.guild.id)) == {"workspace", "sync"}
+
+        await plugin_schedules.reconcile(seat.guild.id, plugin.id, DECLARATIVE)
+
+        assert set(await _runs(session, seat.guild.id)) == {"workspace"}
+
+    async def test_a_due_schedule_keeps_what_its_read_answers(
+        self, acting_user, session, role_session, vendor, declarative
+    ):
+        """The read is made with the installation's token and the params the
+        schedule answers from the connection and ``since``, when it last
+        succeeded. Its write keeps values, as the install, on the task holding
+        the repository."""
+        seat = await acting_user(
+            guild_role=CommunityRole.superadmin, initiative=True, project=True
+        )
+        await create_resource_grant(session, seat.project, all_initiative_members=True)
+        task = await create_task(session, seat.project)
+        plugin = await _declarative_install(
+            session,
+            seat,
+            definition=_syncing(),
+            config=_connected("42"),
+            granted_scopes=["projects:read"],
+        )
+        await route_session_to_guild(session, seat.guild.id)
+        session.add_all(
+            [
+                PluginPlacement(install_id=plugin.id, initiative_id=seat.initiative.id),
+                PluginMetadata(
+                    install_id=plugin.id,
+                    entity_type="task",
+                    entity_id=task.id,
+                    key="github.repo",
+                    value="acme/web",
+                    lookup="acme/web",
+                ),
+            ]
+        )
+        await session.commit()
+        worker = await role_session()
+
+        successes = []
+        for issues in ([{"title": "Broken build"}], [{"title": "A"}, {"title": "B"}]):
+            vendor.api_answers = [{"body": issues}]
+            await _due(session, seat.guild.id)
+            await _run_due(worker, seat.guild.id)
+            run = (await _runs(session, seat.guild.id))["sync"]
+            assert (run.failures, run.claimed_until) == (0, None)
+            successes.append(run.last_success_at)
+
+        first, second = successes
+        assert first < second
+        read = "https://api.github.test/repos/acme/web/issues"
+        assert [request["url"] for request in vendor.api_requests] == [
+            read,
+            f"{read}?{urlencode({'since': first.isoformat()})}",
+        ]
+        assert vendor.api_requests[0]["headers"]["authorization"].startswith(
+            "Bearer ghs_installation_"
+        )
+        kept = {
+            (row.entity_type, row.entity_id, row.key): row.value
+            for row in await session.exec(select(PluginMetadata))
+        }
+        assert kept == {
+            ("task", task.id, "github.repo"): "acme/web",
+            ("task", task.id, "github.issues"): 2,
+            ("task", task.id, "github.since"): first.isoformat(),
+        }
+
+    @pytest.mark.parametrize(
+        ("exchange", "answer", "schedule", "code"),
+        [
+            (
+                403,
+                {"body": [{"title": "A"}]},
+                {},
+                PluginDataMessages.NEEDS_CONFIGURATION,
+            ),
+            (201, {"status": 502}, {}, PluginDataMessages.SERVICE_UNAVAILABLE),
+            (201, {"status": 404}, {}, "not-found"),
+            (
+                201,
+                {"body": [{"title": "A"}]},
+                {"params": '"acme/web"'},
+                "mapping-failed",
+            ),
+            (
+                201,
+                {"body": [{"title": "A"}]},
+                {"write": '{"target": {"install": true}, "set": {"seen": true}}'},
+                PluginChannelMessages.INVALID_PAYLOAD,
+            ),
+        ],
+    )
+    async def test_a_failing_schedule_is_logged_and_backs_off(
+        self,
+        acting_user,
+        session,
+        role_session,
+        vendor,
+        declarative,
+        caplog,
+        exchange,
+        answer,
+        schedule,
+        code,
+    ):
+        """A stored connection whose token the vendor refuses, a read that
+        fails or answers unavailable, a ``params`` that is not an object and
+        changes that are not a list each fail the run: it is logged, nothing is
+        kept, ``since`` stays unset, and the schedule waits
+        ``every × 2^failures``."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        await _declarative_install(
+            session, seat, definition=_syncing(**schedule), config=_connected("42")
+        )
+        worker = await role_session()
+        vendor.exchange_status = exchange
+
+        waits = []
+        for _ in range(2):
+            vendor.api_answers = [answer]
+            await _due(session, guild_id)
+            before = datetime.now(timezone.utc)
+            await _run_due(worker, guild_id)
+            run = (await _runs(session, guild_id))["sync"]
+            minutes = round((run.next_due_at - before).total_seconds() / 60)
+            waits.append((run.failures, minutes))
+
+        assert waits == [(1, 60), (2, 120)]
+        assert run.last_success_at is None
+        assert (await session.exec(select(PluginMetadata))).all() == []
+        failure = (
+            f"plug-in schedules: {DECLARATIVE_ID} did not run sync "
+            f"for guild {guild_id} ({code})"
+        )
+        assert [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == plugin_schedules.__name__
+        ] == [failure, failure]
+
+    async def test_a_schedule_whose_connection_is_not_made_is_skipped(
+        self, acting_user, session, role_session, vendor, declarative, caplog
+    ):
+        """Nothing is sent or logged, its failures and ``since`` stay as they
+        were, and it is next due one interval later."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        guild_id = seat.guild.id
+        await _declarative_install(session, seat, definition=_syncing())
+        since = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        await route_session_to_guild(session, guild_id)
+        await session.exec(update(PluginScheduleRun).values(last_success_at=since))
+        await session.commit()
+        await _due(session, guild_id)
+        before = datetime.now(timezone.utc)
+
+        await _run_due(await role_session(), guild_id)
+
+        run = (await _runs(session, guild_id))["sync"]
+        assert (run.failures, run.last_success_at) == (0, since)
+        wait = run.next_due_at - before
+        assert timedelta(minutes=30) <= wait <= timedelta(minutes=34)
+        assert (vendor.exchanges, vendor.api_requests) == ([], [])
+        assert [r for r in caplog.records if r.name == plugin_schedules.__name__] == []
+
+    @pytest.mark.parametrize(
+        ("settings", "urls"),
+        [
+            ({"org": "acme"}, ["https://api.github.test/orgs/acme/issues"]),
+            (None, []),
+        ],
+        ids=["held", "not stored yet"],
+    )
+    async def test_a_read_sees_each_connection_its_requires_names(
+        self, acting_user, session, role_session, vendor, declarative, settings, urls
+    ):
+        """As ``connections.<id>``, as when the installation calls it. One the
+        community has not stored yet is waited for, as the read's own is."""
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        definition = _syncing()
+        definition["connections"].append(
+            {
+                "id": "settings",
+                "scope": "static",
+                "label": {"en": "Settings"},
+                "fields": [
+                    {
+                        "key": "org",
+                        "type": "string",
+                        "required": True,
+                        "label": {"en": "Organization"},
+                    }
+                ],
+            }
+        )
+        issues = definition["endpoints"][0]
+        issues["requires"] = {"all_of": ["workspace", "settings"]}
+        issues["request"]["url"] = (
+            '"https://api.github.test/orgs/" & connections.settings.org & "/issues"'
+        )
+        config = _connected("42") | ({} if settings is None else {"settings": settings})
+        await _declarative_install(session, seat, definition=definition, config=config)
+        vendor.api_answers = [{"body": []}]
+        await _due(session, seat.guild.id)
+
+        await _run_due(await role_session(), seat.guild.id)
+
+        assert [request["url"] for request in vendor.api_requests] == urls
+        assert (await _runs(session, seat.guild.id))["sync"].failures == 0
+
+    async def test_a_switched_off_install_runs_no_schedule(
+        self, acting_user, session, role_session, vendor, declarative
+    ):
+        seat = await acting_user(guild_role=CommunityRole.superadmin)
+        await _declarative_install(
+            session, seat, definition=_syncing(), config=_connected("42"), enabled=False
+        )
+        await _due(session, seat.guild.id)
+
+        await _run_due(await role_session(), seat.guild.id)
+
+        assert (vendor.exchanges, vendor.api_requests) == ([], [])
+        run = (await _runs(session, seat.guild.id))["sync"]
+        assert (run.failures, run.claimed_until) == (0, None)

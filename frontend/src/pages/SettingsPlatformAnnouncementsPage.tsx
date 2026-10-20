@@ -75,7 +75,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
               setEditorOpen(true);
             }}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {t("operator.new")}
           </Button>
         </CardHeader>
@@ -93,7 +93,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
               return (
                 <div
                   key={announcement.key}
-                  className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +138,7 @@ export const SettingsPlatformAnnouncementsPage = () => {
                         setEditorOpen(true);
                       }}
                     >
-                      <Pencil className="mr-1 h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                       {t("common:edit")}
                     </Button>
                     <Button

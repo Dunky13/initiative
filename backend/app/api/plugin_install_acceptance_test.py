@@ -756,7 +756,7 @@ async def test_an_uploaded_picture_reaches_a_plugin_by_reference_under_members_r
     # Somebody the install has a reference for who is not a member here.
     outsider = await plugin_refs.ensure_plugin_ref(
         guild_id=guild_id,
-        plugin_install_id=installed.plugin.id,
+        public_id=installed.public_id,
         user_id=elsewhere.user.id,
     )
     away = await client.get(

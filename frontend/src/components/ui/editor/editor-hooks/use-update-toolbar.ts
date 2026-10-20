@@ -1,6 +1,7 @@
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $getSelection,
+  $onUpdate,
   type BaseSelection,
   COMMAND_PRIORITY_CRITICAL,
   SELECTION_CHANGE_COMMAND,
@@ -18,10 +19,15 @@ export function useUpdateToolbarHandler(callback: (selection: BaseSelection) => 
     return activeEditor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       () => {
-        const selection = $getSelection();
-        if (selection) {
-          callback(selection);
-        }
+        // The handler runs before the DOM is reconciled; read once it is.
+        $onUpdate(() =>
+          activeEditor.read("latest", () => {
+            const selection = $getSelection();
+            if (selection) {
+              callback(selection);
+            }
+          })
+        );
         return false;
       },
       COMMAND_PRIORITY_CRITICAL

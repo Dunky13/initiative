@@ -218,7 +218,10 @@ const SignInCard = () => {
         // A ceremony this page put down itself — stood aside for the button's
         // prompt, or gone with the page — is not worth a line.
         if (!(err instanceof Error && err.name === "AbortError")) {
-          console.debug("Passkey autofill ceremony ended without a session", err);
+          console.debug(
+            "Passkey autofill ceremony ended without a session",
+            getErrorCode(err) ?? (err instanceof Error ? err.name : null)
+          );
         }
         if (autofillRestartedRef.current) return;
         if (getErrorCode(err) !== "PASSKEY_SIGN_IN_INVALID") return;
@@ -332,7 +335,6 @@ const SignInCard = () => {
         setError(null);
         return;
       }
-      console.error(err);
       setError(err instanceof Error ? err.message : t("login.defaultError"));
     } finally {
       submitInFlightRef.current = false;
@@ -358,7 +360,6 @@ const SignInCard = () => {
       });
       await goWhereTheySignedInFor();
     } catch (err) {
-      console.error(err);
       setError(err instanceof Error ? err.message : t("login.defaultError"));
       setCode("");
     } finally {

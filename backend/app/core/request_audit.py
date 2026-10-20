@@ -18,8 +18,9 @@ life:
 * **A request served through a grant is written down.** The guild-access gate
   records the grant on the request's context; when the response is finished
   this writes one ``pam.request`` line saying which grant, which route, and
-  what it answered. The grant says somebody was let into a community; these
-  say what they did while they were there.
+  what it answered, and one ``access_grant_activity`` row per grant, which the
+  grant's case is told of. The grant says somebody was let into a community;
+  these say what they did while they were there.
 
 A socket has no response to be finished, so it gets no ``pam.request`` line.
 What it has instead is :func:`record_privileged_edit`, which the live editing
@@ -38,11 +39,16 @@ import time
 from typing import Any, Awaitable, Callable
 
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.requests import HTTPConnection, Request
+from starlette.responses import PlainTextResponse, Response
 
-from app.core import audit_context, metrics
+from app.core import audit_context, cloudflare, metrics
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.services import audit as audit_service
+from app.core.security_rules import Signal
+from app.services.platform import security_signals
+from app.services.tenant import plugin_age
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +91,13 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     read.
 
     Uvicorn reads that header only from a peer named in
-    ``--forwarded-allow-ips`` (``127.0.0.1`` unless told otherwise, which is
-    what ``BEHIND_PROXY=true`` does), so a proxy anywhere else leaves every
-    visitor resolving to the proxy's address rather than their own. Nothing
-    else reports that, so this does. It is a hint about configuration: the
-    header decides nothing here, and this changes no behaviour.
+    ``--forwarded-allow-ips``: ``127.0.0.1`` without ``BEHIND_PROXY``, and with
+    it the local network ranges unless ``FORWARDED_ALLOW_IPS`` names others
+    (``start.sh``). A proxy anywhere else leaves every visitor resolving to the
+    proxy's address rather than their own. Nothing else reports that, so this
+    does: for a peer on the local network, and with ``BEHIND_PROXY`` set for
+    any peer. It is a hint about configuration: the header decides nothing
+    here, and this changes no behaviour.
     """
     global _forwarded_hint_at
     if resolved is None:
@@ -107,16 +115,34 @@ def _note_ignored_forwarded_header(headers: Headers, resolved: str | None) -> No
     # header names; one that was not leaves the peer itself, which is not.
     if resolved in {hop.strip() for hop in forwarded.split(",")}:
         return
-    if not _is_local_network_peer(resolved):
+    if not settings.BEHIND_PROXY and not _is_local_network_peer(resolved):
         return
     _forwarded_hint_at = now
     logger.warning(
         "Requests carry X-Forwarded-For but this peer is not configured as a "
-        "trusted proxy, so every client resolves to %s. Set BEHIND_PROXY=true "
-        "(and FORWARDED_ALLOW_IPS to the proxy's address) so rate limits and "
-        "recorded sign-in addresses are per-visitor.",
+        "trusted proxy, so every client resolves to %s. Set %s so rate limits "
+        "and recorded sign-in addresses are per-visitor.",
         resolved,
+        "FORWARDED_ALLOW_IPS to the proxy's address"
+        if settings.BEHIND_PROXY
+        else "BEHIND_PROXY=true",
     )
+
+
+def _through_cloudflare(scope: Scope, headers: Headers) -> None:
+    """Name the visitor as the request's client when the server resolved it
+    to one of Cloudflare's addresses (:mod:`app.core.cloudflare`), so every
+    reader of the client, the server's own request line included, has the
+    visitor. Only behind a proxy: a deployment reached directly takes its
+    peer as it is."""
+    if not settings.BEHIND_PROXY:
+        return
+    client = scope.get("client")
+    if not client:
+        return
+    visitor = cloudflare.visitor(client[0], headers.get("cf-connecting-ip"))
+    if visitor is not None:
+        scope["client"] = (visitor, client[1])
 
 
 def _reached_ids(scope: Scope) -> dict[str, int]:
@@ -133,16 +159,78 @@ def _reached_ids(scope: Scope) -> dict[str, int]:
     return reached
 
 
-def _route_template(scope: Scope) -> str | None:
-    """The route as it is written, rather than as it was typed; ``None``
-    when no route answered."""
-    path = getattr(scope.get("route"), "path", None)
-    return path if isinstance(path, str) else None
+#: The methods that change something.
+_WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+#: Path parameters that name where a request is, rather than what it reached.
+_PLACES = frozenset({"community_id", "guild_id", "initiative_id"})
+
+
+def _target(reached: dict[str, int]) -> tuple[str | None, int | None]:
+    """The thing a route named last, as a kind and an id: ``task_id`` 12 is a
+    task, 12. A route that names only where it is names nothing."""
+    for name, value in reversed(list(reached.items())):
+        if name not in _PLACES and name.endswith("_id"):
+            return name.removesuffix("_id"), value
+    return None, None
+
+
+async def _record_activity(
+    grant_ids: list[int],
+    *,
+    method: str,
+    route: str,
+    status: int,
+    reached: dict[str, int],
+) -> None:
+    """One ``access_grant_activity`` row per grant the request was served
+    through. A failure is logged and never fails the request."""
+    from app.db.session import SystemSessionLocal
+    from app.models.platform.access_grant_activity import (
+        ROUTE_LENGTH,
+        AccessGrantActivity,
+    )
+
+    target_type, target_id = _target(reached)
+    try:
+        async with SystemSessionLocal() as session:
+            for grant_id in grant_ids:
+                session.add(
+                    AccessGrantActivity(
+                        grant_id=grant_id,
+                        method=method[:8],
+                        route=route[:ROUTE_LENGTH],
+                        status=status,
+                        is_write=method in _WRITES,
+                        target_type=target_type,
+                        target_id=target_id,
+                    )
+                )
+            await session.commit()
+    except Exception:  # noqa: BLE001 — a record of the request, never a reason to fail it
+        logger.exception("access grant activity: could not record a request")
+
+
+async def server_error(_request: Request, _exc: Exception) -> Response:
+    """The 500 for a request that raised, carrying the request's id.
+
+    Starlette's own error middleware answers with this, outside every other
+    middleware, and then raises on to the server, which writes the traceback.
+    """
+    context = audit_context.current()
+    headers = {REQUEST_ID_HEADER: context.request_id} if context is not None else None
+    return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)
 
 
 class RequestAuditMiddleware:
     """Open each request's context; close it with a line if it was
-    privileged."""
+    privileged.
+
+    The context is left open when the request ends. The server runs each
+    request in a task of its own, begun with an empty context, so it ends
+    with that task, and what the server writes after the app has returned —
+    its request line, the traceback of a request that raised — still names
+    the request.
+    """
 
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -154,10 +242,13 @@ class RequestAuditMiddleware:
             return
 
         headers = Headers(scope=scope)
-        context, token = audit_context.begin(
+        _through_cloudflare(scope, headers)
+        context, _token = audit_context.begin(
             request_id=_incoming_request_id(headers) or audit_context.new_request_id(),
             source_ip=(scope.get("client") or (None,))[0],
             user_agent=headers.get("user-agent"),
+            country=plugin_age.request_country(HTTPConnection(scope)),
+            scope=scope,
         )
         _note_ignored_forwarded_header(headers, context.source_ip)
         if kind == "websocket":
@@ -169,7 +260,6 @@ class RequestAuditMiddleware:
                 await self.app(scope, receive, send)
             finally:
                 metrics.websocket_connections.dec()
-                audit_context.end(token)
             return
 
         answered: dict[str, int] = {}
@@ -191,14 +281,19 @@ class RequestAuditMiddleware:
         finally:
             elapsed = time.perf_counter() - began
             in_progress.dec()
-            route = _route_template(scope)
+            route = audit_context.route_of(scope)
             label = route or metrics.UNMATCHED_ROUTE
             # No response started means the request ended in an exception,
             # which the server answers with a 500.
             status = str(answered.get("status", 500))
             metrics.http_requests.labels(method, label, status).inc()
             metrics.http_request_duration.labels(method, label).observe(elapsed)
+            if answered.get("status") == 429:
+                # Every 429, whichever limit answered it, is counted by the
+                # security rules and never written down one by one.
+                security_signals.signal(Signal.rate_limited)
             if context.is_privileged:
+                reached = _reached_ids(scope)
                 audit_service.emit(
                     event_type=AuditEventType.PAM_REQUEST,
                     actor_user_id=context.actor_user_id,
@@ -207,10 +302,20 @@ class RequestAuditMiddleware:
                         "method": scope.get("method"),
                         "route": route or scope.get("path", ""),
                         "status": answered.get("status"),
-                        "reached": _reached_ids(scope),
+                        "reached": reached,
                     },
                 )
-            audit_context.end(token)
+                await _record_activity(
+                    [
+                        grant
+                        for grant in (context.grant_id, context.settings_grant_id)
+                        if grant is not None
+                    ],
+                    method=str(scope.get("method") or ""),
+                    route=route or metrics.UNMATCHED_ROUTE,
+                    status=int(answered.get("status", 500)),
+                    reached=reached,
+                )
 
 
 def record_privileged_edit(

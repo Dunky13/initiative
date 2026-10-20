@@ -19,11 +19,14 @@ from app.core.capabilities import Capability, user_has_capability
 from app.core.config import API_V1_STR
 from app.core.login_methods import LoginMethod
 from app.core import auth_context
+from app.services.membership import live_membership_clause
 from app.services.tenant import plugin_age
 from app.services.tenant.plugin_age import AgeViewer
 from app.services.auth import credentials
 from app.services.auth import guild_provider_connections as guild_connections
+from app.core.tools import Tool
 from app.core.identify import (
+    FEED_URL_CREDENTIALS,
     CredentialKind,
     Identified,
     bearer_plugin_token,
@@ -102,7 +105,7 @@ from app.models.platform.guild import (
     CommunityRole,
     CommunityStatus,
 )
-from app.models.platform.guild_auth_policy import GuildAuthPolicy
+from app.models.platform.guild_auth_policy import GuildAuthPolicy, SignInHalf
 from app.models.platform.user import (
     LOGIN_STATUSES,
     User,
@@ -132,14 +135,41 @@ CREDENTIAL_API_KEY = CredentialKind.api_key.value
 CREDENTIAL_INSTALL = "install"
 
 
-def _admit(request: Request, authenticated: Authenticated) -> User:
+def _key_overreached(
+    request: Request, authenticated: Authenticated, scope: str
+) -> None:
+    """Write down an API key reaching past what it was made for. Refused, so
+    there is no transaction to ride: the line goes now."""
+    from app.core.audit_events import AuditEventType
+    from app.services import audit as audit_service
+
+    api_key = authenticated.api_key
+    if api_key is None:
+        return
+    audit_service.emit(
+        event_type=AuditEventType.API_KEY_SCOPE_VIOLATION,
+        actor_user_id=authenticated.user.id,
+        target_user_id=authenticated.user.id,
+        target_type="api_key",
+        target_id=api_key.id,
+        detail={"scope": scope, "method": request.method},
+    )
+
+
+def _admit(
+    request: Request,
+    authenticated: Authenticated,
+    resource: tuple[int, Tool, int] | None = None,
+) -> User:
     """Hand the request the account a credential named, and say which
     credential it was.
 
-    ``read_only`` API keys may only issue safe (non-mutating) HTTP methods;
-    that is the one part of a key's scope that needs the request itself. The
-    guild a key is limited to was recorded where it was read, and the
-    guild-access gate applies it.
+    ``read_only`` API keys may only issue safe (non-mutating) HTTP methods,
+    and a key that names one tool resource is admitted only by the route that
+    serves that resource, which passes it as ``(guild_id, tool, id)``; those
+    are the parts
+    of a key's scope that need the request itself. The guild a key is limited
+    to was recorded where it was read, and the guild-access gate applies it.
     """
     api_key = authenticated.api_key
     if (
@@ -147,11 +177,24 @@ def _admit(request: Request, authenticated: Authenticated) -> User:
         and api_key.read_only
         and request.method not in _SAFE_HTTP_METHODS
     ):
+        _key_overreached(request, authenticated, "read_only")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=UserMessages.API_KEY_READ_ONLY,
         )
+    names = (
+        None
+        if api_key is None or api_key.resource_type is None
+        else (api_key.guild_id, api_key.resource_type, api_key.resource_id)
+    )
+    if names != resource:
+        _key_overreached(request, authenticated, "resource")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=UserMessages.API_KEY_RESOURCE_ONLY,
+        )
     request.state.credential = authenticated.kind.value
+    audit_context.note_actor(authenticated.user.id)
     # Which session this request is: what lets an endpoint act on the
     # account's other ones and leave the caller where they are.
     if authenticated.session_id is not None:
@@ -160,7 +203,10 @@ def _admit(request: Request, authenticated: Authenticated) -> User:
 
 
 async def _authenticate(
-    request: Request, session: AsyncSession, identified: Identified | None
+    request: Request,
+    session: AsyncSession,
+    identified: Identified | None,
+    resource: tuple[int, Tool, int] | None = None,
 ) -> User:
     """The account the credential a request presented names, admitted."""
     # Nothing recorded until a credential is read, so a request that presents
@@ -179,7 +225,7 @@ async def _authenticate(
         authenticated = await credentials.authenticate(session, identified)
     except CredentialRefused as exc:
         raise exc.as_http() from exc
-    return _admit(request, authenticated)
+    return _admit(request, authenticated, resource)
 
 
 async def get_current_user(
@@ -372,11 +418,32 @@ async def get_account_holder_exempt_from_factor(
     return await _active_user(request, current_user, admit_suspended=True)
 
 
+async def get_ticket_holder(
+    request: Request,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """The caller on a route that files or follows their own tickets.
+
+    An active account is held to the deployment's second-factor rule, as on
+    any route. A suspended one is not: its time-out screen, where it appeals
+    and follows the appeal, is reachable without the factor, and it cannot
+    enrol one while suspended. What it may do on these routes is the routes'
+    own narrower question.
+    """
+    user = await _active_user(request, current_user, admit_suspended=True)
+    if user.status != UserStatus.suspended:
+        await _require_platform_factor(request, session, user)
+    return user
+
+
 #: The caller on a time-out allow-list route. See :func:`_active_user`.
 AccountHolder = Annotated[User, Depends(get_current_account_holder)]
 FactorExemptAccountHolder = Annotated[
     User, Depends(get_account_holder_exempt_from_factor)
 ]
+#: The caller on the ticket routes. See :func:`get_ticket_holder`.
+TicketHolder = Annotated[User, Depends(get_ticket_holder)]
 
 
 async def get_active_user_exempt_from_factor(
@@ -407,17 +474,19 @@ AgeViewerDep = Annotated[AgeViewer, Depends(get_age_viewer)]
 FactorExemptUser = Annotated[User, Depends(get_active_user_exempt_from_factor)]
 
 
-def require_capability(capability: Capability) -> Callable:
-    """Dependency factory gating an endpoint on a platform capability.
+def require_capability(capability: Capability, *alternatives: Capability) -> Callable:
+    """Dependency factory gating an endpoint on a platform capability, or on
+    any one of several where each is reason enough.
 
     Access is expressed against the capability model rather than a hardcoded
     role name (see ``app.core.capabilities``).
     """
+    accepted = (capability, *alternatives)
 
     async def dependency(
         current_user: Annotated[User, Depends(get_current_active_user)],
     ) -> User:
-        if not user_has_capability(current_user, capability):
+        if not any(user_has_capability(current_user, held) for held in accepted):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=AuthMessages.INSUFFICIENT_PRIVILEGES,
@@ -477,7 +546,7 @@ def _sign_in(satisfied: frozenset[int], on_behalf: bool) -> SignIn:
 
 async def _enforce_guild_auth_policy(
     session: AsyncSession,
-    policy: GuildAuthPolicy | None,
+    policy: SignInHalf | None,
     guild_id: int,
     satisfied: frozenset[int],
     markers: frozenset[str] = frozenset(),
@@ -499,9 +568,10 @@ async def _enforce_guild_auth_policy(
     are one question to ``guild_connection_admits``, which also applies the
     narrowing a community put on the connection.
 
-    ``policy`` is the guild's row, read under the routed session. A second
-    factor the community asks for applies while it holds the option it needs,
-    read as the database gate reads it.
+    ``policy`` is the half of the guild's row that applies to this request
+    (its guests' for a guest), read under the routed session. A second factor
+    the community asks for applies while it holds the option it needs, read as
+    the database gate reads it.
     """
     restricts, factors_apply = (
         await session.exec(
@@ -578,40 +648,6 @@ async def _enforce_guild_auth_policy(
         )
 
 
-async def refuses_api_keys(session: AsyncSession, membership: GuildMembership) -> bool:
-    """Whether ``membership``'s community refuses its member's personal API
-    keys: turned off for them, while the community holds the ``restrictions``
-    option that setting needs."""
-    if membership.api_keys_allowed:
-        return False
-    return bool(
-        await session.scalar(
-            select(
-                guild_entitlements.holds_option(
-                    membership.guild_id, CommunityAuthOption.restrictions
-                )
-            )
-        )
-    )
-
-
-async def declines_this_credential(
-    session: AsyncSession, membership: GuildMembership
-) -> bool:
-    """Whether the community declines the credential this request was made
-    with.
-
-    True only for a personal API key whose holder's API access the community
-    turned off. The key's own ``guild_id`` says nothing here: a key pinned
-    elsewhere and a key pinned nowhere both address this guild the same way.
-    The cross-guild aggregates, which pick their guilds in one query, ask the
-    same question there (see ``app.services.cross_guild``).
-    """
-    return auth_context.current().api_key_credential and await refuses_api_keys(
-        session, membership
-    )
-
-
 def pinned_elsewhere(guild_id: int) -> bool:
     """Whether this request's API key is limited to a guild other than
     ``guild_id``. False for a key limited to no guild and for every other
@@ -624,17 +660,21 @@ async def _enforce_guild_api_access(
     session: AsyncSession, membership: GuildMembership
 ) -> None:
     """A member whose API access the community turned off does not reach it
-    with a personal API key.
+    with a personal API key (:func:`guild_entitlements.accepts_api_keys`).
 
     Runs beside the sign-in gate, for members. A grantee is never reached with
-    a personal API key at all; the grant branch refuses one before this.
+    a personal API key at all; the grant branch refuses one before this. The
+    key's own ``guild_id`` says nothing here: a key pinned elsewhere and a key
+    pinned nowhere both address this guild the same way.
 
     Covers every path that resolves its guild through
-    :func:`_load_guild_context`: REST, uploads and file downloads, the
-    realtime sockets and the keepalive. The cross-guild aggregates, which pick
-    their guilds themselves, ask the same question where they do it.
+    :func:`_load_guild_context`: REST, uploads and file downloads, subscription
+    feeds, the realtime sockets and the keepalive. The cross-guild aggregates,
+    which pick their guilds themselves, ask the same question where they do it.
     """
-    if await declines_this_credential(session, membership):
+    if auth_context.current().api_key_credential and (
+        await guild_entitlements.refuses_api_keys(session, membership)
+    ):
         raise GuildAccessError(detail=GuildMessages.COMMUNITY_API_KEYS_REFUSED)
 
 
@@ -664,6 +704,7 @@ async def _read_membership_gate(
             .where(
                 GuildMembership.guild_id == guild_id,
                 GuildMembership.user_id == user_id,
+                live_membership_clause(),
             )
         )
     ).one_or_none()
@@ -1282,9 +1323,10 @@ async def _refuse_sign_in(
     rule, under the routing, to name the step-up the caller owes.
     """
     guild_id = guild_context.guild_id
+    row = await session.get(GuildAuthPolicy, guild_id)
     await _enforce_guild_auth_policy(
         session,
-        await session.get(GuildAuthPolicy, guild_id),
+        row.half(guild_context.routes_as_guest) if row is not None else None,
         guild_id,
         satisfied,
         auth_context.current().session_amr,
@@ -2010,7 +2052,16 @@ async def get_factor_exempt_account_holder_session(
     return await _apply_user_session_context(session, current_user)
 
 
+async def get_ticket_holder_session(
+    session: SessionDep,
+    current_user: TicketHolder,
+) -> AsyncSession:
+    """The platform-path session for a ticket route."""
+    return await _apply_user_session_context(session, current_user)
+
+
 AccountHolderSessionDep = Annotated[AsyncSession, Depends(get_account_holder_session)]
+TicketHolderSessionDep = Annotated[AsyncSession, Depends(get_ticket_holder_session)]
 FactorExemptAccountHolderSessionDep = Annotated[
     AsyncSession, Depends(get_factor_exempt_account_holder_session)
 ]
@@ -2074,6 +2125,29 @@ async def get_upload_user(
 
 
 UploadUserDep = Annotated[User, Depends(get_upload_user)]
+
+
+async def authenticate_feed(
+    request: Request, session: AsyncSession, resource: tuple[int, Tool, int]
+) -> User:
+    """The person a subscription link names, for the feed of ``resource``,
+    ``(guild_id, tool, id)``.
+
+    Calendar apps fetch a feed by its URL alone, so its ``?token=`` carries a
+    personal API key, admitted only when the key names ``resource`` (see
+    :func:`_admit`). Held to the same account status and second-factor rules
+    as :func:`get_upload_user`; the route then establishes guild access as a
+    file download does, where the community's API-access rule applies.
+
+    A feed route calls it from a dependency, so its rate limit counts the
+    person the link names (``request.state.user_id``).
+    """
+    identified = identify_url_token(request, FEED_URL_CREDENTIALS)
+    user = await _active_user(
+        request, await _authenticate(request, session, identified, resource)
+    )
+    await _require_platform_factor(request, session, user)
+    return user
 
 
 async def require_direct_messages_enabled(session: UserSessionDep) -> None:

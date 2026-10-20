@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, cast
 
-from sqlalchemy import ColumnElement, and_, func, or_, tuple_
+from sqlalchemy import ColumnElement, and_, exists, func, or_, tuple_
 from sqlalchemy.orm import aliased, selectinload
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -32,15 +32,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.errors import CodedError
 from app.core.messages import (
     CommentMessages,
-    TaskMessages,
-    WikiMessages,
+    KindMessages,
 )
 from app.core.tools import Tool
 from app.db.initiative_rls import (
     COMMENT_PARENTS,
     COMMENT_PARENT_COLUMNS as RLS_COMMENT_PARENT_COLUMNS,
 )
-from app.db.session import guild_context, install_context
+from app.db.query import ids_in
+from app.db.session import guild_context, install_context, routed_guild_id
+from app.db.soft_delete_filter import select_including_deleted
 from app.models.tenant._mixins import tool_models
 from app.models.tenant.calendar import Calendar
 from app.models.tenant.comment import Comment, CommentAudience, in_thread
@@ -58,7 +59,7 @@ from app.models.tenant.task import Task, TaskAssignee
 from app.models.platform.user import User
 from app.services import keyset_cursor
 from app.services.tenant import attachments as attachments_service
-from app.services.tenant import content_references
+from app.services.tenant import content_references, personal_items
 from app.services import notifications
 from app.services import reachability
 from app.services.tenant.mention_parser import (
@@ -94,15 +95,11 @@ class CommentValidationError(CommentError):
 
 @dataclass(frozen=True)
 class CommentTarget:
-    """How one tool binds to comments: its model, the FK column on
-    ``comments`` (``{tool}_id``), and the codes its failures report.
-    ``feature_disabled`` is ``None`` for core tools, which have no master
-    switch."""
+    """How one tool binds to comments: its model and the FK column on
+    ``comments`` (``{tool}_id``)."""
 
     tool: Tool
     model: type[SQLModel]
-    not_found: str
-    feature_disabled: Optional[str] = None
 
     @property
     def column(self) -> str:
@@ -129,13 +126,7 @@ _REGISTERED = (
 # this spans the enum, and that the columns here match the model and the RLS
 # parent registry (app.db.initiative_rls._COMMENT_PARENTS).
 TOOL_COMMENT_TARGETS: dict[Tool, CommentTarget] = {
-    tool: CommentTarget(
-        tool,
-        tool_models()[tool.plural],
-        CommentMessages.TARGET_NOT_FOUND,
-        tool.feature_disabled_code,
-    )
-    for tool in Tool
+    tool: CommentTarget(tool, tool_models()[tool.plural]) for tool in Tool
 }
 
 
@@ -151,8 +142,8 @@ class ExtraCommentTarget:
     It has no sharing and no comment switch of its own, so the tool it belongs
     to answers both; which tool that is, and how a row reaches it, is declared
     once in ``app.db.initiative_rls.COMMENT_PARENTS`` and read from there. What
-    is left is what only this layer knows: the model to load, the field that
-    titles the thread, and the code its absence reports.
+    is left is what only this layer knows: the model to load and the field
+    that titles the thread.
     """
 
     #: The kind's name — the ``{kind}_id`` column, and what an event or a
@@ -161,12 +152,6 @@ class ExtraCommentTarget:
     model: type[SQLModel]
     #: The column holding what the thread is called.
     title_field: str
-    not_found: str
-    #: Whether a new comment tells whoever wrote the row. A page's author
-    #: wants to hear about a note on their page; a task instead tells the
-    #: people it is assigned to, which is a different question and already
-    #: answered further down.
-    notifies_author: bool = True
     #: Whether the anchoring tool's ``comments_enabled`` governs this thread.
     #: True for a wiki page — the wiki is where that switch is offered, and a
     #: wiki with comments off should have none on its pages. False for a task:
@@ -188,11 +173,9 @@ EXTRA_COMMENT_TARGETS: dict[str, ExtraCommentTarget] = {
             "task",
             Task,
             "title",
-            TaskMessages.NOT_FOUND,
-            notifies_author=False,
             anchor_switch=False,
         ),
-        ExtraCommentTarget("wiki_page", WikiPage, "title", WikiMessages.PAGE_NOT_FOUND),
+        ExtraCommentTarget("wiki_page", WikiPage, "title"),
     )
 }
 
@@ -455,12 +438,12 @@ async def _ensure_parent_access(
     else:
         target = TOOL_COMMENT_TARGETS[cast(Tool, ctx.tool)]
         initiative = getattr(ctx.resource, "initiative", None)
-        if (
-            target.feature_disabled is not None
-            and initiative is not None
-            and not getattr(initiative, target.tool.view_permission)
+        if initiative is not None and not getattr(
+            initiative, target.tool.view_permission
         ):
-            raise CommentPermissionError(target.feature_disabled)
+            raise CommentPermissionError(
+                KindMessages.TOOL_NOT_ENABLED, params={"kind": target.tool.value}
+            )
         if not getattr(ctx.resource, "comments_enabled", True):
             raise CommentPermissionError(CommentMessages.COMMENTS_DISABLED)
         anchor_model, anchor_row = target.model, ctx.resource
@@ -486,18 +469,42 @@ def serialize_comment(comment: Comment, *, viewer_id: Optional[int] = None):
     from app.schemas.tenant.comment import CommentRead
     from app.services.tenant import reactions as reactions_service
 
+    from app.schemas.tenant.comment import CommentRemoval
+
     read = CommentRead.model_validate(comment)
     task_project_id = getattr(comment, "_task_project_id", None)
     if task_project_id is not None:
         read.project_id = task_project_id
-    read.can_remove = viewer_id is not None and (
-        comment.created_by == viewer_id
-        or bool(getattr(comment, "_removes_others", False))
-    )
+    removal = removal_of(comment)
+    if removal is not None:
+        # A tombstone names neither its words nor who wrote them; a deleted
+        # comment with replies still under it reads as one.
+        read.removed = CommentRemoval(by=removal[0], reason=removal[1])
+        read.content = ""
+        read.created_by = None
+        read.author = None
+        read.imported_author_name = None
+        read.updated_at = None
+        return read
+    # Deleting is its author's: a moderator takes a comment down instead.
+    read.can_remove = viewer_id is not None and comment.created_by == viewer_id
     rows = getattr(comment, "_reactions", None)
     if rows:
         read.reactions = reactions_service.summarize(rows, viewer_id=viewer_id)
     return read
+
+
+def removal_of(comment: Comment) -> Optional[tuple[str, Optional[str]]]:
+    """Who took ``comment`` out of the conversation, and why: a moderator,
+    with a reason, or its author. ``None`` while it stands."""
+    if comment.removed_at is not None:
+        if comment.removal_id is not None:
+            return "moderator", comment.removed_reason
+        return "author", None
+    if comment.deleted_at is not None:
+        # In its author's trash with replies under it (``list_comments``).
+        return "author", None
+    return None
 
 
 async def attach_reactions(session: AsyncSession, *comments: Comment) -> None:
@@ -533,11 +540,11 @@ async def _get_comment(
     return result.one_or_none()
 
 
-def _parent_not_found(column: str) -> str:
-    extra = EXTRA_COMMENT_TARGETS.get(column)
-    if extra is not None:
-        return extra.not_found
-    return _TARGETS_BY_COLUMN[column].not_found
+def _parent_missing(column: str) -> CommentNotFoundError:
+    """The parent a ``{kind}_id`` column names is not there to comment on."""
+    return CommentNotFoundError(
+        KindMessages.NOT_FOUND, params={"kind": column.removesuffix("_id")}
+    )
 
 
 async def _resolved_parent(
@@ -565,42 +572,70 @@ async def _resolved_parent(
             table, entity_id, cast(int, user.id), guild_id
         ):
             raise CommentPermissionError(CommentMessages.PERMISSION_DENIED)
-        raise CommentNotFoundError(_parent_not_found(column))
+        raise _parent_missing(column)
     await _ensure_parent_access(session, ctx, user=user, access=access)
     return ctx
 
 
-def removes_others_comments(
-    session: AsyncSession, initiative_id: Optional[int]
-) -> bool:
-    """Whether this request may take down comments other people wrote in
-    ``initiative_id``: a community admin, or a manager of that initiative.
+def moderates_thread(session: AsyncSession, initiative_id: Optional[int]) -> bool:
+    """Whether this request is in the moderation set of the initiative a
+    thread is in (``moderation_acts.may_moderate``): it may take comments down
+    and lock or unlock the thread.
 
-    Read off the standing the seam computed, so it costs no query and answers
-    exactly what the delete route checks. An installed plug-in and granted access
-    take down nobody's words but their own.
+    Read off the standing the seam computed, so it costs no query. An
+    installed plug-in moderates nothing.
     """
+    from app.services.tenant.moderation_acts import may_moderate
+
     context = guild_context(session)
-    if context is None:
+    if context is None or install_context(session) is not None:
         return False
-    if context.is_admin:
-        return True
-    return initiative_id is not None and initiative_id in context.manager_initiatives
+    return may_moderate(context, initiative_id)
+
+
+async def _locked_now(session: AsyncSession, ctx: _ParentContext) -> bool:
+    """Whether the thread is locked, read after taking its turn: a lock being
+    placed at the same moment is committed first, and seen, or waits until
+    this write has committed."""
+    from app.db.advisory_locks import LockNamespace, advisory_lock
+
+    row = ctx.extra_row if ctx.extra is not None else ctx.resource
+    await advisory_lock(
+        session,
+        LockNamespace.COMMENT_THREAD,
+        thread_key(routed_guild_id(session), str(row.__tablename__), int(row.id)),
+    )
+    model = type(row)
+    if not hasattr(model, "comments_locked_at"):
+        return False
+    # Read again now that it is this write's turn.
+    return (
+        await session.exec(
+            select_including_deleted(model.comments_locked_at).where(model.id == row.id)
+        )
+    ).first() is not None
+
+
+def thread_key(guild_id: Optional[int], table: str, row_id: int) -> str:
+    """The advisory key one thread takes turns on, for writing in it and for
+    locking it (``moderation_acts``)."""
+    return f"{guild_id}:{table}:{row_id}"
+
+
+def thread_locked(ctx: _ParentContext) -> bool:
+    """Whether a moderator closed this thread: nothing is added to it or
+    edited in it, by anyone, until it is reopened."""
+    row = ctx.extra_row if ctx.extra is not None else ctx.resource
+    return getattr(row, "comments_locked_at", None) is not None
 
 
 def _stamp_parent(
     session: AsyncSession, ctx: _ParentContext, *comments: Comment
 ) -> None:
-    """Record what the parent says about loaded rows, for serialization.
-
-    The task's project — a plain attribute, never the ``project_id`` column
-    (that names a comment ON a project) — and whether this reader may take
-    down other people's comments in the thread, so the client offers Delete
-    exactly where the route allows it.
-    """
-    removes_others = removes_others_comments(session, ctx.initiative_id)
+    """Record what the parent says about loaded rows, for serialization: the
+    task's project — a plain attribute, never the ``project_id`` column (that
+    names a comment ON a project)."""
     for comment in comments:
-        object.__setattr__(comment, "_removes_others", removes_others)
         if ctx.project is not None:
             object.__setattr__(comment, "_task_project_id", ctx.project.id)
 
@@ -680,14 +715,14 @@ async def _ensure_said_to_a_filer(
     Read on the poster's own session: a person who can comment on the task can
     read its case row, and nobody else gets this far.
     """
-    from app.core.intake import Conversation, IntakeStream, meta
+    from app.core.intake import Conversation, IntakeStream, conversation_for
     from app.models.tenant.intake import IntakeCase
 
     if person is None or column != "task_id":
         raise CommentValidationError(CommentMessages.NOT_SAID_TO_A_FILER)
     case = (
         await session.exec(
-            select(IntakeCase.stream, IntakeCase.filer_user_id).where(
+            select(IntakeCase.stream, IntakeCase.filer_user_id, IntakeCase.topic).where(
                 IntakeCase.task_id == entity_id
             )
         )
@@ -695,7 +730,7 @@ async def _ensure_said_to_a_filer(
     if (
         case is None
         or case[1] is None
-        or meta(IntakeStream(case[0])).conversation is Conversation.none
+        or conversation_for(IntakeStream(case[0]), case[2]) is Conversation.none
     ):
         raise CommentValidationError(CommentMessages.NOT_SAID_TO_A_FILER)
 
@@ -739,6 +774,10 @@ async def create_comment(
         # parent is the gate, and its comment switch is the other half.
         access="read",
     )
+    # A locked thread takes nothing new, a moderator's words included:
+    # reopening it is how anyone adds to it.
+    if await _locked_now(session, ctx):
+        raise CommentPermissionError(CommentMessages.LOCKED)
     if parent_comment and getattr(parent_comment, column) != ctx.entity_id:
         raise CommentValidationError(CommentMessages.PARENT_MISMATCH)
     if parent_comment and parent_comment.audience != audience:
@@ -795,25 +834,19 @@ async def notify_task_assignees(
     comment: Comment,
     author: User | notifications.PluginAuthor,
     task: Task,
-    thread: notifications.Subject | None = None,
-    recipients: Sequence[int] | None = None,
 ) -> None:
     """Tell a task's assignees there is a new comment on it, rolled into
-    their unread line for the task.
-
-    ``recipients`` defaults to every assignee but the author; a caller already
-    telling some of them about the comment another way passes who is left.
-    """
+    their unread line for the task: a requester's answer on a case somebody
+    took, which arrives from outside the community rather than as a comment
+    made in it."""
+    thread = await notifications.resolve_subject(session, ("task", task.id))
     if thread is None:
-        thread = await notifications.resolve_subject(session, ("task", task.id))
-        if thread is None:
-            return
-    if recipients is None:
-        recipients = [
-            user_id
-            for user_id in await _task_assignee_ids(session, cast(int, task.id))
-            if user_id != author.id
-        ]
+        return
+    recipients = [
+        user_id
+        for user_id in await _task_assignee_ids(session, cast(int, task.id))
+        if user_id != author.id
+    ]
     name = await notifications.actor_name(session, author)
     await notifications.notify(
         session,
@@ -844,8 +877,9 @@ async def _process_comment_notifications(
 ) -> None:
     """Tell the people a new comment concerns, each once, in priority order:
     the author of the comment it replies to, the people it @mentions, the
-    assignees of a task it #mentions, the assignees of the task it is on, and
-    whoever wrote the tool entity or page it is on.
+    assignees of a task it #mentions, and everyone subscribed to what it is on
+    (``personal_items.subscribers_of``): who made it, who is on it, and who
+    follows it.
 
     Every notice is about the thread, so ``notifications.notify`` sends each
     only to people who can open it; a ``#task`` notice names the mentioned task
@@ -926,38 +960,42 @@ async def _process_comment_notifications(
             actor=author,
         )
 
-    if ctx.task is not None:
-        await notify_task_assignees(
-            session,
-            comment=comment,
-            author=author,
-            task=ctx.task,
-            thread=thread,
-            recipients=first_time(
-                await _task_assignee_ids(session, cast(int, ctx.task.id))
-            ),
+    # Last, so anybody the comment names or answers already heard of it
+    # above: everyone subscribed to the thing, which includes whoever made it
+    # and whoever is assigned to it or going to it, each on the one line they
+    # keep for it beside its other changes: what they are given for those
+    # named on it, what they follow for everyone else.
+    kind, entity_id = thread.about
+    subscribed = (
+        await personal_items.subscribers_of(
+            session, {thread.about: (thread.tool.value, thread.resource_id)}
         )
-
-    # The row the thread hangs off, so a note on a page reaches the page's
-    # author rather than whoever started the wiki.
-    owner_row = ctx.extra_row if ctx.extra is not None else ctx.resource
-    if owner_row is not None and (ctx.extra is None or ctx.extra.notifies_author):
+    )[thread.about]
+    for named, notice_type, line in (
+        (True, NotificationType.assigned_activity, "assigned"),
+        (False, NotificationType.subscription_activity, "subscription"),
+    ):
         await notifications.notify(
             session,
-            NotificationType.comment_on_resource,
-            first_time([getattr(owner_row, "created_by", None)]),
+            notice_type,
+            first_time(
+                sorted(
+                    person
+                    for person, subscriber in subscribed.items()
+                    if (subscriber.tie is personal_items.Tie.named) is named
+                )
+            ),
             about=thread,
-            key="comment.onResource",
+            key=f"{line}.commented",
             values={"actor": name, "context": ctx.title},
             data={
                 "comment_id": comment.id,
-                "entity_type": ctx.ref_type,
-                "entity_id": ctx.entity_id,
-                "commenter_name": name,
-                "commenter_id": author.id,
+                "entity_type": kind,
+                "entity_id": entity_id,
+                "verb": "commented",
             },
             actor=author,
-            rollup_key=f"{ctx.ref_type}:{ctx.entity_id}",
+            rollup_key=f"{line}:{kind}:{entity_id}",
         )
 
 
@@ -969,7 +1007,7 @@ async def list_comments(
     targets: Mapping[str, Optional[int]],
     limit: int,
     cursor: Optional[str] = None,
-) -> tuple[Sequence[Comment], Optional[str]]:
+) -> "ThreadPage":
     """One page of a thread, and the cursor for the next, or None at the end.
 
     A page is ``limit`` conversations — top-level comments, newest first —
@@ -985,9 +1023,29 @@ async def list_comments(
         user=user,
         access="read",
     )
+    # A reply whose parent the reader can't see — held for the platform, say
+    # (app.db.holds), or in its author's trash — starts a conversation of its
+    # own, under a placeholder. A tombstone its author left is shown only
+    # while there is a reply under it to keep a place for.
+    parent = aliased(Comment)
+    child = aliased(Comment)
     roots = select(Comment.id, Comment.created_at).where(
         getattr(Comment, column) == ctx.entity_id,
-        Comment.parent_comment_id.is_(None),
+        or_(
+            Comment.parent_comment_id.is_(None),
+            # Trashed counts as absent here for every reader: the trash's own
+            # row policy lets its deleter and the community's admin see it.
+            ~exists().where(
+                parent.id == Comment.parent_comment_id, parent.deleted_at.is_(None)
+            ),
+        ),
+        ~and_(
+            Comment.removed_at.is_not(None),
+            Comment.removal_id.is_(None),
+            ~exists().where(
+                child.parent_comment_id == Comment.id, child.deleted_at.is_(None)
+            ),
+        ),
         in_thread(),
     )
     position = keyset_cursor.decode(cursor)
@@ -1004,8 +1062,10 @@ async def list_comments(
         last_id, last_created_at = root_rows[limit - 1]
         next_cursor = keyset_cursor.encode(last_created_at, last_id)
     root_ids = [row[0] for row in root_rows[:limit]]
+    locked = thread_locked(ctx)
+    can_moderate = moderates_thread(session, ctx.initiative_id)
     if not root_ids:
-        return [], None
+        return ThreadPage([], None, locked, can_moderate)
 
     # The conversations on this page, every reply at any depth included.
     thread = (
@@ -1024,10 +1084,82 @@ async def list_comments(
         .order_by(Comment.created_at.asc(), Comment.id.asc())
         .options(selectinload(Comment.author))
     )
-    comments = (await session.exec(stmt)).all()
+    comments = list((await session.exec(stmt)).all())
+    comments = await _with_deleted_parents(
+        session, comments, guild_id=guild_id, column=column, entity_id=ctx.entity_id
+    )
     _stamp_parent(session, ctx, *comments)
     await attach_reactions(session, *comments)
-    return comments, next_cursor
+    return ThreadPage(comments, next_cursor, locked, can_moderate)
+
+
+@dataclass(frozen=True)
+class ThreadPage:
+    """One page of a thread, and what the thread says about writing in it."""
+
+    comments: Sequence[Comment]
+    next_cursor: Optional[str]
+    #: A moderator closed it to new comments.
+    locked: bool
+    #: The reader moderates the initiative it is in.
+    can_moderate: bool
+
+
+async def _with_deleted_parents(
+    session: AsyncSession,
+    comments: list[Comment],
+    *,
+    guild_id: int,
+    column: str,
+    entity_id: int,
+) -> list[Comment]:
+    """``comments`` and, in order, the comments their replies answer that are
+    in their authors' trash — served as tombstones (``serialize_comment``), so
+    the replies read where they were said.
+
+    A trashed row reads only to its deleter and the community's admin, so the
+    tombstones are read as the platform, and only what a tombstone shows:
+    where it sits, and that it was deleted. A parent held for the platform
+    stays absent, under the client's placeholder.
+    """
+    from app.db import cohorts
+    from app.db.request_context import SystemGuild
+    from app.db.session import set_rls_context
+
+    present = {c.id for c in comments}
+    missing = {
+        c.parent_comment_id
+        for c in comments
+        if c.parent_comment_id is not None and c.parent_comment_id not in present
+    }
+    if not missing:
+        return comments
+    async with cohorts.system_session(guild_id) as system:
+        await set_rls_context(system, SystemGuild(guild_id, read_only=True))
+        deleted = list(
+            (
+                await system.exec(
+                    select_including_deleted(Comment)
+                    .where(ids_in(Comment.id, missing))
+                    .where(getattr(Comment, column) == entity_id)
+                    .where(Comment.deleted_at.is_not(None))  # type: ignore[union-attr]
+                    .where(Comment.held_at.is_(None))  # type: ignore[union-attr]
+                    .where(in_thread())
+                )
+            ).all()
+        )
+        system.expunge_all()
+        await system.rollback()
+    if not deleted:
+        return comments
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    for tombstone in deleted:
+        # Nothing it said, or who said it, leaves the platform's read.
+        tombstone.content = ""
+        set_committed_value(tombstone, "author", None)
+        object.__setattr__(tombstone, "_reactions", [])
+    return sorted([*comments, *deleted], key=lambda c: (c.created_at, c.id or 0))
 
 
 async def _tell_the_filer(session: AsyncSession, comment: Comment) -> None:
@@ -1059,12 +1191,19 @@ async def delete_comment(
     await _ensure_parent_access(session, ctx, user=user, access="read")
     _stamp_parent(session, ctx, comment)
 
-    is_author = comment.created_by == user.id
-    if not (is_author or removes_others_comments(session, ctx.initiative_id)):
+    # Deleting is the author's alone; a moderator takes a comment down
+    # instead (``moderation_acts``), which leaves a tombstone and a record.
+    if comment.created_by != user.id:
         raise CommentPermissionError(CommentMessages.AUTHOR_ONLY_DELETE)
+    if comment.removed_at is not None:
+        raise CommentValidationError(CommentMessages.REMOVED)
 
     from app.services.tenant.soft_delete import trash
 
+    # The comment alone goes to its author's trash: a reply is somebody
+    # else's words and stays, under a line saying its author deleted it,
+    # until the comment is restored or the trash lets go of it
+    # (``soft_delete.hard_purge_entities``).
     await trash(
         session,
         comment,
@@ -1099,6 +1238,8 @@ async def update_comment(
     # Only the author can edit their own comment
     if comment.created_by != user.id:
         raise CommentPermissionError(CommentMessages.AUTHOR_ONLY_EDIT)
+    if comment.removed_at is not None:
+        raise CommentValidationError(CommentMessages.REMOVED)
 
     # Verify access to the linked entity (same checks as delete_comment)
     column, entity_id = _comment_target(comment)
@@ -1108,6 +1249,10 @@ async def update_comment(
     if ctx is None:
         raise CommentNotFoundError(CommentMessages.NOT_FOUND)
     await _ensure_parent_access(session, ctx, user=user, access="read")
+    # A locked thread stands as it was when it was locked, moderators' words
+    # included. Taking one's own comment back is still a delete.
+    if await _locked_now(session, ctx):
+        raise CommentPermissionError(CommentMessages.LOCKED)
     _stamp_parent(session, ctx, comment)
 
     previous_content = comment.content
@@ -1146,6 +1291,7 @@ async def recent_activity(
 
     conditions = [
         Comment.parent_comment_id.is_(None),
+        Comment.removed_at.is_(None),
         in_thread(),
     ]
     # A comment is reached through its parent — the task's project, or the
@@ -1161,20 +1307,19 @@ async def recent_activity(
         # The entity's own comment switch gates its thread, so it gates the
         # feed too.
         parent_ids = select(model.id).where(model.comments_enabled.is_(True))
-        if target.feature_disabled is not None:
-            # The tool's master switch gates the thread, so it gates the feed
-            # too. A parent that names no initiative (a guild calendar) has no
-            # switch to answer to.
-            parent_ids = parent_ids.where(
-                or_(
-                    model.initiative_id.is_(None),
-                    model.initiative_id.in_(
-                        select(Initiative.id).where(
-                            getattr(Initiative, tool.view_permission).is_(True)
-                        )
-                    ),
-                )
+        # The tool's master switch gates the thread, so it gates the feed
+        # too. A parent that names no initiative (a guild calendar) has no
+        # switch to answer to.
+        parent_ids = parent_ids.where(
+            or_(
+                model.initiative_id.is_(None),
+                model.initiative_id.in_(
+                    select(Initiative.id).where(
+                        getattr(Initiative, tool.view_permission).is_(True)
+                    )
+                ),
             )
+        )
         reachable_by_tool[tool] = parent_ids
         legs.append(and_(fk.isnot(None), fk.in_(parent_ids)))
     # The extras — a thread on something that is not a tool. Each is reached

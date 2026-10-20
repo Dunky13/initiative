@@ -21,7 +21,7 @@ interface ToolBrowserParams {
 
 /**
  * The address-bar state of a tool browser — the rail's tool, the table's page,
- * search and order — for the community front page and My Tools. Everything
+ * search and order — for My Tools. Everything
  * but the page size is in the address, so a narrowed table is a link someone
  * can send. `Extra` names the page's own params, which ride along untouched.
  *

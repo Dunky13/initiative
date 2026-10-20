@@ -233,7 +233,7 @@ jobs:
         run: rm -rf "${RUNNER_TEMP:?}/signing"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-apk
           path: artifacts/*.apk
@@ -241,7 +241,7 @@ jobs:
       # For uploading to Google Play by hand; it is not attached to the GitHub Release.
       - name: Upload the Play bundle
         if: ${{ env.HAS_KEYSTORE == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-aab
           path: play/*.aab
@@ -261,19 +261,27 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      actions: read  # the candidate's server packages, in its run
     outputs:
+      image: ${{ steps.find.outputs.image }}
       tree: ${{ steps.find.outputs.tree }}
       checked: ${{ steps.find.outputs.checked }}
       digest: ${{ steps.find.outputs.digest }}
+      packages-run: ${{ steps.find.outputs.packages-run }}
+      packages-artifact: ${{ steps.find.outputs.packages-artifact }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Find this tree's candidate
         id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.decide.outputs.version }}
         run: |
           # GHCR repository names are lowercase; the owner's login may not be.
           IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/initiative"
+          echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
           tree=$(git rev-parse 'HEAD^{tree}' | cut -c1-12)
           echo "tree=$tree" >> "$GITHUB_OUTPUT"
           # Resolved once, here: what is published is this digest, whatever
@@ -285,7 +293,24 @@ jobs:
             echo "Publishing candidate-$tree ($digest)"
           else
             echo "No checked candidate for this tree ($tree); building and walking one."
+            exit 0
           fi
+          # The server packages built from that image, in a Release Candidate
+          # run on this release's branch that passed. Without them (they
+          # expire after 30 days) they are built from the image below.
+          artifact="server-package-release-${digest#sha256:}"
+          want=$(printf '%s\t%s\t%s\t%s' .github/workflows/release-candidate.yml push "release/v$VERSION" success)
+          for run in $(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$artifact-deb-amd64" \
+              --jq '.artifacts[] | select(.expired | not) | .workflow_run.id'); do
+            if [[ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" \
+                --jq '[.path, .event, .head_branch, .conclusion] | @tsv')" == "$want" ]]; then
+              echo "packages-run=$run" >> "$GITHUB_OUTPUT"
+              echo "packages-artifact=$artifact" >> "$GITHUB_OUTPUT"
+              echo "Attaching the server packages from run $run"
+              exit 0
+            fi
+          done
+          echo "No server packages from the candidate's run; building them from it."
 
   docker-public:
     # Without a checked candidate for this tree (a tag on a tree no release
@@ -323,17 +348,35 @@ jobs:
     with:
       image: ${{ needs.docker-public.outputs.image }}@${{ needs.docker-public.outputs.digest }}
 
+  build-server:
+    # The server packages, built from the image this run publishes when
+    # Release Candidate's run did not leave them (see candidate).
+    needs: [candidate, docker-public]
+    if: >-
+      ${{ !cancelled() && needs.candidate.outputs.packages-run == ''
+      && (needs.candidate.outputs.checked == 'true' || needs.docker-public.result == 'success') }}
+    permissions:
+      contents: read
+      packages: read  # the pull of the image's web assets
+    uses: ./.github/workflows/server-packages.yml
+    with:
+      image: ${{ needs.candidate.outputs.image }}@${{ needs.candidate.outputs.checked == 'true' && needs.candidate.outputs.digest || needs.docker-public.outputs.digest }}
+    # inherit, not a list: the called job's environment secrets
+    # (SERVER_APK_SIGNING_KEY) read as empty without it.
+    secrets: inherit
+
   publish:
     # Tags the checked image as the release: the candidate, or the build
     # above once its walk and journeys passed. Nothing is published unchecked.
     # A release that moves a floor publishes only once that app is built, so
     # no server asks for an app that is not there; a skipped build passes.
-    needs: [decide, candidate, docker-public, walk, journeys, build-android, build-desktop]
+    needs: [decide, candidate, docker-public, walk, journeys, build-android, build-desktop, build-server]
     if: >-
       ${{ !cancelled() && (needs.candidate.outputs.checked == 'true'
       || (needs.walk.result == 'success' && needs.journeys.result == 'success'))
       && needs.build-android.result != 'failure'
-      && needs.build-desktop.result != 'failure' }}
+      && needs.build-desktop.result != 'failure'
+      && (needs.candidate.outputs.packages-run != '' || needs.build-server.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -369,7 +412,7 @@ jobs:
           docker buildx imagetools inspect "$IMAGE_NAME:latest"
 
   release:
-    needs: [decide, build-android, build-desktop, publish]
+    needs: [decide, candidate, build-android, build-desktop, build-server, publish]
     # Run even when the app builds were *skipped* (web-only release). Only the Docker manifest
     # must have been published, from the candidate or a walked build; the APK and the desktop
     # installers are attached opportunistically below. But a build *failure* on a native-change
@@ -380,10 +423,12 @@ jobs:
       && needs.publish.result == 'success'
       && needs.build-android.result != 'failure'
       && needs.build-desktop.result != 'failure'
+      && (needs.candidate.outputs.packages-run != '' || needs.build-server.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read  # the candidate's server packages, in its run
 
     steps:
       - name: Checkout repository
@@ -395,18 +440,39 @@ jobs:
 
       - name: Download Android APK
         if: needs.build-android.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: android-apk
           path: artifacts
 
       - name: Download desktop installers
         if: needs.build-desktop.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: desktop-*
           merge-multiple: true
           path: artifacts
+
+      - name: Download native server packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ${{ needs.candidate.outputs.packages-artifact || needs.build-server.outputs.artifact }}-*
+          merge-multiple: true
+          path: artifacts/server
+          # Release Candidate's run when the packages came from it, else this one.
+          run-id: ${{ needs.candidate.outputs.packages-run || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify native server artifact checksums
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: artifacts/server
+        run: |
+          manifests=( initiative-server-*.sha256 )
+          test "${#manifests[@]}" -eq 4
+          for manifest in "${manifests[@]}"; do
+            sha256sum --check "$manifest"
+          done
 
       - name: Extract changelog for version
         id: changelog
@@ -469,6 +535,12 @@ jobs:
 
           $DESKTOP_SECTION
 
+          ### Native Server Packages
+          Install the \`initiative-server\` .deb on Debian 13 or the .apk on Alpine 3.24, for amd64 or arm64.
+          These packages run the server and are separate from the desktop .deb and Android APK above.
+          The assets include SHA-256 checksums and the Alpine package public signing key.
+          See [native server installation](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/en/running-a-server/native-packages.md) for configuration and service instructions.
+
           ### Docker Image
           \`\`\`bash
           docker pull ${IMAGE_NAME}:${VERSION}
@@ -480,17 +552,23 @@ jobs:
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' release_body.md
 
-      # What an installed plug-in may call, exported from the image this release
-      # published. The image carries no scripts/, so the checkout's are mounted.
-      - name: Export the plug-in API spec
+      # What an installed plug-in may call, and the whole API: what API clients
+      # check themselves against, and what the next release's compatibility check
+      # compares with (scripts/ci/api-compat). Exported from the image this release
+      # published; the image carries no scripts/, so the checkout's are mounted.
+      - name: Export the API specs
         if: startsWith(github.ref, 'refs/tags/')
         env:
           VERSION: ${{ needs.decide.outputs.version }}
         run: |
           mkdir -p artifacts
-          docker run --rm --entrypoint python \
-            -v "$PWD/backend/scripts:/app/scripts:ro" -v "$PWD/artifacts:/out" \
-            "$IMAGE_NAME:$VERSION" scripts/export_openapi.py --plugin /out/initiative-plugin-api.json
+          export_spec() {
+            docker run --rm --entrypoint python \
+              -v "$PWD/backend/scripts:/app/scripts:ro" -v "$PWD/artifacts:/out" \
+              "$IMAGE_NAME:$VERSION" scripts/export_openapi.py "$@"
+          }
+          export_spec /out/openapi.json
+          export_spec --plugin /out/initiative-plugin-api.json
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -501,7 +579,9 @@ jobs:
             artifacts/*.exe
             artifacts/*.dmg
             artifacts/*.deb
+            artifacts/server/*
             artifacts/latest*.yml
+            artifacts/openapi.json
             artifacts/initiative-plugin-api.json
           body_path: release_body.md
           draft: false

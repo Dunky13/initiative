@@ -27,15 +27,10 @@
   },
   "columns": {
     "done": "Erledigt",
-    "task": "Aufgabe",
     "project": "Projekt",
-    "startDate": "Startdatum",
-    "dueDate": "Fälligkeitsdatum",
     "dateWindow": "Zeitfenster",
     "community": "Community",
     "projectPath": "Projektpfad",
-    "priority": "Priorität",
-    "tags": "Tags",
     "status": "Status"
   },
   "checkbox": {
@@ -61,12 +56,8 @@
     "createdAt": "Erstellt {{time}}",
     "readOnlyNoAccess": "Du hast nur Lesezugriff auf dieses Projekt, daher sind die Aufgabenfelder deaktiviert.",
     "readOnlyArchived": "Dieses Projekt ist archiviert. Hebe die Archivierung in den Projekteinstellungen auf, um Aufgaben zu bearbeiten.",
-    "descriptionLabel": "Beschreibung",
     "aiGenerate": "Mit KI generieren",
     "descriptionPlaceholder": "Füge zusätzlichen Kontext oder Abnahmekriterien hinzu. Markdown wird unterstützt.",
-    "noDescriptionReadOnly": "Noch keine Beschreibung.",
-    "saving": "Wird gespeichert…",
-    "saveTask": "Aufgabe speichern",
     "moveToProject": "In Projekt verschieben",
     "duplicating": "Wird dupliziert…",
     "duplicateTask": "Aufgabe duplizieren",
@@ -78,7 +69,6 @@
     "deleteTask": "Aufgabe löschen",
     "deleteTitle": "Aufgabe löschen?",
     "deleteDescription": "Die Aufgabe wird in den Papierkorb verschoben. Du kannst sie unter Einstellungen → Papierkorb wiederherstellen, bevor die Aufbewahrungsfrist endet.",
-    "taskUpdated": "Aufgabe aktualisiert",
     "taskDuplicated": "Aufgabe dupliziert",
     "taskDeleted": "Aufgabe gelöscht",
     "taskArchived": "Aufgabe archiviert",
@@ -88,11 +78,6 @@
     "descriptionGenerated": "Beschreibung generiert",
     "generateDescriptionError": "Beschreibung konnte nicht generiert werden",
     "commentsError": "Kommentare können derzeit nicht geladen werden.",
-    "taskStatusRequired": "Aufgabenstatus ist erforderlich",
-    "unsavedTitle": "Nicht gespeicherte Änderungen verwerfen?",
-    "unsavedBody": "Sie haben nicht gespeicherte Änderungen an dieser Aufgabe. Wenn Sie jetzt gehen, gehen sie verloren.",
-    "unsavedLeave": "Verlassen",
-    "unsavedStay": "Bleiben",
     "skipOccurrence": "Diesen Termin überspringen",
     "taskSkipped": "Weiter zum nächsten Termin",
     "skipError": "Dieser Termin konnte nicht übersprungen werden"
@@ -226,24 +211,14 @@
     "editTags": "Tags bearbeiten"
   },
   "taskForm": {
-    "titleLabel": "Titel",
     "titlePlaceholder": "Aufgabentitel",
-    "descriptionLabel": "Beschreibung",
-    "descriptionPlaceholder": "Weitere Details hinzufügen (optional)",
-    "advancedDetails": "Erweiterte Details",
     "statusLabel": "Status",
-    "selectStatus": "Status auswählen",
-    "priorityLabel": "Priorität",
-    "assigneesLabel": "Zuständige",
     "assigneesEmptyMessage": "Keine Mitglieder gefunden",
     "startDateLabel": "Startdatum",
     "dueDateLabel": "Fälligkeitsdatum",
-    "tagsLabel": "Tags",
     "tagsPlaceholder": "Tags hinzufügen",
     "sections": {
-      "tracking": "Nachverfolgung",
-      "schedule": "Zeitplan",
-      "people": "Personen & Tags"
+      "schedule": "Zeitplan"
     }
   }
 }

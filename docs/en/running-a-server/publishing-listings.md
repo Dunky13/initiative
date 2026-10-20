@@ -79,7 +79,7 @@ One file per listing. Here's a complete dashboard listing:
 |---|---|---|
 | `uid` | ✅ | The listing's product code — see [Choosing a uid](#choosing-a-uid). |
 | `public_id` | ✅ | A readable id, `<publisher>.<slug>`. Lowercase letters, digits, `.`, `-` and `_`. |
-| `kind` | ✅ | `dashboard`, `project` or `plugin`. |
+| `kind` | ✅ | `dashboard`, `project`, `plugin` or `home_layout`. |
 | `name` | ✅ | What the card is called. |
 | `publisher` | ✅ | Who publishes it, as one name: a person, a team, an organization. |
 | `description` | ✅ | The one-line blurb on the browse card. |
@@ -117,6 +117,36 @@ What installs is a new project of the installer's own, called whatever the listi
 - **Dates, as dates.** They're kept as distances from each other, and the installer picks a **Start date** that the earliest one lands on. A launch plan with a deadline six weeks in stays six weeks in.
 
 `example` is optional, and is a second export of the same project with some work filled in: a few tasks moving through the board, so the shape makes sense at a glance. The listing's page then shows **Blank** and **Example** side by side, and the installer chooses which to start from.
+
+## A home layout listing
+
+A ready-made home page that people add to their own home as a new view. Its `definition` places widgets on a twelve-column grid; `y` and `h` count rows.
+
+```json
+"definition": {
+  "schema_version": 1,
+  "kind": "home_layout",
+  "widgets": [
+    { "id": "clock", "type": "clock", "grid": { "x": 0, "y": 0, "w": 4, "h": 6 },
+      "options": { "mode": "timer", "timer": { "duration": 1500 } } },
+    { "id": "focus", "type": "focus", "grid": { "x": 4, "y": 0, "w": 8, "h": 6 } }
+  ]
+}
+```
+
+Widgets are `greeting`, `gettingStarted`, `focus`, `tasks`, `comingUp`, `calendar`, `recent`, `activity`, `communities`, `progress` and `clock`. Each has a smallest size, and `greeting`, `gettingStarted`, `focus`, `tasks`, `calendar`, `communities` and `progress` may appear once. Two widgets can't share a cell.
+
+Only options that mean the same on anybody's page are accepted:
+
+| Widget | Options |
+|---|---|
+| `greeting` | `yonder`: `true` or `false` |
+| `comingUp` | `days`: `3`, `7`, `14` or `30` |
+| `recent` | `mode`: `viewed` or `changed`; `tools`: a list of tool kinds |
+| `activity` | `view`: `all` or `yours` |
+| `clock` | `mode`: `clock` or `timer`; `zones`: up to three time zones; `timer`: `{ "duration": <seconds> }` |
+
+Anything that would point at one person's own things — a community, a list, a note — is refused, as is a widget this server doesn't draw. The refusal names the widget and the reason.
 
 ## A plug-in listing
 

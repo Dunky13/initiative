@@ -21,7 +21,11 @@ from app.core.config import settings
 from app.core.errors import CodedError
 from app.core.identify import bearer_token
 from app.core.messages import BillingMessages
-from app.core.security import PublicKeyBundleError, load_verification_keys
+from app.core.security import (
+    PUBLIC_KEY_JWT_ALGORITHM,
+    PublicKeyBundleError,
+    load_verification_keys,
+)
 from app.models.platform.billing import (
     BillingEventLog,
     BillingJti,
@@ -35,6 +39,9 @@ from app.schemas.platform.billing import (
     BillingCommunityTierApply,
     BillingCommunityTierRead,
 )
+from app.core.audit_events import AuditEventType
+from app.services import audit as audit_service
+from app.services.marketplace import community_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +100,7 @@ def verify_billing_envelope(
     """Verify the envelope on a billing call. Pure — no DB.
 
     Order: config presence, timestamp recency, HMAC over the raw body, then
-    the RS256 JWT. The one-shot ``jti`` redemption is not done here — it is
+    the EdDSA JWT. The one-shot ``jti`` redemption is not done here — it is
     a DB write and belongs inside the endpoint's transaction.
     """
     if not billing_inbound_enabled():
@@ -147,7 +154,7 @@ def verify_billing_envelope(
             payload = jwt.decode(
                 token,
                 key,
-                algorithms=["RS256"],
+                algorithms=[PUBLIC_KEY_JWT_ALGORITHM],
                 audience=BILLING_AUDIENCE,
                 issuer=BILLING_ISSUER,
                 options={"require": ["exp", "iat", "iss", "aud", "jti"]},
@@ -195,6 +202,12 @@ async def record_jti(session: AsyncSession, *, jti: str, expires_at: datetime) -
     try:
         await session.flush()
     except IntegrityError as exc:
+        # Written now: the refusal rolls the transaction back.
+        audit_service.emit(
+            event_type=AuditEventType.SECURITY_REPLAY_REJECTED,
+            actor_user_id=None,
+            detail={"channel": "billing"},
+        )
         raise CodedError(BillingMessages.REPLAYED_TOKEN, 403) from exc
 
 
@@ -206,6 +219,7 @@ _GUILD_TIER_COLUMNS = (
     GuildAdministration.tier_name,
     GuildAdministration.max_storage_bytes,
     GuildAdministration.max_users,
+    GuildAdministration.max_guests,
     GuildAdministration.banner_image_enabled,
     GuildAdministration.support_enabled,
     GuildAdministration.auth_options,
@@ -376,7 +390,13 @@ async def apply_guild_tier(
         # Two rows, one transaction: the caps and plan label on
         # ``guild_administration``, the lifecycle status on ``guilds``.
         administration_values: dict = {}
-        for field in ("tier_name", "max_storage_bytes", "max_users", "plan_is_free"):
+        for field in (
+            "tier_name",
+            "max_storage_bytes",
+            "max_users",
+            "max_guests",
+            "plan_is_free",
+        ):
             if field in provided:
                 administration_values[field] = getattr(payload, field)
         if "feature_keys" in provided and payload.feature_keys is not None:
@@ -404,6 +424,7 @@ async def apply_guild_tier(
             else:
                 guild_values["status"] = payload.status.value
                 guild_values["status_changed_at"] = now
+                community_hooks.status_changed(session, guild_id)
                 logger.info(
                     "billing: guild %s status %s -> %s (source=%s actor=%s event=%s)",
                     guild_id,
@@ -433,6 +454,7 @@ async def apply_guild_tier(
         tier_name=row.tier_name,
         max_storage_bytes=row.max_storage_bytes,
         max_users=row.max_users,
+        max_guests=row.max_guests,
         status=CommunityStatus(row.status),
         feature_keys=billing_capabilities.package_of(
             banner_image_enabled=row.banner_image_enabled,
@@ -477,17 +499,18 @@ class GuildUsage:
     """What one guild is using, for the signed usage read.
 
     ``usage_bytes`` is the figure ``enforce_storage_quota`` enforces against;
-    ``member_count`` is the one ``ensure_membership`` compares with
-    ``max_users``. Billing reads the second so a seat count is never cut below
-    the people already in the community.
+    ``member_count`` and ``guest_count`` are the ones ``ensure_membership``
+    compares with ``max_users`` and ``max_guests``. Billing reads them so a
+    plan is never cut below the people already in the community.
     """
 
     usage_bytes: int
     member_count: int
+    guest_count: int
 
 
 async def guild_usage(guild_id: int) -> GuildUsage:
-    """Current stored bytes and member count for one guild, for the signed
+    """Current stored bytes, member count and guest count for one guild, for the signed
     usage read.
 
     Neither is visible to the column-scoped ``initiative_billing`` role:
@@ -502,7 +525,7 @@ async def guild_usage(guild_id: int) -> GuildUsage:
     anywhere.
     """
     from app.db import cohorts
-    from app.services.platform.guilds import count_members
+    from app.services.platform.guilds import count_guests, count_members
     from app.services.tenant.attachments import get_guild_storage_usage
 
     async with cohorts.system_session(guild_id) as session:
@@ -513,8 +536,10 @@ async def guild_usage(guild_id: int) -> GuildUsage:
         if exists is None:
             raise CodedError(BillingMessages.COMMUNITY_NOT_FOUND, 404)
         member_count = await count_members(session, guild_id=guild_id)
+        guest_count = await count_guests(session, guild_id=guild_id)
 
     return GuildUsage(
         usage_bytes=await get_guild_storage_usage(guild_id),
         member_count=member_count,
+        guest_count=guest_count,
     )

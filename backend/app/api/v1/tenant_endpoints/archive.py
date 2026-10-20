@@ -36,11 +36,14 @@ from app.api.deps import (
 from app.core.plugin_scopes import PluginScopeAccess, scope_name, tool_resource
 from app.core.messages import GuildMessages, InitiativeMessages
 from app.core.tools import ARCHIVE_TARGETS, KINDS, Tool, plural_of
+from app.db.base import MODELS_BY_TABLE
 from app.models.platform.user import User
 from app.models.tenant._mixins import archive_models
 from app.schemas.tenant.archive import ArchivableType, ArchiveResponse
 from app.services.permissions import Action
+from app.models.tenant.task import Task
 from app.services.tenant import archive as archive_service
+from app.services.tenant import column_limits
 
 router = APIRouter(route_class=ActorRoute)
 
@@ -67,9 +70,17 @@ ArchiveWrite = Annotated[
 #: models are the ones carrying ``ArchiveMixin``, and a target's table is its
 #: own plural, so neither half is written down twice. A target with no
 #: archivable model behind it fails at import rather than at request time.
-_BY_TABLE = {model.__tablename__: model for model in archive_models()}
+
+
+def _archivable(target: str) -> type:
+    model = MODELS_BY_TABLE[plural_of(target)]
+    if model not in archive_models():  # pragma: no cover — a registry mistake
+        raise RuntimeError(f"{target} names no model that can be archived")
+    return model
+
+
 ARCHIVE_REGISTRY: dict[str, type] = {
-    target.value: _BY_TABLE[plural_of(target.value)] for target in ArchivableType
+    target.value: _archivable(target.value) for target in ArchivableType
 }
 
 
@@ -100,23 +111,13 @@ async def _load(session: AsyncSession, entity_type: str, entity_id: int) -> Any:
         )
     row = (await session.exec(stmt)).one_or_none()
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND[entity_type]
-        )
+        if entity_type == "initiative":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=InitiativeMessages.NOT_FOUND,
+            )
+        raise KINDS[entity_type].not_found()
     return row
-
-
-#: The "no such thing" code per kind — a tool's own, the one a row inside a
-#: tool is refused with, and the initiative's.
-_NOT_FOUND: dict[str, str] = {
-    **{t.value: resource_access.RESOURCE_ACCESS[t].not_found_msg for t in Tool},
-    **{
-        target: resource_access.SUB_TOOLS[ARCHIVE_REGISTRY[target]].not_found
-        for target in ARCHIVE_TARGETS
-        if target in KINDS and KINDS[target].parent
-    },
-    "initiative": InitiativeMessages.NOT_FOUND,
-}
 
 
 def _authorize(
@@ -192,7 +193,13 @@ async def unarchive_entity(
     live row."""
     row = await _load(session, entity_type.value, entity_id)
     _authorize(entity_type.value, row, current_user, guild_context)
+    was_archived = getattr(row, "archived_at", None) is not None
     await archive_service.unarchive_entity(session, row)
+    # A task back out of the archive goes back into its column.
+    if isinstance(row, Task) and was_archived:
+        await column_limits.refuse_full_columns(
+            session, guild_context, row.project_id, [row]
+        )
     await session.commit()
     return ArchiveResponse(
         entity_type=entity_type, entity_id=entity_id, archived_at=None

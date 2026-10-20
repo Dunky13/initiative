@@ -10,6 +10,7 @@ Tests the auth API endpoints including:
 """
 
 import secrets
+import uuid
 from datetime import date, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -78,15 +79,22 @@ async def test_bootstrap_status_with_users(
     client: AsyncClient, session: AsyncSession, monkeypatch
 ):
     """Registration reads as open only where somebody may register without an
-    invite, which turning community creation off closes too."""
+    invite, which turning community creation off closes too. The demo
+    deployment says so."""
     await create_user(session)
 
     response = await client.get("/api/v1/auth/bootstrap")
-    assert response.json() == {"has_users": True, "public_registration_enabled": True}
+    assert response.json() == {
+        "has_users": True,
+        "public_registration_enabled": True,
+        "demo": False,
+    }
 
     monkeypatch.setattr(settings, "DISABLE_GUILD_CREATION", True)
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
     response = await client.get("/api/v1/auth/bootstrap")
     assert response.json()["public_registration_enabled"] is False
+    assert response.json()["demo"] is True
 
 
 async def test_register_first_user(client: AsyncClient, session: AsyncSession):
@@ -258,14 +266,14 @@ async def test_register_with_invite_blocked_when_guild_full(
     seat = await create_user(session, email="reg-seat@example.com")
     # Minted while the seat is still free, redeemed after it is taken —
     # minting itself is capacity-gated, so the order here is the scenario.
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session, guild_id=guild.id, created_by=seat.id, max_uses=5
     )
     await guild_service.ensure_membership(session, guild_id=guild.id, user_id=seat.id)
     await session.commit()
 
     response = await client.post(
-        f"/api/v1/auth/register?invite_code={invite.code}",
+        f"/api/v1/auth/register?invite_code={invite_code}",
         json={
             "email": "reg-newuser@example.com",
             "username": "reg-newuser",
@@ -304,14 +312,14 @@ async def test_register_with_a_bound_invite_joins_on_confirming(
     monkeypatch.setattr(email_service, "send_verification_email", _capture)
     admin = await create_user(session, email="bound-admin@example.com")
     guild = await create_guild(session, creator=admin)
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
         invitee_email="bound-invitee@example.com",
     )
     await session.commit()
-    guild_id, code = guild.id, invite.code
+    guild_id, code = guild.id, invite_code
 
     def _register(email: str, username: str):
         return client.post(
@@ -2370,7 +2378,7 @@ async def test_oidc_callback_mobile_flow_hands_back_a_code(
     auth_session = (await session.exec(select(AuthSession))).one()
     assert auth_session.satisfied_providers == [provider.id]
     assert auth_session.device_name == "Pixel"
-    assert auth_session.device is True
+    assert auth_session.install_id is not None
 
     legacy = await _run_oidc_flow(
         client,
@@ -2565,7 +2573,11 @@ async def test_password_reset_revokes_sessions_on_every_device(
     user = await create_user(session, email="reset-revoke@example.com")
     old_jwt = get_auth_token(user)
     phone = await session_service.create_session(
-        session, user_id=user.id, amr=["pwd"], satisfied_providers=[], device=True
+        session,
+        user_id=user.id,
+        amr=["pwd"],
+        satisfied_providers=[],
+        install_id=uuid.uuid4(),
     )
     phone_id = phone.session.id
     reset_token = await user_tokens.create_token(

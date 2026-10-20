@@ -197,6 +197,17 @@ const meta = {
         },
       },
     },
+    target: {
+      label: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+    },
+    target_date: {
+      label: {
+        en: "Target date",
+        de: "Zieldatum",
+        es: "Fecha objetivo",
+        fr: "Date cible",
+      },
+    },
   },
 };
 
@@ -210,6 +221,13 @@ const meta = {
  * job — the sandbox has no locale data and no timezone.
  */
 const strings = {
+  target: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+  reached: { en: "Reached", de: "Erreicht", es: "Alcanzado", fr: "Atteint" },
+  missed: { en: "Missed", de: "Verfehlt", es: "No alcanzado", fr: "Manqué" },
+  onTrack: { en: "On track", de: "Im Plan", es: "En camino", fr: "En bonne voie" },
+  behind: { en: "Behind", de: "Im Rückstand", es: "Con retraso", fr: "En retard" },
+  // "{n}" is how far there is still to go.
+  toGo: { en: "{n} to go", de: "noch {n}", es: "faltan {n}", fr: "encore {n}" },
   noRows: {
     en: "Nothing to show",
     de: "Nichts anzuzeigen",
@@ -224,7 +242,82 @@ const strings = {
   },
   other: { en: "Other", de: "Sonstige", es: "Otros", fr: "Autres" },
   series: { en: "Series", de: "Reihe", es: "Serie", fr: "Série" },
+  blank: { en: "None", de: "Keine", es: "Ninguno", fr: "Aucun" },
 };
+
+/** One day, in milliseconds. */
+const DAY = 86400000;
+
+/**
+ * The target the options set, and the moment it is due: the end of its day.
+ * `null` without a target.
+ */
+function targetOf(config) {
+  const value = config.target === undefined || config.target === "" ? NaN : Number(config.target);
+  if (!Number.isFinite(value)) return null;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(config.target_date || "");
+  const due = day ? Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])) + DAY - 1 : null;
+  return { value: value, due: due };
+}
+
+/**
+ * Where a number stands against its target.
+ *
+ * Reached once it gets there, and missed once the day has passed without it.
+ * Before then, a straight line through the points drawn so far says whether it
+ * gets there by the day: on track, or behind. With no day, or too few points to
+ * draw a line through, it is only so far to go. `down` is a target to come down
+ * to rather than to climb to.
+ *
+ * @param {{t: number, y: number}[]} points earliest first, `t` in epoch ms
+ */
+function pace(points, current, target, due, down) {
+  if (down ? current <= target : current >= target) return "reached";
+  if (due !== null && due < Date.now()) return "missed";
+  if (due === null || points.length < 2) return "toGo";
+  // In days from the first point, which keeps the sums well inside a double.
+  const origin = points[0].t;
+  const days = points.map((point) => (point.t - origin) / DAY);
+  let meanT = 0;
+  let meanY = 0;
+  for (let index = 0; index < points.length; index++) {
+    meanT += days[index];
+    meanY += points[index].y;
+  }
+  meanT /= points.length;
+  meanY /= points.length;
+  let across = 0;
+  let spread = 0;
+  for (let index = 0; index < points.length; index++) {
+    across += (days[index] - meanT) * (points[index].y - meanY);
+    spread += (days[index] - meanT) * (days[index] - meanT);
+  }
+  if (spread === 0) return "toGo";
+  const lands = meanY + (across / spread) * ((due - origin) / DAY - meanT);
+  return (down ? lands <= target : lands >= target) ? "onTrack" : "behind";
+}
+
+/** The tone each standing is drawn in. "To go" keeps the widget's own. */
+const PACE_TONES = {
+  reached: "positive",
+  onTrack: "positive",
+  behind: "warning",
+  missed: "negative",
+};
+
+/** A number as plain text: whole, or to two places, or to two significant
+ *  digits where two places would read a small number as nothing. */
+function plain(value) {
+  if (Number.isInteger(value)) return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded !== 0 ? rounded : Number(value.toPrecision(2)));
+}
+
+/** A standing in words: "On track", or how far there is still to go. */
+function standing(say, state, current, target) {
+  if (state !== "toGo") return say(state);
+  return say("toGo").replace("{n}", plain(Math.abs(target - current)));
+}
 
 /**
  * Built-in: chart — a series drawn as bars, lines, an area, or slices.
@@ -419,18 +512,155 @@ function render(data, config, context) {
     return String(row[labelAt]);
   };
 
-  const series = valueColumns.slice(0, 12).map((index) => ({
-    name: nameOf(index),
-    points: rows.map((row, rowIndex) => ({
-      x: labelOf(row, rowIndex),
-      y: typeof row[index] === "number" ? row[index] : 0,
-    })),
-  }));
+  /** The most series a chart draws. */
+  const MAX_SERIES = 12;
 
-  return chart(
-    arrangeAll(series),
-    labelAt !== undefined && columns[labelAt] ? columns[labelAt].name : undefined,
-    undefined,
-    xTime
+  /** Where a split's folded groups collect: a key of its own, so it is never
+   *  mistaken for a split value that reads "Other". */
+  const FOLDED = {};
+
+  /**
+   * One series per value of the split column, for each measure: points per
+   * sprint, one series per status. Rows that share a label and a split value
+   * add up.
+   *
+   * A group is keyed by the split value itself, so a blank and a value that
+   * reads like the blank's label stay two series; the name is only what the
+   * legend says.
+   *
+   * Past the ceiling, the groups kept are the largest by the first measure,
+   * the same ones for every measure, and each measure folds the rest into an
+   * "Other" of its own, so a count and a sum of hours are never added up.
+   *
+   * Every series carries every category, at zero where it has no rows: a
+   * count of nothing is zero, and the categories are ordered by the first
+   * series that has them, so a gap would move a category that only a later
+   * series has to the end.
+   *
+   * With no split column every row is in one group, which is how a pie adds
+   * up the rows that share a label.
+   */
+  const groupedSeries = (splitAt) => {
+    const measures = valueColumns.slice(0, MAX_SERIES);
+    const categories = new Map();
+    const groups = new Map();
+    const add = (points, x, y) => {
+      const key = String(x);
+      const point = points.get(key);
+      if (point) point.y += y;
+      else points.set(key, { x: x, y: y });
+    };
+    const group = (value) => ({ value: value, total: 0, points: measures.map(() => new Map()) });
+
+    rows.forEach((row, rowIndex) => {
+      const x = labelOf(row, rowIndex);
+      if (!categories.has(String(x))) categories.set(String(x), x);
+      const value = splitAt === undefined ? undefined : (row[splitAt] ?? null);
+      if (!groups.has(value)) groups.set(value, group(value));
+      const into = groups.get(value);
+      measures.forEach((index, at) => {
+        const y = typeof row[index] === "number" ? row[index] : 0;
+        add(into.points[at], x, y);
+        if (at === 0) into.total += y;
+      });
+    });
+
+    let kept = [...groups.values()];
+    const perMeasure = Math.max(1, Math.floor(MAX_SERIES / measures.length));
+    if (kept.length > perMeasure) {
+      const largest = new Set(
+        kept
+          .slice()
+          .sort((a, b) => b.total - a.total)
+          .slice(0, perMeasure - 1)
+      );
+      const folded = group(FOLDED);
+      for (const held of kept) {
+        if (largest.has(held)) continue;
+        held.points.forEach((points, at) => {
+          for (const point of points.values()) add(folded.points[at], point.x, point.y);
+        });
+      }
+      kept = kept.filter((held) => largest.has(held)).concat([folded]);
+    }
+
+    const groupName = (value) =>
+      value === FOLDED ? OTHER_LABEL : value === null ? say("blank") : String(value);
+    const nameFor = (value, index) => {
+      if (splitAt === undefined) return nameOf(index);
+      if (measures.length === 1) return groupName(value);
+      return `${groupName(value)} · ${nameOf(index)}`;
+    };
+    const series = [];
+    for (const held of kept) {
+      measures.forEach((index, at) => {
+        series.push({
+          name: nameFor(held.value, index),
+          points: [...categories].map(([key, x]) => held.points[at].get(key) || { x: x, y: 0 }),
+        });
+      });
+    }
+    return series;
+  };
+
+  // A pie is one series, parts of a whole, and draws only that one: split, it
+  // would show one group's numbers as the whole. So it does not split, and the
+  // rows that share a label add up into one slice.
+  const splitAt = (slots.series || [])[0];
+  const series =
+    splitAt !== undefined
+      ? groupedSeries(mark === "pie" ? undefined : splitAt)
+      : valueColumns.slice(0, MAX_SERIES).map((index) => ({
+          name: nameOf(index),
+          points: rows.map((row, rowIndex) => ({
+            x: labelOf(row, rowIndex),
+            y: typeof row[index] === "number" ? row[index] : 0,
+          })),
+        }));
+
+  /**
+   * The target as a line across the chart, labelled with how the data is doing.
+   *
+   * The standing is read off one measure over time: the only series, or the
+   * stack's total. Side-by-side series, or categories rather than moments, have
+   * no one line to read it from, so there the target is only marked. A target
+   * below where the line starts is one to come down to.
+   *
+   * It is read from every point, before the category ceiling folds any of them
+   * into "Other": the latest moment is the one a target is measured at.
+   */
+  const withTarget = (drawn, measured) => {
+    const goal = targetOf(config);
+    if (!goal || mark === "pie") return drawn;
+    let label = `${say("target")} ${plain(goal.value)}`;
+    if (xTime && (measured.length === 1 || stacked)) {
+      const totals = new Map();
+      for (const each of measured) {
+        for (const point of each.points) {
+          if (typeof point.x !== "number") continue;
+          totals.set(point.x, (totals.get(point.x) || 0) + point.y);
+        }
+      }
+      const points = [...totals].map(([t, y]) => ({ t: t, y: y })).sort((a, b) => a.t - b.t);
+      if (points.length) {
+        const current = points[points.length - 1].y;
+        const down = goal.value < points[0].y;
+        const state = pace(points, current, goal.value, goal.due, down);
+        label += ` · ${standing(say, state, current, goal.value)}`;
+      }
+    }
+    drawn.scene.target = goal.value;
+    drawn.scene.targetLabel = label;
+    return drawn;
+  };
+
+  return withTarget(
+    chart(
+      arrangeAll(series),
+      labelAt !== undefined && columns[labelAt] ? columns[labelAt].name : undefined,
+      undefined,
+      xTime
+    ),
+    series
   );
 }

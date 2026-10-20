@@ -1,8 +1,8 @@
-"""Minting a plug-in's embed handoff.
+"""Minting a plug-in's page handoff.
 
-An embed is a cross-origin iframe, so the token that bootstraps it crosses a
+A page is a cross-origin iframe, so the token that bootstraps it crosses a
 trust boundary: the plug-in verifies it against the published public half of the
-plug-in platform's own keypair. That is why it is RS256 with a dedicated key, why
+plug-in platform's own keypair. That is why it is EdDSA with a dedicated key, why
 the audience names one registration, and why the lifetime is a minute.
 
 **Authorization is settled here, before a token exists.** The member's real
@@ -15,7 +15,7 @@ the placement allows; at the community level, and for a surface marked
 that is there. A plug-in never has to make that decision, and never sees a request
 from somebody who failed it.
 
-**The token carries the minimum.** Guild, install, surface, who is opening it,
+**The token carries the minimum.** Guild and its status, install, surface, who is opening it,
 whether they administer the community, and — where the surface was opened
 inside an initiative — which one and whether they moderate it. Nothing about
 their name or their address, and no other role. What a plug-in may do with a person is a function of what the
@@ -24,8 +24,10 @@ claim set.
 
 The claims a plug-in receives:
 
-* ``sub`` — the member, by the reference this install knows them by;
-* ``community_ref`` — the community, by the reference this install knows it by;
+* ``sub`` — the member, by the reference this plug-in knows them by in the
+  community, which a reinstall keeps;
+* ``community_ref`` — the community, by the reference this plug-in knows it by;
+* ``community_status`` — where the community stands now;
 * ``plugin_install_id`` and ``surface_id`` — which install and which surface;
 * ``community_admin`` — ``true`` when the viewer administers the community, read
   from the same standing that decided whether they may open the surface. A
@@ -68,12 +70,13 @@ from app.core.security import (
     PluginPlatformSigningNotConfiguredError,
     plugin_platform_audience,
     resolve_plugin_platform_signing_material,
-    sign_rs256,
+    sign_eddsa,
 )
 from app.models.tenant.guild_plugin import GuildPlugin
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.marketplace import plugin_refs, registration_lookup
+from app.services.marketplace.community_status import community_status
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.tenant import plugin_age
 from app.services.tenant.plugin_age import AgeViewer
@@ -86,38 +89,38 @@ from app.services.tenant.guild_plugins import (
 )
 
 __all__ = [
-    "PLUGIN_EMBED_HANDOFF_LIFETIME",
-    "EmbedHandoff",
-    "embed_by_id",
-    "mint_embed_handoff",
+    "PLUGIN_PAGE_HANDOFF_LIFETIME",
+    "PageHandoff",
+    "page_by_id",
+    "mint_page_handoff",
     "require_live_registration",
 ]
 
 #: Single source for the handoff's lifetime, so the response advertises exactly
 #: what the ``exp`` claim encodes. Short by design: the handoff is spent within a
 #: minute, and the long-lived session belongs to the plug-in, not to this token.
-PLUGIN_EMBED_HANDOFF_LIFETIME = timedelta(seconds=60)
+PLUGIN_PAGE_HANDOFF_LIFETIME = timedelta(seconds=60)
 
 
 @dataclass(frozen=True)
-class EmbedHandoff:
+class PageHandoff:
     """A minted handoff plus everything the browser needs to use it."""
 
     token: str
     expires_in_seconds: int
     #: Where the iframe points: the registration's browser base joined to the
     #: path the manifest declared for this surface.
-    embed_url: str
+    page_url: str
     #: The origins the SPA accepts messages from, and posts the token to.
     allowed_origins: tuple[str, ...]
     audience: str
     surface_id: str
 
 
-def embed_by_id(
+def page_by_id(
     definition: dict[str, Any] | None, surface_id: str, *, scope: str
 ) -> Optional[dict[str, Any]]:
-    """One declared embed surface from a pinned definition, if it renders here.
+    """One declared page from a pinned definition, if it renders here.
 
     ``scope`` is where the surface is being opened from — the route's to state,
     never the caller's. A surface that never asked to render there is not a
@@ -125,24 +128,25 @@ def embed_by_id(
     a surface could say where it belongs carry no ``scopes``, and every one of
     those is community-wide.
     """
-    for embed in declared_surfaces(definition):
-        if embed.get("id") != surface_id:
+    for page in declared_surfaces(definition):
+        if page.get("id") != surface_id:
             continue
-        return embed if surface_renders_in(embed, scope) else None
+        return page if surface_renders_in(page, scope) else None
     return None
 
 
-def _refusal(embed: dict[str, Any], *, initiative_id: int | None) -> str:
+def _refusal(page: dict[str, Any], *, initiative_id: int | None) -> str:
     """The code a refused viewer is given: which audience they missed."""
-    if initiative_id is None or is_admin_only(embed):
+    if initiative_id is None or is_admin_only(page):
         return GuildPluginMessages.SURFACE_ADMIN_ONLY
     return GuildPluginMessages.SURFACE_ROLE_NOT_ALLOWED
 
 
 async def require_live_registration(
-    plugin: GuildPlugin,
+    plugin: GuildPlugin, guild_id: int
 ) -> registration_lookup.RegistrationSnapshot:
-    """The registration behind this install, or a refusal.
+    """The registration behind this install in community ``guild_id``, or a
+    refusal.
 
     Both halves of "not available" answer the same way: a plug-in service this
     deployment never wired up, and one whose registration the operator turned
@@ -151,7 +155,7 @@ async def require_live_registration(
     registration = await registration_lookup.registration_for_definition(
         plugin.definition, listing_uid=plugin.listing_uid
     )
-    if registration is None or not registration.live:
+    if registration is None or not registration.live_in(guild_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=GuildPluginMessages.SERVICE_NOT_REGISTERED,
@@ -159,7 +163,7 @@ async def require_live_registration(
     return registration
 
 
-async def mint_embed_handoff(
+async def mint_page_handoff(
     session: AsyncSession,
     plugin: GuildPlugin,
     *,
@@ -167,7 +171,7 @@ async def mint_embed_handoff(
     context: GuildContext,
     initiative_id: int | None,
     viewer: AgeViewer,
-) -> EmbedHandoff:
+) -> PageHandoff:
     """Authorize the caller for one surface, then mint its handoff.
 
     ``initiative_id`` is where the surface was opened, and it is the only thing
@@ -190,14 +194,14 @@ async def mint_embed_handoff(
     # Two ways there is no surface here: the plug-in never declared one for this
     # scope, or the guild placed its initiative surfaces somewhere else. Same
     # answer, because from this route both mean the same thing.
-    embed = embed_by_id(plugin.definition, surface_id, scope=scope)
-    if embed is None:
+    page = page_by_id(plugin.definition, surface_id, scope=scope)
+    if page is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=GuildPluginMessages.SURFACE_NOT_FOUND,
         )
     access = surface_access(
-        embed,
+        page,
         initiative_id=initiative_id,
         placement_role_ids=(
             None
@@ -221,10 +225,10 @@ async def mint_embed_handoff(
     if access is SurfaceAccess.refused:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=_refusal(embed, initiative_id=initiative_id),
+            detail=_refusal(page, initiative_id=initiative_id),
         )
 
-    registration = await require_live_registration(plugin)
+    registration = await require_live_registration(plugin, context.guild_id)
 
     try:
         key, kid = resolve_plugin_platform_signing_material()
@@ -237,14 +241,22 @@ async def mint_embed_handoff(
             detail=PluginServiceMessages.SIGNING_NOT_CONFIGURED,
         ) from exc
 
-    subject = await plugin_refs.ensure_plugin_ref(
-        guild_id=routed_guild_id(session),
-        plugin_install_id=plugin.id,
-        user_id=context.user_id,
-    )
-    guild_ref = await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=routed_guild_id(session), plugin_install_id=plugin.id
-    )
+    guild_id = routed_guild_id(session)
+    try:
+        subject = await plugin_refs.ensure_plugin_ref(
+            guild_id=guild_id,
+            public_id=registration.public_id,
+            user_id=context.user_id,
+        )
+        guild_ref = await plugin_refs.ensure_plugin_guild_ref(
+            guild_id=guild_id, public_id=registration.public_id
+        )
+    except plugin_refs.PluginNameRefused as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ERASE_PENDING,
+        ) from exc
+    standing = await community_status(guild_id)
 
     now = datetime.now(timezone.utc)
     audience = plugin_platform_audience(registration.public_id)
@@ -252,18 +264,21 @@ async def mint_embed_handoff(
         # One-shot marker: the plug-in blocklists a handoff once it has exchanged
         # it, so a captured token is not replayable inside its short window.
         "jti": str(uuid.uuid4()),
-        # The reference this install knows the member by (OIDC Core §8.1
-        # pairwise), never the row id: it is stable for this install and
-        # unrelated to what any other sector holds for the same person.
+        # The reference this plug-in knows the member by in this community
+        # (OIDC Core §8.1 pairwise), never the row id: it is stable for the
+        # plug-in here, across a reinstall, and unrelated to what any other
+        # sector holds for the same person.
         "sub": subject,
         "aud": audience,
         "iss": TOKEN_ISSUER,
         "iat": int(now.timestamp()),
-        "exp": now + PLUGIN_EMBED_HANDOFF_LIFETIME,
+        "exp": now + PLUGIN_PAGE_HANDOFF_LIFETIME,
         # The guild by reference, for the same reason as the member above: an
         # index names a row to us, not an entity to somebody else.
         "community_ref": guild_ref,
         "plugin_install_id": plugin.id,
+        # Where the community stands now, which every token carries.
+        "community_status": standing,
         "surface_id": surface_id,
         # The viewer's community role, from the standing the access decision
         # above was measured on, so a plug-in need not ask for it separately.
@@ -277,12 +292,12 @@ async def mint_embed_handoff(
             initiative_id in context.manager_initiatives
             and initiative_id in context.override_initiatives
         )
-    token = sign_rs256(payload, key, kid, typ=PLUGIN_HANDOFF_TOKEN_TYPE)
+    token = sign_eddsa(payload, key, kid, typ=PLUGIN_HANDOFF_TOKEN_TYPE)
 
-    return EmbedHandoff(
+    return PageHandoff(
         token=token,
-        expires_in_seconds=int(PLUGIN_EMBED_HANDOFF_LIFETIME.total_seconds()),
-        embed_url=f"{registration.browser_base}{embed.get('path') or ''}",
+        expires_in_seconds=int(PLUGIN_PAGE_HANDOFF_LIFETIME.total_seconds()),
+        page_url=f"{registration.browser_base}{page.get('path') or ''}",
         allowed_origins=registration.allowed_origins,
         audience=audience,
         surface_id=surface_id,

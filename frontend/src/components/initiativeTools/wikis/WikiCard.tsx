@@ -37,7 +37,8 @@ export const WikiCard = ({ wiki, className }: WikiCardProps) => {
         className
       )}
     >
-      <div className="flex items-start gap-3 p-4">
+      {/* Short of the bookmark the list puts on the card's corner. */}
+      <div className="flex items-start gap-3 p-4 pr-14">
         <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-muted-foreground transition group-hover:text-foreground">
           <BookText className="size-5" aria-hidden />
         </span>

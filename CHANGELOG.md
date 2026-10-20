@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-10-20
+
+### Added
+
+- **Home.** The page you land on after signing in is a page of widgets you arrange with **Customize**: Focus, My tasks, your calendar, recent items and activity, your communities, progress, Bookmarks, and a clock and timer. Keep several views as tabs, from a blank page or a ready-made one. My Tasks is now Home in the sidebar, and shows what My Tasks did until you change it. Server owners can publish ready-made views as `home_layout` listings.
+- **The layout editor.** **Edit layouts** (a project's settings › Layouts) lays out a project's Table, Board, Calendar and task page full screen, with its own tasks: drag, hide or add fields, properties, sections and plug-in parts, and check phone, tablet and desktop widths. Calendars, notices, counter groups, galleries and queues lay out their items the same way. Needs a tablet-sized screen or larger.
+- **Group a table or board by any field**: date window, status, priority, assignees, tags, or a select, person or checkbox property. Drag a task between groups to change that field. Choose in **Edit layouts** what each view offers to group by and starts grouped by.
+- **Column limits on a board.** Give a column a limit in **Edit layouts**; once it is full, nobody can add or move a task into it until one leaves.
+- **Presets on lists.** A project's Table, Board and Calendar, and an initiative's calendar, offer filter presets (Incomplete, Unassigned, Mine), with a link to share.
+- **Take a task from the list.** A table's **Assignees** column has **Assign to me**, and a board card's menu assigns or unassigns you or moves the task.
+- **Subscribe to anything.** Subscribe to a tool or anything in one with its bell, and you're notified when somebody else changes, comments on or reacts to it. You're subscribed to what you made and what you're assigned to or going to.
+- **Notification settings by how something involves you.** My Settings › Notifications has nine rows in place of eighteen, and each community gets the first four, and **Mute**, as switches of its own. Your choices carry over.
+- **Bookmark any tool**, listed under the sidebar's **Bookmarks**. Starred projects carry over.
+- **Share into Initiative from your phone.** Share text, a link, pictures or files from another app into a task, a document, a file or a post.
+- **Dashboards:** give a chart, stat or progress bar a **Target** and see whether it is on track; show a **Running count** or **Running total** for a burn-up; split a chart by a second column; and build tiles from an initiative's **Property values**, such as points per sprint. The SQL tab takes window functions.
+- **Coming up** on a community's home page lists the next seven days of events, tasks, project dates and poll closings.
+- **Live task embeds.** Pick **Embed** from the `/` menu to show a task's details, kept current, or a filtered list, table or count of tasks.
+- **Subscribe to a calendar** from Google Calendar, Apple Calendar or Outlook with **Subscribe**. Each link shows only what you can see.
+- **Guests.** Once a server owner turns guests on under Settings › Community, a community's admins invite guests for a set number of days from its **Guests** tab. A guest takes no seat.
+- **Moderation tools.** A shield menu on comments, posts, pictures, wiki pages, queue items, events and tasks lets moderators remove something with a reason, lock comments, clear reactions, warn the author, or hold it for the platform. The moderation page has a **Log** tab.
+- **Help from the app.** Ask for help about your account or a community, report a security problem from User settings › Security, send feedback from the account menu, and appeal a suspension from the sign-in screen.
+- **For platform staff:** a **Communities** list in the Operator dashboard, a **Moderate** access level that reads everything and changes nothing, case notifications, and more account actions on an account's Manage panel.
+- **Search ranks what more members use a little higher.** Turn it off for a community on its Security page, for the server under Settings › Community, or for your own activity under My Settings › Privacy.
+- **More security emails.** New recovery codes and a newly linked sign-in provider each send an email with **This wasn't me**.
+- **Native server packages** for Debian 13 and Alpine 3.24, with systemd and OpenRC services, keeping your configuration and uploads across upgrades.
+- **Plug-ins on items.** Plug-ins can add fields, sections and actions to tasks, events, notices and queue items, and a community's admins choose which roles see them in each initiative. A field can hold a list, with states such as open or merged, and a plug-in can declare settings the community's superadmin changes.
+- **Plug-ins without code of their own** can keep values on the items they read, set them from their vendor's deliveries, from actions and on a schedule, and ask the person running an action for what it needs.
+- **Remove a plug-in and erase its data.** A community's admins can have a plug-in delete what it holds about the community as they remove it.
+- **API:** `PUT /properties/{target}/{id}` with `merge` puts options on and takes them off one multi-select value, and each GitHub release carries the `openapi.json` of the image it ships.
+
+### Changed
+
+- **Fields save as you change them.** Tasks and events have no Save button, and an event's settings page is gone. Descriptions keep a draft and show you someone else's edit before overwriting it.
+- **Layouts decide what boards and tables show, for everyone.** The board's **Fields** and the table's **Columns** menus are gone; set them in **Edit layouts**. Adding a task, event, queue item or counter shows its layout.
+- **Your view of every list follows you** to any device: filters, sort, grouping, columns and view. A project's saved filter sets became presets.
+- **A community's home page leads with activity**: what changed this week, in place of the tool circles and table. Browse by kind in My Tools.
+- **My Messages lists conversations newest first**, in one list. Starring people is gone: search finds anybody.
+- **A tag's page lists everything as tables.**
+- **Assistants over MCP** get smaller answers and a smaller tool list, can list your communities, and get your unfinished tasks unless they ask for more. Tools no longer take a `session_token` argument.
+- **Ready-made dashboards use the new charts.** Dashboards installed from them offer the update.
+- **A plug-in your server provides follows your community's choices** once installed: the community's admins decide where it appears and what it may do.
+- **A GitHub organization connects to one community.** To let several communities share one, a server's owner turns on **Share installations between communities** for the plug-in under **Platform settings › Integrations**. Organizations already shared keep sharing.
+- **Members' AI keys and plug-in sign-ins are theirs alone.** The superadmin seat sees who connected, and can disconnect them.
+- **Every way you sign in is under Security**, your password beside your passkeys and two-factor authentication.
+- **The phone and desktop apps keep your encrypted messages when you sign out**, each account's apart.
+- **The iPhone and iPad app needs iOS 16 or later.**
+- **A setting that stops the server starting is named**, without printing its value.
+- **Escalate is now Send to the platform**, and reports of something illegal or "Other" need a description.
+- **For plug-in authors:** this release serves plug-in API 8.0, so a plug-in installs or updates only from a release built with initiative-plugin-sdk 8.0, with Ed25519 keys. Installed plug-ins keep working.
+- Smart chips, links and embeds update live; deleting your comment keeps its replies; pictures in documents, wikis and posts open full size; the wiki editor keeps its toolbar in view; layouts fit foldables and tablets; large boards, dates and the links graph are faster; and backups keep each initiative's join policy.
+- **Breaking changes**
+  - **`BEHIND_PROXY=true` reads forwarded headers only from a proxy on this machine or its local network.** A proxy on the same host, in your compose file or on your LAN, a Cloudflare Tunnel, and Cloudflare's proxied DNS in front of your own proxy all need nothing more. A proxy that reaches Initiative over a public address goes in `FORWARDED_ALLOW_IPS`; the log names it.
+  - **Server logs are JSON**, one object per line on standard error, request lines included; standard output carries the audit stream alone. Audit lines name people by id only.
+  - **Only moderators remove other people's comments**, and invite links are shown once, when made.
+  - **API:** opens, bookmarks and subscriptions are one API, `/personal-items`, replacing `/recents/`, `GET /projects/favorites` and `POST`/`DELETE /projects/{id}/favorite` (and the MCP `favorite_projects` tool); projects no longer carry `default_view_mode`, `is_favorited` or `last_viewed_at`. `GET /projects/{id}/activity` and `/me/contacts/favorites` are removed. Access grants name people as `user` and `approved_by` in place of their emails. `POST /me/tickets` and its replies take `multipart/form-data`. The full list is in `backend/api-breaking-changes.md`.
+
+### Fixed
+
+- **Plug-in actions** ask the person for what they need, and plug-in lists and sections show on items.
+- **A key limited to one community lists only that community** in `GET /communities/`.
+- **A registry refresh no longer skips the GitHub plug-in** when it brings a version this server already has.
+- **Signing in no longer greets an established account as a new one** when your communities fail to load the first time.
+- **Webhooks arrive in order after a refusal.**
+- **Two-factor authentication works for accounts without a password.**
+- **Switching files no longer blanks the one you open.**
+- **Privacy:** your recent items, bookmarks and project order are yours alone, leaving a community forgets your recent items there, and only you can answer, mark read, edit or react as yourself.
+- **Database URLs with percent-encoded passwords or socket paths** work for start-up migrations.
+- Dashboard tiles over a plug-in's rows count `FILTER` and `DISTINCT` correctly; assignment and reaction emails group again after you mute a community; a dialog no longer opens behind its own backdrop; the task tables keep the project path readable on narrow screens; and icons sit the same distance from their labels everywhere.
+- Pasting a link no longer doubles its `https://`; `#` no longer briefly says nothing matches; uncaptioned pictures show on a wiki page; an invite with no use limit works past the first person; task embeds survive a deleted tag; a project's view no longer carries over to another community's; smart chips work with extensions that strip tracking parameters; a wiki whose home page was deleted opens; dragging a repeating event asks which dates it moves; repeats keep their weekdays when a template shifts dates; search leaves out archived tools; a gallery without a cover shows its newest pictures; and signing in as someone else no longer shows the last account's data.
+- **Encrypted messages and devices:** a prompt for a device that is gone can be cleared, setup recovers after a reload, devices are named in words, and the phone and desktop apps show as one device each.
+
 ## [0.75.3] - 2026-10-08
 
 ### Added

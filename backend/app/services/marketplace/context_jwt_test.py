@@ -19,21 +19,21 @@ by comparing fields — that is what a plug-in will do, and it is the only asser
 that fails if the encoding is subtly wrong.
 """
 
-import base64
 import json
 from datetime import timedelta
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+from jwt.algorithms import OKPAlgorithm
 
 from app.core.config import settings
 from app.core.security import PluginPlatformSigningNotConfiguredError
 from app.services.marketplace import context_jwt
 
 
-_keypair = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_keypair = ed25519.Ed25519PrivateKey.generate()
 _PRIVATE_PEM = _keypair.private_bytes(
     serialization.Encoding.PEM,
     serialization.PrivateFormat.PKCS8,
@@ -62,6 +62,7 @@ def _mint(**overrides) -> str:
             "guild_ref": "gplu_testguild7",
             "plugin_install_id": 3,
             "scope": "endpoint",
+            "community_status": "active",
             **overrides,
         }
     )
@@ -72,7 +73,7 @@ def _claims(token: str) -> dict:
     return jwt.decode(
         token,
         _keypair.public_key(),
-        algorithms=["RS256"],
+        algorithms=["EdDSA"],
         audience=f"initiative-plugin:{PUBLIC_ID}",
     )
 
@@ -94,7 +95,7 @@ class TestClaims:
             jwt.decode(
                 token,
                 _keypair.public_key(),
-                algorithms=["RS256"],
+                algorithms=["EdDSA"],
                 audience="initiative-plugin:other.plugin",
             )
 
@@ -124,6 +125,7 @@ class TestClaims:
             "exp",
             "community_ref",
             "plugin_install_id",
+            "community_status",
             "scope",
             "endpoint_id",
             "connection_refs",
@@ -158,6 +160,16 @@ class TestClaims:
     def test_the_scope_vocabulary_is_what_it_declares(self, scope):
         assert _claims(_mint(scope=scope))["scope"] == scope
 
+    @pytest.mark.parametrize(
+        "standing", ["active", "read_only", "suspended", "on_hold", "deleted"]
+    )
+    def test_it_says_where_the_community_stands(self, standing):
+        assert _claims(_mint(community_status=standing))["community_status"] == standing
+
+    def test_a_status_outside_the_five_is_refused(self):
+        with pytest.raises(context_jwt.ContextTokenError):
+            _mint(community_status="paused")
+
     def test_an_unknown_scope_is_refused(self):
         with pytest.raises(context_jwt.ContextTokenError):
             _mint(scope="admin")
@@ -173,15 +185,11 @@ class TestJwks:
         document = context_jwt.context_jwks()
         entry = document["keys"][0]
 
-        def _int(value: str) -> int:
-            padded = value + "=" * (-len(value) % 4)
-            return int.from_bytes(base64.urlsafe_b64decode(padded), "big")
-
-        rebuilt = rsa.RSAPublicNumbers(_int(entry["e"]), _int(entry["n"])).public_key()
+        rebuilt = OKPAlgorithm.from_jwk(entry)
         claims = jwt.decode(
             _mint(),
             rebuilt,
-            algorithms=["RS256"],
+            algorithms=["EdDSA"],
             audience=f"initiative-plugin:{PUBLIC_ID}",
         )
         assert claims["community_ref"] == "gplu_testguild7"
@@ -189,8 +197,9 @@ class TestJwks:
     def test_it_publishes_the_kid_the_header_carries(self):
         entry = context_jwt.context_jwks()["keys"][0]
         assert entry["kid"] == KEY_ID
-        assert entry["kty"] == "RSA"
-        assert entry["alg"] == "RS256"
+        assert entry["kty"] == "OKP"
+        assert entry["crv"] == "Ed25519"
+        assert entry["alg"] == "EdDSA"
         assert entry["use"] == "sig"
 
     def test_it_publishes_no_private_material(self):
@@ -206,11 +215,11 @@ class TestJwks:
         with pytest.raises(PluginPlatformSigningNotConfiguredError):
             context_jwt.context_jwks()
 
-    def test_a_key_that_is_not_rsa_is_reported_rather_than_published(self, monkeypatch):
-        from cryptography.hazmat.primitives.asymmetric import ed25519
-
+    def test_a_key_that_is_not_ed25519_is_reported_rather_than_published(
+        self, monkeypatch
+    ):
         pem = (
-            ed25519.Ed25519PrivateKey.generate()
+            rsa.generate_private_key(public_exponent=65537, key_size=2048)
             .private_bytes(
                 serialization.Encoding.PEM,
                 serialization.PrivateFormat.PKCS8,

@@ -48,7 +48,7 @@ from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.marketplace import plugin_data
 from app.services.marketplace.plugin_data import PluginDataError, CallingPlugin
-from app.services.marketplace.plugin_refs import ensure_plugin_ref
+from app.services.marketplace.plugin_refs import PluginNameRefused, ensure_plugin_ref
 from app.services.marketplace.registration_lookup import RegistrationSnapshot
 from app.services.marketplace.service_plugins import is_admin_only
 from app.services.tenant.plugin_channels import owns_install
@@ -115,21 +115,16 @@ def _callable_endpoint(
     definition: Mapping[str, Any] | None, endpoint_id: str
 ) -> Optional[dict[str, Any]]:
     """One endpoint of the pinned definition a caller may invoke, or None."""
-    declared = (definition or {}).get("endpoints")
-    for endpoint in declared if isinstance(declared, list) else []:
-        if (
-            isinstance(endpoint, dict)
-            and endpoint.get("id") == endpoint_id
-            and endpoint.get("direction") in _CALLABLE_DIRECTIONS
-        ):
-            return endpoint
-    return None
+    return plugin_data.endpoint_by_id(
+        definition, endpoint_id, directions=_CALLABLE_DIRECTIONS
+    )
 
 
-async def _target_registration(public_id: str) -> RegistrationSnapshot:
-    """The target's registration, live, or ``target_not_installed``."""
+async def _target_registration(public_id: str, guild_id: int) -> RegistrationSnapshot:
+    """The target's registration, live in community ``guild_id``, or
+    ``target_not_installed``."""
     try:
-        return await plugin_data._load_registration(public_id)
+        return await plugin_data._load_registration(public_id, guild_id=guild_id)
     except PluginDataError as exc:
         raise _refuse(PluginHubMessages.TARGET_NOT_INSTALLED, 404) from exc
 
@@ -205,7 +200,7 @@ async def call_plugin(
         if issuable is None or scope not in issuable:
             raise _refuse(PluginHubMessages.INSUFFICIENT_SCOPE, 403)
 
-        registration = await _target_registration(target_public_id)
+        registration = await _target_registration(target_public_id, caller.guild_id)
         target = (
             (
                 await session.exec(
@@ -264,17 +259,19 @@ async def call_plugin(
         clear_rls_context(session)
         await session.rollback()
 
-    target_id = int(target.id or 0)
     member_user_id = caller.member_user_id
-    member_ref = (
-        await ensure_plugin_ref(
-            guild_id=caller.guild_id,
-            plugin_install_id=target_id,
-            user_id=member_user_id,
+    try:
+        member_ref = (
+            await ensure_plugin_ref(
+                guild_id=caller.guild_id,
+                public_id=registration.public_id,
+                user_id=member_user_id,
+            )
+            if member_user_id is not None
+            else None
         )
-        if member_user_id is not None
-        else None
-    )
+    except PluginNameRefused as exc:
+        raise _refuse(PluginHubMessages.TARGET_NOT_INSTALLED, 404) from exc
     calling = CallingPlugin(
         public_id=caller.client_id,
         actor=caller.actor,

@@ -8,13 +8,27 @@ edge, and nothing destructive, bulk, AI-generating, sharing, or property/tag.
 """
 
 import json
+from types import SimpleNamespace
 
+import httpx
+from fastmcp import Client
 from fastmcp.tools.base import ToolResult
-from mcp.types import TextContent
+from mcp.types import CallToolRequestParams, TextContent
 
 from app.core.tools import Tool
 from app.main import app
-from app.mcp_server import Base64FilterMiddleware, _redact_base64, build_mcp_server
+from app.mcp_descriptions import TOOL_DESCRIPTIONS, described_names
+from app.mcp_server import (
+    _FILTER_DATASETS,
+    _MCP_MAX_PAGE_SIZE,
+    _MCP_PAGE_SIZE,
+    _OPEN_TASKS,
+    ArgumentDefaultsMiddleware,
+    TrimResultMiddleware,
+    _free_form_keys,
+    _trim,
+    build_mcp_server,
+)
 
 # A tool is a "write" if its operationId begins with one of these verbs.
 _WRITE_PREFIXES = (
@@ -122,6 +136,9 @@ async def test_mcp_tools_are_curated():
         "task",
         # A task's checklist, ticked one item at a time.
         "checklist",
+        # How full each of a project's status columns is, where a move into a
+        # full one is refused.
+        "column_limits",
         "counter",
         "backlink",
         # The edges between them, which belong to no one tool.
@@ -131,6 +148,8 @@ async def test_mcp_tools_are_curated():
         "search",
         # How many of each, for every tool at once.
         "tool_counts",
+        # The caller's communities: where a session learns its community_id.
+        "list_communities",
         *(tool.value for tool in Tool),
         *(tool.plural for tool in Tool),
     )
@@ -276,45 +295,155 @@ async def test_the_tool_writes_stop_short_of_these():
     assert "update_task_status" not in writes
 
 
-def test_redact_base64_nulls_suffixed_keys_recursively():
+def test_trim_leaves_out_what_a_caller_never_acts_on():
     payload = {
         "title": "t",
+        "due_date": None,
+        "tags": [],
+        "can": {},
+        "archived": False,
+        "comment_count": 0,
         "guild": {"id": 3, "name": "g", "avatar_base64": "AAAA"},
         "assignees": [
-            {"id": 1, "email": "a@example.com", "avatar_base64": "BBBB"},
-            {"id": 2, "email": "b@example.com", "avatar_base64": None},
+            {"id": 1, "avatar_url": "https://example.com/a.png", "avatar_base64": None},
         ],
-        "count_base64_ish": "kept",  # only an exact suffix match is redacted
+        "count_base64_ish": "kept",  # only an exact suffix match is left out
+        "color": "#2563eb",
+        "icon": "circle",
+        "position": 2.5,
     }
-    redacted = _redact_base64(payload)
+    trimmed = _trim(payload)
 
-    # Keys are kept but nulled — so the structured output still satisfies a
-    # schema that declares (and may require) these fields.
-    assert redacted["guild"] == {"id": 3, "name": "g", "avatar_base64": None}
-    assert [a["avatar_base64"] for a in redacted["assignees"]] == [None, None]
-    # Non-base64 fields (including a lookalike key) keep their values.
-    assert redacted["assignees"][0]["email"] == "a@example.com"
-    assert redacted["count_base64_ish"] == "kept"
+    assert trimmed == {
+        "title": "t",
+        # A false and a zero are answers, not absences.
+        "archived": False,
+        "comment_count": 0,
+        "guild": {"id": 3, "name": "g"},
+        "assignees": [{"id": 1}],
+        "count_base64_ish": "kept",
+        # The write tools set these, so they are kept.
+        "color": "#2563eb",
+        "icon": "circle",
+        "position": 2.5,
+    }
     # Input is not mutated.
     assert payload["guild"]["avatar_base64"] == "AAAA"
+    assert payload["due_date"] is None
 
 
-async def test_base64_filter_middleware_redacts_content_and_structured():
-    payload = {"guild": {"avatar_base64": "AAAA", "name": "g"}}
-    result = ToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload))],
-        structured_content=payload,
-    )
+def test_trim_shows_a_property_s_options_once_per_result():
+    options = [{"value": "bug", "label": "Bug", "color": "#DB0000"}]
+    row = {"property_id": 2, "type": "multi_select", "options": options}
+    other = {"property_id": 5, "type": "select", "options": options}
+    payload = {
+        "items": [
+            {"id": 1, "properties": [{**row, "value": ["bug"]}]},
+            {"id": 2, "properties": [{**row, "value": []}, {**other, "value": "bug"}]},
+        ]
+    }
+    first, second = _trim(payload, frozenset({"value"}))["items"]
+
+    assert first["properties"][0]["options"] == options
+    # Seen already: the second row carries the value without the definition.
+    assert "options" not in second["properties"][0]
+    # A different property's options are its own, shown the first time.
+    assert second["properties"][1]["options"] == options
+
+
+def test_trim_keeps_another_community_s_options_under_the_same_id():
+    # Property ids are numbered per community, and ``list_my_tasks`` lists
+    # tasks from all of them: the same id can be two different properties.
+    ours = [{"value": "bug", "label": "Bug"}]
+    theirs = [{"value": "low", "label": "Low"}]
+    payload = {
+        "items": [
+            {"community_id": 1, "properties": [{"property_id": 1, "options": ours}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+            {"community_id": 2, "properties": [{"property_id": 1, "options": theirs}]},
+        ]
+    }
+    first, second, third = _trim(payload)["items"]
+
+    assert first["properties"][0]["options"] == ours
+    assert second["properties"][0]["options"] == theirs
+    # Once both have been shown, a repeat of either carries the value alone.
+    assert "options" not in third["properties"][0]
+
+
+def test_trim_passes_free_form_fields_through_verbatim():
+    content = {"type": "doc", "attrs": {"level": None}, "content": []}
+    payload = {"id": 1, "content": content, "description": None}
+
+    trimmed = _trim(payload, frozenset({"content"}))
+
+    # Inside a document a null can mean something, so it is left alone.
+    assert trimmed == {"id": 1, "content": content}
+
+
+def test_free_form_keys_are_read_off_the_response_schema():
+    schema = {
+        "type": "object",
+        "properties": {
+            "result": {"type": "array", "items": {"$ref": "#/$defs/Read"}},
+        },
+        "$defs": {
+            "Read": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "content": {"anyOf": [{"type": "object"}, {"type": "null"}]},
+                    "value": {},
+                    "owner": {"$ref": "#/$defs/Owner"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            "Owner": {"type": "object", "properties": {"name": {"type": "string"}}},
+        },
+    }
+
+    assert _free_form_keys(schema) == {"content", "value"}
+    assert _free_form_keys(None) == frozenset()
+
+
+async def test_the_server_records_each_tool_s_free_form_fields():
+    server = build_mcp_server(app)
+    (trim,) = [m for m in server.middleware if isinstance(m, TrimResultMiddleware)]
+
+    # A document's body and a dashboard's config are the thing's own, and
+    # reach the caller untouched.
+    assert "content" in trim._free_form_keys["read_file"]
+    assert "config" in trim._free_form_keys["read_dashboard"]
+    # A task has none, so all of it is trimmed.
+    assert not trim._free_form_keys["read_task"] - {"value"}
+
+
+async def test_trim_middleware_trims_the_result_and_its_text():
+    payload = {"guild": {"avatar_base64": "AAAA", "name": "g", "icon": None}}
+    result = ToolResult(structured_content=payload)
 
     async def call_next(_context):
         return result
 
-    out = await Base64FilterMiddleware().on_call_tool(None, call_next)
+    context = SimpleNamespace(message=SimpleNamespace(name="read_guild"))
+    out = await TrimResultMiddleware().on_call_tool(context, call_next)
 
-    assert out.structured_content == {"guild": {"avatar_base64": None, "name": "g"}}
-    assert json.loads(out.content[0].text) == {
-        "guild": {"avatar_base64": None, "name": "g"}
-    }
+    assert out.structured_content == {"guild": {"name": "g"}}
+    # The text a client without structured content reads says the same, and
+    # is serialized compactly.
+    assert out.content[0].text == '{"guild":{"name":"g"}}'
+
+
+async def test_trim_middleware_passes_through_non_json_text():
+    result = ToolResult(content=[TextContent(type="text", text="plain not json")])
+
+    async def call_next(_context):
+        return result
+
+    context = SimpleNamespace(message=SimpleNamespace(name="read_file"))
+    out = await TrimResultMiddleware().on_call_tool(context, call_next)
+
+    assert out.content[0].text == "plain not json"
 
 
 async def test_list_tools_expose_conditions_and_sorting_as_json_strings():
@@ -337,12 +466,243 @@ async def test_list_tools_expose_conditions_and_sorting_as_json_strings():
     assert seen, "expected at least one tool exposing conditions/sorting"
 
 
-async def test_base64_filter_middleware_passes_through_non_json_text():
-    result = ToolResult(content=[TextContent(type="text", text="plain not json")])
+async def test_tools_publish_no_output_schema():
+    """The response schema is for validating a result, not for a model to read.
 
-    async def call_next(_context):
-        return result
+    It was four fifths of ``tools/list``, and against it a trimmed result
+    would fail validation for the keys it leaves out.
+    """
+    tools = await build_mcp_server(app).list_tools()
 
-    out = await Base64FilterMiddleware().on_call_tool(None, call_next)
+    assert [t.name for t in tools if t.output_schema is not None] == []
 
-    assert out.content[0].text == "plain not json"
+
+def _schema_titles(schema, path="$"):
+    """Every ``title`` annotation in ``schema``, by where it sits."""
+    found = []
+    if isinstance(schema, dict):
+        if isinstance(schema.get("title"), str):
+            found.append(path)
+        for name, sub in (schema.get("properties") or {}).items():
+            found += _schema_titles(sub, f"{path}.{name}")
+        for name, sub in (schema.get("$defs") or {}).items():
+            found += _schema_titles(sub, f"{path}.$defs.{name}")
+        for key in ("items", "additionalProperties", "not"):
+            found += _schema_titles(schema.get(key), f"{path}.{key}")
+        for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
+            for i, sub in enumerate(schema.get(key) or ()):
+                found += _schema_titles(sub, f"{path}.{key}[{i}]")
+    return found
+
+
+async def test_tool_inputs_carry_only_what_a_caller_supplies():
+    tools = await build_mcp_server(app).list_tools()
+
+    for tool in tools:
+        params = tool.parameters or {}
+        props = params.get("properties", {})
+        # The browser's session cookie: a caller authenticates with its key.
+        assert "session_token" not in props, tool.name
+        assert "session_token" not in params.get("required", []), tool.name
+        # Titles that only restate a field's name.
+        assert _schema_titles(params) == [], tool.name
+        # Definitions nothing points at any more.
+        body = json.dumps({k: v for k, v in params.items() if k != "$defs"})
+        defs = params.get("$defs", {})
+        for name in defs:
+            reached = f'"#/$defs/{name}"' in body or any(
+                f'"#/$defs/{name}"' in json.dumps(d) for d in defs.values()
+            )
+            assert reached, f"{tool.name} keeps unused $defs/{name}"
+
+    # A *property* called ``title`` is not an annotation, and stays.
+    (create_task,) = [t for t in tools if t.name == "create_task"]
+    assert "title" in create_task.parameters["properties"]
+    assert "title" in create_task.parameters["required"]
+
+
+async def test_the_community_list_is_exposed_and_nothing_else_of_its_router():
+    """Where a session learns the ``community_id`` every other tool takes. The
+    router's other routes are one community's administration."""
+    tools = await build_mcp_server(app).list_tools()
+    community_routes = [
+        t.name for t in tools if "/communities" in getattr(t, "_route").path
+    ]
+
+    assert community_routes == ["list_communities"]
+
+
+async def test_every_tool_is_described_for_the_model_calling_it():
+    """A tool says what it answers, not only its name — which was all a tool
+    search had to go on for a third of them."""
+    names = {t.name for t in await build_mcp_server(app).list_tools()}
+
+    assert names - described_names() == set(), "tools with no MCP description"
+    # And nothing here describes a tool that is not exposed.
+    assert set(TOOL_DESCRIPTIONS) - names == set(), "descriptions for no tool"
+
+
+async def test_the_templated_list_descriptions_name_real_arguments():
+    tools = {t.name: t for t in await build_mcp_server(app).list_tools()}
+    for tool in Tool:
+        listed = tools[f"list_{tool.plural}"]
+        props = listed.parameters["properties"]
+        for name in ("initiative_id", "search", "tag_ids", "property_filters"):
+            assert name in props, f"{listed.name} has no {name}"
+
+
+async def test_descriptions_carry_no_sphinx_markup_or_class_essays():
+    tools = await build_mcp_server(app).list_tools()
+
+    for tool in tools:
+        texts = [tool.description or ""] + [
+            sub["description"]
+            for sub in _subschemas_of(tool.parameters)
+            if isinstance(sub.get("description"), str)
+        ]
+        for text in texts:
+            assert "``" not in text, f"{tool.name}: {text[:80]}"
+            assert ":func:" not in text and ":class:" not in text, tool.name
+
+    # A nested model's docstring is cut to its summary: the grant row's ran on
+    # for paragraphs about the sharing panel.
+    (create_project,) = [t for t in tools if t.name == "create_project"]
+    grant = create_project.parameters["properties"]["grants"]["items"]
+    assert grant["description"].startswith("One `resource_grants` row")
+    assert "\n\n" not in grant["description"]
+
+
+def _subschemas_of(schema):
+    if isinstance(schema, dict):
+        yield schema
+        for value in schema.values():
+            if isinstance(value, dict):
+                yield from _subschemas_of(value)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from _subschemas_of(item)
+
+
+async def test_every_filtered_list_names_its_fields():
+    """``conditions`` names the fields its list filters on, from the field
+    registry, so a model doesn't guess at columns."""
+    tools = await build_mcp_server(app).list_tools()
+    filtered = {
+        t.name: t.parameters["properties"]["conditions"]["description"]
+        for t in tools
+        if "conditions" in t.parameters.get("properties", {})
+    }
+
+    # A new list that takes conditions is told which dataset they filter.
+    assert set(filtered) == set(_FILTER_DATASETS)
+    for name, text in filtered.items():
+        for field in ("project_id", "status_category", "assignee_ids", "due_date"):
+            assert field in text, f"{name} conditions do not name {field}"
+        # The task lists have no initiative argument, so it is a condition.
+        assert "initiative_ids" in text, name
+
+
+async def test_every_sorted_list_names_its_sorts():
+    tools = await build_mcp_server(app).list_tools()
+    sorted_lists = {
+        t.name: t.parameters["properties"]["sorting"]["description"]
+        for t in tools
+        if "sorting" in t.parameters.get("properties", {})
+    }
+
+    assert sorted_lists
+    for name, text in sorted_lists.items():
+        # What the board and table sort by, including the fields declared only
+        # to be sorted on.
+        for field in ("due_date", "priority", "date_group", "status_position"):
+            assert field in text, f"{name} sorting does not name {field}"
+        # And not the lifecycle columns no client offers.
+        assert "deleted_at" not in text and "hold_id" not in text, name
+
+
+async def test_a_page_is_sized_for_a_model():
+    tools = await build_mcp_server(app).list_tools()
+    paged = [t for t in tools if "page_size" in t.parameters.get("properties", {})]
+
+    assert paged
+    for tool in paged:
+        schema = tool.parameters["properties"]["page_size"]
+        assert 1 <= schema["default"] <= _MCP_PAGE_SIZE, tool.name
+        assert schema["maximum"] <= _MCP_MAX_PAGE_SIZE, tool.name
+        assert schema["minimum"] == 1, tool.name
+
+
+def _call(name: str, arguments: dict | None):
+    return SimpleNamespace(
+        message=CallToolRequestParams(name=name, arguments=arguments),
+        copy=lambda message: SimpleNamespace(message=message),
+    )
+
+
+async def _arguments_after(middleware, name: str, arguments: dict | None) -> dict:
+    seen = {}
+
+    async def call_next(context):
+        seen.update(context.message.arguments)
+        return ToolResult(structured_content={})
+
+    await middleware.on_call_tool(_call(name, arguments), call_next)
+    return seen
+
+
+async def test_my_tasks_left_unfiltered_are_the_open_ones():
+    middleware = ArgumentDefaultsMiddleware(
+        {"list_my_tasks": {"conditions": _OPEN_TASKS}}, {}
+    )
+
+    unfiltered = await _arguments_after(middleware, "list_my_tasks", {})
+    open_categories = json.loads(unfiltered["conditions"])[0]["value"]
+    assert set(open_categories) == {"backlog", "todo", "in_progress"}
+
+    # Asked for, every task comes back, and a filter of the caller's own wins.
+    everything = await _arguments_after(
+        middleware, "list_my_tasks", {"conditions": "[]"}
+    )
+    assert everything["conditions"] == "[]"
+    # Other tools are left alone.
+    assert await _arguments_after(middleware, "list_tasks", None) == {}
+
+
+async def test_a_page_size_is_held_to_its_bounds():
+    middleware = ArgumentDefaultsMiddleware({}, {"list_files": (20, 50)})
+
+    assert (await _arguments_after(middleware, "list_files", {}))["page_size"] == 20
+    # Zero means "everything" to the route; here it means the default page.
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 0}))[
+        "page_size"
+    ] == 20
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 500}))[
+        "page_size"
+    ] == 50
+    assert (await _arguments_after(middleware, "list_files", {"page_size": 7}))[
+        "page_size"
+    ] == 7
+
+
+async def test_the_server_sends_the_defaults_to_the_route():
+    """End to end through the built server: the request a call makes carries
+    the MCP defaults it left out."""
+    server = build_mcp_server(app)
+    requests: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"items": [], "has_next": False})
+
+    for tool in await server.list_tools():
+        if tool.name == "list_my_tasks":
+            tool._client = httpx.AsyncClient(
+                transport=httpx.MockTransport(answer), base_url="http://test"
+            )
+
+    async with Client(server) as client:
+        await client.call_tool_mcp("list_my_tasks", {})
+
+    (request,) = requests
+    assert json.loads(request.url.params["conditions"]) == json.loads(_OPEN_TASKS)
+    assert request.url.params["page_size"] == str(_MCP_PAGE_SIZE)

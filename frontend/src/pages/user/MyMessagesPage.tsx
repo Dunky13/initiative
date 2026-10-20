@@ -53,6 +53,7 @@ import {
 import { useUserProfile } from "@/hooks/useUsers";
 import { groupName, isGroup, roster } from "@/lib/conversationName";
 import { formatDateTime, formatDayHeading, localDayKey } from "@/lib/formatDate";
+import { dateTimeFormat } from "@/lib/intl";
 import { hour12Option } from "@/lib/timeFormat";
 import { getUserHandle } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
@@ -76,7 +77,7 @@ import type { TranslateFn } from "@/types/i18n";
  * offer to ask for one instead.
  */
 export function MyMessagesPage() {
-  const { t } = useTranslation(["messages", "nav"]);
+  const { t } = useTranslation(["messages", "nav", "common"]);
   const device = useDmDevice();
   const conversations = useConversations();
   const requests = useMessageRequests();
@@ -251,11 +252,20 @@ export function MyMessagesPage() {
 
   if (device.isError) {
     return (
-      <div>
+      <div className="flex flex-col items-center">
         <StatusMessage
           icon={<ShieldCheck className="size-6" aria-hidden />}
           title={t("deviceFailed")}
         />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={device.isFetching}
+          onClick={() => void device.refetch()}
+        >
+          {t("common:tryAgain")}
+        </Button>
       </div>
     );
   }
@@ -375,7 +385,7 @@ const clockTime = (at: string): string => {
   const date = new Date(at);
   return Number.isNaN(date.getTime())
     ? ""
-    : new Intl.DateTimeFormat(undefined, {
+    : dateTimeFormat(undefined, {
         timeStyle: "short",
         hour12: hour12Option(),
       }).format(date);

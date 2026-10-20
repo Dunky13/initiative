@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+# Stop a running service before removing/replacing its executable. Fresh
+# containers without a running OpenRC service require no service action.
+if command -v rc-service >/dev/null && rc-service initiative-server status >/dev/null 2>&1; then
+    rc-service initiative-server stop
+fi

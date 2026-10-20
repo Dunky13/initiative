@@ -25,8 +25,9 @@ added to the contract and to nothing else fails here.
 
 import pytest
 
-from app.services.marketplace import contract
+from app.services.marketplace import contract, service_plugins
 from app.services.marketplace.definitions import normalize_listing_definition
+from app.services.tenant import plugin_metadata
 
 pytestmark = pytest.mark.always
 
@@ -50,10 +51,30 @@ def maximal_manifest() -> dict:
             "public_id": "acme.tracker",
             "protocol": 1,
             "scopes": ["projects:write", "comments:read", "plugins:acme.github"],
+            "calls_plugins": True,
         },
-        "features": ["endpoints", "widgets", "embeds", "dashboards"],
+        "features": [
+            "endpoints",
+            "widgets",
+            "pages",
+            "dashboards",
+            "fields",
+            "parts",
+            "actions",
+        ],
         "default_name": "Acme Tracker",
         "minimum_age": {"default": 16, "US": 13},
+        "help": {"en": "Link the tracker's issues to tasks."},
+        "settings": [
+            {
+                "key": "prefix",
+                "type": "string",
+                "label": {"en": "Prefix"},
+                "description": {"en": "What references start with"},
+                "unique": True,
+                "assigned": "community_name",
+            }
+        ],
         "min_plugin_api": "4.2",
         "vendor": {
             "label": {"en": "Acme client"},
@@ -114,6 +135,10 @@ def maximal_manifest() -> dict:
                     "key": "{vendor.private_key}",
                     "alg": "RS256",
                     "lifetime": 300,
+                    "exchange_body": {
+                        "repositories": ["{choice}"],
+                        "permissions": {"issues": "read"},
+                    },
                 },
                 "access_hint": {"api": "Acme API", "scopes": ["read"]},
             },
@@ -197,6 +222,7 @@ def maximal_manifest() -> dict:
                 "id": "plugin.acme.tracker.written",
                 "direction": "write",
                 "label": {"en": "Written"},
+                "params": [{"key": "note", "type": "string", "label": {"en": "Note"}}],
                 "returns": [{"key": "number", "type": "int"}],
                 # The same kind and key the emission about it declares, so a
                 # consumer resolves both to one address.
@@ -223,7 +249,7 @@ def maximal_manifest() -> dict:
                 "requires": {"any_of": ["vendor"]},
             }
         ],
-        "embeds": [
+        "pages": [
             {
                 "id": "panel",
                 "path": "/panel",
@@ -232,6 +258,74 @@ def maximal_manifest() -> dict:
                 "admin_only": True,
                 "capabilities": ["camera"],
                 "requires": {"all_of": ["other"]},
+            }
+        ],
+        "fields": [
+            {
+                "key": "demo.link",
+                "name": {"en": "Demo"},
+                "kind": "badge",
+                "list": True,
+                "on": ["task", "queue_item"],
+                "description": {"en": "The item's demo"},
+                "tone": "accent",
+                "states": {
+                    "status": {
+                        "name": {"en": "Status"},
+                        "values": {
+                            "open": {"label": {"en": "Open"}, "tone": "positive"}
+                        },
+                    }
+                },
+                "requires": {"all_of": ["vendor"]},
+            }
+        ],
+        "actions": [
+            {
+                "id": "new-link",
+                "name": {"en": "New link"},
+                "endpoint": "plugin.acme.tracker.written",
+                "params": ["note"],
+                "on": ["task"],
+                "confirm": {"en": "Make a new link?"},
+                "menu": True,
+                "admin_only": True,
+                "requires": {"any_of": ["vendor"]},
+            }
+        ],
+        # Every component once, each with every prop it takes.
+        "parts": [
+            {
+                "id": "demo",
+                "name": {"en": "Demo"},
+                "on": ["task"],
+                "description": {"en": "The task's demo"},
+                "requires": {"all_of": ["other"]},
+                "tree": {
+                    "type": "section",
+                    "props": {"title": {"en": "Demo"}, "collapsed": True},
+                    "children": [
+                        {"type": "field", "props": {"field": "demo.link"}},
+                        {
+                            "type": "stack",
+                            "props": {"direction": "row", "gap": "small", "wrap": True},
+                            "children": [
+                                {"type": "value", "props": {"field": "demo.link"}},
+                                {
+                                    "type": "text",
+                                    "props": {
+                                        "text": {"en": "opened"},
+                                        "tone": "muted",
+                                    },
+                                },
+                            ],
+                        },
+                        {
+                            "type": "button",
+                            "props": {"action": "new-link", "variant": "primary"},
+                        },
+                    ],
+                },
             }
         ],
         "dashboards": [
@@ -263,7 +357,7 @@ def maximal_declarative_manifest() -> dict:
 
     A request sends a body or a GraphQL query, a cursor goes in a parameter or
     a variable, and a route reads a body path or a header, so those are spread
-    over several requests.
+    over several requests. Only a write's request names a connection per actor.
     """
     api = '"https://api.tracker.example/issues"'
     paged = {
@@ -277,9 +371,10 @@ def maximal_declarative_manifest() -> dict:
     }
     return {
         "plugin_kind": "service",
-        "features": ["endpoints"],
+        "features": ["endpoints", "fields", "parts", "actions"],
         "hosts": ["api.tracker.example", "*.tracker.example"],
         "auth": {"header": "X-Tracker-Token", "prefix": ""},
+        "scopes": ["projects:read", "comments:read"],
         "vendor": {
             "fields": [
                 {"key": "client_id", "type": "string", "label": {"en": "Client"}},
@@ -382,7 +477,19 @@ def maximal_declarative_manifest() -> dict:
                     "when": 'headers."x-event" = "opened"',
                     "emit": "plugin.acme.issues.opened",
                     "map": '{"number": payload.number}',
-                }
+                    "write": (
+                        '[{"target": {"holding": {"key": "issue", "value":'
+                        ' $string(payload.number)}}, "set": {"state": "open"}}]'
+                    ),
+                },
+                # A row may change the plug-in's values and emit nothing.
+                {
+                    "when": 'headers."x-event" = "closed"',
+                    "write": (
+                        '[{"target": {"kind": "task", "id": payload.task},'
+                        ' "set": {"state": null}}]'
+                    ),
+                },
             ],
             "status": [
                 {
@@ -392,10 +499,20 @@ def maximal_declarative_manifest() -> dict:
                 }
             ],
         },
+        "schedules": [
+            {
+                "id": "sync",
+                "every": "15m",
+                "endpoint": "plugin.acme.issues.list",
+                "params": '{"since": since}',
+                "write": '[{"target": {"install": true}, "set": {"synced": now}}]',
+            }
+        ],
         "endpoints": [
             {
                 "id": "plugin.acme.issues.list",
                 "direction": "read",
+                "actors": ["installation"],
                 "returns": [{"key": "titles", "type": "string", "list": True}],
                 "unavailable": ["archived"],
                 "request": {
@@ -438,6 +555,8 @@ def maximal_declarative_manifest() -> dict:
             {
                 "id": "plugin.acme.issues.label",
                 "direction": "write",
+                "actors": ["member", "installation"],
+                "requires": {"all_of": ["workspace"]},
                 "returns": [{"key": "number", "type": "int"}],
                 "identity": {"kind": "issue", "key": ["number"]},
                 "steps": [
@@ -463,7 +582,10 @@ def maximal_declarative_manifest() -> dict:
                             "method": "PUT",
                             "url": api,
                             "body": '{"labels": steps.current.body.name}',
-                            "connection": "workspace",
+                            "connection": {
+                                "member": "profile",
+                                "installation": "workspace",
+                            },
                         },
                     },
                 ],
@@ -474,6 +596,47 @@ def maximal_declarative_manifest() -> dict:
                 "direction": "emit",
                 "returns": [{"key": "number", "type": "int"}],
             },
+        ],
+        "fields": [
+            {
+                "key": "issue",
+                "name": {"en": "Issue"},
+                "kind": "number",
+                "list": True,
+                "on": ["task"],
+                "actions": ["refresh"],
+            }
+        ],
+        "actions": [
+            {
+                "id": "label",
+                "name": {"en": "Label"},
+                "endpoint": "plugin.acme.issues.label",
+                "write": '{"set": {"labelled": result.number}}',
+                "on": ["task"],
+            },
+            # A read fetches what the action's write keeps.
+            {
+                "id": "refresh",
+                "name": {"en": "Refresh"},
+                "endpoint": "plugin.acme.issues.list",
+                "write": '{"set": {"titles": result.titles}}',
+                "on": ["task"],
+            },
+        ],
+        "parts": [
+            {
+                "id": "issue",
+                "name": {"en": "Issue"},
+                "on": ["task"],
+                "tree": {
+                    "type": "stack",
+                    "children": [
+                        {"type": "field", "props": {"field": "issue"}},
+                        {"type": "button", "props": {"action": "label"}},
+                    ],
+                },
+            }
         ],
     }
 
@@ -509,6 +672,10 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
     listed, searched, labelled, _opened = declarative["endpoints"]
     current, setting = labelled["steps"]
     hooks = declarative["webhooks"]
+    part = published["parts"][0]
+    section = part["tree"]
+    field_node, stack, button = section["children"]
+    value_node, text = stack["children"]
     return [
         ("manifest", {**published, **declarative}),
         ("connection", {**connection, **workspace}),
@@ -522,7 +689,9 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
         ("webhooks", {**published["webhooks"], **hooks}),
         ("webhookVerify", published["webhooks"]["verify"]),
         ("webhookRoute", {**published["webhooks"]["route"], **hooks["route"]}),
-        ("schedule", published["schedules"][0]),
+        # A container's schedule names its interval, a declarative plug-in's
+        # the read it makes and what it writes from the answer.
+        ("schedule", {**published["schedules"][0], **declarative["schedules"][0]}),
         ("accessHint", connection["access_hint"]),
         # A read carries the caller-side fields and a write carries the
         # identity; no single direction carries every field, so the two are
@@ -533,7 +702,7 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
         # count against anything.
         ("endpointReturn", {**read["returns"][0], **read["returns"][2]}),
         ("widget", widget),
-        ("embed", published["embeds"][0]),
+        ("page", published["pages"][0]),
         ("bundledDashboard", dashboard),
         ("bundledDashboardWidget", dashboard["widgets"][0]),
         # `requires` names one operator at a time, so the two are covered from
@@ -545,6 +714,7 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
             "vendorRequest",
             {**listed["request"], **searched["request"], **setting["request"]},
         ),
+        ("actorConnections", setting["request"]["connection"]),
         ("graphqlRequest", searched["request"]["graphql"]),
         ("requestStep", current),
         ("pageNumberPaging", listed["request"]["paging"]),
@@ -561,6 +731,20 @@ def _nodes(published: dict, declarative: dict) -> list[tuple[str, dict]]:
         ("healthState", workspace["health"]["states"][0]),
         ("webhookEvent", hooks["events"][0]),
         ("webhookStatus", hooks["status"][0]),
+        # Only a declarative plug-in's list field offers its elements actions.
+        ("field", {**published["fields"][0], **declarative["fields"][0]}),
+        ("stateFacet", published["fields"][0]["states"]["status"]),
+        ("stateValue", published["fields"][0]["states"]["status"]["values"]["open"]),
+        ("setting", published["settings"][0]),
+        # Only a declarative plug-in's action carries a write.
+        ("action", {**published["actions"][0], **declarative["actions"][0]}),
+        ("part", part),
+        ("sectionNode", section),
+        ("stackNode", stack),
+        ("fieldNode", field_node),
+        ("valueNode", value_node),
+        ("textNode", text),
+        ("buttonNode", button),
         ("other", other),
     ]
 
@@ -597,13 +781,33 @@ def test_every_service_field_survives_a_publish(published):
     ]
 
 
+def test_every_node_prop_survives_a_publish(published):
+    """A node's props are written inline, so the inventory above does not reach
+    them; they are measured here, for every component the contract offers."""
+    section = published["parts"][0]["tree"]
+    stack = section["children"][1]
+    stored = {
+        node["type"]: node.get("props", {})
+        for node in (section, *section["children"], *stack["children"])
+    }
+    assert set(stored) == set(service_plugins.PART_NODES)
+    for node_type, props in stored.items():
+        name = service_plugins.PART_NODES[node_type]
+        declared = contract.objects()[name]["properties"]["props"]["properties"]
+        assert set(props) == set(declared), node_type
+
+
 def test_the_maximal_manifests_really_are_maximal(nodes):
     """The two tests above pass trivially if the fixtures stopped covering
     something, so the fixtures themselves are checked: every object the
-    contract defines with fields is one these manifests reach."""
+    contract defines with fields is one these manifests reach. A change, and
+    a list's element, is what a ``write`` answers rather than a term a
+    manifest stores, and the changes engine holds an answer to it
+    (``plugin_metadata.apply_changes``), an element's every term."""
     reached = {owner for owner, _ in nodes} - {"other"}
     with_fields = {name for name in contract.objects() if contract.fields(name)}
-    assert with_fields - reached == set()
+    assert with_fields - reached == {"change", "targetedChange", "listElement"}
+    assert set(plugin_metadata._ELEMENT_TERMS) == set(contract.fields("listElement"))
 
 
 def test_an_emitting_endpoint_keeps_what_describes_it(published):
@@ -640,6 +844,27 @@ def test_the_uid_shape_matches_the_contract():
 
     assert UID_LENGTH == contract.cap("uidLength")
     assert frozenset(UID_ALPHABET) == contract.charset("uid")
+
+
+def test_the_metadata_columns_match_the_contract():
+    """A plug-in's metadata key and look-up text are column widths, and the
+    items it keeps values on are the table's CHECK, so each is checked against
+    the contract rather than read from it, as the uid is. So are a setting's
+    key and a unique setting's value, which an install claims."""
+    from app.core.tools import ITEM_KINDS
+    from app.models.platform.plugin_install import (
+        SETTING_KEY_LENGTH,
+        SETTING_VALUE_LENGTH,
+    )
+    from app.models.tenant.plugin_metadata import LOOKUP_LENGTH, PluginMetadata
+
+    assert PluginMetadata.__table__.c.key.type.length == contract.cap(
+        "metadataKeyLength"
+    )
+    assert LOOKUP_LENGTH == contract.cap("metadataLookupLength")
+    assert frozenset(ITEM_KINDS) == contract.enum("itemKind")
+    assert SETTING_KEY_LENGTH == contract.cap("identifierLength")
+    assert SETTING_VALUE_LENGTH == contract.cap("uniqueSettingValueLength")
 
 
 # --- what the registrar reports -------------------------------------------
@@ -782,6 +1007,14 @@ def _with(build, change):
     return body
 
 
+def _labelled_on(connection) -> dict:
+    """The maximal declarative manifest, its write's second request naming
+    ``connection``."""
+    body = maximal_declarative_manifest()
+    body["endpoints"][2]["steps"][1]["request"]["connection"] = connection
+    return body
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -801,6 +1034,71 @@ def _with(build, change):
         _with(
             maximal_declarative_manifest,
             lambda b: b.update(schedules=[{"id": "sync", "every": "15m"}]),
+        ),
+        # Declared as a feature too, so the kind is the only thing wrong.
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b.update(
+                pages=[{"id": "panel", "path": "/panel", "name": {"en": "Panel"}}],
+                features=[*b["features"], "pages"],
+            ),
+        ),
+        *(
+            _with(
+                maximal_declarative_manifest,
+                lambda b, scope=scope: b.update(scopes=[scope]),
+            )
+            for scope in (
+                "projects:write",
+                "initiatives:moderate",
+                "community:admin",
+                "plugins:acme.github",
+            )
+        ),
+        _with(maximal_manifest, lambda b: b.update(scopes=["projects:read"])),
+        _with(maximal_manifest, lambda b: b["actions"][0].pop("endpoint")),
+        _with(maximal_manifest, lambda b: b["actions"][0].update(write='{"set": {}}')),
+        _with(maximal_manifest, lambda b: b["schedules"][0].update(write="[]")),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: (b["actions"][0].pop("endpoint"), b["actions"][0].pop("write")),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["actions"][0].update(endpoint="plugin.acme.issues.opened"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["actions"][0].update(write='{"set": '),
+        ),
+        _with(maximal_declarative_manifest, lambda b: b["schedules"][0].pop("write")),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["schedules"][0].update(endpoint="plugin.acme.issues.label"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["endpoints"][0].update(actors=["member"]),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["schedules"][0].update(id="workspace"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["webhooks"]["events"][1].pop("write"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["webhooks"]["events"][0].pop("map"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["webhooks"]["events"][0].pop("emit"),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["webhooks"]["events"][1].update(write="["),
         ),
         _with(
             maximal_declarative_manifest,
@@ -842,12 +1140,66 @@ def _with(build, change):
             maximal_declarative_manifest, lambda b: b["endpoints"][0].update(retries=3)
         ),
         _with(maximal_declarative_manifest, _member_request_not_required),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: (
+                b["endpoints"][2].update(requires={"all_of": ["workspace", "profile"]}),
+                b["endpoints"][2]["steps"][1]["request"].update(connection="profile"),
+            ),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["endpoints"][0]["request"].update(
+                connection={"installation": "workspace"}
+            ),
+        ),
+        _labelled_on({"member": "profile"}),
+        _labelled_on({"member": "profile", "installation": "workspace", "owner": "x"}),
+        _labelled_on({"member": "workspace", "installation": "workspace"}),
+        _labelled_on({"member": "profile", "installation": "profile"}),
+        _with(maximal_manifest, lambda b: b["fields"][0].update(actions=["new-link"])),
+        _with(maximal_declarative_manifest, lambda b: b["fields"][0].pop("list")),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["fields"][0].update(actions=["gone"]),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: b["fields"][0].update(on=["post", "task"]),
+        ),
+        _with(
+            maximal_declarative_manifest,
+            lambda b: (
+                b["actions"][0].pop("endpoint"),
+                b["actions"][0].update(params=["number"]),
+            ),
+        ),
     ],
     ids=[
         "container-hosts",
         "container-map",
         "container-after-connect-request",
-        "declarative-schedules",
+        "declarative-schedule-calls-no-hook",
+        "declarative-pages",
+        "declarative-write-scope",
+        "declarative-moderator-scope",
+        "declarative-admin-scope",
+        "declarative-plugin-scope",
+        "container-top-level-scopes",
+        "container-action-without-endpoint",
+        "container-action-write",
+        "container-schedule-write",
+        "declarative-action-names-nothing",
+        "declarative-action-names-an-emission",
+        "declarative-action-write-does-not-parse",
+        "declarative-schedule-without-write",
+        "declarative-schedule-names-a-write",
+        "declarative-schedule-read-not-by-the-installation",
+        "declarative-schedule-a-connections-id",
+        "event-row-emits-and-writes-nothing",
+        "event-row-emit-without-map",
+        "event-row-map-without-emit",
+        "event-row-write-does-not-parse",
         "declarative-after-connect-hook",
         "declarative-no-hosts",
         "declarative-no-request",
@@ -859,12 +1211,32 @@ def _with(build, change):
         "declarative-sets-the-credential",
         "unknown-endpoint-term",
         "member-connection-not-in-requires",
+        "member-connection-the-installation-may-make",
+        "connection-per-actor-on-a-read",
+        "connection-per-actor-not-for-each-actor",
+        "connection-per-actor-not-an-actor",
+        "connection-per-actor-community-for-the-member",
+        "connection-per-actor-members-for-the-installation",
+        "container-element-actions",
+        "element-actions-on-a-field-not-a-list",
+        "element-action-not-declared",
+        "element-action-not-where-the-field-is",
+        "action-params-without-an-endpoint",
     ],
 )
 def test_one_plugin_is_one_kind_and_says_only_what_its_kind_says(body):
     """A plug-in is a container or declarative, never both, and a declarative
-    plug-in's expressions parse and read only the steps before them. An endpoint
-    is closed: a misspelt term is refused, not dropped."""
+    plug-in's expressions parse and read only the steps before them. A
+    declarative plug-in asks only for read scopes and has no pages; its actions
+    name a write, a change, or both; its schedules make a read as the
+    installation; and an event row emits, writes, or both. Only a declarative
+    plug-in's list field offers actions on its elements, each declared and
+    offered wherever the field is, and an action asks for the params of an
+    endpoint it names. A request on a member's connection is one its endpoint
+    requires and the installation does not make; a write's request naming a
+    connection per actor names one for each of its actors, the member's own
+    for the member and the community's for the installation. An endpoint is
+    closed: a misspelt term is refused, not dropped."""
     from app.services.marketplace.manifest_values import ListingDefinitionError
 
     with pytest.raises(ListingDefinitionError):

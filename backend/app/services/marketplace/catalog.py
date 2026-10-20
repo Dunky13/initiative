@@ -32,6 +32,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.version import get_version
 from app.db.query import apply_pagination
+from app.db.session import routed_guild_id
 from app.models.platform.marketplace import (
     MarketplaceListing,
     MarketplaceListingVersion,
@@ -216,8 +217,9 @@ def _min_plugin_api(manifest: dict[str, Any], public_id: str) -> Optional[str]:
 # --- reads ------------------------------------------------------------------
 
 
-async def _unoffered_plugin() -> Exists:
-    """Matches a plug-in listing this deployment does not run the service for.
+async def _unoffered_plugin(guild_id: Optional[int]) -> Exists:
+    """Matches a plug-in listing this deployment does not run the service for
+    in community ``guild_id``.
 
     Read from the registration snapshot rather than joined from the table:
     nothing on the request path holds a grant on it, so it is loaded on the
@@ -228,7 +230,7 @@ async def _unoffered_plugin() -> Exists:
     here and stay on the shelf.
     """
     latest = MarketplaceListingVersion
-    offered = sorted(await registration_lookup.enabled_service_ids())
+    offered = sorted(await registration_lookup.enabled_service_ids(guild_id))
     return (
         select(latest.id)
         .where(
@@ -269,7 +271,9 @@ async def list_listings(
     either, for the same reason: a catalog is published to every deployment,
     and a registration is how one says it runs that plug-in. The rule is read here
     rather than passed in, so browsing, reading a listing and installing one
-    cannot end up disagreeing about what this deployment carries.
+    cannot end up disagreeing about what this deployment carries. It is asked
+    for the community the session is routed to, so a plug-in limited to the
+    operations community is on that community's shelf alone.
 
     ``sources``, when given, keeps only listings that reached the deployment
     one of those ways — what a client showing a narrower catalogue asks for.
@@ -293,7 +297,7 @@ async def list_listings(
         )
     else:
         filters.append(MarketplaceListing.bundled_with_uid.is_(None))
-    unoffered_plugin = await _unoffered_plugin()
+    unoffered_plugin = await _unoffered_plugin(routed_guild_id(session))
     filters.append(~unoffered_plugin)
     if query:
         # Case-insensitive across the three fields someone would actually type.
@@ -310,8 +314,13 @@ async def list_listings(
         count_statement = count_statement.where(condition)
 
     total = (await session.exec(count_statement)).one()
+    # By name, then by id: listings may share a name, and without a unique
+    # last key their order could change between one page's query and the
+    # next, showing one twice and another never.
     statement = apply_pagination(
-        statement.order_by(MarketplaceListing.name), page, page_size
+        statement.order_by(MarketplaceListing.name, MarketplaceListing.id),
+        page,
+        page_size,
     )
     return (await session.exec(statement)).all(), int(total)
 
@@ -412,7 +421,6 @@ async def upsert_listing(
     bundled_with: Optional[str] = None,
     hold_for_review: bool = False,
     submitted_by: Optional[int] = None,
-    root_is_builtin: bool = False,
 ) -> MarketplaceListing:
     """Create or update one listing and the version its manifest describes.
 
@@ -436,8 +444,7 @@ async def upsert_listing(
     shared a new listing; it is never changed afterwards.
 
     A plug-in's ``registration`` block is read before anything is written and
-    applied once its version is offered. ``root_is_builtin`` is whether a
-    registry listing verified under the root this image ships.
+    applied once its version is offered.
     """
     if source not in LISTING_SOURCES:
         raise CatalogError(f"unknown listing source {source!r}")
@@ -481,7 +488,6 @@ async def upsert_listing(
                 listing_public_id=public_id,
                 definition=definition,
                 source=source,
-                root_is_builtin=root_is_builtin,
             )
         except registrations_service.ListingRegistrationError as exc:
             error = CatalogSourceConflict if exc.conflict else CatalogError
@@ -598,7 +604,7 @@ async def upsert_listing(
         )
         session.add(version)
         await session.flush()
-    elif _stored_body(kind, version) != (
+    elif _stored_body(kind, version, public_id=public_id) != (
         definition,
         example,
         release_notes,
@@ -648,13 +654,19 @@ async def upsert_listing(
 
 
 def _stored_body(
-    kind: str, version: MarketplaceListingVersion
+    kind: str, version: MarketplaceListingVersion, *, public_id: str
 ) -> tuple[Any, Any, Any, Any, Any] | None:
     """A published version's content as today's code would write it. A field
     the definition format gained since then takes its default on both sides,
-    so it is the content that is compared, not the format it was saved in."""
+    so it is the content that is compared, not the format it was saved in.
+
+    Normalized under the same ``public_id`` as the incoming manifest: a
+    declarative plug-in is named by its listing and does not normalize without
+    it, which would make every republish of one read as changed."""
     try:
-        definition = normalize_listing_definition(kind, version.definition)
+        definition = normalize_listing_definition(
+            kind, version.definition, public_id=public_id
+        )
         example = normalize_listing_example(kind, version.example, definition)
     except ListingDefinitionError:
         return None

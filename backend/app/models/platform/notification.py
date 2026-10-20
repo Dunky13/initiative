@@ -14,12 +14,18 @@ class NotificationType(str, Enum):
     initiative_join_approved = "initiative_join_approved"
     initiative_join_denied = "initiative_join_denied"
     project_added = "project_added"
-    user_pending_approval = "user_pending_approval"
     mention = "mention"
     comment_on_task = "comment_on_task"
     comment_on_resource = "comment_on_resource"
     comment_reply = "comment_reply"
+    #: Somebody reacted to the recipient's comment.
     comment_reaction = "comment_reaction"
+    #: Somebody changed or commented on something the recipient is subscribed
+    #: to, or on something inside a tool they are subscribed to.
+    subscription_activity = "subscription_activity"
+    #: Somebody changed something the recipient is named on: a task they are
+    #: assigned, an event they are going to.
+    assigned_activity = "assigned_activity"
     #: A notice went up on a bulletin board the recipient can see.
     post_published = "post_published"
     access_grant_requested = "access_grant_requested"
@@ -27,7 +33,6 @@ class NotificationType(str, Enum):
     access_grant_denied = "access_grant_denied"
     access_grant_revoked = "access_grant_revoked"
     event_invitation = "event_invitation"
-    event_updated = "event_updated"
     event_cancelled = "event_cancelled"
     event_rsvp = "event_rsvp"
     event_reminder = "event_reminder"
@@ -37,6 +42,9 @@ class NotificationType(str, Enum):
     import_failed = "import_failed"
     avatar_removed = "avatar_removed"
     username_changed = "username_changed"
+    #: Staff cleared part of the recipient's profile: names in communities,
+    #: status line or decorations. Names which, never who.
+    profile_field_cleared = "profile_field_cleared"
     account_suspended = "account_suspended"
     account_unsuspended = "account_unsuspended"
     #: A community this account holds the seat of was put on hold. Written once,
@@ -68,6 +76,18 @@ class NotificationType(str, Enum):
     #: waiting on them, in progress or closed. Names the case and its state,
     #: never what was said.
     ticket_updated = "ticket_updated"
+    #: A community's moderators took down something the recipient wrote.
+    #: Names the kind and the reason, never what it said or who reported it.
+    moderation_removal = "moderation_removal"
+    #: A community's moderators warned the recipient about something they
+    #: wrote, in the moderator's own words. Never names or counts reporters.
+    moderation_warning = "moderation_warning"
+    #: A case opened in the operations community, told to everyone who can
+    #: read it. Names the stream; the title is read when the line is.
+    case_opened = "case_opened"
+    #: Whoever filed a case answered on it, and nobody has taken it, so the
+    #: people who can read it hear instead of nobody.
+    case_replied = "case_replied"
 
 
 class Notification(SQLModel, table=True):

@@ -4,8 +4,6 @@ These constants are used as HTTPException detail strings. The frontend
 maps these codes to localized user-facing messages via errors.json.
 """
 
-from app.core.tools import Tool
-
 
 class CommonMessages:
     """Codes that belong to no one tool."""
@@ -30,6 +28,42 @@ class CommonMessages:
     #: The request body is larger than its route takes. Answered by the
     #: transport (``app.core.body_limit``) before any handler runs.
     REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
+
+    #: An update named a description that is no longer the stored one.
+    DESCRIPTION_CHANGED = "DESCRIPTION_CHANGED"
+    #: A write named a version of the content that is no longer current.
+    CONTENT_CHANGED = "CONTENT_CHANGED"
+    #: Content with a live collaboration room has that room as its writer; a
+    #: save from outside the session is refused.
+    LIVE_SESSION_OWNS_CONTENT = "LIVE_SESSION_OWNS_CONTENT"
+    VERSION_NOT_FOUND = "VERSION_NOT_FOUND"
+    CANNOT_DELETE_LAST_VERSION = "CANNOT_DELETE_LAST_VERSION"
+    #: Somebody else uploaded a version at the same moment.
+    VERSION_CONFLICT = "VERSION_CONFLICT"
+
+
+class KindMessages:
+    """Refusals about one kind of thing — a tool, or what lives inside one.
+
+    Raised with ``params={"kind": <its KINDS value>}`` (``app.core.tools``), and
+    worded once with the kind's name filled in, so a new tool or kind needs its
+    name in each locale rather than a sentence per refusal.
+    """
+
+    NOT_FOUND = "NOT_FOUND"
+    #: In the initiative, but not shared it.
+    NO_ACCESS = "NO_ACCESS"
+    OWNER_REQUIRED = "OWNER_REQUIRED"
+    #: Shared to read, not to change.
+    WRITE_ACCESS_REQUIRED = "WRITE_ACCESS_REQUIRED"
+    #: The initiative role may not create this tool.
+    CREATE_PERMISSION_REQUIRED = "CREATE_PERMISSION_REQUIRED"
+    #: The initiative has this tool switched off.
+    TOOL_NOT_ENABLED = "TOOL_NOT_ENABLED"
+    #: A temporary access grant reaches content, not who may see it.
+    GRANT_CANNOT_MANAGE_MEMBERS = "GRANT_CANNOT_MANAGE_MEMBERS"
+    #: Sharing was addressed to somebody whose role does not reach the tool.
+    GRANTEE_LACKS_ACCESS = "GRANTEE_LACKS_ACCESS"
 
 
 class AuthMessages:
@@ -142,6 +176,7 @@ class ImageMessages:
     IMAGE_INVALID = "IMAGE_INVALID"
     IMAGE_WRONG_SIZE = "IMAGE_WRONG_SIZE"
     IMAGE_WRONG_RATIO = "IMAGE_WRONG_RATIO"
+    IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
 
 
 class GuildMessages:
@@ -177,6 +212,8 @@ class GuildMessages:
     COMMUNITY_CREATION_DISABLED = "COMMUNITY_CREATION_DISABLED"
     FREE_COMMUNITY_ALREADY_HELD = "FREE_COMMUNITY_ALREADY_HELD"
     COMMUNITY_CREATION_LIMIT_REACHED = "COMMUNITY_CREATION_LIMIT_REACHED"
+    #: A demo visitor's account holds its copy and creates no community.
+    COMMUNITY_CREATION_DEMO_ACCOUNT = "COMMUNITY_CREATION_DEMO_ACCOUNT"
     # Naming another user as a new guild's admin is platform-staff only.
     COMMUNITY_OWNER_REQUIRES_CAPABILITY = "COMMUNITY_OWNER_REQUIRES_CAPABILITY"
     # ...and that user has to exist already; we never create one.
@@ -186,6 +223,9 @@ class GuildMessages:
     COMMUNITY_PROVISION_FAILED = "COMMUNITY_PROVISION_FAILED"
     #: Restore was asked for a guild that has not been deleted.
     COMMUNITY_NOT_DELETED = "COMMUNITY_NOT_DELETED"
+    #: The community's purge has begun: it cannot be restored or have its
+    #: status changed, and is deleted once its plug-ins have answered.
+    COMMUNITY_PURGE_STARTED = "COMMUNITY_PURGE_STARTED"
     #: A guild cannot be restored *to* deleted.
     COMMUNITY_RESTORE_STATUS_INVALID = "COMMUNITY_RESTORE_STATUS_INVALID"
     #: The guild's roster no longer holds the seat that configures it, so the
@@ -194,6 +234,12 @@ class GuildMessages:
     #: ``deleted`` is reached by deleting a guild and left by restoring it,
     #: never by setting the status control to it.
     COMMUNITY_STATUS_NOT_SETTABLE = "COMMUNITY_STATUS_NOT_SETTABLE"
+    #: Suspending a community, or lifting its suspension, needs a live
+    #: ``moderate`` grant on it.
+    COMMUNITY_SUSPENSION_NEEDS_GRANT = "COMMUNITY_SUSPENSION_NEEDS_GRANT"
+    #: It is in no status a suspension starts from, or has none to lift.
+    COMMUNITY_NOT_SUSPENDABLE = "COMMUNITY_NOT_SUSPENDABLE"
+    COMMUNITY_NOT_SUSPENDED = "COMMUNITY_NOT_SUSPENDED"
     #: The deployment's billing service sets this community's caps and
     #: entitlements; they are changed there.
     COMMUNITY_PLAN_SET_BY_BILLING = "COMMUNITY_PLAN_SET_BY_BILLING"
@@ -205,6 +251,11 @@ class GuildMessages:
     COMMUNITY_RESTORE_STATUS_SET_BY_BILLING = "COMMUNITY_RESTORE_STATUS_SET_BY_BILLING"
     COMMUNITY_MEMBERSHIP_MISSING = "COMMUNITY_MEMBERSHIP_MISSING"
     COMMUNITY_USER_LIMIT_REACHED = "COMMUNITY_USER_LIMIT_REACHED"
+    COMMUNITY_GUEST_LIMIT_REACHED = "COMMUNITY_GUEST_LIMIT_REACHED"
+    COMMUNITY_GUESTS_DISABLED = "COMMUNITY_GUESTS_DISABLED"
+    NOT_A_GUEST = "NOT_A_GUEST"
+    GUEST_TIME_ENDED = "GUEST_TIME_ENDED"
+    GUEST_GRANT_NOT_FOUND = "GUEST_GRANT_NOT_FOUND"
     # Asked to join a guild that is not listed in the community directory (or
     # is no longer active). Reported as a 404 — an unlisted guild has published
     # nothing, its existence at a given id included.
@@ -234,7 +285,6 @@ class GuildMessages:
     # the one above because there is nothing to click: the answer stands, and
     # the reply has to say so rather than ask again.
     AGE_BELOW_MINIMUM = "COMMUNITY_AGE_BELOW_MINIMUM"
-    IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
     BANNER_COLOR_INVALID = "BANNER_COLOR_INVALID"
     # Banner text is black or white; nothing between the two is offered.
     BANNER_TEXT_COLOR_INVALID = "BANNER_TEXT_COLOR_INVALID"
@@ -316,33 +366,37 @@ class InitiativeMessages:
     CONTENT_KEPT_IN = "INITIATIVE_CONTENT_KEPT_IN"
 
 
-class FilterPresetMessages:
-    NOT_FOUND = "FILTER_PRESET_NOT_FOUND"
-    DUPLICATE_ID = "FILTER_PRESET_DUPLICATE_ID"
-    LIMIT_REACHED = "FILTER_PRESET_LIMIT_REACHED"
+class ToolLayoutMessages:
+    # The tool takes no layouts, or the target names an instance where the tool
+    # has one page per initiative (or the other way round).
+    TARGET_INVALID = "TOOL_LAYOUTS_TARGET_INVALID"
+    # A kind of layout this tool does not draw, or a part or field a detail
+    # does not.
+    KIND_NOT_ALLOWED = "TOOL_LAYOUTS_KIND_NOT_ALLOWED"
+    # A layout over its node, depth or size limit.
+    TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
+    # More of one plug-in's parts on an item than it may place there.
+    TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
 
 
 class ProjectMessages:
     INVALID_TEMPLATE = "PROJECT_INVALID_TEMPLATE"
     INITIATIVE_REQUIRED = "PROJECT_INITIATIVE_REQUIRED"
-    # Configuring the project itself (pinning, default view, filter
-    # presets) — a project manager, the project owner, or a guild admin.
+    # Configuring the project itself (pinning, its layouts) — a
+    # project manager, the project owner, or a guild admin.
     CONFIGURE_REQUIRED = "PROJECT_CONFIGURE_REQUIRED"
 
 
 class TaskMessages:
-    NOT_FOUND = "TASK_NOT_FOUND"
     #: The task was not opened by an intake stream.
     NOT_A_CASE = "TASK_NOT_A_CASE"
-    MISSING_AFTER_CREATE = "TASK_MISSING_AFTER_CREATE"
-    MISSING_AFTER_UPDATE = "TASK_MISSING_AFTER_UPDATE"
-    MISSING_AFTER_MOVE = "TASK_MISSING_AFTER_MOVE"
+    #: The board column it would go into holds as many tasks as it takes.
+    STATUS_AT_LIMIT = "TASK_STATUS_AT_LIMIT"
     ALREADY_IN_PROJECT = "TASK_ALREADY_IN_PROJECT"
     CANNOT_MOVE_TO_TEMPLATE = "TASK_CANNOT_MOVE_TO_TEMPLATE"
     PROJECT_MISMATCH = "TASK_PROJECT_MISMATCH"
     STATUS_NOT_FOUND = "TASK_STATUS_NOT_FOUND_FOR_PROJECT"
     INVALID_ASSIGNEE_ID = "TASK_INVALID_ASSIGNEE_ID"
-    DUPLICATE_NOT_FOUND = "TASK_DUPLICATE_NOT_FOUND"
     NOT_REPEATING = "TASK_NOT_REPEATING"
     NO_LATER_OCCURRENCE = "TASK_NO_LATER_OCCURRENCE"
 
@@ -432,7 +486,6 @@ class AuthProviderMessages:
 
 
 class TagMessages:
-    NOT_FOUND = "TAG_NOT_FOUND"
     NAME_ALREADY_EXISTS = "TAG_NAME_ALREADY_EXISTS"
     # Shared by every set-tags / bulk-tags surface: one or more of the
     # submitted tag ids does not resolve to an active tag in this guild.
@@ -451,7 +504,6 @@ class PropertyMessages:
 
 class AttachmentMessages:
     IMAGE_ONLY = "ATTACHMENT_IMAGE_ONLY"
-    FILE_EMPTY = "ATTACHMENT_FILE_EMPTY"
     INVALID_IMAGE = "ATTACHMENT_INVALID_IMAGE"
     TOO_LARGE = "ATTACHMENT_TOO_LARGE"
     STORAGE_QUOTA_EXCEEDED = "ATTACHMENT_STORAGE_QUOTA_EXCEEDED"
@@ -460,9 +512,6 @@ class AttachmentMessages:
 class FileMessages:
     NAME_ALREADY_EXISTS = "FILE_NAME_ALREADY_EXISTS"
     NAME_REQUIRED = "FILE_NAME_REQUIRED"
-    LIVE_SESSION_OWNS_CONTENT = "FILE_LIVE_SESSION_OWNS_CONTENT"
-    #: A write named a version of the content that is no longer current.
-    CONTENT_CHANGED = "FILE_CONTENT_CHANGED"
     COLLABORATION_UPDATE_INVALID = "FILE_COLLABORATION_UPDATE_INVALID"
     AI_NATIVE_ONLY = "FILE_AI_NATIVE_ONLY"
     SMART_LINK_URL_REQUIRED = "FILE_SMART_LINK_URL_REQUIRED"
@@ -471,10 +520,7 @@ class FileMessages:
     SPREADSHEET_FILE_TOO_LARGE = "FILE_SPREADSHEET_FILE_TOO_LARGE"
     SMART_LINK_URL_INVALID = "FILE_SMART_LINK_URL_INVALID"
     NOT_AN_UPLOADED_FILE = "FILE_NOT_AN_UPLOADED_FILE"
-    VERSION_NOT_FOUND = "FILE_VERSION_NOT_FOUND"
-    CANNOT_DELETE_LAST_VERSION = "FILE_CANNOT_DELETE_LAST_VERSION"
     VERSION_TYPE_MISMATCH = "FILE_VERSION_TYPE_MISMATCH"
-    VERSION_CONFLICT = "FILE_VERSION_CONFLICT"
     INVALID_FILE = "FILE_INVALID_FILE"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
 
@@ -483,11 +529,15 @@ class CommentMessages:
     NOT_FOUND = "COMMENT_NOT_FOUND"
     PERMISSION_DENIED = "COMMENT_PERMISSION_DENIED"
     PARENT_NOT_FOUND = "COMMENT_PARENT_NOT_FOUND"
-    TARGET_NOT_FOUND = "COMMENT_TARGET_NOT_FOUND"
     PARENT_MISMATCH = "COMMENT_PARENT_MISMATCH"
     PROVIDE_ONE_ENTITY = "COMMENT_PROVIDE_ONE_ENTITY"
     AUTHOR_ONLY_EDIT = "COMMENT_AUTHOR_ONLY_EDIT"
     AUTHOR_ONLY_DELETE = "COMMENT_AUTHOR_ONLY_DELETE"
+    #: A moderator took it down, or its author deleted it: it has no words to
+    #: edit or react to.
+    REMOVED = "COMMENT_REMOVED"
+    #: A moderator closed the thread to new comments.
+    LOCKED = "COMMENT_THREAD_LOCKED"
     NOT_LINKED = "COMMENT_NOT_LINKED"
     COMMENTS_DISABLED = "COMMENTS_DISABLED"
     #: Only an operations case with somebody to answer takes a comment said to
@@ -498,22 +548,12 @@ class CommentMessages:
 
 
 class SharingMessages:
-    """Refusals from the sharing flow.
-
-    One code per tool, derived from the enum rather than written out, so a new
-    tool has one the day it exists. ``tools_test`` fails if a locale has not
-    been given the wording for it.
-    """
+    """Refusals from the sharing flow."""
 
     #: A grant naming an installed plug-in, sent to a resource's own sharing. What
     #: a plug-in may reach is granted by the community's seat, so this list
     #: neither writes nor removes one.
     PLUGIN_INSTALL_GRANT_NOT_SET_HERE = "SHARING_PLUGIN_INSTALL_GRANT_NOT_SET_HERE"
-
-    @staticmethod
-    def grantee_lacks_tool(tool: "Tool") -> str:
-        """Sharing was addressed to somebody whose role does not reach ``tool``."""
-        return f"GRANTEE_LACKS_{tool.value.upper()}_ACCESS"
 
 
 class ReactionMessages:
@@ -581,6 +621,27 @@ class SettingsMessages:
     # Object storage
     STORAGE_BACKFILL_RUNNING = "SETTINGS_STORAGE_BACKFILL_RUNNING"
     STORAGE_BACKFILL_NOT_CONFIGURED = "SETTINGS_STORAGE_BACKFILL_NOT_CONFIGURED"
+    #: The backfill stopped on an error; its cause is in the server log.
+    STORAGE_BACKFILL_FAILED = "SETTINGS_STORAGE_BACKFILL_FAILED"
+    #: A connection test of S3 storage with no bucket named.
+    STORAGE_BUCKET_REQUIRED = "SETTINGS_STORAGE_BUCKET_REQUIRED"
+    #: The bucket could not be reached; the cause is in the server log.
+    STORAGE_CONNECTION_FAILED = "SETTINGS_STORAGE_CONNECTION_FAILED"
+
+
+class EvidenceMessages:
+    """What a person attaches to a ticket or a report."""
+
+    #: The stream takes no files.
+    NOT_TAKEN = "EVIDENCE_NOT_TAKEN"
+    TOO_MANY = "EVIDENCE_TOO_MANY"
+    TOO_LARGE = "EVIDENCE_TOO_LARGE"
+    EMPTY = "EVIDENCE_EMPTY"
+    #: Its bytes are not one of the types the stream takes.
+    TYPE_NOT_ALLOWED = "EVIDENCE_TYPE_NOT_ALLOWED"
+    #: A picture that could not be read to take its location out.
+    UNREADABLE = "EVIDENCE_UNREADABLE"
+    NOT_FOUND = "EVIDENCE_NOT_FOUND"
 
 
 class ModerationMessages:
@@ -592,6 +653,62 @@ class ModerationMessages:
     NOWHERE_TO_SEND = "MODERATION_NOWHERE_TO_SEND"
     TARGET_NOT_FOUND = "MODERATION_TARGET_NOT_FOUND"
     NOT_A_MODERATOR = "MODERATION_NOT_A_MODERATOR"
+    #: An ``illegal`` report names the law it falls under.
+    LEGAL_BASIS_REQUIRED = "MODERATION_LEGAL_BASIS_REQUIRED"
+    #: Only an ``illegal`` report names a law.
+    LEGAL_BASIS_NOT_TAKEN = "MODERATION_LEGAL_BASIS_NOT_TAKEN"
+    #: An ``illegal`` or ``other`` report says what is wrong.
+    DETAIL_REQUIRED = "MODERATION_DETAIL_REQUIRED"
+    #: A child-safety report names where the material is and attaches none.
+    NO_ATTACHMENTS = "MODERATION_NO_ATTACHMENTS"
+    #: That act isn't done to that kind of thing.
+    ACT_NOT_TAKEN = "MODERATION_ACT_NOT_TAKEN"
+    #: It is taken down already.
+    ALREADY_REMOVED = "MODERATION_ALREADY_REMOVED"
+    #: The removal named was undone already, or what it took down is gone.
+    NOT_REMOVED = "MODERATION_NOT_REMOVED"
+    #: That log row isn't a removal.
+    NOT_A_REMOVAL = "MODERATION_NOT_A_REMOVAL"
+    ACTION_NOT_FOUND = "MODERATION_ACTION_NOT_FOUND"
+    #: The thread is locked already, or not locked.
+    ALREADY_LOCKED = "MODERATION_ALREADY_LOCKED"
+    NOT_LOCKED = "MODERATION_NOT_LOCKED"
+    #: A warning says what the member is told.
+    MESSAGE_REQUIRED = "MODERATION_MESSAGE_REQUIRED"
+    #: Nobody wrote it, so there is nobody to warn.
+    NOBODY_TO_WARN = "MODERATION_NOBODY_TO_WARN"
+
+
+class HoldMessages:
+    """Holding content for the platform, and releasing a hold."""
+
+    #: There is nothing to hold there, or nothing the reader may hold.
+    TARGET_NOT_FOUND = "HOLD_TARGET_NOT_FOUND"
+    #: Holding is for the community's moderators and the platform's.
+    NOT_ALLOWED = "HOLD_NOT_ALLOWED"
+    #: It is held already.
+    ALREADY_HELD = "HOLD_ALREADY_HELD"
+    #: A hold for illegal content names the law it falls under.
+    LEGAL_BASIS_REQUIRED = "HOLD_LEGAL_BASIS_REQUIRED"
+    #: The platform takes no moderation cases here, so nobody would see it.
+    NOWHERE_TO_SEND = "HOLD_NOWHERE_TO_SEND"
+    NOT_FOUND = "HOLD_NOT_FOUND"
+    ALREADY_RELEASED = "HOLD_ALREADY_RELEASED"
+    #: The case named isn't one the platform is working.
+    CASE_NOT_FOUND = "HOLD_CASE_NOT_FOUND"
+    #: The case named is about another community.
+    CASE_OTHER_COMMUNITY = "HOLD_CASE_OTHER_COMMUNITY"
+    #: Another hold still covers it, so it can't be removed or destroyed.
+    COVERED_BY_ANOTHER = "HOLD_COVERED_BY_ANOTHER"
+    #: The community is being deleted for good.
+    COMMUNITY_GONE = "HOLD_COMMUNITY_GONE"
+
+
+class SecurityMessages:
+    """Telling whoever runs this server about a security problem."""
+
+    #: Nothing is set up to receive security reports here.
+    NOWHERE_TO_SEND = "SECURITY_NOWHERE_TO_SEND"
 
 
 class SupportMessages:
@@ -599,6 +716,22 @@ class SupportMessages:
 
     NOT_AVAILABLE = "SUPPORT_NOT_AVAILABLE"
     NOWHERE_TO_SEND = "SUPPORT_NOWHERE_TO_SEND"
+
+
+class FeedbackMessages:
+    """Telling whoever runs this server what somebody thinks."""
+
+    #: Nothing is set up to receive feedback here.
+    NOWHERE_TO_SEND = "FEEDBACK_NOWHERE_TO_SEND"
+
+
+class AppealMessages:
+    """Asking for an account's suspension to be lifted."""
+
+    #: The account is not suspended: there is nothing to appeal.
+    NOT_SUSPENDED = "APPEAL_NOT_SUSPENDED"
+    #: Nothing is set up to receive appeals here.
+    NOWHERE_TO_SEND = "APPEAL_NOWHERE_TO_SEND"
 
 
 class TicketMessages:
@@ -645,6 +778,9 @@ class OperatorMessages:
     CANNOT_ASSIGN_HIGHER_ROLE = "OPERATOR_CANNOT_ASSIGN_HIGHER_ROLE"
     USE_SELF_DELETION = "OPERATOR_USE_SELF_DELETION"
     CANNOT_DELETE_SELF = "OPERATOR_CANNOT_DELETE_SELF"
+    #: Staff do not act on their own account from the operator dashboard; it
+    #: is theirs to change from their own settings.
+    CANNOT_ACT_ON_SELF = "OPERATOR_CANNOT_ACT_ON_SELF"
 
 
 class AccessGrantMessages:
@@ -660,6 +796,19 @@ class AccessGrantMessages:
     #: Approving asks whether the requester may still request access: an
     #: active account whose role holds ``access.request``.
     GRANTEE_INELIGIBLE = "ACCESS_GRANT_GRANTEE_INELIGIBLE"
+    #: A ``moderate`` grant is for those who hold ``content.moderate``.
+    MODERATE_NOT_HELD = "ACCESS_GRANT_MODERATE_NOT_HELD"
+    #: A request names the operations case it is for, where the operations
+    #: community takes cases a grant may serve.
+    CASE_REQUIRED = "ACCESS_GRANT_CASE_REQUIRED"
+    #: No case by that id that the requester can read.
+    CASE_NOT_FOUND = "ACCESS_GRANT_CASE_NOT_FOUND"
+    #: A case of a kind no grant serves (feedback, say).
+    CASE_NOT_LINKABLE = "ACCESS_GRANT_CASE_NOT_LINKABLE"
+    #: The case is closed.
+    CASE_CLOSED = "ACCESS_GRANT_CASE_CLOSED"
+    #: The case is about another community.
+    CASE_OTHER_COMMUNITY = "ACCESS_GRANT_CASE_OTHER_COMMUNITY"
     #: A settings rung reads; changing what it reaches takes a read_write
     #: content grant beside it.
     WRITE_GRANT_REQUIRED = "ACCESS_GRANT_WRITE_REQUIRED"
@@ -688,6 +837,11 @@ class UserMessages:
     API_KEY_NOT_FOUND = "USER_API_KEY_NOT_FOUND"
     API_KEY_READ_ONLY = "USER_API_KEY_READ_ONLY"
     API_KEY_GUILD_FORBIDDEN = "USER_API_KEY_COMMUNITY_FORBIDDEN"
+    #: A key may name one resource of a tool that has a feed, in the community
+    #: it is limited to.
+    API_KEY_RESOURCE_INVALID = "USER_API_KEY_RESOURCE_INVALID"
+    #: A key that names one resource reads that resource's feed and nothing else.
+    API_KEY_RESOURCE_ONLY = "USER_API_KEY_RESOURCE_ONLY"
     USERNAME_ALREADY_CHOSEN = "USERNAME_ALREADY_CHOSEN"
     #: The date given puts this account under the minimum age for the parts of
     #: the platform that are open to people they have not met.
@@ -917,7 +1071,6 @@ class NotificationMessages:
 
 class AnnouncementMessages:
     NOT_FOUND = "ANNOUNCEMENT_NOT_FOUND"
-    IMAGE_NOT_FOUND = "ANNOUNCEMENT_IMAGE_NOT_FOUND"
     IMAGE_TOO_LARGE = "ANNOUNCEMENT_IMAGE_TOO_LARGE"
 
 
@@ -933,7 +1086,6 @@ class CalendarMessages:
 
 
 class CalendarEventMessages:
-    NOT_FOUND = "CALENDAR_EVENT_NOT_FOUND"
     ICAL_PARSE_FAILED = "ICAL_PARSE_FAILED"
     ICAL_NO_EVENTS = "ICAL_NO_EVENTS_FOUND"
     ENDS_BEFORE_START = "CALENDAR_EVENT_ENDS_BEFORE_START"
@@ -1024,21 +1176,12 @@ class PostMessages:
 
 
 class GalleryMessages:
-    IMAGE_NOT_FOUND = "GALLERY_IMAGE_NOT_FOUND"
-    #: The bytes are not a raster image this app can show — or are an SVG,
-    #: which is a document rather than a picture.
-    INVALID_IMAGE = "GALLERY_INVALID_IMAGE"
     IMAGE_TOO_LARGE = "GALLERY_IMAGE_TOO_LARGE"
-    IMAGE_EMPTY = "GALLERY_IMAGE_EMPTY"
-    VERSION_NOT_FOUND = "GALLERY_VERSION_NOT_FOUND"
-    CANNOT_DELETE_LAST_VERSION = "GALLERY_CANNOT_DELETE_LAST_VERSION"
-    VERSION_CONFLICT = "GALLERY_VERSION_CONFLICT"
     #: A cover has to be one of the gallery's own pictures.
     COVER_NOT_IN_GALLERY = "GALLERY_COVER_NOT_IN_GALLERY"
 
 
 class WikiMessages:
-    PAGE_NOT_FOUND = "WIKI_PAGE_NOT_FOUND"
     #: A page cannot be its own parent.
     PAGE_PARENT_ITSELF = "WIKI_PAGE_PARENT_ITSELF"
     #: Filing a page under one of its own descendants would detach the branch
@@ -1048,11 +1191,6 @@ class WikiMessages:
     HOME_NOT_IN_WIKI = "WIKI_HOME_NOT_IN_WIKI"
     #: So does the page new ones are copied from.
     TEMPLATE_NOT_IN_WIKI = "WIKI_TEMPLATE_NOT_IN_WIKI"
-    #: A page with a live collaboration room has that room as the writer of
-    #: its content; a save from outside the session is refused.
-    LIVE_SESSION_OWNS_CONTENT = "WIKI_LIVE_SESSION_OWNS_CONTENT"
-    #: A write named a version of the content that is no longer current.
-    CONTENT_CHANGED = "WIKI_CONTENT_CHANGED"
 
 
 class MarketplaceMessages:
@@ -1144,17 +1282,18 @@ class MarketplaceRegistryMessages:
     PUBLISHER_CONFLICT = "MARKETPLACE_REGISTRY_PUBLISHER_CONFLICT"
     #: The listing itself was refused by the catalog's validator.
     LISTING_REJECTED = "MARKETPLACE_REGISTRY_LISTING_REJECTED"
+    #: A package's terms for a listing are not in the expected format, or name
+    #: a combination terms never take. The listing keeps the terms it had.
+    TERMS_INVALID = "MARKETPLACE_REGISTRY_TERMS_INVALID"
 
 
 class QueueMessages:
-    ITEM_NOT_FOUND = "QUEUE_ITEM_NOT_FOUND"
     NO_ITEMS = "QUEUE_NO_ITEMS"
     NO_CURRENT_ITEM = "QUEUE_NO_CURRENT_ITEM"
     ITEM_NOT_HELD = "QUEUE_ITEM_NOT_HELD"
 
 
 class CounterMessages:
-    NOT_FOUND = "COUNTER_NOT_FOUND"
     VIEW_MODE_REQUIRES_BOUNDS = "COUNTER_VIEW_MODE_REQUIRES_BOUNDS"
     MIN_GREATER_THAN_MAX = "COUNTER_MIN_GREATER_THAN_MAX"
     STEP_MUST_BE_POSITIVE = "COUNTER_STEP_MUST_BE_POSITIVE"
@@ -1194,6 +1333,15 @@ class GuildPluginMessages:
     #: settings form is not where it is set.
     CONFIG_MANAGED_FIELD = "COMMUNITY_PLUGIN_CONFIG_MANAGED_FIELD"
 
+    # --- settings ---
+    #: The pinned definition declares no setting by that key.
+    SETTING_NOT_FOUND = "COMMUNITY_PLUGIN_SETTING_NOT_FOUND"
+    #: A unique setting's value that is not a lowercase letter, then lowercase
+    #: letters and digits, 2 to 16 characters in all.
+    SETTING_INVALID = "COMMUNITY_PLUGIN_SETTING_INVALID"
+    #: A unique setting's value this install cannot take.
+    SETTING_UNAVAILABLE = "COMMUNITY_PLUGIN_SETTING_UNAVAILABLE"
+
     # --- connections ---
     #: No such connection on this install, or no such member connection.
     CONNECTION_NOT_FOUND = "COMMUNITY_PLUGIN_CONNECTION_NOT_FOUND"
@@ -1226,6 +1374,15 @@ class GuildPluginMessages:
     #: not remove or disable it. The affordances are absent rather than
     #: erroring; this answers a request that arrives anyway.
     MANDATORY = "COMMUNITY_PLUGIN_MANDATORY"
+    #: The listing installs only in a community holding an active entitlement
+    #: for it, and this one holds none.
+    ENTITLEMENT_REQUIRED = "COMMUNITY_PLUGIN_ENTITLEMENT_REQUIRED"
+    #: Erasing a plug-in's data with its removal is the community's admins'
+    #: choice, and this caller is not one.
+    ERASE_ADMIN_ONLY = "COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY"
+    #: The community asked this plug-in to erase its data and it has not
+    #: finished; it can be installed again once it has.
+    ERASE_PENDING = "COMMUNITY_PLUGIN_ERASE_PENDING"
 
     # --- service plug-ins ---
     #: This install's plug-in service is not wired up here — never registered, or
@@ -1263,35 +1420,6 @@ class GuildPluginMessages:
     UPGRADE_VERSION_MOVED = "COMMUNITY_PLUGIN_UPGRADE_VERSION_MOVED"
 
 
-class BundledChannelMessages:
-    """Codes for calls a service this deployment ships makes to it.
-
-    Machine-to-machine, read by that service's logs and retry logic rather than
-    ``errors.json`` — the same reasoning :class:`BillingMessages` gives. No
-    surface renders one to a person.
-    """
-
-    #: No bundled service is named, or its secret is unwired. The channel is
-    #: inert on a deployment that ships none.
-    NOT_CONFIGURED = "BUNDLED_NOT_CONFIGURED"
-    #: The envelope arrived without both halves of its signature.
-    MISSING_SIGNATURE = "BUNDLED_MISSING_SIGNATURE"
-    #: Outside the clock window, or not a timestamp at all.
-    STALE_TIMESTAMP = "BUNDLED_STALE_TIMESTAMP"
-    #: The signature is not one this deployment's secret produces.
-    BAD_SIGNATURE = "BUNDLED_BAD_SIGNATURE"
-    #: The reference names no guild, or names one through an install that is
-    #: not the caller's own.
-    UNKNOWN_GUILD = "BUNDLED_UNKNOWN_COMMUNITY"
-    #: No reference has been minted for that guild in the sector asked about.
-    NO_SUCH_NAME = "BUNDLED_NO_SUCH_NAME"
-    #: The signed body is not the shape this route takes.
-    INVALID_PAYLOAD = "BUNDLED_INVALID_PAYLOAD"
-    #: That sector names something inside a guild, so it is not one a caller
-    #: holding only a guild reference can ask for.
-    SECTOR_NOT_ANSWERABLE = "BUNDLED_SECTOR_NOT_ANSWERABLE"
-
-
 class PluginServiceMessages:
     """Codes for the deployment-level plug-in service registry.
 
@@ -1307,7 +1435,7 @@ class PluginServiceMessages:
     INVALID_BASE_URL = "PLUGIN_SERVICE_INVALID_BASE_URL"
     #: The browser-facing base, when a plug-in answers there rather than at the
     #: address Initiative's own server calls.
-    INVALID_EMBED_ORIGIN = "PLUGIN_SERVICE_INVALID_EMBED_ORIGIN"
+    INVALID_PAGE_ORIGIN = "PLUGIN_SERVICE_INVALID_PAGE_ORIGIN"
     INVALID_ORIGIN = "PLUGIN_SERVICE_INVALID_ORIGIN"
     #: The key set is not a JWKS this build can verify against, or an entry in
     #: it carries no ``kid`` for a JWT to name.
@@ -1356,6 +1484,9 @@ class PluginServiceMessages:
     VENDOR_SETUP_EXPIRED = "PLUGIN_SERVICE_VENDOR_SETUP_EXPIRED"
     #: The vendor did not answer the setup's code with the new client's values.
     VENDOR_SETUP_FAILED = "PLUGIN_SERVICE_VENDOR_SETUP_FAILED"
+    #: Sharing is turned off while a vendor installation is connected to more
+    #: than one community.
+    SHARED_ROUTES_IN_USE = "PLUGIN_SERVICE_SHARED_ROUTES_IN_USE"
 
 
 class PluginMessages:
@@ -1438,6 +1569,16 @@ class PluginDataMessages:
     #: This worker already has as many calls in flight to this plug-in as it will
     #: hold open, so one slow plug-in cannot consume the pool.
     BUSY = "PLUGIN_DATA_BUSY"
+    #: Too many calls in a short window: a member's actions, or one plug-in's
+    #: calls to others.
+    RATE_LIMITED = "PLUGIN_DATA_RATE_LIMITED"
+    #: The install's pinned version declares no such action on this kind of
+    #: item.
+    ACTION_NOT_FOUND = "PLUGIN_ACTION_NOT_FOUND"
+    #: The action is not offered on this item for this reader: the install is
+    #: not placed in its initiative with a role they hold, or the plug-in
+    #: cannot read the item.
+    ACTION_NOT_OFFERED = "PLUGIN_ACTION_NOT_OFFERED"
 
 
 class PluginChannelMessages:
@@ -1447,6 +1588,16 @@ class PluginChannelMessages:
     step that refused: an install this caller does not own, or a payload
     outside what the pinned manifest declared.
     """
+
+    # --- entitlements and usage ---
+    #: This deployment holds no entitlement statement for the install's
+    #: community and listing.
+    NO_ENTITLEMENT = "NO_ENTITLEMENT"
+    #: The meter is not one the listing's terms let this plug-in report: every
+    #: meter, on a deployment whose listings carry no terms.
+    METER_NOT_ALLOWED = "METER_NOT_ALLOWED"
+    #: The total is lower than the one already reported for that period.
+    USAGE_TOTAL_DECREASED = "USAGE_TOTAL_DECREASED"
 
     # --- the install being addressed ---
     #: No install of this plug-in in that guild — never installed, uninstalled, or
@@ -1482,6 +1633,22 @@ class PluginChannelMessages:
     #: A config state outside what a plug-in may report.
     INVALID_CONFIG_STATE = "PLUGIN_CHANNEL_INVALID_CONFIG_STATE"
 
+    # --- metadata ---
+    #: A metadata key that is not a lowercase letter followed by lowercase
+    #: letters, digits, ``_`` and ``.``, or is longer than the cap.
+    METADATA_KEY_INVALID = "PLUGIN_CHANNEL_METADATA_KEY_INVALID"
+    #: One value is larger, as JSON, than a value may be.
+    METADATA_VALUE_TOO_LARGE = "PLUGIN_CHANNEL_METADATA_VALUE_TOO_LARGE"
+    #: The write would leave more keys, or more bytes, on the item or the
+    #: install than it may hold.
+    METADATA_LIMIT_REACHED = "PLUGIN_CHANNEL_METADATA_LIMIT_REACHED"
+    #: No item of that kind and id that the install can read.
+    METADATA_ITEM_NOT_FOUND = "PLUGIN_CHANNEL_METADATA_ITEM_NOT_FOUND"
+    #: A change upserts or removes elements of a key that is not a list field
+    #: on the item's kind, or sets a list field to what is not a list of
+    #: elements.
+    METADATA_LIST_MISMATCH = "PLUGIN_CHANNEL_METADATA_LIST_MISMATCH"
+
 
 class WebhookSubscriptionMessages:
     INVALID_TARGET_URL = "WEBHOOK_INVALID_TARGET_URL"
@@ -1495,6 +1662,7 @@ class AIMessages:
     INVALID_BASE_URL = "AI_INVALID_BASE_URL"
     CONNECTION_NOT_FOUND = "AI_CONNECTION_NOT_FOUND"
     MEMBER_KEYS_DISABLED = "AI_MEMBER_KEYS_DISABLED"
+    MEMBER_KEY_NOT_FOUND = "AI_MEMBER_KEY_NOT_FOUND"
     INVALID_API_KEY = "AI_INVALID_API_KEY"
     NOT_ENABLED = "AI_NOT_ENABLED"
     #: No provider is chosen, or the chosen one needs a key and has none.
@@ -1556,6 +1724,13 @@ class BillingMessages:
     PORTAL_NOT_CONFIGURED = "BILLING_PORTAL_NOT_CONFIGURED"
     PORTAL_SIGNING_NOT_CONFIGURED = "BILLING_PORTAL_SIGNING_NOT_CONFIGURED"
     PORTAL_GRANT_UNAVAILABLE = "BILLING_PORTAL_GRANT_UNAVAILABLE"
+    #: A statement for a listing no package names terms for here: it takes
+    #: none on this deployment.
+    LISTING_HAS_NO_TERMS = "BILLING_LISTING_HAS_NO_TERMS"
+    #: An entitlement statement that is not a compact JWS with the statement
+    #: header (``alg`` EdDSA, ``typ`` initiative-entitlement+jwt), the issuer's
+    #: ``iss``, and every claim present with its type.
+    INVALID_STATEMENT = "BILLING_INVALID_STATEMENT"
 
 
 class DirectMessageMessages:
@@ -1629,7 +1804,26 @@ class ContactGrantMessages:
     CANNOT_GRANT_SELF = "CONTACT_GRANT_CANNOT_GRANT_SELF"
 
 
-class ContactMessages:
-    """My Contacts — the starred list on the personal page."""
+class DemoMessages:
+    """The demo deployment's links, copies and pitches."""
 
-    CANNOT_FAVORITE_SELF = "CONTACT_CANNOT_FAVORITE_SELF"
+    #: The link is unknown, revoked, expired or used up, or its pitch has
+    #: nothing published.
+    DEMO_LINK_NOT_FOUND = "DEMO_LINK_NOT_FOUND"
+    #: No demo space is free right now.
+    DEMO_BUSY = "DEMO_BUSY"
+    #: The account was not made for a demo copy, or its copy is gone.
+    DEMO_COPY_NOT_FOUND = "DEMO_COPY_NOT_FOUND"
+    #: The community is not a pitch, or the reference names none.
+    DEMO_PITCH_NOT_FOUND = "DEMO_PITCH_NOT_FOUND"
+    #: Publishing a pitch is for its admins.
+    DEMO_PITCH_ADMIN_REQUIRED = "DEMO_PITCH_ADMIN_REQUIRED"
+    #: The pitch's bundle can't be imported, or an editor it names has no
+    #: account.
+    DEMO_PITCH_SOURCE_INVALID = "DEMO_PITCH_SOURCE_INVALID"
+    #: The platform holds content in the pitch, so it stays until released.
+    DEMO_PITCH_HELD = "DEMO_PITCH_HELD"
+    #: A persona's handle belongs to an account that is not a persona.
+    DEMO_PERSONA_TAKEN = "DEMO_PERSONA_TAKEN"
+    #: A link's end is in the past.
+    DEMO_LINK_EXPIRY_INVALID = "DEMO_LINK_EXPIRY_INVALID"

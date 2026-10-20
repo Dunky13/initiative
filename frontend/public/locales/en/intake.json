@@ -86,14 +86,23 @@
     "action": "Ask for help",
     "title": "Ask for help",
     "description": "Tell us what is going on and somebody will pick it up.",
-    "subjectLabel": "What is this about?",
+    "subjectLabel": "Title",
     "subjectPlaceholder": "One line, so it can be found again",
     "bodyLabel": "What happened?",
     "bodyPlaceholder": "What you were doing, what you expected, and what happened instead.",
     "browseFaq": "Browse the FAQ",
     "submit": "Send",
     "thanks": "Sent. Somebody will pick it up.",
-    "error": "Could not send that. Try again in a moment."
+    "error": "Could not send that. Try again in a moment.",
+    "topicLabel": "What is it about?",
+    "topicPlaceholder": "Choose one",
+    "topics": {
+      "account": "My account",
+      "community": "This community",
+      "billing": "Billing",
+      "data_request": "A copy of this community's data, or deleting it",
+      "other": "Something else"
+    }
   },
   "contact": {
     "title": "Get in touch",
@@ -139,6 +148,135 @@
     "replyAndWait": "Send and wait for them",
     "fromTeam": "The team ({{name}})",
     "someone": "Someone",
-    "conversationLabel": "Conversation with {{name}}"
+    "conversationLabel": "Conversation with {{name}}",
+    "access": {
+      "title": "Access",
+      "listLabel": "Access asked for on this case",
+      "none": "No access has been asked for on this case.",
+      "request": "Request access",
+      "endsIn": "ends in {{minutes}}m"
+    },
+    "holds": {
+      "title": "Holds",
+      "none": "Nothing is held on this case.",
+      "needGrant": "To see and release what is held in community {{community}}, request moderation access to it.",
+      "requestAccess": "Request access",
+      "holdReported": "Hold the reported content",
+      "target": "{{type}} {{id}}",
+      "via": {
+        "community": "Held by the community",
+        "platform": "Held by the platform"
+      },
+      "reasons": {
+        "legal_request": "Legal request",
+        "illegal_content": "May be illegal"
+      },
+      "bases": {
+        "child_safety": "Child safety",
+        "terrorism": "Terrorism",
+        "intellectual_property": "Intellectual property",
+        "fraud": "Fraud",
+        "privacy": "Privacy",
+        "other": "Other"
+      },
+      "restore": "Restore",
+      "remove": "Remove",
+      "purge": "Purge",
+      "purgeTitle": "Purge this content?",
+      "purgeDescription": "This destroys it for good, with everything held with it. It can't be undone.",
+      "released": {
+        "restore": "Released: restored",
+        "remove": "Released: removed",
+        "purge": "Released: purged"
+      }
+    },
+    "topics": {
+      "account": "Their account",
+      "community": "Their community",
+      "billing": "Billing",
+      "data_request": "Data request",
+      "other": "Other",
+      "vulnerability": "Vulnerability",
+      "account_compromise": "Account compromise",
+      "idea": "Idea",
+      "problem": "Problem",
+      "praise": "Praise",
+      "appeal": "Suspension appeal"
+    },
+    "take": "Take this case",
+    "taken": "You're on this case",
+    "takeFailed": "Couldn't take this case."
+  },
+  "evidence": {
+    "attach": "Attach files",
+    "limits_one": "Up to {{count}} file, {{size}} at most.",
+    "limits_other": "Up to {{count}} files, {{size}} each at most.",
+    "remove": "Remove {{name}}",
+    "tooMany_one": "You can attach {{count}} file.",
+    "tooMany_other": "You can attach up to {{count}} files.",
+    "tooLarge": "{{name}} is larger than {{size}}.",
+    "notAllowed": "{{name}} isn't a kind of file this takes.",
+    "heading": "Attached",
+    "reveal": "Show {{name}}",
+    "view": "View {{name}}",
+    "open": "Open {{name}}",
+    "dropped_one": "Took off {{names}}: this doesn't take it.",
+    "dropped_other": "Took off {{names}}: this doesn't take them."
+  },
+  "security": {
+    "action": "Report a security problem",
+    "cardTitle": "Report a security problem",
+    "cardDescription": "Found a weakness in this server, or someone else got into your account? Tell the people who run it.",
+    "title": "Report a security problem",
+    "description": "The people who run this server read this, and you can follow it under My Tickets.",
+    "topicLabel": "What is it about?",
+    "topicPlaceholder": "Choose one",
+    "topics": {
+      "vulnerability": "A weakness in this server",
+      "account_compromise": "Someone else got into my account",
+      "other": "Something else"
+    },
+    "bodyLabel": "What did you find?",
+    "bodyPlaceholder": "What you saw, where, and how to see it again.",
+    "softwareNote": "A problem with the Initiative software itself, rather than this server, goes to the project: see SECURITY.md.",
+    "submit": "Send report",
+    "thanks": "Sent. You can follow it under My Tickets.",
+    "error": "Could not send that. Try again in a moment."
+  },
+  "feedback": {
+    "action": "Send feedback",
+    "title": "Send feedback",
+    "description": "Tell the people who run this server what you think. You can follow it under My Tickets.",
+    "typeLabel": "What kind of feedback is it?",
+    "typePlaceholder": "Choose one",
+    "topics": {
+      "idea": "An idea",
+      "problem": "A problem",
+      "praise": "Praise",
+      "other": "Something else"
+    },
+    "bodyLabel": "What do you want to tell them?",
+    "bodyPlaceholder": "What you'd like, what got in your way, or what you liked.",
+    "needsAnswer": "I need an answer",
+    "needsAnswerHelp": "Sends this as a help request instead, so somebody writes back.",
+    "submit": "Send feedback",
+    "thanks": "Thanks! The people who run this server will read it.",
+    "error": "Could not send that. Try again in a moment.",
+    "context": {
+      "title": "Sent with it",
+      "help": "Where the app was, so they can see what you saw. Nothing here names you or anything you opened.",
+      "remove": "Remove",
+      "fields": {
+        "app_version": "Version",
+        "platform": "Platform",
+        "locale": "Language",
+        "theme": "Theme",
+        "route": "Page",
+        "viewport": "Window"
+      }
+    }
+  },
+  "moderationTopics": {
+    "appeal": "Appeal against your suspension"
   }
 }

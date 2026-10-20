@@ -16,9 +16,9 @@ There are two, and the difference is who gets what you take.
 
 | | **Your community's** | **Yours** |
 |---|---|---|
-| What's on it | Dashboards, projects and plug-ins | Decoration packs |
+| What's on it | Dashboards, projects and plug-ins | Home layouts and decoration packs |
 | Who it's for | Everyone in that community | You, in every community you're in |
-| Where to open it | **Browse the marketplace** in a dashboards or projects list's **More actions** menu (beside the create button, while the list is empty), or at the foot of the **Plug-ins** section of the sidebar | **Browse the marketplace** on **My Settings → Profile** |
+| Where to open it | **Browse the marketplace** in a dashboards or projects list's **More actions** menu (beside the create button, while the list is empty), or at the foot of the **Plug-ins** section of the sidebar | **Browse the marketplace** when making a new home view, or on **My Settings → Profile** |
 
 ![Browsing the marketplace](../images/marketplace/browse.png)
 
@@ -60,7 +60,7 @@ What lands is an ordinary project of your own. Rename the columns, delete the ex
 
 ### Adding a plug-in
 
-A **plug-in** adds something to the community as a whole rather than one effort: a page of its own, extra dashboard widgets, or a link to a service your group already uses. Because it affects everyone, **only your community's [superadmin](communities.md#why-superadmin-is-separate) can add or remove one**. Everybody else can browse, read the listing, and go and ask them nicely.
+A **plug-in** adds something to the community as a whole rather than one effort: a page of its own, extra dashboard widgets, [fields and buttons on your items](#what-a-plug-in-puts-on-items), or a link to a service your group already uses. Because it affects everyone, **only your community's [superadmin](communities.md#why-superadmin-is-separate) can add or remove one**. Everybody else can browse, read the listing, and go and ask them nicely.
 
 1. Switch the marketplace to the **Plug-ins** shelf and open a listing.
 2. **Add to community**, and name it.
@@ -86,7 +86,7 @@ A plug-in asking for nothing gets asked nothing. It just gets a name.
 
 Some plug-ins work through another one: automations that open GitHub issues, say. You're asked about that when the other one arrives, not before, so a community without GitHub is never asked whether automations may use it. Remove GitHub and that permission goes with it. Add it back and you're asked again.
 
-A plug-in allowed to change something, such as a task, can fill in that thing's [custom properties](initiatives.md#initiative-settings) as well. **Properties** on its own is for making new ones: it lets the plug-in read an initiative's property definitions, and with write, add to them.
+A plug-in allowed to change something, such as a task, can fill in that thing's [custom properties](initiatives.md#custom-properties) as well. **Properties** on its own is for making new ones: it lets the plug-in read an initiative's property definitions, and with write, add to them.
 
 !!! info "Some plug-ins have a minimum age"
     A listing that has one says so: **Ages 16+**, for the country your browser is set to. It can differ by country. The community can still add it; somebody under the age where they are just can't open or use it.
@@ -104,6 +104,22 @@ Some plug-ins can do more if you let them, and ask for it in two lines that star
 
 Ticking either lets the plug-in ask for that standing; it doesn't use it everywhere at once. An automations plug-in, for example, uses it only for an automation somebody holding that role set up to run that way. Either way, it still reaches only the kinds of thing ticked above. An admin-standing plug-in that may read projects reads every project, and still no files.
 
+### What a plug-in puts on items
+
+Some plug-ins add to the things you already work with: an invoice number on a task, a **Paid** tick on a queue item, a progress bar on a counter that is very nearly at its fundraising target. They can appear on tasks, calendar events, queue items, counters, gallery pictures and posts.
+
+| | What you see |
+|---|---|
+| **Fields** | A labelled value, drawn like Initiative's own: text, a number, a date, a date and time, a link, a colored badge, a progress bar or a tick box. A field can also hold a list, such as every pull request linked to a task, each with badges for what state it's in. Task fields can be filtered on, like any other. |
+| **Sections** | A small panel on the item's page, made of the plug-in's fields and buttons. |
+| **Actions** | A button in a section, an entry in the item's menu, or a button beside one entry of a list, that asks the plug-in to do something with this one item. Some check with you first, or ask you a question or two, like which repository. |
+
+The plug-in keeps those values in Initiative, so they show and filter without waiting on it.
+
+What the superadmin agreed to applies here too. A plug-in only puts values on items it may read, so one allowed to read projects can mark tasks, but not calendar events. They show in the initiatives under **Where it works**, to the roles under **Who can open it there**, and to community admins. A few actions belong to community admins alone.
+
+Placing a plug-in in an initiative adds its fields and sections to that initiative's item pages, and its task fields to boards and tables. Whoever looks after the layouts can move them or take them off in [Edit layouts](layouts.md). One taken off stays off, updates included.
+
 ### Updates
 
 Plug-ins update themselves. Most new versions arrive quietly and nobody notices, which is the idea.
@@ -112,7 +128,7 @@ The exception is a version that wants **more** than you agreed to: something new
 
 Prefer to read every update first? Turn off **Update automatically** in the plug-in's settings, and each new version waits for you to click **Update to** it.
 
-Some plug-ins come with your server and are added to every community for you. Those can't be removed or turned off from here, and they update without asking. Whoever runs the server decides whether they exist at all.
+Some plug-ins come with your server and are added to every community for you. Those can't be removed or turned off from here, and they update without asking. Whoever runs the server decides whether they exist at all; once one is added, your community decides where it appears and what it may do, like any other.
 
 ### A plug-in can own things
 
@@ -125,7 +141,9 @@ In **Settings → Users**, **Transfer ownership** offers plug-ins beside admins.
 Some plug-ins need a credential — an API key, or a sign-in to another service. Two kinds, and the difference matters:
 
 - **Community credential** — set once by the superadmin, used for everyone. Good for a shared account the whole group works through.
-- **Your account** — each member supplies their own, used only for them. Yours is yours; other members can't see or use it.
+- **Your account** — each member supplies their own, used only for them. Yours is yours: other members, admins included, can't see or use it. The superadmin can see who has connected, and disconnect them.
+
+Some plug-ins also have **settings** of their own, such as the prefix a task's reference starts with. The superadmin changes them in the plug-in's settings.
 
 Each connection shows which service it uses and what it's allowed to do there, so you can decide before you hand anything over.
 
@@ -135,11 +153,36 @@ Each connection shows which service it uses and what it's allowed to do there, s
 - **Remove** takes it out entirely:
     - Anything it set up when it was added moves to the **Trash**, restorable during the retention window.
     - Anything it owned stays where it is, with no owner. An admin picks it up with **Claim unowned content** in **Settings → Users**.
+    - Every value it kept on items goes with it.
     - Every credential it held, the community's and each member's, is deleted, and the plug-in is told to stop using them.
+    - The plug-in is told it was removed, and what it keeps about your community stays with it. It never learns your members' names or accounts, only a name of its own for each of them, and those names stay the same: add it back later and it recognises your community and its members, and picks up where it left off.
+- **Remove and erase its data** does all of that and also asks the plug-in to delete everything it holds about your community. Once it has, its names for your community and its members are forgotten, and adding it back starts afresh. Until then it can't be added back. A plug-in that never answers is given a few days, and then its names are forgotten anyway. Only the community's admins can erase, and a plug-in that comes with your server can't be removed or erased.
+
+A plug-in is also told when your community's standing changes, for instance when it is put on hold, and pauses its own work until the community is back. When a community is deleted for good, every plug-in that knew it is asked to erase what it holds first, and the community is destroyed once each has answered or been given up on.
 
 ## Your own marketplace
 
-Yours holds **decoration packs**: artwork for your profile, and by far the least serious part of Initiative.
+Yours holds **home layouts** and **decoration packs**.
+
+### Home layouts
+
+Ready-made pages for your [home](your-space.md#home), each arranged for a particular kind of day. Five ship with Initiative:
+
+| | |
+|---|---|
+| **Week ahead** | Your calendar front and centre, the next fortnight beside it, what's urgent underneath. |
+| **Study session** | A twenty-five minute timer, the next few things, your streak, then the whole list. |
+| **Stand-up** | What happened to your things, what changed lately, your list. Read it top to bottom and you know what to say. |
+| **Club secretary** | Every community you're in, the calendar across them, and the posts, events and files that changed. |
+| **Around the world** | Clocks for wherever your people are, plus what everybody changed while you slept. |
+
+**Add to my home** opens the layout as a new view, beside the ones you already have — nothing you arranged is touched. **Browse the marketplace** at the foot of the new-view picker brings you here.
+
+A layout is only an arrangement. It carries no tasks, no communities and nobody else's anything: every widget reads your own things when it draws.
+
+### Decoration packs
+
+Artwork for your profile, and by far the least serious part of Initiative.
 
 Each pack is built around one thing a group of people has in common, and carries banners, frames and trophies you wear in whatever combination pleases you.
 

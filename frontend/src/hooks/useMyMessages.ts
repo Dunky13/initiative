@@ -14,6 +14,7 @@
 
 import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   acceptInvitation,
@@ -32,6 +33,7 @@ import {
   collect,
   collectVerification,
   confirmMatch,
+  DeviceGoneError,
   dismissVerification,
   ensureDevice,
   historyAsk,
@@ -75,6 +77,8 @@ export const messageKeys = {
   // Keyed on the conversations it counts, so a new one is a new question
   // rather than a stale answer waiting for something to invalidate it.
   unread: (conversationIds: string[]) => ["dm", "unread", conversationIds.join(",")] as const,
+  /** When each conversation's newest message on this device was written. */
+  latest: (conversationIds: string[]) => ["dm", "latest", conversationIds.join(",")] as const,
   /** A new device of this account's waiting to be confirmed, read out of the local store. */
   ownDevice: ["dm", "own-device"] as const,
   /** This device's own outstanding ask for its history. */
@@ -107,7 +111,10 @@ export function useDmDevice() {
     // for a channel that does not exist.
     enabled: dmEnabled,
     staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
+    // Setting up is safe to ask again: a device already registered is found
+    // rather than made twice. One failed round trip should not leave the page
+    // saying this browser cannot do encrypted messages until it is reloaded.
+    retry: 2,
   });
 }
 
@@ -140,6 +147,7 @@ export function useSendMessage(conversationId: string, memberIds: number[]) {
       void queryClient.invalidateQueries({
         queryKey: messageKeys.thread(conversationId),
       });
+      void queryClient.invalidateQueries({ queryKey: ["dm", "latest"] });
     },
     // Settled, not success: reading the directory happens before the send, so
     // a send that fails afterwards can still have found something to say.
@@ -232,6 +240,7 @@ export function useCollectMessages(enabled: boolean) {
       if (touched.length > 0) {
         void queryClient.invalidateQueries({ queryKey: messageKeys.conversations });
         void queryClient.invalidateQueries({ queryKey: ["dm", "unread"] });
+        void queryClient.invalidateQueries({ queryKey: ["dm", "latest"] });
       }
       return touched;
     },
@@ -307,13 +316,20 @@ function useCollectVerification(enabled: boolean) {
 
 /** What the prompt and the dialog can do about a comparison. */
 export function useVerificationActions() {
+  const { t } = useTranslation("messages");
+  const queryClient = useQueryClient();
   const onError = (error: unknown) =>
     toast.error(getErrorMessage(error, "messages:verification.error"));
   return {
     start: useMutation({
       mutationFn: ({ change, sendHistory }: { change: PeerKeyChange; sendHistory: boolean }) =>
         startVerification(change, { sendHistory }),
-      onError,
+      onError: (error) => {
+        if (!(error instanceof DeviceGoneError)) return onError(error);
+        // Its prompt is already gone from the store; this takes it off screen.
+        toast.info(t("newDevice.gone"));
+        void queryClient.invalidateQueries({ queryKey: messageKeys.ownDevice });
+      },
     }),
     confirm: useMutation({ mutationFn: confirmMatch, onError }),
     reject: useMutation({ mutationFn: rejectMatch, onError }),
@@ -423,6 +439,27 @@ export function useMessagesWaiting(): number {
  * deletes a message once it has been collected and could not answer this even
  * if it were asked.
  */
+/**
+ * When the newest message in each conversation was written, on this device, by
+ * the sender's clock: what the conversation list is ordered by. Absent for a
+ * thread this device holds nothing of.
+ */
+export function useLatestMessages(conversationIds: string[]) {
+  return useQuery({
+    queryKey: messageKeys.latest(conversationIds),
+    queryFn: async () => {
+      const latest = new Map<string, string>();
+      for (const id of conversationIds) {
+        const log = await messageLog.get(id);
+        if (log.length > 0) latest.set(id, log[log.length - 1].at);
+      }
+      return latest;
+    },
+    enabled: conversationIds.length > 0,
+    staleTime: 0,
+  });
+}
+
 export function useUnreadMessages(conversationIds: string[]) {
   return useQuery({
     queryKey: messageKeys.unread(conversationIds),

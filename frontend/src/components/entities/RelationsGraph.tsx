@@ -160,6 +160,8 @@ interface RelationsGraphProps {
   showTags: boolean;
   onShowTagsChange: (showTags: boolean) => void;
   loading?: boolean;
+  /** The walk further out failed, so only the first hop is drawn. */
+  walkFailed?: boolean;
 }
 
 /** How hard the layout pushes, wherever it is asked to run. */
@@ -298,6 +300,7 @@ export const RelationsGraph = ({
   showTags,
   onShowTagsChange,
   loading,
+  walkFailed,
 }: RelationsGraphProps) => {
   const { t } = useTranslation(["relations", "search"]);
   const navigate = useNavigate();
@@ -457,6 +460,10 @@ export const RelationsGraph = ({
         </label>
         {loading ? (
           <span className="ml-1 text-muted-foreground text-xs">{t("graph.walking")}</span>
+        ) : walkFailed ? (
+          <span role="status" className="ml-1 text-muted-foreground text-xs">
+            {t("graph.walkFailed")}
+          </span>
         ) : null}
       </div>
 

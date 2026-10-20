@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
   Minus,
@@ -13,7 +14,7 @@ import { type TouchEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type CounterRead, Tool } from "@/api/generated/initiativeAPI.schemas";
-import { CounterFormDialog } from "@/components/initiativeTools/counters/CounterFormDialog";
+import { EditCounterDialog } from "@/components/initiativeTools/counters/EditCounterDialog";
 import { CounterView } from "@/components/initiativeTools/counters/views/CounterView";
 import { CounterFocusSkeleton } from "@/components/skeletons/PageSkeletons";
 import { ToolAccessStatus } from "@/components/ToolAccessStatus";
@@ -31,6 +32,7 @@ import {
   useSetCount,
   useSteppedCount,
 } from "@/hooks/useCounters";
+import { useRecordOpen, useSubscription } from "@/hooks/usePersonalItems";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getContrastingTextColor } from "@/lib/counter-color";
@@ -84,6 +86,8 @@ export function CounterDetailPage() {
     [counters, counterId]
   );
   const counter = currentIndex >= 0 ? counters[currentIndex] : null;
+  useRecordOpen("counter", counter?.id);
+  const subscription = useSubscription("counter", counter?.id ?? 0);
 
   const canWrite = Boolean(group?.can.edit);
 
@@ -183,6 +187,22 @@ export function CounterDetailPage() {
         >
           {counter.name}
         </h1>
+        {/* On the counter's own colours: filled when subscribed. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-pressed={subscription.subscribed}
+          aria-label={
+            subscription.subscribed ? t("common:subscribe.remove") : t("common:subscribe.add")
+          }
+          title={subscription.subscribed ? t("common:subscribe.remove") : t("common:subscribe.add")}
+          disabled={!subscription.ready}
+          onClick={subscription.toggle}
+          className={cn("h-10 w-10", chromeButtonClass)}
+          style={{ color: fg }}
+        >
+          <Bell className="h-5 w-5" fill={subscription.subscribed ? "currentColor" : "none"} />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -296,14 +316,15 @@ export function CounterDetailPage() {
       </div>
 
       {canWrite && editing && (
-        <CounterFormDialog
+        <EditCounterDialog
           open={!!editing}
           onOpenChange={(open) => {
             if (!open) setEditing(null);
           }}
           groupId={groupId}
-          initiativeId={initiativeId}
+          initiativeId={group.initiative_id}
           counter={editing}
+          stepper={stepper}
         />
       )}
     </div>

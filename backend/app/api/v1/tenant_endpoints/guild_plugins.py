@@ -18,7 +18,7 @@ perform another member's connection nor read its values.
 
 What a member may *do* inside a plug-in is not decided here. The content a plug-in
 creates carries its own grants, and the tool that owns it enforces them exactly
-as it does for initiative content. A plug-in's *embedded* surfaces are the
+as it does for initiative content. A plug-in's *pages* are the
 exception, because they have no local content to carry grants: the handoff mint
 is where who-may-open-this is settled, against where the seat placed the plug-in
 and which roles it allowed there.
@@ -34,16 +34,24 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from sqlalchemy import func, union
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.db import post_commit
-from app.db.session import routed_guild_id
 from app.api.deps import (
     AgeViewerDep,
+    CurrentUser,
+    GuildContextDep,
     RLSSessionDep,
     SeatContextDep,
     SeatSessionDep,
@@ -52,35 +60,31 @@ from app.api.deps import (
     require_first_party_session,
     require_grant_writes,
     require_seat,
-    GuildContextDep,
-    CurrentUser,
 )
 from app.core.audit_events import AuditEventType
-from app.core.plugin_scopes import plugin_scope_target
 from app.core.messages import (
     GuildPluginMessages,
     InitiativeMessages,
     MarketplaceMessages,
 )
+from app.core.plugin_scopes import plugin_scope_target
+from app.core.rate_limit import limiter
+from app.db import post_commit
 from app.db.guild_standing import GuildContext
-from app.services.tenant import plugin_age
-from app.services.tenant.plugin_age import AgeViewer
 from app.db.query import build_paginated_response, paginated_query
+from app.db.session import routed_guild_id
 from app.models.platform.guild import GuildMembership
-from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.initiative import Initiative
+from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.schemas.tenant.guild_plugin import (
-    PluginPlacementRead,
-    PluginPlacementUpdate,
-    CommunityPluginScopesUpdate,
     CommunityPluginConfigUpdate,
     CommunityPluginConnectionSummary,
-    CommunityPluginConsentSummary,
     CommunityPluginConnectStart,
     CommunityPluginConsentAnswer,
     CommunityPluginConsentRead,
+    CommunityPluginConsentSummary,
     CommunityPluginDecline,
     CommunityPluginDetail,
     CommunityPluginHandoff,
@@ -88,8 +92,13 @@ from app.schemas.tenant.guild_plugin import (
     CommunityPluginListResponse,
     CommunityPluginMembersResponse,
     CommunityPluginRead,
+    CommunityPluginScopesUpdate,
+    CommunityPluginSettingUpdate,
+    CommunityPluginUninstallNotice,
     CommunityPluginUpdate,
     CommunityPluginUpgrade,
+    PluginPlacementRead,
+    PluginPlacementUpdate,
     serialize_consent,
     serialize_guild_plugin,
     serialize_guild_plugin_detail,
@@ -98,27 +107,32 @@ from app.schemas.tenant.guild_plugin import (
     upgrade_asks_read,
 )
 from app.services import audit as audit_service
-from app.services.marketplace import plugin_installs as plugin_installs_service
-from app.services.marketplace import plugin_refs
 from app.services.marketplace import catalog as catalog_service
-from app.services.marketplace import registration_lookup
+from app.services.marketplace import (
+    plugin_entitlements,
+    registration_lookup,
+)
+from app.services.marketplace import plugin_installs as plugin_installs_service
 from app.services.marketplace.definitions import (
-    PLUGIN_KINDS,
     GUILD_INSTALLABLE_PLUGIN_KINDS,
+    PLUGIN_KINDS,
 )
 from app.services.marketplace.installs import (
     count_install,
     resolve_listing_install,
 )
 from app.services.membership import initiative_scope_clause
+from app.services.platform import billing_ping
+from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_age
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connection_flows as flows_service
 from app.services.tenant import plugin_connections as connections_service
-from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import plugin_handoff as handoff_service
+from app.services.tenant import plugin_member_consents as consents_service
 from app.services.tenant import plugin_schedules as plugin_schedules_service
 from app.services.tenant import plugin_updates as plugin_updates_service
-from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant.plugin_age import AgeViewer
 
 logger = logging.getLogger(__name__)
 
@@ -225,10 +239,12 @@ async def _plugin_names(
 
 
 async def _require_grantable(
-    session: AsyncSession, granted: set[str], definition: dict
+    session: AsyncSession, granted: set[str], definition: dict, listing_uid: str
 ) -> None:
     """Refuse a grant the manifest does not request, the ceiling does not allow,
-    or that uses a plug-in the community does not have.
+    or that uses a plug-in the community does not have. ``listing_uid`` is the
+    listing the definition is a version of, which names a declarative plug-in's
+    registration.
 
     The one check every write of a grant makes: setting the scopes, installing
     with them, and consenting to a version's new ones.
@@ -238,7 +254,9 @@ async def _require_grantable(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=GuildPluginMessages.SCOPE_NOT_REQUESTED,
         )
-    registration = await registration_lookup.registration_for_definition(definition)
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=listing_uid
+    )
     ceiling = set(registration.scope_ceiling) if registration is not None else set()
     if not granted <= ceiling:
         raise HTTPException(
@@ -304,7 +322,7 @@ def _require_installable_kind(definition: dict) -> None:
         )
 
 
-async def _require_removable(plugin: GuildPlugin) -> None:
+async def _require_removable(plugin: GuildPlugin, guild_id: int) -> None:
     """Refuse to remove or turn off a plug-in the deployment provides.
 
     Mandatory constrains guild admins, not the operator: a plug-in marked so on
@@ -315,7 +333,7 @@ async def _require_removable(plugin: GuildPlugin) -> None:
     nothing migrated.
     """
     state = await registration_lookup.install_state(
-        plugin.definition, listing_uid=plugin.listing_uid
+        plugin.definition, guild_id=guild_id, listing_uid=plugin.listing_uid
     )
     if state.mandatory:
         raise HTTPException(
@@ -344,7 +362,9 @@ async def _read(
         plugin,
         viewer=viewer,
         install_state=await registration_lookup.install_state(
-            plugin.definition, listing_uid=plugin.listing_uid
+            plugin.definition,
+            guild_id=context.guild_id,
+            listing_uid=plugin.listing_uid,
         ),
         avatar_url=await _plugin_avatar(session, plugin),
         context=context,
@@ -374,7 +394,9 @@ async def _detail(
         avatar_url=await _plugin_avatar(session, plugin),
         member_rows=await _member_rows(session, plugin_id=plugin.id, user_id=user_id),
         install_state=await registration_lookup.install_state(
-            plugin.definition, listing_uid=plugin.listing_uid
+            plugin.definition,
+            guild_id=context.guild_id,
+            listing_uid=plugin.listing_uid,
         ),
         update_offer=offer,
         installed=await guild_plugins_service.installed_plugin_ids(session),
@@ -449,7 +471,9 @@ async def list_community_plugins(
                 plugin,
                 viewer=viewer,
                 install_state=await registration_lookup.install_state(
-                    plugin.definition, listing_uid=plugin.listing_uid
+                    plugin.definition,
+                    guild_id=guild_context.guild_id,
+                    listing_uid=plugin.listing_uid,
                 ),
                 avatar_url=avatars.get(plugin.listing_uid),
                 context=guild_context,
@@ -519,6 +543,13 @@ async def install_community_plugin(
     listing, version = await resolve_listing_install(
         session, payload.listing_uid, kind="plugin"
     )
+    if await plugin_entitlements.entitlement_blocks(
+        guild_context.guild_id, listing.uid, session
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ENTITLEMENT_REQUIRED,
+        )
 
     existing = (
         await session.exec(
@@ -534,7 +565,7 @@ async def install_community_plugin(
     definition = dict(version.definition)
     _require_installable_kind(definition)
     granted = set(payload.granted_scopes)
-    await _require_grantable(session, granted, definition)
+    await _require_grantable(session, granted, definition, listing.uid)
 
     name = (payload.name or definition.get("default_name") or listing.name).strip()
     try:
@@ -558,6 +589,12 @@ async def install_community_plugin(
                 payload.role_kinds,
             )
         await session.commit()
+    except guild_plugins_service.ErasePendingError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=GuildPluginMessages.ERASE_PENDING,
+        ) from exc
     except guild_plugins_service.PlacementError as exc:
         await session.rollback()
         raise HTTPException(
@@ -580,7 +617,9 @@ async def install_community_plugin(
             detail=GuildPluginMessages.ALREADY_INSTALLED,
         ) from exc
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
+    await guild_plugins_service.assign_settings(
+        session, plugin, guild_id=guild_context.guild_id
+    )
     await plugin_schedules_service.reconcile(
         guild_context.guild_id, plugin.id, plugin.definition
     )
@@ -638,7 +677,9 @@ async def upgrade_community_plugin(
     definition = dict(version.definition)
     _require_installable_kind(definition)
 
-    registration = await registration_lookup.registration_for_definition(definition)
+    registration = await registration_lookup.registration_for_definition(
+        definition, listing_uid=plugin.listing_uid
+    )
     asks = plugin_updates_service.upgrade_asks(
         plugin,
         definition,
@@ -664,7 +705,7 @@ async def upgrade_community_plugin(
             },
         )
     add_scopes = set(payload.add_scopes) if payload is not None else set()
-    await _require_grantable(session, add_scopes, definition)
+    await _require_grantable(session, add_scopes, definition, plugin.listing_uid)
 
     previous_version = plugin.listing_version
     previous_grant = sorted(plugin.granted_scopes or [])
@@ -703,9 +744,10 @@ async def upgrade_community_plugin(
     )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_schedules_service.reconcile(
-        guild_context.guild_id, plugin.id, plugin.definition
+    await guild_plugins_service.assign_settings(
+        session, plugin, guild_id=guild_context.guild_id
     )
+    await plugin_updates_service.reconcile_repinned(guild_context.guild_id, plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
 
@@ -796,7 +838,7 @@ async def update_community_plugin(
         plugin.name = data["name"].strip()
     if "enabled" in data and data["enabled"] is not None:
         if not data["enabled"]:
-            await _require_removable(plugin)
+            await _require_removable(plugin, guild_context.guild_id)
         plugin.enabled = data["enabled"]
     if data.get("auto_update") is not None:
         plugin.auto_update = data["auto_update"]
@@ -823,8 +865,47 @@ async def update_community_plugin(
         )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
     return await _read(session, plugin, guild_context, viewer)
+
+
+@router.get(
+    "/{plugin_id}/uninstall-notice", response_model=CommunityPluginUninstallNotice
+)
+@limiter.limit("30/minute")
+async def read_uninstall_notice(
+    request: Request,
+    plugin_id: int,
+    session: SeatSessionDep,
+    guild_context: SeatContextDep,
+    locale: Annotated[
+        str, Query(max_length=35, pattern=r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
+    ] = "en",
+) -> CommunityPluginUninstallNotice:
+    """What the removal dialog says about this plug-in beyond the usual.
+
+    For a plug-in whose listing carries package terms, the entitlement issuer
+    is asked, for this response only and within two seconds, what removing it
+    means for this community; its sentence comes back as it gave it. Anything
+    else is ``managed: false``. Read by the seat, which is who removes one.
+    """
+    plugin = await _load(session, plugin_id)
+    listing_uid = plugin.listing_uid
+    if (
+        not listing_uid
+        or await plugin_entitlements.listing_terms(listing_uid, session) is None
+    ):
+        return CommunityPluginUninstallNotice()
+    notice = await billing_ping.plugin_uninstall_notice(
+        guild_context.guild_id, listing_uid=listing_uid, locale=locale
+    )
+    fallback = plugin_entitlements.action_url(guild_context.guild_id, listing_uid)
+    if notice is None:
+        return CommunityPluginUninstallNotice(managed=True, action_url=fallback)
+    return CommunityPluginUninstallNotice(
+        managed=True,
+        message=notice.message,
+        action_url=notice.action_url or fallback,
+    )
 
 
 @router.delete("/{plugin_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -834,45 +915,39 @@ async def uninstall_community_plugin(
     current_user: CurrentUser,
     guild_context: SeatWriteContextDep,
     background_tasks: BackgroundTasks,
+    erase: Annotated[bool, Query()] = False,
 ) -> None:
     """Remove a plug-in, ending its access and trashing what it created
     (:func:`~app.services.tenant.guild_plugins.uninstall_plugin`).
 
-    A plug-in the deployment provides to every guild is not removable here (§7.7):
-    the operator's registration decides whether it exists at all.
+    What the plug-in calls the community and its members is kept, so installing
+    it again picks up where it left off. ``erase`` also asks the plug-in to
+    delete everything it holds about the community, and forgets those names
+    once it has: the community's admins' choice alone (403
+    ``COMMUNITY_PLUGIN_ERASE_ADMIN_ONLY`` for anyone else).
+
+    A plug-in the deployment provides to every guild is not removable here, and
+    so not erasable either (§7.7): the operator's registration decides whether
+    it exists at all.
     """
     # Held for the rest of this transaction, so a calendar being given to the
     # plug-in either lands before this read and is trashed with everything else, or
     # finds no install and is refused.
     plugin = await _load(session, plugin_id, for_update=True)
-    await _require_removable(plugin)
+    await _require_removable(plugin, guild_context.guild_id)
+    if erase and not guild_context.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildPluginMessages.ERASE_ADMIN_ONLY,
+        )
 
     install_id, guild_id = plugin.id, routed_guild_id(session)
     await guild_plugins_service.uninstall_plugin(
-        session, plugin, actor_user_id=current_user.id
+        session, plugin, actor_user_id=current_user.id, erase=erase
     )
     await session.commit()
     await plugin_installs_service.forget(guild_id, install_id)
-    # After the revocations, which name the guild by these references.
     background_tasks.add_task(post_commit.settle, session)
-    background_tasks.add_task(_drop_install_refs, guild_id, install_id)
-
-
-async def _drop_install_refs(guild_id: int, install_id: int) -> None:
-    """Remove what an uninstalled install called each member. Explicit, because
-    the reference lives in a platform-wide table that no foreign key reaches
-    from here. A reference left behind names an install that no longer exists,
-    so it resolves to nobody."""
-    try:
-        await plugin_refs.drop_install_refs(
-            guild_id=guild_id, plugin_install_id=install_id
-        )
-    except SQLAlchemyError:
-        logger.warning(
-            "plug-in refs: references for install %s in guild %s were not removed",
-            install_id,
-            guild_id,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -908,7 +983,39 @@ async def update_community_plugin_config(
     )
     await session.commit()
     await session.refresh(plugin)
-    await plugin_installs_service.record(guild_context.guild_id, plugin)
+    return await _detail(session, plugin, guild_context, current_user.id, viewer)
+
+
+@router.put("/{plugin_id}/settings/{key}", response_model=CommunityPluginDetail)
+async def update_community_plugin_setting(
+    plugin_id: int,
+    key: str,
+    payload: CommunityPluginSettingUpdate,
+    session: SeatWriteSessionDep,
+    current_user: CurrentUser,
+    guild_context: SeatWriteContextDep,
+    viewer: AgeViewerDep,
+) -> CommunityPluginDetail:
+    """Set one of the values the plug-in's settings declare.
+
+    Validated against the *pinned* definition. A unique setting holds a
+    lowercase letter, then lowercase letters and digits, 2 to 16 in all
+    (``COMMUNITY_PLUGIN_SETTING_INVALID`` otherwise), that no other community
+    on this server holds, now or as an earlier value
+    (``COMMUNITY_PLUGIN_SETTING_UNAVAILABLE`` otherwise). The value it replaces
+    stays this community's, and the plug-in still reads it; setting it again
+    makes it current.
+    """
+    plugin = await _load(session, plugin_id, for_update=True)
+    await guild_plugins_service.set_setting(
+        session,
+        plugin,
+        key,
+        payload.value,
+        guild_id=guild_context.guild_id,
+        actor_user_id=current_user.id,
+    )
+    await session.refresh(plugin)
     return await _detail(session, plugin, guild_context, current_user.id, viewer)
 
 
@@ -988,7 +1095,7 @@ async def put_community_plugin_scopes(
     plugin = await _load(session, plugin_id, for_update=True)
 
     granted = set(payload.granted)
-    await _require_grantable(session, granted, plugin.definition)
+    await _require_grantable(session, granted, plugin.definition, plugin.listing_uid)
     await guild_plugins_service.set_granted_scopes(
         session,
         plugin,
@@ -1002,7 +1109,7 @@ async def put_community_plugin_scopes(
 
 
 # ---------------------------------------------------------------------------
-# Embedded surfaces
+# Pages
 # ---------------------------------------------------------------------------
 
 
@@ -1015,7 +1122,7 @@ async def create_community_plugin_handoff(
     guild_context: GuildContextDep,
     viewer: AgeViewerDep,
 ) -> CommunityPluginHandoff:
-    """Mint the short-lived credential for one of this plug-in's embedded surfaces.
+    """Mint the short-lived credential for one of this plug-in's pages.
 
     Whether the surface may be opened is decided here, under the caller's real
     session, so the plug-in never makes that call and never sees a request from
@@ -1026,7 +1133,7 @@ async def create_community_plugin_handoff(
     and expires in a minute.
     """
     plugin = await _load(session, plugin_id)
-    handoff = await handoff_service.mint_embed_handoff(
+    handoff = await handoff_service.mint_page_handoff(
         session,
         plugin,
         surface_id=surface_id,
@@ -1073,7 +1180,7 @@ async def create_initiative_plugin_handoff(
     """
     initiative = await _load_initiative(session, initiative_id, current_user.id)
     plugin = await _load(session, plugin_id)
-    handoff = await handoff_service.mint_embed_handoff(
+    handoff = await handoff_service.mint_page_handoff(
         session,
         plugin,
         surface_id=surface_id,
@@ -1085,7 +1192,7 @@ async def create_initiative_plugin_handoff(
     return _handoff_response(handoff)
 
 
-def _handoff_response(handoff: handoff_service.EmbedHandoff) -> CommunityPluginHandoff:
+def _handoff_response(handoff: handoff_service.PageHandoff) -> CommunityPluginHandoff:
     """The same answer either route gives.
 
     The initiative is not in it: it is a claim in the token, and the browser
@@ -1094,7 +1201,7 @@ def _handoff_response(handoff: handoff_service.EmbedHandoff) -> CommunityPluginH
     return CommunityPluginHandoff(
         handoff_token=handoff.token,
         expires_in_seconds=handoff.expires_in_seconds,
-        embed_url=handoff.embed_url,
+        page_url=handoff.page_url,
         allowed_origins=list(handoff.allowed_origins),
         audience=handoff.audience,
         surface_id=handoff.surface_id,
@@ -1154,7 +1261,9 @@ async def connect_community_plugin(
         require_seat(guild_context)
         require_grant_writes(guild_context)
 
-    registration = await handoff_service.require_live_registration(plugin)
+    registration = await handoff_service.require_live_registration(
+        plugin, guild_context.guild_id
+    )
 
     if guild_wide:
         stored_config = (plugin.config or {}).get(connection_id) or {}
@@ -1235,9 +1344,6 @@ async def disconnect_community_plugin(
         )
 
     await session.commit()
-    if connection.get("scope") == "static":
-        await session.refresh(plugin)
-        await plugin_installs_service.record(guild_context.guild_id, plugin)
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.messages import CommonMessages
 from app.core.tools import DEFAULT_ENABLED_TOOLS, Tool
 from app.db import cohorts
-from app.db.session import install_context, routed_guild_id, set_rls_context
+from app.db.session import (
+    guild_context,
+    install_context,
+    routed_guild_id,
+    set_rls_context,
+)
 from app.models.platform.guild import GUILD_LADDER, GuildMembership, CommunityRole
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.initiative import (
@@ -58,6 +63,7 @@ from app.models.tenant.property import PropertyValue
 from app.models.tenant.queue import QueueItem
 from app.models.tenant.resource_grant import ResourceGrant
 from app.models.tenant.task import Task, TaskAssignee
+from app.services.membership import live_membership_clause
 from app.services.platform.users import visible_to_other_people
 from app.db.request_context import SystemGuild
 
@@ -78,12 +84,47 @@ class Governing:
         return cls(tool, row.id, row.initiative_id)
 
 
+async def governing_of(
+    session: AsyncSession, ref: tuple[str, int]
+) -> tuple[Tool, Any] | None:
+    """The tool, and its row, that governs ``ref`` (a task's project, a page's
+    wiki, a tool itself), read on ``session``, or ``None`` where the session
+    cannot reach it. The hops come from ``governing_path``, so no caller names
+    a tool."""
+    from sqlalchemy import column as sa_column
+    from sqlalchemy import table as sa_table
+
+    from app.db.initiative_rls import entity_tables, governing_path
+    from app.models.tenant._mixins import tool_models
+
+    kind, entity_id = ref
+    table = entity_tables()[kind]
+    walk = governing_path(table)
+    if walk is None:
+        raise ValueError(f"no tool governs {kind!r}")
+    tool, hops = walk
+    row_id: int | None = entity_id
+    for column, parent in hops:
+        step = sa_table(table, sa_column("id"), sa_column(column))
+        row_id = (
+            await session.exec(select(step.c[column]).where(step.c.id == row_id))
+        ).one_or_none()
+        if row_id is None:
+            return None
+        table = parent
+    model = tool_models()[tool.plural]
+    row = (
+        await session.exec(select(model).where(model.id == row_id))  # type: ignore[attr-defined]
+    ).one_or_none()
+    return None if row is None else (tool, row)
+
+
 def _grant_reaches(
-    governing: Governing, user_id: Any, *outer: Any
+    governing: Governing, user_id: Any, guest: ColumnElement[bool], *outer: Any
 ) -> ColumnElement[bool]:
     """A grant on the row that reaches ``user_id``: naming them, on a role
     they hold, or shared with every member of an initiative they are in (or of
-    the community, on a row that belongs to none)."""
+    the community, on a row that belongs to none, unless ``guest``)."""
     im = aliased(InitiativeMember)
     held = sa_select(im.role_id).where(im.user_id == user_id).correlate(*outer)
     joined = sa_select(im.initiative_id).where(im.user_id == user_id).correlate(*outer)
@@ -98,7 +139,7 @@ def _grant_reaches(
                 and_(
                     ResourceGrant.all_initiative_members.is_(True),
                     or_(
-                        ResourceGrant.initiative_id.is_(None),
+                        and_(ResourceGrant.initiative_id.is_(None), ~guest),
                         ResourceGrant.initiative_id.in_(joined),
                     ),
                 ),
@@ -120,8 +161,9 @@ def readers_of(governing: Governing, guild_id: int) -> Select:
         )
         .correlate(gm)
     )
+    guest = gm.role == CommunityRole.guest
     if governing.initiative_id is None:
-        reached = _grant_reaches(governing, gm.user_id, gm)
+        reached = _grant_reaches(governing, gm.user_id, guest, gm)
     else:
         im = aliased(InitiativeMember)
         role = aliased(InitiativeRoleModel)
@@ -154,20 +196,38 @@ def readers_of(governing: Governing, guild_id: int) -> Select:
                 ),
                 or_(
                     role.override_share_restrictions.is_(True),
-                    _grant_reaches(governing, gm.user_id, gm, im),
+                    _grant_reaches(governing, gm.user_id, guest, gm, im),
                 ),
             )
             .correlate(gm)
         )
+        # A guest given the row itself, in an initiative they are not in.
+        given = (
+            exists()
+            .where(
+                ResourceGrant.resource_type == tool.value,
+                ResourceGrant.resource_id == governing.resource_id,
+                ResourceGrant.user_id == gm.user_id,
+            )
+            .correlate(gm)
+        )
+        enabled = exists().where(
+            Initiative.id == governing.initiative_id,
+            getattr(Initiative, f"{tool.plural}_enabled").is_(True),
+        )
+        reached = or_(reached, and_(guest, given, enabled))
     return sa_select(gm.user_id).where(
         gm.guild_id == guild_id,
+        live_membership_clause(gm),
         present,
         or_(gm.role.in_(_ADMIN_RUNGS), reached),
     )
 
 
 @asynccontextmanager
-async def roster_session(session: AsyncSession) -> AsyncIterator[AsyncSession]:
+async def roster_session(
+    session: AsyncSession, *, whole: bool = False
+) -> AsyncIterator[AsyncSession]:
     """Where the routed community's roster is read for ``session``'s request.
 
     The request's own session for a person, so a row it has just made is seen.
@@ -175,8 +235,14 @@ async def roster_session(session: AsyncSession) -> AsyncIterator[AsyncSession]:
     and who can open something is not its scopes' to say, so its requests are
     answered by the community's own read instead, as
     :mod:`app.services.reachability` does.
+
+    A guest reads only their own place in the roster, which is what they may
+    name. ``whole`` is for who a notice reaches, which is the community's to
+    say whoever acted, so a guest's request reads that on the community's own
+    read too.
     """
-    if install_context(session) is None:
+    context = guild_context(session)
+    if install_context(session) is None and not (whole and context and context.guest):
         yield session
         return
     guild_id = routed_guild_id(session)

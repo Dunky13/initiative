@@ -23,9 +23,7 @@ const mocks = vi.hoisted(() => ({
   members: vi.fn(),
   permission: vi.fn(),
   connections: vi.fn(),
-  favorites: vi.fn(),
   permissions: vi.fn(),
-  setFavorite: vi.fn(),
   ignored: vi.fn(),
   ignore: vi.fn(),
   setOwnName: vi.fn(),
@@ -34,12 +32,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/api/generated/communities/communities", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   setOwnDisplayName: mocks.setOwnName,
-}));
-
-vi.mock("@/hooks/useContacts", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  useFavoriteContacts: () => mocks.favorites(),
-  useToggleFavoriteContact: () => mocks.setFavorite,
 }));
 
 vi.mock("@/hooks/useUsers", async (importOriginal) => ({
@@ -90,7 +82,6 @@ beforeEach(() => {
   mocks.permission.mockReturnValue({ data: { permission: "denied", may_connect: false } });
   mocks.permissions.mockReturnValue({ data: { permissions: {} } });
   mocks.connections.mockReturnValue({ data: { accepted: [], incoming: [], outgoing: [] } });
-  mocks.favorites.mockReturnValue({ data: { items: [] } });
   mocks.ignored.mockReturnValue({ data: { items: [] } });
   answer([]);
 });
@@ -180,14 +171,6 @@ describe("a community's members page", () => {
     expect((await screen.findByText("bram")).closest("a")).not.toHaveTextContent("Admin");
   });
 
-  it("stars somebody from the row", async () => {
-    answer([person(1, "ada")]);
-    setup();
-
-    await userEvent.click(await screen.findByRole("button", { name: /to favorites/i }));
-    expect(mocks.setFavorite).toHaveBeenCalledWith(1, false);
-  });
-
   it("offers everything else a person can be, behind the overflow", async () => {
     // Ignoring above all: a roster is the likeliest place to want it, and it
     // used to mean knowing somebody's exact handle and opening Settings.
@@ -230,14 +213,13 @@ describe("a community's members page", () => {
   });
 
   it("offers nothing to do about yourself", async () => {
-    // Starring, ignoring and every way in are refused for your own account,
+    // Ignoring and every way in are refused for your own account,
     // so a row for it that offered them would be offering errors.
     answer([person(99, "me"), person(1, "ada")]);
     setup();
 
     await screen.findByText("me");
     // One row has the controls; the reader's own has none.
-    expect(screen.getAllByRole("button", { name: /to favorites/i })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /actions for/i })).toHaveLength(1);
   });
 

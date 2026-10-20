@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import sys
+from functools import lru_cache
 from typing import Any, Callable, Optional
 
 import jsonata
@@ -69,9 +70,10 @@ def plain(value: Any, *, top: bool = False) -> Any:
     return _UNDEFINED if top else None
 
 
+@lru_cache(maxsize=16)
 def _clock(millis: int) -> dict[str, Any]:
     """``$now()`` and ``$millis()`` answering one instant, bound as the SDK
-    binds them."""
+    binds them. One run's expressions share an instant, so they share these."""
     return {
         "now": jsonata.Jsonata(
             f"function($picture, $timezone) {{ $fromMillis({millis}, $picture, $timezone) }}"
@@ -80,12 +82,23 @@ def _clock(millis: int) -> dict[str, Any]:
     }
 
 
+@lru_cache(maxsize=256)
+def _parsed(expression: str) -> jsonata.Jsonata:
+    """An expression parsed once. Each run binds its own document and sets
+    the bounds afresh: the library counts the time bound from when the bounds
+    were set, and reads the instance it is evaluating from a thread-local."""
+    parsed = jsonata.Jsonata(expression)
+    parsed.set_output_convert_nulls(False)
+    return parsed
+
+
 def _run(expression: str, document: Any, millis: Optional[int], bounds: tuple) -> Any:
     time_ms, depth, _ = bounds
-    bounded = jsonata.Jsonata(expression, timeout=time_ms, stack=depth)
-    bounded.set_output_convert_nulls(False)
+    parsed = _parsed(expression)
+    parsed.environment.set_runtime_bounds(time_ms, depth)
+    jsonata.Jsonata.CURRENT.jsonata = parsed
     bindings = _clock(millis) if millis is not None else None
-    return plain(bounded.evaluate(document, bindings), top=True)
+    return plain(parsed.evaluate(document, bindings), top=True)
 
 
 def answer(request: dict[str, Any], bounds: tuple) -> dict[str, Any]:
@@ -99,8 +112,8 @@ def answer(request: dict[str, Any], bounds: tuple) -> dict[str, Any]:
         if len(text.encode("utf-8")) > bounds[2]:
             return {"error": f"the answer is over {bounds[2]} bytes"}
         if request.get("predicate"):
-            # ``$boolean`` of the answer, as JSON gives it back.
-            truth = _run("$boolean($)", json.loads(text), None, bounds)
+            # ``$boolean`` of the answer, which is plain JSON already.
+            truth = _run("$boolean($)", value, None, bounds)
             return {"value": truth is True}
         return {"value": value}
     except jsonata.JException as error:

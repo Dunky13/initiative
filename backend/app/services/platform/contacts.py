@@ -1,30 +1,30 @@
 """What the My Contacts page reads.
 
-Two halves that do not share a source. The **sections** are the rosters of the
-reader's own guilds, gathered the way every other ``/me`` aggregate is — one
-routed visit per guild, via ``gather_across_guilds``. The **favorites** are
-rows of ``public.profile_favorites`` resolved against ``public.user_profiles``,
-which needs no guild at all and may name people the reader shares none with.
+The rosters of the reader's own guilds, gathered the way every other ``/me``
+aggregate is: one routed visit per guild, via ``gather_across_guilds``.
 """
 
 from typing import Iterable, Optional, Sequence
 
-from sqlalchemy import String, cast, exists, func, text
+from sqlalchemy import exists, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
-from app.core import usernames
 from app.db.query import apply_pagination, ids_in, page_has_next
 from app.db.session import set_rls_context
-from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, GuildMembership
+from app.models.platform.guild import (
+    LIVE_STATUS_VALUES,
+    CommunityRole,
+    Guild,
+    GuildMembership,
+)
+from app.services.membership import live_membership_clause
 from app.models.platform.guild_image import GuildImageVariant
-from app.models.platform.profile_favorite import ProfileFavorite
 from app.models.platform.user import User, UserStatus
-from app.models.platform.user_profile_view import MemberProfile, user_profiles
+from app.models.platform.user_profile_view import MemberProfile
 from app.schemas.platform.contact import (
     ContactCommunitySection,
     ContactRead,
-    FavoriteContactsResponse,
 )
 from app.services.cross_guild import gather_across_guilds
 from app.services.platform import guild_images as guild_images_service
@@ -48,7 +48,8 @@ async def ordered_member_guilds(
     ``GuildMembership.position`` is the order they dragged the rail into, so
     this is the same rule the rail uses rather than a second one. A suspended
     guild is left out, matching ``member_guild_ids`` and the ``/c/{community_id}``
-    path it stands in for.
+    path it stands in for, and so is one the reader is only a guest of: a guest
+    reads nobody's place in it.
     """
     await set_rls_context(session, Platform(user_id=user_id))
     rows = (
@@ -58,6 +59,8 @@ async def ordered_member_guilds(
             .join(User, User.id == GuildMembership.user_id)
             .where(
                 GuildMembership.user_id == user_id,
+                GuildMembership.role != CommunityRole.guest,
+                live_membership_clause(),
                 Guild.status.in_(LIVE_STATUS_VALUES),
                 User.status != UserStatus.suspended,
             )
@@ -240,69 +243,3 @@ async def listable_by_guild(
         )
         result[guild_id] = {row[0] for row in rows}
     return result
-
-
-async def favorites(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    search: Optional[str] = None,
-) -> FavoriteContactsResponse:
-    """The starred section.
-
-    Read from ``public.user_profiles`` — the view that *is* the public
-    projection of an account — so a favorite the reader shares no guild with
-    still resolves. That view carries no ``display_name``, a member's name
-    belonging to one guild rather than to the account, so a search here
-    matches the handle and nothing else.
-    """
-    stmt = (
-        select(
-            user_profiles.c.id,
-            user_profiles.c.username,
-            user_profiles.c.discriminator,
-            user_profiles.c.avatar_url,
-            user_profiles.c.status,
-            user_profiles.c.profile_decorations,
-        )
-        .join(
-            ProfileFavorite,
-            ProfileFavorite.favorite_user_id == user_profiles.c.id,
-        )
-        .where(
-            ProfileFavorite.user_id == user_id,
-            users_service.visible_to_other_people(user_profiles.c.status),
-        )
-    )
-    if search and (term := search.strip()):
-        name_part, number = usernames.parse_handle(term)
-        stmt = stmt.where(user_profiles.c.username.ilike(f"%{name_part}%"))
-        if number is not None:
-            stmt = stmt.where(
-                func.lpad(cast(user_profiles.c.discriminator, String), 4, "0").like(
-                    f"{number}%"
-                )
-            )
-
-    rows = (
-        await session.exec(
-            stmt.order_by(
-                func.lower(user_profiles.c.username).asc(),
-                user_profiles.c.discriminator.asc(),
-            )
-        )
-    ).all()
-
-    items = [
-        ContactRead(
-            id=row.id,
-            username=row.username,
-            discriminator=row.discriminator,
-            avatar_url=row.avatar_url,
-            status=row.status,
-            profile_decorations=row.profile_decorations or {},
-            presence=presence_service.online.presence_of(row.id),
-        )
-        for row in rows
-    ]
-    return FavoriteContactsResponse(items=items, total_count=len(items))

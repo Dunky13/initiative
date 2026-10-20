@@ -10,14 +10,13 @@
   "peopleError": "Die Personenliste konnte nicht geladen werden.",
   "peopleReaderHidden": "Du stehst nicht auf dieser Liste, weil dir die Leute hier keine Direktnachrichten schicken können.",
   "peopleReaderHiddenLink": "Ändern",
-  "favorites": "Favoriten",
+  "bookmarks": "Lesezeichen",
   "noInitiativesAvailable": "Keine Initiativen verfügbar",
   "addInitiative": "Initiative hinzufügen",
   "noTagsCreated": "Noch keine Tags erstellt",
   "myAccount": "Mein Konto",
   "home": "Startseite",
   "myProfile": "Mein Profil",
-  "myTasks": "Meine Aufgaben",
   "myTools": "Meine Werkzeuge",
   "myMessages": "Meine Nachrichten",
   "myCalendar": "Mein Kalender",
@@ -98,5 +97,6 @@
   "createWiki": "Neues Wiki",
   "sidebar": {
     "resize": "Ziehen, um die Seitenleiste breiter zu machen"
-  }
+  },
+  "sendFeedback": "Feedback senden"
 }

@@ -86,7 +86,7 @@ def test_a_connections_recovery_clears_only_its_own_verdict():
     """``foo`` working again says nothing about ``foo_bar``, whose name it
     begins."""
     plugin = SimpleNamespace(
-        config_state="unverified", config_state_detail=None, updated_at=None
+        config={}, config_state="unverified", config_state_detail=None, updated_at=None
     )
 
     assert set_connection_state(plugin, "foo_bar", "removed")

@@ -91,6 +91,7 @@ async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypa
         "operator_handoff": False,
         "manages_plans": False,
         "insights": False,
+        "contracts": False,
     }
 
 
@@ -153,13 +154,17 @@ async def test_config_captcha_exposes_provider_and_site_key(
     assert "very-private-secret" not in response.text
 
 
-async def test_config_says_cookie_consent_is_off_by_default(client: AsyncClient):
-    """The SPA reads the switch here because the notice is for somebody who has
-    not signed in. Off unless an owner turned it on."""
+async def test_config_says_cookie_consent_and_guests_are_off_by_default(
+    client: AsyncClient,
+):
+    """The SPA reads the switches here: the cookie notice is for somebody who
+    has not signed in, and a deployment without guests shows nothing about
+    them. Off unless an owner turned them on."""
     response = await client.get("/api/v1/config")
 
     assert response.status_code == 200
     assert response.json()["cookie_consent_enabled"] is False
+    assert response.json()["guests_enabled"] is False
 
 
 async def test_config_asks_about_nothing_a_deployment_does_not_do(

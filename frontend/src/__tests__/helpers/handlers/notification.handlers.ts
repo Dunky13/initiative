@@ -26,6 +26,7 @@ const category = (
   group,
   personal: false,
   community_scoped: true,
+  per_community: group === "your_communities",
   mutable_channels: EVERY_CHANNEL,
   defaults: ALL_ON,
   ...extras,
@@ -36,24 +37,24 @@ export const buildNotificationPreferences = (
   overrides: Partial<NotificationPreferencesRead> = {}
 ): NotificationPreferencesRead => ({
   categories: [
-    category("mentions", "addressed_to_me", { personal: true }),
-    category("replies", "addressed_to_me", { personal: true }),
-    category("assignments", "addressed_to_me", { personal: true }),
-    category("events", "addressed_to_me", { personal: true }),
-    category("direct_messages", "addressed_to_me", {
-      personal: true,
-      community_scoped: false,
-    }),
-    category("comments", "activity"),
-    category("reactions", "activity"),
-    category("due_dates", "activity"),
-    category("event_reminders", "activity"),
-    category("membership", "community"),
+    category("mentions", "your_communities", { personal: true }),
+    category("assignments", "your_communities", { personal: true }),
+    category("subscriptions", "your_communities"),
+    category("news", "your_communities"),
     category("approvals", "community", {
       personal: true,
       mutable_channels: KEEPS_THE_BELL,
     }),
-    category("posts", "community"),
+    category("moderation", "community", {
+      personal: true,
+      mutable_channels: KEEPS_THE_BELL,
+    }),
+    // Not a preference: nothing switches it off.
+    category("cases", "community", { mutable_channels: [] }),
+    category("direct_messages", "account", {
+      personal: true,
+      community_scoped: false,
+    }),
     category("jobs", "account", { personal: true }),
     category("account", "account", {
       personal: true,

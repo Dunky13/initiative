@@ -1,26 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
+from functools import partial
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from app.services.guild_sweeps import Scope, Visit
+from app.core import audit_context
 
 logger = logging.getLogger(__name__)
 
-#: How often each pass over the communities runs.
-MINUTE_PASS_SECONDS = 60
-SLOW_PASS_SECONDS = 300
+#: How often the hourly pass runs.
 HOURLY_PASS_SECONDS = 3600
-
-#: The minute pass sends overdue digests on every this-many-th pass.
-OVERDUE_EVERY = 5
-
-_minute_passes = itertools.count()
 
 
 class Loop:
@@ -52,10 +43,11 @@ class Loop:
                 await self._wait()
             while True:
                 self._woken.clear()
-                try:
-                    await work()
-                except Exception:  # pragma: no cover
-                    logger.exception("%s worker encountered an error", self.name)
+                with audit_context.job(self.name):
+                    try:
+                        await work()
+                    except Exception:  # pragma: no cover
+                        logger.exception("%s worker encountered an error", self.name)
                 await self._wait()
         except asyncio.CancelledError:  # pragma: no cover
             logger.info("%s worker cancelled", self.name)
@@ -69,119 +61,25 @@ class Loop:
         await asyncio.sleep(self.settle)
 
 
-async def minute_pass() -> None:
-    """Event-driven work's backstop and the minute-grained notices, in one
-    visit per community.
-
-    Webhook deliveries (retries that have come due, and anything a lost wake
-    left), plug-ins' due schedules, data-job claims, both digests, event reminders
-    and scheduled posts, and every :data:`OVERDUE_EVERY`-th pass the overdue
-    digests. Posts are published in active communities only: a hold must not
-    keep announcing new notices to its members.
-    """
-    from app.services import notifications
-    from app.services.guild_sweeps import Scope, each_guild
-    from app.services.tenant import plugin_schedules, outbox_poller, post_publication
-
-    now = datetime.now(timezone.utc)
-    scans = [
-        notifications.digest_scan(notifications.ASSIGNMENT_DIGEST, now=now),
-        notifications.digest_scan(notifications.REACTION_DIGEST, now=now),
-    ]
-    try:
-        reminders = await notifications.reminder_scan(now=now)
-    except Exception:
-        # The rest of the pass goes ahead without them.
-        logger.exception("minute: reading reminder opt-ins failed")
-        reminders = None
-    if reminders is not None:
-        scans.append(reminders)
-    if next(_minute_passes) % OVERDUE_EVERY == 0:
-        scans.append(notifications.overdue_scan(now=now))
-    await each_guild(
-        [
-            (Scope.ACTIVE, outbox_poller.drain_guild),
-            (Scope.ACTIVE, plugin_schedules.run_due),
-            *_claims(),
-            (
-                Scope.ACTIVE,
-                lambda session, _guild_id: post_publication.publish_due_posts(
-                    session, now=now
-                ),
-            ),
-        ],
-        name="minute",
-        scans=scans,
-    )
-
-
-async def slow_pass() -> None:
-    """Data jobs whose rows have gone quiet. The stale window is 15 minutes,
-    so five is often enough."""
-    from app.services.export import worker as export_worker
-    from app.services.guild_sweeps import Scope, each_guild
-    from app.services.import_engine import worker as import_worker
-
-    await each_guild(
-        [
-            (Scope.ACTIVE, export_worker.jobs.sweep_stale),
-            (Scope.ACTIVE, import_worker.jobs.sweep_stale),
-        ],
-        name="slow",
-    )
-
-
 async def hourly_pass() -> None:
-    """Retention and upkeep: trash, expired exports and imports, delivered
-    webhook history, spent digest items, and plug-in auto-updates.
-
-    Trash is purged and plug-ins updated in active communities only: a read-only
-    or suspended one is frozen until it returns. Exports and imports expire
-    wherever the schema still exists.
-    """
+    """The settled mail and read notifications past their keeping, and the
+    security-signal windows no rule can still read. Work in the communities
+    runs on timers (``app.services.sweep_timers``)."""
     from app.services import notifications
-    from app.services.export import worker as export_worker
-    from app.services.guild_sweeps import Scope, each_guild
-    from app.services.import_engine import worker as import_worker
-    from app.services.tenant import plugin_updates, outbox_poller, trash_purge
+    from app.services.platform import security_signals
 
-    await each_guild(
-        [
-            (Scope.ACTIVE, trash_purge.purge_guild),
-            (Scope.PROVISIONED, export_worker.expire_artifacts),
-            (Scope.PROVISIONED, import_worker.expire_payloads),
-            (Scope.ACTIVE, outbox_poller.expire_history),
-            (Scope.ACTIVE, plugin_updates.update_guild),
-        ],
-        name="hourly",
-        scans=[notifications.digest_gc_scan(now=datetime.now(timezone.utc))],
-    )
-
-
-def _claims() -> list[tuple[Scope, Visit]]:
-    """Each job type's claim of a community's next queued job."""
-    from app.services.export import worker as export_worker
-    from app.services.guild_sweeps import Scope
-    from app.services.import_engine import worker as import_worker
-
-    return [
-        (Scope.ACTIVE, export_worker.jobs.claim),
-        (Scope.ACTIVE, import_worker.jobs.claim),
-    ]
+    await notifications.drop_spent_notifications(now=datetime.now(timezone.utc))
+    await security_signals.sweep()
 
 
 def start_background_tasks() -> list[asyncio.Task]:
-    from app.services import data_jobs
-    from app.services.guild_sweeps import Scope
+    from app.services import sweep_timers
     from app.services.notifications import (
         process_hold_summaries,
         HOLD_SUMMARY_POLL_SECONDS,
     )
-    from app.services.platform import notice_outbox
-    from app.services.platform.email_outbox import (
-        EMAIL_OUTBOX_POLL_SECONDS,
-        process_email_outbox,
-    )
+    from app.services.platform import email_outbox, notice_outbox
+    from app.services.platform import security_signals
     from app.services.platform.presence import (
         ACTIVITY_FLUSH_SECONDS,
         process_activity_flush,
@@ -206,7 +104,6 @@ def start_background_tasks() -> list[asyncio.Task]:
         IDENTITY_REF_SWEEP_POLL_SECONDS,
         process_identity_ref_sweep,
     )
-    from app.services.tenant import outbox_poller
     from app.services.tenant.room_sink import ROOM_SWEEP_SECONDS, process_room_sweep
     from app.services.platform.user_tokens import (
         process_expired_token_purge,
@@ -224,6 +121,10 @@ def start_background_tasks() -> list[asyncio.Task]:
         GRANT_EXPIRY_POLL_SECONDS,
         process_grant_expiry,
     )
+    from app.services.platform.guests import (
+        GUEST_EXPIRY_POLL_SECONDS,
+        end_expired_guests,
+    )
     from app.services.auth.held_changes import (
         HOLD_SWEEP_POLL_SECONDS,
         process_due_holds,
@@ -238,20 +139,20 @@ def start_background_tasks() -> list[asyncio.Task]:
     )
 
     tasks = [
-        # Every sweep that visits the communities, grouped by how often it
-        # needs to run.
+        # Every sweep that works community by community, in only the
+        # communities whose timers have come due.
+        asyncio.create_task(sweep_timers.loop.run(sweep_timers.process_due_timers)),
+        # The sweeps that call another server, so none of the above waits on one.
         asyncio.create_task(
-            Loop("minute", interval=MINUTE_PASS_SECONDS).run(minute_pass)
+            sweep_timers.outward_loop.run(
+                partial(sweep_timers.process_due_timers, outward=True)
+            )
         ),
-        asyncio.create_task(Loop("slow", interval=SLOW_PASS_SECONDS).run(slow_pass)),
+        # A catalog change arms the communities with an install of it.
+        asyncio.create_task(sweep_timers.catalog_loop.run(sweep_timers.watch_catalog)),
         asyncio.create_task(
             Loop("hourly", interval=HOURLY_PASS_SECONDS).run(hourly_pass)
         ),
-        # Communities a wake names, visited as soon as it arrives.
-        asyncio.create_task(
-            outbox_poller.drain.run([(Scope.ACTIVE, outbox_poller.drain_guild)])
-        ),
-        asyncio.create_task(data_jobs.drain.run(_claims())),
         asyncio.create_task(
             Loop("hold-summary", interval=HOLD_SUMMARY_POLL_SECONDS).run(
                 process_hold_summaries
@@ -262,11 +163,7 @@ def start_background_tasks() -> list[asyncio.Task]:
             notice_outbox.loop.run(notice_outbox.process_notice_outbox)
         ),
         # The one way notification email leaves the building.
-        asyncio.create_task(
-            Loop("email-outbox", interval=EMAIL_OUTBOX_POLL_SECONDS).run(
-                process_email_outbox
-            )
-        ),
+        asyncio.create_task(email_outbox.loop.run(email_outbox.process_email_outbox)),
         # What the presence roll has seen, written where another process can
         # read it. The roll is this worker's own memory; delivery decides
         # elsewhere.
@@ -274,6 +171,14 @@ def start_background_tasks() -> list[asyncio.Task]:
             Loop("activity-flush", interval=ACTIVITY_FLUSH_SECONDS).run(
                 process_activity_flush
             )
+        ),
+        # What the security rules counted in this process, added to the
+        # deployment's totals, and a case opened for any key that crossed.
+        asyncio.create_task(
+            Loop(
+                "security-signals",
+                interval=security_signals.FLUSH_INTERVAL.total_seconds(),
+            ).run(security_signals.process_flush)
         ),
         asyncio.create_task(
             Loop("oidc-refresh-sync", interval=OIDC_SYNC_POLL_SECONDS).run(
@@ -328,6 +233,11 @@ def start_background_tasks() -> list[asyncio.Task]:
             )
         ),
         asyncio.create_task(
+            Loop("guest-expiry", interval=GUEST_EXPIRY_POLL_SECONDS).run(
+                end_expired_guests
+            )
+        ),
+        asyncio.create_task(
             Loop("held-changes", interval=HOLD_SWEEP_POLL_SECONDS).run(
                 process_due_holds
             )
@@ -339,6 +249,13 @@ def start_background_tasks() -> list[asyncio.Task]:
         ),
     ]
 
+    from app.core.config import settings
+
+    if settings.DEMO_MODE:
+        from app.demo.copies import pool_pass
+
+        tasks.append(asyncio.create_task(Loop("demo-pool", interval=60).run(pool_pass)))
+
     # The marketplace registry needs a trusted root. A build without one runs
     # no worker at all. Each pass asks the platform switch first, so turning
     # the registry off stops the fetching without a restart. The loop runs its
@@ -346,8 +263,6 @@ def start_background_tasks() -> list[asyncio.Task]:
     # this build ships is already seeded by then and the registry adds to it
     # through the same writer.
     if registry_available():
-        from app.core.config import settings
-
         tasks.append(
             asyncio.create_task(
                 Loop(

@@ -11,9 +11,8 @@ A cohort's communities are visited one after another on one session, and the
 cohorts side by side, a few at a time, so a pass holds at most one connection
 per cohort.
 
-Work that is woken rather than timed goes through a :class:`Drain`: a
-community said to have work waiting is added to it, and its loop visits just
-those communities.
+Work armed by a timer (``app.services.sweep_timers``) is handed in as each
+community's own visits, and visits just those.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from enum import Enum
 from typing import NamedTuple
 
@@ -29,10 +28,9 @@ from sqlalchemy import text
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core import metrics
+from app.core import audit_context, metrics
 from app.db import cohorts
 from app.db.session import set_rls_context
-from app.services.background_tasks import Loop
 from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.db.request_context import SystemGuild, Unattributed
 
@@ -83,16 +81,22 @@ async def each_guild(
     name: str,
     only: Iterable[int] | None = None,
     scans: Sequence[Scan] = (),
+    planned: Mapping[int, Sequence[tuple[Scope, Visit]]] | None = None,
 ) -> None:
     """Run every visit in every community its scope admits, then finish each
     scan.
 
-    ``only`` restricts the pass to those communities. ``name`` labels the log
-    lines and the pass-duration metric."""
+    ``planned`` adds each community's own visits, and restricts the pass to
+    those communities. ``only`` restricts the pass to those communities.
+    ``name`` labels the log lines and the pass-duration metric."""
     started = time.monotonic()
     every = [*visits, *((scan.scope, scan.visit) for scan in scans)]
+    plan = planned or {}
+    if planned is not None:
+        only = list(planned)
+    all_visits = [*every, *(pair for own in plan.values() for pair in own)]
     by_cohort: dict[int, list[tuple[int, str, bool]]] = {}
-    for community in await _communities(every, only):
+    for community in await _communities(all_visits, only):
         by_cohort.setdefault(cohorts.cohort_of(community[0]), []).append(community)
     limit = asyncio.Semaphore(COHORTS_AT_ONCE)
 
@@ -102,7 +106,7 @@ async def each_guild(
                 for guild_id, status, provisioned in communities:
                     # Ids repeat across schemas.
                     session.expunge_all()
-                    for scope, visit in every:
+                    for scope, visit in [*plan.get(guild_id, ()), *every]:
                         if scope.admits(status, provisioned=provisioned):
                             await _visit(session, visit, guild_id, name=name)
         except Exception:
@@ -147,34 +151,11 @@ async def _communities(
 async def _visit(
     session: AsyncSession, visit: Visit, guild_id: int, *, name: str
 ) -> None:
-    try:
-        await set_rls_context(session, SystemGuild(guild_id))
-        await visit(session, guild_id)
-        await session.commit()
-    except Exception:
-        logger.exception("%s: visit failed guild=%s", name, guild_id)
-        await session.rollback()
-
-
-class Drain:
-    """Communities said to have work waiting, and the loop that visits them.
-
-    :meth:`wake` adds a community and returns at once. :meth:`run` waits for
-    one, lets ``settle`` seconds of further wakes gather, and visits them all
-    in one pass restricted to them.
-    """
-
-    def __init__(self, name: str, *, settle: float) -> None:
-        self.pending: set[int] = set()
-        self._loop = Loop(name, settle=settle)
-
-    def wake(self, guild_id: int) -> None:
-        self.pending.add(guild_id)
-        self._loop.wake()
-
-    async def run(self, visits: Sequence[tuple[Scope, Visit]]) -> None:
-        async def visit_pending() -> None:
-            only, self.pending = self.pending, set()
-            await each_guild(visits, name=self._loop.name, only=only)
-
-        await self._loop.run(visit_pending)
+    with audit_context.visiting(guild_id):
+        try:
+            await set_rls_context(session, SystemGuild(guild_id))
+            await visit(session, guild_id)
+            await session.commit()
+        except Exception:
+            logger.exception("%s: visit failed", name)
+            await session.rollback()

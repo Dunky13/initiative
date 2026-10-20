@@ -9,7 +9,7 @@ import { syncComments } from "@/hooks/useComments";
 import { canvasIsStale, dashboardDataKey } from "@/hooks/useSqlQuery";
 import { openLiveSocket } from "@/lib/liveSocket";
 import { queryClient } from "@/lib/queryClient";
-import { TOOLS, toolPlural } from "@/lib/tools";
+import { singularOf, TOOLS, toolPlural } from "@/lib/tools";
 import { buildCommunityWsUrl } from "@/lib/wsUrl";
 
 import { useAuth } from "./useAuth";
@@ -69,7 +69,7 @@ const recounts = (change: RealtimeChange) =>
  * Tools come from the registry, so a new tool's events are live the day it
  * ships. The rest are the things the bus can name that are not a tool of their
  * own. A type nothing here claims is ignored on purpose: its parents carry the
- * surfaces that matter, and a queue item is refreshed by refreshing its queue.
+ * surfaces that matter.
  */
 const RESOURCE_SPECS: Record<string, (id: number, recount: boolean) => Spec[]> = {
   ...Object.fromEntries(
@@ -86,6 +86,9 @@ const RESOURCE_SPECS: Record<string, (id: number, recount: boolean) => Spec[]> =
   // moved is a question about the parent, below.
   comments: () => [q.recentComments()],
   calendar_events: (id) => [q.calendarEvent(id), q.allCalendarEvents()],
+  // Their own reads, which an opened item shows; the tool is named as parent.
+  queue_items: (id) => [q.queueItem(id)],
+  counters: (id) => [q.counter(id)],
   // The wiki it is in is named as its parent, which refreshes the tree.
   wiki_pages: (id) => [q.wikiPage(id)],
   // An initiative's roster, its roles, what those roles permit and its
@@ -131,6 +134,18 @@ const CONTAINER_SPECS: Record<string, (id: number, direct: boolean) => Spec[]> =
   wiki_pages: (id) => [q.wikiPage(id)],
 };
 
+/**
+ * What a change to one facet of a resource makes stale, by the facet's label in
+ * `changed`, where the facet is read at an address of its own rather than under
+ * the resource's: a project's views, or an initiative's calendar views. A
+ * project's columns are read by every chip showing a task's status, and the
+ * change names the project rather than its tasks, so it reaches them all.
+ */
+const FACET_SPECS: Record<string, Spec> = {
+  layouts: q.layouts(),
+  statuses: q.allReferences("task"),
+};
+
 const isRef = (value: unknown): value is ResourceRef => {
   const ref = value as ResourceRef | undefined;
   return typeof ref?.type === "string" && Number.isFinite(ref?.id);
@@ -159,10 +174,15 @@ export const applyChanges = (changes: readonly RealtimeChange[], communityId: nu
   const resources = new Map<string, [ResourceRef, boolean]>();
   const containers = new Map<string, [ResourceRef, boolean]>();
   const threads = new Map<string, { parent: ResourceRef; commentIds: Set<number> }>();
+  const specs: Spec[] = [];
 
   for (const change of changes) {
     const resource = change.resource;
     const parents = (change.parents ?? []).filter(isRef);
+    for (const facet of change.changed ?? []) {
+      const spec = FACET_SPECS[facet];
+      if (spec) specs.push(spec);
+    }
     if (isRef(resource)) {
       note(resources, resource, recounts(change));
       // The innermost parent is what the comment's thread hangs off.
@@ -178,12 +198,16 @@ export const applyChanges = (changes: readonly RealtimeChange[], communityId: nu
     }
   }
 
-  const specs: Spec[] = [];
   for (const [ref, recount] of resources.values()) {
     specs.push(...(RESOURCE_SPECS[ref.type]?.(ref.id, recount) ?? []));
+    // What a chip, link or embed says about it — its name, its status, its body.
+    specs.push(q.references(singularOf(ref.type), ref.id));
   }
   for (const [ref, direct] of containers.values()) {
     specs.push(...(CONTAINER_SPECS[ref.type]?.(ref.id, direct) ?? []));
+    // A reading about the thing a change sits directly in: a project's
+    // progress moves with its tasks.
+    if (direct) specs.push(q.references(singularOf(ref.type), ref.id));
   }
   if (specs.length > 0) void invalidate(...specs);
 

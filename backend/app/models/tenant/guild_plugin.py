@@ -6,8 +6,9 @@ nature (a club's own events calendar), and a tool that lives in one initiative
 cannot be that.
 
 The row is *installation state*, not content. It records which listing was
-installed, at which version, and how the guild configured it (``config`` /
-``secret_fields``). The content itself is an ordinary row in an ordinary table
+installed, at which version, how the guild configured it (``config`` /
+``secret_fields``) and what its settings hold (``settings`` /
+``setting_aliases``). The content itself is an ordinary row in an ordinary table
 — a guild-level ``calendars`` row, for instance — owned by the install and
 governed by its own grants like anything else. That split is
 deliberate: plug-ins mount existing tools at guild scope rather than introducing a
@@ -129,17 +130,19 @@ class GuildPlugin(CreatedByMixin, table=True):
         sa_column=Column(JSONB, nullable=False, server_default="{}"),
     )
 
-    # Whether this install is placed in each initiative created after it.
-    #
-    # Where a plug-in appears is ``plugin_placements``, one row per initiative. An
-    # ordinary install is placed only where the seat puts it. A mandatory one is
-    # placed in every initiative when it is installed, and this flag has a
-    # trigger on ``initiative_roles`` add a row, with the new initiative's
-    # moderator role, when an initiative is created. A placement the seat
-    # removes stays removed: nothing sweeps the existing initiatives.
-    follows_new_initiatives: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    # The value of each setting the pinned definition declares, by key, as the
+    # seat set it or Initiative assigned it: ``{"task_prefix": "acme"}``.
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default="{}"),
+    )
+    # Each unique setting's earlier values, newest first, by key:
+    # ``{"task_prefix": ["acmeold"]}``. They stay this install's
+    # (``public.plugin_install_claims``) until it is removed. A setting never
+    # renamed has no entry.
+    setting_aliases: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default="{}"),
     )
 
     # The scopes the community's seat consented to for this install, from

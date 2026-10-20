@@ -167,7 +167,18 @@
     "title": "Titre",
     "description": "Description",
     "updated_at": "Mis à jour",
-    "created_by": "Créé par"
+    "created_by": "Créé par",
+    "property": "Propriété",
+    "property_id": "Propriété",
+    "value_text": "Texte",
+    "value_number": "Nombre",
+    "value_boolean": "Case à cocher",
+    "value_date": "Date",
+    "value_datetime": "Date et heure",
+    "value_user_id": "Personne",
+    "value_json": "Choix",
+    "entity_type": "Type d’élément",
+    "entity_id": "Élément"
   },
   "filterOp": {
     "eq": "est",
@@ -243,7 +254,8 @@
     "card": "Carte",
     "column": "Colonne",
     "date": "Date",
-    "total": "Total"
+    "total": "Total",
+    "series": "Séparer par"
   },
   "builder": {
     "dataset": "Afficher les données de",
@@ -254,8 +266,9 @@
     "asItIs": "Valeur",
     "exactTime": "Heure exacte",
     "groupBy": "Regrouper par",
-    "everythingTogether": "Rien — un total",
-    "groupByHelp": "Les lignes de même valeur ne font plus qu'une ; nombres et totaux sont calculés pour chacune.",
+    "groupedBy": "Une ligne par {{columns}}",
+    "notGrouped": "Chaque ligne, telle quelle",
+    "groupByHelp": "Dès qu'une colonne est un nombre ou un total, elle est calculée pour chaque combinaison des autres colonnes.",
     "statement": "L'instruction ainsi construite",
     "tabBuild": "Créer",
     "tabSql": "SQL",
@@ -273,7 +286,9 @@
     "sum": "Total",
     "avg": "Moyenne",
     "min": "Minimum",
-    "max": "Maximum"
+    "max": "Maximum",
+    "running_count": "Nombre cumulé",
+    "running_sum": "Total cumulé"
   },
   "bucket": {
     "day": "Par jour",
@@ -288,7 +303,9 @@
     "calendar_events": "Événements du calendrier",
     "counters": "Compteurs",
     "counter_groups": "Groupes de compteurs",
-    "task_statuses": "Statuts de tâche"
+    "task_statuses": "Statuts de tâche",
+    "property_values": "Valeurs des propriétés",
+    "property_definitions": "Propriétés"
   },
   "viewMode": {
     "label": "Exécuter le tableau de bord en tant que",

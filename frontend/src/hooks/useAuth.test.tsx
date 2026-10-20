@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildUser } from "@/__tests__/factories";
 import { getBootstrapStatusQueryKey } from "@/api/generated/auth/auth";
+import { getListNotificationsQueryKey } from "@/api/generated/notifications/notifications";
 
 const get = vi.fn();
 const post = vi.fn();
@@ -35,6 +36,11 @@ vi.mock("@/api/client", () => ({
   watchForActivity: () => () => undefined,
   startSessionActivity: () => startSessionActivity(),
   forgetSessionActivity: vi.fn(),
+}));
+
+const prefetchViewPreferences = vi.fn();
+vi.mock("@/lib/viewPreferences", () => ({
+  prefetchViewPreferences: () => prefetchViewPreferences(),
 }));
 
 // Generated calls arrive here: the account read answers from `get`, every POST
@@ -233,21 +239,31 @@ describe("useAuth identity ordering", () => {
     expect(auth.user).toBeNull();
   });
 
-  it("takes the messages on this device with it when signing out", async () => {
-    // A decrypted conversation must not outlive the session that read it, and
-    // the sign-out itself must not depend on that going through.
-    forgetMessages.mockRejectedValueOnce(new Error("offline"));
-    get.mockResolvedValueOnce({ data: buildUser({ username: "Signed in" }) });
-    renderAuth();
-    await waitFor(() => expect(auth.user).not.toBeNull());
+  it.each([
+    { where: "a browser", native: false, forgets: true },
+    { where: "the phone or desktop app", native: true, forgets: false },
+  ])(
+    "signs out of $where, taking its messages only from a browser",
+    async ({ native, forgets }) => {
+      // A browser may be shared, so a decrypted conversation must not outlive the
+      // session that read it, and the sign-out must not depend on that going
+      // through. A device keeps them, so signing back in reads them straight away.
+      platform.native = native;
+      forgetMessages.mockClear();
+      forgetMessages.mockRejectedValueOnce(new Error("offline"));
+      get.mockResolvedValueOnce({ data: buildUser({ username: "Signed in" }) });
+      renderAuth();
+      await waitFor(() => expect(auth.user).not.toBeNull());
 
-    await act(async () => {
-      await auth.logout();
-    });
+      await act(async () => {
+        await auth.logout();
+      });
 
-    expect(forgetMessages).toHaveBeenCalled();
-    expect(auth.user).toBeNull();
-  });
+      expect(forgetMessages).toHaveBeenCalledTimes(forgets ? 1 : 0);
+      expect(auth.user).toBeNull();
+      platform.native = false;
+    }
+  );
 
   it("names the session it is ending so the server revokes only that one", async () => {
     // A native client's refresh token is the only thing that tells the server
@@ -464,6 +480,36 @@ describe("useAuth passkey sign-in", () => {
   });
 });
 
+describe("useAuth account switch", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset().mockResolvedValue({ data: {} });
+    getItem.mockReset().mockReturnValue(null);
+  });
+
+  it("drops the previous account's answers when a sign-in names somebody else", async () => {
+    const before = buildUser({ username: "Before" });
+    get.mockResolvedValue({ data: before });
+    renderAuth();
+    await waitFor(() => expect(auth.user?.username).toBe("Before"));
+    queryClient.setQueryData(getListNotificationsQueryKey(), { items: ["theirs"] });
+
+    // A re-read of the same account keeps what it holds.
+    await act(async () => {
+      await auth.refreshUser();
+    });
+    expect(queryClient.getQueryData(getListNotificationsQueryKey())).toBeDefined();
+
+    get.mockResolvedValue({ data: buildUser({ username: "Demo" }) });
+    await act(async () => {
+      await auth.applySignIn({ access_token: "demo-token", token_type: "bearer" });
+    });
+
+    expect(auth.user?.username).toBe("Demo");
+    expect(queryClient.getQueryData(getListNotificationsQueryKey())).toBeUndefined();
+  });
+});
+
 describe("useAuth registration", () => {
   beforeEach(() => {
     get.mockReset();
@@ -524,5 +570,44 @@ describe("useAuth passkey step-up", () => {
     presentPasskey.mockRejectedValueOnce(new Error("no credential"));
     await expect(auth.stepUpWithPasskey()).rejects.toThrow();
     expect(setAuthToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAuth while suspended", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset().mockResolvedValue({ data: {} });
+    getItem.mockReset().mockReturnValue(null);
+    prefetchViewPreferences.mockClear();
+  });
+
+  const refused = () =>
+    act(() => {
+      window.dispatchEvent(new CustomEvent("initiative:auth:account-suspended"));
+    });
+
+  it("re-reads the account the first time a request says it is suspended", async () => {
+    get.mockResolvedValueOnce({ data: buildUser({ status: "active" }) });
+    renderAuth();
+    await waitFor(() => expect(auth.user?.status).toBe("active"));
+    expect(prefetchViewPreferences).toHaveBeenCalled();
+
+    get.mockResolvedValueOnce({ data: buildUser({ status: "suspended" }) });
+    refused();
+    await waitFor(() => expect(auth.user?.status).toBe("suspended"));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks nothing more of a suspended account, so a refusal can't loop", async () => {
+    get.mockResolvedValue({ data: buildUser({ status: "suspended" }) });
+    renderAuth();
+    await waitFor(() => expect(auth.user?.status).toBe("suspended"));
+    // Nothing on the time-out screen reads the saved views.
+    expect(prefetchViewPreferences).not.toHaveBeenCalled();
+
+    refused();
+    refused();
+    await act(async () => {});
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

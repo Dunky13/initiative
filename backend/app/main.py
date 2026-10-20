@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import TypeAdapter
+from pydantic.json_schema import models_json_schema
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -46,10 +47,17 @@ from app.core.security import (
 )
 from app.core.config import API_V1_STR, PROJECT_NAME, settings
 from app.core.logging_config import configure_logging
-from app.core.request_audit import RequestAuditMiddleware
+from app.core.request_audit import RequestAuditMiddleware, server_error
 from app.core.routing import MOUNTED, route_endpoint
 from app.core.version import __version__
 from app.core.smart_chips import SmartChipKind
+from app.schemas.platform.ticket import (
+    AppealTicketCreate,
+    FeedbackTicketCreate,
+    ModerationTicketCreate,
+    SecurityTicketCreate,
+    SupportTicketCreate,
+)
 from app.db.errors import INSUFFICIENT_PRIVILEGE_SQLSTATE, dbapi_sqlstate
 from app.db.frozen import FROZEN_PARENT_CONSTRAINT, frozen_refusal
 from app.db.session import SystemSessionLocal
@@ -181,8 +189,14 @@ async def lifespan(app: FastAPI):
     # fire-and-forget by design: it maintains its own connection in the
     # background and a deployment that cannot reach it still delivers every
     # frame to the sockets this process holds.
-    from app.services import guild_work
-    from app.services.platform import notice_outbox, notify_bus, user_stream
+    from app.db import timers
+    from app.services import sweep_timers
+    from app.services.platform import (
+        email_outbox,
+        notice_outbox,
+        notify_bus,
+        user_stream,
+    )
     from app.services.tenant import outbox_poller, room_sink
 
     notify_bus.register(
@@ -193,10 +207,11 @@ async def lifespan(app: FastAPI):
     notify_bus.register(
         room_sink.CHANNEL, room_sink.deliver, on_connect=room_sink.on_bus_connected
     )
-    # The same hint wakes the webhook outbox's drain.
+    # The same hint wakes the webhook drain in a subscribed community.
     notify_bus.register(room_sink.CHANNEL, outbox_poller.hint)
-    notify_bus.register(guild_work.CHANNEL, guild_work.deliver)
+    notify_bus.register(timers.WAKE_CHANNEL, sweep_timers.hint)
     notify_bus.register(notice_outbox.CHANNEL, notice_outbox.hint)
+    notify_bus.register(email_outbox.CHANNEL, email_outbox.hint)
     await notify_bus.start()
 
     # Write collaborative bodies that have changed on an interval, so what a
@@ -294,6 +309,8 @@ async def app_swagger_ui_html() -> Response:
 # Initialize rate limiter (uses shared limiter from app.core.rate_limit)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Starlette's error middleware answers a request that raised with this.
+app.add_exception_handler(Exception, server_error)
 # Register the middleware so the limiter's `default_limits` actually apply to
 # *every* route, not just the handful with an explicit `@limiter.limit(...)`
 # decorator. Without this the global default was inert. The middleware
@@ -379,7 +396,7 @@ async def coded_error_handler(request: Request, exc: CodedError) -> JSONResponse
 
     Handled here rather than at each route because a refusal is raised where
     it is decided, often below every route that reaches it."""
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.code})
+    return JSONResponse(status_code=exc.status_code, content=exc.body)
 
 
 @app.exception_handler(DBAPIError)
@@ -707,6 +724,21 @@ def custom_openapi() -> dict:
     components.setdefault("schemas", {})["SmartChipKind"] = TypeAdapter(
         SmartChipKind
     ).json_schema()
+
+    # What a filing's ``payload`` part holds. The route takes it as a JSON
+    # string beside the files, so the shapes are published here instead.
+    _, ticket_schemas = models_json_schema(
+        [
+            (SupportTicketCreate, "validation"),
+            (ModerationTicketCreate, "validation"),
+            (SecurityTicketCreate, "validation"),
+            (FeedbackTicketCreate, "validation"),
+            (AppealTicketCreate, "validation"),
+        ],
+        ref_template="#/components/schemas/{model}",
+    )
+    for name, schema in ticket_schemas.get("$defs", {}).items():
+        components["schemas"].setdefault(name, schema)
 
     for path_item in openapi_schema.get("paths", {}).values():
         for operation in path_item.values():

@@ -7,9 +7,12 @@
  * holds an `int` parameter to an actual integer, and holds every entry of a
  * `list` one to the same rule.
  */
+
 import { describe, expect, it } from "vitest";
 
-import { asControlValue, asDeclaredList, asDeclaredType } from "./pluginParams";
+import type { PluginDataParam } from "@/api/pluginData";
+
+import { asControlValue, asDeclaredList, asDeclaredType, withParamAnswer } from "./pluginParams";
 
 const int = { type: "int" };
 const text = { type: "string" };
@@ -91,5 +94,56 @@ describe("asControlValue", () => {
     // The whole point: an option's value is a string, the binding holds an int,
     // and the control has to find its own option again afterwards.
     expect(asControlValue(asDeclaredType(int, "7"))).toBe("7");
+  });
+});
+
+describe("withParamAnswer", () => {
+  const declared: Pick<PluginDataParam, "key" | "options_from">[] = [
+    { key: "shop", options_from: { endpoint: "plugin.acme.shop.list-shops", key: "names" } },
+    {
+      key: "aisle",
+      options_from: {
+        endpoint: "plugin.acme.shop.list-aisles",
+        key: "codes",
+        needs: { shop: "shop" },
+      },
+    },
+    {
+      key: "shelf",
+      options_from: {
+        endpoint: "plugin.acme.shop.list-shelves",
+        key: "codes",
+        needs: { aisle: "aisle" },
+      },
+    },
+    { key: "tags" },
+  ];
+
+  it("drops an emptied answer rather than sending nothing", () => {
+    expect(withParamAnswer(declared, { tags: ["a"] }, "tags", [])).toEqual({});
+    expect(withParamAnswer(declared, { shop: "north" }, "shop", "")).toEqual({});
+    expect(withParamAnswer(declared, { shop: "north" }, "shop", undefined)).toEqual({});
+  });
+
+  it("clears what was chosen from a changed answer, through the chain", () => {
+    const chosen = { shop: "north", aisle: "A1", shelf: "S9", tags: ["a"] };
+    expect(withParamAnswer(declared, chosen, "shop", "south")).toEqual({
+      shop: "south",
+      tags: ["a"],
+    });
+    expect(withParamAnswer(declared, chosen, "aisle", "B2")).toEqual({
+      shop: "north",
+      aisle: "B2",
+      tags: ["a"],
+    });
+    expect(withParamAnswer(declared, chosen, "shop", "")).toEqual({ tags: ["a"] });
+  });
+
+  it("keeps the choices made under an answer picked again", () => {
+    const chosen = { shop: "north", aisle: "A1", shelf: "S9" };
+    expect(withParamAnswer(declared, chosen, "shop", "north")).toEqual(chosen);
+    expect(withParamAnswer(declared, { tags: ["a", "b"] }, "tags", ["a", "b"])).toEqual({
+      tags: ["a", "b"],
+    });
   });
 });

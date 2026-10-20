@@ -43,7 +43,7 @@ public class FirebaseInitializer {
         // Check if we need to fetch new config (server URL changed or no config stored)
         String storedServerUrl = prefs.getString(KEY_SERVER_URL, "");
         if (!serverUrl.equals(storedServerUrl) || !prefs.contains(KEY_PROJECT_ID)) {
-            Log.d(TAG, "Fetching FCM config from backend: " + serverUrl);
+            Log.d(TAG, "Fetching FCM config from backend");
             if (!fetchAndStoreConfig(serverUrl, prefs)) {
                 Log.w(TAG, "Failed to fetch FCM config, push notifications disabled");
                 return false;
@@ -78,10 +78,10 @@ public class FirebaseInitializer {
                 .build();
 
             FirebaseApp.initializeApp(context, options);
-            Log.i(TAG, "Firebase initialized successfully with project: " + projectId);
+            Log.i(TAG, "Firebase initialized successfully");
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize Firebase: " + e.getMessage(), e);
+            Log.e(TAG, "Failed to initialize Firebase (" + e.getClass().getSimpleName() + ")");
             return false;
         }
     }
@@ -107,7 +107,6 @@ public class FirebaseInitializer {
                 String baseUrl = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
                 String configUrl = baseUrl + "/settings/fcm-config";
 
-                Log.d(TAG, "Fetching FCM config from: " + configUrl);
 
                 // Validate HTTPS for security (allow HTTP only for localhost and private IPs)
                 if (configUrl.startsWith("http://")) {
@@ -183,7 +182,7 @@ public class FirebaseInitializer {
                 success[0] = true;
 
             } catch (Exception e) {
-                Log.e(TAG, "Error fetching FCM config: " + e.getMessage(), e);
+                Log.e(TAG, "Error fetching FCM config (" + e.getClass().getSimpleName() + ")");
             } finally {
                 if (reader != null) {
                     try {

@@ -20,10 +20,10 @@ import base64
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Sequence
 
-from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from jwt.algorithms import OKPAlgorithm
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -33,7 +33,7 @@ from app.core.relationships import Provenance, RelationshipType
 from app.core.search import SearchEntityType
 from app.models.tenant.relationship import EntityRelationship
 from app.services.tenant import relationships as relationships_service
-from app.core.tools import Tool
+from app.core.tools import CHILD_KINDS, Tool
 from app.core.security import (
     get_password_hash,
     mint_access_token,
@@ -54,6 +54,7 @@ from app.models.tenant.wiki import Wiki, WikiPage
 from app.models.tenant.post_poll import PostPoll, PostPollOption
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_secret import GuildPluginSecret
+from app.models.tenant.plugin_connection_secret import PluginConnectionSecret
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.models.tenant.calendar_event import CalendarEvent, CalendarEventAttendee
 from app.models.tenant.comment import Comment
@@ -67,6 +68,7 @@ from app.services.marketplace import plugin_installs
 from app.services.marketplace import catalog as marketplace_catalog
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import file_versions
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import plugin_schedules
 from app.services.tenant.plugin_config import mint_connection_ref
 from app.services.tenant.dashboard_definition import (
@@ -237,7 +239,7 @@ async def create_guild(
     a filler account and has no members.
 
     Overrides for the operator-set fields (``max_storage_bytes``, ``max_users``,
-    ``tier_name``, ``auth_options``) land on ``guild_administration``; the rest
+    ``max_guests``, ``tier_name``, ``auth_options``) land on ``guild_administration``; the rest
     on the guild. Example: ``guild = await create_guild(session, name="Test")``.
     """
     # Test guilds hold every sign-in option by default so the guild-auth
@@ -249,7 +251,13 @@ async def create_guild(
         "auth_options": [option.value for option in CommunityAuthOption],
         **{
             field: overrides.pop(field)
-            for field in ("max_storage_bytes", "max_users", "tier_name", "auth_options")
+            for field in (
+                "max_storage_bytes",
+                "max_users",
+                "max_guests",
+                "tier_name",
+                "auth_options",
+            )
             if field in overrides
         },
     }
@@ -423,6 +431,26 @@ async def create_guild_membership(
         await session.refresh(membership)
 
     return membership
+
+
+async def create_guest(
+    session: AsyncSession,
+    guild: Guild,
+    *,
+    role: CommunityRole = CommunityRole.guest,
+    ends_in: timedelta = timedelta(hours=1),
+) -> User:
+    """A new account that is a guest of ``guild`` until ``ends_in`` from now.
+    The platform's guest switch is the caller's to set."""
+    user = await create_user(session)
+    await create_guild_membership(
+        session,
+        user=user,
+        guild=guild,
+        role=role,
+        guest_until=datetime.now(timezone.utc) + ends_in,
+    )
+    return user
 
 
 #: Where :func:`create_user` leaves the ``client``-sector reference an access
@@ -1190,7 +1218,8 @@ async def create_guild_plugin(
     """An installed plug-in, written straight into the guild's schema.
 
     ``secrets`` is its secret values, ``{connection_id: {key: ciphertext}}``,
-    stored in ``guild_plugin_secrets``.
+    stored in ``guild_plugin_secrets``. An assigned setting it holds no value
+    for is given one, as an install's is.
 
     Deliberately not routed through the install endpoint. A ``service`` plug-in's
     definition is publishable and storable today but the install path does not
@@ -1219,6 +1248,7 @@ async def create_guild_plugin(
         await session.commit()
     await session.refresh(plugin)
     await plugin_installs.record(guild.id, plugin)
+    await guild_plugins_service.assign_settings(session, plugin, guild_id=guild.id)
     await plugin_schedules.reconcile(guild.id, plugin.id, plugin.definition)
     return plugin
 
@@ -1229,10 +1259,12 @@ async def create_plugin_user_connection(
     user: User,
     *,
     connection_id: str = "github",
+    secrets: dict[str, Any] | None = None,
     **overrides: Any,
 ) -> GuildPluginUserConnection:
     """A member's credential for one of ``plugin``'s connections, as a
-    completed flow leaves it."""
+    completed flow leaves it. ``secrets`` is what it holds, ``{key:
+    ciphertext}``, kept beside it."""
     await route_session_to_guild(session, guild_of(plugin))
     row = GuildPluginUserConnection(
         **{
@@ -1246,20 +1278,23 @@ async def create_plugin_user_connection(
     )
     session.add(row)
     await session.commit()
+    if secrets:
+        session.add(PluginConnectionSecret(connection_row_id=row.id, secrets=secrets))
+        await session.commit()
     await session.refresh(row)
     return row
 
 
-_TEST_PLUGIN_KEY = ec.generate_private_key(ec.SECP256R1())
+_TEST_PLUGIN_KEY = ed25519.Ed25519PrivateKey.generate()
 
 
 def sample_plugin_jwks(kid: str = "tests-plugin-key") -> dict[str, Any]:
-    """A public key set for a test registration: one P-256 key under ``kid``.
+    """A public key set for a test registration: one Ed25519 key under ``kid``.
 
     A registration is live only with a key set, so every test registration
     carries one unless the test says otherwise.
     """
-    entry = json.loads(ECAlgorithm.to_jwk(_TEST_PLUGIN_KEY.public_key()))
+    entry = json.loads(OKPAlgorithm.to_jwk(_TEST_PLUGIN_KEY.public_key()))
     entry["kid"] = kid
     return {"keys": [entry]}
 
@@ -1414,6 +1449,94 @@ async def create_marketplace_listing(
         await session.commit()
         await session.refresh(listing)
     return listing
+
+
+async def create_listing_with_terms(
+    session: AsyncSession,
+    *,
+    uid: str,
+    public_id: str,
+    access: str,
+    mandatory: bool = False,
+    meters: Sequence[str] = (),
+    **overrides: Any,
+) -> MarketplaceListing:
+    """A plug-in listing as the registry carries one a package names terms for.
+
+    Published like any listing, then given the registry's source and the
+    terms a refresh writes from the ``package`` role. A test honouring them
+    also patches ``tuf_registry.configured_root_is_builtin`` to answer true.
+    """
+    overrides.setdefault(
+        "definition",
+        {"plugin_kind": "service", "service": {"public_id": public_id}},
+    )
+    listing = await create_marketplace_listing(
+        session, uid=uid, public_id=public_id, kind="plugin", commit=False, **overrides
+    )
+    listing.source = "registry"
+    listing.access = access
+    listing.mandatory = mandatory
+    listing.meters = list(meters)
+    session.add(listing)
+    await session.commit()
+    await session.refresh(listing)
+    return listing
+
+
+#: The key test entitlement statements are signed with. Nothing here verifies
+#: the signature (the plug-in does), so one key serves every test.
+_STATEMENT_KEY = ed25519.Ed25519PrivateKey.generate()
+
+
+def entitlement_statement(
+    *,
+    community_ref: str,
+    listing_uid: str,
+    version: int,
+    values: dict[str, Any],
+    header: dict[str, Any] | None = None,
+    drop: Sequence[str] = (),
+    **claims: Any,
+) -> str:
+    """A compact JWS entitlement statement, as the issuer signs one.
+
+    ``header`` replaces header fields, ``claims`` replaces or adds claims, and
+    ``drop`` removes claims, so a test can build each malformed shape.
+    """
+
+    def segment(value: dict[str, Any]) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    body: dict[str, Any] = {
+        "iss": "initiative-billing",
+        "listing_uid": listing_uid,
+        "community_ref": community_ref,
+        "version": version,
+        "values": values,
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        **claims,
+    }
+    for name in drop:
+        body.pop(name, None)
+    signing_input = ".".join(
+        [
+            segment(
+                {
+                    "alg": "EdDSA",
+                    "typ": "initiative-entitlement+jwt",
+                    "kid": "test-statement-key",
+                    **(header or {}),
+                }
+            ),
+            segment(body),
+        ]
+    )
+    signature = _STATEMENT_KEY.sign(signing_input.encode())
+    return (
+        f"{signing_input}.{base64.urlsafe_b64encode(signature).rstrip(b'=').decode()}"
+    )
 
 
 async def create_profile_pack(
@@ -2484,6 +2607,36 @@ async def create_tool_entity(
 ) -> Any:
     """Create one instance of ``tool``'s content, whichever tool it is."""
     return await TOOL_FACTORIES[tool](session, initiative, creator, **overrides)
+
+
+# The same for what lives inside a tool, keyed by ``CHILD_KINDS``: each takes
+# its tool's row and a creator, and the ones that name no creator ignore it.
+CHILD_FACTORIES: dict[str, Any] = {
+    "task": lambda session, project, creator, **kw: create_task(session, project, **kw),
+    "queue_item": lambda session, queue, creator, **kw: create_queue_item(
+        session, queue, **kw
+    ),
+    "calendar_event": create_calendar_event,
+    "counter": lambda session, group, creator, **kw: create_counter(
+        session, group, **kw
+    ),
+    "gallery_image": create_gallery_image,
+    "wiki_page": create_wiki_page,
+}
+
+if set(CHILD_FACTORIES) != set(CHILD_KINDS):
+    raise RuntimeError(
+        f"CHILD_FACTORIES must cover CHILD_KINDS exactly "
+        f"(missing: {sorted(set(CHILD_KINDS) - set(CHILD_FACTORIES))}, "
+        f"unknown: {sorted(set(CHILD_FACTORIES) - set(CHILD_KINDS))})"
+    )
+
+
+async def create_child_entity(
+    session: AsyncSession, kind: str, tool_row: Any, creator: User, **overrides: Any
+) -> Any:
+    """Create one row of ``kind`` inside ``tool_row``, whichever kind it is."""
+    return await CHILD_FACTORIES[kind](session, tool_row, creator, **overrides)
 
 
 async def enable_all_tools(session: AsyncSession, initiative: Initiative) -> Initiative:

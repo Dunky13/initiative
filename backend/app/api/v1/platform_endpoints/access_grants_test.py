@@ -58,7 +58,7 @@ async def _request_access(client: AsyncClient, actor: Actor, guild, **body) -> o
     )
 
 
-async def test_support_requests_owner_approves_and_the_queue_masks_addresses(
+async def test_support_requests_owner_approves_and_the_queue_names_handles(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     """The whole request->approve flow, and how the queue names the people in
@@ -84,7 +84,9 @@ async def test_support_requests_owner_approves_and_the_queue_masks_addresses(
     queue = await client.get(f"{GRANTS}queue?status=pending", headers=owner.headers)
     assert queue.status_code == 200
     row = next(g for g in queue.json()["items"] if g["id"] == grant_id)
-    assert row["user_email"] == "s***t@e***m"
+    assert row["user"]["id"] == support.user.id
+    assert row["user"]["username"] == support.user.username
+    assert "user_email" not in row
 
     approved = await client.post(
         f"{GRANTS}{grant_id}/approve", json={}, headers=owner.headers
@@ -93,8 +95,9 @@ async def test_support_requests_owner_approves_and_the_queue_masks_addresses(
     assert approved.json()["status"] == "approved"
     assert approved.json()["is_live"] is True
     assert approved.json()["expires_at"] is not None
-    assert approved.json()["approved_by_email"] == "o***r@e***m"
+    assert approved.json()["approved_by"]["username"] == owner.user.username
     assert "@example.com" not in approved.text
+    assert "e***m" not in approved.text
 
 
 async def test_my_requests_respects_limit_and_order(
@@ -295,7 +298,7 @@ async def test_a_grant_reaches_a_tools_content_not_who_it_is_shared_with(
     )
 
     assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"] == tool.grant_cannot_manage_members_code
+    assert resp.json() == tool.grant_cannot_manage_members().body
 
 
 async def test_grantee_sees_guild_content(
@@ -345,10 +348,10 @@ async def test_grantee_sees_guild_content(
     )
     assert events.status_code == 200, events.text
 
-    # Recording a recent view answers rather than faulting: a grantee's own
-    # view is simply not persisted.
-    viewed = await client.post(
-        host.g(f"/recents/project/{host.project.id}"), headers=headers
+    # Recording an open answers rather than faulting: a grantee's own view
+    # is simply not persisted.
+    viewed = await client.put(
+        host.g(f"/personal-items/view/project/{host.project.id}"), headers=headers
     )
     assert viewed.status_code == 200, viewed.text
 
@@ -439,7 +442,7 @@ async def test_the_queue_is_read_by_approvers_on_their_own_tier(
     if expected == 200:
         row = next(g for g in queue.json()["items"] if g["id"] == grant.id)
         assert row["community_name"] == host.guild.name
-        assert row["user_email"] is not None
+        assert row["user"] is not None
 
 
 async def test_a_grantee_reads_their_own_grant_and_not_somebody_elses(
@@ -569,3 +572,40 @@ async def test_a_revoked_grant_is_not_recorded_as_expiring(
     await session.refresh(revoked)
     assert revoked.status == "revoked"
     assert emitted(capfd, AuditEventType.ACCESS_GRANT_DECIDED) == []
+
+
+async def test_a_moderate_grant_is_for_those_who_moderate(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Reading what the platform holds is moderation work: support may not ask
+    for it, a moderator may, and approving it asks again of the grantee."""
+    guild = await create_guild(session)
+    support = await acting_user("support")
+    refused = await _request_access(client, support, guild, access_level="moderate")
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == "ACCESS_GRANT_MODERATE_NOT_HELD"
+
+    moderator = await acting_user("moderator")
+    asked = await _request_access(client, moderator, guild, access_level="moderate")
+    assert asked.status_code in (200, 201), asked.text
+    assert asked.json()["access_level"] == "moderate"
+
+
+async def test_a_moderate_grant_is_never_self_issued(
+    session: AsyncSession, acting_user
+):
+    from app.core.messages import AccessGrantMessages
+    from app.models.platform.access_grant import AccessLevel
+    from app.schemas.platform.access_grant import BreakGlassCreate
+    from app.services.platform import access_grants as service
+
+    guild = await create_guild(session)
+    operator = await acting_user("operator")
+    with pytest.raises(service.AccessGrantError) as refused:
+        await service.break_glass(
+            session,
+            actor=operator.user,
+            payload=BreakGlassCreate(community_id=guild.id, reason="looking quickly"),
+            level=AccessLevel.moderate.value,
+        )
+    assert refused.value.code == AccessGrantMessages.MODERATE_NOT_HELD

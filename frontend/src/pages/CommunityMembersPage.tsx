@@ -9,7 +9,6 @@ import { CommunityRole } from "@/api/generated/initiativeAPI.schemas";
 import { MemberDisplayNameDialog } from "@/components/communities/MemberDisplayNameDialog";
 import { ContactActionButtons } from "@/components/contacts/ContactActionButtons";
 import { ContactActionsMenu } from "@/components/contacts/ContactActionsMenu";
-import { FavoriteToggle } from "@/components/contacts/FavoriteToggle";
 import { StatusMessage } from "@/components/StatusMessage";
 import { UserHandle } from "@/components/UserHandle";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +17,20 @@ import { DataTable } from "@/components/ui/data-table";
 import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
-import { useFavoriteContacts, useToggleFavoriteContact } from "@/hooks/useContacts";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDmPermissions } from "@/hooks/useDirectMessages";
-import { usePersistedColumnVisibility } from "@/hooks/usePersistedColumnVisibility";
+import {
+  deviceJSON,
+  LIST,
+  type ListViewSpec,
+  NO_PART_VIEW,
+  useListView,
+  viewKey,
+} from "@/hooks/useListView";
 import { USER_SEARCH_PAGE_SIZE, useUserSearch } from "@/hooks/useUsers";
 import { isAdminRole } from "@/lib/permissions";
 import type { AppColumnDef } from "@/lib/table";
-import { getUrlHandle, getUserDisplayName } from "@/lib/userDisplay";
+import { getUrlHandle } from "@/lib/userDisplay";
 
 /**
  * Everyone in this community, and a way to reach them.
@@ -43,6 +48,17 @@ import { getUrlHandle, getUserDisplayName } from "@/lib/userDisplay";
  */
 /** How long typing settles before the address and the roster follow it. */
 const SEARCH_SETTLES_MS = 250;
+
+/** Where one person's view of a community's roster is kept: its columns. */
+const membersViewSpec = (communityId: number): ListViewSpec<null> => ({
+  key: viewKey(communityId, "members"),
+  read: () => null,
+  defaults: { filters: null, ...NO_PART_VIEW },
+  carryOver: () => {
+    const columns = deviceJSON("community-members-columns");
+    return columns && typeof columns === "object" ? { parts: { [LIST]: { columns } } } : null;
+  },
+});
 
 export const CommunityMembersPage = () => {
   const { t } = useTranslation("communities");
@@ -102,21 +118,14 @@ export const CommunityMembersPage = () => {
     setSearch({ q: settled || undefined, page: undefined });
   }, [settled, draft, q, setSearch]);
 
-  // Starring is a second read: a favourite may be somebody you share no
-  // community with, so the list is not a slice of this roster.
-  const favorites = useFavoriteContacts("");
-  const starred = useMemo(
-    () => new Set((favorites.data?.items ?? []).map((contact) => contact.id)),
-    [favorites.data]
-  );
-  const setFavorite = useToggleFavoriteContact();
-
   const answers = permissions.data?.permissions ?? {};
 
-  const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
-    "community-members-columns",
-    []
+  // The columns this person shows, kept in their view of the roster. What
+  // this device kept before carries over.
+  const membersView = useListView(
+    useMemo(() => membersViewSpec(Number(communityId)), [communityId])
   );
+  const { columns: columnVisibility, setColumns: setColumnVisibility } = membersView;
 
   const columns = useMemo<AppColumnDef<UserSummary>[]>(
     () => [
@@ -177,21 +186,13 @@ export const CommunityMembersPage = () => {
           return (
             <div className="flex items-center justify-end gap-1">
               <ContactActionButtons user={person} permission={answers[String(person.id)] ?? null} />
-              {/* Its own control rather than a menu item, the way a contacts
-                  row has it: starring is one private, reversible click and
-                  nothing is told to anybody. */}
-              <FavoriteToggle
-                starred={starred.has(row.original.id)}
-                name={getUserDisplayName(row.original)}
-                onToggle={() => setFavorite(row.original.id, starred.has(row.original.id))}
-              />
               {/* Everything else a person can be to you — ignoring above all,
                   which a roster is the likeliest place to want. Same menu as
                   their profile and their contacts row, so it holds no surprise
                   and nothing has to be kept in step. */}
               <ContactActionsMenu
                 user={person}
-                omit={["profile", "message", "connect", "ask", "favorite"]}
+                omit={["profile", "message", "connect", "ask"]}
                 permission={answers[String(person.id)] ?? null}
               />
             </div>
@@ -199,7 +200,7 @@ export const CommunityMembersPage = () => {
         },
       },
     ],
-    [t, starred, setFavorite, me?.id, answers]
+    [t, me?.id, answers]
   );
 
   return (

@@ -13,8 +13,8 @@
  * - **Everyone** gets the two answers that are theirs — whether the plug-in may act
  *   as them, and their own half of any connection. Nobody else's appears.
  * - **The seat** additionally gets what the community owns: the community-wide
- *   credential, where the plug-in appears, and the governance view of what every
- *   member has given it.
+ *   credential, the plug-in's settings, where it appears, and the governance
+ *   view of what every member has given it.
  *
  * This is deliberately not the community-settings page. That one is about the
  * install — adding, renaming, turning off, removing — and belongs to admins.
@@ -29,6 +29,7 @@ import { PluginConnectionsPanel } from "@/components/plugins/PluginConnectionsPa
 import { PluginConsentRequests } from "@/components/plugins/PluginConsentRequests";
 import { PluginMembersPanel } from "@/components/plugins/PluginMembersPanel";
 import { PluginPlacementPanel } from "@/components/plugins/PluginPlacementPanel";
+import { PluginSettingsPanel } from "@/components/plugins/PluginSettingsPanel";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +40,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPluginDetail } from "@/hooks/useCommunityPluginDetail";
-import { declaredEmbeds } from "@/lib/pluginSurfaces";
+import { hasInitiativeSurfaces } from "@/lib/pluginSurfaces";
 
 export interface PluginSettingsDialogProps {
   pluginId: number;
@@ -60,13 +61,13 @@ export function PluginSettingsDialog({
   const detail = useCommunityPluginDetail(pluginId);
   const plugin = detail.data;
 
-  // Placement is where the plug-in has a page and where it may reach content, so
-  // a plug-in with either has one to choose.
+  // Placement is where the plug-in has a page, or fields, sections or actions
+  // on items, and where it may reach content, so a plug-in with either has one
+  // to choose.
   const showsPlacement =
     isCommunityAdmin &&
     !!plugin &&
-    (declaredEmbeds(plugin.definition, "initiative").length > 0 ||
-      (plugin.requested_scopes ?? []).length > 0);
+    (hasInitiativeSurfaces(plugin.definition) || (plugin.requested_scopes ?? []).length > 0);
   // Install management, which the seat holds — not the manifest's
   // admin-visible surfaces above, which ask whether you administer the
   // community and are a different question.
@@ -115,6 +116,7 @@ export function PluginSettingsDialog({
                     {t("plugins:settings.adminDescription")}
                   </p>
                 </div>
+                <PluginSettingsPanel pluginId={plugin.id} settings={plugin.settings ?? []} />
                 {/* Where the plug-in goes is the community's call, and only for a plug-in
                     that has somewhere to go. */}
                 {showsPlacement && <PluginPlacementPanel plugin={plugin} />}

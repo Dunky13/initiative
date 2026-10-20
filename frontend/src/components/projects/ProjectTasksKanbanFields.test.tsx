@@ -1,20 +1,21 @@
 /**
- * The board's Fields menu: what a card shows, and that turning something off
- * actually takes it off the card.
+ * What a board's card shows: the card its view lays out, or the shipped one.
  *
- * The cards are memoized on prop identity, so "the menu changed the state" and
- * "the card re-rendered" are genuinely different claims — these assert the
- * second one, by reading the card.
+ * The cards are memoized on prop identity, so these read the card rather than
+ * the state behind it.
  */
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildDefaultTaskStatuses,
+  buildPropertyDefinition,
+  buildPropertySummary,
   buildTask,
   buildTaskListResponse,
+  buildToolLayoutSet,
   buildUserSummary,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -49,14 +50,8 @@ const board = () =>
         taskHref={(taskId) => `/tasks/${taskId}`}
       />
     ),
-    { routerSearch: { view: "kanban" } }
+    { routerSearch: { layout: "board" } }
   );
-
-const openFieldsMenu = async () => {
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /fields/i }));
-  return user;
-};
 
 beforeEach(() => {
   seedTask();
@@ -64,8 +59,8 @@ beforeEach(() => {
   resetTimeFormat();
 });
 
-describe("the board's Fields menu", () => {
-  it("shows every field on a board nobody has configured", async () => {
+describe("a board's card", () => {
+  it("shows every field on a board nobody has laid out", async () => {
     seedTask({ description_excerpt: "Start from the coast…", has_description: true });
     board();
 
@@ -74,46 +69,71 @@ describe("the board's Fields menu", () => {
     expect(screen.getByText(/priority: medium/i)).toBeInTheDocument();
   });
 
-  it("takes a field off the card when it is unchecked", async () => {
-    board();
-    expect(await screen.findByText(/priority: medium/i)).toBeInTheDocument();
-
-    const user = await openFieldsMenu();
-    await user.click(await screen.findByRole("menuitemcheckbox", { name: "Priority" }));
-
-    await waitFor(() => expect(screen.queryByText(/priority: medium/i)).not.toBeInTheDocument());
-    // The card itself stays — this hides a field, not the task.
-    expect(screen.getByText("Draw the map")).toBeInTheDocument();
-  });
-
-  it("never offers to hide the title", async () => {
-    board();
-    await openFieldsMenu();
-
-    const menu = await screen.findByRole("menu");
-    expect(within(menu).queryByRole("menuitemcheckbox", { name: /^title$/i })).toBeNull();
-  });
-
-  it("remembers the choice for next time", async () => {
-    board();
-    const user = await openFieldsMenu();
-    await user.click(await screen.findByRole("menuitemcheckbox", { name: "Priority" }));
-
-    await waitFor(() =>
-      expect(
-        JSON.parse(localStorage.getItem("initiative-project-1-kanban-fields") ?? "{}")
-      ).toMatchObject({ priority: false })
+  it("shows a task's properties on a board nobody has laid out", async () => {
+    seedTask({
+      properties: [buildPropertySummary({ property_id: 12, name: "Effort", value: "large" })],
+    });
+    server.use(
+      communityHttp.get("/property-definitions/", () =>
+        HttpResponse.json([buildPropertyDefinition({ id: 12, name: "Effort" })])
+      )
     );
+    board();
+
+    expect(await screen.findByText("large")).toBeInTheDocument();
   });
 
-  it("offers to put everything back once something is hidden", async () => {
+  it("shows the shipped card for a board laid out with none", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                // As the server sends a board changed to hold no card.
+                definition: { card: null, columns: null },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
     board();
-    const user = await openFieldsMenu();
-    await user.click(await screen.findByRole("menuitemcheckbox", { name: "Priority" }));
 
-    await user.click(await screen.findByRole("menuitem", { name: /show all fields/i }));
+    expect(await screen.findByText(/priority: medium/i)).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(screen.getByText(/priority: medium/i)).toBeInTheDocument());
+  it("shows only what the board's card names", async () => {
+    seedTask({ description_excerpt: "Start from the coast…", has_description: true });
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: {
+                  card: {
+                    type: "card",
+                    children: [{ type: "field", props: { field: "title" } }],
+                  },
+                },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+    board();
+
+    expect(await screen.findByText("Draw the map")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/priority: medium/i)).not.toBeInTheDocument());
+    expect(screen.queryByText("Start from the coast…")).not.toBeInTheDocument();
   });
 });
 
@@ -156,5 +176,98 @@ describe("a card's excerpt", () => {
 
     expect(await screen.findByText("@Ada King")).toBeInTheDocument();
     expect(screen.getByText(/Start from the coast with/)).toBeInTheDocument();
+  });
+});
+
+describe("a grouped board", () => {
+  it("starts in its layout's bands, one for every priority, holding a task or not", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { group_by: "priority" },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+    board();
+
+    const medium = await screen.findByRole("button", { name: "Medium" });
+    expect(medium).toHaveAttribute("aria-expanded", "true");
+    for (const priority of ["Urgent", "High", "Low"]) {
+      expect(screen.getByRole("button", { name: priority })).toBeInTheDocument();
+    }
+    expect(await screen.findAllByText("Draw the map")).toHaveLength(1);
+    expect(screen.getByRole("combobox", { name: /group by/i })).toHaveTextContent(/priority/i);
+  });
+
+  it("folds a band and opens it again", async () => {
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { group_by: "priority" },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      )
+    );
+    const user = userEvent.setup();
+    board();
+    await screen.findAllByText("Draw the map");
+
+    await user.click(screen.getByRole("button", { name: "Medium" }));
+
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    expect(screen.queryByText("Draw the map")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Medium" }));
+
+    expect(await screen.findByText("Draw the map")).toBeInTheDocument();
+  });
+});
+
+describe("a limited column", () => {
+  it("counts its open tasks against its limit, whatever the board shows", async () => {
+    const [todo] = STATUSES;
+    server.use(
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "board",
+                is_default: true,
+                definition: { limits: [{ status_id: todo.id, limit: 3 }] },
+                updated_at: "2026-10-01T12:00:00.000Z",
+              },
+            ],
+          })
+        )
+      ),
+      communityHttp.get("/tasks/column-limits", () =>
+        HttpResponse.json([{ project_id: todo.project_id, status_id: todo.id, limit: 3, count: 3 }])
+      )
+    );
+    board();
+
+    const fill = await screen.findByText("3 / 3");
+    expect(fill).toHaveAttribute("title", "Takes at most 3 open tasks");
   });
 });

@@ -199,6 +199,54 @@ async def test_the_provisioner_shape_on_an_existing_role(
         await engine.dispose()
 
 
+@pytest.mark.parametrize("password", ["derived-0f3a9c", "pässwörd\u00a0\ufb01x"])
+async def test_a_login_signs_in_with_the_password_its_verifier_was_made_from(
+    password,
+):
+    """The bootstrap sets a login by its verifier, and the password itself
+    signs in: Postgres prepares and hashes it the same way."""
+    from sqlalchemy import make_url, text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.db.bootstrap import _ensure_role_steps, _run_steps
+    from conftest import RUN_ID, TEST_DATABASE_URL
+
+    name = f"test_{RUN_ID}_probe_scram"
+    steps = _ensure_role_steps(LoginRole(name, password, "LOGIN"))
+    assert password not in repr(steps)
+    owner = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    signed_in = create_async_engine(
+        make_url(TEST_DATABASE_URL).set(username=name, password=password),
+        poolclass=NullPool,
+    )
+    try:
+        async with owner.begin() as conn:
+            await conn.execute(text(f'DROP ROLE IF EXISTS "{name}"'))
+            await _run_steps(conn, steps)
+            await conn.execute(
+                text(
+                    f"DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO "
+                    f'"{name}"\', current_database()); END $$'
+                )
+            )
+        try:
+            async with signed_in.connect() as conn:
+                assert await conn.scalar(text("SELECT current_user")) == name
+        finally:
+            async with owner.begin() as conn:
+                await conn.execute(
+                    text(
+                        f"DO $$ BEGIN EXECUTE format('REVOKE ALL ON DATABASE %I "
+                        f'FROM "{name}"\', current_database()); END $$'
+                    )
+                )
+                await conn.execute(text(f'DROP ROLE IF EXISTS "{name}"'))
+    finally:
+        await signed_in.dispose()
+        await owner.dispose()
+
+
 def _guc_keys(sql: str, call: str) -> set[str]:
     """The ``app._bootstrap_*`` settings ``sql`` names in ``call('<key>'``."""
     keys: set[str] = set()

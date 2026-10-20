@@ -15,6 +15,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import config as config_module
 from app.core.audit_events import AuditEventType
 from app.core.messages import GuildMessages
+from app.core.moderation import HoldReason, HoldVia
+from app.db import cohorts, post_commit
+from app.db.holds import HoldsInForce
+from app.db.request_context import SystemGuild
+from app.db.session import set_rls_context
 from app.models.platform.app_setting import (
     DEFAULT_GUILD_RETENTION_DAYS,
     DEFAULT_HOLD_DELETION_DAYS,
@@ -28,14 +33,18 @@ from app.models.platform.guild import (
     CommunityStatus,
 )
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+from app.models.tenant.content_hold import ContentHold
+from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services import email as email_service
 from app.services.platform import billing_ping, guild_purge
 from app.services.platform import guilds as guilds_service
 from app.services.platform.identity_refs import billing_ref, existing_ref
-from app.testing import emitted
+from app.testing import emitted, route_session_to_guild
 from app.testing.factories import (
     create_guild,
     create_guild_membership,
+    create_guild_plugin,
+    create_plugin_user_connection,
     create_user,
     get_auth_headers,
 )
@@ -68,6 +77,10 @@ async def _delete_via_danger_zone(
         },
     )
     assert response.status_code == 204, response.text
+    # The deletion arms the community's plug-in hook timer once it commits, on
+    # a task of its own that holds the guild row while it writes. A purge
+    # claims the row SKIP LOCKED, so it waits for that work to finish.
+    await post_commit.settle_all()
 
 
 # ── The status set itself ───────────────────────────────────────────────────
@@ -290,6 +303,72 @@ async def test_the_purge_is_what_drops_billings_name(
     assert await _billing_ref(guild.id) is None
 
 
+async def test_its_plugins_keep_their_names_until_the_purge_erases_them(
+    client: AsyncClient, session: AsyncSession, monkeypatch
+):
+    """A deleted community can come back under the names its plug-ins hold, so
+    the delete keeps them. The purge asks each plug-in holding one to erase
+    what it has, while the community still has its row, and deletes the row
+    only once that erase is finished; the names go with the erase."""
+    from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+    from app.models.platform.plugin_community_hook import PluginCommunityHook
+    from app.services.marketplace import community_hooks, plugin_refs
+    from app.services.platform.identity_refs import ensure_ref
+
+    admin, guild = await _seated_guild(session)
+    guild_id = guild.id
+    # The name a plug-in the community had installed holds for its admin.
+    member = await ensure_ref(
+        session,
+        entity_type=IdentityEntity.user,
+        entity_id=admin.id,
+        purpose=IdentityPurpose.plugin,
+        sector_guild_id=guild_id,
+        sector_plugin="tests.purged",
+    )
+    await session.commit()
+    await _delete_via_danger_zone(client, guild=guild, headers=get_auth_headers(admin))
+    assert await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild_id)
+
+    session.expunge_all()
+    row = (await session.exec(select(Guild).where(Guild.id == guild_id))).one()
+    later = row.status_changed_at + timedelta(
+        days=DEFAULT_GUILD_RETENTION_DAYS, minutes=1
+    )
+    assert await guild_purge.purge_due_guilds(session, now=later) == 0
+
+    session.expunge_all()
+    row = (await session.exec(select(Guild).where(Guild.id == guild_id))).one()
+    assert row.purge_started_at is not None
+    erase = (
+        await session.exec(
+            select(PluginCommunityHook).where(PluginCommunityHook.guild_id == guild_id)
+        )
+    ).one()
+    assert (erase.public_id, erase.hook, erase.done_at) == (
+        "tests.purged",
+        "erase",
+        None,
+    )
+    await session.commit()
+
+    # Nothing is registered under that name here, so it is never answered.
+    monkeypatch.setattr(community_hooks, "MAX_ATTEMPTS", 1)
+    async with cohorts.system_session(guild_id) as routed:
+        await set_rls_context(routed, SystemGuild(guild_id))
+        await community_hooks.visit(routed, guild_id)
+        await routed.commit()
+    assert (
+        await plugin_refs.resolve_plugin_ref(session, ref=member, guild_id=guild_id)
+        is None
+    )
+    session.expunge_all()
+    assert await guild_purge.purge_due_guilds(session, now=later) == 1
+    assert (
+        await session.exec(select(Guild).where(Guild.id == guild_id))
+    ).first() is None
+
+
 async def test_restore_refuses_a_community_that_is_not_deleted(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
@@ -432,7 +511,7 @@ async def test_the_purge_waits_out_the_whole_window(
     async def _first_fails(session, row, days):
         if row.id == guild_id:
             raise RuntimeError("destroying failed")
-        await destroy(session, row, days)
+        return await destroy(session, row, days)
 
     monkeypatch.setattr(guild_purge, "_destroy", _first_fails)
     capfd.readouterr()
@@ -586,6 +665,41 @@ async def test_the_purge_leaves_live_communities_alone(session: AsyncSession):
         assert (
             await session.exec(select(Guild).where(Guild.id == guild_id))
         ).one_or_none() is not None
+
+
+async def test_destroying_now_leaves_a_held_community_and_its_connections(
+    session: AsyncSession,
+):
+    admin, guild = await _seated_guild(session)
+    guild_id = guild.id
+    plugin = await create_guild_plugin(
+        session,
+        guild,
+        admin,
+        definition={
+            "plugin_kind": "service",
+            "service": {"public_id": "tests.purge", "protocol": 1},
+            "connections": [{"id": "github", "scope": "member"}],
+        },
+    )
+    await create_plugin_user_connection(session, plugin, admin)
+    session.add(
+        ContentHold(
+            target_type="task",
+            target_id=1,
+            placed_via=HoldVia.community.value,
+            reason=HoldReason.legal_request.value,
+        )
+    )
+    await session.commit()
+
+    with pytest.raises(HoldsInForce):
+        await guild_purge.destroy_now(session, guild)
+    await session.rollback()
+
+    await route_session_to_guild(session, guild_id)
+    assert (await session.exec(select(GuildPluginUserConnection))).all()
+    assert await session.get(Guild, guild_id) is not None
 
 
 async def test_deleting_a_community_writes_to_the_seat_that_could_restore_it(session):

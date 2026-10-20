@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.tools import KINDS, Tool
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.gallery import GalleryImage, GalleryImageVersion
 from app.models.tenant.resource_grant import ResourceAccessLevel
@@ -90,7 +91,7 @@ async def test_create_requires_feature_enabled(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "GALLERIES_NOT_ENABLED"
+    assert response.json() == Tool.gallery.disabled().body
 
 
 async def test_create_requires_the_create_permission(
@@ -113,7 +114,7 @@ async def test_create_requires_the_create_permission(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "GALLERY_CREATE_PERMISSION_REQUIRED"
+    assert response.json() == Tool.gallery.create_denied().body
 
 
 async def test_list_carries_newest_picture_as_cover(
@@ -156,6 +157,31 @@ async def test_list_carries_newest_picture_as_cover(
     assert chosen.status_code == 200, chosen.text
     assert chosen.json()["cover"]["image_id"] == older.id
     assert chosen.json()["cover_image_id"] == older.id
+
+
+async def test_a_caption_written_over_another_is_refused(
+    client: AsyncClient, acting_user, session
+):
+    """As a description is: a caption saved over one that has since changed."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    await _galleries_enabled(session, a.initiative)
+    gallery = await create_gallery(session, a.initiative, a.user)
+    image = await create_gallery_image(session, gallery, a.user, write_blob=False)
+    path = a.g(f"/galleries/{gallery.id}/images/{image.id}")
+
+    first = await client.patch(path, headers=a.headers, json={"caption": "Dawn"})
+    stale = await client.patch(
+        path, headers=a.headers, json={"caption": "Dusk", "caption_base": None}
+    )
+    current = await client.patch(
+        path, headers=a.headers, json={"caption": "Dusk", "caption_base": "Dawn"}
+    )
+
+    assert first.status_code == 200, first.text
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "DESCRIPTION_CHANGED"
+    assert current.json()["caption"] == "Dusk"
+    assert current.json()["plugin_values"] == []
 
 
 async def test_preview_is_capped_at_the_newest_few(
@@ -352,7 +378,7 @@ async def test_upload_refuses_what_is_not_a_raster_image(
         },
     )
     assert svg.status_code == 400
-    assert svg.json()["detail"] == "GALLERY_INVALID_IMAGE"
+    assert svg.json()["detail"] == "IMAGE_INVALID"
 
     fake = await client.post(
         a.g(f"/galleries/{gallery.id}/images"),
@@ -362,7 +388,7 @@ async def test_upload_refuses_what_is_not_a_raster_image(
         },
     )
     assert fake.status_code == 400
-    assert fake.json()["detail"] == "GALLERY_INVALID_IMAGE"
+    assert fake.json()["detail"] == "IMAGE_INVALID"
 
     empty = await client.post(
         a.g(f"/galleries/{gallery.id}/images"),
@@ -370,7 +396,7 @@ async def test_upload_refuses_what_is_not_a_raster_image(
         files={"file": ("x.png", io.BytesIO(b""), "image/png")},
     )
     assert empty.status_code == 400
-    assert empty.json()["detail"] == "GALLERY_IMAGE_EMPTY"
+    assert empty.json()["detail"] == "IMAGE_EMPTY"
 
 
 def test_orphaned_blobs_are_discarded_only_when_that_is_certain(monkeypatch):
@@ -422,7 +448,7 @@ async def test_upload_refuses_what_the_decoder_will_not_read(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "GALLERY_INVALID_IMAGE"
+    assert response.json()["detail"] == "IMAGE_INVALID"
     listing = await client.get(
         a.g(f"/galleries/{gallery.id}/images"), headers=a.headers
     )
@@ -495,7 +521,7 @@ async def test_upload_needs_write_access_on_the_gallery(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "GALLERY_WRITE_ACCESS_REQUIRED"
+    assert response.json() == Tool.gallery.write_required().body
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +690,7 @@ async def test_a_picture_is_reached_only_through_its_gallery(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "GALLERY_IMAGE_NOT_FOUND"
+    assert response.json() == KINDS["gallery_image"].not_found().body
 
 
 async def test_removing_a_picture_trashes_it_and_clears_the_cover(
@@ -719,7 +745,7 @@ async def test_bulk_delete_trashes_a_selection_or_nothing(
         json={"image_ids": [mine[0].id, stranger.id]},
     )
     assert mixed.status_code == 404
-    assert mixed.json()["detail"] == "GALLERY_IMAGE_NOT_FOUND"
+    assert mixed.json() == KINDS["gallery_image"].not_found().body
     still = await client.get(a.g(f"/galleries/{gallery.id}/images"), headers=a.headers)
     assert still.json()["total_count"] == 3
 
@@ -888,7 +914,7 @@ async def test_deleting_the_current_version_promotes_the_previous(
         headers=a.headers,
     )
     assert last.status_code == 400
-    assert last.json()["detail"] == "GALLERY_CANNOT_DELETE_LAST_VERSION"
+    assert last.json()["detail"] == "CANNOT_DELETE_LAST_VERSION"
 
 
 async def test_deleting_a_version_is_the_owners_call(

@@ -2,6 +2,7 @@ import type {
   SearchHit,
   SearchResults,
   SearchSuggestion,
+  TaggedEntity,
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 
@@ -60,4 +61,22 @@ export function buildSearchResults(
   overrides: Partial<SearchResults> = {}
 ): SearchResults {
   return { ...buildPage(items), fuzzy: false, ...overrides };
+}
+
+/** One thing carrying a tag, as the tag's page lists it: a hit, plus the name
+ *  of the tool it lives in and when it last changed. */
+export function buildTaggedEntity(overrides: Partial<TaggedEntity> = {}): TaggedEntity {
+  const hit = buildSearchHit(overrides);
+  return {
+    entity_type: hit.entity_type,
+    entity_id: hit.entity_id,
+    title: hit.title,
+    snippet: hit.snippet ?? null,
+    initiative_id: hit.initiative_id ?? null,
+    tool: hit.tool ?? null,
+    tool_id: hit.tool_id ?? null,
+    tool_title: `Tool ${counter}`,
+    updated_at: null,
+    ...overrides,
+  };
 }

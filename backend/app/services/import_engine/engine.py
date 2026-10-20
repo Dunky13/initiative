@@ -25,7 +25,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.advisory_locks import LockNamespace, advisory_lock
-from app.db.session import routed_guild_id
+from app.db import gucs
+from app.db.session import raise_flag, routed_guild_id
 from app.core.messages import ImportEngineMessages
 from app.models.platform.guild import CommunityRole
 from app.models.platform.user import User
@@ -33,7 +34,6 @@ from app.models.tenant.import_job import ImportJob, ImportJobStatus
 from app.models.tenant.initiative import Initiative
 from app.core.tools import tool_for_create_permission
 from app.schemas.tenant.import_job import BackupPlanPerson, EnvelopeImportPlan
-from app.services import guild_work
 from app.services.import_engine.common import (
     handle_key,
     load_guild_member_handles,
@@ -236,8 +236,6 @@ async def start_envelope_import(
         + timedelta(hours=import_limits.IMPORT_STAGED_TTL_HOURS),
     )
     session.add(job)
-    if not unplaced:
-        guild_work.wake(session, guild_work.DATA_JOBS, guild_id)
     await session.commit()
     await session.refresh(job)
     return job
@@ -284,6 +282,7 @@ async def apply_one_envelope(
             guild_id=guild_id,
         ),
     )
+    await raise_flag(session, gucs.IMPORTING)
     result = await importer.apply(
         session,
         envelope=envelope,
@@ -291,6 +290,7 @@ async def apply_one_envelope(
         importer=user,
         context=context,
     )
+    await raise_flag(session, gucs.IMPORTING, False)
     resolution = await context.links.resolve(session, created_by=user.id)
     result.links_created = resolution.created
     result.links_unresolved = resolution.unresolved

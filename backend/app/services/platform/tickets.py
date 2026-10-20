@@ -18,34 +18,38 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import AsyncIterator, Optional
+from typing import TYPE_CHECKING, AsyncIterator, Optional, Sequence
 
 from limits import parse
 from sqlalchemy import String, cast
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.intake import Conversation, IntakeStream, meta
+from app.core.intake import (
+    Conversation,
+    FeedbackTopic,
+    IntakeStream,
+    SecurityTopic,
+    conversation_for,
+    meta,
+)
 from app.core.rate_limit import take_allowance
 from app.db import cohorts
 from app.db.session import routed_guild_id
 from app.models.platform.app_setting import AppSetting
 from app.models.platform.user import User
 from app.models.tenant.comment import Comment
+from app.models.tenant.evidence import Evidence
 from app.models.tenant.intake import IntakeBinding, IntakeCase
 from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
 from app.services.platform import intake as intake_service
 from app.services.tenant import support as support_service
 
+if TYPE_CHECKING:
+    from app.services.platform.evidence import PreparedEvidence
+
 #: The counter namespace a filing's pace is kept under.
 _PACE_NAMESPACE = "tickets"
-
-#: The streams a person can file into here. The others are still reached by
-#: their contact address; each joins this set in the phase that builds its
-#: form.
-FILEABLE: frozenset[IntakeStream] = frozenset(
-    {IntakeStream.support, IntakeStream.moderation}
-)
 
 
 class TicketMode(str, Enum):
@@ -67,6 +71,8 @@ class StreamAvailability:
     #: Who to write to about the stream, whatever the mode — a form whose
     #: filing turns out to have nowhere to go falls back to it.
     contact: Optional[str]
+    #: The topics the form offers this person from here, in offering order.
+    types: tuple[str, ...] = ()
 
 
 class FilingTooFast(Exception):
@@ -113,15 +119,29 @@ async def availability(
             # form is always there; a report the platform would have to take
             # falls back to the address when nothing is bound.
             offered[stream] = StreamAvailability(TicketMode.form, contact)
-        elif (
-            stream is IntakeStream.support
-            and guild_id is not None
-            and await intake_service.stream_is_bound(stream)
-            and await support_service.entitled(user, guild_id)
-        ):
-            offered[stream] = StreamAvailability(TicketMode.form, contact)
-        else:
+        elif not await intake_service.stream_is_bound(stream):
             offered[stream] = _fallback(contact)
+        elif stream is IntakeStream.support:
+            # Their own account is always theirs to ask about; a community
+            # only where it takes help requests, and its data only for the
+            # seat holder.
+            community = (
+                await support_service.community_topics(user, guild_id)
+                if guild_id is not None
+                else frozenset()
+            )
+            offered[stream] = StreamAvailability(
+                TicketMode.form,
+                contact,
+                tuple(t.value for t in support_service.offered_topics(community)),
+            )
+        else:
+            # Anybody signed in may tell the server about a security problem,
+            # or what they think.
+            topics = SecurityTopic if stream is IntakeStream.security else FeedbackTopic
+            offered[stream] = StreamAvailability(
+                TicketMode.form, contact, tuple(t.value for t in topics)
+            )
     return offered
 
 
@@ -162,11 +182,12 @@ def derive_state(
     status_id: Optional[int],
     awaiting_status_id: Optional[int],
     stream: IntakeStream,
+    topic: Optional[str] = None,
     trashed: bool = False,
 ) -> FilerState:
     """The state a case's status shows its filer.
 
-    A case the team put in the trash is closed to its filer. A stream with no
+    A case the team put in the trash is closed to its filer. A case with no
     conversation never waits on its filer, who has no way to answer.
     """
     if trashed or category == TaskStatusCategory.done:
@@ -174,7 +195,7 @@ def derive_state(
     if (
         awaiting_status_id is not None
         and status_id == awaiting_status_id
-        and meta(stream).conversation is not Conversation.none
+        and conversation_for(stream, topic) is not Conversation.none
     ):
         return FilerState.waiting_on_you
     if category == TaskStatusCategory.todo:
@@ -193,6 +214,8 @@ class FiledTicket:
     opened_at: datetime
     updated_at: Optional[datetime]
     status_id: Optional[int] = None
+    #: What it is about within its stream, as they chose.
+    topic: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -204,6 +227,19 @@ class TicketMessage:
     #: are shown as the team rather than by name.
     mine: bool
     content: str
+    created_at: datetime
+    #: What they sent with it.
+    attachments: tuple["TicketAttachment", ...] = ()
+
+
+@dataclass(frozen=True)
+class TicketAttachment:
+    """A file the filer sent, as they read it back."""
+
+    id: int
+    display_name: str
+    content_type: str
+    size_bytes: int
     created_at: datetime
 
 
@@ -253,6 +289,7 @@ def _ticket_columns():
     return (
         IntakeCase.task_id,
         IntakeCase.stream,
+        IntakeCase.topic,
         IntakeCase.filer_subject,
         IntakeCase.opened_at,
         Task.updated_at,
@@ -269,6 +306,7 @@ def _ticket_from(row) -> FiledTicket:
     (
         task_id,
         stream,
+        topic,
         subject,
         opened_at,
         updated_at,
@@ -286,11 +324,13 @@ def _ticket_from(row) -> FiledTicket:
             status_id=status_id,
             awaiting_status_id=awaiting,
             stream=IntakeStream(stream),
+            topic=topic,
             trashed=deleted_at is not None,
         ),
         opened_at=opened_at,
         updated_at=updated_at,
         status_id=status_id,
+        topic=topic,
     )
 
 
@@ -345,20 +385,39 @@ async def read_filed(user: User, task_id: int) -> FiledTicketDetail:
                 .order_by(Comment.created_at, Comment.id)
             )
         ).all()
+        sent = (
+            await session.exec(
+                select(
+                    Evidence.comment_id,
+                    Evidence.id,
+                    Evidence.display_name,
+                    Evidence.content_type,
+                    Evidence.size_bytes,
+                    Evidence.created_at,
+                )
+                .join(IntakeCase, IntakeCase.id == Evidence.case_id)
+                .where(IntakeCase.task_id == task_id)
+                .order_by(Evidence.created_at, Evidence.id)
+            )
+        ).all()
         guild_id = routed_guild_id(session)
     if guild_id is None:
         raise TicketNotFound
     ticket = _ticket_from(row)
+    attached: dict[Optional[int], list[TicketAttachment]] = {}
+    for comment_id, *fields in sent:
+        attached.setdefault(comment_id, []).append(TicketAttachment(*fields))
     messages = [
         TicketMessage(
             id=comment_id,
             mine=author == user.id,
             content=content,
             created_at=created_at,
+            attachments=tuple(attached.get(comment_id, ())),
         )
         for comment_id, author, content, created_at in said
     ]
-    conversation = meta(ticket.stream).conversation
+    conversation = conversation_for(ticket.stream, ticket.topic)
     return FiledTicketDetail(
         guild_id=guild_id,
         ticket=ticket,
@@ -368,7 +427,39 @@ async def read_filed(user: User, task_id: int) -> FiledTicketDetail:
     )
 
 
-async def reply(user: User, detail: FiledTicketDetail, words: str) -> None:
+async def filed_evidence(user: User, task_id: int, evidence_id: int) -> int:
+    """The operations community holding file ``evidence_id`` of case
+    ``task_id``, where it is one ``user`` sent with it. Raises
+    :class:`TicketNotFound` otherwise, the same for a file that is not theirs
+    as for one that does not exist.
+
+    Read through their filer role, which admits only their own files on their
+    own cases; serving it reads the rest on the operations community's system
+    session once this has answered.
+    """
+    async with _as_filer(user) as session:
+        if session is None:
+            raise TicketNotFound
+        found = (
+            await session.exec(
+                select(Evidence.id)
+                .join(IntakeCase, IntakeCase.id == Evidence.case_id)
+                .where(Evidence.id == evidence_id)
+                .where(IntakeCase.task_id == task_id)
+            )
+        ).first()
+        guild_id = routed_guild_id(session)
+    if found is None or guild_id is None:
+        raise TicketNotFound
+    return guild_id
+
+
+async def reply(
+    user: User,
+    detail: FiledTicketDetail,
+    words: str,
+    evidence: Sequence["PreparedEvidence"] = (),
+) -> None:
     """Add ``user``'s answer to a case they filed.
 
     ``detail`` is the case as read through their filer access, which is what
@@ -386,6 +477,7 @@ async def reply(user: User, detail: FiledTicketDetail, words: str) -> None:
         filer=user,
         words=words,
         stream=detail.ticket.stream,
+        evidence=evidence,
     )
     if not taken:
         raise ReplyRefused

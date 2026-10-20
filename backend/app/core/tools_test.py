@@ -92,20 +92,6 @@ def test_an_initiative_starts_with_projects_and_files_on():
         assert InitiativeBase.model_fields[tool.view_permission].default is expected
 
 
-def test_recent_entity_types_agree_across_surfaces():
-    # The model's allowed set, the schema enum, and the RLS path registry all
-    # derive from the Tool enum — assert they agree (this also guards someone
-    # re-declaring one of them by hand).
-    from app.db.initiative_rls import RECENT_ENTITY_TABLES
-    from app.models.tenant.recent_view import RECENT_ENTITY_TYPES
-    from app.schemas.tenant.recent_view import RecentEntityType
-
-    derived = {t.value for t in Tool}
-    assert set(RECENT_ENTITY_TYPES) == derived
-    assert set(RECENT_ENTITY_TABLES) == derived
-    assert {e.value for e in RecentEntityType} == derived
-
-
 def test_every_tool_is_commentable():
     # Comments span EVERY tool plus the content-level extras: the service
     # registry, the comments table's parent FKs, the RLS parent declaration,
@@ -147,27 +133,6 @@ def test_every_tool_is_commentable():
         }
         assert parent.tool_fk in extra_columns, column
         assert extra.title_field in extra_columns, column
-
-
-def test_every_tool_has_its_sharing_refusal_in_every_locale():
-    # Sharing reaches somebody only where their role already lets them use the
-    # tool, and the refusal names the tool. The codes are derived from the enum
-    # so a new tool has one for free; the WORDING cannot be derived, so this is
-    # what says a locale is still owed it.
-    import json
-    from pathlib import Path
-
-    from app.core.messages import SharingMessages
-
-    locales = Path(__file__).resolve().parents[2].parent / "frontend/public/locales"
-    for locale in ("de", "en", "es", "fr"):
-        catalogue = json.loads((locales / locale / "errors.json").read_text())
-        missing = [
-            SharingMessages.grantee_lacks_tool(tool)
-            for tool in Tool
-            if SharingMessages.grantee_lacks_tool(tool) not in catalogue
-        ]
-        assert not missing, f"{locale}/errors.json is missing {missing}"
 
 
 def test_every_tool_row_is_written_without_returning():

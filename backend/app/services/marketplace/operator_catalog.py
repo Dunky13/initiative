@@ -20,8 +20,7 @@ so an operator listing is held to the same validation, the same uid and
 ``public_id`` rules, the same required attribution, and the same same-origin
 artwork rule as everything else in the catalog. The ``core.*`` namespace stays
 with the build. A plug-in's manifest may carry the registry's ``registration``
-block, and its scope ceiling is the operator's approval; it names no
-reference sectors, which only a registry listing may.
+block, and its scope ceiling is the operator's approval.
 
 Two behaviours are worth stating plainly:
 
@@ -172,7 +171,8 @@ def _read_directory(
     try:
         paths = sorted(path for path in root.glob("*.json") if path.is_file())
     except OSError as exc:
-        return [], [ScanProblem(file=root.name, reason=f"cannot be listed: {exc}")]
+        logger.warning("marketplace: cannot list the operator catalog: %s", exc)
+        return [], [ScanProblem(file=root.name, reason="cannot be listed")]
 
     if len(paths) > MAX_MANIFEST_FILES:
         problems.append(
@@ -198,13 +198,19 @@ def _read_directory(
                 continue
             manifest = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError) as exc:
-            problems.append(
-                ScanProblem(file=path.name, reason=f"cannot be read: {exc}")
+            logger.warning(
+                "marketplace: cannot read operator listing %s: %s", path, exc
             )
+            problems.append(ScanProblem(file=path.name, reason="cannot be read"))
             continue
         except json.JSONDecodeError as exc:
             problems.append(
-                ScanProblem(file=path.name, reason=f"is not valid JSON: {exc}")
+                ScanProblem(
+                    file=path.name,
+                    reason=(
+                        f"is not valid JSON (line {exc.lineno}, column {exc.colno})"
+                    ),
+                )
             )
             continue
         if not isinstance(manifest, dict):

@@ -40,7 +40,7 @@ Nothing in Initiative is held back to make the hosted version look better. What 
 | Where your data lives | Wherever you put it | Where our service runs |
 | Who you ask when it breaks | You, and the community | Us |
 | Version you're on | Whichever you pull | The current one |
-| Plug-ins that need a service behind them | You run the service | Already running |
+| Plug-ins that need something set up behind them | You set it up | Already done |
 | Automations | — | Available, metered separately |
 
 ### Plug-ins that need something running behind them

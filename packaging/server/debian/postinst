@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+    configure)
+        if ! getent group initiative >/dev/null; then addgroup --system initiative; fi
+        if ! getent passwd initiative >/dev/null; then
+            adduser --system --ingroup initiative --home /var/lib/initiative \
+                --no-create-home --disabled-login initiative
+        fi
+        [ "$(id -u initiative)" -ne 0 ]
+        # Prepare the root-owned state directory before creating writable storage.
+        if [ -L /var/lib/initiative ] || { [ -e /var/lib/initiative ] && [ ! -d /var/lib/initiative ]; }; then
+            echo 'Refusing non-directory or symlink at /var/lib/initiative' >&2
+            exit 1
+        fi
+        mkdir -p /var/lib/initiative
+        chown root:initiative /var/lib/initiative
+        chmod 0750 /var/lib/initiative
+        for directory in /var/lib/initiative/uploads /var/log/initiative; do
+            if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
+                echo "Refusing non-directory or symlink at $directory" >&2
+                exit 1
+            fi
+        done
+        install -d -o initiative -g initiative -m 0750 /var/lib/initiative/uploads /var/log/initiative
+        chown root:initiative /etc/initiative /etc/initiative/server.env
+        chmod 0750 /etc/initiative
+        chmod 0640 /etc/initiative/server.env
+        # Record potential enable links without enabling or starting the service.
+        # This lets purge clean manual enablement even after the unit is removed.
+        deb-systemd-helper update-state initiative-server.service
+        if [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then systemctl daemon-reload; fi
+        echo 'Configure /etc/initiative/server.env, then manually enable/start initiative-server.'
+        ;;
+esac

@@ -26,7 +26,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from cryptography.hazmat.primitives import serialization as _serialization
-from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
 from httpx import ASGITransport, AsyncClient
 from starlette.requests import HTTPConnection
 from sqlalchemy import event, text
@@ -50,6 +50,7 @@ from app.db.session import (
 )
 from app.testing import guild_pool
 from app.testing.schema_harness import clear_search_path_pin
+from app.testing.server import in_request_tasks
 from app.db.guild_ddl import render_guild_schema_ddl
 from app.db.guild_migrations import GUILD_SCHEMA_REGEX
 from app.db.schema_provisioning import guild_schema_name
@@ -91,7 +92,7 @@ RUN_ID = f"{CHECKOUT_ID}_{WORKER_ID}"
 settings.GUILD_ROLE_PREFIX = f"test_{RUN_ID}_"
 settings.PLATFORM_ROLE_PREFIX = f"test_{RUN_ID}_"
 
-# Handoff tokens are RS256 and need a real signing key, which a test that mints
+# Handoff tokens are EdDSA and need a real signing key, which a test that mints
 # one asks for through ``handoff_signing_key``. Everywhere else the deployment
 # default holds: no key.
 settings.HANDOFF_SIGNING_PRIVATE_KEY_PEM = None
@@ -287,7 +288,7 @@ def _alembic_config() -> Config:
     """Alembic config pointed at this worker's test database."""
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL.replace("%", "%%"))
     config.attributes["configure_logger"] = False
     config.attributes["url_configured"] = True
     return config
@@ -555,10 +556,26 @@ def _reset_presence_roll():
     presence.online = presence.OnlineRoll()
 
 
+@pytest.fixture(autouse=True)
+def _reset_timer_wakes():
+    """Start and end every test with no community waiting to be woken.
+
+    ``sweep_timers.wake`` notes a community in a process-global set that the
+    next ``process_due_timers`` arms timers for. Test databases RESTART
+    IDENTITY per test, so a wake one test left behind would arm a timer in the
+    next for a community that test never made, or for whoever has its id now.
+    """
+    from app.services import sweep_timers
+
+    sweep_timers._woken.clear()
+    yield
+    sweep_timers._woken.clear()
+
+
 @functools.cache
 def _handoff_keypair() -> tuple[str, str]:
-    """One RSA keypair per process, built the first time a test asks for it."""
-    key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    """One Ed25519 keypair per process, built the first time a test asks for it."""
+    key = _ed25519.Ed25519PrivateKey.generate()
     private_pem = key.private_bytes(
         encoding=_serialization.Encoding.PEM,
         format=_serialization.PrivateFormat.PKCS8,
@@ -1151,7 +1168,7 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     try:
         async with AsyncClient(
-            transport=ASGITransport(app=app),
+            transport=ASGITransport(app=in_request_tasks(app)),
             base_url="http://test",
             # What a browser on this origin actually sends. Every unsafe method
             # from a page carries it, and CsrfOriginMiddleware requires it (or

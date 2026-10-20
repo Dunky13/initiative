@@ -99,6 +99,7 @@ async def _build_settings(ctx: SectionContext) -> tuple[dict[str, Any], int] | N
         "allow_push_notifications": guild.allow_push_notifications,
         "allow_email_notifications": guild.allow_email_notifications,
         "redact_notification_content": guild.redact_notification_content,
+        "allow_engagement_ranking": guild.allow_engagement_ranking,
         "banner": dict(guild.banner or {}),
         "retention_days": setting.retention_days if setting else None,
     }
@@ -303,8 +304,10 @@ EXEMPT: dict[str, str] = {
     "guild_ai_connections": "credentials",
     "guild_ai_connection_keys": "credentials",
     "guild_ai_member_keys": "credentials",
+    "ai_member_key_secrets": "credentials",
     "guild_plugin_secrets": "credentials",
     "guild_plugin_user_connections": "credentials",
+    "plugin_connection_secrets": "credentials",
     "plugin_member_consents": "credentials",
     # Per-member personal preference, not community property — it belongs to
     # the member, and follows them rather than the guild.
@@ -316,9 +319,14 @@ EXEMPT: dict[str, str] = {
     "webhook_deliveries": "operational",
     "plugin_hook_deliveries": "operational",
     "plugin_schedule_runs": "operational",
+    "timer_marks": "operational",
+    "subscription_progress": "operational",
     # In-flight workflow rather than owned content: a request to join is a
     # question waiting on somebody in THIS instance.
     "initiative_join_requests": "in_flight",
+    # The platform's record of what it holds here. Not the community's to
+    # read, so not the community's to carry out.
+    "content_holds": "platform",
 }
 
 __all__ = [

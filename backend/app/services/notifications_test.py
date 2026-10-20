@@ -6,13 +6,14 @@ test harness commits real data and truncates between tests).
 """
 
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import urlencode
 
 import re
 
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import usernames
@@ -41,18 +42,21 @@ from app.services.notifications import (
     ASSIGNMENT_ITEM_RETENTION,
     ASSIGNMENT_MAX_WINDOW,
     ASSIGNMENT_QUIET_PERIOD,
+    EVENT_REMINDER_DISPATCH_RETENTION,
     notify,
 )
 from app.services.notifications import (
     ASSIGNMENT_DIGEST,
     REACTION_DIGEST,
-    digest_gc_scan,
+    expire_digest_items,
     digest_scan,
     event_when,
     overdue_scan,
     reminder_scan,
 )
-from app.services.guild_sweeps import Scan, each_guild
+from app.services.guild_sweeps import Scan, Scope, each_guild
+from app.services.platform import accounts as accounts_service
+from app.services.tenant import expiry
 from app.models.platform.guild import Guild, CommunityRole
 from app.testing import (
     guild_of,
@@ -69,7 +73,7 @@ from app.testing import (
     drain_notices,
     set_notification_prefs,
 )
-from app.testing import route_as
+from app.testing import route_as, route_session_to_guild
 from app.db.request_context import Platform, SystemGuild, Unattributed
 
 
@@ -97,12 +101,13 @@ async def _events_initiative(session: AsyncSession, creator):
 
 
 async def _add_attendee(session, initiative, event, user, *, rsvp=RSVPStatus.pending):
-    attendee = CalendarEventAttendee(
-        calendar_event_id=event.id,
-        user_id=user.id,
-        rsvp_status=rsvp,
-    )
-    session.add(attendee)
+    session.add(CalendarEventAttendee(calendar_event_id=event.id, user_id=user.id))
+    if rsvp is not RSVPStatus.pending:
+        session.add(
+            CalendarEventAnswer(
+                calendar_event_id=event.id, user_id=user.id, rsvp_status=rsvp
+            )
+        )
     await session.commit()
     # Reminders are gathered in the attendee's own context, so they must be a
     # guild + initiative member to see the event under RLS (as the real app
@@ -190,12 +195,22 @@ def test_format_event_when_falls_back_on_bad_timezone():
 
 
 async def test_event_reminder_fires_once_within_lead_window(
-    session: AsyncSession,
+    session: AsyncSession, monkeypatch
 ):
     creator = await create_user(session, email="organizer@example.com")
     attendee = await create_user(
         session, email="attendee@example.com", event_reminder_minutes_before=15
     )
+    # Reminded about nothing here, so their lead is never read.
+    bystander = await create_user(session, email="bystander@example.com")
+    asked: set[int] = set()
+    read_leads = accounts_service.load_event_reminder_leads
+
+    async def leads(user_ids):
+        asked.update(user_ids)
+        return await read_leads(user_ids)
+
+    monkeypatch.setattr(accounts_service, "load_event_reminder_leads", leads)
     guild, initiative, calendar = await _events_initiative(session, creator)
     # Starts in 10 min; with a 15-min lead the reminder is already due.
     start_at = datetime.now(timezone.utc) + timedelta(minutes=10)
@@ -211,6 +226,7 @@ async def test_event_reminder_fires_once_within_lead_window(
 
     await _dispatch(session)
     assert len(await _reminders_for(session, attendee.id)) == 1
+    assert attendee.id in asked and bystander.id not in asked
 
     # Dedup: a second pass must not create another reminder.
     await _dispatch(session)
@@ -224,6 +240,28 @@ async def test_event_reminder_fires_once_within_lead_window(
         )
     )
     assert len(list(dispatches.all())) == 1
+
+    # The hourly expiry pass keeps the row while its event is upcoming and
+    # drops it once the start is past the retention.
+    await set_rls_context(session, Unattributed())
+    await route_session_to_guild(session, guild.id)
+
+    async def _expire() -> list[EventReminderDispatch]:
+        await each_guild(
+            [(Scope.PROVISIONED, await expiry.prepare())], name="test", only=[guild.id]
+        )
+        return list((await session.exec(select(EventReminderDispatch))).all())
+
+    assert len(await _expire()) == 1
+    await session.exec(
+        update(EventReminderDispatch).values(
+            event_start_at=datetime.now(timezone.utc)
+            - EVENT_REMINDER_DISPATCH_RETENTION
+            - timedelta(minutes=1)
+        )
+    )
+    await session.commit()
+    assert await _expire() == []
 
 
 async def test_event_reminder_fires_for_each_occurrence_of_a_repeat(
@@ -252,7 +290,7 @@ async def test_event_reminder_fires_for_each_occurrence_of_a_repeat(
         CalendarEventAnswer(
             calendar_event_id=event.id,
             user_id=away.id,
-            original_start=upcoming,
+            occurrence_start=upcoming,
             rsvp_status=RSVPStatus.declined,
         )
     )
@@ -469,9 +507,8 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     session: AsyncSession, monkeypatch
 ):
     """The overdue digest must collect a user's overdue tasks from EVERY guild
-    they belong to. Under schema-per-guild each guild's tasks live in its own
-    schema, so a single public-scoped scan (the old behaviour) would miss all
-    but the routed guild — this asserts both guilds' tasks reach the email."""
+    they belong to, including one whose timer has not come due: the day's
+    digest is claimed once, so it has to hold them all."""
     user = await create_user(
         session,
         email="multi-overdue@example.com",
@@ -479,7 +516,7 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     )
     # The scheduled clock is a preference now; midnight is always past.
     await set_notification_prefs(session, user, {"email": {"at": "00:00"}})
-    await _overdue_task_in_new_guild(session, user, label="Alpha")
+    alpha = await _overdue_task_in_new_guild(session, user, label="Alpha")
     await _overdue_task_in_new_guild(session, user, label="Beta")
 
     captured: dict = {}
@@ -492,7 +529,12 @@ async def test_overdue_digest_gathers_tasks_across_user_guilds(
     monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
 
     await set_rls_context(session, Unattributed())
-    await _sweep(overdue_scan(now=datetime.now(timezone.utc)))
+    await each_guild(
+        [],
+        name="test",
+        scans=[overdue_scan(now=datetime.now(timezone.utc))],
+        only=[alpha.id],
+    )
 
     assert captured.get("user_id") == user.id
     assert {"Alpha overdue", "Beta overdue"} <= captured["titles"]
@@ -577,7 +619,7 @@ async def test_overdue_digest_pushes_when_email_opted_out(
         user,
         {
             "email": {"at": "00:00"},
-            "categories": {"due_dates": {"email": False}},
+            "categories": {"assignments": {"email": False}},
         },
     )
     await _overdue_task_in_new_guild(session, user, label="Alpha")
@@ -588,7 +630,8 @@ async def test_overdue_digest_pushes_when_email_opted_out(
     monkeypatch.setattr(email_outbox, "enqueue", _fail_email)
     _push_on(monkeypatch)
 
-    now = datetime.now(timezone.utc)
+    # Midday, so the second pass falls on the same day.
+    now = datetime.now(timezone.utc).replace(hour=12, minute=0)
     await set_rls_context(session, Unattributed())
     await _sweep(overdue_scan(now=now))
     assert len(await _queued_pushes(session)) == 1
@@ -621,7 +664,7 @@ async def test_overdue_digest_skips_push_when_opted_out(
         user,
         {
             "email": {"at": "00:00"},
-            "categories": {"due_dates": {"push": False}},
+            "categories": {"assignments": {"push": False}},
         },
     )
     await _overdue_task_in_new_guild(session, user, label="Alpha")
@@ -806,6 +849,55 @@ async def test_assignment_digest_gathers_items_across_user_guilds(
         assert pending == [], f"guild {guild_id} items not marked processed"
 
 
+async def test_assignment_digest_takes_an_opted_out_community_unsent(
+    session: AsyncSession, monkeypatch
+):
+    """A community switched off after its items were queued leaves them out of
+    the digest, and takes them anyway, so they stop counting as waiting."""
+    user = await create_user(session, email="digest-guild-optout@example.com")
+    await _assignment_item_in_new_guild(session, user, label="Alpha")
+    muted = await _assignment_item_in_new_guild(session, user, label="Beta")
+    await set_rls_context(session, Unattributed())
+    await set_notification_prefs(
+        session,
+        user,
+        {
+            "guilds": {
+                str(muted.id): {
+                    "categories": {"assignments": {"email": False, "push": False}}
+                }
+            }
+        },
+    )
+
+    captured: dict = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        captured["titles"] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await set_rls_context(session, Unattributed())
+    await _sweep(
+        digest_scan(
+            ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc) + ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+
+    assert "Alpha task" in captured["titles"]
+    assert "Beta task" not in captured["titles"]
+    await route_as(session, user_id=user.id, guild_id=muted.id)
+    pending = (
+        await session.exec(
+            select(TaskAssignmentDigestItem).where(
+                TaskAssignmentDigestItem.processed_at.is_(None)
+            )
+        )
+    ).all()
+    assert pending == []
+
+
 async def test_assignment_digest_waits_for_the_flurry_to_end(
     session: AsyncSession, monkeypatch
 ):
@@ -850,6 +942,36 @@ async def test_assignment_digest_waits_for_the_flurry_to_end(
         )
     )
     assert sent == [2]
+
+
+async def test_assignment_digest_waits_for_a_community_it_did_not_visit(
+    session: AsyncSession, monkeypatch
+):
+    """An item still arriving in a community whose timer has not come due holds
+    the digest back as well."""
+    user = await create_user(session, email="unvisited@example.com")
+    alpha = await _assignment_item_in_new_guild(session, user, label="Alpha")
+    await _assignment_item_in_new_guild(session, user, label="Beta")
+    # Alpha's item has settled; Beta's has just landed.
+    await route_as(session, user_id=user.id, guild_id=alpha.id)
+    await session.exec(
+        update(TaskAssignmentDigestItem).values(
+            created_at=datetime.now(timezone.utc) - 2 * ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+    await session.commit()
+    sent = AsyncMock(return_value=True)
+    monkeypatch.setattr(email_outbox, "enqueue", sent)
+
+    await set_rls_context(session, Unattributed())
+    await each_guild(
+        [],
+        name="test",
+        scans=[digest_scan(ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc))],
+        only=[alpha.id],
+    )
+
+    sent.assert_not_called()
 
 
 async def test_assignment_digest_caps_a_steady_trickle(
@@ -1025,13 +1147,14 @@ async def test_assignment_gc_drops_items_past_retention(session: AsyncSession):
     # Well inside the window: nothing is touched.
     session.expunge_all()
     await set_rls_context(session, Unattributed())
-    await _sweep(digest_gc_scan(now=datetime.now(timezone.utc)))
+    await each_guild([(Scope.LIVE, expire_digest_items)], name="test")
     assert await _row_count() == 1
 
     session.expunge_all()
     await set_rls_context(session, Unattributed())
-    await _sweep(
-        digest_gc_scan(now=datetime.now(timezone.utc) + ASSIGNMENT_ITEM_RETENTION)
+    later = datetime.now(timezone.utc) + ASSIGNMENT_ITEM_RETENTION
+    await each_guild(
+        [(Scope.LIVE, partial(expire_digest_items, now=later))], name="test"
     )
     assert await _row_count() == 0
 
@@ -1212,7 +1335,7 @@ async def test_reaction_digest_respects_the_opt_out(session: AsyncSession, monke
     await set_notification_prefs(
         session,
         user,
-        {"categories": {"reactions": {"email": False, "push": False}}},
+        {"categories": {"mentions": {"email": False, "push": False}}},
     )
     await _reaction_item_in_new_guild(session, user, label="Alpha")
 

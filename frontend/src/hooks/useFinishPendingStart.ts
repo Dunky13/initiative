@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCommunities } from "@/hooks/useCommunities";
 import { communityPath } from "@/lib/communityUrl";
 import { nearOfPlace, nearSearchOf, type Place, saveNear } from "@/lib/directoryNear";
+import { type FirstHomeContext, seedFirstHome } from "@/lib/home/firstHome";
 import { toast } from "@/lib/mascotToast";
 import {
   clearStart,
@@ -14,6 +16,7 @@ import {
   readPendingStart,
   type StartAnswers,
   type Starter,
+  type StartPath,
   seedStarter,
 } from "@/lib/startFlow";
 import { toolDetailRoute } from "@/lib/tools";
@@ -36,6 +39,30 @@ export const useLandOnStarter = () => {
     [navigate]
   );
 };
+
+/**
+ * Make the first home page from why they signed up. Not waited on: nobody
+ * lands on Home from the start flow, so it only has to be there by the next
+ * visit.
+ */
+export const useSeedFirstHome = () => {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (path: StartPath, context?: FirstHomeContext) => void seedFirstHome(queryClient, path, context),
+    [queryClient]
+  );
+};
+
+/** What the first home page points at, from what the flow made. */
+export const firstHomeContext = (
+  communityId: number,
+  starter: Starter | null
+): FirstHomeContext => ({
+  communityId,
+  list: starter?.projectId
+    ? { communityId, initiativeId: starter.initiativeId, projectId: starter.projectId }
+    : null,
+});
 
 /** The directory, on the shelves they picked. */
 export const useOpenDirectory = () => {
@@ -85,6 +112,7 @@ export const useFinishPendingStart = (): void => {
   const seed = useSeedStarter();
   const landOn = useLandOnStarter();
   const openDirectory = useOpenDirectory();
+  const seedHome = useSeedFirstHome();
   const done = useRef(false);
   const refetched = useRef(false);
 
@@ -94,6 +122,7 @@ export const useFinishPendingStart = (): void => {
     if (!answers) return;
     if (answers.path === "join" || answers.path === "invite") {
       done.current = true;
+      seedHome(answers.path);
       void (async () => {
         await clearStart();
         if (answers.path === "join" && !user.age_below_minimum_at) {
@@ -115,7 +144,9 @@ export const useFinishPendingStart = (): void => {
     done.current = true;
     void (async () => {
       await clearStart();
-      await landOn(community.id, await seed(community.id, answers));
+      const starter = await seed(community.id, answers);
+      seedHome(answers.path, firstHomeContext(community.id, starter));
+      await landOn(community.id, starter);
     })();
-  }, [user, loading, communities, refreshCommunities, seed, landOn, openDirectory]);
+  }, [user, loading, communities, refreshCommunities, seed, landOn, openDirectory, seedHome]);
 };

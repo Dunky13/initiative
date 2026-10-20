@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete as sa_delete
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from app.core.messages import CommentMessages
 from app.core.tools import Tool
@@ -337,6 +339,59 @@ async def test_guild_calendar_comments_reach_every_member(client, session, actin
     assert [c["content"] for c in listed.json()["comments"]] == ["Game night?"]
 
 
+async def test_a_comment_is_its_authors_to_change(
+    client, session, acting_user, reading_as
+):
+    """In the database, neither another member who can edit the task nor the
+    community's admin rewrites someone's comment, trashes it on its own or
+    writes one in their name; trashing the task takes it along."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    task = await create_task(session, a.project)
+    comment = await create_comment(session, a.user, task=task)
+    other = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    await create_resource_grant(
+        session, a.project, user=other.user, level=ResourceAccessLevel.write
+    )
+    admin = await acting_user(guild_role=CommunityRole.admin, guild=a.guild)
+    params = {"id": comment.id, "task": task.id, "author": a.user.id}
+    rewrite = text("UPDATE comments SET content = 'Not what I said' WHERE id = :id")
+    trash = text(
+        "UPDATE comments SET deleted_at = now(),"
+        " deleted_by = NULLIF(current_setting('app.current_user_id'), '')::int"
+        " WHERE id = :id"
+    )
+    forge = text(
+        "INSERT INTO comments (task_id, content, created_by, created_at, updated_at)"
+        " VALUES (:task, 'Said for you', :author, now(), now()) RETURNING created_by"
+    )
+
+    for outsider in (other, admin):
+        asking = await reading_as(outsider.user.id, a.guild.id)
+        with pytest.raises(DBAPIError, match="only its author changes a comment"):
+            await asking.exec(rewrite, params=params)
+        await asking.rollback()
+        await asking.exec(trash, params=params)
+        with pytest.raises(DBAPIError, match="goes to the trash with what it is on"):
+            await asking.commit()
+        await asking.rollback()
+        written = await asking.exec(forge, params=params)
+        assert written.scalar_one() == outsider.user.id
+        await asking.rollback()
+    asking = await reading_as(a.user.id, a.guild.id)
+    assert (await asking.exec(rewrite, params=params)).rowcount == 1
+    await asking.rollback()
+
+    deleted = await client.delete(a.g(f"/tasks/{task.id}"), headers=other.headers)
+    assert deleted.status_code in (200, 204), deleted.text
+
+
 async def test_a_thread_pages_by_conversation(client, session, acting_user):
     """A page is ``limit`` conversations, newest first, each carrying every
     reply under it however late or deep; the cursor walks the rest with
@@ -521,7 +576,8 @@ class TestToolCommentSwitch:
             a.g("/comments/"), headers=a.headers, params={"wiki_id": wiki.id}
         )
         assert wiki_thread.status_code == 200
-        assert wiki_thread.json() == {"comments": [], "next_cursor": None}
+        assert wiki_thread.json()["comments"] == []
+        assert wiki_thread.json()["next_cursor"] is None
 
         # The feed names the page, not the wiki it is filed in.
         recent = await client.get(a.g("/comments/recent"), headers=a.headers)
@@ -763,9 +819,10 @@ class TestRemovingAComment:
     """Who may delete a comment, and the thread saying so up front.
 
     The thread reports ``can_remove`` per comment from the same rule the delete
-    route applies — the author, a community admin, or a manager of the
-    initiative — so the client offers Delete exactly where it would go
-    through. Write access to the thing commented on is not part of the rule.
+    route applies — its author, and nobody else — so the client offers Delete
+    exactly where it would go through. Taking somebody else's words down is
+    moderation (``moderation_acts``): the thread says who may, in
+    ``can_moderate``, and a manager of the initiative is not among them.
     """
 
     @pytest.fixture
@@ -784,6 +841,7 @@ class TestRemovingAComment:
                 ("author", "member"),
                 ("writer", "member"),
                 ("manager", "project_manager"),
+                ("moderator", "moderator"),
             )
         }
         await create_resource_grant(
@@ -797,16 +855,17 @@ class TestRemovingAComment:
         return {"admin": owner, **joined, "task": task, "comment": comment}
 
     @pytest.mark.parametrize(
-        "reader,removes",
+        "reader,removes,moderates",
         [
-            pytest.param("author", True, id="its-author"),
-            pytest.param("admin", True, id="a-community-admin"),
-            pytest.param("manager", True, id="a-manager-of-the-initiative"),
-            pytest.param("writer", False, id="somebody-who-can-only-write"),
+            pytest.param("author", True, False, id="its-author"),
+            pytest.param("admin", False, True, id="a-community-admin"),
+            pytest.param("moderator", False, True, id="full-access-in-the-initiative"),
+            pytest.param("manager", False, False, id="a-manager-of-the-initiative"),
+            pytest.param("writer", False, False, id="somebody-who-can-only-write"),
         ],
     )
     async def test_the_thread_says_who_may_delete_and_the_route_agrees(
-        self, client, thread, reader, removes
+        self, client, thread, reader, removes, moderates
     ):
         actor = thread[reader]
         listed = await client.get(
@@ -817,6 +876,7 @@ class TestRemovingAComment:
         assert listed.status_code == 200, listed.text
         (shown,) = listed.json()["comments"]
         assert shown["can_remove"] is removes
+        assert listed.json()["can_moderate"] is moderates
 
         deleted = await client.delete(
             actor.g(f"/comments/{thread['comment'].id}"), headers=actor.headers

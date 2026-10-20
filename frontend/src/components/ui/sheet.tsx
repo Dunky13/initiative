@@ -5,7 +5,15 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Sheet = SheetPrimitive.Root;
+// Radix draws a dialog's overlay only when it is modal, so the content can sit
+// inside the overlay only then. The root says which it is.
+const SheetModalContext = React.createContext(true);
+
+const Sheet = ({ modal = true, ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) => (
+  <SheetModalContext.Provider value={modal}>
+    <SheetPrimitive.Root modal={modal} {...props} />
+  </SheetModalContext.Provider>
+);
 
 const SheetTrigger = SheetPrimitive.Trigger;
 
@@ -19,7 +27,7 @@ const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/80 data-[state=closed]:animate-out data-[state=open]:animate-in",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/80 data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-300 data-[state=open]:duration-500",
       className
     )}
     {...props}
@@ -54,9 +62,9 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
+>(({ side = "right", className, children, ...props }, ref) => {
+  const modal = React.useContext(SheetModalContext);
+  const content = (
     <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       <SheetPrimitive.Close
         className="absolute right-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
@@ -71,8 +79,15 @@ const SheetContent = React.forwardRef<
       </SheetPrimitive.Close>
       {children}
     </SheetPrimitive.Content>
-  </SheetPortal>
-));
+  );
+  return (
+    <SheetPortal>
+      {/* Inside its overlay, so it always paints above it (see DialogContent).
+          A non-modal sheet has no overlay, and draws its own backdrop if any. */}
+      {modal ? <SheetOverlay>{content}</SheetOverlay> : content}
+    </SheetPortal>
+  );
+});
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

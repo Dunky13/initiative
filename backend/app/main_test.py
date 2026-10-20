@@ -24,7 +24,11 @@ from app.main import (
     coded_error_handler,
     validation_exception_handler,
 )
-from app.testing import captcha_switched_on, create_plugin_service_registration
+from app.testing import (
+    captcha_switched_on,
+    create_plugin_service_registration,
+    in_request_tasks,
+)
 
 
 async def test_validation_handler_strips_input_and_url() -> None:
@@ -68,6 +72,14 @@ async def test_coded_error_is_answered_with_its_code_and_status() -> None:
 
     assert response.status_code == 409
     assert json.loads(response.body) == {"detail": "SOME_REFUSAL"}
+
+    with_params = await coded_error_handler(
+        None, CodedError("SOME_REFUSAL", 404, params={"kind": "file"})
+    )
+    assert json.loads(with_params.body) == {
+        "detail": "SOME_REFUSAL",
+        "params": {"kind": "file"},
+    }
 
 
 async def test_responses_carry_content_security_policy(client: AsyncClient) -> None:
@@ -239,7 +251,7 @@ async def _hsts_for(app_url: str) -> str | None:
     main_module._STRICT_TRANSPORT_SECURITY = hsts_value
     try:
         async with AsyncClient(
-            transport=ASGITransport(app=probe), base_url="http://test"
+            transport=ASGITransport(app=in_request_tasks(probe)), base_url="http://test"
         ) as ac:
             resp = await ac.get("/ping")
     finally:

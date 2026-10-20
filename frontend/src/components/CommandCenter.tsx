@@ -4,13 +4,16 @@ import {
   CalendarDays,
   CheckSquare,
   FilePlus,
+  House,
   LayoutGrid,
   LifeBuoy,
   ListTodo,
   MessageSquare,
+  MessageSquareHeart,
   Plus,
   Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   UserCog,
 } from "lucide-react";
@@ -20,6 +23,8 @@ import { useTranslation } from "react-i18next";
 import { type SearchSuggestion, Tool } from "@/api/generated/initiativeAPI.schemas";
 import { InitiativeMark } from "@/components/icons/InitiativeMark";
 import { getOpenCreateTaskWizard } from "@/components/tasks/CreateTaskWizard";
+import { openFeedback, useFeedbackOffered } from "@/components/tickets/FeedbackSheet";
+import { useSecurityReporting } from "@/components/tickets/ReportSecurityProblem";
 import { getOpenCreateToolWizard } from "@/components/tools/CreateToolWizard";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -36,8 +41,7 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDirectMessagesEnabled } from "@/hooks/useDirectMessages";
 import { useGlobalCreateAccess } from "@/hooks/useInitiativeAccess";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
-import { useRecents } from "@/hooks/useRecents";
+import { useRecents } from "@/hooks/usePersonalItems";
 import { useCommunitySearchSuggest } from "@/hooks/useSearch";
 import { useTasks } from "@/hooks/useTasks";
 import { useHasFiledTickets } from "@/hooks/useTickets";
@@ -51,6 +55,7 @@ import { recentRoute } from "@/lib/recentRoute";
 import {
   categoryEntityTypes,
   DEFAULT_SEARCH_CATEGORY,
+  FROM_SEARCH,
   hitIcon,
   SEARCH_CATEGORIES,
   type SearchCategory,
@@ -206,7 +211,7 @@ export function CommandCenter() {
     { enabled: open && !!user && !isSearching, staleTime: 30_000 }
   );
 
-  // Suggested = mixed-type recent items, ordered by ``last_viewed_at`` desc
+  // Suggested = mixed-type recent items, ordered by ``viewed_at`` desc
   // (same payload that backs the layout tabs bar).
   const recentItems = recentQuery.data ?? [];
   // Browse rows carry their own community_id — a task in this list can come from
@@ -248,13 +253,15 @@ export function CommandCenter() {
   const isCommunityAdmin = Boolean(activeCommunity?.can.administer);
   const dmEnabled = useDirectMessagesEnabled();
   const hasTickets = useHasFiledTickets();
+  const securityReporting = useSecurityReporting();
+  const feedbackOffered = useFeedbackOffered();
   const showPlatformSettings = canManagePlatformConfig(user);
   const showOperatorDashboard = canAccessOperatorDashboard(user);
 
   // Static pages
   const pages = useMemo(() => {
     const items = [
-      { label: t("pages.myTasks"), path: "/", icon: CheckSquare },
+      { label: t("pages.home"), path: "/", icon: House },
       { label: t("pages.myCalendar"), path: "/my-calendar", icon: CalendarDays },
       { label: t("pages.myTools"), path: "/my-tools", icon: LayoutGrid },
       // Only where the deployment offers messaging: the palette is a way to
@@ -307,9 +314,9 @@ export function CommandCenter() {
     showPlatformSettings,
   ]);
 
-  const handleSelect = (path: string) => {
+  const handleSelect = (path: string, state?: typeof FROM_SEARCH) => {
     setOpen(false);
-    void router.navigate({ to: path });
+    void router.navigate({ to: path, state });
   };
 
   return (
@@ -358,69 +365,65 @@ export function CommandCenter() {
             keyed on the query itself rather than re-filtered here. A comment
             is found by its opening words, which can mention people. */}
         {isSearching && (
-          <MentionedPeopleScope>
-            <ReportMentionedPeople texts={suggestions.map(({ hit }) => hit.title)} />
-            <CommandGroup heading={t("groups.results")}>
-              {members.map((member) => (
-                // A profile belongs to the person rather than to the community
-                // the search ran in, so this leaves the community tree.
+          <CommandGroup heading={t("groups.results")}>
+            {members.map((member) => (
+              // A profile belongs to the person rather than to the community
+              // the search ran in, so this leaves the community tree.
+              <CommandItem
+                key={`member-${member.id}`}
+                value={`member-${member.id}`}
+                keywords={[effectiveSearch, getUserDisplayName(member)]}
+                onSelect={() => handleSelect(`/u/${getUrlHandle(member)}`)}
+              >
+                <Avatar className="size-4">
+                  <AvatarImage src={getAvatarSrc(member)} alt="" />
+                  <AvatarFallback className="text-3xs">{getInitialsForUser(member)}</AvatarFallback>
+                </Avatar>
+                <span>{getUserDisplayName(member)}</span>
+              </CommandItem>
+            ))}
+            {suggestions.map(({ hit, path }) => {
+              const Icon = hitIcon(hit);
+              return (
                 <CommandItem
-                  key={`member-${member.id}`}
-                  value={`member-${member.id}`}
-                  keywords={[effectiveSearch, getUserDisplayName(member)]}
-                  onSelect={() => handleSelect(`/u/${getUrlHandle(member)}`)}
-                >
-                  <Avatar className="size-4">
-                    <AvatarImage src={getAvatarSrc(member)} alt="" />
-                    <AvatarFallback className="text-3xs">
-                      {getInitialsForUser(member)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span>{getUserDisplayName(member)}</span>
-                </CommandItem>
-              ))}
-              {suggestions.map(({ hit, path }) => {
-                const Icon = hitIcon(hit);
-                return (
-                  <CommandItem
-                    key={`result-${hit.entity_type}-${hit.entity_id}`}
-                    value={`result-${hit.entity_type}-${hit.entity_id}`}
-                    keywords={[effectiveSearch, hit.title.replace(USER_MENTION_PATTERN, " ")]}
-                    onSelect={() =>
-                      handleSelect(
-                        activeCommunityId ? communityPath(activeCommunityId, path) : path
-                      )
-                    }
-                  >
-                    <Icon className="text-muted-foreground" />
-                    <span>
-                      <MentionText text={hit.title} disableLink />
-                    </span>
-                  </CommandItem>
-                );
-              })}
-              {(scopeQuery.isError || scopeIsEmpty) && (
-                <div className="py-3 text-center text-muted-foreground text-sm">
-                  {scopeQuery.isError ? t("search:failed.title") : t("noResults")}
-                </div>
-              )}
-              {activeCommunityId !== null && (
-                <CommandItem
-                  value="result-see-all"
-                  keywords={[effectiveSearch]}
+                  key={`result-${hit.entity_type}-${hit.entity_id}`}
+                  value={`result-${hit.entity_type}-${hit.entity_id}`}
+                  keywords={[effectiveSearch, hit.title.replace(USER_MENTION_PATTERN, " ")]}
                   onSelect={() =>
                     handleSelect(
-                      `${getCommunityPath("/search")}?q=${encodeURIComponent(effectiveSearch)}` +
-                        (scope === DEFAULT_SEARCH_CATEGORY ? "" : `&tab=${scope}`)
+                      activeCommunityId ? communityPath(activeCommunityId, path) : path,
+                      FROM_SEARCH
                     )
                   }
                 >
-                  <Search className="text-muted-foreground" />
-                  <span>{t("seeAllResults", { query: effectiveSearch })}</span>
+                  <Icon className="text-muted-foreground" />
+                  <span>
+                    <MentionText text={hit.title} disableLink />
+                  </span>
                 </CommandItem>
-              )}
-            </CommandGroup>
-          </MentionedPeopleScope>
+              );
+            })}
+            {(scopeQuery.isError || scopeIsEmpty) && (
+              <div className="py-3 text-center text-muted-foreground text-sm">
+                {scopeQuery.isError ? t("search:failed.title") : t("noResults")}
+              </div>
+            )}
+            {activeCommunityId !== null && (
+              <CommandItem
+                value="result-see-all"
+                keywords={[effectiveSearch]}
+                onSelect={() =>
+                  handleSelect(
+                    `${getCommunityPath("/search")}?q=${encodeURIComponent(effectiveSearch)}` +
+                      (scope === DEFAULT_SEARCH_CATEGORY ? "" : `&tab=${scope}`)
+                  )
+                }
+              >
+                <Search className="text-muted-foreground" />
+                <span>{t("seeAllResults", { query: effectiveSearch })}</span>
+              </CommandItem>
+            )}
+          </CommandGroup>
         )}
 
         {/* Actions — each shown only when the user can land its wizard
@@ -448,6 +451,30 @@ export function CommandCenter() {
             >
               <FilePlus className="text-muted-foreground" />
               <span>{t("actions.addFile")}</span>
+            </CommandItem>
+          )}
+          {(securityReporting.form || securityReporting.contact) && (
+            <CommandItem
+              value="action-report-security-problem"
+              onSelect={() => {
+                setOpen(false);
+                void router.navigate({ to: "/my-tickets", search: { report: "security" } });
+              }}
+            >
+              <ShieldAlert className="text-muted-foreground" />
+              <span>{t("actions.reportSecurityProblem")}</span>
+            </CommandItem>
+          )}
+          {feedbackOffered && (
+            <CommandItem
+              value="action-send-feedback"
+              onSelect={() => {
+                setOpen(false);
+                openFeedback();
+              }}
+            >
+              <MessageSquareHeart className="text-muted-foreground" />
+              <span>{t("actions.sendFeedback")}</span>
             </CommandItem>
           )}
         </CommandGroup>

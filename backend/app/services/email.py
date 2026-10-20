@@ -291,9 +291,16 @@ async def send_email(
         await asyncio.to_thread(_deliver, config, message)
     except EmailNotConfiguredError:
         raise
-    except Exception as exc:  # pragma: no cover
-        logger.exception("Failed to send email: %s", exc)
-        raise RuntimeError("Failed to send email") from exc
+    except Exception as exc:
+        # Records the failure's type and SMTP reply code; the error raised to
+        # callers carries no chained cause.
+        if isinstance(exc, smtplib.SMTPResponseException):
+            logger.error(
+                "Failed to send email (%s, code %s)", type(exc).__name__, exc.smtp_code
+            )
+        else:
+            logger.error("Failed to send email (%s)", type(exc).__name__)
+        raise RuntimeError("Failed to send email") from None
 
 
 async def send_test_email(session: AsyncSession, recipient: str) -> None:
@@ -1099,6 +1106,23 @@ async def announce_second_factor_change(
         user,
         section="secondFactor",
         key="secondFactor.enabled" if enabled else "secondFactor.disabled",
+    )
+
+
+async def announce_recovery_codes_issued(session: AsyncSession, user: User) -> None:
+    """Tell the account a new set of recovery codes was made, and the old
+    ones stopped working."""
+    await _queue_account_notice(
+        user, section="secondFactor", key="secondFactor.recoveryRegenerated"
+    )
+
+
+async def announce_identity_linked(
+    session: AsyncSession, user: User, *, provider: str
+) -> None:
+    """Tell the account it can now be signed in to through ``provider``."""
+    await _queue_account_notice(
+        user, section="identity", key="identity.linked", provider=provider
     )
 
 

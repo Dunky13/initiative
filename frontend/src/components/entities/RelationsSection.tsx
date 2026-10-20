@@ -192,8 +192,8 @@ export const RelationsSection = ({
     Boolean(initiative?.can.view.includes(Tool.file) && initiative.can.create.includes(Tool.file));
 
   const { data: rows = [], isLoading, isError } = useRelationshipsFor(entity);
-  // Only walked while the picture is the thing on screen: a second hop is a
-  // request per neighbour, and no other layout shows more than one.
+  // Only walked while the picture is the thing on screen: no other layout shows
+  // more than one hop, and one hop is the list above.
   const neighbourhood = useRelationsNeighbourhood(entity, hops, {
     enabled: layout === "graph" && !collapsed,
     includeTags: showTags,
@@ -410,6 +410,7 @@ export const RelationsSection = ({
               showTags={showTags}
               onShowTagsChange={setShowTags}
               loading={neighbourhood.isLoading}
+              walkFailed={neighbourhood.walkFailed}
             />
           </Suspense>
         ) : layout === "carousel" ? (
@@ -422,7 +423,7 @@ export const RelationsSection = ({
                 const group = groupOf(edge, shown);
                 if (!group) return null;
                 return (
-                  <CarouselItem key={edge.id} className="basis-40 pl-4 sm:basis-44 lg:basis-48">
+                  <CarouselItem key={edge.id} className="basis-40 pl-4 sm:basis-44 md:basis-48">
                     <EntityCard
                       end={edge.other}
                       badge={t(`groups.${group.key}.title` as const)}

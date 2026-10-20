@@ -1,4 +1,4 @@
-import { Link, useRouter, useSearch } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAppConfig } from "@/hooks/useAppConfig";
+import { useEmailLinkToken } from "@/hooks/useEmailLinkToken";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 
@@ -25,9 +26,8 @@ export const ResetPasswordPage = () => {
   // lazy-load mid-submit.
   const { t } = useTranslation(["auth", "errors"]);
   const { passwordLoginEnabled } = useAppConfig();
-  const searchParams = useSearch({ strict: false }) as { token?: string };
   const router = useRouter();
-  const token = searchParams.token ?? "";
+  const token = useEmailLinkToken();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success">("idle");
@@ -50,7 +50,6 @@ export const ResetPasswordPage = () => {
       await resetPassword({ token, password });
       setStatus("success");
     } catch (err) {
-      console.error(err);
       // ``getErrorMessage`` maps server codes like ``PASSWORD_BREACHED``
       // to the localized string from ``errors.json``; falls back to the
       // generic reset-page error when the code isn't recognized.

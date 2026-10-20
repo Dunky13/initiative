@@ -54,6 +54,17 @@ const meta = {
         },
       },
     },
+    target: {
+      label: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+    },
+    target_date: {
+      label: {
+        en: "Target date",
+        de: "Zieldatum",
+        es: "Fecha objetivo",
+        fr: "Date cible",
+      },
+    },
   },
 };
 
@@ -67,6 +78,13 @@ const meta = {
  * job — the sandbox has no locale data and no timezone.
  */
 const strings = {
+  target: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+  reached: { en: "Reached", de: "Erreicht", es: "Alcanzado", fr: "Atteint" },
+  missed: { en: "Missed", de: "Verfehlt", es: "No alcanzado", fr: "Manqué" },
+  onTrack: { en: "On track", de: "Im Plan", es: "En camino", fr: "En bonne voie" },
+  behind: { en: "Behind", de: "Im Rückstand", es: "Con retraso", fr: "En retard" },
+  // "{n}" is how far there is still to go.
+  toGo: { en: "{n} to go", de: "noch {n}", es: "faltan {n}", fr: "encore {n}" },
   noRows: {
     en: "Nothing to show",
     de: "Nichts anzuzeigen",
@@ -84,6 +102,80 @@ const strings = {
   done: { en: "Done", de: "Erledigt", es: "Hecho", fr: "Terminé" },
   of: { en: "of", de: "von", es: "de", fr: "sur" },
 };
+
+/** One day, in milliseconds. */
+const DAY = 86400000;
+
+/**
+ * The target the options set, and the moment it is due: the end of its day.
+ * `null` without a target.
+ */
+function targetOf(config) {
+  const value = config.target === undefined || config.target === "" ? NaN : Number(config.target);
+  if (!Number.isFinite(value)) return null;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(config.target_date || "");
+  const due = day ? Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])) + DAY - 1 : null;
+  return { value: value, due: due };
+}
+
+/**
+ * Where a number stands against its target.
+ *
+ * Reached once it gets there, and missed once the day has passed without it.
+ * Before then, a straight line through the points drawn so far says whether it
+ * gets there by the day: on track, or behind. With no day, or too few points to
+ * draw a line through, it is only so far to go. `down` is a target to come down
+ * to rather than to climb to.
+ *
+ * @param {{t: number, y: number}[]} points earliest first, `t` in epoch ms
+ */
+function pace(points, current, target, due, down) {
+  if (down ? current <= target : current >= target) return "reached";
+  if (due !== null && due < Date.now()) return "missed";
+  if (due === null || points.length < 2) return "toGo";
+  // In days from the first point, which keeps the sums well inside a double.
+  const origin = points[0].t;
+  const days = points.map((point) => (point.t - origin) / DAY);
+  let meanT = 0;
+  let meanY = 0;
+  for (let index = 0; index < points.length; index++) {
+    meanT += days[index];
+    meanY += points[index].y;
+  }
+  meanT /= points.length;
+  meanY /= points.length;
+  let across = 0;
+  let spread = 0;
+  for (let index = 0; index < points.length; index++) {
+    across += (days[index] - meanT) * (points[index].y - meanY);
+    spread += (days[index] - meanT) * (days[index] - meanT);
+  }
+  if (spread === 0) return "toGo";
+  const lands = meanY + (across / spread) * ((due - origin) / DAY - meanT);
+  return (down ? lands <= target : lands >= target) ? "onTrack" : "behind";
+}
+
+/** The tone each standing is drawn in. "To go" keeps the widget's own. */
+const PACE_TONES = {
+  reached: "positive",
+  onTrack: "positive",
+  behind: "warning",
+  missed: "negative",
+};
+
+/** A number as plain text: whole, or to two places, or to two significant
+ *  digits where two places would read a small number as nothing. */
+function plain(value) {
+  if (Number.isInteger(value)) return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded !== 0 ? rounded : Number(value.toPrecision(2)));
+}
+
+/** A standing in words: "On track", or how far there is still to go. */
+function standing(say, state, current, target) {
+  if (state !== "toGo") return say(state);
+  return say("toGo").replace("{n}", plain(Math.abs(target - current)));
+}
 
 /**
  * Built-in: progress — a meter, or a column of them.
@@ -142,6 +234,26 @@ function render(data, config, context) {
     return late ? "negative" : "accent";
   };
 
+  const goal = targetOf(config);
+
+  /** A meter, with the target marked on its track and said in its caption. A
+   *  meter fills, so its target is one to climb to. */
+  const aimedMeter = (label, value, whole, caption) => {
+    if (!goal) {
+      return meter(label, value, 0, whole, caption, shareTone(value, whole, false));
+    }
+    const state = pace([], value, goal.value, goal.due, false);
+    return meter(
+      label,
+      value,
+      0,
+      whole,
+      `${caption} · ${say("target")} ${plain(goal.value)} · ${standing(say, state, value, goal.value)}`,
+      PACE_TONES[state] || shareTone(value, whole, false),
+      goal.value
+    );
+  };
+
   // Which columns fill this widget's slots, resolved by the host.
   const slots = context?.slots || {};
   const valueAt = (slots.value || [])[0];
@@ -170,13 +282,11 @@ function render(data, config, context) {
       rows.map((row, index) => {
         const value = number(row, valueAt);
         const whole = wholeOf(row);
-        return meter(
+        return aimedMeter(
           name(row, say("row") + " " + (index + 1)),
           value,
-          0,
           whole,
-          value + " " + say("of") + " " + whole,
-          shareTone(value, whole, false)
+          value + " " + say("of") + " " + whole
         );
       })
     );
@@ -192,13 +302,11 @@ function render(data, config, context) {
   if (totalAt === undefined) whole = value;
   return {
     v: 1,
-    scene: meter(
+    scene: aimedMeter(
       rows.length === 1 ? name(rows[0], say("total")) : say("total"),
       value,
-      0,
       whole || 1,
-      value + " " + say("of") + " " + (whole || 1),
-      shareTone(value, whole || 1, false)
+      value + " " + say("of") + " " + (whole || 1)
     ),
   };
 }

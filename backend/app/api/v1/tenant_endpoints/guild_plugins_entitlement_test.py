@@ -1,0 +1,427 @@
+"""What a listing's package terms change about installing and removing it.
+
+* **Install gating.** An ``entitled`` listing installs only in a community
+  holding an active statement for it; the catalog shows it unavailable, with
+  where to go about it. A statement is active unless it says ``active: false``.
+* **Install pings.** Installing or removing a listing with terms tells
+  billing, naming the community by billing's reference; one without terms
+  tells nobody. Installing also hands the plug-in the statement already held.
+* **The uninstall notice.** The removal dialog asks billing what to say, and
+  shows neutral text when billing does not answer in time.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+
+import httpx
+import pytest
+from httpx import AsyncClient
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core import config as config_module
+from app.core.messages import GuildPluginMessages
+from app.db import post_commit
+from app.models.platform.guild import CommunityRole
+from app.services import sweep_timers
+from app.services.marketplace import plugin_entitlements, tuf_registry
+from app.services.platform import billing_ping
+from app.services.tenant import plugin_connection_flows as flows
+from app.testing import (
+    billing_guild_ref,
+    create_listing_with_terms,
+    create_marketplace_listing,
+    create_plugin_service_registration,
+    entitlement_statement,
+    marketplace_uid,
+)
+
+SERVICE_ID = "tests.paidco"
+SERVICE_UID = marketplace_uid("paidco")
+BILLING = "https://billing.test"
+PORTAL = "https://portal.test"
+
+
+def _definition() -> dict:
+    return {
+        "plugin_kind": "service",
+        "service": {"public_id": SERVICE_ID, "protocol": 1, "scopes": []},
+        "default_name": "PaidCo",
+    }
+
+
+async def _hold(guild_id: int, values: dict) -> str:
+    """Keep a version-1 statement of ``values`` for the community, as the
+    billing verb would; the signed statement is returned."""
+    statement = entitlement_statement(
+        community_ref=await billing_guild_ref(guild_id),
+        listing_uid=SERVICE_UID,
+        version=1,
+        values=values,
+    )
+    await plugin_entitlements.store_statement(
+        guild_id, SERVICE_UID, statement=statement, version=1, values=values
+    )
+    return statement
+
+
+@pytest.fixture(autouse=True)
+def shipped_root(monkeypatch):
+    monkeypatch.setattr(tuf_registry, "configured_root_is_builtin", lambda: True)
+
+
+@pytest.fixture
+async def registered(session: AsyncSession):
+    await create_plugin_service_registration(
+        session,
+        public_id=SERVICE_ID,
+        base_url="https://paidco.example.test",
+        listing_uid=SERVICE_UID,
+    )
+
+
+@pytest.fixture
+async def entitled(session: AsyncSession, registered):
+    return await create_listing_with_terms(
+        session,
+        uid=SERVICE_UID,
+        public_id=SERVICE_ID,
+        access="entitled",
+        name="PaidCo",
+        definition=_definition(),
+    )
+
+
+@pytest.fixture
+def billing(monkeypatch):
+    """Billing configured, with its answers scripted; ``sent`` records every
+    request this deployment makes to it."""
+
+    class Billing:
+        sent: list[tuple[str, dict]] = []
+        answer: dict | None = None
+        delay: float = 0.0
+
+    monkeypatch.setattr(config_module.settings, "BILLING_SERVICE_URL", BILLING)
+    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", "secret")
+    monkeypatch.setattr(config_module.settings, "BILLING_URL", PORTAL)
+    Billing.sent = []
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def post(self, url, *, content, headers):
+            Billing.sent.append((url, json.loads(content)))
+            if Billing.delay:
+                await asyncio.sleep(Billing.delay)
+            if Billing.answer is None:
+                return httpx.Response(204)
+            return httpx.Response(200, json=Billing.answer)
+
+    monkeypatch.setattr(billing_ping.httpx, "AsyncClient", Client)
+    return Billing
+
+
+@pytest.fixture
+def hooks(monkeypatch) -> list[tuple[str, dict]]:
+    delivered: list[tuple[str, dict]] = []
+
+    async def call_hook(name, *, body, **_kwargs):
+        if name == plugin_entitlements.ENTITLEMENT_HOOK:
+            delivered.append((name, dict(body)))
+
+    monkeypatch.setattr(flows, "call_hook", call_hook)
+    return delivered
+
+
+async def _settle() -> None:
+    # A step started by a commit may start a ping of its own.
+    for _ in range(3):
+        await post_commit.settle_all()
+    # And every hook the commits wrote, sent by the timers they armed.
+    await sweep_timers.process_due_timers(outward=True)
+
+
+async def _install(client: AsyncClient, actor):
+    response = await client.post(
+        actor.g("/plugins/"), headers=actor.headers, json={"listing_uid": SERVICE_UID}
+    )
+    await _settle()
+    return response
+
+
+async def _seat(acting_user):
+    return await acting_user(guild_role=CommunityRole.superadmin)
+
+
+# --- install gating ------------------------------------------------------------
+
+
+class TestGating:
+    async def test_an_entitled_listing_without_a_statement_does_not_install(
+        self, client: AsyncClient, acting_user, entitled, billing
+    ):
+        a = await _seat(acting_user)
+
+        response = await _install(client, a)
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == GuildPluginMessages.ENTITLEMENT_REQUIRED
+
+    async def test_the_catalog_says_it_is_unavailable_and_where_to_go(
+        self, client: AsyncClient, acting_user, entitled, billing
+    ):
+        a = await _seat(acting_user)
+        expected = {
+            "reason": "entitlement_required",
+            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
+        }
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{SERVICE_UID}"), headers=a.headers
+        )
+        browse = await client.get(
+            a.g("/marketplace/listings"),
+            headers=a.headers,
+            params={"kind": "plugin"},
+        )
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["unavailable"] == expected
+        [card] = [i for i in browse.json()["items"] if i["uid"] == SERVICE_UID]
+        assert card["unavailable"] == expected
+
+    async def test_an_active_statement_lets_it_install(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a = await _seat(acting_user)
+        statement = await _hold(a.guild.id, {"active": True})
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{SERVICE_UID}"), headers=a.headers
+        )
+        response = await _install(client, a)
+
+        assert detail.json()["unavailable"] is None
+        assert response.status_code == 201, response.text
+        # The statement already held is handed to the plug-in it was for.
+        assert hooks == [("entitlement", {"statement": statement})]
+
+    async def test_a_statement_that_says_inactive_does_not(
+        self, client: AsyncClient, acting_user, entitled, billing
+    ):
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": False})
+
+        response = await _install(client, a)
+
+        assert response.status_code == 409
+
+    async def test_a_statement_saying_nothing_of_active_counts(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"owned": ["pack-1"]})
+
+        response = await _install(client, a)
+
+        assert response.status_code == 201, response.text
+
+    async def test_under_another_root_nothing_is_gated(
+        self, client: AsyncClient, acting_user, entitled, billing, monkeypatch
+    ):
+        monkeypatch.setattr(tuf_registry, "configured_root_is_builtin", lambda: False)
+        a = await _seat(acting_user)
+
+        response = await _install(client, a)
+
+        assert response.status_code == 201, response.text
+        # Nor is anybody told: the listing holds no terms here.
+        assert billing.sent == []
+
+
+# --- install pings -----------------------------------------------------------------
+
+
+class TestInstallPings:
+    async def test_installing_and_removing_tell_billing(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": True})
+        ref = await billing_guild_ref(a.guild.id)
+
+        installed = await _install(client, a)
+        removed = await client.delete(
+            a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
+        )
+        await _settle()
+
+        assert removed.status_code == 204, removed.text
+        pings = [
+            (url, {k: v for k, v in body.items() if k != "event_id"})
+            for url, body in billing.sent
+        ]
+        assert pings == [
+            (
+                f"{BILLING}/api/v1/pings/install",
+                {"community_ref": ref, "listing_uid": SERVICE_UID, "event": event},
+            )
+            for event in ("installed", "uninstalled")
+        ]
+        assert all(body["event_id"] for _, body in billing.sent)
+
+    async def test_a_listing_without_terms_tells_nobody(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session: AsyncSession,
+        registered,
+        billing,
+    ):
+        await create_marketplace_listing(
+            session,
+            uid=SERVICE_UID,
+            public_id=SERVICE_ID,
+            kind="plugin",
+            definition=_definition(),
+        )
+        a = await _seat(acting_user)
+
+        installed = await _install(client, a)
+        await client.delete(
+            a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
+        )
+        await _settle()
+
+        assert installed.status_code == 201, installed.text
+        assert billing.sent == []
+
+
+# --- the uninstall notice ----------------------------------------------------------
+
+
+class TestUninstallNotice:
+    async def _installed(self, client, acting_user):
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": True})
+        response = await _install(client, a)
+        assert response.status_code == 201, response.text
+        return a, response.json()["id"]
+
+    async def _notice(self, client, a, plugin_id, locale="de"):
+        return await client.get(
+            a.g(f"/plugins/{plugin_id}/uninstall-notice"),
+            headers=a.headers,
+            params={"locale": locale},
+        )
+
+    async def test_billing_words_are_shown_as_given(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a, plugin_id = await self._installed(client, acting_user)
+        billing.sent = []
+        billing.answer = {
+            "message": "Die App läuft bis zum 30. November weiter.",
+            "action_url": "https://portal.test/apps/x",
+        }
+
+        response = await self._notice(client, a, plugin_id)
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "managed": True,
+            "message": "Die App läuft bis zum 30. November weiter.",
+            "action_url": "https://portal.test/apps/x",
+        }
+        [(url, body)] = billing.sent
+        assert url == f"{BILLING}/api/v1/plugin-uninstall-notice"
+        assert body == {
+            "community_ref": await billing_guild_ref(a.guild.id),
+            "listing_uid": SERVICE_UID,
+            "locale": "de",
+        }
+
+    async def test_billing_too_slow_is_neutral_text(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks, monkeypatch
+    ):
+        a, plugin_id = await self._installed(client, acting_user)
+        monkeypatch.setattr(billing_ping, "UNINSTALL_NOTICE_SECONDS", 0.05)
+        billing.answer = {"message": "Too late to be read."}
+        billing.delay = 1.0
+
+        response = await self._notice(client, a, plugin_id)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "managed": True,
+            "message": None,
+            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
+        }
+
+    async def test_an_unreadable_answer_is_neutral_text(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a, plugin_id = await self._installed(client, acting_user)
+        billing.answer = {"message": "", "action_url": "javascript:alert(1)"}
+
+        response = await self._notice(client, a, plugin_id)
+
+        assert response.json()["message"] is None
+        assert response.json()["action_url"].startswith(PORTAL)
+
+    async def test_without_billing_the_text_is_neutral(
+        self, client: AsyncClient, acting_user, entitled, hooks, monkeypatch
+    ):
+        monkeypatch.setattr(config_module.settings, "BILLING_SERVICE_URL", None)
+        monkeypatch.setattr(config_module.settings, "BILLING_URL", None)
+        a, plugin_id = await self._installed(client, acting_user)
+
+        response = await self._notice(client, a, plugin_id)
+
+        assert response.json() == {"managed": True, "message": None, "action_url": None}
+
+    async def test_a_listing_without_terms_has_nothing_to_say(
+        self,
+        client: AsyncClient,
+        acting_user,
+        session: AsyncSession,
+        registered,
+        billing,
+    ):
+        await create_marketplace_listing(
+            session,
+            uid=SERVICE_UID,
+            public_id=SERVICE_ID,
+            kind="plugin",
+            definition=_definition(),
+        )
+        a = await _seat(acting_user)
+        installed = await _install(client, a)
+
+        response = await self._notice(client, a, installed.json()["id"])
+
+        assert response.json() == {
+            "managed": False,
+            "message": None,
+            "action_url": None,
+        }
+        assert billing.sent == []
+
+    async def test_a_member_does_not_read_it(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        a, plugin_id = await self._installed(client, acting_user)
+        member = await acting_user(guild_role=CommunityRole.member, guild=a.guild)
+
+        response = await self._notice(client, member, plugin_id)
+
+        assert response.status_code == 403

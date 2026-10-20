@@ -1,9 +1,10 @@
 /**
- * The community home's activity strip: the latest comments anywhere in the community.
+ * The community home's Comments circle: the latest comments anywhere in the
+ * community, a card each, with what was said and how it landed.
  *
- * It sits under the tool table and stays put while the rail switches tools —
- * the feed is community-wide, not a view of the selected tool. The endpoint only
- * returns comments on entities the user may see, so no filtering happens here.
+ * It fills the tray under the front page's rail.
+ * The endpoint only returns comments on entities the user may see, so no
+ * filtering happens here.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -14,16 +15,15 @@ import { useTranslation } from "react-i18next";
 import { ReactionTarget, type RecentActivityEntry } from "@/api/generated/initiativeAPI.schemas";
 import { CommentContent } from "@/components/comments/CommentContent";
 import { CommentReferences } from "@/components/comments/CommentReferences";
+import { FeedCardSkeleton } from "@/components/communityHome/CommunityActivityFeed";
 import { ReactionBar } from "@/components/reactions/ReactionBar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ProfileAvatar } from "@/components/user/ProfileAvatar";
 import { useRecentComments } from "@/hooks/useComments";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { entityRefRoute, TOOLS, taskRoute, toolDetailRoute } from "@/lib/tools";
-import { resolveUploadUrl } from "@/lib/uploadUrl";
-import { getInitialsForUser, getUserDisplayName } from "@/lib/userDisplay";
+import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 
 const RECENT_COMMENTS_PARAMS = { limit: 10 };
@@ -88,75 +88,77 @@ const CommentEntry = ({ entry }: { entry: RecentActivityEntry }) => {
     contextParts.push(t("recentComments.inProject", { projectName: entry.project_name }));
   }
 
-  const authorAvatarSrc = resolveUploadUrl(entry.author?.avatar_url) || undefined;
-
   const body = (
-    <div className="flex gap-3">
-      <Avatar className="h-8 w-8 shrink-0">
-        {authorAvatarSrc ? <AvatarImage src={authorAvatarSrc} /> : null}
-        <AvatarFallback userId={entry.author?.id ?? null} className="text-xs">
-          {getInitialsForUser(entry.author)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="truncate font-medium text-sm">
-            {getUserDisplayName(entry.author, t("recentComments.unknownAuthor"))}
-          </span>
-          <RelativeTime
-            date={entry.created_at}
-            className="shrink-0 text-muted-foreground text-xs"
+    <>
+      <div className="flex items-center gap-3">
+        {entry.author ? (
+          <ProfileAvatar
+            user={entry.author}
+            decorations={entry.author.profile_decorations}
+            presence={entry.author.presence}
+            className="size-9 shrink-0"
           />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate font-medium text-sm">
+              {getUserDisplayName(entry.author, t("recentComments.unknownAuthor"))}
+            </span>
+            <RelativeTime
+              date={entry.created_at}
+              className="shrink-0 text-muted-foreground text-xs"
+            />
+          </div>
+          {contextParts.length > 0 && (
+            <p className="truncate text-muted-foreground text-xs">{contextParts.join(" ")}</p>
+          )}
         </div>
-        {contextParts.length > 0 && (
-          <p className="truncate text-muted-foreground text-xs">{contextParts.join(" ")}</p>
-        )}
-        <CommentContent
-          ref={contentRef}
-          content={entry.content}
-          compact
-          // The preview is itself a link, so the body must not hold one.
-          disableLinks
-          className={cn("mt-0.5", !expanded && "line-clamp-2")}
-        />
       </div>
-    </div>
+      <CommentContent
+        ref={contentRef}
+        content={entry.content}
+        // The card is itself a link, so the body must not hold one.
+        disableLinks
+        className={cn("mt-3", !expanded && "line-clamp-4")}
+      />
+    </>
   );
 
   return (
-    <div className={cn("rounded-md p-2 transition-colors", linkTo && "hover:bg-accent")}>
-      {linkTo ? (
-        <Link to={linkTo} className="block">
-          {body}
-        </Link>
-      ) : (
-        body
-      )}
-      {/* Outside the link above: a button nested in one is neither valid nor
-          clickable without fighting the navigation. The indent lines it up
-          with the comment body, past the avatar. */}
-      {(isTruncated || expanded) && (
-        <button
-          type="button"
-          className="mt-1 ml-11 font-medium text-primary text-xs hover:underline"
-          onClick={() => setExpanded((open) => !open)}
-        >
-          {expanded ? t("recentComments.showLess") : t("recentComments.readMore")}
-        </button>
-      )}
-      {/* Read-only here, and also outside the link: the feed shows how a
-          comment landed, and reacting to one belongs in the thread it is in —
-          which is exactly where the row already goes. */}
-      {entry.reactions?.length ? (
-        <ReactionBar
-          className="mt-1 ml-11"
-          targetType={ReactionTarget.comment}
-          targetId={entry.comment_id}
-          groups={entry.reactions}
-          canReact={false}
-        />
-      ) : null}
-    </div>
+    <li>
+      <Card className={cn("p-4 transition-colors", linkTo && "hover:bg-accent/40")}>
+        {linkTo ? (
+          <Link to={linkTo} className="block">
+            {body}
+          </Link>
+        ) : (
+          body
+        )}
+        {/* Outside the link above: a button nested in one is neither valid nor
+            clickable without fighting the navigation. */}
+        {(isTruncated || expanded) && (
+          <button
+            type="button"
+            className="mt-1 font-medium text-primary text-xs hover:underline"
+            onClick={() => setExpanded((open) => !open)}
+          >
+            {expanded ? t("recentComments.showLess") : t("recentComments.readMore")}
+          </button>
+        )}
+        {/* Read-only here, and also outside the link: the feed shows how a
+            comment landed, and reacting to one belongs in the thread it is in —
+            which is exactly where the card already goes. */}
+        {entry.reactions?.length ? (
+          <ReactionBar
+            className="mt-3"
+            targetType={ReactionTarget.comment}
+            targetId={entry.comment_id}
+            groups={entry.reactions}
+            canReact={false}
+          />
+        ) : null}
+      </Card>
+    </li>
   );
 };
 
@@ -165,45 +167,35 @@ export const CommunityRecentComments = () => {
   const { data: comments, isLoading, isError } = useRecentComments(RECENT_COMMENTS_PARAMS);
   const contents = useMemo(() => (comments ?? []).map((entry) => entry.content), [comments]);
 
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list of skeletons has no id to key from
+          <FeedCardSkeleton key={i} />
+        ))}
+      </div>
+    );
+  }
+  if (isError) {
+    return <p className="p-2 text-destructive text-sm">{t("recentComments.loadError")}</p>;
+  }
+  if (!comments || comments.length === 0) {
+    return (
+      <div className="flex h-50 flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+        <MessageSquare className="h-8 w-8 opacity-50" aria-hidden="true" />
+        <span>{t("recentComments.noComments")}</span>
+      </div>
+    );
+  }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("recentComments.title")}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list of skeletons has no id to key from
-              <div key={i} className="flex gap-3">
-                <Skeleton className="h-8 w-8 rounded-full" />
-                <div className="flex-1 space-y-1">
-                  <Skeleton className="h-3 w-1/3" />
-                  <Skeleton className="h-4 w-full" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : isError ? (
-          <p className="text-destructive text-sm">{t("recentComments.loadError")}</p>
-        ) : !comments || comments.length === 0 ? (
-          <div className="flex h-50 items-center justify-center text-muted-foreground text-sm">
-            <div className="flex flex-col items-center gap-2">
-              <MessageSquare className="h-8 w-8 opacity-50" />
-              <span>{t("recentComments.noComments")}</span>
-            </div>
-          </div>
-        ) : (
-          // What the comments mention is read for the whole strip at once.
-          <CommentReferences contents={contents}>
-            <div className="space-y-4">
-              {comments.map((entry) => (
-                <CommentEntry key={entry.comment_id} entry={entry} />
-              ))}
-            </div>
-          </CommentReferences>
-        )}
-      </CardContent>
-    </Card>
+    // What the comments mention is read for the whole strip at once.
+    <CommentReferences contents={contents}>
+      <ul className="space-y-3">
+        {comments.map((entry) => (
+          <CommentEntry key={entry.comment_id} entry={entry} />
+        ))}
+      </ul>
+    </CommentReferences>
   );
 };

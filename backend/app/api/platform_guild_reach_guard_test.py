@@ -75,12 +75,24 @@ _SERVICES = "app/services/platform"
 
 #: Functions that route into whichever community their caller names.
 _WRAPPERS: dict[tuple[str, str], str] = {
+    (f"{_SERVICES}/holds.py", "place"): (
+        "holds: writes a hold, as the platform, in the community whose own "
+        "session the caller just read the target on"
+    ),
+    (f"{_SERVICES}/holds.py", "release"): (
+        "holds: releases a hold, as the platform, in the community a moderate "
+        "grantee's request was routed into"
+    ),
     (f"{_SERVICES}/intake.py", "add_filer_reply"): (
         "writes a filer's answer in the operations community its caller read "
         "the case in"
     ),
     (f"{_SERVICES}/users.py", "_erase_in_guild"): (
         "erases an account's rows in one community, on that community's cohort session"
+    ),
+    (f"{_SERVICES}/guild_purge.py", "_end_plugin_connections"): (
+        "deletes a community's plug-in connections in its own schema, for "
+        "whichever deletion its caller is making"
     ),
     (f"{_SERVICES}/guilds.py", "seed_guild_content"): (
         "provisions and seeds a new community's schema"
@@ -96,6 +108,9 @@ _WRAPPERS: dict[tuple[str, str], str] = {
     ),
     (f"{_SERVICES}/provider_placement.py", "list_targets"): (
         "lists a placeable community's initiatives for a provider placement rule"
+    ),
+    (f"{_ENDPOINTS}/settings.py", "_routed_to_community"): (
+        "routes the operator's community sheet into a community that is still there"
     ),
 }
 
@@ -113,6 +128,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "enroll_new_member_in_auto_join_initiatives.enroll_in_auto_join_initiatives",
     ): (
         "enrolls a new member in the auto-join initiatives after the membership "
+        "commits, on the community's cohort session"
+    ),
+    (f"{_SERVICES}/guilds.py", "_give_guest_invite_grants.give"): (
+        "gives a new guest what their invite names after the membership "
         "commits, on the community's cohort session"
     ),
     (f"{_SERVICES}/users.py", "_in_each_guild"): (
@@ -137,7 +156,18 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "the scheduled sweep that deletes a community whose hold ran out, "
         "letting go of its plug-in connections in its own schema"
     ),
+    (f"{_SERVICES}/guild_purge.py", "destroy_now"): (
+        "destroys a community without a retention window, letting go of its "
+        "plug-in connections in its own schema"
+    ),
     # --- Aggregates ----------------------------------------------------------
+    (f"{_ENDPOINTS}/settings.py", "list_community_plugin_summaries"): (
+        "the operator's community sheet: which installs report a usage summary"
+    ),
+    (f"{_ENDPOINTS}/settings.py", "read_community_plugin_summary"): (
+        "the operator's community sheet: one install's usage summary, read "
+        "with no member's connection"
+    ),
     # --- Account closure and erasure -----------------------------------------
     # --- Intake: the platform owner's setting, in the operations community ---
     (f"{_SERVICES}/intake.py", "stream_is_bound"): (
@@ -146,9 +176,63 @@ _ALLOWED: dict[tuple[str, str], str] = {
     (f"{_SERVICES}/intake.py", "open_case"): (
         "intake: opens a case in the operations community on the deployment's behalf"
     ),
+    (f"{_SERVICES}/intake.py", "release_subject_guild"): (
+        "intake: unnames a case's community again, for a grant that was not "
+        "made after all"
+    ),
+    (f"{_SERVICES}/intake.py", "claim_subject_guild"): (
+        "intake: settles the community a case is about, as an access grant for "
+        "it is asked for"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "_as_reader"): (
+        "grant cases: routes the person naming a case into the operations "
+        "community through the seam, as themselves, to read it"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "note"): (
+        "grant cases: notes on an operations case what became of a grant for it"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "case_exists"): (
+        "grant cases: reads whether a case a grant serves is still there to be told"
+    ),
+    (f"{_SERVICES}/intake.py", "case_locked"): (
+        "intake: holds a case's task locked while a hold naming it is written, "
+        "so evidence retention never decides the case's files in between"
+    ),
+    (f"{_SERVICES}/evidence.py", "held_cases"): (
+        "evidence retention: asks the community a case is about whether a "
+        "hold there still names the case, before its files are deleted"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "activate"): (
+        "grant cases: puts a case to work when access for it is approved"
+    ),
+    (f"{_SERVICES}/grant_cases.py", "cases_required"): (
+        "grant cases: reads whether the operations community takes cases a "
+        "grant may serve"
+    ),
+    (f"{_SERVICES}/intake.py", "open_case_counts"): (
+        "intake: counts the open cases about an account, for the staff roster, "
+        "naming no case's content"
+    ),
+    (f"{_SERVICES}/intake.py", "open_cases_for"): (
+        "intake: lists where an account's open cases are, for staff to link to; "
+        "opening one is its initiative's to allow"
+    ),
     (f"{_SERVICES}/tickets.py", "reply"): (
         "tickets: writes a filer's answer in the operations community the "
         "filer role just read their case in"
+    ),
+    (f"{_SERVICES}/holds.py", "_require_case"): (
+        "holds: checks the case a platform moderator names is one the "
+        "operations community is working"
+    ),
+    (f"{_SERVICES}/holds.py", "_note_on_case"): (
+        "holds: notes a placement, release or reminder on its operations case"
+    ),
+    (f"{_SERVICES}/evidence.py", "carry_report"): (
+        "evidence: carries an escalated report's files into the operations case"
+    ),
+    (f"{_ENDPOINTS}/tickets.py", "read_filed_evidence"): (
+        "tickets: opens a file the filer role has just shown is the reader's own"
     ),
     (f"{_SERVICES}/ticket_notices.py", "notify_filers"): (
         "the scheduled sweep that tells filers their case moved"

@@ -1,0 +1,26 @@
+import { useInfiniteQuery } from "@tanstack/react-query";
+
+import { getReadActivityQueryKey, readActivity } from "@/api/generated/activity/activity";
+import type { ActivityFeedPage, ReadActivityParams } from "@/api/generated/initiativeAPI.schemas";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+
+/**
+ * The community's activity feed, page by page as somebody asks for more.
+ *
+ * It is not refreshed by the realtime bus: every change in a busy community
+ * would refetch the feed of everyone looking at it. It is read when the page
+ * opens, and again when the reader comes back to it. Another view or place is
+ * a feed of its own, so nothing of the last one is shown while it arrives.
+ */
+export const useActivityFeed = (params?: ReadActivityParams, community?: number) => {
+  const activeCommunityId = useActiveCommunityId();
+  // A page outside the community (the home page) names the one it shows.
+  const communityId = community ?? activeCommunityId;
+  return useInfiniteQuery({
+    queryKey: getReadActivityQueryKey(communityId, params),
+    queryFn: ({ pageParam }) => readActivity(communityId, { ...params, page: pageParam as number }),
+    initialPageParam: 1,
+    getNextPageParam: (last: ActivityFeedPage) => (last.has_next ? last.page + 1 : undefined),
+    staleTime: 60 * 1000,
+  });
+};

@@ -291,6 +291,8 @@ class FakeVendor:
     revoke_status: int = 200
     #: The status GitHub's grant deletion answers with.
     grant_status: int = 204
+    #: The status the installation token exchange answers with.
+    exchange_status: int = 201
     #: What the vendor signs its webhooks with.
     webhook_secret: str = "webhook-secret-789"
     #: Where its API answers, and what it answers, in order: each a recorded
@@ -309,7 +311,9 @@ class FakeVendor:
     #: Each grant deletion: its method, path, Authorization header and body.
     grant_deletions: list[tuple[str, str, str, Any]] = field(default_factory=list)
     hooks: list[tuple[str, dict[str, Any], str]] = field(default_factory=list)
-    exchanges: list[str] = field(default_factory=list)
+    #: Each token exchange: its Authorization header and JSON body (``None``
+    #: when it sent none).
+    exchanges: list[tuple[str, Any]] = field(default_factory=list)
     _serial: Any = field(default_factory=lambda: itertools.count(1))
 
     # --- the test's side ------------------------------------------------
@@ -450,10 +454,17 @@ class FakeVendor:
         return httpx.Response(200, json=self._issue())
 
     def _exchange(self, request: httpx.Request) -> httpx.Response:
-        self.exchanges.append(request.headers.get("authorization", ""))
+        self.exchanges.append(
+            (
+                request.headers.get("authorization", ""),
+                json.loads(request.content) if request.content else None,
+            )
+        )
+        if self.exchange_status >= 300:
+            return httpx.Response(self.exchange_status)
         expires = datetime.now(timezone.utc) + timedelta(hours=1)
         return httpx.Response(
-            201,
+            self.exchange_status,
             json={
                 "token": f"ghs_installation_{next(self._serial)}",
                 "expires_at": expires.strftime("%Y-%m-%dT%H:%M:%SZ"),

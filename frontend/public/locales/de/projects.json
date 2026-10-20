@@ -32,30 +32,15 @@
       "in_progress": "In Arbeit",
       "done": "Erledigt"
     },
-    "customFilters": "Eigene Filter",
     "modified": "geändert",
-    "saveAsPreset": "Voreinstellung speichern",
-    "updatePreset": "„{{name}}“ aktualisieren",
-    "presetName": "Name der Voreinstellung",
-    "presetNamePlaceholder": "z. B. Blockierte Aufgaben",
-    "presetSetDefault": "Als Standard des Projekts festlegen",
-    "presetSaved": "Voreinstellung gespeichert",
-    "presetUnavailable": "Diese Voreinstellung gibt es in diesem Projekt nicht mehr; stattdessen wird der Projektstandard angezeigt.",
-    "presetSaveError": "Voreinstellung konnte nicht gespeichert werden",
-    "presetDeleteError": "Voreinstellung konnte nicht gelöscht werden",
-    "preset": "Voreinstellung",
-    "resetToPreset": "Auf Voreinstellung zurücksetzen",
     "assignedToMe": "Mir zugewiesen",
     "unassigned": "Nicht zugewiesen",
     "archived": "Archiviert",
-    "statusCategory": "Statuskategorie",
-    "savePresetDescription": "Alle in diesem Projekt sehen diese Voreinstellung.",
-    "seededPresets": {
-      "all": "Alle",
-      "incomplete": "Unerledigt",
-      "unassigned": "Nicht zugewiesen",
-      "mine": "Meine"
-    }
+    "statusCategory": "Statuskategorie"
+  },
+  "layouts": {
+    "label": "Layout",
+    "loadError": "Die Layouts dieses Projekts konnten nicht geladen werden."
   },
   "createDialog": {
     "title": "Projekt erstellen",
@@ -104,23 +89,13 @@
     "closeOthers": "Andere schließen",
     "closeAll": "Alle schließen"
   },
-  "favorite": {
-    "remove": "Aus Favoriten entfernen",
-    "add": "Zu Favoriten hinzufügen"
-  },
   "pin": {
     "pinned": "Angeheftetes Projekt",
     "unpin": "Projekt lösen",
     "pin": "Projekt anheften"
   },
   "taskComposer": {
-    "title": "Aufgabe erstellen",
-    "description": "Füge zu erledigende Arbeit hinzu.",
-    "archivedMessage": "Dieses Projekt ist archiviert. Hebe die Archivierung auf, um neue Aufgaben hinzuzufügen.",
-    "noWriteAccess": "Du benötigst Schreibzugriff, um Aufgaben zu erstellen.",
-    "saving": "Wird gespeichert…",
-    "createTask": "Aufgabe erstellen",
-    "createError": "Aufgabe konnte nicht erstellt werden."
+    "createTask": "Aufgabe erstellen"
   },
   "assignee": {
     "emptyMessage": "Lade Initiativmitglieder ein, um Aufgaben zuzuweisen.",
@@ -173,19 +148,7 @@
     "unknownError": "Unbekannter Fehler"
   },
   "settings": {
-    "tabTaskStatuses": "Aufgabenstatus",
-    "tabFilterPresets": "Ansichten",
-    "filterPresetsHeading": "Filter-Voreinstellungen",
-    "filterPresetsDescription": "Gespeicherte Filtersätze, aus denen alle in diesem Projekt wählen können. Der Standard bestimmt, womit das Projekt öffnet.",
-    "defaultView": "Standardansicht",
-    "defaultViewHint": "Mit welcher Aufgabenansicht dieses Projekt öffnet, wenn noch keine gewählt wurde.",
-    "presetDefaultColumn": "Standard",
-    "presetNoFilters": "Keine Filter – alle Aufgaben",
-    "deletePreset": "Voreinstellung löschen",
-    "deletePresetConfirm": "„{{name}}“ löschen? Wer sie nutzt, fällt auf den Projektstandard zurück.",
-    "noPresets": "Noch keine Voreinstellungen.",
-    "presetMoveUp": "Voreinstellung nach oben",
-    "presetMoveDown": "Voreinstellung nach unten"
+    "tabTaskStatuses": "Aufgabenstatus"
   },
   "files": {
     "newFile": "Neue Datei"
@@ -195,7 +158,7 @@
     "addTask": "Aufgabe hinzufügen",
     "enterTooltip": "Drücke „Enter“, um eine neue Aufgabe zu erstellen",
     "viewTable": "Tabelle",
-    "viewKanban": "Kanban",
+    "viewBoard": "Board",
     "viewCalendar": "Kalender",
     "archiveDoneTasks": "Erledigte Aufgaben archivieren",
     "archiveDialogTitle": "Aufgaben archivieren",
@@ -223,9 +186,11 @@
     "markInProgress": "Aufgabe als in Bearbeitung markieren",
     "markDone": "Aufgabe als erledigt markieren",
     "taskColumn": "Aufgabe",
-    "tagGroup": "Tag",
     "untagged": "Ohne Tag",
-    "commentsColumn": "Kommentare",
+    "noValue": "Ohne {{name}}",
+    "checked": "{{name}}: ja",
+    "unchecked": "{{name}}: nein",
+    "moveError": "Die Aufgabe konnte nicht in diese Gruppe verschoben werden.",
     "statusColumn": "Status",
     "filterPlaceholder": "Aufgaben filtern...",
     "reorderTask": "Aufgabe neu anordnen",
@@ -258,7 +223,11 @@
       "comments": "Kommentare",
       "blockers": "Blocker",
       "tags": "Tags"
-    }
+    },
+    "limitCount": "{{count}} / {{limit}}",
+    "limitTitle": "Nimmt höchstens {{limit}} offene Aufgaben auf",
+    "full": "Voll",
+    "statusFull": "{{name}} ist voll"
   },
   "recurrence": {
     "repeat": "Wiederholen",
@@ -316,14 +285,20 @@
     "archivedOn": "Archiviert am {{date}}",
     "reorder": "Projekt neu anordnen"
   },
-  "activitySidebar": {
-    "title": "Projektaktivität",
-    "activity": "Aktivität",
-    "expand": "Aktivitäts-Seitenleiste ausklappen",
-    "collapse": "Aktivitäts-Seitenleiste einklappen",
-    "loading": "Aktivität wird geladen…",
-    "noComments": "Noch keine Kommentare.",
-    "commentedOn": "kommentierte",
-    "loadMore": "Mehr laden"
+  "presets": {
+    "label": "Vorlagen",
+    "placeholder": "Vorlage wählen",
+    "incomplete": "Unerledigt",
+    "unassigned": "Nicht zugewiesen",
+    "mine": "Meine"
+  },
+  "quickActions": {
+    "assignToMe": "Mir zuweisen",
+    "assignToMeFor": "{{title}} mir zuweisen",
+    "unassignMe": "Mich entfernen",
+    "assigned": "Dir zugewiesen",
+    "unassigned": "Du bist nicht mehr bei dieser Aufgabe",
+    "assignError": "Die Zuständigen dieser Aufgabe konnten nicht geändert werden.",
+    "moveTo": "Verschieben nach"
   }
 }

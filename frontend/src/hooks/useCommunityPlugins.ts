@@ -1,7 +1,8 @@
 /**
  * Plug-ins installed in the current community.
  *
- * Every member reads this — the sidebar has to know what is there — while
+ * Every member reads this — the sidebar has to know what is there — and no
+ * guest does, the plug-ins being the community's rather than shared with them;
  * installing, renaming, disabling and removing are community-admin actions the
  * server enforces. The UI mirrors that by hiding the affordances, not by
  * deciding it.
@@ -13,21 +14,28 @@ import type {
   CommunityPluginInstall,
   CommunityPluginListResponse,
   CommunityPluginRead,
+  CommunityPluginUninstallNotice,
   CommunityPluginUpdate,
+  DetailLayoutReadKind,
+  PluginActionResult,
   PluginPlacementRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import {
   getListCommunityPluginsQueryKey,
+  getReadUninstallNoticeQueryKey,
   installCommunityPlugin,
   listCommunityPlugins,
   putCommunityPluginPlacement,
   putCommunityPluginScopes,
+  readUninstallNotice,
+  runPluginAction,
   uninstallCommunityPlugin,
   updateCommunityPlugin,
 } from "@/api/generated/plugins/plugins";
-import { invalidate, q } from "@/api/query-keys";
+import { invalidate, q, type Spec } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { useCommunities } from "@/hooks/useCommunities";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
 
@@ -35,10 +43,29 @@ const pluginsKey = (communityId: number) => getListCommunityPluginsQueryKey(comm
 
 export const useCommunityPlugins = (options?: QueryOpts<CommunityPluginListResponse>) => {
   const communityId = useActiveCommunityId();
+  const communityWide = Boolean(useCommunities().activeCommunity?.can.community_wide);
+  const { enabled = true, ...rest } = options ?? {};
   return useQuery<CommunityPluginListResponse>({
     queryKey: pluginsKey(communityId),
     queryFn: () => listCommunityPlugins(communityId),
-    ...options,
+    enabled: enabled && communityWide,
+    ...rest,
+  });
+};
+
+/**
+ * What the removal dialog says about one plug-in beyond the usual: asked when
+ * the dialog opens, in the reader's language, and never cached past it.
+ */
+export const useUninstallNotice = (pluginId: number, locale: string, enabled: boolean) => {
+  const communityId = useActiveCommunityId();
+  return useQuery<CommunityPluginUninstallNotice>({
+    queryKey: getReadUninstallNoticeQueryKey(communityId, pluginId, { locale }),
+    queryFn: () => readUninstallNotice(communityId, pluginId, { locale }),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
   });
 };
 
@@ -69,10 +96,17 @@ export const useUpdateCommunityPlugin = (
   );
 };
 
-export const useUninstallCommunityPlugin = (options?: MutationOpts<void, number>) => {
-  return useCommunityMutation<void, number>(
+export interface UninstallPlugin {
+  pluginId: number;
+  /** Also ask the plug-in to delete what it holds about the community. */
+  erase?: boolean;
+}
+
+export const useUninstallCommunityPlugin = (options?: MutationOpts<void, UninstallPlugin>) => {
+  return useCommunityMutation<void, UninstallPlugin>(
     {
-      mutationFn: (communityId, pluginId) => uninstallCommunityPlugin(communityId, pluginId),
+      mutationFn: (communityId, { pluginId, erase }) =>
+        uninstallCommunityPlugin(communityId, pluginId, erase ? { erase: true } : undefined),
       invalidate: () => invalidate(q.plugins()),
       errorKey: "plugins:error",
     },
@@ -116,3 +150,41 @@ export const useSetPluginScopes = (
     options
   );
 };
+
+/** The reads that show an item of each kind plug-ins draw on. */
+const ITEM_READS: Record<DetailLayoutReadKind, (id: number) => Spec[]> = {
+  task: (id) => [q.allTasks(), q.task(id)],
+  calendar_event: (id) => [q.allCalendarEvents(), q.calendarEvent(id)],
+  queue_item: (id) => [q.allQueues(), q.queueItem(id)],
+  // A picture is read under its gallery, which an action names no more of.
+  gallery_image: () => [q.allGalleries()],
+  counter: (id) => [q.allCounterGroups(), q.counter(id)],
+  post: (id) => [q.allPosts(), q.post(id)],
+};
+
+/** Run one of a plug-in's actions on an item, with what the reader answered
+ *  for the parameters it asks for and the list element it was run from. The
+ *  plug-in does the work; the item is read again for the values it shows
+ *  afterwards. */
+export const useRunPluginAction = () =>
+  useCommunityMutation<
+    PluginActionResult,
+    {
+      pluginId: number;
+      actionId: string;
+      kind: DetailLayoutReadKind;
+      itemId: number;
+      params?: Record<string, unknown>;
+      element?: string;
+    }
+  >({
+    mutationFn: (communityId, { pluginId, actionId, kind, itemId, params, element }) =>
+      runPluginAction(communityId, pluginId, actionId, {
+        entity_type: kind,
+        entity_id: itemId,
+        ...(params ? { params } : {}),
+        ...(element ? { element } : {}),
+      }),
+    invalidate: (_data, { kind, itemId }) => invalidate(...ITEM_READS[kind](itemId)),
+    errorKey: "plugins:error",
+  });

@@ -29,13 +29,15 @@ caller is only reading facts off.
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from datetime import timedelta
 from typing import Iterable, Sequence
 
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.models.platform.user import User
 
-__all__ = ["load", "load_one", "load_all", "load_event_reminder_optins"]
+__all__ = ["load", "load_one", "load_all", "load_event_reminder_leads"]
 
 
 async def load(
@@ -111,24 +113,26 @@ async def load_all(
     return ordered
 
 
-async def load_event_reminder_optins() -> list[User]:
-    """Everybody who asked to be reminded about events, detached.
+async def load_event_reminder_leads(user_ids: Collection[int]) -> dict[int, timedelta]:
+    """How long before an event each of ``user_ids`` asked to be reminded,
+    for those who asked.
 
-    The reminder sweep walks each guild's schema in turn, so the session it
-    holds is routed into one — and a routed session has no business reading an
-    account's preferences. The question "who wants reminding" is about accounts
-    rather than about any guild, so it is asked here, once, before the walk.
+    The reminder sweep holds a session routed into a guild's schema, and a
+    routed session has no business reading an account's preferences. The
+    question is about accounts rather than any guild, so it is asked here, on
+    the system engine, for the attendees a visit found.
     """
     from app.db.session import SystemSessionLocal
 
+    if not user_ids:
+        return {}
     async with SystemSessionLocal() as system_session:
-        rows = list(
-            (
-                await system_session.exec(
-                    select(User).where(User.event_reminder_minutes_before.is_not(None))
+        rows = (
+            await system_session.exec(
+                select(User.id, User.event_reminder_minutes_before).where(
+                    col(User.id).in_(sorted(user_ids)),
+                    User.event_reminder_minutes_before.is_not(None),
                 )
-            ).all()
-        )
-        for row in rows:
-            system_session.expunge(row)
-    return rows
+            )
+        ).all()
+    return {user_id: timedelta(minutes=minutes) for user_id, minutes in rows}

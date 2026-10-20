@@ -37,7 +37,7 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useFile, useSetFileCache, useUpdateFile } from "@/hooks/useFiles";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useReadOnOpen } from "@/hooks/useNotifications";
-import { useRecordRecentView } from "@/hooks/useRecents";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { useServerForm } from "@/hooks/useServerForm";
 import { uploadAttachment } from "@/lib/attachmentUtils";
@@ -131,13 +131,9 @@ export const FileDetailPage = () => {
 
   // Track recently viewed files so the layout header tabs bar can surface
   // them. Mirrors the pattern in ProjectDetailPage.
-  const recordViewMutation = useRecordRecentView(Tool.file, communityId);
   const viewedFileId = fileQuery.data?.id;
   useReadOnOpen(Tool.file, viewedFileId);
-  useEffect(() => {
-    if (!viewedFileId) return;
-    recordViewMutation.mutate(viewedFileId);
-  }, [viewedFileId, recordViewMutation.mutate]);
+  useRecordOpen(Tool.file, viewedFileId);
 
   // Which file the featured image below was filled in from. Filled in
   // once per file, for the reason the body's copy is: a later answer
@@ -560,6 +556,7 @@ export const FileDetailPage = () => {
       <ToolPageHeader
         tool={Tool.file}
         initiativeId={file.initiative_id}
+        starId={file.id}
         settingsTo={canEditFile ? toolSettingsRoute(Tool.file, initiativeId, file.id) : undefined}
         chest={
           <ToolChest
@@ -701,7 +698,7 @@ export const FileDetailPage = () => {
                       isOpen={outline.isOpen}
                       onOpenChange={outline.setIsOpen}
                       className={cn(
-                        "hidden w-64 shrink-0 lg:flex",
+                        "hidden w-64 shrink-0 md:flex",
                         isFullscreen ? "min-h-0" : "max-h-[80vh]"
                       )}
                     />

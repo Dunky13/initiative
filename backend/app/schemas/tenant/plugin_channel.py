@@ -22,19 +22,26 @@ service layer validates against.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import ConfigDict, Field
+from pydantic import AwareDatetime, ConfigDict, Field
 
-from app.schemas.base import SanitizedBaseModel
+from app.core.tools import METADATA_TARGETS
+from app.schemas.base import RawTextStr, SanitizedBaseModel
 
 __all__ = [
+    "MetadataTarget",
     "PluginConnectionRead",
     "PluginConnectionsResponse",
     "PluginConnectionToken",
     "PluginInstallConfigRead",
     "PluginInstallationEvent",
     "PluginMemberConfigRead",
+    "PluginMetadataItem",
+    "PluginMetadataItems",
+    "PluginMetadataValues",
+    "PluginMetadataWrite",
     "PluginStatusReport",
     "PluginStatusRead",
 ]
@@ -148,3 +155,77 @@ class PluginInstallationEvent(SanitizedBaseModel):
     event_type: str = Field(max_length=200)
     payload: Dict[str, Any] = {}
     initiative_id: Optional[int] = None
+
+
+MetadataTarget = Enum(
+    "MetadataTarget", {name: name for name in METADATA_TARGETS}, type=str
+)
+MetadataTarget.__doc__ = (
+    "What a plug-in keeps values on: an item, or ``plugin``, its own install."
+)
+
+
+class PluginMetadataItem(SanitizedBaseModel):
+    """The values one install keeps on one item, by key."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    entity_type: str
+    entity_id: int
+    values: Dict[str, Any] = {}
+
+
+class PluginMetadataItems(SanitizedBaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    items: List[PluginMetadataItem] = []
+
+
+class PluginMetadataWrite(SanitizedBaseModel):
+    """A change to one item's values, or to the install's own: ``values`` sets
+    them by key, a ``null`` removing its key; ``upsert`` adds a list field's
+    elements by key, or merges each into the element with its ``ref``; and
+    ``remove`` takes the elements with these refs from a list field. At least
+    one of the three, each key in one. ``entity_id`` names the item; the
+    install's own values need none."""
+
+    entity_type: MetadataTarget
+    entity_id: Optional[int] = None
+    values: Optional[Dict[str, Any]] = None
+    upsert: Optional[Dict[str, Any]] = None
+    remove: Optional[Dict[str, Any]] = None
+
+
+class PluginMetadataValues(SanitizedBaseModel):
+    """Every value the install keeps on the item, after a write."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    values: Dict[str, Any] = {}
+
+
+class PluginEntitlementRead(SanitizedBaseModel):
+    """The entitlement statement held for the install's community and
+    listing: the compact JWS the issuer signed, exactly as it was sent. The
+    plug-in verifies it with the issuer's key and reads ``version`` and
+    ``values`` from its claims."""
+
+    statement: RawTextStr
+
+
+class PluginUsageReport(SanitizedBaseModel):
+    """A period's cumulative total for one meter, as the plug-in counted it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quantity: int = Field(ge=0, le=2**63 - 1, strict=True)
+    #: When the total was counted.
+    as_of: AwareDatetime
+
+
+class PluginUsageRead(SanitizedBaseModel):
+    """The total held for one meter and period after a report."""
+
+    meter: str
+    period: str
+    quantity: int

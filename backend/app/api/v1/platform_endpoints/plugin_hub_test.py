@@ -12,7 +12,7 @@ the plug-in called; everything above it runs for real.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -26,7 +26,7 @@ from app.core.plugin_access_token import seal_install_token
 from app.core.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.messages import PluginDataMessages, PluginHubMessages
-from app.models.platform.guild import CommunityRole
+from app.models.platform.guild import CommunityRole, GuildMembership
 from app.models.tenant.plugin_member_consent import PluginMemberConsent
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.guild_plugin import GuildPlugin
@@ -35,6 +35,7 @@ from app.services.marketplace import plugin_data as plugin_data_service
 from app.services.marketplace.plugin_refs import ensure_plugin_ref
 from app.services.marketplace.context_jwt_test import _PRIVATE_PEM
 from app.testing import (
+    create_plugin_user_connection,
     create_plugin_service_registration,
     create_guild_plugin,
     emitted,
@@ -156,7 +157,7 @@ def upstream(monkeypatch):
             return jwt.decode(
                 header.removeprefix("Bearer "),
                 options={"verify_signature": False},
-                algorithms=["RS256"],
+                algorithms=["EdDSA"],
             )
 
     recorder = Recorder()
@@ -303,19 +304,15 @@ async def _connect(session: AsyncSession, installed, target, member) -> None:
         config={"login": "alice"},
         secrets={},
     )
-    await route_session_to_guild(session, installed.guild.id)
-    session.add(
-        GuildPluginUserConnection(
-            plugin_id=target.id,
-            connection_id="account",
-            user_id=member.user.id,
-            connection_ref="cr_member_account",
-            config=config,
-            config_secrets=secrets,
-            status="connected",
-        )
+    await create_plugin_user_connection(
+        session,
+        target,
+        member.user,
+        connection_id="account",
+        connection_ref="cr_member_account",
+        config=config,
+        secrets=secrets,
     )
-    await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -488,11 +485,13 @@ async def test_a_member_call_carries_the_targets_reference_never_the_callers(
     assert response.status_code == 200, response.text
     claims = upstream.claims()
     target_ref = await ensure_plugin_ref(
-        guild_id=installed.guild.id, plugin_install_id=target.id, user_id=member.user.id
+        guild_id=installed.guild.id,
+        public_id=target.definition["service"]["public_id"],
+        user_id=member.user.id,
     )
     caller_ref = await ensure_plugin_ref(
         guild_id=installed.guild.id,
-        plugin_install_id=installed.plugin.id,
+        public_id=installed.public_id,
         user_id=member.user.id,
     )
     assert claims["actor"] == "member"
@@ -628,23 +627,43 @@ async def test_every_call_is_written_to_the_audit_stream_without_its_params(
     assert "secret-repo-name" not in str(answered)
 
 
+@pytest.mark.parametrize("ended", ["consent", "guest_time"])
 async def test_a_member_token_for_a_member_who_left_is_refused(
-    client: AsyncClient, session: AsyncSession, acting_user, role_session, upstream
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    role_session,
+    upstream,
+    ended,
 ):
-    """The install seam still stands the token up first: a withdrawn consent
-    leaves the member token nothing to act with."""
+    """The install seam still stands the token up first: a withdrawn consent,
+    or a guest's time running out, leaves the member token nothing to act
+    with."""
     installed, _target = await _hub(session, acting_user, role_session)
     member = await _member(session, acting_user, installed)
-    await route_session_to_guild(session, installed.guild.id)
-    consent = (
-        await session.exec(
-            select(PluginMemberConsent).where(
-                PluginMemberConsent.user_id == member.user.id
+    now = datetime.now(timezone.utc)
+    if ended == "consent":
+        await route_session_to_guild(session, installed.guild.id)
+        consent = (
+            await session.exec(
+                select(PluginMemberConsent).where(
+                    PluginMemberConsent.user_id == member.user.id
+                )
             )
-        )
-    ).one()
-    consent.revoked_at = datetime.now(timezone.utc)
-    session.add(consent)
+        ).one()
+        consent.revoked_at = now
+        session.add(consent)
+    else:
+        membership = (
+            await session.exec(
+                select(GuildMembership).where(
+                    GuildMembership.guild_id == installed.guild.id,
+                    GuildMembership.user_id == member.user.id,
+                )
+            )
+        ).one()
+        membership.guest_until = now - timedelta(minutes=1)
+        session.add(membership)
     await session.commit()
 
     response = await client.post(
@@ -835,6 +854,62 @@ async def test_a_member_write_reads_the_community_connection_without_its_secrets
     assert sent["body"] == {
         "seen": {"workspace": {"owner": "acme"}, "account": {"login": "alice"}}
     }
+
+
+@pytest.mark.parametrize(
+    "caller,status,token",
+    [
+        ("installation", 200, "gho_community"),
+        ("member", 200, "gho_member"),
+        ("unconnected", 409, None),
+    ],
+    ids=["installation", "member", "member-not-connected"],
+)
+async def test_a_write_naming_a_connection_per_actor_runs_on_the_callers(
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    role_session,
+    monkeypatch,
+    caller,
+    status,
+    token,
+):
+    """A write made as the installation carries the community's credential
+    and one made as a member the member's own, which ``requires`` need not
+    name: a member who has not connected it is told to, and the vendor is
+    not called."""
+    definition = _with_member_account(None)
+    label = definition["endpoints"][1]
+    label.update(actors=["member", "installation"], requires={"all_of": ["workspace"]})
+    label["request"]["connection"] = {"member": "account", "installation": "workspace"}
+    vendor = FakeVendor()
+    vendor.install(monkeypatch)
+    vendor.api_answers = [{"body": {"number": 7}}]
+    installed, target = await _hub(
+        session, acting_user, role_session, declarative=True, definition=definition
+    )
+    assert target is not None
+    headers = _installation_headers(installed)
+    if caller != "installation":
+        member = await _member(session, acting_user, installed)
+        if caller == "member":
+            await _connect(session, installed, target, member)
+        headers = _member_headers(installed, member)
+
+    response = await client.post(
+        _url(f"plugin.{TARGET}.label"),
+        json={"params": {"repo": "web", "number": 7}},
+        headers=headers,
+    )
+
+    assert response.status_code == status, response.text
+    if token is None:
+        assert response.json()["detail"] == PluginDataMessages.CONNECTION_REQUIRED
+        assert vendor.api_requests == []
+    else:
+        assert response.json()["actor"] == caller
+        assert vendor.api_requests[0]["headers"]["authorization"] == f"Bearer {token}"
 
 
 async def test_a_cached_read_follows_the_members_connection_fields(

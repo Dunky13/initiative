@@ -72,16 +72,13 @@ Rare, and recoverable. First, read the end of the log:
 docker compose logs initiative | tail -n 40
 ```
 
-If the last thing it says is a message framed in `=` signs telling you what to do (the image being older than the database, say), that message is the whole answer. Do what it says.
+If the last thing it says is a message framed in `=` signs telling you what to do (the image being older than the database, say), that message is the whole answer. Do what it says. A setting that stops it starting is named too, with why, and without its value printed.
 
-Otherwise, find the report it wrote just before the traceback. The server keeps retrying, so there may be several; this prints the most recent one, and nothing past its closing line:
+Otherwise, find the report it wrote. The log is one JSON object per line, and the server keeps retrying, so there may be several; this prints the most recent one as plain text (it needs `jq`, which your package manager has):
 
 ```bash
-docker compose logs --no-log-prefix initiative | awk '
-  /Initiative could not start/ { report = ""; inside = 1 }
-  inside { report = report $0 "\n" }
-  inside && /^=+$/ { inside = 0 }
-  END { printf "%s", report }'
+docker compose logs --no-log-prefix initiative \
+  | grep 'Initiative could not start' | tail -n 1 | jq -r .msg
 ```
 
 It lists the version, how the database is set up, where the migrations stopped, and the error. The passwords and keys the server is configured with are taken out, but give it a read before you post it. Then paste it into [an issue](https://github.com/beyonders-studio/initiative/issues).

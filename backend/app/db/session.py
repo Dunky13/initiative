@@ -24,7 +24,7 @@ from sqlalchemy.pool import NullPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import HTTPConnection
 
-from app.core import audit_context, metrics
+from app.core import metrics
 from app.core.plugin_access_token import InstallAccessToken
 from app.core.config import settings
 from app.core.identify import bearer_plugin_token
@@ -60,6 +60,7 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.DATABASE_URL_APP,
     echo=False,
+    hide_parameters=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
@@ -74,6 +75,7 @@ engine = create_async_engine(
 system_engine = create_async_engine(
     settings.DATABASE_URL_ADMIN,
     echo=False,
+    hide_parameters=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
@@ -85,6 +87,7 @@ _SYSTEM_LOGIN_ROLE, _ = settings.database_login("DATABASE_URL_ADMIN")
 provisioning_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+    hide_parameters=True,
     pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
 )
 
@@ -103,6 +106,7 @@ QUERY_POOL_TIMEOUT_SECONDS = 5
 query_engine = create_async_engine(
     settings.DATABASE_URL_QUERY or settings.DATABASE_URL_APP,
     echo=False,
+    hide_parameters=True,
     pool_size=QUERY_POOL_SIZE,
     max_overflow=0,
     pool_timeout=QUERY_POOL_TIMEOUT_SECONDS,
@@ -166,15 +170,13 @@ def instrument_engine(
         if not flag_slow or elapsed < SLOW_STATEMENT_SECONDS:
             return
         slow.inc()
-        request = audit_context.current()
         written = ""
         if log_text:
             written = ": " + " ".join(statement.split())[:_SLOW_STATEMENT_TEXT_LIMIT]
         logger.warning(
-            "Slow statement on the %s engine, %.0f ms (request %s)%s",
+            "Slow statement on the %s engine, %.0f ms%s",
             label,
             elapsed * 1000,
-            request.request_id if request is not None else "none",
             written,
         )
 
@@ -708,7 +710,8 @@ def _get_alembic_config() -> Config:
     config = Config(str(ALEMBIC_INI_PATH))
     config.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
     # Use superuser URL for migrations (needs CREATE ROLE and DDL privileges)
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # Alembic uses ConfigParser interpolation; escape literal URL percent signs.
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
     config.attributes["configure_logger"] = False
     config.attributes["url_configured"] = True
     return config
@@ -770,7 +773,10 @@ async def migration_lock() -> AsyncGenerator[AsyncConnection, None]:
     is given the connection, for the checks that run under the lock.
     """
     lock_engine = create_async_engine(
-        settings.DATABASE_URL, poolclass=NullPool, isolation_level="AUTOCOMMIT"
+        settings.DATABASE_URL,
+        poolclass=NullPool,
+        isolation_level="AUTOCOMMIT",
+        hide_parameters=True,
     )
     try:
         conn = await lock_engine.connect()

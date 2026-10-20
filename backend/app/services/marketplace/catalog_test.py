@@ -23,6 +23,7 @@ from app.services.marketplace.definitions import (
     normalize_listing_example,
 )
 from app.testing import create_marketplace_listing
+from app.testing.fake_vendor import declarative_plugin
 
 
 def _manifest(**overrides):
@@ -294,8 +295,8 @@ class TestDefinitions:
                         "public_id": "tests.widget-co",
                         "default_url": "https://widget.test",
                     },
-                    "features": ["embeds"],
-                    "embeds": [
+                    "features": ["pages"],
+                    "pages": [
                         {"id": "main", "path": "/embed/main", "name": {"en": "Main"}}
                     ],
                 },
@@ -308,7 +309,7 @@ class TestDefinitions:
             "public_id": "tests.widget-co",
             "protocol": 1,
         }
-        assert version.definition["embeds"][0]["path"] == "/embed/main"
+        assert version.definition["pages"][0]["path"] == "/embed/main"
 
 
 class TestArtwork:
@@ -362,6 +363,37 @@ class TestVersions:
         await service.upsert_listing(session, _manifest(), source="builtin")
         listing = await service.upsert_listing(session, _manifest(), source="builtin")
         assert len(await service.listing_versions(session, listing.id)) == 1
+
+    async def test_republishing_a_declarative_plugin_unchanged_is_a_no_op(
+        self, session
+    ):
+        """A declarative plug-in is named by its listing, so its stored version
+        is compared under that name too. Without it every registry refresh read
+        the version as rewritten and skipped the listing."""
+        manifest = _manifest(
+            kind="plugin",
+            public_id="tests.issues",
+            definition=declarative_plugin("tests.issues"),
+        )
+        await service.upsert_listing(session, manifest, source="registry")
+        listing = await service.upsert_listing(session, manifest, source="registry")
+        assert len(await service.listing_versions(session, listing.id)) == 1
+
+    async def test_a_declarative_plugins_version_cannot_be_rewritten(self, session):
+        definition = declarative_plugin("tests.issues")
+        await service.upsert_listing(
+            session,
+            _manifest(kind="plugin", public_id="tests.issues", definition=definition),
+            source="registry",
+        )
+        changed = json.loads(json.dumps(definition))
+        changed["vendor"]["fields"][0]["label"]["en"] = "Application id"
+        with pytest.raises(CatalogError, match="already published with different"):
+            await service.upsert_listing(
+                session,
+                _manifest(kind="plugin", public_id="tests.issues", definition=changed),
+                source="registry",
+            )
 
     async def test_a_published_version_cannot_be_rewritten(self, session):
         """The definition under a version is frozen once published.
@@ -626,7 +658,7 @@ class TestInstallsCount:
 
 def _body(manifest: dict) -> tuple:
     definition = normalize_listing_definition(
-        manifest["kind"], manifest.get("definition")
+        manifest["kind"], manifest.get("definition"), public_id=manifest["public_id"]
     )
     example = normalize_listing_example(
         manifest["kind"], manifest.get("example"), definition

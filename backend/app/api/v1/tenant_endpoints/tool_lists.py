@@ -43,6 +43,7 @@ from typing import Annotated, Any, Awaitable, Callable, List, Literal, Mapping, 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from sqlalchemy import and_, func, literal, select, union_all
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.actor_route import ActorRoute
@@ -76,7 +77,7 @@ from app.models.tenant.file import File, FileType
 from app.models.tenant.gallery import Gallery
 from app.models.tenant.post import Post
 from app.models.tenant.project import Project
-from app.models.tenant.project_order import ProjectOrder
+from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.queue import Queue
 from app.models.tenant.wiki import Wiki
 from app.schemas.tenant.calendar import (
@@ -556,10 +557,11 @@ def _project_refine(req: ListRequest) -> Callable[[Any], Any]:
     if req.user_id is None:
         return lambda statement: statement
     return lambda statement: statement.outerjoin(
-        ProjectOrder,
+        PersonalItem,
         and_(
-            ProjectOrder.project_id == Project.id,
-            ProjectOrder.user_id == req.user_id,
+            col(PersonalItem.entity_type) == Tool.project.value,
+            col(PersonalItem.entity_id) == Project.id,
+            col(PersonalItem.user_id) == req.user_id,
         ),
     )
 
@@ -568,7 +570,7 @@ def _project_order(req: ListRequest) -> list:
     """The reader's own manual order, then id; by id alone for a plug-in."""
     if req.user_id is None:
         return [Project.id.asc()]
-    return [ProjectOrder.sort_order.asc().nulls_last(), Project.id.asc()]
+    return [col(PersonalItem.sort_order).asc().nulls_last(), Project.id.asc()]
 
 
 async def _serialize_projects(spec: ToolListSpec, req: ListRequest, rows: list) -> list:
@@ -1141,7 +1143,7 @@ def _mount_list(spec: ToolListSpec) -> None:
     )
 
 
-async def _view_conditions(
+async def view_conditions(
     spec: ToolListSpec,
     session: AsyncSession,
     current_user: User,
@@ -1174,7 +1176,7 @@ async def get_tool_counts_by_initiative(
     selects = [
         select(literal(spec.tool.value), spec.model.initiative_id, func.count())
         .where(
-            *await _view_conditions(
+            *await view_conditions(
                 spec, session, current_user, guild_context, **spec.views["active"]
             )
         )
@@ -1247,7 +1249,7 @@ async def get_tool_counts(
             union_all(
                 *[
                     select(literal(name), func.count()).where(
-                        *await _view_conditions(
+                        *await view_conditions(
                             spec,
                             session,
                             current_user,
@@ -1265,7 +1267,7 @@ async def get_tool_counts(
         return ToolCountsResponse(views=dict(view_counts))
 
     shown = select(spec.model.id).where(
-        *await _view_conditions(
+        *await view_conditions(
             spec,
             session,
             current_user,

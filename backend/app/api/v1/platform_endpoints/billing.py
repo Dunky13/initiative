@@ -32,11 +32,15 @@ from app.schemas.platform.billing import (
     BillingCommunityStatusRequest,
     BillingCommunityTierApply,
     BillingCommunityTierRead,
+    BillingPluginEntitlementApply,
+    BillingPluginEntitlementRead,
     BillingUsageRead,
     BillingUsageRequest,
 )
 from app.models.platform.guild import CommunityStatus
 from app.models.platform.identity_ref import IdentityEntity
+from app.db import post_commit
+from app.services.marketplace import plugin_entitlements
 from app.services.platform import billing as billing_service
 from app.services.platform import guilds as guilds_service
 from app.services.platform import identity_refs
@@ -55,6 +59,7 @@ def _payload_error_code(exc: ValidationError) -> str:
             BillingMessages.SUPPORT_SOURCE_RESTRICTED,
             BillingMessages.ACTOR_REQUIRED,
             BillingMessages.NOTICE_SOURCE_NOT_ALLOWED,
+            BillingMessages.INVALID_STATEMENT,
         ):
             if code in message:
                 return code
@@ -264,4 +269,62 @@ async def community_usage(request: Request, session: SessionDep) -> BillingUsage
         community_ref=payload.community_ref,
         usage_bytes=usage.usage_bytes,
         member_count=usage.member_count,
+        guest_count=usage.guest_count,
+    )
+
+
+@router.post("/plugin-entitlement", response_model=BillingPluginEntitlementRead)
+async def plugin_entitlement(
+    request: Request, session: SessionDep
+) -> BillingPluginEntitlementRead:
+    """The current entitlement statement for one community and listing.
+
+    The body is ``{"statement": "<jws>"}``, a statement the issuer signed. Its
+    claims name the community, the listing, the version and the values; the
+    signature is left to the plug-in, which holds the issuer's key. A statement
+    that is not one (wrong header, issuer or claims) is refused (422
+    ``INVALID_STATEMENT``) with nothing consumed.
+
+    Taken only for a listing whose package names terms for it here: any other
+    listing is refused (409) with nothing consumed. A version higher than the
+    one held replaces it, and the statement is handed, exactly as sent, to the
+    installed plug-in as its ``entitlement`` hook; an equal or lower one
+    changes nothing (``applied: false``), so a retry is harmless. A plug-in
+    that is not installed is handed it when it is.
+
+    The jti is burned and committed on the billing session first; the
+    statement is written on the system engine, which the billing role does not
+    reach.
+    """
+    claims, payload = await _verify_and_parse(request, BillingPluginEntitlementApply)
+    issued = payload.claims
+    guild_id = await _resolve_guild(issued.community_ref)
+    if await plugin_entitlements.listing_terms(issued.listing_uid) is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=BillingMessages.LISTING_HAS_NO_TERMS,
+        )
+    await set_rls_context(session, Billing(guild_id))
+    await _burn_jti(session, claims)
+    if await billing_service.guild_lifecycle_status(session, guild_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BillingMessages.COMMUNITY_NOT_FOUND,
+        )
+    await session.commit()  # persist the one-shot jti redemption
+    stored = await plugin_entitlements.store_statement(
+        guild_id,
+        issued.listing_uid,
+        statement=payload.statement,
+        version=issued.version,
+        values=issued.values,
+    )
+    if stored.applied:
+        post_commit.spawn(
+            plugin_entitlements.deliver_entitlement(guild_id, issued.listing_uid)
+        )
+    return BillingPluginEntitlementRead(
+        listing_uid=issued.listing_uid,
+        version=stored.version,
+        applied=stored.applied,
     )

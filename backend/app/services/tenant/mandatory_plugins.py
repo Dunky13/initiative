@@ -9,24 +9,26 @@ Six properties, and each one is a deliberate choice:
 
 * **A guild gets it at creation, and an existing guild gets it at boot.** The
   same sweep pattern that reprovisions stale schemas, so the flag reaches guilds
-  that predate it without anyone running anything.
+  that predate it without anyone running anything. The install index
+  (``plugin_installs``) says which guilds lack an install, and only those are
+  visited.
 * **Installing never fails guild creation.** The install is a local row; the
   plug-in's container may be down, its listing may not have arrived yet, and none of
   that is a reason a guild cannot be created. What is missing is logged, and the
   next boot tries again.
 * **The kill switch outranks the flag.** A registration the operator turned off
   installs nowhere new — deactivating a plug-in stops it exactly like any other.
+  One limited to the operations community (``operations_only``) is installed
+  there alone.
 * **It is granted what it asks for, within the ceiling.** The manifest's
   requested scopes, capped by the registration's ``scope_ceiling``: the
   operator's registration is the consent a seat would otherwise give. Using
   another plug-in is granted only once the community has it, and a required
-  plug-in arriving lets every install that asks use it. An install already
-  there that holds no grant is given the same on the next sweep; one the seat
-  has granted something is left as the seat set it.
-* **It is placed in every initiative.** Each one that exists when it is
-  installed, and each one created afterwards (``follows_new_initiatives``). The
-  seat may still remove it from any single initiative, and that stays removed:
-  nothing sweeps the initiatives that already exist.
+  plug-in arriving lets every install that asks use it.
+* **It is placed in every initiative there is.** When it is installed.
+* **After that it is the seat's.** Its grant and where it appears, new
+  initiatives included, are the seat's to change, as for any install. Nothing
+  here touches an install that is already there.
 * **Clearing the flag destroys nothing.** Nothing here removes an install, so a
   plug-in that stops being mandatory simply becomes an ordinary one a guild admin
   may now remove. Tearing a plug-in down is uninstalling it, which is a different
@@ -40,13 +42,17 @@ and a deployment's configuration decides whether anything uses it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Optional
 
-from sqlmodel import select
+from sqlalchemy import text
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.db import cohorts
+from app.db.request_context import Unattributed
+from app.db.session import set_rls_context
 from app.models.platform.guild import GUILD_ADMIN_ROLES, GuildMembership
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.services.guild_sweeps import Scope, each_guild
@@ -56,8 +62,8 @@ from app.services.marketplace.installs import (
     ListingInstallError,
     resolve_listing_install,
 )
-from app.services.tenant import plugin_schedules
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_schedules
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +71,7 @@ __all__ = [
     "BackfillResult",
     "backfill_mandatory_plugins",
     "install_mandatory_plugins",
+    "assign_install_settings",
     "mandatory_grant",
 ]
 
@@ -144,7 +151,11 @@ async def install_mandatory_plugins(
     an install is *recorded against* can differ — that is ``installer_id``,
     which falls back to the guild's longest-standing admin.
     """
-    registrations = await registration_lookup.mandatory_registrations()
+    registrations = [
+        registration
+        for registration in await registration_lookup.mandatory_registrations()
+        if registration.serves(guild_id)
+    ]
     if not registrations:
         return []
 
@@ -170,29 +181,14 @@ async def install_mandatory_plugins(
             )
             continue
 
-        existing = (
+        if (
             await session.exec(
-                select(GuildPlugin).where(
+                select(GuildPlugin.id).where(
                     GuildPlugin.listing_uid == registration.listing_uid
                 )
             )
-        ).first()
-        if existing is not None:
-            # An install the registration marked mandatory after it landed
-            # follows new initiatives from here on. The initiatives that exist
-            # already keep whatever placement the seat gave them.
-            if not existing.follows_new_initiatives:
-                existing.follows_new_initiatives = True
-                session.add(existing)
-            # One that holds no grant yet gets what a new install would. A
-            # grant the seat already set is theirs and is left as it is.
-            if not existing.granted_scopes:
-                granted = mandatory_grant(
-                    existing.definition or {}, registration, present
-                )
-                if granted:
-                    existing.granted_scopes = granted
-                    session.add(existing)
+        ).first() is not None:
+            # Already here: from then on it is the seat's, as any install is.
             continue
 
         try:
@@ -216,29 +212,33 @@ async def install_mandatory_plugins(
             )
             continue
 
-        plugin = await guild_plugins_service.install_plugin(
-            session,
-            listing_uid=listing.uid,
-            listing_version=version.version,
-            definition=definition,
-            guild_id=guild_id,
-            created_by=installer_id,
-            name=(definition.get("default_name") or listing.name).strip(),
-            actor_user_id=created_by,
-            via="mandatory",
-            granted_scopes=mandatory_grant(definition, registration, present),
-            # The registration stands in for the seat here too.
-            allowed_callers=None,
-        )
+        try:
+            plugin = await guild_plugins_service.install_plugin(
+                session,
+                listing_uid=listing.uid,
+                listing_version=version.version,
+                definition=definition,
+                guild_id=guild_id,
+                created_by=installer_id,
+                name=(definition.get("default_name") or listing.name).strip(),
+                actor_user_id=created_by,
+                via="mandatory",
+                granted_scopes=mandatory_grant(definition, registration, present),
+                # The registration stands in for the seat here too.
+                allowed_callers=None,
+            )
+        except guild_plugins_service.ErasePendingError:
+            # The community asked it to erase its data and that is not
+            # finished. Left for a later pass, which finds it still missing.
+            logger.info(
+                "mandatory plug-ins: %s waits for its erase in guild %s",
+                registration.public_id,
+                guild_id,
+            )
+            continue
         present.add(registration.public_id)
-        # Placed in every initiative there is, and in each one created later.
-        plugin.follows_new_initiatives = True
-        session.add(plugin)
         await session.flush()
         await guild_plugins_service.place_in_every_initiative(session, plugin)
-        # Indexed now, before the caller commits: a guild whose seed fails is
-        # removed, and its index rows with it.
-        await plugin_installs.record(guild_id, plugin)
         await plugin_schedules.reconcile(
             guild_id, plugin.id, definition, session=session
         )
@@ -247,17 +247,70 @@ async def install_mandatory_plugins(
     return installed
 
 
+async def assign_install_settings(
+    session: AsyncSession, guild_id: int, listing_uids: Collection[str]
+) -> None:
+    """Give the assigned settings of the community's installs of
+    ``listing_uids`` their values, once the transaction that made the installs
+    has committed."""
+    if not listing_uids:
+        return
+    for plugin in (
+        await session.exec(
+            select(GuildPlugin).where(col(GuildPlugin.listing_uid).in_(listing_uids))
+        )
+    ).all():
+        await guild_plugins_service.assign_settings(session, plugin, guild_id=guild_id)
+
+
+async def _missing(
+    registrations: list[registration_lookup.RegistrationSnapshot],
+) -> set[int]:
+    """The communities missing a mandatory install, read from the install
+    index."""
+    found = {
+        registration.operations_guild_id
+        for registration in registrations
+        if registration.operations_only and registration.operations_guild_id is not None
+    }
+    everywhere = sorted(
+        {
+            registration.listing_uid
+            for registration in registrations
+            if registration.listing_uid and not registration.operations_only
+        }
+    )
+    if not everywhere:
+        return found
+    async with cohorts.system_session(None) as session:
+        await set_rls_context(session, Unattributed())
+        found.update(
+            (
+                await session.exec(
+                    text(
+                        "SELECT g.id FROM guilds g WHERE ("
+                        " SELECT count(DISTINCT i.listing_uid) FROM plugin_installs i"
+                        " WHERE i.guild_id = g.id"
+                        " AND i.listing_uid = ANY(:uids)) < :wanted"
+                    ).bindparams(uids=everywhere, wanted=len(everywhere))  # type: ignore[call-overload]
+                )
+            ).scalars()
+        )
+    return found
+
+
 async def backfill_mandatory_plugins() -> BackfillResult:
     """Place mandatory plug-ins into guilds that predate the flag.
 
-    Runs at boot, visiting every guild whose schema exists on a system session
-    from its cohort. A guild that fails is rolled back and logged; the others
+    Runs at boot, visiting each guild :func:`_missing` names on a system
+    session from its cohort. A guild that fails is rolled back and logged; the others
     still get their plug-in, and the next boot tries again.
 
     Returns immediately when nothing is marked mandatory, which is every
     deployment that has not asked for this.
     """
-    if not await registration_lookup.mandatory_registrations():
+    registrations = await registration_lookup.mandatory_registrations()
+    if not registrations:
         return BackfillResult()
 
     visited = succeeded = installed = 0
@@ -267,10 +320,26 @@ async def backfill_mandatory_plugins() -> BackfillResult:
         visited += 1
         added = await install_mandatory_plugins(session, guild_id=guild_id)
         await session.commit()
+        # The next pass reads the index, so it is written now rather than
+        # when the sweep comes.
+        await plugin_installs.reindex_community(session, guild_id)
+        await assign_install_settings(
+            session,
+            guild_id,
+            [
+                registration.listing_uid
+                for registration in registrations
+                if registration.listing_uid and registration.serves(guild_id)
+            ],
+        )
         succeeded += 1
         installed += len(added)
 
-    await each_guild([(Scope.PROVISIONED, backfill)], name="mandatory-plugins")
+    await each_guild(
+        [(Scope.PROVISIONED, backfill)],
+        name="mandatory-plugins",
+        only=await _missing(registrations),
+    )
     return BackfillResult(
         guilds=visited, installed=installed, failed=visited - succeeded
     )

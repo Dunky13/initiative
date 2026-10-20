@@ -17,6 +17,7 @@ from app.services.tenant.dashboard_definition import (
     TABULAR_SOURCES,
     WIDGET_PRESETS,
     WIDGET_SPECS,
+    OptionKind,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -182,6 +183,9 @@ class WidgetOption(SanitizedBaseModel):
     #: Served rather than guessed at, so the editor's pre-selected entry is the
     #: one that will actually be drawn.
     default: str
+    #: ``choice`` picks one of ``values``; ``number`` and ``date`` take a value
+    #: of their own (a target, its day) and are empty until one is given.
+    kind: OptionKind = "choice"
 
 
 class WidgetSlot(SanitizedBaseModel):
@@ -254,7 +258,10 @@ def build_widget_catalog() -> WidgetCatalog:
                 ],
                 options=[
                     WidgetOption(
-                        key=key, values=list(option.values), default=option.default
+                        key=key,
+                        values=list(option.values),
+                        default=option.default,
+                        kind=option.kind,
                     )
                     for key, option in spec.options.items()
                 ],

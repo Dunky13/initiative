@@ -40,7 +40,7 @@ import { clearAllWhiteboardSceneCaches } from "@/components/files/whiteboardScen
 import { forgetMessagesOnThisDevice, serveAccount } from "@/crypto/messaging";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { clearJustSignedIn, markJustSignedIn } from "@/lib/authTransition";
-import { getErrorMessage } from "@/lib/errorMessage";
+import { getErrorCode, getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import {
   clearRefreshToken,
@@ -76,6 +76,13 @@ interface LoginPayload {
   deviceName?: string;
 }
 
+/** Ask for the view-preference map for `account` ahead of the first screen.
+ *  A suspended account reaches only its time-out screen, which has no lists,
+ *  and is refused everything else. */
+const prefetchFor = (account: UserRead): void => {
+  if (account.status !== "suspended") prefetchViewPreferences();
+};
+
 /** Answering a challenge: one of the two codes, never both. */
 interface SecondFactorPayload {
   challenge: string;
@@ -109,7 +116,9 @@ interface AuthContextValue {
   login: (payload: LoginPayload) => Promise<void>;
   completeSecondFactor: (payload: SecondFactorPayload) => Promise<void>;
   applyPasskeySignIn: (result: PasskeySignInResult) => Promise<void>;
-  applyEmailOtpSignIn: (token: Token) => Promise<void>;
+  /** Adopt a session a sign-in route answered with directly: a code sent to
+   *  an address, or a demo link. */
+  applySignIn: (token: Token) => Promise<void>;
   stepUpWithFactor: (payload: StepUpPayload) => Promise<void>;
   stepUpWithPasskey: () => Promise<void>;
   stepUpWithEmailCode: (payload: EmailCodeStepUpPayload) => Promise<void>;
@@ -164,6 +173,14 @@ const beginSession = () => {
   startSessionActivity();
 };
 
+/** Drop every answer held for the account that was here: the requests still in
+ *  the air, the query cache, and the copy of it kept on the device. */
+const forgetAccountData = () => {
+  void queryClient.cancelQueries();
+  queryClient.clear();
+  void purgeOfflineCache();
+};
+
 /** Delete the long-lived device token an older version of the app kept, unread. */
 const forgetLegacyDeviceToken = () => {
   removeItem(CREDENTIAL_KEYS.token);
@@ -199,6 +216,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // * `identityEpochRef` — signing in or out replaces *who* the account is,
   //   which no read of the previous person may undo. Bumped there and nowhere
   //   else, so an ordinary read cannot invalidate another read.
+  // Whether the account held now is suspended, for the refusal handler below,
+  // which outlives any one render.
+  const suspendedRef = useRef(false);
+  useEffect(() => {
+    suspendedRef.current = user?.status === "suspended";
+  }, [user]);
   const readSeqRef = useRef(0);
   const appliedReadRef = useRef(0);
   const identityEpochRef = useRef(0);
@@ -207,17 +230,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    *  and the session is no longer running on a snapshot. */
   const rememberIdentity = useCallback((nextUser: UserRead | null) => {
     setSessionUnverified(false);
+    // What the cache holds belongs to whoever was last confirmed here (or, at
+    // boot, to whoever the restored copy was saved for). A sign-in over a live
+    // session, or a sign-out that did not complete, names somebody else, and
+    // none of it carries over.
+    if (nextUser && restoredIdentityMismatch(nextUser.id)) forgetAccountData();
     if (!isOfflineCacheEnabled()) return;
     if (!nextUser) {
       setOfflineWritesAllowed(false);
       clearOfflineSession();
       return;
-    }
-    // The cache restored at boot belonged to whoever was last signed in here.
-    // If the server names somebody else, it does not carry over.
-    if (restoredIdentityMismatch(nextUser.id)) {
-      queryClient.clear();
-      void purgeOfflineCache();
     }
     saveOfflineSession(nextUser, currentServerKey());
     setOfflineWritesAllowed(true);
@@ -232,7 +254,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // The first screen's list query waits on the saved filters and sort, so
       // ask for them from here rather than from the screen: knowing who is
       // signed in is the only prerequisite, and this is where that happens.
-      if (nextUser) prefetchViewPreferences();
+      if (nextUser) prefetchFor(nextUser);
     },
     [rememberIdentity]
   );
@@ -256,7 +278,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       serveAccount(currentServerKey(), nextUser.id);
       // The view-preference map is still fresh from any earlier call, so a
       // re-read costs nothing.
-      prefetchViewPreferences();
+      prefetchFor(nextUser);
     },
     [rememberIdentity]
   );
@@ -311,7 +333,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     void restore().catch((err) => {
-      console.error("Failed to load token", err);
+      console.error("Failed to load token", getErrorCode(err));
     });
     return () => {
       cancelled = true;
@@ -484,8 +506,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [adoptSession, t]
   );
 
-  /** Adopt the session a code sent to an address produced. */
-  const applyEmailOtpSignIn = useCallback(
+  /** Adopt the session a code sent to an address, or a demo link, produced. */
+  const applySignIn = useCallback(
     async (token: Token) => {
       await adoptSession(token, { begin: true });
     },
@@ -561,11 +583,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     forgetLegacyDeviceToken();
     clearRefreshToken();
     forgetSessionActivity();
-    queryClient.clear();
+    forgetAccountData();
     // replaceIdentity already dropped the session snapshot; the cache that went
     // with it goes at the same time.
     clearOfflineSession();
-    void purgeOfflineCache();
   }, [replaceIdentity]);
 
   /** The session this device was holding is over, and nothing here asked for
@@ -603,14 +624,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // same handler.
     setHasActiveSession(false);
     clearJustSignedIn();
-    try {
-      // Before the session goes: a decrypted conversation must not outlive it,
-      // and withdrawing this browser's device stops anything more being sent to
-      // a key store that is about to be erased. It needs the token, so it goes
-      // ahead of the sign-out itself.
-      await forgetMessagesOnThisDevice();
-    } catch {
-      // Never a reason to stay signed in.
+    // A browser may be a shared computer, so its messages go before the session
+    // does: a decrypted conversation must not outlive it, and withdrawing its
+    // device needs the token. The phone and desktop apps keep theirs, as through
+    // a lapse, so signing back in reads them straight away.
+    if (!Capacitor.isNativePlatform()) {
+      try {
+        await forgetMessagesOnThisDevice();
+      } catch {
+        // Never a reason to stay signed in.
+      }
     }
     try {
       // The same for this device's notifications: withdrawn while the
@@ -657,6 +680,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return undefined;
     }
     const handleSuspended = () => {
+      // Already showing the time-out screen: the account read already says
+      // so, and reading it again would only be refused again.
+      if (suspendedRef.current) return;
       void refreshUser();
     };
     window.addEventListener(AUTH_ACCOUNT_SUSPENDED_EVENT, handleSuspended);
@@ -671,7 +697,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     login,
     completeSecondFactor,
     applyPasskeySignIn,
-    applyEmailOtpSignIn,
+    applySignIn,
     stepUpWithFactor,
     stepUpWithPasskey,
     stepUpWithEmailCode,

@@ -4,7 +4,7 @@ icon: lucide/sliders-horizontal
 
 # Configuration
 
-Initiative is configured with **environment variables**, set in your `docker-compose.yml`, a `.env` file, or your container environment. This page covers what you're most likely to touch; the complete list is `backend/.env.example` in the source.
+Initiative is configured with **environment variables**, set in your `docker-compose.yml`, a `.env` file, or your container environment. This page covers what you're most likely to touch, and `backend/.env.example` in the source lists the rest.
 
 !!! tip "Some things are configured in the app, not here"
     Email, single sign-on, branding colors and AI are all set up from **Settings → Platform** in the running app, by the [owner](platform-roles.md) — friendlier than environment variables, and covered on their own pages. Environment variables are for the foundational settings below.
@@ -56,6 +56,18 @@ Someone who answers "not old enough yet" keeps that answer, so the question isn'
 Direct messages are off by default: every account is created on the **Private** policy, meaning nobody can even ask to message them until the person opens it up. The starting policy sits under the same **Settings → Platform → Community** tab.
 
 It's read **once**, when an account is made. Changing it opens no existing account and closes none either — people who already have a setting keep it. See [Who can reach you](../guides/messages.md#who-can-reach-you).
+
+### Guests
+
+[Guests](../sharing/guests.md) are off until you switch on **Allow guests**, under the same **Settings → Platform → Community** tab. Beside it, **Longest a guest may stay (days)** caps every stay on the server, 90 days to start with. A community can set a shorter cap for itself, never a longer one.
+
+Switching guests off shuts every guest out at once and removes nobody: switch it back on and they're in again until their time ends.
+
+### Ranking search by engagement
+
+Search puts what more members have recently opened or worked on a little higher, from a rough level per item that the server works out once an hour. It's on unless you switch off **Let communities rank results by engagement**, under the same **Settings → Platform → Community** tab. Off, no community ranks by engagement whatever it chose, and every level is deleted within the hour.
+
+A community holding its own security standard can turn it off for itself as well. If your privacy policy needs to describe it, [Data & compliance](../security/data-and-compliance.md#what-initiative-keeps-about-use) has what is kept and for how long.
 
 ### How long people stay signed in
 
@@ -124,6 +136,8 @@ Deleting an account or a community hides it immediately and erases it later. How
 
 Leave any of them blank and **nothing happens on a timer** — the right answer for a deployment required to keep records rather than shed them. Each is counted from the moment each thing was deleted or put on hold, so changing the number moves the date for things already in the queue.
 
+When a community's window ends, its plug-ins are asked to erase what they hold about it first, and it's destroyed once each has answered. A plug-in that doesn't answer is asked again for a few days and then given up on, so a purge can take up to about four days past the window. From the moment they're asked, the community can't be restored or have its status changed.
+
 A restored community reconnects its installed plug-ins itself. It authorised those connections in the first place, so it authorises them again.
 
 ## Running behind a reverse proxy
@@ -133,10 +147,14 @@ For any real deployment you'll put Initiative behind a reverse proxy that handle
 | Variable | What it does | Default |
 |---|---|---|
 | `BEHIND_PROXY` | Trust `X-Forwarded-*` headers from your proxy (so client IPs and HTTPS are detected correctly). | `false` |
-| `FORWARDED_ALLOW_IPS` | Which proxy IPs to trust when `BEHIND_PROXY=true`. | `*` |
+| `FORWARDED_ALLOW_IPS` | Which proxy addresses or ranges to trust when `BEHIND_PROXY=true`, comma-separated. Only needed for a proxy that reaches the app over a public address. Setting it replaces the default, so list every proxy you trust. | This machine, its container networks and your LAN |
 
 !!! warning "Only enable proxy trust behind an actual proxy"
     `BEHIND_PROXY` tells Initiative to believe the `X-Forwarded-*` headers it receives. Only turn it on when a trusted proxy is the one setting them.
+
+    With it on, each visitor is recognised with nothing else to set when your proxy is on the same machine, in your compose file or on your LAN, behind a Cloudflare Tunnel, or behind Cloudflare's proxied DNS (the orange cloud) in front of your own Caddy or nginx.
+
+    The one setup that needs more is a proxy on another machine that reaches Initiative over a public address. List it in `FORWARDED_ALLOW_IPS`; the log names the address to add when it sees one.
 
 ## The app association files
 
@@ -215,7 +233,6 @@ Nothing to set. Your server follows the Initiative registry from the moment it s
     | `MARKETPLACE_REGISTRY_TTL_SECONDS` | How often the server checks for updates. At least 60. | `900` |
     | `MARKETPLACE_REGISTRY_ROOT` | A path to a different signing key. The server then trusts a registry somebody else signs, in place of the Initiative registry. | The key built into Initiative |
     | `PLUGIN_SERVICES_CONFIG` | A JSON file of plug-in services to set up at every start, in place of the form. See [Setting it up from a file](plugins.md#setting-it-up-from-a-file). | — |
-    | `PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM` / `PLUGIN_PLATFORM_SIGNING_KEY_ID` | Your own key for signing what Initiative sends plug-ins. Unset, Initiative makes and keeps one itself. | — |
     | `EXPRESSION_WORKERS` | How many small helper processes each server process may run for plug-ins Initiative runs itself. They start on first use, and an idle one leaves after five minutes. 1 to 16. | `2` |
 
 ## Your own marketplace listings
@@ -241,13 +258,18 @@ These have their own pages:
 
 Two streams come out of the container, and they are for different readers.
 
-**Standard error** is the application talking: what it checked at start-up, what it repaired, anything it thinks you should know. `LOG_LEVEL` says how much. It's `INFO` unless you set it; `WARNING` if you would rather only hear about trouble; `DEBUG` when you are chasing something and want all of it.
+**Standard error** is the application talking: what it checked at start-up, what it repaired, every request it answered, anything it thinks you should know. It is one JSON object per line, the web server's own lines included, so a log platform reads fields rather than squinting at text. `LOG_LEVEL` says how much. It's `INFO` unless you set it; `WARNING` if you would rather only hear about trouble; `DEBUG` when you are chasing something and want all of it. To turn up a single logger and leave the rest alone, start uvicorn with a `--log-config` file that sets that logger's level.
+
+**The request line names the route, not the address.** A request for task 3 in community 7 is logged as `GET /api/v1/c/{community_id}/tasks/{task_id} 200`, with the community in a field of its own, and the query string is left off. Whatever somebody typed into a search box or pasted into a link stays out of the log. A request that crashes gets one line with its traceback, under the same request id as everything else it wrote.
 
 **Standard output** is the audit stream: one JSON object per line, one line per recorded action — who did what, to which account or community, when — and nothing else on that stream. Every line carries `"stream": "audit"`, so a collector can route these and nothing else, and `"service": "initiative"`, so where the billing and automation services ship the same kind of line about the same community, a reader can tell whose it is. Whatever already ships your container's logs carries it, and a log platform reads it as records rather than text.
 
 That is where the record is kept, searched and alerted on. A filter on `event_type` is an alert; `guild_id` is on every line about a community. `LOG_LEVEL` has no say over any of it.
 
-**Every line says which request it came from.** A `context` block carries the id that request is known by, the network address it arrived from, and what the browser or app called itself. The same id goes back to the caller as an `X-Request-Id` header, and behind a reverse proxy an id the proxy has already assigned is kept rather than replaced — so one request has one name in your proxy's log, your application log and the audit stream alike. People appear as account ids; no line holds a password, a key, an email address or anybody's name.
+**Every line says which request it came from.** An application line carries `request_id`, the account (`user_id`), the community (`guild_id`) and the `route`. An audit line carries the same id in its `context` block, and a line about somebody signing in, or reaching a community through a grant, adds the network address and what the browser or app called itself. Background work is named the same way, with an id that starts `job-`, so one pass of a sweep reads as one story. The id goes back to the caller as an `X-Request-Id` header, and behind a reverse proxy an id the proxy has already assigned is kept rather than replaced — so one request has one name in your proxy's log, your application log and the audit stream alike. People appear as account ids, not names.
+
+??? techspec "Errors on a line"
+    An `exc` field holds the exception's type, its message and the whole traceback. Database, mail and validation errors are written as their codes (`sqlstate=23505 constraint=…`), never the values they were handed, and database statements are logged without their parameters. Outgoing requests to webhooks and plug-ins get one line each, naming the target's origin, the answer and how long it took: `INFO` when it failed, `DEBUG` when it worked.
 
 **Somebody visiting a community they don't belong to is recorded request by request.** Support access and emergency break-glass both work by a grant, and while one is live every single request made under it is a line of its own — the route, the method, the answer, and which grant allowed it. Knowing an operator held the keys for an hour is not the same as knowing what they opened, and this is the difference. Editing is over a live connection rather than a request, so that gets a line of its own the first time they change a document or a wiki page, naming which one.
 

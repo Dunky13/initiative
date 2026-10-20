@@ -111,7 +111,6 @@ async def agree(
             "provider_id": connection.provider_id,
             "narrowing_agreed": agreed,
             "claim": connection.claim,
-            "claim_values": list(connection.claim_values or ()),
         },
     )
     await session.commit()

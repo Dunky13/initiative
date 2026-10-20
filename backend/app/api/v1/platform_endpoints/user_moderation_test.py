@@ -97,7 +97,7 @@ class TestRenaming:
     ):
         moderator = await create_user(session, role=UserRole.moderator)
         subject = await create_user(session, username="before", discriminator=7)
-        subject_id = subject.id
+        subject_id, moderator_id = subject.id, moderator.id
         capfd.readouterr()
 
         await client.patch(
@@ -111,10 +111,8 @@ class TestRenaming:
             session, subject_id
         )
         assert entry["event_type"] == "user.username_changed"
-        # The handle they lost is what they will look for; the one they have is
-        # already on screen.
-        assert entry["detail"]["from"] == "before#0007"
-        assert entry["detail"]["to"] == "after#0007"
+        assert entry["actor_user_id"] == moderator_id
+        assert entry["detail"] == {}
 
     @pytest.mark.parametrize("role", [UserRole.member, UserRole.support])
     async def test_below_moderator_is_refused(
@@ -268,8 +266,11 @@ class TestSuspension:
         await self._suspend(client, moderator, member, reason="Terms of use")
         await self._suspend(client, moderator, member, suspended=False)
 
-        kinds = [e["event_type"] for e in _audit_entries(capfd, member_id)]
-        assert set(kinds) == {"user.suspended", "user.unsuspended"}
+        entries = _audit_entries(capfd, member_id)
+        assert {e["event_type"]: e["detail"] for e in entries} == {
+            "user.suspended": {"reason_given": True},
+            "user.unsuspended": {"reason_given": False},
+        }
 
     async def test_a_moderator_cannot_suspend_themselves(
         self, client, session, moderator_and_member
@@ -448,6 +449,11 @@ class TestNothingElse:
             # Moderator (content.moderate / users.manage).
             ("/api/v1/operator/users/{user_id}/avatar", "DELETE"),
             ("/api/v1/operator/users/{user_id}/username", "PATCH"),
+            # Names in communities, status line, decorations: each cleared,
+            # never set, like the picture.
+            ("/api/v1/operator/users/{user_id}/profile/{field}", "DELETE"),
+            # Ends every session; its holder signs in again.
+            ("/api/v1/operator/users/{user_id}/sessions", "DELETE"),
             ("/api/v1/operator/users/{user_id}/suspension", "POST"),
             # Turns password and code sign-in back on after wrong answers.
             ("/api/v1/operator/users/{user_id}/sign-in-lock", "DELETE"),
@@ -474,6 +480,8 @@ class TestNothingElse:
         [
             ("DELETE", "/avatar", None),
             ("PATCH", "/username", {"username": "renamed"}),
+            ("DELETE", "/profile/custom_status", None),
+            ("DELETE", "/sessions", None),
             ("DELETE", "/sign-in-lock", None),
             ("DELETE", "/api-keys", None),
             ("POST", "/reactivate", None),
@@ -574,10 +582,10 @@ class TestTheAggregateRoutes:
         assert response.status_code == 403
         assert response.json()["detail"] == "ACCOUNT_SUSPENDED"
 
-    async def test_recents_is_refused_once_suspended(
+    async def test_tabs_are_refused_once_suspended(
         self, client, session, suspended_with_work
     ):
-        """``/recents`` builds its own guild list rather than going through
+        """``/me/personal-items`` builds its own guild list rather than going through
         ``member_guild_ids``; the account gate stops it before either."""
         moderator, a = suspended_with_work
 
@@ -587,7 +595,9 @@ class TestTheAggregateRoutes:
             json={"suspended": True},
         )
 
-        response = await client.get("/api/v1/recents/", headers=a.headers)
+        response = await client.get(
+            "/api/v1/me/personal-items?mark=view", headers=a.headers
+        )
         assert response.status_code == 403
         assert response.json()["detail"] == "ACCOUNT_SUSPENDED"
 
@@ -758,3 +768,29 @@ class TestPlatformRole:
 
         assert response.status_code == 403
         assert _audit_entries(capfd, subject_id) == []
+
+
+async def test_clearing_part_of_a_profile_tells_its_holder_what_went(
+    client: AsyncClient, session: AsyncSession
+):
+    moderator = await create_user(session, role=UserRole.moderator)
+    subject = await create_user(session)
+    subject_id = subject.id
+
+    response = await client.delete(
+        f"/api/v1/operator/users/{subject_id}/profile/custom_status",
+        headers=get_auth_headers(moderator),
+    )
+    assert response.status_code == 200, response.text
+
+    await drain_notices()
+    (line,) = (
+        await session.exec(
+            select(Notification)
+            .where(Notification.user_id == subject_id)
+            .where(Notification.type == NotificationType.profile_field_cleared.value)
+        )
+    ).all()
+    # What went, never who took it.
+    assert line.data["field"] == "custom_status"
+    assert str(moderator.id) not in str(line.data)

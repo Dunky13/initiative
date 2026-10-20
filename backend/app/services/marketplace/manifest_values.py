@@ -21,6 +21,7 @@ host is trustworthy.
 from __future__ import annotations
 
 import json
+import string
 from typing import Any, NoReturn
 
 from app.models.platform.marketplace import UID_ALPHABET, UID_LENGTH
@@ -35,12 +36,17 @@ __all__ = [
     "MAX_HINT_LENGTH",
     "MAX_IDENTIFIER_LENGTH",
     "MAX_LABEL_LENGTH",
+    "MAX_METADATA_KEY_LENGTH",
     "MAX_NAME_LENGTH",
     "MAX_PATH_LENGTH",
     "MAX_PUBLIC_ID_LENGTH",
+    "MAX_UNIQUE_SETTING_VALUE_LENGTH",
     "MAX_URL_LENGTH",
+    "MIN_UNIQUE_SETTING_VALUE_LENGTH",
+    "UNIQUE_SETTING_VALUE_CHARS",
     "check_identifier",
     "check_json_size",
+    "check_metadata_key",
     "check_path",
     "check_public_id",
     "check_single_line",
@@ -48,6 +54,9 @@ __all__ = [
     "check_url",
     "clean_text",
     "fail",
+    "is_identifier",
+    "is_metadata_key",
+    "is_unique_setting_value",
     "require_list",
     "require_mapping",
     "utf8_bytes",
@@ -84,9 +93,23 @@ MAX_URL_LENGTH = contract.cap("urlLength")
 #: An `access_hint` string — the API and permission names a connection asks for.
 MAX_HINT_LENGTH = contract.cap("hintLength")
 
-#: What an id inside a manifest may use: connection, widget, data source, embed.
+#: What an id inside a manifest may use: connection, widget, data source, page.
 #: Lowercase only, so two ids cannot differ by case alone.
 IDENTIFIER_CHARS = contract.charset("identifier")
+
+#: A key a plug-in keeps a value under, on an item or on its install: a
+#: lowercase letter, then any of the metadata key characters. The same rule
+#: holds a manifest's field and a value the install writes.
+METADATA_KEY_CHARS = contract.charset("metadataKey")
+MAX_METADATA_KEY_LENGTH = contract.cap("metadataKeyLength")
+
+#: A unique setting's value: a lowercase letter, then lowercase letters and
+#: digits, two to ``uniqueSettingValueLength`` characters. It holds no ``-``, so
+#: a reference such as ``<value>-<number>`` reads one way. The lower bound is
+#: the contract's, which it states literally.
+UNIQUE_SETTING_VALUE_CHARS = contract.charset("uniqueSettingValue")
+MIN_UNIQUE_SETTING_VALUE_LENGTH = 2
+MAX_UNIQUE_SETTING_VALUE_LENGTH = contract.cap("uniqueSettingValueLength")
 
 #: What a `<publisher>.<slug>` id may use. Matches the catalog's own rule.
 PUBLIC_ID_CHARS = contract.charset("publicId")
@@ -175,6 +198,47 @@ def check_identifier(value: Any, *, what: str) -> str:
     for character in value:
         if character not in IDENTIFIER_CHARS:
             fail(f"{what} contains {character!r}, which is not allowed")
+    return value
+
+
+def is_identifier(value: Any) -> bool:
+    """Whether ``value`` is an id a manifest names something by."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_IDENTIFIER_LENGTH
+        and all(character in IDENTIFIER_CHARS for character in value)
+    )
+
+
+def is_metadata_key(value: Any) -> bool:
+    """Whether ``value`` is a key a plug-in may keep a value under."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_METADATA_KEY_LENGTH
+        and value[0] in string.ascii_lowercase
+        and all(character in METADATA_KEY_CHARS for character in value)
+    )
+
+
+def is_unique_setting_value(value: Any) -> bool:
+    """Whether ``value`` is a value a unique setting may hold."""
+    return (
+        isinstance(value, str)
+        and MIN_UNIQUE_SETTING_VALUE_LENGTH
+        <= len(value)
+        <= MAX_UNIQUE_SETTING_VALUE_LENGTH
+        and value[0] in string.ascii_lowercase
+        and all(character in UNIQUE_SETTING_VALUE_CHARS for character in value)
+    )
+
+
+def check_metadata_key(value: Any, *, what: str) -> str:
+    """A metadata key, named by a manifest."""
+    if not is_metadata_key(value):
+        fail(
+            f"{what} must be a lowercase letter, then lowercase letters, digits, "
+            f"'_' and '.', at most {MAX_METADATA_KEY_LENGTH} characters"
+        )
     return value
 
 

@@ -27,7 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { toast } from "@/lib/mascotToast";
-import { toolCommunityBrowseTarget, toolListRoute } from "@/lib/tools";
+import { toolListRoute } from "@/lib/tools";
 
 export const ToolSettingsAdvancedPage = () => {
   const { t } = useTranslation("common");
@@ -50,15 +50,9 @@ export const ToolSettingsAdvancedPage = () => {
       onSuccess: () => {
         toast.success(t("toolSettings.deleted", { name: entity.name }));
         setDeleteDialogOpen(false);
-        // Back to the tool's tab in the initiative this entity belonged to.
-        // A community-level entity (a plug-in's calendar) has no tab, so it falls back
-        // to the community home browsing that tool.
-        if (entity.initiative_id == null) {
-          const browse = toolCommunityBrowseTarget(tool);
-          router.navigate({ to: gp(browse.to), search: browse.search });
-        } else {
-          router.navigate({ to: gp(toolListRoute(tool, entity.initiative_id)) });
-        }
+        // Back to the tool's tab in the initiative this entity belonged to, or
+        // to the community's own list for a community-level one (a plug-in's calendar).
+        router.navigate({ to: gp(toolListRoute(tool, entity.initiative_id ?? null)) });
       },
     });
   };

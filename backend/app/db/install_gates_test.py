@@ -517,6 +517,32 @@ async def test_an_install_sees_only_its_own_subscriptions(
     await s.rollback()
 
 
+async def test_an_install_reaches_the_timer_marks_only_through_its_writes(
+    session, acting_user, role_session
+):
+    install = await _install(session, acting_user, role_session, granted=["tags:write"])
+    await route_session_to_guild(session, install.guild.id)
+    await session.exec(text("DELETE FROM timer_marks"))
+    await session.commit()
+
+    s, _ = await _route(role_session, install, ["tags:write"])
+    with pytest.raises(DBAPIError, match="row-level security"):
+        await s.exec(
+            text("INSERT INTO timer_marks (kind, due_at) VALUES ('reconcile', now())")
+        )
+    await s.rollback()
+
+    s, _ = await _route(role_session, install, ["tags:write"])
+    s.add(Tag(name="arms-a-timer"))
+    await s.flush()
+    assert (await s.exec(text("SELECT kind FROM timer_marks"))).all() == []
+    await s.commit()
+
+    await route_session_to_guild(session, install.guild.id)
+    marks = (await session.exec(text("SELECT kind FROM timer_marks"))).all()
+    assert marks != []
+
+
 async def test_every_tool_table_writes_an_installs_owner_row(session, acting_user):
     """The trigger list is stated in its migration; the catalog is what a new
     tool has to match."""

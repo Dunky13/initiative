@@ -58,6 +58,7 @@ nav = [
     "en/guides/initiatives.md",
     { "Tools" = [
       "en/guides/tools.md",
+      "en/guides/layouts.md",
       "en/guides/projects-and-tasks.md",
       "en/guides/files.md",
       "en/guides/calendar.md",
@@ -80,6 +81,7 @@ nav = [
     "en/sharing/index.md",
     "en/sharing/initiative-roles.md",
     "en/sharing/sharing-projects-and-files.md",
+    "en/sharing/guests.md",
   ] },
   { "Security & privacy" = [
     "en/security/index.md",
@@ -100,6 +102,7 @@ nav = [
   { "Running a server" = [
     "en/running-a-server/index.md",
     "en/running-a-server/installation.md",
+    "en/running-a-server/native-packages.md",
     "en/running-a-server/configuration.md",
     "en/running-a-server/single-sign-on.md",
     "en/running-a-server/email.md",

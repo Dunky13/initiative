@@ -92,12 +92,12 @@ from app.models.platform.auth_provider_secret import AuthProviderSecret
 from app.models.platform.auth_session import AuthSession
 from app.models.platform.user import (
     LOGIN_STATUSES,
-    SIGN_IN_STATUSES,
     User,
     UserRole,
     UserStatus,
+    may_sign_in,
 )
-from app.models.platform.guild import Guild, GuildInvite, CommunityRole
+from app.models.platform.guild import Guild, CommunityRole
 from app.schemas.platform.token import Token
 from app.schemas.platform.second_factor import SecondFactorChallengeAnswer
 from app.schemas.platform.auth import (
@@ -604,8 +604,8 @@ async def _register_account(
             logger.warning(
                 "SMTP not configured; skipping verification email for user %s", user.id
             )
-        except RuntimeError as exc:  # pragma: no cover
-            logger.error("Failed to send verification email: %s", exc)
+        except RuntimeError:  # pragma: no cover
+            logger.error("Failed to send verification email for user %s", user.id)
     return RegisteredAccount(user=user, codes=codes)
 
 
@@ -729,6 +729,7 @@ async def bootstrap_status(session: SessionDep) -> dict[str, bool]:
     return {
         "has_users": await any_account_exists(session),
         "public_registration_enabled": settings.registration_open,
+        "demo": settings.DEMO_MODE,
     }
 
 
@@ -809,7 +810,7 @@ async def answer_second_factor(
     # Before the factor is read, not after: a code presented to an account that
     # cannot sign in anyway should not be spent on finding that out.
     user = await system_session.get(User, user_id)
-    if user is None or user.status not in SIGN_IN_STATUSES:
+    if user is None or not may_sign_in(user):
         await system_session.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=AuthMessages.INACTIVE_USER
@@ -1142,7 +1143,7 @@ async def redeem_native_sign_in(
     user = (
         await system_session.get(User, handoff.user_id) if handoff is not None else None
     )
-    if handoff is None or user is None or user.status not in SIGN_IN_STATUSES:
+    if handoff is None or user is None or not may_sign_in(user):
         await system_session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1155,11 +1156,7 @@ async def redeem_native_sign_in(
         user_id=user.id,
         token_version=user.token_version,
         amr=handoff.amr,
-        audit_detail={
-            "method": handoff.method,
-            "native": True,
-            "device_name": handoff.device_name,
-        },
+        audit_detail={"method": handoff.method, "native": True},
         satisfied_providers=handoff.satisfied_providers,
         provider_auth=handoff.provider_auth,
         device_name=handoff.device_name,
@@ -1558,8 +1555,9 @@ async def _complete_provider_login(
     #
     # An account waiting out its erasure window is the deliberate exception
     # (SIGN_IN_STATUSES): the holder coming back is exactly what calls the
-    # deletion off, and which way they came back is not the question.
-    if user.status not in SIGN_IN_STATUSES:
+    # deletion off, and which way they came back is not the question. Unless
+    # its own age answer closed it, which no sign-in calls off (may_sign_in).
+    if not may_sign_in(user):
         return _error_redirect(is_mobile, OidcMessages.ACCOUNT_INACTIVE)
 
     if resolution.outcome is ResolutionOutcome.EMAIL_UNVERIFIED:
@@ -1648,6 +1646,12 @@ async def _complete_provider_login(
     system_session.add(user)
     await system_session.commit()
     await system_session.refresh(user)
+    if matched:
+        # A new way into the account: its holder is told, with the way to say
+        # it wasn't them.
+        await email_service.announce_identity_linked(
+            system_session, user, provider=provider_row.display_name
+        )
     if proved_address is not None:
         # A sign-in at a provider is no place the account already uses, so a
         # proof that arrives with it can be undone by the addresses before it.
@@ -1793,13 +1797,17 @@ async def _complete_provider_login(
         provider_id=provider_id,
         assurance=assurance,
     )
+    # What the provider said about this authentication, in the same shape the
+    # session row keeps, with its narrowing claims named rather than valued.
+    # Absent claims add no keys.
+    assured = assurance.as_record()
+    claims = assured.pop("claims", None)
     audit_detail = {
         "method": "oidc",
         "provider": provider_slug,
         "step_up": prior is not None,
-        # What the provider said about this authentication, in the same shape
-        # the session row keeps. Absent claims add no keys.
-        **assurance.as_record(),
+        **assured,
+        **({"claim_names": sorted(claims)} if claims else {}),
     }
     try:
         if prior is None:
@@ -1941,17 +1949,15 @@ async def _join_awaited_invite(
     expired, filled up or was withdrawn in the meantime joins nothing, and the
     person can be sent another.
     """
-    invite = await session.get(GuildInvite, invite_id)
-    if invite is None:
-        return
     try:
         async with session.begin_nested():
             await guilds_service.redeem_invite_for_user(
-                session, code=invite.code, user=user
+                session, invite_id=invite_id, user=user
             )
     except (
         guilds_service.GuildInviteError,
         guilds_service.GuildCapacityError,
+        guilds_service.GuestsDisabledError,
         guilds_service.AgeConfirmationRequiredError,
     ) as exc:
         logger.info(

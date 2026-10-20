@@ -15,6 +15,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 import app.api.v1.platform_endpoints.guilds as guilds_endpoint
+from app.db import post_commit
 from app.db.schema_provisioning import guild_role_name, guild_schema_name
 from app.models.platform.guild import Guild, CommunityStatus
 from app.models.platform.app_setting import DEFAULT_GUILD_RETENTION_DAYS
@@ -100,6 +101,10 @@ async def test_delete_guild_keeps_the_schema_until_the_purge(
         },
     )
     assert resp.status_code == 204
+    # The deletion arms the community's plug-in hook timer once it commits, on
+    # a task of its own that holds the guild row while it writes. A purge
+    # claims the row SKIP LOCKED, so it waits for that work to finish.
+    await post_commit.settle_all()
 
     guild = (await session.exec(select(Guild).where(Guild.id == gid))).one()
     assert guild.status == CommunityStatus.deleted.value
@@ -180,6 +185,7 @@ async def test_purge_succeeds_even_if_deprovision_fails(
         },
     )
     assert resp.status_code == 204
+    await post_commit.settle_all()
 
     async def boom(_guild_id):
         raise RuntimeError("deprovisioning failed")

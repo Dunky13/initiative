@@ -17,6 +17,9 @@
     "removeTitle": "Remove {{name}}?",
     "removeBody": "What it created moves to the trash, where it can still be restored. Every credential it held — the community's and each member's — is deleted, and the plug-in is told to stop using them.",
     "removed": "{{name}} removed.",
+    "removeAndErase": "Remove and erase",
+    "erase": "Also erase its data",
+    "eraseHelp": "The plug-in is asked to delete everything it holds about this community. If you add it again later, it starts afresh.",
     "saved": "Saved.",
     "needsConfig": "Needs setup",
     "configInvalid": "Setup problem",
@@ -30,7 +33,9 @@
     "autoUpdateOff": "Updates are now applied by hand.",
     "upgradeTo": "Update to {{version}}",
     "upToDate": "Up to date",
-    "upgraded": "Updated to {{version}}."
+    "upgraded": "Updated to {{version}}.",
+    "removeManagedNeutral": "Charges for this plug-in are managed by your provider.",
+    "removeManagedAction": "Manage"
   },
   "updates": {
     "wants": "Version {{version}} wants to:",
@@ -60,7 +65,9 @@
       "moderator": "Moderators",
       "project_manager": "Project managers",
       "member": "Members"
-    }
+    },
+    "entitlementRequired": "This plug-in has to be set up for your community before it can be added.",
+    "entitlementAction": "See options"
   },
   "connections": {
     "none": "This plug-in asks for nothing to be set up.",
@@ -95,6 +102,14 @@
       "expired": "Expired"
     },
     "expired": "This connection has run out. Connect again to keep using it."
+  },
+  "installSettings": {
+    "title": "Settings",
+    "description": "What this plug-in reads in this community.",
+    "notSet": "Not set",
+    "unique": "No other community on this server can use it. Use a lowercase letter, then lowercase letters and digits.",
+    "earlier": "Earlier values, which still work: {{values}}",
+    "saved": "Setting saved."
   },
   "members": {
     "title": "Members",
@@ -161,7 +176,7 @@
     "adminTitle": "Community settings",
     "adminDescription": "What the community owns for this plug-in. Only the superadmin sees this."
   },
-  "embed": {
+  "page": {
     "connecting": "Connecting…",
     "handoffFailed": "Could not open this plug-in. Try again in a moment.",
     "failed": "This plug-in could not be opened",
@@ -212,6 +227,10 @@
     "sign_in_required": {
       "title": "Sign in to finish",
       "body": "Finish connecting in the browser where you're signed in to Initiative, as the person who started it."
+    },
+    "taken": {
+      "title": "Already connected elsewhere",
+      "body": "This organization is already connected to another community on this server, so nothing changed here. To connect it here, disconnect it there first, or remove the app from the organization at the other service and connect again."
     },
     "closeTab": "You can close this tab."
   },

@@ -83,6 +83,12 @@ class GuildRoleKind(StrEnum):
     #: An installed plug-in's request: only what ``app.db.plugin_rls.PLUGIN_TABLE_ACCESS``
     #: names, no default privileges, and ``plugin_install_base`` for ``public``.
     plugin = "_plugin"
+    #: A guest's request: only what ``app.db.guest_access.GUEST_TABLE_ACCESS``
+    #: names, the row narrowing ``TO guest_base`` there, and ``guest_base`` for
+    #: ``public``. No default privileges.
+    guest = "_guest"
+    #: The same, SELECT-only: a guest in a ``read_only`` community.
+    guest_read_only = "_guest_ro"
 
 
 def guild_role_name(guild_id: int, kind: GuildRoleKind = GuildRoleKind.full) -> str:
@@ -155,7 +161,8 @@ SYSTEM_GUILD_MAINTENANCE_GRANTS: dict[str, tuple[str, ...]] = {
     # writes are column-scoped where possible; DELETE needs a table privilege.
     "event_outbox": (
         "INSERT (txn_id, occurred_at, actor_user_id, actor_install_id, "
-        "initiative_id, resource_type, resource_id, action, changed, parents)",
+        "initiative_id, resource_type, resource_id, action, changed, parents, "
+        "dac_tool, dac_id)",
         # The poller's candidate scan: which transactions exist, in what order.
         # Nothing of what a row says — that is read per transaction, as the
         # subscription's owner, where RLS decides it.
@@ -200,7 +207,7 @@ SYSTEM_GUILD_MAINTENANCE_SEQUENCE_GRANTS: dict[str, tuple[str, ...]] = {
 #: A schema's comment records one digest per part; a boot re-applies only the
 #: parts whose digest moved, except that new structure re-applies every part,
 #: since the others reach the tables it adds.
-PARTS = ("schema", "grants", "rls", "capture", "search")
+PARTS = ("schema", "checks", "grants", "rls", "capture", "search", "timers")
 _STAMP_PREFIX = "provisioned:"
 
 
@@ -209,7 +216,8 @@ class ProvisioningBundle:
     """The per-process render of everything provisioning applies.
 
     ``schema_ddl`` is reflected LIVE from the Alembic-maintained
-    ``guild_template`` schema; ``rls_ddl`` is rendered from the
+    ``guild_template`` schema; ``checks_ddl`` from the CHECKs the models mark as
+    following a registry (``app.db.registry_checks``); ``rls_ddl`` from the
     ``INITIATIVE_PATHS`` registry (see ``app.db.guild_ddl``). There are no
     committed artifacts — new guilds match the template + registry by
     construction. ``digests`` hashes each part's render (the grants as
@@ -218,15 +226,26 @@ class ProvisioningBundle:
     """
 
     schema_ddl: str
+    checks_ddl: str
+    #: Not digested: it follows from ``checks_ddl``.
+    validate_ddl: str
     rls_ddl: str
     capture_ddl: str
     search_ddl: str
+    timer_ddl: str
     digests: dict[str, str]
 
     @property
     def stamp(self) -> str:
         """The schema comment a guild carries once every part is applied."""
-        return _STAMP_PREFIX + ",".join(f"{p}={self.digests[p]}" for p in PARTS)
+        return self.stamp_pending()
+
+    def stamp_pending(self, *parts: str) -> str:
+        """The stamp, with ``parts`` still to finish: a later boot applies
+        them again."""
+        return _STAMP_PREFIX + ",".join(
+            f"{p}={'pending' if p in parts else self.digests[p]}" for p in PARTS
+        )
 
     def stale_parts(self, stamp: str | None) -> tuple[str, ...]:
         """The parts a schema commented ``stamp`` still needs, in apply order."""
@@ -257,9 +276,15 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
             return _bundle
         from app.db.event_capture import render_guild_capture_ddl
         from app.db.guild_ddl import render_guild_rls_ddl, render_guild_schema_ddl
+        from app.db.registry_checks import (
+            render_guild_registry_check_ddl,
+            render_guild_registry_validate_ddl,
+        )
         from app.db.search_index import render_guild_search_ddl
+        from app.db.timers import render_guild_timer_ddl
 
         schema_ddl = await render_guild_schema_ddl(db_session.provisioning_engine)
+        checks_ddl = render_guild_registry_check_ddl()
         rls_ddl = render_guild_rls_ddl()
         capture_ddl = render_guild_capture_ddl()
         # Naming the operator class in the rendered text is what makes the
@@ -267,18 +292,24 @@ async def get_provisioning_bundle() -> ProvisioningBundle:
         # that were created without it.
         opclass = f"public.{SEARCH_OPCLASS}" if await search_operator_ready() else None
         search_ddl = render_guild_search_ddl(opclass)
+        timer_ddl = render_guild_timer_ddl()
         grants = _grant_statements("__stamp__", 0)
         _bundle = ProvisioningBundle(
             schema_ddl=schema_ddl,
+            checks_ddl=checks_ddl,
+            validate_ddl=render_guild_registry_validate_ddl(),
             rls_ddl=rls_ddl,
             capture_ddl=capture_ddl,
             search_ddl=search_ddl,
+            timer_ddl=timer_ddl,
             digests={
                 "schema": _digest(schema_ddl),
+                "checks": _digest(checks_ddl),
                 "grants": _digest(*grants),
                 "rls": _digest(rls_ddl),
                 "capture": _digest(capture_ddl),
                 "search": _digest(search_ddl),
+                "timers": _digest(timer_ddl),
             },
         )
         return _bundle
@@ -309,6 +340,22 @@ async def apply_guild_schema(conn: AsyncConnection, schema: str) -> None:
     )
 
 
+async def apply_guild_checks(
+    conn: AsyncConnection, schema: str, *, replace: bool = True, validate: bool = True
+) -> None:
+    """Replace and/or validate the registry CHECKs on ``schema``'s tables
+    (``app.db.registry_checks``), with the search_path pointed at it."""
+    bundle = await get_provisioning_bundle()
+    ddl = "\n".join(
+        ([bundle.checks_ddl] if replace else [])
+        + ([bundle.validate_ddl] if validate else [])
+    )
+    raw = await conn.get_raw_connection()
+    await raw.driver_connection.execute(
+        f'SET search_path TO "{schema}", public;\n{ddl}\nSET search_path TO public;'
+    )
+
+
 async def apply_guild_rls(conn: AsyncConnection, schema: str) -> None:
     """Apply the initiative-level RLS policies to ``schema``'s tables by RUNNING
     the registry-rendered RLS DDL with the search_path pointed at it.
@@ -328,8 +375,8 @@ async def apply_guild_rls(conn: AsyncConnection, schema: str) -> None:
 
 
 async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
-    """Re-assert the shared ``public`` functions the capture and search
-    triggers call, from their registries.
+    """Re-assert the shared ``public`` functions the capture, search and
+    timer triggers call, from their registries.
 
     Migrations create them, but a migration freezes the body it was written
     with; the registries are the current truth, so re-rendering them here is
@@ -344,6 +391,7 @@ async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
         SEARCH_FUNCTION_SQL,
         WRITE_FUNCTION_SQL,
     )
+    from app.db.timers import ARM_FUNCTION_SQL, ARM_ON_WRITE_FUNCTION_SQL
 
     raw = await conn.get_raw_connection()
     # The write function first: both search trigger functions call it.
@@ -355,6 +403,8 @@ async def apply_guild_trigger_functions(conn: AsyncConnection) -> None:
                 WRITE_FUNCTION_SQL,
                 SEARCH_FUNCTION_SQL,
                 DEPENDENT_FUNCTION_SQL,
+                ARM_FUNCTION_SQL,
+                ARM_ON_WRITE_FUNCTION_SQL,
             )
         )
     )
@@ -385,6 +435,19 @@ async def apply_guild_search(conn: AsyncConnection, schema: str) -> None:
     shared functions that :func:`apply_guild_trigger_functions` keeps current.
     """
     ddl = (await get_provisioning_bundle()).search_ddl
+    raw = await conn.get_raw_connection()
+    await raw.driver_connection.execute(
+        f'SET search_path TO "{schema}", public;\n{ddl}\nSET search_path TO public;'
+    )
+
+
+async def apply_guild_timers(conn: AsyncConnection, schema: str) -> None:
+    """Install the sweep-timer triggers on ``schema``'s tables.
+
+    Same shape as :func:`apply_guild_capture`: per-table triggers calling
+    shared functions that :func:`apply_guild_trigger_functions` keeps current.
+    """
+    ddl = (await get_provisioning_bundle()).timer_ddl
     raw = await conn.get_raw_connection()
     await raw.driver_connection.execute(
         f'SET search_path TO "{schema}", public;\n{ddl}\nSET search_path TO public;'
@@ -464,8 +527,9 @@ async def strip_template_registry_objects(conn: AsyncConnection) -> int:
 #: the install, the scopes its pinned version requests and where it is
 #: placed, and for a member token the member's
 #: consent and what their initiative roles permit; the sharing gate reads the
-#: grant rows; a notification about what the install did names it. No route
-#: addresses any of them for a plug-in.
+#: grant rows; a notification about what the install did names it; a task
+#: written for a member is held to its board's column limits, which its
+#: project's board layout holds. No route addresses any of them for a plug-in.
 PLUGIN_ROLE_MACHINERY_READS: dict[str, tuple[str, ...]] = {
     "guild_plugins": (
         "id",
@@ -486,6 +550,7 @@ PLUGIN_ROLE_MACHINERY_READS: dict[str, tuple[str, ...]] = {
     ),
     "initiative_role_permissions": ("initiative_role_id", "permission_key", "enabled"),
     "resource_grants": (),
+    "tool_layouts": ("initiative_id", "tool", "tool_id", "kind", "definition"),
 }
 
 #: What ``guild_<id>_plugin`` writes outside ``PLUGIN_TABLE_ACCESS``: table -> the
@@ -559,11 +624,18 @@ def _grant_statements(schema: str, guild_id: int) -> list[str]:
     "no member/permission management" line. The query role holds no shared
     floor: its schema and the routed community's members. The plug-in role (an
     installed plug-in's requests) holds only what ``_plugin_role_grant_statements``
-    renders.
+    renders, and the guest roles only what ``guest_role_grant_statements`` does.
     """
-    role, ro_role, support_role, query_role, seat_role, plugin_role = _guild_roles(
-        guild_id
-    )
+    (
+        role,
+        ro_role,
+        support_role,
+        query_role,
+        seat_role,
+        plugin_role,
+        guest_role,
+        guest_ro_role,
+    ) = _guild_roles(guild_id)
     stmts = [
         # Account-erasure maintenance: direct, table-bounded access lets the
         # app_admin login retain BYPASSRLS while it removes embedded names.
@@ -654,6 +726,14 @@ def _grant_statements(schema: str, guild_id: int) -> list[str]:
     # Plug-in role: table by table from the plug-in registry, with no default
     # privileges and no guild role composed in.
     stmts.extend(_plugin_role_grant_statements(schema, plugin_role))
+    # Guest roles: table by table from the guest registry, likewise.
+    from app.db.guest_access import guest_role_grant_statements
+
+    members = f'"{APP_LOGIN_ROLE}", "{SYSTEM_LOGIN_ROLE}"'
+    for guest, writes in ((guest_role, True), (guest_ro_role, False)):
+        stmts.extend(
+            guest_role_grant_statements(schema, guest, writes=writes, members=members)
+        )
     return stmts
 
 
@@ -686,18 +766,32 @@ async def _existing_roles(conn: AsyncConnection, roles: tuple[str, ...]) -> set[
 _BACKFILL_CONCURRENCY = 4
 
 
+async def _write_stamp(conn: AsyncConnection, schema: str, stamp: str) -> None:
+    # Constant hex digests, safe to inline.
+    await conn.exec_driver_sql(f"COMMENT ON SCHEMA \"{schema}\" IS '{stamp}'")
+
+
 async def _apply_parts(
-    conn: AsyncConnection, guild_id: int, parts: tuple[str, ...]
+    conn: AsyncConnection,
+    guild_id: int,
+    parts: tuple[str, ...],
+    *,
+    validate_checks: bool = True,
 ) -> None:
     """Apply ``parts`` of the bundle to ``guild_<id>``, then stamp the schema.
 
     Every part is idempotent (``IF NOT EXISTS``, ``CREATE OR REPLACE``, drop
     and re-create), so re-applying one that was current changes nothing.
+    ``validate_checks=False`` replaces the registry CHECKs without checking
+    the rows already there, and stamps ``checks`` pending until the caller
+    validates them in a transaction of its own.
     """
     schema = guild_schema_name(guild_id)
     if "schema" in parts:
         await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
         await apply_guild_schema(conn, schema)  # canonical Alembic-owned table DDL
+    if "checks" in parts:  # CHECKs that follow a registry
+        await apply_guild_checks(conn, schema, validate=validate_checks)
     if "grants" in parts:
         roles = _guild_roles(guild_id)
         existing = await _existing_roles(conn, roles)
@@ -714,9 +808,13 @@ async def _apply_parts(
         await apply_guild_capture(conn, schema)  # change-capture triggers
     if "search" in parts:
         await apply_guild_search(conn, schema)  # search-index refresh triggers
-    # Constant hex digests, safe to inline.
-    stamp = (await get_provisioning_bundle()).stamp
-    await conn.exec_driver_sql(f"COMMENT ON SCHEMA \"{schema}\" IS '{stamp}'")
+    if "timers" in parts:
+        await apply_guild_timers(conn, schema)  # sweep-timer triggers
+    bundle = await get_provisioning_bundle()
+    pending = "checks" in parts and not validate_checks
+    await _write_stamp(
+        conn, schema, bundle.stamp_pending("checks") if pending else bundle.stamp
+    )
 
 
 async def provision_guild_schema(conn: AsyncConnection, guild_id: int) -> str:
@@ -774,7 +872,13 @@ async def provision_guild(guild_id: int) -> str:
 
 
 async def deprovision_guild(guild_id: int) -> None:
-    """Drop a guild's schema + role on the superuser engine, and remove its blobs."""
+    """Drop a guild's schema + role on the superuser engine, and remove its blobs.
+
+    Refused with ``HoldsInForce`` while the platform holds anything there
+    (``app.db.holds``): the schema stays until every hold is released."""
+    from app.db.holds import refuse_while_held
+
+    await refuse_while_held(guild_id)
     async with db_session.provisioning_engine.begin() as conn:
         await drop_guild_schema(conn, guild_id)
     # Remove the guild's stored blobs (the ``guild_<id>/`` storage namespace).
@@ -823,8 +927,16 @@ async def _backfill_guild(guild_id: int, *, wait: bool) -> bool | None:
         )
         parts = PARTS if settings.FORCE_GUILD_BACKFILL else bundle.stale_parts(stamp)
         if parts:
-            await _apply_parts(conn, guild_id, parts)
-        return bool(parts)
+            await _apply_parts(conn, guild_id, parts, validate_checks=False)
+    if "checks" in parts:
+        # After the replacement commits, so the scan holds no lock that stops
+        # the guild's reads and writes. A failure leaves ``checks`` pending.
+        async with db_session.provisioning_engine.begin() as conn:
+            await advisory_lock(conn, LockNamespace.GUILD_PROVISION, guild_id)
+            schema = guild_schema_name(guild_id)
+            await apply_guild_checks(conn, schema, replace=False)
+            await _write_stamp(conn, schema, bundle.stamp)
+    return bool(parts)
 
 
 async def backfill_guild_schemas() -> BackfillSummary:
@@ -1068,21 +1180,43 @@ async def reindex_guild_search(
 async def backfill_guild_search() -> int:
     """Reindex every guild whose search generation is stale.
 
-    Runs after schema provisioning, visiting each guild on a system session
-    from its cohort. A guild's content is walked in bounded transactions, so a
-    large install fills in progressively instead of holding one transaction
-    open across the whole sweep. A guild that fails is logged and the others
-    carry on.
+    Runs after schema provisioning. One read of the catalog finds the stale
+    guilds (the marker is a comment on each one's ``search_entries``), and
+    only those are visited, each on a system session from its cohort. A
+    guild's content is walked in bounded transactions, so a large install
+    fills in progressively instead of holding one transaction open across the
+    whole sweep. A guild that fails is logged and the others carry on.
     """
+    from app.db.search_index import search_generation
     from app.services.guild_sweeps import Scope, each_guild
 
+    async with db_session.provisioning_engine.connect() as conn:
+        stale = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT substr(n.nspname, 7)::int FROM pg_class c"
+                        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+                        " WHERE c.relname = 'search_entries'"
+                        " AND n.nspname ~ '^guild_[0-9]+$'"
+                        " AND obj_description(c.oid, 'pg_class')"
+                        " IS DISTINCT FROM :generation"
+                    ),
+                    {"generation": search_generation()},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not stale:
+        return 0
     total = 0
 
     async def reindex(session: AsyncSession, guild_id: int) -> None:
         nonlocal total
         total += await reindex_guild_search(session, guild_id)
 
-    await each_guild([(Scope.PROVISIONED, reindex)], name="search-reindex")
+    await each_guild([(Scope.PROVISIONED, reindex)], name="search-reindex", only=stale)
     if total:
         logger.info("search reindex wrote %d entries", total)
     return total

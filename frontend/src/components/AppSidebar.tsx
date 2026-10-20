@@ -1,13 +1,13 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   Binoculars,
+  Bookmark,
   Check,
   ChevronsDownUp,
   ChevronsUpDown,
   Pencil,
   Plus,
   Settings,
-  Star,
   Tag,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,7 +43,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsBar, TabsContent, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAuth } from "@/hooks/useAuth";
 import { useAutoCloseSidebar } from "@/hooks/useAutoCloseSidebar";
@@ -52,19 +51,23 @@ import { useCommunityPlugins } from "@/hooks/useCommunityPlugins";
 import { liveInitiatives } from "@/hooks/useInitiativeAccess";
 import { useInitiativeDirectory, useInitiatives } from "@/hooks/useInitiatives";
 import { compareVersions, useLatestVersion } from "@/hooks/useLatestVersion";
-import { useFavoriteProjects, useProjects } from "@/hooks/useProjects";
+import { useCommunityBookmarks } from "@/hooks/usePersonalItems";
+import { useProjects } from "@/hooks/useProjects";
 import { useTags } from "@/hooks/useTags";
 import { useToolCountsByInitiative } from "@/hooks/useToolCounts";
+import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { communityPath } from "@/lib/communityUrl";
 import { canAccessOperatorDashboard, canManagePlatformConfig } from "@/lib/permissions";
+import { renderRecentIcon } from "@/lib/recentIcon";
+import { getActiveRecentKey, recentRoute } from "@/lib/recentRoute";
 import { getItem, setItem } from "@/lib/storage";
-import { TOOLS, toolDetailRoute, toolViewParams } from "@/lib/tools";
+import { TOOLS, toolViewParams } from "@/lib/tools";
 
 export const AppSidebar = () => {
   const { user, logout, refreshUser } = useAuth();
   const { communityDirectoryEnabled, isLoading: configLoading } = useAppConfig();
   const { activeCommunity, activeCommunityId } = useCommunities();
-  const isMobile = useIsMobile();
+  const isMobile = !atLeast(useWidthClass(), "md");
   const location = useLocation();
   const { t } = useTranslation(["nav", "tags", "initiatives"]);
 
@@ -151,10 +154,13 @@ export const AppSidebar = () => {
     }
   );
 
-  const favoritesQuery = useFavoriteProjects({
+  // The reader's bookmarks here, every kind of tool, newest first.
+  const bookmarksQuery = useCommunityBookmarks(null, {
     enabled: communityTreeEnabled,
     staleTime: 60_000,
   });
+  // Which of them is open: the tool the address names.
+  const activeTool = useMemo(() => getActiveRecentKey(location.pathname), [location.pathname]);
 
   // Every tool's per-initiative counts in one fan-out, keyed by `Tool`, so
   // the badges follow the registry rather than a list kept in step by hand.
@@ -360,37 +366,34 @@ export const AppSidebar = () => {
                   <TabsContent value="initiatives" className="mt-0 flex-1 overflow-hidden">
                     <ScrollArea className="[&_[data-radix-scroll-area-viewport]>div]:block! h-full">
                       <SidebarContent className="overflow-x-hidden overflow-y-visible">
-                        {/* Favorites Section */}
-                        {Array.isArray(favoritesQuery?.data) && favoritesQuery.data.length > 0 && (
+                        {/* Bookmarks */}
+                        {Array.isArray(bookmarksQuery?.data) && bookmarksQuery.data.length > 0 && (
                           <>
                             <SidebarGroup>
                               <SidebarGroupLabel className="flex items-center gap-2 py-2">
-                                <Star className="h-4 w-4" />
-                                {t("favorites")}
+                                <Bookmark className="h-4 w-4" />
+                                {t("bookmarks")}
                               </SidebarGroupLabel>
                               <SidebarGroupContent>
                                 <SidebarMenu>
-                                  {favoritesQuery.data.map((project) => (
-                                    <SidebarMenuItem key={project.id}>
+                                  {bookmarksQuery.data.map((item) => (
+                                    <SidebarMenuItem key={`${item.entity_type}:${item.entity_id}`}>
                                       <SidebarMenuButton
                                         asChild
-                                        isActive={project.id === activeProjectId}
+                                        isActive={
+                                          activeTool?.entityType === item.entity_type &&
+                                          activeTool.entityId === item.entity_id
+                                        }
                                       >
                                         <Link
-                                          to={gp(
-                                            toolDetailRoute(
-                                              Tool.project,
-                                              project.initiative_id,
-                                              project.id
-                                            )
-                                          )}
+                                          to={recentRoute(item)}
                                           className="flex min-w-0 items-center gap-2"
                                         >
-                                          {project.icon ? (
-                                            <span className="shrink-0 text-lg">{project.icon}</span>
-                                          ) : null}
+                                          <span className="flex size-5 shrink-0 items-center justify-center">
+                                            {renderRecentIcon(item)}
+                                          </span>
                                           <span className="min-w-0 flex-1 truncate">
-                                            {project.name}
+                                            {item.name}
                                           </span>
                                         </Link>
                                       </SidebarMenuButton>

@@ -126,6 +126,17 @@ const meta = {
         },
       },
     },
+    target: {
+      label: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+    },
+    target_date: {
+      label: {
+        en: "Target date",
+        de: "Zieldatum",
+        es: "Fecha objetivo",
+        fr: "Date cible",
+      },
+    },
   },
 };
 
@@ -139,6 +150,13 @@ const meta = {
  * job — the sandbox has no locale data and no timezone.
  */
 const strings = {
+  target: { en: "Target", de: "Ziel", es: "Objetivo", fr: "Objectif" },
+  reached: { en: "Reached", de: "Erreicht", es: "Alcanzado", fr: "Atteint" },
+  missed: { en: "Missed", de: "Verfehlt", es: "No alcanzado", fr: "Manqué" },
+  onTrack: { en: "On track", de: "Im Plan", es: "En camino", fr: "En bonne voie" },
+  behind: { en: "Behind", de: "Im Rückstand", es: "Con retraso", fr: "En retard" },
+  // "{n}" is how far there is still to go.
+  toGo: { en: "{n} to go", de: "noch {n}", es: "faltan {n}", fr: "encore {n}" },
   noRows: {
     en: "Nothing to show",
     de: "Nichts anzuzeigen",
@@ -155,6 +173,80 @@ const strings = {
   of: { en: "of", de: "von", es: "de", fr: "sur" },
   points: { en: "points", de: "Punkte", es: "puntos", fr: "points" },
 };
+
+/** One day, in milliseconds. */
+const DAY = 86400000;
+
+/**
+ * The target the options set, and the moment it is due: the end of its day.
+ * `null` without a target.
+ */
+function targetOf(config) {
+  const value = config.target === undefined || config.target === "" ? NaN : Number(config.target);
+  if (!Number.isFinite(value)) return null;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(config.target_date || "");
+  const due = day ? Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])) + DAY - 1 : null;
+  return { value: value, due: due };
+}
+
+/**
+ * Where a number stands against its target.
+ *
+ * Reached once it gets there, and missed once the day has passed without it.
+ * Before then, a straight line through the points drawn so far says whether it
+ * gets there by the day: on track, or behind. With no day, or too few points to
+ * draw a line through, it is only so far to go. `down` is a target to come down
+ * to rather than to climb to.
+ *
+ * @param {{t: number, y: number}[]} points earliest first, `t` in epoch ms
+ */
+function pace(points, current, target, due, down) {
+  if (down ? current <= target : current >= target) return "reached";
+  if (due !== null && due < Date.now()) return "missed";
+  if (due === null || points.length < 2) return "toGo";
+  // In days from the first point, which keeps the sums well inside a double.
+  const origin = points[0].t;
+  const days = points.map((point) => (point.t - origin) / DAY);
+  let meanT = 0;
+  let meanY = 0;
+  for (let index = 0; index < points.length; index++) {
+    meanT += days[index];
+    meanY += points[index].y;
+  }
+  meanT /= points.length;
+  meanY /= points.length;
+  let across = 0;
+  let spread = 0;
+  for (let index = 0; index < points.length; index++) {
+    across += (days[index] - meanT) * (points[index].y - meanY);
+    spread += (days[index] - meanT) * (days[index] - meanT);
+  }
+  if (spread === 0) return "toGo";
+  const lands = meanY + (across / spread) * ((due - origin) / DAY - meanT);
+  return (down ? lands <= target : lands >= target) ? "onTrack" : "behind";
+}
+
+/** The tone each standing is drawn in. "To go" keeps the widget's own. */
+const PACE_TONES = {
+  reached: "positive",
+  onTrack: "positive",
+  behind: "warning",
+  missed: "negative",
+};
+
+/** A number as plain text: whole, or to two places, or to two significant
+ *  digits where two places would read a small number as nothing. */
+function plain(value) {
+  if (Number.isInteger(value)) return String(value);
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded !== 0 ? rounded : Number(value.toPrecision(2)));
+}
+
+/** A standing in words: "On track", or how far there is still to go. */
+function standing(say, state, current, target) {
+  if (state !== "toGo") return say(state);
+  return say("toGo").replace("{n}", plain(Math.abs(target - current)));
+}
 
 /**
  * Built-in: Stat — one big number, and what it is doing.
@@ -202,6 +294,18 @@ function render(data, config, context) {
   };
 
   const scene = (node) => ({ v: 1, scene: node });
+
+  const goal = targetOf(config);
+
+  /** The number against its target, in the caption and its tone. Which way is
+   *  better is the same answer the trend chip reads. */
+  const aimed = (node, current, points) => {
+    if (!goal) return node;
+    const state = pace(points, current, goal.value, goal.due, deltaGood === "down");
+    node.caption = `${say("target")} ${plain(goal.value)} · ${standing(say, state, current, goal.value)}`;
+    if (PACE_TONES[state]) node.tone = PACE_TONES[state];
+    return node;
+  };
 
   /** The number above its own history. A `stack` rather than a bespoke node:
    *  the vocabulary already composes, and the sparkline is an ordinary series
@@ -267,11 +371,23 @@ function render(data, config, context) {
   if (overTime) {
     const ordered = rows.slice().sort((a, b) => (a[labelAt] || 0) - (b[labelAt] || 0));
     const change = changeOver(ordered.map(number));
-    const node = metric(
+    // The total as it stood after each period, which is what a target is
+    // reached along.
+    let running = 0;
+    const climbed = [];
+    for (const row of ordered) {
+      running += number(row);
+      if (typeof row[labelAt] === "number") climbed.push({ t: row[labelAt], y: running });
+    }
+    const node = aimed(
+      metric(
+        total,
+        heading,
+        ordered.length + " " + say("points"),
+        change === null ? undefined : { delta: change, deltaGood: deltaGood }
+      ),
       total,
-      heading,
-      ordered.length + " " + say("points"),
-      change === null ? undefined : { delta: change, deltaGood: deltaGood }
+      climbed
     );
     return withSparkline(
       node,
@@ -282,10 +398,18 @@ function render(data, config, context) {
   if (pick === "largest") {
     let best = rows[0];
     for (const row of rows) if (number(row) > number(best)) best = row;
-    return scene(metric(number(best), name(best) || heading, say("of") + " " + total));
+    return scene(
+      aimed(metric(number(best), name(best) || heading, say("of") + " " + total), number(best), [])
+    );
   }
   if (pick === "first") {
-    return scene(metric(number(rows[0]), name(rows[0]) || heading, say("of") + " " + total));
+    return scene(
+      aimed(
+        metric(number(rows[0]), name(rows[0]) || heading, say("of") + " " + total),
+        number(rows[0]),
+        []
+      )
+    );
   }
-  return scene(metric(total, heading || say("total")));
+  return scene(aimed(metric(total, heading || say("total")), total, []));
 }

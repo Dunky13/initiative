@@ -252,14 +252,14 @@ async def test_an_install_reads_people_and_its_community_by_reference(
     for ref, user_id in zip(named, people):
         row = await _ref_row(session, ref)
         assert (row.entity_type, row.entity_id) == (IdentityEntity.user, user_id)
-        assert (row.purpose, row.sector_guild_id, row.sector_id) == (
+        assert (row.purpose, row.sector_guild_id, row.sector_plugin) == (
             IdentityPurpose.plugin,
             installed.guild.id,
-            installed.plugin.id,
+            installed.public_id,
         )
     # The community's reference is the one the install is known to hold.
     assert body["guild_id"] == await plugin_refs.ensure_plugin_guild_ref(
-        guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+        guild_id=installed.guild.id, public_id=installed.public_id
     )
 
 
@@ -392,7 +392,9 @@ async def test_what_the_install_does_not_hold_is_unprocessable(
     )
     known = await _refs_for(client, installed)
     foreign = await plugin_refs.ensure_plugin_ref(
-        guild_id=installed.guild.id, plugin_install_id=other.id, user_id=people[1]
+        guild_id=installed.guild.id,
+        public_id=other.definition["service"]["public_id"],
+        user_id=people[1],
     )
     headers = _bearer(installed.guild.id, installed.plugin.id, ["files:write"])
 

@@ -181,7 +181,7 @@ export interface CardGridSkeletonProps {
 /** A grid of cards, each with a title, a couple of lines, and some tags. */
 export const CardGridSkeleton = ({
   count = 6,
-  className = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+  className = "grid grid-cols-fill-60/3 gap-4",
   cardClassName,
 }: CardGridSkeletonProps) => (
   <div className={className}>
@@ -523,7 +523,7 @@ export const FileDetailSkeleton = ({ label }: LabelledSkeletonProps) => (
 export const TaskEditSkeleton = ({ label }: LabelledSkeletonProps) => (
   <SkeletonRegion label={label}>
     <DetailPageSkeleton actions={2} description={false}>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid canvas-md:grid-cols-[minmax(0,1fr)_20rem] gap-6">
         <EditorSkeleton lines={8} />
         <FormSkeleton card={false} fields={5} action={false} />
       </div>
@@ -569,8 +569,9 @@ export const SettingsPaneSkeleton = ({ label }: LabelledSkeletonProps) => (
   </SkeletonRegion>
 );
 
-/** The community front page: its banner, the tool rail rising out of the
- *  tray with the table in it, the initiative directory, and recent comments. */
+/** The community front page: its banner, the comments circle rising out of
+ *  the tray with the comments in it, the initiative directory, and what is
+ *  coming up. */
 export const CommunityHomeSkeleton = ({ label }: LabelledSkeletonProps) => (
   <SkeletonRegion label={label} className="space-y-6">
     {/* Full-bleed like the banner it stands in for. */}
@@ -582,20 +583,15 @@ export const CommunityHomeSkeleton = ({ label }: LabelledSkeletonProps) => (
     </div>
     <div className="relative z-10 space-y-6">
       <div>
-        <div className="relative z-10 flex justify-center gap-3 px-3 sm:gap-4">
-          {keysFor(TOOLS.length).map((key, index) => (
-            <Skeleton
-              key={key}
-              className={cn(
-                "size-16 shrink-0 rounded-full bg-muted",
-                // A phone shows the first few; the rest sit off the edge.
-                index >= 4 && "max-sm:hidden"
-              )}
-            />
-          ))}
+        <div className="relative z-10 flex justify-center px-3">
+          <Skeleton className="size-16 shrink-0 rounded-full bg-muted" />
         </div>
         <div className="-mt-8 rounded-2xl bg-muted px-3 pt-11 pb-3 sm:px-4 sm:pb-4">
-          <TableSkeleton rows={5} columns={5} pagination />
+          <Card>
+            <CardContent className="pt-6">
+              <ListSkeleton rows={4} />
+            </CardContent>
+          </Card>
         </div>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">

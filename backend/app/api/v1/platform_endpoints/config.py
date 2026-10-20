@@ -67,6 +67,8 @@ class BillingConfig(BaseModel):
     # Whether the billing service's insights page can be opened from here:
     # the operator dashboard's Billing tab shows its button only then.
     insights: bool = False
+    # The same for its contracts console: the same key opens it.
+    contracts: bool = False
 
 
 class AppConfig(BaseModel):
@@ -100,6 +102,15 @@ class AppConfig(BaseModel):
     # command palette and the per-person message controls. A database setting
     # like the two above, so it changes without a redeploy.
     direct_messages_enabled: bool
+    # Whether this deployment lets communities have guests at all. The SPA
+    # shows nothing about guests when false. A database setting like the ones
+    # above.
+    guests_enabled: bool
+    # Whether this deployment orders search by engagement at all. The SPA
+    # offers a person the switch to leave their own activity out only while
+    # this is on: off, there is nothing for it to leave out of. A database
+    # setting like the ones above.
+    engagement_ranking_enabled: bool
     # Whether an arriving visitor is asked what this deployment may keep in
     # their browser. Off by default, and unauthenticated by necessity -- the
     # question is put to somebody who has not signed in and may never do so. A
@@ -154,6 +165,7 @@ async def get_app_config(session: SessionDep) -> AppConfig:
             operator_handoff=billing_support_handoff_enabled(),
             manages_plans=billing_managed(),
             insights=billing_insights_handoff_enabled(),
+            contracts=billing_insights_handoff_enabled(),
         )
         if settings.BILLING_URL
         else None
@@ -170,6 +182,8 @@ async def get_app_config(session: SessionDep) -> AppConfig:
         community_directory_enabled=app_settings.community_directory_enabled,
         community_age_gate_enabled=app_settings.community_age_gate_enabled,
         direct_messages_enabled=app_settings.direct_messages_enabled,
+        guests_enabled=app_settings.guests_enabled,
+        engagement_ranking_enabled=app_settings.engagement_ranking_enabled,
         cookie_consent_enabled=app_settings.cookie_consent_enabled,
         light_accent_color=app_settings.light_accent_color,
         dark_accent_color=app_settings.dark_accent_color,

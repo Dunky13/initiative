@@ -30,7 +30,7 @@ from app.api.deps import (
     SessionDep,
     UserSessionDep,
     get_current_active_user,
-    refuses_api_keys,
+    holds_guild_role,
     require_first_party_session,
     SystemSessionDep,
     GuildAdminContext,
@@ -135,12 +135,15 @@ from app.services.auth import addresses, held_changes
 
 from app.core.audit_events import AuditEventType
 from app.services import audit as audit_service
+from app.services import sweep_timers
+from app.services.cross_guild import member_guild_ids
 from app.core.tools import Tool
 from app.api import resource_access
 from app.services.tenant import initiatives as initiatives_service
 from app.services.tenant import named_people
 from app.services.tenant import ownership as ownership_service
 from app.services.platform import cookie_consent as cookie_consent_service
+from app.services.platform import guild_entitlements
 from app.services.platform import guilds as guilds_service
 from app.services.platform import guild_images as images_service
 from app.services.platform import legal as legal_service
@@ -158,6 +161,7 @@ from app.services.platform import user_avatars as user_avatars_service
 from app.services.platform import profile_decorations as profile_decorations_service
 from app.services.platform import users as users_service
 from app.services.platform import api_keys as api_keys_service
+from app.services.tenant.plugin_age import request_country
 from app.services.platform import csv_export
 from app.services.tenant import stats_service
 from app.models.platform.user_token import UserTokenPurpose
@@ -166,7 +170,7 @@ from app.services import email as email_service
 from app.services.platform import app_settings as app_settings_service
 from app.services.platform import auth_posture
 from app.services.platform import user_tokens as user_tokens_service
-from app.services.tenant import recent_views as recent_views_service
+from app.services.tenant import personal_items as personal_items_service
 from app.db.query import (
     MAX_ID_FILTER_VALUES,
     apply_pagination,
@@ -207,19 +211,31 @@ async def read_my_time_out(
     current_user: FactorExemptAccountHolder,
 ) -> AccountTimeOutRead:
     """What a suspended account is told on its time-out screen: why, where a
-    reason was given, and whom to contact.
+    reason was given, whom to contact, and whether it can appeal here — with
+    the appeal it already made, which it follows on the same screen.
 
     Answers for an active account too — nobody to contact, since there is
     nothing to lift — so the screen can ask without first knowing the status.
     """
+    from app.core.intake import APPEAL
+    from app.services.platform import tickets as tickets_service
+
     if current_user.status != UserStatus.suspended:
         return AccountTimeOutRead()
+    appeals = [
+        ticket
+        for ticket in await tickets_service.list_filed(current_user)
+        if ticket.stream is IntakeStream.moderation and ticket.topic == APPEAL
+    ]
+    latest = max(appeals, key=lambda ticket: ticket.opened_at, default=None)
     return AccountTimeOutRead(
         contact_email=await intake_service.contact_for(
             session, IntakeStream.moderation
         ),
         since=current_user.status_changed_at,
         reason=current_user.status_reason,
+        can_appeal=await intake_service.stream_is_bound(IntakeStream.moderation),
+        appeal_task_id=latest.task_id if latest is not None else None,
     )
 
 
@@ -287,6 +303,11 @@ async def list_users(
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
+    guests: bool = Query(
+        default=False,
+        description="The community's guests instead of its members. For its "
+        "administrators.",
+    ),
 ) -> UserCommunityMemberListResponse:
     """The community's roster, a page at a time.
 
@@ -297,13 +318,22 @@ async def list_users(
     Ordered like ``/search``: nearest first while searching, otherwise by name
     where the guild shows names, then by handle.
     """
-    base = users_service.guild_members(
+    if guests and not holds_guild_role(
+        guild_context, CommunityRole.admin, settings=True
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GuildMessages.COMMUNITY_ADMIN_REQUIRED,
+        )
+    narrow = users_service.guild_guests if guests else users_service.guild_members
+    base = narrow(
         select(
             MemberProfile,
             GuildMembership.role,
             GuildMembership.oidc_provider_id,
             GuildMembership.display_name,
             GuildMembership.api_keys_allowed,
+            GuildMembership.guest_until,
         ),
         guild_id=guild_context.guild_id,
     )
@@ -330,8 +360,16 @@ async def list_users(
     # set, so only the seat is told it.
     seat = guild_context.guild_seat
     items = []
-    for user, guild_role, oidc_provider_id, display_name, api_keys_allowed in rows:
+    for (
+        user,
+        guild_role,
+        oidc_provider_id,
+        display_name,
+        api_keys_allowed,
+        guest_until,
+    ) in rows:
         member = UserCommunityMember.model_validate(user)
+        member.guest_until = guest_until
         member.community_role = guild_role.value
         member.oidc_managed = oidc_provider_id is not None
         member.display_name = display_name
@@ -483,8 +521,15 @@ async def search_users(
             page=page,
             page_size=page_size,
         )
+    # Scoped to content, or naming people already chosen, the picker lists the
+    # community's guests too; across the whole community it is the roster.
+    scoped = (
+        initiative_id is not None
+        or bool(user_id)
+        or (tool is not None and resource_id is not None)
+    )
     base = users_service.guild_members(
-        select(MemberProfile), guild_id=guild_context.guild_id
+        select(MemberProfile), guild_id=guild_context.guild_id, guests=scoped
     )
     if initiative_id is not None:
         base = base.where(_in_initiative(initiative_id))
@@ -1057,6 +1102,7 @@ async def claim_my_username(
 
 @me_router.post("/age-confirmation", response_model=UserRead)
 async def confirm_my_age(
+    request: Request,
     payload: AgeConfirmation,
     session: UserSessionDep,
     system_session: SystemSessionDep,
@@ -1093,11 +1139,48 @@ async def confirm_my_age(
     re-answer until it comes out right is not one. Putting it right takes
     somebody with ``users.age_unblock``, which is a support ticket rather than
     an appeal to the same form.
+
+    **Under the minimum for an account where they are, there is no account.**
+    Sign-up refuses a date like that at the door, and an account that was made
+    without a date (a sign-in provider asked for none, or the field was left
+    empty) meets the same rule here, late: the minimum for the country the
+    request comes from (``users.ACCOUNT_MINIMUM_AGE``, 13 in the US, 16 in
+    Germany; the highest of them where the country is not known), applied
+    before the directory's. The answer stands, the date is not kept, and the
+    account is closed and scheduled for erasure
+    (:func:`~app.services.platform.users.refuse_account_for_age`) — not merely
+    kept out of the directory, which is the answer for sixteen.
     """
     if current_user.age_below_minimum_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=UserMessages.AGE_ANSWER_STANDS,
+        )
+
+    # A date nobody was born on is refused before anything is decided on it:
+    # a year in the future would otherwise read as an age below every minimum
+    # and close the account over a typo.
+    try:
+        users_service.check_birthdate(payload.birthdate)
+    except users_service.InvalidBirthdateError as exc:
+        # Refused separately from being too young, so the reply says which.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=UserMessages.AGE_INVALID_BIRTHDATE,
+        ) from exc
+
+    # Too young for an account at all, where they are. Only while the
+    # deployment checks age: with the check off nothing is asked, and nothing
+    # answered here may close an account.
+    if await app_settings_service.community_age_gate_enabled(
+        system_session
+    ) and users_service.below_account_minimum(
+        payload.birthdate, request_country(request)
+    ):
+        await users_service.refuse_account_for_age(session, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=UserMessages.AGE_BELOW_ACCOUNT_MINIMUM,
         )
 
     # The date is kept first, and only one answer per account is kept.
@@ -1440,18 +1523,29 @@ async def update_me(
         if normalized_time_format is not None:
             current_user.time_format = normalized_time_format
     if "recent_tabs_limit" in update_data:
-        current_user.recent_tabs_limit = recent_views_service.clamp_recent_limit(
+        current_user.recent_tabs_limit = personal_items_service.clamp_recent_limit(
             update_data["recent_tabs_limit"]
         )
+    if update_data.get("count_toward_engagement_ranking") is not None:
+        current_user.count_toward_engagement_ranking = update_data[
+            "count_toward_engagement_ranking"
+        ]
+    # Sweeps a change can bring due sooner in the person's communities.
+    sooner: list[str] = []
     if "timezone" in update_data:
         normalized_timezone = normalize_timezone(update_data["timezone"])
         if normalized_timezone:
+            if normalized_timezone != current_user.timezone:
+                # The overdue digest goes out at a time of their day.
+                sooner.append("overdue")
             current_user.timezone = normalized_timezone
     if "event_reminder_minutes_before" in update_data:
         # ``None`` is a valid value here (reminders off), so assign directly.
-        current_user.event_reminder_minutes_before = normalize_reminder_minutes(
-            update_data["event_reminder_minutes_before"]
-        )
+        lead = normalize_reminder_minutes(update_data["event_reminder_minutes_before"])
+        before = current_user.event_reminder_minutes_before
+        if lead is not None and (before is None or lead > before):
+            sooner.append("reminders")
+        current_user.event_reminder_minutes_before = lead
     if "color_theme" in update_data:
         current_user.color_theme = update_data["color_theme"]
     if "task_completion_visual_feedback" in update_data:
@@ -1517,6 +1611,10 @@ async def update_me(
         # rather than at the next reconnect. Told after the commit, so nothing
         # is shown on the strength of a write that did not land.
         presence.online.chose(current_user.id, current_user.presence)
+    if sooner:
+        communities = await member_guild_ids(session, current_user.id)
+        for kind in sooner:
+            await sweep_timers.arm_in(kind, communities)
     # Platform path — no initiative_roles enrichment (see read_me).
     return await users_service.to_self_read(session, current_user)
 
@@ -1668,7 +1766,7 @@ async def create_my_api_key(
         # And the guild has to accept this member's keys at all. Asked here as
         # well as at the gate so a key that could never be used is never handed
         # over.
-        if await refuses_api_keys(session, membership):
+        if await guild_entitlements.refuses_api_keys(session, membership):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=GuildMessages.COMMUNITY_API_KEYS_REFUSED,
@@ -1680,6 +1778,8 @@ async def create_my_api_key(
         expires_at=payload.expires_at,
         read_only=payload.read_only,
         guild_id=payload.community_id,
+        resource_type=payload.resource_type,
+        resource_id=payload.resource_id,
     )
     return ApiKeyCreateResponse(api_key=api_key, secret=secret)
 
@@ -1942,7 +2042,7 @@ async def remove_member(
 def _image_not_found() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=GuildMessages.IMAGE_NOT_FOUND,
+        detail=ImageMessages.IMAGE_NOT_FOUND,
     )
 
 

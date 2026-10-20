@@ -72,6 +72,30 @@
       "body_other": "{{count}} nuevas reacciones a tus publicaciones, incluida {{emoji}} de {{actor}}"
     }
   },
+  "subscription": {
+    "changed": {
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "{{actor}} cambió {{context}}"
+    },
+    "commented": {
+      "title": "Nuevo comentario en algo a lo que te suscribiste",
+      "body": "{{actor}} comentó en {{context}}"
+    },
+    "reacted": {
+      "title": "Nueva reacción en algo a lo que te suscribiste",
+      "body": "{{actor}} reaccionó a {{context}}"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "title": "Algo en lo que participas cambió",
+      "body": "{{actor}} cambió {{context}}"
+    },
+    "commented": {
+      "title": "Nuevo comentario en algo en lo que participas",
+      "body": "{{actor}} comentó en {{context}}"
+    }
+  },
   "post": {
     "published": {
       "title": "Nueva publicación",
@@ -81,14 +105,6 @@
   "event": {
     "invitation": {
       "title": "Nueva invitación a un evento",
-      "body": "{{event}} ({{when}})"
-    },
-    "rescheduled": {
-      "title": "Evento reprogramado",
-      "body": "{{event}} ({{when}})"
-    },
-    "updated": {
-      "title": "Evento actualizado",
       "body": "{{event}} ({{when}})"
     },
     "cancelled": {
@@ -107,6 +123,7 @@
   "accessGrant": {
     "levelRead": "de solo lectura",
     "levelReadWrite": "de lectura y escritura",
+    "levelModerate": "de moderación",
     "levelAdmin": "a los ajustes de la comunidad (administrador)",
     "levelSuperadmin": "a los ajustes de la comunidad (superadministrador)",
     "requested": {
@@ -157,56 +174,36 @@
   },
   "redacted": {
     "mentions": {
-      "title": "Te mencionaron",
+      "title": "Te mencionaron o te respondieron",
       "body": "Abre Initiative para ver dónde."
     },
-    "replies": {
-      "title": "Tienes una respuesta",
-      "body": "Abre Initiative para leerla."
-    },
-    "comments": {
-      "title": "Nuevo comentario",
-      "body": "Abre Initiative para leerlo."
-    },
-    "reactions": {
-      "title": "Nueva reacción",
-      "body": "Abre Initiative para verla."
-    },
     "assignments": {
-      "title": "Nueva tarea asignada",
-      "body": "Abre Initiative para verla."
+      "title": "Algo en lo que participas",
+      "body": "Abre Initiative para verlo."
     },
-    "due_dates": {
-      "title": "Tareas vencidas",
-      "body": "Abre Initiative para verlas."
+    "subscriptions": {
+      "title": "Algo a lo que te suscribiste cambió",
+      "body": "Abre Initiative para verlo."
     },
-    "membership": {
-      "title": "Tu membresía cambió",
-      "body": "Abre Initiative para ver qué cambió."
+    "news": {
+      "title": "Algo nuevo en una comunidad",
+      "body": "Abre Initiative para verlo."
     },
     "approvals": {
       "title": "Algo está esperando por ti",
       "body": "Abre Initiative para revisarlo."
     },
-    "posts": {
-      "title": "Nueva publicación",
-      "body": "Abre Initiative para leerla."
-    },
-    "events": {
-      "title": "Un evento cambió",
-      "body": "Abre Initiative para verlo."
-    },
-    "event_reminders": {
-      "title": "Evento próximo",
-      "body": "Abre Initiative para verlo."
-    },
-    "direct_messages": {
-      "title": "Nuevo mensaje",
+    "moderation": {
+      "title": "Un aviso de moderación",
       "body": "Abre Initiative para leerlo."
     },
-    "connections": {
-      "title": "Novedades de contactos",
-      "body": "Abre Initiative para verlas."
+    "cases": {
+      "title": "Novedades de un caso",
+      "body": "Abre Initiative para leerlas."
+    },
+    "direct_messages": {
+      "title": "Un mensaje o una solicitud de contacto",
+      "body": "Abre Initiative para verlo."
     },
     "jobs": {
       "title": "Terminó un proceso que iniciaste",
@@ -246,6 +243,26 @@
       "title": "Notificaciones reanudadas",
       "body_one": "{{count}} cosa ocurrió mientras no estabas.",
       "body_other": "{{count}} cosas ocurrieron mientras no estabas."
+    }
+  },
+  "moderation": {
+    "removed": {
+      "title": "Un moderador eliminó algo que escribiste",
+      "body": "Incumplía las normas de esta comunidad. Abre el aviso para ver el motivo."
+    },
+    "warned": {
+      "title": "Un aviso de los moderadores de esta comunidad",
+      "body": "{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "title": "Un caso nuevo",
+      "body": "Abre Initiative para leerlo."
+    },
+    "replied": {
+      "title": "Una respuesta en un caso que nadie ha tomado",
+      "body": "Abre Initiative para leerla."
     }
   }
 }

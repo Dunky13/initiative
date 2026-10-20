@@ -29,7 +29,11 @@ export const BUILTIN_SHAPES: Record<string, WidgetSlot[]> = {
     slot("group", LABEL, { required: false }),
   ],
   stat: [slot("value", ["number"]), slot("label", LABEL, { required: false })],
-  chart: [slot("label", [...LABEL, "date"]), slot("value", ["number"], { repeatable: true })],
+  chart: [
+    slot("label", [...LABEL, "date"]),
+    slot("value", ["number"], { repeatable: true }),
+    slot("series", LABEL, { required: false }),
+  ],
   funnel: [slot("label", LABEL), slot("value", ["number"])],
   progress: [
     slot("value", ["number"]),

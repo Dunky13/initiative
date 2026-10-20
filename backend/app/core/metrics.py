@@ -110,6 +110,17 @@ sweep_pass_duration = Histogram(
     ("pass",),
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
 )
+sweep_timer_lag = Histogram(
+    "initiative_sweep_timer_lag_seconds",
+    "How long past its due time a sweep timer was claimed, by sweep.",
+    ("sweep",),
+    buckets=(1.0, 5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 900.0, 3600.0),
+)
+sweep_timer_repairs = Counter(
+    "initiative_sweep_timer_repairs",
+    "Sweep timers the daily reconcile armed because no write had, by sweep.",
+    ("sweep",),
+)
 users = Gauge(
     "initiative_users",
     "Accounts on this deployment, by status.",

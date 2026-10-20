@@ -351,7 +351,7 @@ async def test_erasing_a_user_stops_their_references_resolving(
         entity_id=victim.id,
         purpose=IdentityPurpose.plugin,
         sector_guild_id=1,
-        sector_id=1,
+        sector_plugin="acme.tracker",
     )
     kept = await ensure_ref(
         session,
@@ -389,7 +389,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
     )
 
     # Active invite addressed to the victim — the recoverable PII trace.
-    victim_invite = await guild_service.create_guild_invite(
+    victim_invite, victim_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -398,7 +398,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
         expires_at=None,
     )
     # Invite for someone else — must be untouched.
-    other_invite = await guild_service.create_guild_invite(
+    other_invite, other_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -407,7 +407,7 @@ async def test_soft_delete_user_scrubs_addressed_invites(
         expires_at=None,
     )
     # Unbound shareable link (no address) — must be untouched.
-    open_invite = await guild_service.create_guild_invite(
+    open_invite, open_invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -471,7 +471,7 @@ async def test_hard_delete_user_scrubs_addressed_invites(
         session, user=victim, guild=guild, role=CommunityRole.member
     )
 
-    invite = await guild_service.create_guild_invite(
+    invite, invite_code = await guild_service.create_guild_invite(
         session,
         guild_id=guild.id,
         created_by=admin.id,
@@ -990,7 +990,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
     from app.models.platform.dm_device import DmDevice
     from app.models.platform.email_outbox import EmailOutboxItem
     from app.models.platform.notification import Notification
-    from app.models.platform.profile_favorite import ProfileFavorite
     from app.models.platform.user_birthdate import UserBirthdate
     from app.models.platform.user_cookie_consent import UserCookieConsent
     from app.models.platform.user_decoration import UserDecoration
@@ -1036,8 +1035,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
             DmConversationMember(conversation_id=conversation.id, user_id=user.id),
             DmConversationMember(conversation_id=conversation.id, user_id=other.id),
             UserDmGuildOptout(user_id=user.id, guild_id=guild.id),
-            ProfileFavorite(user_id=user.id, favorite_user_id=other.id),
-            ProfileFavorite(user_id=other.id, favorite_user_id=user.id),
             UserIgnore(user_id=user.id, ignored_user_id=other.id),
             UserIgnore(user_id=other.id, ignored_user_id=user.id),
             ContactGrant(
@@ -1069,8 +1066,6 @@ async def test_soft_delete_user_empties_the_shared_tables(
         (DmConversationMember, DmConversationMember.user_id),
         (UserDmSettings, UserDmSettings.user_id),
         (UserDmGuildOptout, UserDmGuildOptout.user_id),
-        (ProfileFavorite, ProfileFavorite.user_id),
-        (ProfileFavorite, ProfileFavorite.favorite_user_id),
         (UserIgnore, UserIgnore.user_id),
         (UserIgnore, UserIgnore.ignored_user_id),
         (ContactGrant, ContactGrant.user_id_low),

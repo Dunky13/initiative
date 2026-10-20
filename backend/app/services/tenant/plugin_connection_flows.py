@@ -27,7 +27,11 @@ Three things happen here and nowhere else:
   renews one; :func:`mint_jwt_bearer` mints a token for a connection that
   declares a ``jwt_bearer`` token, and caches it.
 * **Hooks.** :func:`call_hook` calls the plug-in at ``POST {base}/v1/hooks/{name}``
-  with a ``lifecycle`` context token naming the install and the hook.
+  with a ``lifecycle`` context token naming the install and the hook. Only
+  :mod:`app.services.marketplace.community_hooks` calls it, under one lock per
+  community and plug-in: the hooks about the community, queued and retried, and
+  ``after_connect``, ``webhook`` and ``schedule``, sent at once by its
+  ``call_now``. A ``revoke`` rides that queue too (``plugin_revocation``).
 
 Every call to a vendor goes through the pinned egress helper, https only, with
 a timeout and a size cap. A call to the plug-in goes to its registration's
@@ -37,6 +41,7 @@ address, as an endpoint call does.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import time
@@ -47,25 +52,26 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 import jwt
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.errors import CodedError
 from app.core.config import settings
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
-from app.core.messages import PluginChannelMessages, GuildPluginMessages
+from app.core.errors import CodedError
+from app.core.messages import GuildPluginMessages, PluginChannelMessages
 from app.core.security import PluginPlatformSigningNotConfiguredError
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
+from app.db.request_context import SystemGuild, Unattributed
 from app.db.session import set_rls_context
+from app.models.platform.access_grant import AccessLevel
 from app.models.platform.guild import (
     LIVE_STATUS_VALUES,
+    CommunityStatus,
     Guild,
     GuildMembership,
-    CommunityStatus,
 )
-from app.models.platform.access_grant import AccessLevel
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services.auth.oidc._http import (
@@ -73,23 +79,27 @@ from app.services.auth.oidc._http import (
     OidcHttpStatusError,
     post_form_json_pinned,
 )
-from app.services.marketplace import plugin_installs, registration_lookup
-from app.services.platform import access_grants as access_grants_service
+from app.services.marketplace import (
+    expressions,
+    plugin_installs,
+    registration_lookup,
+)
+from app.services.marketplace.community_status import community_status
+from app.services.marketplace.context_jwt import mint_context_token
 from app.services.marketplace.plugin_data import (
     MAX_RESPONSE_BYTES,
     REQUEST_TIMEOUT_SECONDS,
 )
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
-from app.services.marketplace.context_jwt import mint_context_token
-from app.services.marketplace.vendor_values import load_vendor_values
-from app.services.safe_http import ResponseTooLargeError, request_public_target
-from app.services.tenant import plugin_config as plugin_config_service
-from app.services.tenant import guild_plugins as guild_plugins_service
-from app.services.tenant.plugin_config import (
-    mint_connection_ref,
-    token_of,
-    without_tokens,
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
 )
+from app.services.marketplace.vendor_values import load_vendor_values
+from app.services.platform import access_grants as access_grants_service
+from app.services.safe_http import ResponseTooLargeError, request_public_target
+from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_config as plugin_config_service
+from app.services.tenant import plugin_connections as connections_service
 from app.services.tenant.connection_flow_state import (
     MAX_INSTALLATION_ID_LENGTH,
     ConnectionFlowState,
@@ -99,11 +109,16 @@ from app.services.tenant.connection_flow_state import (
     encode_state,
     new_state,
 )
+from app.services.tenant.plugin_config import (
+    install_settings,
+    mint_connection_ref,
+    token_of,
+    without_tokens,
+)
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
 )
-from app.db.request_context import SystemGuild, Unattributed
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +133,7 @@ __all__ = [
     "call_hook",
     "callback_url",
     "clear_token_cache",
+    "forget_minted",
     "complete_callback",
     "complete_setup",
     "flow_of",
@@ -147,6 +163,8 @@ OUTCOMES: frozenset[str] = frozenset(
         "not_recorded",
         "awaiting_approval",
         "sign_in_required",
+        # Another community on this deployment holds the vendor installation.
+        "taken",
     }
 )
 
@@ -160,7 +178,10 @@ VENDOR_MAX_RESPONSE_BYTES = 512 * 1024
 #: The hooks Initiative calls.
 HOOKS_PATH = "/v1/hooks"
 HOOK_NAMES: frozenset[str] = frozenset(
-    {"after_connect", "revoke", "webhook", "schedule"}
+    {"after_connect", "revoke", "webhook", "schedule", "entitlement"}
+    # The hooks about the community's install, delivered by
+    # ``app.services.marketplace.community_hooks``.
+    | {"installed", "uninstalled", "erase", "community_status"}
 )
 #: The widest account label kept, matching what the members view shows.
 MAX_ACCOUNT_LABEL_LENGTH = 200
@@ -180,15 +201,27 @@ class VendorRefusedError(Exception):
 
 
 class HookError(Exception):
-    """The plug-in's hook could not be reached, or answered with something else."""
+    """The plug-in's hook could not be reached, or answered with something else.
+
+    ``status`` is the HTTP status the plug-in answered with, when it answered.
+    """
+
+    def __init__(self, message: str, *, status: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class HookNameRefused(HookError):
+    """The plug-in may not be given a name for the community (no live install,
+    or an erase is pending), so it has none to be told under and nothing is
+    sent."""
 
 
 class RevocationAnsweredError(HookError):
     """The vendor answered a revocation with something other than success."""
 
     def __init__(self, status: int) -> None:
-        super().__init__(f"revocation answered {status}")
-        self.status = status
+        super().__init__(f"revocation answered {status}", status=status)
 
 
 @dataclass(frozen=True)
@@ -563,13 +596,33 @@ class _Minted:
 
 
 #: Minted tokens, per worker, by the connection and the exact request that
-#: minted them.
+#: minted them. Each token minted drops those past reuse.
 _minted: dict[tuple[Any, ...], _Minted] = {}
+#: How many times each connection's minted tokens were forgotten, so a mint
+#: that was waiting on the vendor when they were keeps nothing.
+_forgotten: dict[tuple[Any, ...], int] = {}
 
 
 def clear_token_cache() -> None:
     """Forget every minted token."""
     _minted.clear()
+
+
+def forget_minted(guild_id: int, install_id: int, connection_id: str) -> None:
+    """Forget the tokens minted for one community connection, as its stored
+    values go, those a mint still waiting for will answer included."""
+    connection = (guild_id, install_id, connection_id)
+    _forgotten[connection] = _forgotten.get(connection, 0) + 1
+    for key in [held for held in _minted if held[:3] == connection]:
+        del _minted[key]
+
+
+def _keep_minted(key: tuple[Any, ...], minted: _Minted) -> None:
+    """Hold ``minted`` under ``key``, and drop every token past reuse."""
+    now = time.monotonic()
+    for stale in [held for held, one in _minted.items() if one.reuse_until <= now]:
+        del _minted[stale]
+    _minted[key] = minted
 
 
 def _parse_expiry(body: Mapping[str, Any], *, now: int) -> Optional[int]:
@@ -588,6 +641,35 @@ def _parse_expiry(body: Mapping[str, Any], *, now: int) -> Optional[int]:
     return _epoch(body.get("expires_in"), now=now)
 
 
+def _filled(value: Any, *, vendor: Mapping[str, str], fields: Mapping[str, Any]) -> Any:
+    """``value`` with ``{vendor.<key>}`` and ``{<key>}`` filled in every string
+    it holds, at any depth."""
+    if isinstance(value, str):
+        return render(value, vendor=vendor, fields=fields, in_url=False)
+    if isinstance(value, dict):
+        return {
+            key: _filled(child, vendor=vendor, fields=fields)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_filled(child, vendor=vendor, fields=fields) for child in value]
+    return value
+
+
+async def _answered_body(text: str, fields: Mapping[str, Any]) -> dict[str, Any]:
+    """What a token's ``exchange_body`` expression answers over the
+    connection's own fields, which must be an object."""
+    try:
+        answer = await expressions.evaluate(text, {"connection": dict(fields)})
+    except expressions.ExpressionError as exc:
+        logger.warning("plug-in connection: the exchange body failed (%s)", exc)
+        raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502) from exc
+    if not isinstance(answer, dict):
+        logger.warning("plug-in connection: the exchange body is not an object")
+        raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502)
+    return answer
+
+
 async def mint_jwt_bearer(
     spec: Mapping[str, Any],
     *,
@@ -597,8 +679,10 @@ async def mint_jwt_bearer(
 ) -> TokenSet:
     """A token for a connection that declares a ``jwt_bearer`` token.
 
-    A JWT signed with the vendor key is posted to the exchange address, and the
-    answer's token is reused until a minute before it expires.
+    A JWT signed with the vendor key is posted to the exchange address, with
+    the token's ``exchange_body`` when it declares one: the object with its
+    names filled, or what its expression answers over the connection's own
+    fields. The answer's token is reused until a minute before it expires.
     """
     url = _render_url(spec.get("exchange_url"), vendor=vendor, fields=fields)
     issuer = render(
@@ -607,10 +691,29 @@ async def mint_jwt_bearer(
     key = render(str(spec.get("key") or ""), vendor=vendor, fields=fields, in_url=False)
     if not issuer or not key:
         raise ConnectionFlowError(GuildPluginMessages.CONNECTION_VENDOR_NOT_CONFIGURED)
-    full_key = (*cache_key, url, issuer)
+    declared = spec.get("exchange_body")
+    body = (
+        _filled(declared, vendor=vendor, fields=fields)
+        if isinstance(declared, dict)
+        else None
+    )
+    # An expression's body is made from the connection's fields alone, so
+    # those key it, and it is evaluated only when no token is held for them.
+    asked = (declared, fields) if isinstance(declared, str) else body
+    full_key = (
+        *cache_key,
+        url,
+        issuer,
+        hashlib.sha256(
+            json.dumps(asked, sort_keys=True, default=str).encode()
+        ).hexdigest(),
+    )
     cached = _minted.get(full_key)
     if cached is not None and cached.reuse_until > time.monotonic():
         return TokenSet(access_token=cached.token, expires_at=cached.expires_at)
+    forgotten = _forgotten.get(cache_key[:3], 0)
+    if isinstance(declared, str):
+        body = await _answered_body(declared, fields)
 
     lifetime = spec.get("lifetime")
     seconds = lifetime if isinstance(lifetime, int) and lifetime > 0 else 540
@@ -636,6 +739,7 @@ async def mint_jwt_bearer(
                 "Accept": "application/json",
                 "Authorization": f"Bearer {assertion}",
             },
+            json=body,
             timeout=VENDOR_TIMEOUT_SECONDS,
             transport=http_transport,
             max_bytes=VENDOR_MAX_RESPONSE_BYTES,
@@ -657,11 +761,16 @@ async def mint_jwt_bearer(
         raise ConnectionFlowError(PluginChannelMessages.TOKEN_UNAVAILABLE, 502)
     expires_at = _parse_expiry(body, now=now)
     remaining = (expires_at - now) if expires_at is not None else 0
-    if remaining > _MINTED_REUSE_MARGIN_SECONDS:
-        _minted[full_key] = _Minted(
-            token=token,
-            expires_at=expires_at,
-            reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+    if remaining > _MINTED_REUSE_MARGIN_SECONDS and forgotten == _forgotten.get(
+        cache_key[:3], 0
+    ):
+        _keep_minted(
+            full_key,
+            _Minted(
+                token=token,
+                expires_at=expires_at,
+                reuse_until=time.monotonic() + remaining - _MINTED_REUSE_MARGIN_SECONDS,
+            ),
         )
     return TokenSet(access_token=token, expires_at=expires_at)
 
@@ -677,14 +786,26 @@ async def call_hook(
     guild_id: int,
     install_id: int,
     body: Mapping[str, Any],
+    guild_ref: Optional[str] = None,
 ) -> Optional[Any]:
     """Call one of the plug-in's hooks and return its JSON answer (``None`` for an
-    empty one). Raises :class:`HookError` for anything but a 2xx answer."""
+    empty one). Raises :class:`HookError` for anything but a 2xx answer, with
+    the status the plug-in answered with when it answered.
+
+    The token names the community by what the plug-in calls it, minted on first
+    use; ``guild_ref`` hands one in instead, for a hook that must not mint a
+    name (``erase``). ``install_id`` is the install the hook is about, or ``0``
+    when the community has none to name."""
     if name not in HOOK_NAMES:
         raise HookError(f"unknown hook {name!r}")
-    guild_ref = await ensure_plugin_guild_ref(
-        guild_id=guild_id, plugin_install_id=install_id
-    )
+    if guild_ref is None:
+        try:
+            guild_ref = await ensure_plugin_guild_ref(
+                guild_id=guild_id, public_id=public_id
+            )
+        except PluginNameRefused as exc:
+            raise HookNameRefused(f"hook {name}: no name for the community") from exc
+    standing = await community_status(guild_id)
     try:
         token, _ = mint_context_token(
             public_id=public_id,
@@ -692,6 +813,7 @@ async def call_hook(
             plugin_install_id=install_id,
             scope="lifecycle",
             hook=name,
+            community_status=standing,
         )
     except PluginPlatformSigningNotConfiguredError as exc:
         raise HookError("signing is not configured") from exc
@@ -722,13 +844,17 @@ async def call_hook(
     ) as exc:
         raise HookError(f"hook {name} could not be reached: {exc}") from exc
     if not 200 <= response.status_code < 300:
-        raise HookError(f"hook {name} answered {response.status_code}")
+        raise HookError(
+            f"hook {name} answered {response.status_code}", status=response.status_code
+        )
     if not response.content:
         return None
     try:
         return response.json()
     except ValueError as exc:
-        raise HookError(f"hook {name} did not answer with JSON") from exc
+        raise HookError(
+            f"hook {name} did not answer with JSON", status=response.status_code
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -761,7 +887,10 @@ async def after_connect(
     access_token: str,
     params: Mapping[str, str],
 ) -> AfterConnect:
-    answer = await call_hook(
+    # Sent through the one door every hook goes through (community_hooks).
+    from app.services.marketplace import community_hooks
+
+    answer = await community_hooks.call_now(
         "after_connect",
         public_id=public_id,
         base_url=base_url,
@@ -841,7 +970,7 @@ async def _load_for_flow(
     registration = await registration_lookup.registration_for_definition(
         plugin.definition, listing_uid=plugin.listing_uid
     )
-    if registration is None or not registration.live:
+    if registration is None or not registration.live_in(state.guild_id):
         return None
     return _Loaded(
         plugin=plugin,
@@ -985,6 +1114,7 @@ async def complete_callback(
         fields = without_tokens((loaded.plugin.config or {}).get(state.connection_id))
         install_id = loaded.plugin.id
         definition = loaded.plugin.definition
+        installed = install_settings(loaded.plugin)
 
     # The vendor and the plug-in are asked with no transaction open. What they
     # answer is stored against the install as it stands once they have.
@@ -1021,6 +1151,7 @@ async def complete_callback(
                     declared,
                     params=params,
                     access_token=tokens.access_token,
+                    installed=installed,
                 )
             else:
                 answer = await after_connect(
@@ -1052,7 +1183,7 @@ async def complete_callback(
         plugin = loaded.plugin
         try:
             if state.user_id is not None:
-                stored = await _store_member(
+                outcome = await _store_member(
                     session,
                     plugin=plugin,
                     connection=loaded.connection,
@@ -1062,8 +1193,9 @@ async def complete_callback(
                     label=label,
                 )
             else:
-                stored = await _store_community(
+                outcome = await _store_community(
                     session,
+                    guild_id=state.guild_id,
                     plugin_id=plugin.id,
                     connection=loaded.connection,
                     tokens=None if loaded.flow.get("install_url") else tokens,
@@ -1074,13 +1206,7 @@ async def complete_callback(
                 "plug-in connection: after_connect values refused (%s)", exc.code
             )
             return landing_url(state.return_path, "not_recorded")
-        if not stored:
-            return landing_url(state.return_path, "not_recorded")
-        await session.commit()
-        if state.user_id is None:
-            await session.refresh(plugin)
-            await plugin_installs.record(state.guild_id, plugin)
-    return landing_url(state.return_path, "connected")
+    return landing_url(state.return_path, outcome)
 
 
 def _managed_only(connection: Mapping[str, Any], values: Mapping[str, Any]) -> dict:
@@ -1103,9 +1229,10 @@ async def _store_member(
     tokens: TokenSet,
     values: Mapping[str, Any],
     label: Optional[str],
-) -> bool:
+) -> str:
     """The member's row: their token set, the managed values and the account
-    label, ``connected``. A blocked member's row is left as it is."""
+    label, ``connected``. A blocked member's row is left as it is. Answers the
+    landing outcome."""
     connection_id = str(connection.get("id"))
     row = (
         await session.exec(
@@ -1119,7 +1246,7 @@ async def _store_member(
         )
     ).first()
     if row is not None and row.blocked_at is not None:
-        return False
+        return "not_recorded"
     if row is None:
         row = GuildPluginUserConnection(
             plugin_id=plugin.id,
@@ -1128,35 +1255,47 @@ async def _store_member(
             connection_ref=mint_connection_ref(),
             status="pending",
         )
+    stored = (
+        await connections_service.load_connection_secrets(session, row)
+        if row.id is not None
+        else {}
+    )
     config, secrets = plugin_config_service.apply_connection_values(
         connection,
         _managed_only(connection, values),
         current=without_tokens(row.config),
-        current_secrets=without_tokens(row.config_secrets),
+        current_secrets=without_tokens(stored),
         allow_managed=True,
     )
-    row.config, row.config_secrets = seal_tokens(tokens, config=config, secrets=secrets)
+    row.config, sealed = seal_tokens(tokens, config=config, secrets=secrets)
     row.account_label = label
     row.status = "connected"
     row.updated_at = datetime.now(timezone.utc)
-    session.add(row)
-    await session.flush()
-    return True
+    await connections_service.store_connection_secrets(session, row, sealed)
+    await session.commit()
+    return "connected"
 
 
 async def _store_community(
     session: AsyncSession,
     *,
+    guild_id: int,
     plugin_id: int,
     connection: Mapping[str, Any],
     tokens: Optional[TokenSet],
     values: Mapping[str, Any],
-) -> bool:
+) -> str:
     """The community's own connection: the managed values, and the token set
-    unless the flow is installation-style, whose person's token is not kept."""
+    unless the flow is installation-style, whose person's token is not kept.
+    Answers the landing outcome.
+
+    The route the values give the install's vendor webhooks is claimed in the
+    install index before anything is stored, and nothing is stored when
+    another community holds it (``taken``). A store that fails after the claim
+    has the index sweep write the row again from what the community holds."""
     plugin = await guild_plugins_service.lock_install(session, plugin_id)
     if plugin is None:
-        return False
+        return "not_recorded"
     connection_id = str(connection.get("id"))
     all_secrets = await guild_plugins_service.load_secrets(session, plugin)
     stored_config = (plugin.config or {}).get(connection_id) or {}
@@ -1170,16 +1309,33 @@ async def _store_community(
     )
     if tokens is not None:
         config, secrets = seal_tokens(tokens, config=config, secrets=secrets)
-    plugin.config = _replace_entry(plugin.config, connection_id, config)
-    plugin_config_service.guild_connection_ref(plugin, connection_id)
-    plugin.config_state = "unverified"
-    plugin.config_state_detail = None
-    plugin.updated_at = datetime.now(timezone.utc)
-    session.add(plugin)
-    await guild_plugins_service.store_secrets(
-        session, plugin, _replace_entry(all_secrets, connection_id, secrets)
-    )
-    return True
+    entries = _replace_entry(plugin.config, connection_id, config)
+    route = plugin_installs.hook_route(plugin.definition, entries)
+    if not await plugin_installs.claim(guild_id, plugin, route):
+        return "taken"
+    try:
+        plugin.config = entries
+        plugin_config_service.guild_connection_ref(plugin, connection_id)
+        plugin.config_state = "unverified"
+        plugin.config_state_detail = None
+        plugin.updated_at = datetime.now(timezone.utc)
+        session.add(plugin)
+        await guild_plugins_service.store_secrets(
+            session, plugin, _replace_entry(all_secrets, connection_id, secrets)
+        )
+        await session.commit()
+    except Exception:
+        # The route was claimed for values that were not stored: the index
+        # sweep writes the row again from what the community holds.
+        await session.rollback()
+        await session.exec(
+            text("SELECT arm_timer(:kind, now())").bindparams(
+                kind=plugin_installs.INDEX_SWEEP
+            )
+        )
+        await session.commit()
+        raise
+    return "connected"
 
 
 def _replace_entry(
@@ -1256,7 +1412,7 @@ async def _member_row(
 
 
 def _member_tokens(
-    plugin: GuildPlugin, row: GuildPluginUserConnection
+    plugin: GuildPlugin, row: GuildPluginUserConnection, secrets: dict[str, Any]
 ) -> tuple[dict[str, Any], TokenSet]:
     """The flow and token set of a member connection that may be handed out."""
     if row.blocked_at is not None:
@@ -1267,7 +1423,7 @@ def _member_tokens(
         plugin.definition, row.connection_id
     )
     flow = flow_of(connection)
-    tokens = unseal_tokens(row.config, row.config_secrets)
+    tokens = unseal_tokens(row.config, secrets)
     if flow is None or tokens is None or row.status != "connected":
         raise ConnectionFlowError(PluginChannelMessages.CONNECTION_NO_TOKEN)
     return flow, tokens
@@ -1296,7 +1452,9 @@ async def member_token(
     )
     if row is None:
         return None
-    flow, tokens = _member_tokens(plugin, row)
+    flow, tokens = _member_tokens(
+        plugin, row, await connections_service.load_connection_secrets(session, row)
+    )
     renewed = await _renewed(
         flow, public_id=public_id, fields=without_tokens(row.config), tokens=tokens
     )
@@ -1309,7 +1467,8 @@ async def member_token(
     )
     if row is None:
         return None
-    _, current = _member_tokens(plugin, row)
+    stored = await connections_service.load_connection_secrets(session, row)
+    _, current = _member_tokens(plugin, row, stored)
     if current != tokens:
         await session.commit()
         return current
@@ -1319,11 +1478,9 @@ async def member_token(
         session.add(row)
         await session.commit()
         raise ConnectionFlowError(PluginChannelMessages.CONNECTION_EXPIRED)
-    row.config, row.config_secrets = seal_tokens(
-        renewed, config=row.config, secrets=row.config_secrets
-    )
+    row.config, sealed = seal_tokens(renewed, config=row.config, secrets=stored)
     row.updated_at = datetime.now(timezone.utc)
-    session.add(row)
+    await connections_service.store_connection_secrets(session, row, sealed)
     await session.commit()
     return renewed
 
@@ -1574,29 +1731,6 @@ async def revocation_sender(
 
         return send_grant_deletion
 
-    if method != "hook":
-        return None
-    registration = (await registration_lookup.load_registrations()).get(public_id)
-    if registration is None or not registration.base_url:
-        logger.info(
-            "plug-in credential revocation: %s is not registered here; dropped",
-            public_id,
-        )
-        return None
-    base_url = registration.base_url
-
-    async def send_hook() -> None:
-        await call_hook(
-            "revoke",
-            public_id=public_id,
-            base_url=base_url,
-            guild_id=guild_id,
-            install_id=install_id,
-            body={
-                "connection": connection_id,
-                "access_token": tokens.get("access_token"),
-                "refresh_token": tokens.get("refresh_token"),
-            },
-        )
-
-    return send_hook
+    # ``hook`` rides the community-hook queue (``plugin_revocation``), and
+    # every other method sends nothing.
+    return None

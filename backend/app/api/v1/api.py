@@ -15,7 +15,10 @@ from app.core.tools import Tool
 #                          them — the one place tenant data is read without a
 #                          single guild context (see /me routes below).
 from app.api.v1.tenant_endpoints import (
+    activity,
     moderation,
+    evidence,
+    holds,
     archive,
     query,
     smart_chips,
@@ -48,15 +51,15 @@ from app.api.v1.tenant_endpoints import (
     property_values,
     queues,
     reactions,
-    recents,
+    personal_items,
     relationships,
     resource_grants,
     storage,
     tags,
-    filter_presets,
     task_statuses,
     tasks,
     tool_grants,
+    tool_layouts,
     tool_lifecycle,
     tool_lists,
     tools,
@@ -66,6 +69,7 @@ from app.api.v1.tenant_endpoints import (
 from app.api.v1.platform_endpoints import (
     account_change,
     held_changes,
+    home_layouts,
     field_catalog,
     recurrence,
     access_grants,
@@ -85,7 +89,7 @@ from app.api.v1.platform_endpoints import (
     billing,
     config,
     contacts,
-    guild_reference,
+    demo,
     guild_provider_connections,
     guilds,
     health,
@@ -127,6 +131,8 @@ api_router.include_router(config.router, tags=["config"])
 # Unauthenticated: the signup form links to them.
 api_router.include_router(legal.router, tags=["legal"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+# The demo deployment's routes; 404 unless the deployment runs as the demo.
+api_router.include_router(demo.router, prefix="/demo", tags=["demo"])
 # Mounted on the same prefix: the factor routes are part of /auth, kept in
 # their own module rather than growing the sign-in one.
 api_router.include_router(second_factor.router, prefix="/auth", tags=["auth"])
@@ -182,9 +188,6 @@ api_router.include_router(
 # credential, because requiring one to fetch a verification key is circular.
 api_router.include_router(
     plugin_platform.router, prefix="/plugin-platform", tags=["plugin-platform"]
-)
-api_router.include_router(
-    guild_reference.router, prefix="/plugin-platform", tags=["plugin-platform"]
 )
 # The token endpoint: a plug-in authenticates with a JWT it signs and is issued a
 # plug-in or installation token. The listing of its installs takes the plug-in token.
@@ -244,7 +247,6 @@ api_router.include_router(
 )
 # Recents tabs bar is cross-guild (GET list). The addressed delete lives under
 # the guild router below.
-api_router.include_router(recents.router, prefix="/recents", tags=["recents"])
 api_router.include_router(
     user_view_preferences.router,
     prefix="/user-view-preferences",
@@ -277,16 +279,21 @@ guild_router.include_router(tool_lists.router)
 guild_router.include_router(projects.router, **_tool_mount(Tool.project))
 guild_router.include_router(task_statuses.router, tags=["task-statuses"])
 guild_router.include_router(task_statuses.initiative_router, tags=["task-statuses"])
-guild_router.include_router(filter_presets.router, tags=["filter-presets"])
+guild_router.include_router(tool_layouts.router, tags=["layouts"])
 guild_router.include_router(query.router, tags=["query"])
 guild_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 # A community's own moderation: its reports, and settling them. No prefix —
 # the reports of an initiative lead with the initiative, and settling one leads
 # with the report. Who may read any of it is the tables' RLS, not a check here.
 guild_router.include_router(moderation.router, tags=["moderation"])
+# Files attached to a report or a case, opened for whoever may read the one
+# they hang off.
+guild_router.include_router(evidence.router, prefix="/evidence", tags=["evidence"])
+guild_router.include_router(holds.router, prefix="/holds", tags=["holds"])
 # Asking whoever runs the deployment for help. Guild-scoped because whether
 # it is offered at all is the community's own setting.
 guild_router.include_router(comments.router, prefix="/comments", tags=["comments"])
+guild_router.include_router(activity.router, prefix="/activity", tags=["activity"])
 guild_router.include_router(reactions.router, prefix="/reactions", tags=["reactions"])
 # Guild-scoped AI config (guild/user levels). Platform AI config is top-level.
 guild_router.include_router(
@@ -300,6 +307,8 @@ guild_router.include_router(
     attachments.router, prefix="/attachments", tags=["attachments"]
 )
 guild_router.include_router(exports.router, prefix="/exports", tags=["exports"])
+guild_router.include_router(demo.community_router, prefix="/demo", tags=["demo"])
+guild_router.include_router(demo.sales_router, prefix="/demo", tags=["demo"])
 guild_router.include_router(imports.router, prefix="/imports", tags=["imports"])
 guild_router.include_router(queues.router, **_tool_mount(Tool.queue))
 # Flat read-back routes, at the guild root: an event envelope names a
@@ -375,9 +384,9 @@ guild_router.include_router(archive.router, tags=["archive"])
 # under /me below; users.router keeps the routes about other people.
 guild_router.include_router(users.guild_router, prefix="/users", tags=["users"])
 guild_router.include_router(users.members_router, prefix="/members", tags=["users"])
-# Recents: the addressed DELETE is guild-scoped (the cross-guild GET list stays
-# top-level — fully separate endpoints, see recents.py).
-guild_router.include_router(recents.guild_router, prefix="/recents", tags=["recents"])
+guild_router.include_router(
+    personal_items.guild_router, prefix="/personal-items", tags=["personal-items"]
+)
 # WebSockets (guild-scoped). Mounting under /c fixes the URL shape now; the
 # handlers are rewired to read the path guild in a follow-up step.
 guild_router.include_router(events.router, prefix="/events", tags=["events"])
@@ -399,6 +408,7 @@ me_router.include_router(tickets.me_router, tags=["tickets"])
 # MY_TOOL_LISTS, plus the tab counts. One tag, because they are one page rather
 # than nine domains reaching across guilds for their own reasons.
 me_router.include_router(me_tools.me_router, tags=["my-tools"])
+me_router.include_router(personal_items.me_router, tags=["personal-items"])
 me_router.include_router(calendar_entries.me_router, tags=["calendar-entries"])
 me_router.include_router(me_trash.me_router, tags=["trash"])
 me_router.include_router(me_ai.me_router, tags=["ai-settings"])
@@ -417,3 +427,4 @@ api_router.include_router(me_router)
 # router included without one cannot carry an empty path.
 api_router.include_router(users.me_router, prefix="/me", tags=["users"])
 api_router.include_router(held_changes.me_router, prefix="/me", tags=["users"])
+api_router.include_router(home_layouts.me_router, prefix="/me", tags=["home-layouts"])

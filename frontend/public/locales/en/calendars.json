@@ -3,7 +3,6 @@
   "deleteEvent": "Delete Event",
   "eventDeleted": "Event deleted",
   "eventTitle": "Title",
-  "titlePlaceholder": "Event title",
   "descriptionPlaceholder": "Add a description...",
   "location": "Location",
   "locationPlaceholder": "Add a location or link...",
@@ -125,5 +124,28 @@
     "addDate": "Add a date",
     "added": "Date added.",
     "openAlone": "Change just this occurrence"
+  },
+  "subscribe": {
+    "menu": "Subscribe",
+    "title": "Subscribe to {{name}}",
+    "titleMany": "Subscribe to calendars",
+    "description": "Add a calendar to Google Calendar, Apple Calendar or Outlook. Each calendar gets its own link, so it stays a separate calendar there and keeps itself up to date.",
+    "secret": "Anyone with this link can see the calendar's events, so keep it to yourself. Events another app has already copied stay there after you remove the link.",
+    "replaces": "You already have a link for this calendar. Getting a new one stops the old one working.",
+    "getLink": "Get link",
+    "getNewLink": "Get a new link",
+    "copy": "Copy link",
+    "copied": "Link copied.",
+    "open": "Open in calendar app",
+    "manage": "You can remove this link under Settings › Security.",
+    "keyName": "Calendar: {{name}}",
+    "error": "Couldn't make a subscription link."
+  },
+  "eventPage": {
+    "titlePlaceholder": "Event title",
+    "description": "Description",
+    "noDescription": "No description.",
+    "when": "When",
+    "tagsPlaceholder": "Add tags"
   }
 }

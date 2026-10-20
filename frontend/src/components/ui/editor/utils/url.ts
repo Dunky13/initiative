@@ -110,6 +110,35 @@ export function sanitizeUrl(url: string): string {
   }
 }
 
+/** What the link field holds before anyone has typed or pasted a URL. */
+export const DEFAULT_LINK_URL = "https://";
+
+// A destination that needs no scheme in front of it: one of its own
+// (`https://…`, `mailto:…`) or a place in the app (`/…`, `#…`).
+const OWN_DESTINATION_RE = /^(?:[a-z][a-z0-9+.-]*:\/\/|(?:mailto|tel|sms):|[/#])/i;
+
+/**
+ * The link field's value with the starting `https://` dropped when what
+ * follows it already says where it goes, so a URL pasted after it stands
+ * alone instead of reading `https://https://…`.
+ */
+export function withoutDefaultScheme(value: string): string {
+  if (!value.toLowerCase().startsWith(DEFAULT_LINK_URL)) {
+    return value;
+  }
+  const rest = value.slice(DEFAULT_LINK_URL.length).trimStart();
+  return OWN_DESTINATION_RE.test(rest) ? rest : value;
+}
+
+/**
+ * The link field's value after `pasted` lands on the untouched default: the
+ * pasted URL in its place, wherever the caret was, with `https://` kept in
+ * front of a bare host.
+ */
+export function pasteOverDefaultLinkUrl(pasted: string): string {
+  return withoutDefaultScheme(DEFAULT_LINK_URL + pasted.trim());
+}
+
 // Anchored URL matcher used by validateUrl. It requires the WHOLE string to be
 // one of: an allowlisted absolute URL (http/https/mailto/tel/sms), a
 // "www."/email-prefixed host, or a bare domain with a path. It can NOT match a

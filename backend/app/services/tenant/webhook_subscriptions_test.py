@@ -214,6 +214,9 @@ def _install_context(**overrides):
             None,
             id="another-plugins-event",
         ),
+        pytest.param(
+            {"guild_admin": True}, ["demo.link_opened"], None, id="demo-event-admin"
+        ),
     ],
 )
 def test_an_install_may_subscribe_within_its_standing(
@@ -251,6 +254,12 @@ def test_an_install_may_subscribe_within_its_standing(
         ),
         pytest.param({}, ["files.created"], 13, id="not-placed"),
         pytest.param({}, [_GH_EVENT], None, id="plugins-scope-missing"),
+        pytest.param(
+            {"token_scopes": frozenset({"community:admin"})},
+            ["demo.lead_left"],
+            None,
+            id="demo-event-without-admin-standing",
+        ),
     ],
 )
 def test_an_install_may_not_subscribe_beyond_its_standing(
@@ -561,6 +570,10 @@ async def test_a_declarative_plugins_event_reaches_a_subscriber_as_a_containers_
     install may subscribe to its event; what reaches the subscriber is what
     the same plug-in emitting the same event from a container delivers."""
     from app.core.plugin_access_token import seal_install_token
+    from app.db import cohorts
+    from app.db.request_context import SystemGuild
+    from app.db.session import set_rls_context
+    from app.services.tenant import plugin_hooks
     from app.db.install_standing_test import _install, _route
     from app.models.platform.plugin_service_registration import RegistrationKind
     from app.models.tenant.guild_plugin import GuildPlugin
@@ -630,6 +643,10 @@ async def test_a_declarative_plugins_event_reaches_a_subscriber_as_a_containers_
         f"/api/v1/plugin-hooks/{public_id}", content=body, headers=headers
     )
     assert response.status_code == 202, response.text
+    # The delivery waits for the community's delivery sweep, which maps it.
+    async with cohorts.system_session(install.guild.id) as worker:
+        await set_rls_context(worker, SystemGuild(install.guild.id))
+        await plugin_hooks.run_due(worker, install.guild.id)
     await poller.drain_guild(system, install.guild.id, now=datetime.now(timezone.utc))
     [declared] = sent
     assert declared["changes"] == [

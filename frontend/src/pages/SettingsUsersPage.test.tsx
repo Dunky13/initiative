@@ -15,6 +15,7 @@ import { buildCommunity, buildUserCommunityMember } from "@/__tests__/factories"
 import { renderPage } from "@/__tests__/helpers/render";
 import type {
   CommunityAuthOption,
+  CommunityInviteRead,
   CommunityRead,
   UserCommunityMember,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -23,17 +24,20 @@ const state = vi.hoisted(() => ({
   billing: null as { url: string } | null,
   members: [] as UserCommunityMember[],
   authOptions: [] as CommunityAuthOption[],
+  invites: [] as CommunityInviteRead[],
 }));
 vi.mock("@/hooks/useAppConfig", () => ({ useAppConfig: () => ({ billing: state.billing }) }));
 
 const mintHandoff = vi.hoisted(() => vi.fn());
 const listInvites = vi.hoisted(() => vi.fn());
+const createInvite = vi.hoisted(() => vi.fn());
+const deleteInvite = vi.hoisted(() => vi.fn());
 vi.mock("@/api/generated/communities/communities", () => ({
-  createCommunityInvite: vi.fn(),
-  deleteCommunityInvite: vi.fn(),
+  createCommunityInvite: createInvite,
+  deleteCommunityInvite: deleteInvite,
   useListCommunityInvites: (communityId: number, options?: { query?: { enabled?: boolean } }) => {
     if (options?.query?.enabled !== false) listInvites(communityId);
-    return { data: [], isLoading: false, isError: false, refetch: vi.fn() };
+    return { data: state.invites, isLoading: false, isError: false, refetch: vi.fn() };
   },
   createCommunityBillingHandoff: mintHandoff,
 }));
@@ -67,6 +71,10 @@ vi.mock("@/hooks/useCommunityAuthPolicy", () => ({
 vi.mock("@/components/communities/UnownedContentCard", () => ({ UnownedContentCard: () => null }));
 
 import { SettingsUsersPage } from "./SettingsUsersPage";
+
+beforeEach(() => {
+  state.invites = [];
+});
 
 const setup = (overrides: Partial<CommunityRead>) => {
   const community = buildCommunity({
@@ -170,6 +178,57 @@ describe("SettingsUsersPage invites", () => {
     expect(await screen.findByText("Admin")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate invite" })).not.toBeInTheDocument();
     expect(listInvites).not.toHaveBeenCalled();
+  });
+
+  it("shows a new invite's link once, until the invite is deleted", async () => {
+    const community = setup({});
+    const invite = {
+      id: 7,
+      community_id: community.id,
+      created_by: null,
+      expires_at: null,
+      max_uses: 1,
+      uses: 0,
+      invitee_email: null,
+      created_at: new Date().toISOString(),
+      guest_days: null,
+      grants: [],
+    };
+    createInvite.mockImplementation(async () => {
+      state.invites = [invite];
+      return { ...invite, code: "fresh-code" };
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Generate invite" }));
+
+    expect(await screen.findByText(/\/invite\/fresh-code$/)).toBeInTheDocument();
+    expect(screen.getByText("Invite link")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete invite" }));
+
+    await waitFor(() => expect(screen.queryByText(/fresh-code/)).not.toBeInTheDocument());
+    expect(deleteInvite).toHaveBeenCalledWith(community.id, 7);
+  });
+
+  it("leaves guest invites to the Guests tab", async () => {
+    state.invites = [
+      {
+        id: 8,
+        community_id: 1,
+        created_by: null,
+        expires_at: null,
+        max_uses: 1,
+        uses: 0,
+        invitee_email: null,
+        created_at: new Date().toISOString(),
+        guest_days: 5,
+        grants: [],
+      },
+    ];
+    setup({});
+
+    expect(await screen.findByText("No active invites.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete invite" })).not.toBeInTheDocument();
   });
 });
 

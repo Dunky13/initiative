@@ -1,0 +1,10 @@
+python3
+python3-venv
+python3-dev
+build-essential
+pkg-config
+libffi-dev
+libssl-dev
+libmagic1t64
+dpkg-dev
+ca-certificates

@@ -100,6 +100,35 @@
       "body": "<strong>{{actor}}</strong> replied to your comment on <strong>{{context}}</strong>"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} changed",
+      "title": "Something you subscribed to changed",
+      "body": "<strong>{{actor}}</strong> changed <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "New comment on {{context}}",
+      "title": "New comment on something you subscribed to",
+      "body": "<strong>{{actor}}</strong> commented on <strong>{{context}}</strong>"
+    },
+    "reacted": {
+      "subject": "New reaction on {{context}}",
+      "title": "New reaction on something you're subscribed to",
+      "body": "<strong>{{actor}}</strong> reacted to <strong>{{context}}</strong>"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} changed",
+      "title": "Something you're on changed",
+      "body": "<strong>{{actor}}</strong> changed <strong>{{context}}</strong>"
+    },
+    "commented": {
+      "subject": "New comment on {{context}}",
+      "title": "New comment on something you're on",
+      "body": "<strong>{{actor}}</strong> commented on <strong>{{context}}</strong>"
+    }
+  },
   "post": {
     "published": {
       "subject": "New post: {{post}}",
@@ -112,16 +141,6 @@
       "subject": "You're invited: {{event}}",
       "title": "New event invitation",
       "body": "<strong>{{organizer}}</strong> invited you to <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
-    },
-    "rescheduled": {
-      "subject": "Event rescheduled: {{event}}",
-      "title": "Event rescheduled",
-      "body": "<strong>{{editor}}</strong> rescheduled <strong>{{event}}</strong> to <strong>{{when}}</strong>."
-    },
-    "updated": {
-      "subject": "Event updated: {{event}}",
-      "title": "Event updated",
-      "body": "<strong>{{editor}}</strong> updated <strong>{{event}}</strong> (<strong>{{when}}</strong>)."
     },
     "cancelled": {
       "subject": "Event cancelled: {{event}}",
@@ -156,6 +175,7 @@
     "greeting": "Hi <strong>{{name}}</strong>,",
     "levelRead": "read-only",
     "levelReadWrite": "read-write",
+    "levelModerate": "moderation",
     "levelAdmin": "community-settings (admin)",
     "levelSuperadmin": "community-settings (superadmin)",
     "requested": {
@@ -259,6 +279,11 @@
       "subject": "Two-factor authentication will be turned off",
       "title": "Two-factor authentication will be turned off",
       "body": "Two-factor authentication will be turned off on <strong>{{date}}</strong>. Until then your account still asks for a code when you sign in, and you can cancel it under Security in your settings."
+    },
+    "recoveryRegenerated": {
+      "subject": "New recovery codes were made for your account",
+      "title": "New recovery codes were made for your account",
+      "body": "A new set of recovery codes was made for your account, and the ones you had no longer work. Keep the new ones somewhere safe."
     }
   },
   "passwordRemoved": {
@@ -350,24 +375,18 @@
     },
     "noCommunity": {
       "direct_messages": "Direct messages",
-      "connections": "Connections",
       "account": "Your account",
       "other": "Across your communities"
     },
     "category": {
-      "mentions": "Mentions",
-      "replies": "Replies",
-      "comments": "Comments on your work",
-      "reactions": "Reactions",
-      "assignments": "Task assignments",
-      "due_dates": "Overdue tasks",
-      "membership": "Joining things",
+      "mentions": "Mentions and replies",
+      "assignments": "Assigned to you",
+      "subscriptions": "Subscribed",
+      "news": "New in your communities",
       "approvals": "Waiting on you",
-      "posts": "Posts",
-      "events": "Events",
-      "event_reminders": "Event reminders",
-      "direct_messages": "Direct messages",
-      "connections": "Connections",
+      "moderation": "Moderation",
+      "cases": "Cases",
+      "direct_messages": "Messages and connections",
       "jobs": "Exports and imports",
       "account": "Your account"
     }
@@ -465,6 +484,38 @@
       "m10": "October",
       "m11": "November",
       "m12": "December"
+    }
+  },
+  "moderation": {
+    "removed": {
+      "subject": "A moderator removed something you wrote",
+      "title": "A moderator removed something you wrote",
+      "body": "Something you wrote broke this community's rules and was taken down. The notice in the app says why."
+    },
+    "warned": {
+      "subject": "A warning from this community's moderators",
+      "title": "A warning from this community's moderators",
+      "body": "The moderators wrote:<br><br>{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "subject": "A new case was opened",
+      "title": "A new case was opened",
+      "body": "A case was just opened where you work cases, and nobody has taken it yet. Open it in Initiative to read it."
+    },
+    "replied": {
+      "subject": "A reply on a case nobody has taken",
+      "title": "A reply on a case nobody has taken",
+      "body": "Whoever filed a case answered on it, and nobody has taken it yet. Open it in Initiative to read it."
+    }
+  },
+  "identity": {
+    "fallbackText": "If this wasn't you, change your password straight away and get in touch with whoever runs this site.",
+    "linked": {
+      "subject": "A new way to sign in to your account",
+      "title": "A new way to sign in to your account",
+      "body": "Your account can now be signed in to through <strong>{{provider}}</strong>, because it proved an address of yours."
     }
   }
 }

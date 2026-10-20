@@ -1,3 +1,9 @@
+export { buildActivityEntry } from "./activity.factory";
+export {
+  buildCalendarEvent,
+  buildEventAttendee,
+  resetCounter as resetCalendarEventCounter,
+} from "./calendarEvent.factory";
 export { ownerCan, readerCan, writerCan } from "./can";
 export {
   buildComment,
@@ -18,11 +24,6 @@ export {
   resetCounter as resetDmCounter,
 } from "./dm.factory";
 export { buildFileSummary, resetCounter as resetFileCounter } from "./file.factory";
-export {
-  buildDefaultFilterPresets,
-  buildFilterPreset,
-  resetCounter as resetFilterPresetCounter,
-} from "./filterPreset.factory";
 export { buildGallery, buildGalleryImage } from "./gallery.factory";
 export {
   buildInitiative,
@@ -78,6 +79,7 @@ export {
   buildSearchHit,
   buildSearchResults,
   buildSearchSuggestion,
+  buildTaggedEntity,
   resetCounter as resetSearchCounter,
 } from "./search.factory";
 export { buildTag, buildTagSummary, resetCounter as resetTagCounter } from "./tag.factory";
@@ -87,6 +89,7 @@ export {
   buildTaskListResponse,
   resetCounter as resetTaskCounter,
 } from "./task.factory";
+export { buildSavedLayoutSet, buildToolLayoutSet } from "./toolLayout.factory";
 export {
   buildOwnedDecoration,
   buildUser,
@@ -99,11 +102,11 @@ export {
 } from "./user.factory";
 export { buildWiki, buildWikiPage } from "./wiki.factory";
 
+import { resetCounter as resetCalendarEventCounter } from "./calendarEvent.factory";
 import { resetCounter as resetCommentCounter } from "./comment.factory";
 import { resetCounter as resetCommunityCounter } from "./community.factory";
 import { resetCounter as resetDmCounter } from "./dm.factory";
 import { resetCounter as resetFileCounter } from "./file.factory";
-import { resetCounter as resetFilterPresetCounter } from "./filterPreset.factory";
 import { resetCounter as resetGalleryCounter } from "./gallery.factory";
 import { resetCounter as resetInitiativeCounter } from "./initiative.factory";
 import { resetCounter as resetMarketplaceCounter } from "./marketplace.factory";
@@ -137,10 +140,10 @@ export function resetFactories(): void {
   resetPropertyCounter();
   resetRecentCounter();
   resetMarketplaceCounter();
-  resetFilterPresetCounter();
   resetSearchCounter();
   resetDmCounter();
   resetPostCounter();
   resetGalleryCounter();
   resetWikiCounter();
+  resetCalendarEventCounter();
 }

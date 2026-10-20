@@ -26,7 +26,7 @@ const list = (...items: ReturnType<typeof buildProject>[]): ProjectListResponse 
 describe("project list cache keys", () => {
   it("reaches every narrowed list from the endpoint prefix", () => {
     const qc = new QueryClient();
-    const project = buildProject({ id: 7, is_favorited: false });
+    const project = buildProject({ id: 7, name: "Before" });
 
     // The shapes the app actually caches: the sidebar's community-wide read, an
     // initiative's tab, and that tab's Templates and Archive views.
@@ -46,28 +46,28 @@ describe("project list cache keys", () => {
       (prev) =>
         prev && {
           ...prev,
-          items: prev.items.map((p) => (p.id === 7 ? { ...p, is_favorited: true } : p)),
+          items: prev.items.map((p) => (p.id === 7 ? { ...p, name: "After" } : p)),
         }
     );
 
     for (const key of keys) {
       expect(
-        qc.getQueryData<ProjectListResponse>(key)?.items[0].is_favorited,
+        qc.getQueryData<ProjectListResponse>(key)?.items[0].name,
         `stale list for key ${JSON.stringify(key)}`
-      ).toBe(true);
+      ).toBe("After");
     }
   });
 
   it("does not reach another community's lists", () => {
     const qc = new QueryClient();
     const otherKey = getListProjectsQueryKey(2, { initiative_id: 5 });
-    qc.setQueryData(otherKey, list(buildProject({ id: 7, is_favorited: false })));
+    qc.setQueryData(otherKey, list(buildProject({ id: 7, name: "Before" })));
 
     qc.setQueriesData<ProjectListResponse>(
       { queryKey: getListProjectsQueryKey(COMMUNITY) },
-      (prev) => prev && { ...prev, items: prev.items.map((p) => ({ ...p, is_favorited: true })) }
+      (prev) => prev && { ...prev, items: prev.items.map((p) => ({ ...p, name: "After" })) }
     );
 
-    expect(qc.getQueryData<ProjectListResponse>(otherKey)?.items[0].is_favorited).toBe(false);
+    expect(qc.getQueryData<ProjectListResponse>(otherKey)?.items[0].name).toBe("Before");
   });
 });

@@ -6,24 +6,35 @@
  * kept apart from the task's comments: everything here is what the requester
  * reads, and nothing in the thread below ever reaches them.
  */
-import { Inbox, Send } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Inbox, KeyRound, Send, UserCheck } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  type AccessGrantRead,
+  type CaseEvidenceRead,
   type CaseMessageRead,
   CommentAudience,
   Conversation,
 } from "@/api/generated/initiativeAPI.schemas";
 import { CommentContent } from "@/components/comments/CommentContent";
+import { AccessGrantStatusBadge } from "@/components/platform/AccessGrantStatusBadge";
+import { CaseHolds } from "@/components/tickets/CaseHolds";
+import { communityEvidenceUrl, EvidenceList } from "@/components/tickets/Evidence";
+import { UserHandle } from "@/components/UserHandle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { UserHoverLink } from "@/components/user/UserHoverLink";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useAuth } from "@/hooks/useAuth";
 import { useCreateComment } from "@/hooks/useComments";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
 import { useUpdateTask } from "@/hooks/useTasks";
-import { refreshTaskCase, useTaskCase } from "@/hooks/useTickets";
+import { refreshTaskCase, useTakeCase, useTaskCase } from "@/hooks/useTickets";
+import { minutesLeft } from "@/lib/formatDate";
+import { Capability, hasCapability } from "@/lib/permissions";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
 
@@ -31,9 +42,19 @@ interface CasePanelProps {
   taskId: number;
   /** Whether the reader may change the task. */
   canEdit: boolean;
+  /** Who the task is assigned to, so the reader can take it if they aren't. */
+  assigneeIds: number[];
 }
 
-const Message = ({ message }: { message: CaseMessageRead }) => {
+const Message = ({
+  message,
+  evidence,
+  urlFor,
+}: {
+  message: CaseMessageRead;
+  evidence: CaseEvidenceRead[];
+  urlFor: (evidenceId: number) => string;
+}) => {
   const { t } = useTranslation("intake");
   const when = useRelativeTime(message.created_at);
   const name = message.author ? getUserDisplayName(message.author) : t("case.someone");
@@ -51,14 +72,126 @@ const Message = ({ message }: { message: CaseMessageRead }) => {
         <div className="text-sm">
           <CommentContent content={message.content} />
         </div>
+        <EvidenceList className="mt-2" items={evidence} urlFor={urlFor} blurred />
       </div>
     </li>
   );
 };
 
-export const CasePanel = ({ taskId, canEdit }: CasePanelProps) => {
+/** What a grant reaches and how far, in the words the request form uses. */
+const GRANT_LEVEL_KEY: Partial<
+  Record<
+    string,
+    "levelRead" | "levelReadWrite" | "levelModerate" | "levelAdmin" | "levelSuperadmin"
+  >
+> = {
+  read: "levelRead",
+  read_write: "levelReadWrite",
+  moderate: "levelModerate",
+  admin: "levelAdmin",
+  superadmin: "levelSuperadmin",
+};
+
+const GrantRow = ({ grant }: { grant: AccessGrantRead }) => {
+  const { t } = useTranslation(["intake", "settings"]);
+  const left = grant.is_live ? minutesLeft(grant.expires_at) : null;
+  const purpose = t(
+    grant.purpose === "settings"
+      ? "settings:accessGrants.purposeSettings"
+      : "settings:accessGrants.purposeContent"
+  );
+  const levelKey = GRANT_LEVEL_KEY[grant.access_level];
+  const level = levelKey ? t(`settings:accessGrants.${levelKey}`) : grant.access_level;
+  const community = grant.community_name
+    ? `${grant.community_name} (#${grant.community_id})`
+    : `#${grant.community_id}`;
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+      <div className="min-w-0">
+        <p className="truncate text-sm">
+          {grant.user ? (
+            <UserHandle user={grant.user} />
+          ) : (
+            getUserDisplayName({ id: grant.user_id })
+          )}{" "}
+          → {community}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {purpose} · {level}
+          {left !== null ? <> · {t("case.access.endsIn", { minutes: left })}</> : null}
+        </p>
+      </div>
+      <AccessGrantStatusBadge grant={grant} />
+    </li>
+  );
+};
+
+/**
+ * The access asked for on this case, and a way to ask for more. The request
+ * form opens with this case chosen, and the community it is about where it
+ * names one.
+ */
+const CaseAccess = ({
+  taskId,
+  grants,
+  subjectCommunityId,
+}: {
+  taskId: number;
+  grants: AccessGrantRead[];
+  subjectCommunityId: number | null;
+}) => {
+  const { t } = useTranslation("intake");
+  const { user } = useAuth();
+  const canRequest = hasCapability(user, Capability.accessRequest);
+  if (grants.length === 0 && !canRequest) return null;
+  // A grant on the same community already carries its name, which saves the
+  // picker showing a bare number.
+  const subjectName =
+    subjectCommunityId == null
+      ? null
+      : (grants.find((grant) => grant.community_id === subjectCommunityId)?.community_name ?? null);
+  return (
+    <CardContent className="space-y-2 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 font-medium text-sm">
+          <KeyRound className="h-4 w-4" aria-hidden="true" />
+          {t("case.access.title")}
+        </p>
+        {canRequest ? (
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/settings/operator/access"
+              search={{
+                form: "request",
+                case: taskId,
+                ...(subjectCommunityId == null ? {} : { community: subjectCommunityId }),
+                ...(subjectName ? { name: subjectName } : {}),
+              }}
+            >
+              {t("case.access.request")}
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+      {grants.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("case.access.none")}</p>
+      ) : (
+        <ul className="divide-y" aria-label={t("case.access.listLabel")}>
+          {grants.map((grant) => (
+            <GrantRow key={grant.id} grant={grant} />
+          ))}
+        </ul>
+      )}
+    </CardContent>
+  );
+};
+
+export const CasePanel = ({ taskId, canEdit, assigneeIds }: CasePanelProps) => {
   const { t } = useTranslation(["intake", "common"]);
+  const { user } = useAuth();
   const caseQuery = useTaskCase(taskId);
+  const takeCase = useTakeCase();
+  const communityId = useActiveCommunityId();
   const [reply, setReply] = useState("");
   const createComment = useCreateComment();
   const updateTask = useUpdateTask();
@@ -68,10 +201,19 @@ export const CasePanel = ({ taskId, canEdit }: CasePanelProps) => {
   if (!found) return null;
 
   const filerName = found.filer ? getUserDisplayName(found.filer) : null;
+  const mine = user != null && assigneeIds.includes(user.id);
   const awaiting = found.awaiting_filer_status_id ?? null;
   const messages = found.messages ?? [];
   const teamHasSpoken = messages.some((message) => !message.from_requester);
   const pending = createComment.isPending || updateTask.isPending;
+  const evidence = found.evidence ?? [];
+  const shownIds = new Set(messages.map((message) => message.id));
+  // Files beside no message shown here: carried in with a report, or sent
+  // with words the conversation no longer holds.
+  const loose = evidence.filter(
+    (item) => item.comment_id == null || !shownIds.has(item.comment_id)
+  );
+  const urlFor = (evidenceId: number) => communityEvidenceUrl(communityId, evidenceId);
 
   const send = async (wait: boolean) => {
     const content = reply.trim();
@@ -94,6 +236,12 @@ export const CasePanel = ({ taskId, canEdit }: CasePanelProps) => {
         <CardTitle className="flex items-center gap-2 text-base">
           <Inbox className="h-4 w-4" aria-hidden="true" />
           {t(`streams.${found.stream}.title`)}
+          {/* What the filer said it is about, where they chose. */}
+          {found.topic ? (
+            <span className="font-normal text-muted-foreground">
+              · {t(`case.topics.${found.topic}`, { defaultValue: found.topic })}
+            </span>
+          ) : null}
         </CardTitle>
         <p className="text-muted-foreground text-sm">
           {filerName ? (
@@ -115,13 +263,56 @@ export const CasePanel = ({ taskId, canEdit }: CasePanelProps) => {
             {found.filer_subject}
           </p>
         ) : null}
+        {mine ? (
+          <p className="flex items-center gap-1.5 text-muted-foreground text-sm">
+            <UserCheck className="h-4 w-4" aria-hidden="true" />
+            {t("case.taken")}
+          </p>
+        ) : canEdit ? (
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={takeCase.isPending}
+              onClick={() => takeCase.mutate(taskId)}
+            >
+              <UserCheck className="h-4 w-4" aria-hidden="true" />
+              {t("case.take")}
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
+      {loose.length > 0 ? (
+        <CardContent className="space-y-2 pb-3">
+          <p className="font-medium text-muted-foreground text-xs">{t("evidence.heading")}</p>
+          <EvidenceList items={loose} urlFor={urlFor} blurred />
+        </CardContent>
+      ) : null}
+      {found.stream === "moderation" && found.subject_community_id != null ? (
+        <CaseHolds
+          taskId={taskId}
+          communityId={found.subject_community_id}
+          resourceType={found.resource_type}
+          resourceId={found.resource_id}
+        />
+      ) : null}
+      <CaseAccess
+        taskId={taskId}
+        grants={found.grants ?? []}
+        subjectCommunityId={found.subject_community_id ?? null}
+      />
       {found.filer && (
         <CardContent className="space-y-3">
           {messages.length > 0 ? (
             <ul className="space-y-3" aria-label={t("case.conversationLabel", { name: filerName })}>
               {messages.map((message) => (
-                <Message key={message.id} message={message} />
+                <Message
+                  key={message.id}
+                  message={message}
+                  evidence={evidence.filter((item) => item.comment_id === message.id)}
+                  urlFor={urlFor}
+                />
               ))}
             </ul>
           ) : null}

@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.errors import CodedError
 from app.core.messages import WebhookSubscriptionMessages
 from app.core import webhook_events
+from app.core.config import settings
 from app.core.plugin_scopes import plugin_scope
 from app.db import cohorts
 from app.db.session import set_rls_context
@@ -27,12 +28,12 @@ from app.schemas.tenant.webhook_subscription import (
     WebhookSubscriptionUpdate,
 )
 from app.services import audit as audit_service
-from app.services import guild_work
 from app.services.marketplace.registration_lookup import (
     load_registrations,
     service_public_id,
 )
 from app.services.marketplace.service_plugins import ENDPOINT_ID_PREFIX
+from app.services.platform.intake import configured_operations_guild_id
 from app.db.request_context import SystemGuild
 
 #: The fields a rewrite reports as moved. ``fields`` is a list of names, so
@@ -104,19 +105,34 @@ async def plugin_event_emitters(
 
 
 async def assert_vocabulary(
-    event_types: list[str] | None, fields: list[str] | None, *, guild_id: int
+    event_types: list[str] | None,
+    fields: list[str] | None,
+    *,
+    guild_id: int,
+    for_install: bool = False,
 ) -> dict[str, str]:
     """Reject event types and field names that could never fire.
 
     Callers pass the values the row will END UP with. The change vocabulary
     derives from the capture registry; a plug-in event is one a plug-in installed
-    here declares it emits. This is what turns a typo into a 400 rather than a
-    subscription that looks healthy and never delivers. Returns the plug-in events
-    named, each with the plug-in that emits it (:func:`plugin_event_emitters`).
+    here declares it emits; the demo's events are a subscription an install
+    (``for_install``) in the operations community holds on the demo
+    deployment. This is what turns a typo
+    into a 400 rather than a subscription that looks healthy and never
+    delivers. Returns the plug-in events named, each with the plug-in that emits
+    it (:func:`plugin_event_emitters`).
     """
     named = list(event_types or [])
     emitters = await plugin_event_emitters(guild_id, named)
-    changes = [name for name in named if name not in emitters]
+    demo: frozenset[str] = frozenset()
+    if (
+        for_install
+        and settings.DEMO_MODE
+        and webhook_events.DEMO_EVENT_TYPES.intersection(named)
+        and guild_id == await configured_operations_guild_id()
+    ):
+        demo = webhook_events.DEMO_EVENT_TYPES
+    changes = [name for name in named if name not in emitters and name not in demo]
     if changes and webhook_events.unknown_event_types(changes):
         raise WebhookSubscriptionVocabularyError(
             WebhookSubscriptionMessages.UNKNOWN_EVENT_TYPE
@@ -153,6 +169,8 @@ def assert_install_may_subscribe(
       type no scope reaches (a plug-in's own install changing) is never a plug-in's.
     - Every plug-in event needs ``plugins:<public_id>`` of the plug-in that emits it
       (``emitters``), among the token's scopes.
+    - Every demo event needs the community-admin standing, held now: the
+      token asking for it and the seat's grant holding it.
     - A token narrowed to one initiative subscribes to that initiative only.
     - A community-wide subscription needs a token that is not narrowed.
     - A named initiative is one the install is placed in.
@@ -166,6 +184,10 @@ def assert_install_may_subscribe(
     refused = WebhookSubscriptionScopeError(PluginMessages.SCOPE_REQUIRED)
     readable = set(context.install_read)
     for event_type in event_types:
+        if event_type in webhook_events.DEMO_EVENT_TYPES:
+            if not context.guild_admin:
+                raise refused
+            continue
         emitter = emitters.get(event_type)
         if emitter is not None:
             if plugin_scope(emitter) not in context.token_scopes:
@@ -282,7 +304,10 @@ async def create_subscription(
     names no person (:func:`create_install_subscription`).
     """
     await assert_vocabulary(
-        list(payload.event_types), payload.fields, guild_id=guild_id
+        list(payload.event_types),
+        payload.fields,
+        guild_id=guild_id,
+        for_install=plugin_install_id is not None,
     )
 
     secret = _generate_hmac_secret()
@@ -317,7 +342,6 @@ async def create_subscription(
             "plugin_install_id": plugin_install_id,
         },
     )
-    guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()
     await session.refresh(subscription)
     return subscription, secret
@@ -336,7 +360,10 @@ async def create_install_subscription(
     the install and no person. ``session`` is the one the install seam routed.
     """
     emitters = await assert_vocabulary(
-        list(payload.event_types), payload.fields, guild_id=context.guild_id
+        list(payload.event_types),
+        payload.fields,
+        guild_id=context.guild_id,
+        for_install=True,
     )
     assert_install_may_subscribe(
         context,
@@ -387,6 +414,7 @@ async def update_subscription(
         else subscription.event_types,
         payload.fields if payload.fields is not None else subscription.fields,
         guild_id=guild_id,
+        for_install=subscription.plugin_install_id is not None,
     )
 
     data = payload.model_dump(exclude_unset=True)
@@ -416,8 +444,6 @@ async def update_subscription(
                 target_id=subscription.id,
                 detail={**changed, "target_host_changed": host_changed},
             )
-    if subscription.active:
-        guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()
     await session.refresh(subscription)
     return subscription
@@ -495,5 +521,4 @@ async def delete_subscription(
                 "plugin_install_id": plugin_install_id,
             },
         )
-    guild_work.wake(session, guild_work.WEBHOOKS, guild_id)
     await session.commit()

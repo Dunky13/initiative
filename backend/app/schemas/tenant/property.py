@@ -149,13 +149,40 @@ class PropertyValueInput(SanitizedBaseModel):
     value: Any = None
 
 
-class PropertyValuesSetRequest(SanitizedBaseModel):
-    """Replace-all payload for ``PUT /properties/{target}/{entity_id}``.
+class PropertyOptionsChange(SanitizedBaseModel):
+    """Options put on and taken off one multi-select value, against the value
+    as it stands when the change is written rather than a list that replaces
+    it, so two people changing different options of it both stand."""
 
-    An empty list clears every property value on the entity.
+    property_id: int
+    add: List[str] = Field(default_factory=list, max_length=100)
+    remove: List[str] = Field(default_factory=list, max_length=100)
+
+
+class PropertyValuesSetRequest(SanitizedBaseModel):
+    """Payload for ``PUT /properties/{target}/{entity_id}``: replace-all, or
+    with ``merge`` only the properties it names.
+
+    Replacing, an empty list clears every property value on the entity.
     """
 
     values: List[PropertyValueInput] = Field(default_factory=list)
+    #: Write only the properties ``values`` names, and take off the ones
+    #: ``removed`` names, leaving every other value on the entity as it is.
+    merge: bool = False
+    removed: List[int] = Field(default_factory=list, max_length=100)
+    #: With ``merge``, multi-select values to change an option of.
+    options: List[PropertyOptionsChange] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def removal_merges(self) -> "PropertyValuesSetRequest":
+        if (self.removed or self.options) and not self.merge:
+            raise ValueError("removed and options need merge")
+        changed = [change.property_id for change in self.options]
+        written = {*self.removed, *(entry.property_id for entry in self.values)}
+        if len(changed) != len(set(changed)) or written.intersection(changed):
+            raise ValueError("a property's options change once, and alone")
+        return self
 
 
 class PropertiesOnCreate(SanitizedBaseModel):

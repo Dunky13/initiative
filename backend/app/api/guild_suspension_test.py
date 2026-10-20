@@ -25,8 +25,9 @@ from app.core.messages import GuildMessages
 from app.core.tools import Tool
 from app.models.platform.access_grant import AccessGrant
 from app.models.platform.app_setting import AppSetting
-from app.models.platform.guild import Guild, GuildInvite, CommunityRole, CommunityStatus
+from app.models.platform.guild import Guild, CommunityRole, CommunityStatus
 from app.models.platform.user import UserRole
+from app.services.platform import guilds as guild_service
 from app.services.tenant import task_statuses as task_statuses_service
 from app.testing import (
     guild_administration,
@@ -326,7 +327,7 @@ async def test_read_only_member_reads_but_writes_denied_at_role_level(
         },
     )
     assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"] == Tool.project.write_required_code
+    assert resp.json() == Tool.project.write_required().body
 
 
 async def test_read_only_guild_admin_writes_denied_too(
@@ -353,13 +354,13 @@ async def test_read_only_guild_admin_writes_denied_too(
         },
     )
     assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"] == Tool.project.write_required_code
+    assert resp.json() == Tool.project.write_required().body
 
     resp = await client.patch(
         a.g(f"/tasks/{task.id}"), headers=a.headers, json={"title": "after"}
     )
     assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"] == Tool.project.write_required_code
+    assert resp.json() == Tool.project.write_required().body
 
 
 async def test_read_only_establishes_content_read_only_context(
@@ -574,16 +575,12 @@ async def test_scoped_read_write_grant_edits_suspended_guild(
 # ---------------------------------------------------------------------------
 
 
-async def _invite_for(session: AsyncSession, guild: Guild, code: str) -> GuildInvite:
-    invite = GuildInvite(
-        code=code,
-        guild_id=guild.id,
-        created_by=guild.created_by,
-        max_uses=5,
+async def _invite_for(session: AsyncSession, guild: Guild) -> str:
+    _, code = await guild_service.create_guild_invite(
+        session, guild_id=guild.id, created_by=guild.created_by, max_uses=5
     )
-    session.add(invite)
     await session.commit()
-    return invite
+    return code
 
 
 @pytest.mark.parametrize(
@@ -597,21 +594,21 @@ async def test_invite_redemption_refused_on_non_active_guild(
     """Joining a non-active guild is refused, reported as a plain expired
     invite (never the guild's lifecycle status)."""
     admin = await acting_user(guild_role=CommunityRole.admin)
-    invite = await _invite_for(session, admin.guild, f"frozen-{status.value}")
+    code = await _invite_for(session, admin.guild)
     await _set_status(session, admin.guild, status)
 
     joiner = await acting_user()
     resp = await client.post(
         "/api/v1/communities/invite/accept",
         headers=joiner.headers,
-        json={"code": invite.code},
+        json={"code": code},
     )
     assert resp.status_code == 400
     assert resp.json()["detail"] == GuildMessages.INVITE_EXPIRED_OR_USED
 
     # The describe endpoint reports it like any expired code.
     resp = await client.get(
-        f"/api/v1/communities/invite/{invite.code}", headers=joiner.headers
+        f"/api/v1/communities/invite/{code}", headers=joiner.headers
     )
     assert resp.status_code == 200
     body = resp.json()

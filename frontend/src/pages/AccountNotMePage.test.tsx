@@ -5,7 +5,7 @@
  * the page reads the token and says what the email was about, and only the
  * button signs the account out everywhere.
  */
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
@@ -22,7 +22,7 @@ const PAGE = {
 };
 
 describe("AccountNotMePage", () => {
-  it("signs out everywhere only when the button is pressed", async () => {
+  it("signs out everywhere only when the button is pressed, from an address without the token", async () => {
     const user = userEvent.setup();
     const refreshUser = vi.fn().mockResolvedValue(undefined);
     const signOuts: unknown[] = [];
@@ -36,10 +36,15 @@ describe("AccountNotMePage", () => {
       })
     );
 
-    renderPage(AccountNotMePage, { ...PAGE, auth: { user: buildUser(), refreshUser } });
+    const { router } = renderPage(AccountNotMePage, {
+      ...PAGE,
+      auth: { user: buildUser(), refreshUser },
+    });
 
     expect(await screen.findByText(/a change to your passkeys/i)).toBeInTheDocument();
     expect(signOuts).toEqual([]);
+    await waitFor(() => expect(router.state.location.href).toBe("/account/not-me"));
+    expect(router.history.length).toBe(1);
 
     await user.click(screen.getByRole("button", { name: /sign out everywhere/i }));
 
@@ -48,6 +53,33 @@ describe("AccountNotMePage", () => {
     // A signed-in browser asks after its own session, which may be one of
     // those just ended.
     expect(refreshUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the people running the server were told, or who to tell", async () => {
+    const user = userEvent.setup();
+    let told = true;
+    server.use(
+      http.post("/api/v1/auth/account-change/read", () =>
+        HttpResponse.json({ notice: "passkey.added", sign_out: true, undo: null, subject: null })
+      ),
+      http.post("/api/v1/auth/account-change/sign-out", () =>
+        HttpResponse.json(
+          told
+            ? { status: "signed_out", platform_told: true, contact: null }
+            : { status: "signed_out", platform_told: false, contact: "security@example.org" }
+        )
+      )
+    );
+
+    const first = renderPage(AccountNotMePage, PAGE);
+    await user.click(await screen.findByRole("button", { name: /sign out everywhere/i }));
+    expect(await screen.findByText(/have been told/i)).toBeInTheDocument();
+    first.unmount();
+
+    told = false;
+    renderPage(AccountNotMePage, PAGE);
+    await user.click(await screen.findByRole("button", { name: /sign out everywhere/i }));
+    expect(await screen.findByText(/security@example\.org/)).toBeInTheDocument();
   });
 
   it("says so when the link has expired or been used", async () => {

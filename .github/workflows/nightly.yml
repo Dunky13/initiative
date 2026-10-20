@@ -7,9 +7,8 @@ name: Nightly
 # journeys. A failed night opens an issue labelled nightly; the next good night
 # closes it.
 #
-# A schedule always runs the workflow as main holds it, which can be a release
-# behind the dev tree it tests. So the schedule only starts this workflow on
-# dev, and the night runs dev's steps against dev's code.
+# A schedule runs the workflow as the default branch holds it, and that is
+# dev, so the night runs dev's steps against dev's code.
 
 on:
   schedule:
@@ -27,30 +26,14 @@ permissions:
   contents: read
 
 # Every night reports to the same issue, so a newer run replaces an older one
-# rather than racing it to that issue. The schedule's own run only starts the
-# night, and stays out of the group so the night it starts does not cancel it.
+# rather than racing it to that issue.
 concurrency:
-  group: nightly-${{ github.event.pull_request.number || (github.event_name == 'schedule' && 'start') || 'dev' }}
+  group: nightly-${{ github.event.pull_request.number || 'dev' }}
   cancel-in-progress: true
 
 jobs:
-  start:
-    name: Start the night on dev
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Run this workflow on dev
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh workflow run nightly.yml --ref dev
-
   backend:
     name: Backend (${{ matrix.name }})
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -160,7 +143,6 @@ jobs:
 
   frontend:
     name: Frontend (Auckland, shuffled)
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # The tests pin their own locale (vitest.config.ts), so only the timezone
@@ -189,7 +171,6 @@ jobs:
 
   journeys:
     name: Journeys
-    if: github.event_name != 'schedule'
     uses: ./.github/workflows/journeys.yml
 
   report:
@@ -197,7 +178,7 @@ jobs:
     needs: [backend, frontend, journeys]
     # The night on dev, scheduled or started by hand; a branch's run reports
     # on its own page only.
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && github.ref_name == 'dev' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref_name == 'dev' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

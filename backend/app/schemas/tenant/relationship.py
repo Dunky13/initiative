@@ -122,3 +122,38 @@ class RelationshipRead(SanitizedBaseModel):
     confidence: Optional[float] = None
     created_by: Optional[int] = None
     created_at: datetime
+
+
+class NeighbourhoodNode(SanitizedBaseModel):
+    """One thing in a neighbourhood, and how many hops out it was found."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    end: RelatedEnd
+    depth: int
+
+
+class NeighbourhoodEdge(SanitizedBaseModel):
+    """One link in a neighbourhood, from the side the walk reached it on.
+
+    ``direction`` is relative to ``anchor``, as a :class:`RelationshipRead`'s is
+    to the entity asked about.
+    """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    id: int
+    relationship_type: RelationshipType
+    anchor: EndpointRef
+    other: EndpointRef
+    direction: str
+    provenance: str
+
+
+class NeighbourhoodRead(SanitizedBaseModel):
+    """Everything within some hops of one thing, in one answer."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    nodes: List[NeighbourhoodNode]
+    edges: List[NeighbourhoodEdge]

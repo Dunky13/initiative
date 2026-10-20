@@ -85,6 +85,11 @@ const shapeSummary = (entry: WidgetCatalogEntry, t: TFunction<"dashboards">): st
     })
     .join(" · ");
 
+/** The options a widget is added with: the ones that are a choice. A value
+ *  of its own, such as a target, is set once the widget has data to aim. */
+const choices = (entry: WidgetCatalogEntry) =>
+  entry.options.filter((option) => option.kind !== "number" && option.kind !== "date");
+
 export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps) {
   const { t, i18n } = useTranslation("dashboards");
   const [open, setOpen] = useState(false);
@@ -103,7 +108,7 @@ export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps)
         const meta = metas[entry.type] ?? null;
         const name = widgetDisplayName(meta, entry.type, language);
         const description = localized(meta?.description, language) ?? "";
-        const optionLabels = entry.options.flatMap((option) => [
+        const optionLabels = choices(entry).flatMap((option) => [
           optionLabel(option, meta, language),
           ...option.values.map((value) => valueLabel(option.key, value, meta, language)),
         ]);
@@ -139,7 +144,7 @@ export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps)
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <Button size="sm" disabled={atCap || !catalog}>
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             {t("canvas.addWidget")}
           </Button>
         </DialogTrigger>
@@ -164,9 +169,9 @@ export function WidgetPicker({ catalog, widgetCount, onAdd }: WidgetPickerProps)
           </div>
 
           {selected ? (
-            <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[15rem_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 gap-4 sm:grid-cols-[15rem_minmax(0,1fr)]">
               <ul
-                className="max-h-40 min-h-0 space-y-1 overflow-y-auto pr-1 md:max-h-none"
+                className="max-h-40 min-h-0 space-y-1 overflow-y-auto pr-1 sm:max-h-none"
                 aria-label={t("picker.listLabel")}
               >
                 {filtered.map((item) => (
@@ -260,7 +265,7 @@ function WidgetDetail({
           </div>
         )}
 
-        {entry.options.map((option) => (
+        {choices(entry).map((option) => (
           <fieldset key={option.key} className="space-y-1.5">
             <legend className="font-medium text-sm">{optionLabel(option, meta, language)}</legend>
             <div className="flex flex-wrap gap-1.5">
@@ -298,7 +303,7 @@ function WidgetDetail({
         className="shrink-0 self-end"
         onClick={() => onAdd(NEW_WIDGET_SOURCE, Object.keys(options).length ? options : undefined)}
       >
-        <Plus className="mr-1.5 h-4 w-4" />
+        <Plus className="h-4 w-4" />
         {t("picker.add", { widget: name })}
       </Button>
     </div>

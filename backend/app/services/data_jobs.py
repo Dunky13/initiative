@@ -2,9 +2,9 @@
 
 A data job is a row in its community's own schema (an ``ImportJob`` or an
 ``ExportJob``) that a background visit claims and runs. The claim is visited
-when a wake says a job was queued or ended in the community (:data:`drain`),
-and in every active community by the minute pass. Every API process does
-this, so the claim is decided in the database: under a transaction-scoped
+by the ``data_jobs`` timer that queuing or ending a job arms at once, and again
+once the job's slot is free. Every API process does this, so the claim is
+decided in the database: under a transaction-scoped
 advisory lock on the community, so two processes never claim in the same
 community at once, a community with a job already active gets no second one,
 and the oldest queued job goes first.
@@ -14,8 +14,8 @@ renders), and a process runs at most so many of each kind at once. A claimed
 job runs as a task of its own, on a system session of its own, and tells its
 creator how it ended.
 
-The slow pass sweeps each community for jobs whose row has gone quiet, which
-nobody is running any more. What happens to one depends on the job type, so
+The ``stale_jobs`` timer sweeps a community for jobs whose row has gone quiet,
+which nobody is running any more. What happens to one depends on the job type, so
 the sweep is the worker's. Jobs this process is running are left out of it:
 they are known to be alive.
 
@@ -40,12 +40,13 @@ from sqlalchemy import func
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core import audit_context
 from app.db import cohorts
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import set_rls_context
 from app.models.platform.notification import NotificationType
-from app.services import guild_work
-from app.services.guild_sweeps import Drain, Scope, each_guild
+from app.services import sweep_timers
+from app.services.guild_sweeps import Scope, each_guild
 from app.services.platform import notice_outbox
 from app.db.request_context import SystemGuild, Unattributed
 
@@ -69,9 +70,6 @@ Runner = Callable[..., Awaitable[JobOutcome | None]]
 
 #: Every dispatcher, for :func:`cancel_running_jobs`.
 _dispatchers: weakref.WeakSet[Dispatcher[Any]] = weakref.WeakSet()
-
-#: Communities a wake says have a job queued or ended, for the claim.
-drain = Drain("data-jobs", settle=0.0)
 
 
 @dataclass(eq=False)
@@ -241,28 +239,28 @@ class Dispatcher(Generic[JobT]):
         """One claimed job, start to finish, on a session of its own. Once it
         ends, the community's next queued job may start."""
         model: Any = self.model
-        try:
-            async with cohorts.system_session(guild_id) as session:
-                await set_rls_context(session, SystemGuild(guild_id))
-                job = (
-                    await session.exec(select(model).where(model.id == job_id))
-                ).one_or_none()
-                if job is None:
-                    return
-                # End the read here rather than holding it open for as long as
-                # the job runs.
-                await session.commit()
-                outcome = await self.run(session, job, guild_id=guild_id, kind=kind)
-                if outcome is not None:
-                    await notify(session, [outcome])
-        except Exception:
-            logger.exception(
-                "%s job task failed id=%s guild=%s", self.name, job_id, guild_id
-            )
-        finally:
-            # Out of the slot before the wake, so this process can claim again.
-            self.running.pop((guild_id, job_id), None)
-        await guild_work.send(guild_work.DATA_JOBS, guild_id)
+        with audit_context.job(self.name, guild_id=guild_id):
+            try:
+                async with cohorts.system_session(guild_id) as session:
+                    await set_rls_context(session, SystemGuild(guild_id))
+                    job = (
+                        await session.exec(select(model).where(model.id == job_id))
+                    ).one_or_none()
+                    if job is None:
+                        return
+                    # End the read here rather than holding it open for as long
+                    # as the job runs.
+                    await session.commit()
+                    outcome = await self.run(session, job, guild_id=guild_id, kind=kind)
+                    if outcome is not None:
+                        await notify(session, [outcome])
+            except Exception:
+                logger.exception("%s job task failed id=%s", self.name, job_id)
+            finally:
+                # Out of the slot before the wake, so this process can claim
+                # again.
+                self.running.pop((guild_id, job_id), None)
+        sweep_timers.wake("data_jobs", guild_id)
 
 
 async def cancel_running_jobs() -> None:

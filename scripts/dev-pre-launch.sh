@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Orchestrate the dev environment startup chain. Equivalent of the VSCode dev:setup
-# task chain: db -> migrate -> seed -> backend (bg) -> frontend (bg) -> browser.
+# task chain: deps -> db -> migrate -> seed -> backend (bg) -> frontend (bg) -> browser.
 #
 # Cleanup belongs to a *running* environment. Once both servers are up, every
 # exit path tears them down and removes the seeded data: Ctrl+C (SIGINT), kill
@@ -77,6 +77,12 @@ for spec in "backend:$DEV_BACKEND_PORT" "frontend:$DEV_FRONTEND_PORT"; do
         exit 1
     fi
 done
+
+# Bring both environments in line with the lockfiles, so a pull that changed a
+# dependency doesn't start the servers on the old set. Both are quick no-ops
+# when nothing changed.
+(cd backend && uv sync)
+(cd frontend && pnpm install)
 
 docker compose up db -d --wait
 

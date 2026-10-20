@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional, Protocol, Sequence
 
@@ -48,7 +49,10 @@ from app.models.platform.guild import LIVE_STATUS_VALUES, Guild, CommunityStatus
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
-from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
+from app.services.marketplace.plugin_refs import (
+    PluginNameRefused,
+    ensure_plugin_guild_ref,
+)
 from app.services.marketplace.registration_lookup import service_public_id
 from app.services.marketplace.service_plugins import (
     CONNECTION_STATES,
@@ -57,6 +61,7 @@ from app.services.marketplace.service_plugins import (
 from app.services.tenant import plugin_config as plugin_config_service
 from app.services.tenant import plugin_connection_flows as flows
 from app.services.tenant import guild_plugins as guild_plugins_service
+from app.services.tenant import plugin_connections as connections_service
 from app.db.request_context import SystemGuild, Unattributed
 
 logger = logging.getLogger(__name__)
@@ -135,15 +140,22 @@ async def _route(session: AsyncSession, guild_id: int, *, read_only: bool) -> No
 
 
 async def _install_guild_ref(session: AsyncSession, plugin: GuildPlugin) -> str:
-    """What this install calls the guild it is in.
+    """What this install's plug-in calls the guild it is in.
 
     Every payload on this channel names the guild by it, because it is the only
     name the plug-in on the other end has for it. The community is the one the
-    session read the install from.
+    session read the install from, and the plug-in is the one the install's
+    registration names.
     """
-    return await ensure_plugin_guild_ref(
-        guild_id=routed_guild_id(session), plugin_install_id=plugin.id
-    )
+    public_id = await guild_plugins_service.install_public_id(plugin)
+    if public_id is None:
+        raise PluginChannelError(PluginChannelMessages.INSTALL_NOT_FOUND, 404)
+    try:
+        return await ensure_plugin_guild_ref(
+            guild_id=routed_guild_id(session), public_id=public_id
+        )
+    except PluginNameRefused as exc:
+        raise PluginChannelError(PluginChannelMessages.INSTALL_NOT_FOUND, 404) from exc
 
 
 async def _guild_row(session: AsyncSession, guild_id: int) -> Optional[Guild]:
@@ -257,6 +269,12 @@ async def config_payload(session: AsyncSession, plugin: GuildPlugin) -> dict[str
         if isinstance(ref, str) and ref:
             connection_refs[connection_id] = ref
 
+    rows = [
+        row for row in await _member_rows(session, plugin) if row.blocked_at is None
+    ]
+    sealed = await connections_service.connection_secrets_of(
+        session, [row.id for row in rows if row.id is not None]
+    )
     member_values = [
         {
             "connection_id": row.connection_id,
@@ -265,12 +283,11 @@ async def config_payload(session: AsyncSession, plugin: GuildPlugin) -> dict[str
             "values": {
                 **plugin_config_service.without_tokens(row.config),
                 **plugin_config_service.decrypt_connection_secrets(
-                    plugin_config_service.without_tokens(row.config_secrets)
+                    plugin_config_service.without_tokens(sealed.get(row.id, {}))
                 ),
             },
         }
-        for row in await _member_rows(session, plugin)
-        if row.blocked_at is None
+        for row in rows
     ]
 
     state = plugin_config_service.config_state(plugin)
@@ -427,18 +444,42 @@ def set_connection_state(plugin: GuildPlugin, connection_id: str, state: str) ->
 
     A state other than ``ok`` is ``invalid``, its detail the connection and
     the state (``workspace_suspended``). ``ok`` clears a verdict about this
-    connection and leaves one about another as it is.
+    connection and leaves one about another as it is. ``removed`` is also
+    kept on the connection's own stored values (``REMOVED_AT``), until ``ok``
+    is read for that connection or it is connected again.
     """
+    marked = _mark_removed(plugin, connection_id, state)
     about = {f"{connection_id}_{other}" for other in CONNECTION_STATES if other != "ok"}
     if state == "ok":
         if plugin.config_state == "invalid" and plugin.config_state_detail not in about:
-            return False
+            return marked
         verdict: tuple[str, Optional[str]] = ("ok", None)
     else:
         verdict = ("invalid", f"{connection_id}_{state}")
     if (plugin.config_state, plugin.config_state_detail) == verdict:
-        return False
+        return marked
     plugin.config_state, plugin.config_state_detail = verdict
+    plugin.updated_at = datetime.now(timezone.utc)
+    return True
+
+
+def _mark_removed(plugin: GuildPlugin, connection_id: str, state: str) -> bool:
+    """Mark a stored connection the vendor reported ``removed``, and unmark it
+    when ``ok`` is read for it. Answers whether that changed it."""
+    stored = (plugin.config or {}).get(connection_id)
+    if not isinstance(stored, dict) or state not in ("ok", "removed"):
+        return False
+    removed = state == "removed"
+    if (plugin_config_service.REMOVED_AT in stored) == removed:
+        return False
+    entry = {
+        key: value
+        for key, value in stored.items()
+        if key != plugin_config_service.REMOVED_AT
+    }
+    if removed:
+        entry[plugin_config_service.REMOVED_AT] = int(time.time())
+    plugin.config = {**(plugin.config or {}), connection_id: entry}
     plugin.updated_at = datetime.now(timezone.utc)
     return True
 
@@ -530,10 +571,29 @@ async def keep_event(
             PluginChannelMessages.INITIATIVE_NOT_PLACED, status_code=403
         )
 
+    await stage_event(
+        session,
+        install_id=plugin.id,
+        event_type=event_type,
+        payload=payload,
+        initiative_id=initiative_id,
+    )
+
+
+async def stage_event(
+    session: AsyncSession,
+    *,
+    install_id: int,
+    event_type: str,
+    payload: dict[str, Any],
+    initiative_id: Optional[int] = None,
+) -> None:
+    """Write one event to the routed community's plug-in outbox, in the
+    caller's transaction, and wake the outbox drain once it commits."""
     session.add(
         PluginEventOutbox(
             txn_id=func.txid_current(),
-            install_id=plugin.id,
+            install_id=install_id,
             event_type=event_type,
             initiative_id=initiative_id,
             payload=payload,

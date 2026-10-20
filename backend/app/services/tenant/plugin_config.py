@@ -32,6 +32,11 @@ Satisfaction is computed from presence alone — which fields have values. This
 build never inspects a credential, calls a vendor, or learns a scope; whether a
 credential carries the permissions it needs is the plug-in's to report, and arrives
 separately as ``config_state``.
+
+A plug-in may also declare *settings*: values the seat sees and changes on the
+install, which every expression of a declarative plug-in reads
+(:func:`install_settings`). They are checked against the pinned definition the
+same way (:func:`setting_value`).
 """
 
 from __future__ import annotations
@@ -44,8 +49,10 @@ from typing import Any, Optional
 from app.core.errors import CodedError
 from app.core.encryption import SALT_PLUGIN_CONFIG, decrypt_field, encrypt_field
 from app.core.messages import GuildPluginMessages
+from app.services.marketplace.manifest_values import is_unique_setting_value
 
 __all__ = [
+    "REMOVED_AT",
     "RESERVED_TOKEN_KEYS",
     "PluginConfigError",
     "ConfigState",
@@ -58,13 +65,16 @@ __all__ = [
     "connection_id_for_ref",
     "decrypt_connection_secrets",
     "definition_connections",
+    "definition_settings",
     "guild_connection_ref",
     "has_value_map",
+    "install_settings",
     "is_satisfied",
     "mint_connection_ref",
     "needs_configuration",
     "prune_to_definition",
     "runs_vendor_flow",
+    "setting_value",
     "token_of",
     "without_tokens",
 ]
@@ -79,11 +89,15 @@ MAX_SECRET_VALUE_LENGTH = 16_000
 #: What a plug-in may report back about the configuration it was handed.
 CONFIG_STATES: frozenset[str] = frozenset({"unverified", "ok", "invalid"})
 
+#: When the vendor reported a connection removed (epoch seconds), kept in its
+#: plain map until the connection is read ``ok`` or connected again.
+REMOVED_AT = "removed_at"
+
 #: Where a connection's flow keeps its tokens, beside its declared fields: the
 #: two tokens sealed in the secrets map, the two expiry times (epoch seconds)
-#: in the plain map.
+#: in the plain map. :data:`REMOVED_AT` is kept in the plain map the same way.
 RESERVED_TOKEN_KEYS: frozenset[str] = frozenset(
-    {"access_token", "refresh_token", "expires_at", "refresh_expires_at"}
+    {"access_token", "refresh_token", "expires_at", "refresh_expires_at", REMOVED_AT}
 )
 
 #: Long enough that a handle is never guessed, short enough to sit in a URL the
@@ -137,6 +151,24 @@ def connection_by_id(
         if connection.get("id") == connection_id:
             return connection
     return None
+
+
+def definition_settings(definition: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The settings a pinned definition declares, in manifest order."""
+    declared = (definition or {}).get("settings")
+    if not isinstance(declared, list):
+        return []
+    return [entry for entry in declared if isinstance(entry, dict)]
+
+
+def install_settings(plugin: Any) -> dict[str, Any]:
+    """What every expression of a declarative plug-in reads of its install:
+    ``settings``, each setting's value by key, and ``aliases``, each unique
+    setting's earlier values by key, newest first."""
+    return {
+        "settings": dict(plugin.settings or {}),
+        "aliases": dict(plugin.setting_aliases or {}),
+    }
 
 
 def token_of(connection: Mapping[str, Any] | None) -> Optional[dict[str, Any]]:
@@ -259,6 +291,32 @@ def _coerce(field: dict[str, Any], value: Any) -> Any:
     return text
 
 
+def setting_value(setting: Mapping[str, Any], value: Any) -> Optional[str]:
+    """A value submitted for ``setting``, as it is kept: one line of text, or
+    ``None`` to clear a setting that is not unique.
+
+    A unique setting always holds a value, in lowercase: a lowercase letter,
+    then lowercase letters and digits (``SETTING_INVALID`` otherwise).
+    """
+    text = value.strip() if isinstance(value, str) else value
+    if setting.get("unique") is True:
+        text = text.lower() if isinstance(text, str) else text
+        if not is_unique_setting_value(text):
+            raise PluginConfigError(GuildPluginMessages.SETTING_INVALID)
+        return text
+    if text is None:
+        return None
+    if (
+        not isinstance(text, str)
+        or not text
+        or any(ord(character) < 32 or ord(character) == 127 for character in text)
+    ):
+        raise PluginConfigError(GuildPluginMessages.CONFIG_INVALID_VALUE)
+    if len(text) > MAX_CONFIG_VALUE_LENGTH:
+        raise PluginConfigError(GuildPluginMessages.CONFIG_VALUE_TOO_LONG)
+    return text
+
+
 def apply_connection_values(
     connection: dict[str, Any],
     submitted: dict[str, Any],
@@ -355,7 +413,8 @@ def prune_to_definition(
     entirely, which the caller revokes — the plug-in is still holding whatever
     those values bought it.
     """
-    # A connection with a flow keeps its tokens too, under the reserved keys.
+    # A connection with a flow keeps its tokens and its removal mark too, under
+    # the reserved keys.
     declared: dict[str, set[str]] = {
         connection["id"]: {
             field["key"] for field in _fields(connection) if "key" in field
@@ -433,6 +492,46 @@ def is_satisfied(
     if required:
         return all(present.get(key, False) for key in required)
     return any(present.values())
+
+
+def installation_meets(
+    plugin: Any, requires: Any, *, members_connect: bool = False
+) -> bool:
+    """Whether a call the installation makes meets ``requires``: the
+    community's own connections it names hold a value, every one for
+    ``all_of`` and one for ``any_of``. A member's connection never answers the
+    installation. With ``members_connect``, one it names counts as held: it is
+    the member's to make when they run what asks for it, and they are asked to
+    then. Absent, it asks nothing."""
+    if not isinstance(requires, dict):
+        return True
+    for key, check in (("all_of", all), ("any_of", any)):
+        terms = requires.get(key)
+        if isinstance(terms, list):
+            return check(
+                _community_connection_holds(plugin, term, members_connect)
+                for term in terms
+            )
+    return True
+
+
+def _community_connection_holds(
+    plugin: Any, connection_id: Any, members_connect: bool
+) -> bool:
+    connection = (
+        connection_by_id(plugin.definition, connection_id)
+        if isinstance(connection_id, str)
+        else None
+    )
+    if connection is None:
+        return False
+    if connection.get("scope") == "interactive":
+        return members_connect
+    return is_satisfied(
+        connection,
+        (plugin.config or {}).get(connection_id) or {},
+        (plugin.secret_fields or {}).get(connection_id) or {},
+    )
 
 
 def needs_configuration(

@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useFieldCatalogs } from "@/hooks/useQueryVocabulary";
+import { listFormat } from "@/lib/intl";
 import type { FilterNode } from "@/lib/widgets/conditions";
 
 /** The datasets a query may name. Read from the generated enum, which is the
@@ -42,10 +43,30 @@ const DATASETS = Object.values(DatasetName) as DatasetName[];
 
 /** What a column may be reduced to, mirroring the builder's own set. */
 const AGGREGATES = ["count", "sum", "avg", "min", "max"] as const;
+/** What may be added up along the grouping, mirroring the builder's set. */
+const RUNNING = ["count", "sum"] as const;
+/** How a running aggregate is held in the "Show as" choice. */
+const RUNNING_PREFIX = "running_";
 const BUCKETS = ["day", "week", "month", "quarter", "year"] as const;
 
 /** The one column that is not a field: how many rows there are. */
 const COUNT_ALL: QueryColumnSpec = { field: "*", aggregate: "count", alias: "count" };
+
+/** What a statement is grouped by: once any column is a count or a total,
+ *  every column shown as it is — the only grouping Postgres accepts, so it is
+ *  worked out rather than asked for. With no count or total, every row shows.
+ *  A name is listed once: the server groups every column that has it, such as
+ *  one date rounded two ways. */
+const groupingFor = (columns: QueryColumnSpec[]): string[] =>
+  columns.some((column) => column.aggregate)
+    ? [
+        ...new Set(
+          columns
+            .filter((column) => !column.aggregate && column.field !== "*")
+            .map((column) => column.alias || column.field)
+        ),
+      ]
+    : [];
 
 export interface QueryBuilderProps {
   spec: QueryBuildRequest;
@@ -55,7 +76,7 @@ export interface QueryBuilderProps {
 }
 
 export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps) {
-  const { t } = useTranslation(["dashboards", "common"]);
+  const { t, i18n } = useTranslation(["dashboards", "common"]);
   const { fields, relations, defaultFilters } = useFieldCatalog(spec.dataset as DatasetName);
   // What each related dataset holds. A relation says only its name and where
   // it arrives; what may be named there is that dataset's own description, so
@@ -96,7 +117,14 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
     [selectable, reachable]
   );
 
-  const patch = (next: Partial<QueryBuildRequest>) => onChange({ ...spec, ...next });
+  const patch = (next: Partial<QueryBuildRequest>) => {
+    const merged = { ...spec, ...next };
+    onChange({ ...merged, group_by: groupingFor(merged.columns) });
+  };
+  // What the statement is grouped by now. A saved widget keeps the grouping it
+  // was built with until it is edited, because opening one must not rewrite
+  // it, so this reads the spec rather than working it out again.
+  const grouping = spec.group_by ?? [];
 
   /**
    * A new statement starts without archived work or templates.
@@ -126,6 +154,9 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
     patch({ columns: spec.columns.map((held, at) => (at === index ? column : held)) });
 
   const isDate = (field?: { kind?: string }) => field?.kind === "date";
+  /** Whether another column is shown as it is, for this one to add up along. */
+  const runsAlong = (index: number) =>
+    spec.columns.some((other, at) => at !== index && !other.aggregate && other.field !== "*");
 
   return (
     <div className="space-y-4">
@@ -191,13 +222,22 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
             </Select>
 
             <Select
-              value={column.aggregate ?? "none"}
-              onValueChange={(aggregate) =>
+              value={
+                column.running
+                  ? `${RUNNING_PREFIX}${column.aggregate}`
+                  : (column.aggregate ?? "none")
+              }
+              onValueChange={(choice) => {
+                const running = choice.startsWith(RUNNING_PREFIX);
+                const aggregate = running ? choice.slice(RUNNING_PREFIX.length) : choice;
                 setColumn(index, {
                   ...column,
                   aggregate: aggregate === "none" ? null : aggregate,
-                })
-              }
+                  running: running || undefined,
+                  // Named for what it now is: "count" or "running_count".
+                  alias: null,
+                });
+              }}
             >
               <SelectTrigger className="w-32" aria-label={t("dashboards:builder.fn")}>
                 <SelectValue />
@@ -211,6 +251,18 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
                     })}
                   </SelectItem>
                 ))}
+                {/* Added up along another column, so offered once there is
+                    one. A running column already chosen stays shown, and the
+                    builder's refusal says why it no longer runs. */}
+                {(column.running || runsAlong(index)) &&
+                  RUNNING.map((aggregate) => (
+                    <SelectItem
+                      key={`${RUNNING_PREFIX}${aggregate}`}
+                      value={`${RUNNING_PREFIX}${aggregate}`}
+                    >
+                      {t(`dashboards:aggregate.${RUNNING_PREFIX}${aggregate}` as const)}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
 
@@ -261,7 +313,7 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
             })
           }
         >
-          <Plus className="mr-1 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           {t("dashboards:builder.addColumn")}
         </Button>
       </section>
@@ -276,28 +328,17 @@ export function QueryBuilder({ spec, onChange, initiativeId }: QueryBuilderProps
         />
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-1">
         <Label>{t("dashboards:builder.groupBy")}</Label>
-        <Select
-          value={spec.group_by?.[0] ?? "none"}
-          onValueChange={(name) => patch({ group_by: name === "none" ? [] : [name] })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">{t("dashboards:builder.everythingTogether")}</SelectItem>
-            {spec.columns
-              .filter((column) => !column.aggregate)
-              .map((column) => column.alias || column.field)
-              .filter((name) => name !== "*")
-              .map((name) => (
-                <SelectItem key={name} value={name}>
-                  {fieldLabel(name, t)}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <p className="text-sm">
+          {grouping.length
+            ? t("dashboards:builder.groupedBy", {
+                columns: listFormat(i18n.resolvedLanguage ?? i18n.language, {
+                  type: "conjunction",
+                }).format(grouping.map((name) => fieldLabel(name, t))),
+              })
+            : t("dashboards:builder.notGrouped")}
+        </p>
         <p className="text-muted-foreground text-xs">{t("dashboards:builder.groupByHelp")}</p>
       </section>
     </div>

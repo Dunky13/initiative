@@ -1,4 +1,5 @@
-import { $isCodeNode, CODE_LANGUAGE_MAP, getLanguageFriendlyName } from "@lexical/code";
+import { $isCodeNode } from "@lexical/code";
+import { CODE_LANGUAGE_MAP, getLanguageFriendlyName } from "@lexical/code-prism";
 import { $isListNode } from "@lexical/list";
 import { $findMatchingParent } from "@lexical/utils";
 import { $isRangeSelection, $isRootOrShadowRoot, type BaseSelection } from "lexical";

@@ -45,6 +45,7 @@ import json
 from dataclasses import dataclass, fields, replace
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
+from app.core.capabilities import Capability, roles_with_capability
 from app.core.plugin_scopes import (
     PLUGIN_SCOPE_PREFIX,
     LEVEL_SCOPES,
@@ -53,7 +54,7 @@ from app.core.plugin_scopes import (
 )
 from app.core.tools import Tool
 from app.db import gucs
-from app.db.authorization import LIVE_GRANT, sql_values
+from app.db.authorization import LIVE_GRANT, live_membership, sql_values
 from app.models.platform.access_grant import AccessGrantPurpose, AccessLevel
 from app.models.platform.plugin_service_registration import (
     RegistrationKind,
@@ -127,27 +128,55 @@ def _writes(values: dict[gucs.Guc, str]) -> str:
     )
 
 
+#: The platform tiers that hold ``content.moderate``: who may read held content
+#: under a ``moderate`` grant.
+_MODERATING_TIERS_SQL = ", ".join(
+    f"'{role.value}'"
+    for role in sorted(roles_with_capability(Capability.CONTENT_MODERATE), key=str)
+)
+
+#: The request is routed into a guest role: the role in use carries the guest
+#: floor. A ``guest`` membership row is read only under one, and under any
+#: other role it is no membership and its holder is in no initiative.
+_ROUTED_AS_GUEST = "pg_has_role(current_user, 'guest_base', 'USAGE')"
+
 #: The reader's own rows the person statement reads, each table once. Every
 #: key below is an aggregate over one of these, so a new key picks a row set
-#: rather than reading its table again.
+#: rather than reading its table again. ``my_items`` is a guest's: the
+#: initiatives of the items shared with them by name, read only when the
+#: membership row is a guest's.
 _PERSON_ROWS = f"""
-WITH my_initiatives AS MATERIALIZED (
+WITH my_row AS MATERIALIZED (
+  SELECT m.role,
+         (m.role <> '{CommunityRole.guest.value}' OR {_ROUTED_AS_GUEST}) AS routed
+  FROM public.guild_memberships m
+  WHERE m.guild_id = {gucs.GUILD_ID} AND m.user_id = {gucs.USER_ID}
+    AND {live_membership("m")}
+),
+my_membership AS MATERIALIZED (
+  SELECT r.role FROM my_row r WHERE r.routed
+),
+my_initiatives AS MATERIALIZED (
   SELECT im.initiative_id, im.role_id,
          COALESCE(r.is_manager, false) AS is_manager,
          COALESCE(r.override_share_restrictions, false) AS overrides
   FROM initiative_members im
   LEFT JOIN initiative_roles r ON r.id = im.role_id
   WHERE im.user_id = {gucs.USER_ID}
+    AND NOT EXISTS (SELECT 1 FROM my_row mr WHERE NOT mr.routed)
+),
+my_items AS MATERIALIZED (
+  SELECT DISTINCT g.initiative_id
+  FROM resource_grants g
+  WHERE g.user_id = {gucs.USER_ID} AND g.initiative_id IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM my_membership m WHERE m.role = '{CommunityRole.guest.value}'
+    )
 ),
 my_role_permissions AS MATERIALIZED (
   SELECT mi.initiative_id, rp.permission_key, rp.enabled
   FROM my_initiatives mi
   JOIN initiative_role_permissions rp ON rp.initiative_role_id = mi.role_id
-),
-my_membership AS MATERIALIZED (
-  SELECT m.role
-  FROM public.guild_memberships m
-  WHERE m.guild_id = {gucs.GUILD_ID} AND m.user_id = {gucs.USER_ID}
 ),
 my_grants AS MATERIALIZED (
   SELECT g.purpose, g.access_level::text AS access_level
@@ -192,6 +221,16 @@ _PERSON_STANDING: dict[gucs.Guc, str] = {
           AND g.access_level = '{AccessLevel.read_write.value}'
       )::text
     )""",
+    # A moderate grant reads what the platform holds only while its holder
+    # still moderates: the tier is read as it stands now, not as it stood when
+    # the grant was approved.
+    gucs.PAM_MODERATE: f"""(
+      SELECT (EXISTS (
+        SELECT 1 FROM my_grants g
+        WHERE g.purpose = '{AccessGrantPurpose.content.value}'
+          AND g.access_level = '{AccessLevel.moderate.value}'
+      ) AND COALESCE({gucs.PLATFORM_ROLE.sql} IN ({_MODERATING_TIERS_SQL}), false))::text
+    )""",
     gucs.MEMBER_INITIATIVES: """COALESCE((
       SELECT string_agg(DISTINCT mi.initiative_id::text, ',')
       FROM my_initiatives mi
@@ -219,14 +258,24 @@ _PERSON_STANDING: dict[gucs.Guc, str] = {
     gucs.ENABLED_TOOLS: f"""COALESCE((
       SELECT string_agg(DISTINCT i.id || ':' || t.tool, ',')
       FROM initiatives i
-      JOIN my_initiatives mi ON mi.initiative_id = i.id
       CROSS JOIN LATERAL (VALUES {_tool_switch_values()}) AS t(tool, enabled)
       WHERE t.enabled
+        AND i.id IN (
+          SELECT mi.initiative_id FROM my_initiatives mi
+          UNION ALL
+          SELECT it.initiative_id FROM my_items it
+        )
     ), '')""",
     gucs.OVERRIDE_INITIATIVES: """COALESCE((
       SELECT string_agg(DISTINCT mi.initiative_id::text, ',')
       FROM my_initiatives mi
       WHERE mi.overrides
+    ), '')""",
+    gucs.GUEST: f"""COALESCE((
+      SELECT (m.role = '{CommunityRole.guest.value}')::text FROM my_membership m
+    ), 'false')""",
+    gucs.GUEST_ITEM_INITIATIVES: """COALESCE((
+      SELECT string_agg(it.initiative_id::text, ',') FROM my_items it
     ), '')""",
     gucs.GUILD_AUTH_OK: """   (SELECT public.guild_auth_satisfied()::text)""",
     gucs.CONTENT_HOLD: f"""COALESCE((
@@ -261,13 +310,14 @@ _GUILD_ADMIN_SCOPE = LEVEL_SCOPES[InstallLevel.community_admin]
 _LIVE_STATUSES_SQL = sql_values(sorted(LIVE_STATUS_VALUES))
 
 #: A reference row in this install's own sector: the ``plugin`` purpose, the
-#: routed community and the routed install. The same predicate the
+#: routed community and the plug-in the token was issued to, which ``install``
+#: below holds to the routed install's registration. The same predicate the
 #: ``identity_refs`` policies for the install floor hold every read and insert
 #: to (``app.db.public_rls``).
 _IN_INSTALL_SECTOR = (
     f"r.purpose = '{IdentityPurpose.plugin.value}'"
     f" AND r.sector_guild_id = {gucs.GUILD_ID}"
-    f" AND r.sector_id = {gucs.INSTALL_ID}"
+    f" AND r.sector_plugin = {gucs.TOKEN_CLIENT_ID}"
 )
 #: How long a replaced reference keeps resolving, as an interval.
 _GRACE_INTERVAL = f"interval '{int(REF_GRACE_PERIOD.total_seconds())} seconds'"
@@ -302,14 +352,16 @@ def _permission_default_values() -> str:
     )
 
 
-#: The scopes an install's tokens may carry, as ``text[]`` over ``guild_plugins
-#: a``: those the seat granted that the pinned version still requests. The
-#: grant itself is left as the seat set it, so a scope a later version stops
-#: requesting stops being carried by every token at once. Read by token
-#: issuance, the install standing and the plug-in hub alike.
+#: The scopes an install may use, as ``text[]`` over ``guild_plugins a``: those
+#: the seat granted that the pinned version still requests, a container's in
+#: its ``service`` block and a declarative plug-in's, which has none, at the top
+#: of its manifest. The grant itself is left as the seat set it, so a scope a
+#: later version stops requesting stops being carried by every token at once.
+#: Read by token issuance, the install standing and the plug-in hub alike.
 ISSUABLE_SCOPES_SQL = (
     "ARRAY(SELECT s FROM unnest(a.granted_scopes) AS s "
-    "WHERE a.definition -> 'service' -> 'scopes' @> jsonb_build_array(s))"
+    "WHERE COALESCE(a.definition -> 'service', a.definition) -> 'scopes' "
+    "@> jsonb_build_array(s))"
 )
 
 
@@ -324,6 +376,9 @@ _INSTALL_STANDING: dict[gucs.Guc, str] = {
     gucs.PAM_GUILD_ID: """''""",
     gucs.PAM_READ: """'false'""",
     gucs.PAM_WRITE: """'false'""",
+    gucs.PAM_MODERATE: """'false'""",
+    gucs.GUEST: """'false'""",
+    gucs.GUEST_ITEM_INITIATIVES: """''""",
     gucs.MEMBER_INITIATIVES: """COALESCE((
       SELECT string_agg(p.initiative_id::text, ',' ORDER BY p.initiative_id)
       FROM placed p
@@ -387,9 +442,14 @@ _INSTALL_STANDING: dict[gucs.Guc, str] = {
 #:
 #: ``install`` is the install when it may act at all: the community's status is
 #: one its members use, the install is on, and the operator's registration for
-#: its listing is live (on, its publisher on, and holding a key set) and the
-#: client the token names. Every value below is computed from it, so an install
-#: that may not act has an empty standing. ``live`` says which.
+#: its listing is live in this community (on, its publisher on, a container's
+#: holding a key set, and not limited to the operations community unless this
+#: is it) and the client the token names. That registration is a container's,
+#: or a declarative plug-in's for an install pinned to a declarative version: a
+#: declarative plug-in is issued no token, and Initiative routes as its install
+#: itself, with the scopes the install holds. Every value below is computed from
+#: it, so an install that may not act has an empty standing. ``live`` says
+#: which.
 #:
 #: An install is a member of the initiatives it is placed in (narrowed to one
 #: when the token names it), and its initiative role is exactly what its scopes
@@ -422,8 +482,8 @@ _INSTALL_STANDING: dict[gucs.Guc, str] = {
 #: sign-in rules, so that value too is what ``live`` says.
 #:
 #: Two more columns carry what the install calls things, both read only in its
-#: own sector (``purpose = 'plugin'``, the routed community and the routed
-#: install): ``guild_ref``, its live reference for the community, and
+#: own sector (``purpose = 'plugin'``, the routed community and the token's
+#: plug-in): ``guild_ref``, its live reference for the community, and
 #: ``named_refs``, the references in ``:named_refs`` that name somebody there,
 #: as ``{ref: [entity_type, entity_id, member]}``, where ``member`` says
 #: whether a person is a member of the community — the profiles an install
@@ -458,8 +518,10 @@ install AS (
       JOIN public.publishers p ON p.id = r.publisher_id
       WHERE r.listing_uid = a.listing_uid
         AND r.public_id = {gucs.TOKEN_CLIENT_ID}
-        AND r.kind = '{RegistrationKind.CONTAINER}'
-        AND {registration_live_sql("r", "p")}
+        AND (r.kind = '{RegistrationKind.CONTAINER}'
+          OR (r.kind = '{RegistrationKind.DECLARATIVE}'
+            AND a.definition -> 'service' IS NULL))
+        AND {registration_live_sql("r", "p", "g.id")}
     )
     AND ({gucs.USER_ID} IS NULL OR (
       EXISTS (SELECT 1 FROM consent)
@@ -467,6 +529,7 @@ install AS (
         SELECT 1
         FROM public.guild_memberships m
         WHERE m.guild_id = {gucs.GUILD_ID} AND m.user_id = {gucs.USER_ID}
+          AND {live_membership("m")}
       )
       AND EXISTS (
         SELECT 1
@@ -664,6 +727,12 @@ class GuildContext:
     #: A live content grant covers this request, at read / read_write.
     pam_read: bool = False
     pam_write: bool = False
+    #: A live content grant at ``moderate`` covers it: held content reads.
+    pam_moderate: bool = False
+    #: The membership row is a guest's, and the request is routed as one.
+    guest: bool = False
+    #: A guest's initiatives of the items shared with them one at a time.
+    guest_item_initiatives: tuple[int, ...] = ()
     member_initiatives: tuple[int, ...] = ()
     manager_initiatives: tuple[int, ...] = ()
     member_role_ids: tuple[int, ...] = ()
@@ -758,6 +827,14 @@ class GuildContext:
         )
 
     @property
+    def routes_as_guest(self) -> bool:
+        """Whether the membership row the lookup found is a guest's, which
+        routes the request into the community's guest role. :attr:`guest` is
+        the same question answered by the standing statement under that role.
+        """
+        return self.guild_role == CommunityRole.guest.value
+
+    @property
     def is_pam(self) -> bool:
         return self.grant is not None or self.settings_grant is not None
 
@@ -789,9 +866,12 @@ class GuildContext:
     @property
     def grant_content(self) -> Optional[str]:
         """The content grant's level as the database found it: ``read``,
-        ``read_write``, or ``None`` when no live grant covers this request."""
+        ``read_write``, ``moderate``, or ``None`` when no live grant covers
+        this request."""
         if self.pam_write:
             return "read_write"
+        if self.pam_moderate:
+            return "moderate"
         return "read" if self.pam_read else None
 
     def grant_satisfies(
@@ -830,6 +910,7 @@ class GuildContext:
             settings_rung=None,
             pam_read=False,
             pam_write=False,
+            pam_moderate=False,
         )
 
     # --- The standing --------------------------------------------------------
@@ -943,6 +1024,14 @@ class InstallContext:
     @property
     def is_pam(self) -> bool:
         return False
+
+    @property
+    def guest(self) -> bool:
+        return False
+
+    @property
+    def guest_item_initiatives(self) -> tuple[int, ...]:
+        return ()
 
     @property
     def pam_read(self) -> bool:

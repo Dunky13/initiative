@@ -1,0 +1,56 @@
+{
+  "title": "Partager sur Initiative",
+  "chooseKind": "Qu'est-ce que cela doit devenir ?",
+  "cancel": "Annuler",
+  "fallbackTitle": "Image partagée",
+  "fallbackFileTitle": "Fichier partagé",
+  "pictures_one": "{{count}} image",
+  "pictures_other": "{{count}} images",
+  "files_one": "{{count}} fichier",
+  "files_other": "{{count}} fichiers",
+  "kinds": {
+    "task": {
+      "label": "Tâche",
+      "description": "L'ajouter à un projet"
+    },
+    "file": {
+      "label": "Document",
+      "description": "Rédiger un document autour"
+    },
+    "upload": {
+      "label": "Fichier",
+      "description": "Le téléverser tel quel"
+    },
+    "post": {
+      "label": "Publication",
+      "description": "L'afficher sur le tableau d'une initiative"
+    }
+  },
+  "createWizard": {
+    "title": "Partager sur Initiative",
+    "selectCommunity": "Sélectionnez une communauté",
+    "selectInitiative": "Sélectionnez une initiative",
+    "selectProject": "Sélectionnez un projet",
+    "noInitiatives": "Aucune initiative ici à laquelle vous pouvez ajouter ceci.",
+    "lastUsed": "Dernier utilisé",
+    "back": "Retour"
+  },
+  "compose": {
+    "title": "Titre",
+    "note": "Note",
+    "notePlaceholder": "Ajouter une note (facultatif)",
+    "fileName": "Nom pour {{name}}",
+    "remove": "Retirer {{name}}",
+    "filesLeftOut_one": "{{count}} fichier n'est pas une image et reste de côté. Choisissez Fichier pour le téléverser.",
+    "filesLeftOut_other": "{{count}} fichiers ne sont pas des images et restent de côté. Choisissez Fichier pour les téléverser.",
+    "creating": "Partage…",
+    "upload_one": "Téléverser le fichier",
+    "upload_other": "Téléverser {{count}} fichiers",
+    "create": {
+      "task": "Créer la tâche",
+      "file": "Créer le document",
+      "post": "Publier"
+    }
+  },
+  "createError": "Impossible de partager. Réessayez."
+}

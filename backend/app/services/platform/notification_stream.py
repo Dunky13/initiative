@@ -1,7 +1,7 @@
 """The inbox's use of the per-user signal channel.
 
 The bell is a *personal* surface: a user's notifications span every guild they
-belong to (and some, like ``user_pending_approval``, belong to no guild at
+belong to (and some, like ``account_suspended``, belong to no guild at
 all), so this is addressed by user id and carries no guild. That is what makes
 it a different object from :mod:`app.services.content_sockets`, whose rooms are
 ``(guild_id, kind, id)`` and whose sockets only exist while a tab sits

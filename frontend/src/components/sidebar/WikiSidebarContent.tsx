@@ -17,6 +17,7 @@ import {
   useWikiTreeExpansion,
   WikiPageTree,
 } from "@/components/initiativeTools/wikis/WikiPageTree";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { Button } from "@/components/ui/button";
 import {
   SidebarContent,
@@ -132,6 +133,7 @@ export const WikiSidebarContent = ({
           <h2 className="min-w-0 flex-1 truncate font-semibold text-lg">
             {wikiQuery.data?.name ?? t("title")}
           </h2>
+          <SubscribeButton kind={Tool.wiki} entityId={wikiId} className="size-8" />
           {canWrite ? (
             <Button variant="ghost" size="icon" className="size-8 shrink-0" asChild>
               <Link to={gp(toolSettingsRoute(Tool.wiki, initiativeId, wikiId))}>

@@ -5,13 +5,13 @@ A marketplace **listing** says what a plug-in is and what it declares. A
 splits the same way, whatever published its listing:
 
 * **Plug-in facts** come from the plug-in's listing, and only a listing apply writes
-  them: ``listing_uid``, ``scope_ceiling``, ``image_digest``,
-  ``reference_sectors`` and ``compose``. Every source reads the same
+  them: ``listing_uid``, ``scope_ceiling``, ``image_digest`` and ``compose``. Every source reads the same
   ``registration`` block (the registry, a local upload, the operator's catalog
   directory, the build).
 * **Deployment facts** come from the operator, through ``PLUGIN_SERVICES_CONFIG``
   or the settings form: where the plug-in runs, the public keys its container signs
-  with, its vendor values, the switch, the mandatory flag and the origins.
+  with, its vendor values, the switch, the mandatory and operations-only flags
+  and the origins.
 
 A registration holds no secret beyond its vendor values. Every call the plug-in
 makes to Initiative is a JWT it signs with a key published here (``jwks``, or
@@ -32,6 +32,13 @@ Some columns exist only because of that split:
 * ``mandatory`` — the deployment asserts this plug-in is part of what it *is*, so
   every guild has it and guild admins cannot remove it. The operator's kill
   switch (``enabled``) still outranks it.
+* ``operations_only`` — the plug-in is for the deployment's operations community
+  (``app_settings.operations_guild_id``) alone: it is offered nowhere else, the
+  mandatory sweep installs it nowhere else, and an install anywhere else is not
+  live. With no operations community named, it is live nowhere.
+* ``shared_routes`` — one vendor installation may route to several communities.
+  Off, each route of its installs is held by one community
+  (``plugin_installs.exclusive``).
 
 * ``vendor_values`` — what the operator supplies for the plug-in's vendor client,
   as the listing's manifest declares it under ``vendor``: one Fernet
@@ -45,7 +52,8 @@ Some columns exist only because of that split:
 **Live** is one rule, stated once in :func:`registration_live_sql`: the
 registration is enabled, its publisher is enabled, its required vendor values
 are set and, for a container, it has a location and a key set to verify
-against.
+against; and, asked for one community, the registration is not limited to the
+operations community or that community is it.
 The install standing, the registration snapshot and every channel that reads
 a single row ask it in that form.
 
@@ -77,13 +85,11 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
 
 from app.core.encryption import FERNET_SALT, SALT_PLUGIN_VENDOR
-from app.models.platform.identity_ref import IdentityPurpose
 
 __all__ = [
     "IMAGE_REFERENCE_MAX_LENGTH",
     "LISTING_STATED_FIELDS",
     "MAX_PLUGIN_ID_LENGTH",
-    "REFERENCE_SECTORS",
     "PluginServiceRegistration",
     "RegistrationKind",
     "BrowserAddressed",
@@ -99,11 +105,6 @@ MAX_PLUGIN_ID_LENGTH = 120
 #: The widest container image reference stored.
 IMAGE_REFERENCE_MAX_LENGTH = 500
 
-#: The sectors a registration may name in ``reference_sectors``: the other
-#: parties this deployment keeps its own reference for a community in, which
-#: a plug-in may be allowed to learn. A sector outside this set is dropped.
-REFERENCE_SECTORS: frozenset[str] = frozenset({IdentityPurpose.billing.value})
-
 #: What only a plug-in's listing states. A ``PLUGIN_SERVICES_CONFIG`` entry or a
 #: settings request naming one is refused: it gives deployment facts only.
 LISTING_STATED_FIELDS: tuple[str, ...] = (
@@ -112,7 +113,6 @@ LISTING_STATED_FIELDS: tuple[str, ...] = (
     "scope_ceiling",
     "image",
     "image_digest",
-    "reference_sectors",
     "registry",
     "compose",
 )
@@ -137,10 +137,17 @@ class RegistrationSource:
 
 
 def registration_live_sql(
-    registration: str = "plugin_service_registrations", publisher: str = "publishers"
+    registration: str = "plugin_service_registrations",
+    publisher: str = "publishers",
+    community: Optional[str] = None,
 ) -> str:
     """Whether a registration is live, as a SQL boolean over one registration
     row and its publisher's row, named by ``registration`` and ``publisher``.
+
+    Given ``community``, a SQL expression naming one community's id, it is live
+    in that community: an ``operations_only`` registration is live only in the
+    community ``app_settings.operations_guild_id`` names. Without it, the
+    answer is the registration's own, wherever it is limited to.
 
     Enabled, its publisher enabled, and every required vendor value set; and
     for a container, a location and a key set to verify against (a pasted set
@@ -151,13 +158,21 @@ def registration_live_sql(
     listing names the plug-in, and the operator says where it runs and which keys
     it signs with. A declarative plug-in runs nowhere and signs nothing.
     """
+    reach = (
+        ""
+        if community is None
+        else (
+            f" AND (NOT {registration}.operations_only OR {community} = ("
+            "SELECT s.operations_guild_id FROM public.app_settings s WHERE s.id = 1))"
+        )
+    )
     return (
         f"({registration}.enabled AND {publisher}.enabled"
         f" AND {registration}.vendor_ready"
         f" AND ({registration}.kind = '{RegistrationKind.DECLARATIVE}'"
         f" OR ({registration}.base_url IS NOT NULL"
         f" AND ({registration}.jwks_uri IS NOT NULL"
-        f" OR {registration}.jwks -> 'keys' -> 0 IS NOT NULL))))"
+        f" OR {registration}.jwks -> 'keys' -> 0 IS NOT NULL))){reach})"
     )
 
 
@@ -196,14 +211,14 @@ class PluginServiceRegistration(SQLModel, table=True):
     base_url: Optional[str] = Field(
         default=None, sa_column=Column(String(1000), nullable=True)
     )
-    # Base of the service's browser surface: the iframe an embed opens and the
+    # Base of the service's browser surface: the iframe a page opens in and the
     # page a member is sent to for an interactive connection. Unset means the
     # plug-in answers both surfaces at one address, which is the ordinary case and
     # what every registration written before this column existed says.
-    embed_origin: Optional[str] = Field(
+    page_origin: Optional[str] = Field(
         default=None, sa_column=Column(String(1000), nullable=True)
     )
-    # Origins this plug-in's embedded surfaces may be framed from and postMessage'd
+    # Origins this plug-in's pages may be framed from and postMessage'd
     # to. Defaults to the browser base's own origin.
     allowed_origins: List[str] = Field(
         default_factory=list,
@@ -233,6 +248,16 @@ class PluginServiceRegistration(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
+    # Offered to, installed in and live in the operations community alone.
+    operations_only: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    # One vendor installation may route to several communities.
+    shared_routes: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
     # The operator's kill switch. False stops every channel this plug-in has.
     enabled: bool = Field(
         default=True,
@@ -254,24 +279,12 @@ class PluginServiceRegistration(SQLModel, table=True):
         default=None,
         sa_column=Column(String(IMAGE_REFERENCE_MAX_LENGTH), nullable=True),
     )
-    # Which of this deployment's other sectors the plug-in may learn a community's
-    # reference in. Honoured only from a registry listing; empty otherwise.
-    reference_sectors: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
-    )
     # The Compose service its listing's publisher wrote for running the plug-in
     # beside Initiative: ``{"service": <YAML text>, "base_url": <address on
     # the Compose network>}``, its placeholders unfilled. NULL when the listing
     # carries none.
     compose: Optional[dict] = Field(
         default=None, sa_column=Column(JSONB, nullable=True)
-    )
-    # Whether the registry listing behind this row was verified under the root
-    # shipped in the image. Reference sectors are honoured only when it was.
-    root_is_builtin: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     # What the operator supplies for the plug-in's vendor client, by the key the
     # listing's manifest declares under ``vendor``. Every value is a Fernet
@@ -318,13 +331,13 @@ class BrowserAddressed(Protocol):
     """
 
     base_url: str
-    embed_origin: Optional[str]
+    page_origin: Optional[str]
 
 
 def browser_base(registration: BrowserAddressed) -> str:
     """The base a person's browser resolves for this plug-in's surfaces.
 
-    ``embed_origin`` when the deployment gave one, ``base_url`` otherwise — an
+    ``page_origin`` when the deployment gave one, ``base_url`` otherwise — an
     plug-in reachable at a single address needs no second field to say so.
     """
-    return registration.embed_origin or registration.base_url
+    return registration.page_origin or registration.base_url

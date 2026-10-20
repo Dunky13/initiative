@@ -48,7 +48,7 @@ def test_structure_is_read_only(table):
         "guild_settings",
         "guild_plugins",
         "initiative_role_permissions",
-        "project_favorites",
+        "personal_items",
         "post_reads",
         "intake_cases",
     ],

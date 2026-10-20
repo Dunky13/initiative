@@ -38,6 +38,7 @@ from app.services.tenant.plugin_age import AgeViewer
 from app.services.tenant.guild_plugins import (
     grantable_scopes,
     offered_scopes,
+    item_openability,
     surface_openability,
 )
 
@@ -106,6 +107,17 @@ class CommunityPluginConfigUpdate(SanitizedBaseModel):
     values: Dict[str, Dict[str, Any]] = {}
 
 
+class CommunityPluginSettingUpdate(SanitizedBaseModel):
+    """A value for one of the install's settings.
+
+    ``null`` clears a setting that is not unique. A unique one always holds a
+    value: a lowercase letter, then lowercase letters and digits, which no other
+    community on this server holds.
+    """
+
+    value: Optional[str] = None
+
+
 class CommunityPluginArtifact(SanitizedBaseModel):
     """One thing an install produced."""
 
@@ -153,6 +165,24 @@ class CommunityPluginConnectionRead(SanitizedBaseModel):
     status: Optional[str] = None
     account_label: Optional[str] = None
     blocked: bool = False
+
+
+class CommunityPluginSettingRead(SanitizedBaseModel):
+    """One setting the pinned definition declares, and what the install holds
+    for it."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    key: str
+    label: Dict[str, str] = {}
+    description: Dict[str, str] = {}
+    #: No two communities on this server hold the same value, and the values it
+    #: held before stay this community's.
+    unique: bool = False
+    value: Optional[str] = None
+    #: A unique setting's earlier values, newest first, which the plug-in still
+    #: reads.
+    aliases: List[str] = []
 
 
 class PluginPlacementRead(SanitizedBaseModel):
@@ -205,6 +235,25 @@ class PluginSurfaceAccessRead(SanitizedBaseModel):
     openable_initiatives: List[int] = []
 
 
+class CommunityPluginUninstallNotice(SanitizedBaseModel):
+    """What to tell somebody about to remove a plug-in, beyond what removing
+    any plug-in does.
+
+    ``managed`` is whether this deployment's entitlement issuer has a say about
+    this plug-in at all: false, and nothing else, for every plug-in whose
+    listing carries no package terms. When it does, ``message`` is the
+    issuer's own sentence in the reader's language, shown as it is, or null
+    when it could not say in time, in which case the client shows its own
+    neutral text. ``action_url`` is where to go about it.
+    """
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    managed: bool = False
+    message: Optional[str] = None
+    action_url: Optional[str] = None
+
+
 class CommunityPluginRead(SanitizedBaseModel):
     model_config = ConfigDict(
         from_attributes=True, json_schema_serialization_defaults_required=True
@@ -255,9 +304,20 @@ class CommunityPluginRead(SanitizedBaseModel):
     #: rather than permission: it is the community's own answer to where an
     #: plug-in belongs, so it reads the same for everyone.
     placements: List[PluginPlacementRead] = []
-    #: Each embedded surface the pinned definition declares, with where the
+    #: Each page the pinned definition declares, with where the
     #: viewer may open it.
     surface_access: List[PluginSurfaceAccessRead] = []
+    #: The initiatives whose items show the viewer this plug-in's values and
+    #: parts.
+    item_initiatives: List[int] = []
+    #: The declared fields and parts offered there: those whose connections
+    #: hold what they require.
+    item_fields: List[str] = []
+    item_parts: List[str] = []
+    #: The declared actions the viewer may run on those items.
+    item_actions: List[str] = []
+    #: The install's settings' values by key, which its parts' text names.
+    setting_values: Dict[str, Any] = {}
     #: The scopes the community's seat granted this install: empty until the
     #: seat grants some, and never wider than what the manifest requests or
     #: the registration allows.
@@ -313,7 +373,7 @@ class CommunityPluginMemberConsent(CommunityPluginConsentRead):
 
 
 class PluginSurfaceSummary(SanitizedBaseModel):
-    """One of a plug-in's embedded surfaces, by id and by its localized name."""
+    """One of a plug-in's pages, by id and by its localized name."""
 
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
@@ -383,6 +443,8 @@ class CommunityPluginDetail(CommunityPluginRead):
     """
 
     connections: List[CommunityPluginConnectionRead] = []
+    #: Each setting the pinned definition declares, with its value.
+    settings: List[CommunityPluginSettingRead] = []
     #: The viewer's own answers to this plug-in's requests to act as them, one per
     #: purpose, the plug-in-wide one first. Nobody else's.
     consents: List[CommunityPluginConsentRead] = []
@@ -435,7 +497,7 @@ class CommunityPluginConnectStart(SanitizedBaseModel):
 
 
 class CommunityPluginHandoff(SanitizedBaseModel):
-    """A short-lived credential for one of a plug-in's embedded surfaces.
+    """A short-lived credential for one of a plug-in's pages.
 
     The token reaches the iframe by ``postMessage`` and never a query string,
     and it is worth a minute. ``allowed_origins`` is what the SPA posts to and
@@ -446,7 +508,7 @@ class CommunityPluginHandoff(SanitizedBaseModel):
 
     handoff_token: str
     expires_in_seconds: int
-    embed_url: str
+    page_url: str
     allowed_origins: List[str] = []
     audience: str
     surface_id: str
@@ -540,12 +602,21 @@ def serialize_guild_plugin(
     """
     definition = plugin.definition or {}
     state = plugin_config_service.config_state(plugin)
+    age_allows = plugin_age.age_allows(definition, viewer)
     openability = surface_openability(
         definition,
         placements=placements,
         is_guild_admin=context.is_admin,
         member_role_ids=context.member_role_ids,
-        age_allows=plugin_age.age_allows(definition, viewer),
+        age_allows=age_allows,
+    )
+    on_items = item_openability(
+        plugin,
+        placements=placements,
+        is_guild_admin=context.is_admin,
+        member_role_ids=context.member_role_ids,
+        age_allows=age_allows,
+        frozen=context.content_read_only,
     )
     features = definition.get("features")
     service_state = install_state or InstallState()
@@ -580,6 +651,11 @@ def serialize_guild_plugin(
             )
             for one in openability
         ],
+        item_initiatives=list(on_items.initiatives),
+        item_fields=list(on_items.fields),
+        item_parts=list(on_items.parts),
+        item_actions=list(on_items.actions),
+        setting_values=dict(plugin.settings or {}),
         granted_scopes=sorted(plugin.granted_scopes or []),
         mandatory=service_state.mandatory,
         available=service_state.available,
@@ -615,7 +691,7 @@ def serialize_connection(
     else:
         stored_config = (member_row.config or {}) if member_row is not None else {}
         stored_secrets = (
-            (member_row.config_secrets or {}) if member_row is not None else {}
+            (member_row.secret_fields or {}) if member_row is not None else {}
         )
 
     declared = {
@@ -693,9 +769,22 @@ def serialize_guild_plugin_detail(
             plugin.definition
         )
     ]
+    held = plugin.settings or {}
+    aliases = plugin.setting_aliases or {}
     return CommunityPluginDetail(
         **base.model_dump(),
         connections=connections,
+        settings=[
+            CommunityPluginSettingRead(
+                key=setting["key"],
+                label=setting.get("label") or {},
+                description=setting.get("description") or {},
+                unique=setting.get("unique") is True,
+                value=held.get(setting["key"]),
+                aliases=list(aliases.get(setting["key"]) or []),
+            )
+            for setting in plugin_config_service.definition_settings(plugin.definition)
+        ],
         consents=[serialize_consent(row) for row in consent_rows],
         update_version=update_offer.version if update_offer is not None else None,
         pending_update=serialize_upgrade_asks(plugin, update_offer),

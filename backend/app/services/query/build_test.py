@@ -91,6 +91,98 @@ def test_a_grouped_series_comes_back_in_order(bucket):
     assert "GROUP BY 1 ORDER BY 1 ASC" in sql
 
 
+def test_one_date_rounded_two_ways_is_grouped_both_ways():
+    """The two roundings share the date's name, and both have to be grouped
+    or the statement is refused."""
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="due_date", bucket="month"),
+                Column(field="due_date", bucket="day"),
+                Column(field="*", aggregate="count"),
+            ),
+            group_by=("due_date",),
+        )
+    )
+    assert "GROUP BY 1, 2 ORDER BY 1 ASC NULLS LAST, 2 ASC NULLS LAST" in sql
+
+
+def test_a_count_sharing_a_columns_name_is_not_grouped():
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="priority", alias="bucket"),
+                Column(field="*", aggregate="count", alias="bucket"),
+            ),
+            group_by=("bucket",),
+        )
+    )
+    assert "GROUP BY 1 ORDER BY 1 ASC NULLS LAST" in sql
+
+
+def test_a_running_count_adds_up_along_the_grouping():
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="completed_at", bucket="week"),
+                Column(field="*", aggregate="count", running=True),
+            ),
+            group_by=("completed_at",),
+        )
+    )
+    assert (
+        "sum(count(*)) OVER (ORDER BY date_trunc('week', completed_at) ASC NULLS LAST)"
+        " AS running_count" in sql
+    )
+
+
+def test_a_running_total_restarts_for_each_series():
+    """The first grouped column is the axis and the rest split the series, so
+    each series climbs on its own."""
+    sql, _ = build_and_resolve(
+        QuerySpec(
+            dataset="tasks",
+            columns=(
+                Column(field="due_date", bucket="month"),
+                Column(field="priority"),
+                Column(field="*", aggregate="count", running=True),
+            ),
+            group_by=("due_date", "priority"),
+        )
+    )
+    assert "OVER (PARTITION BY priority ORDER BY date_trunc('month', due_date)" in sql
+
+
+@pytest.mark.parametrize(
+    ("columns", "code"),
+    [
+        # Nothing grouped: one row has nothing to add up along.
+        ((Column(field="*", aggregate="count", running=True),), "UNSUPPORTED_SYNTAX"),
+        # A running average is not a running total.
+        (
+            (
+                Column(field="priority"),
+                Column(field="*", aggregate="avg", running=True),
+            ),
+            "UNSUPPORTED_FUNCTION",
+        ),
+    ],
+)
+def test_a_running_total_needs_a_grouping_and_a_total(columns, code):
+    with pytest.raises(QueryError) as refused:
+        build(
+            QuerySpec(
+                dataset="tasks",
+                columns=columns,
+                group_by=tuple(c.field for c in columns if not c.aggregate),
+            )
+        )
+    assert refused.value.code == getattr(QueryMessages, code)
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -468,12 +560,12 @@ class TestADateStaysADistance:
 
     def test_ahead_of_now(self):
         assert self.where({"relative": 30}) == (
-            "due_date <= (now() + CAST('30 days' AS interval))"
+            "due_date <= now() + CAST('30 days' AS interval)"
         )
 
     def test_behind_it(self):
         assert self.where({"relative": -30}, FilterOp.gte) == (
-            "due_date >= (now() - CAST('30 days' AS interval))"
+            "due_date >= now() - CAST('30 days' AS interval)"
         )
 
     def test_today(self):

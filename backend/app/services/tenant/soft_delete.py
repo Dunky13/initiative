@@ -51,6 +51,7 @@ from app.models.tenant.file import File
 from app.models.tenant.gallery import GalleryImage
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.task import Task
+from app.services.tenant.held import refuse_if_held
 from app.services.tenant.lifecycle_tree import (
     CASCADE_CHILDREN,
     Level,
@@ -185,6 +186,16 @@ async def trash(
     return retention_days
 
 
+def _live_and_not_held(model: type):
+    """What trashing a parent takes with it: what is not in the trash already,
+    and not held. A held row stays where it is when its parent goes
+    (``app.db.holds``)."""
+    live = model.deleted_at.is_(None)
+    if hasattr(model, "held_at"):
+        return live & model.held_at.is_(None)
+    return live
+
+
 async def soft_delete_entity(
     session: AsyncSession,
     entity: SoftDeleteMixin,
@@ -211,9 +222,7 @@ async def soft_delete_entity(
     # under it at the database, so a child written after its parent was stamped
     # would be refused. Collected before anything is stamped, while the walk's
     # own queries still see an untouched tree.
-    levels = await subtree_levels(
-        session, [entity], where=lambda model: model.deleted_at.is_(None)
-    )
+    levels = await subtree_levels(session, [entity], where=_live_and_not_held)
     for level in reversed(levels):
         await _write_level(session, level, values, park=True)
 
@@ -244,7 +253,8 @@ async def restore_entity(
 
 async def _purge_references(session: AsyncSession, doomed: Level) -> None:
     """Drop every row that names one of these by ``(kind, id)``: edges,
-    reactions, recent views and custom property values.
+    reactions, recent views, engagement levels, custom property values,
+    plug-ins' metadata and a tool's views.
 
     Nothing carries those out with the row they name, and once it is gone
     their policies have nothing to ask, so they go first. Each kind is read
@@ -253,12 +263,23 @@ async def _purge_references(session: AsyncSession, doomed: Level) -> None:
     """
     from app.core.reactions import ReactionTarget
     from app.core.relationships import ENDPOINT_KINDS
-    from app.db.initiative_rls import RECENT_ENTITY_TABLES
-    from app.services.tenant import properties, reactions, recent_views, relationships
+    from app.core.tools import ITEM_KINDS, KINDS, LAYOUTS_PER_INSTANCE
+    from app.db.initiative_rls import CONTENT_KIND_TABLES
+    from app.services.tenant import (
+        engagement_levels,
+        plugin_metadata,
+        properties,
+        reactions,
+        personal_items,
+        relationships,
+        tool_layouts,
+    )
 
     edge_kinds = {endpoint.table: kind for kind, endpoint in ENDPOINT_KINDS.items()}
     reaction_targets = {target.table: target for target in ReactionTarget}
-    recent_kinds = {table: kind for kind, table in RECENT_ENTITY_TABLES.items()}
+    content_kinds = {table: kind for kind, table in CONTENT_KIND_TABLES.items()}
+    item_kinds = {KINDS[kind].table: kind for kind in ITEM_KINDS}
+    layout_tools = {tool.plural: tool for tool in LAYOUTS_PER_INSTANCE}
     for model, ids in doomed.items():
         table = getattr(model, "__tablename__", "")
         if not ids:
@@ -267,10 +288,15 @@ async def _purge_references(session: AsyncSession, doomed: Level) -> None:
             await relationships.purge_for_entities(session, kind, ids)
         if (target := reaction_targets.get(table)) is not None:
             await reactions.purge_reactions_for(session, target=target, target_ids=ids)
-        if (recent := recent_kinds.get(table)) is not None:
-            await recent_views.purge_for_entities(session, recent, ids)
+        if (content := content_kinds.get(table)) is not None:
+            await personal_items.purge_for_entities(session, content, ids)
+            await engagement_levels.purge_for_entities(session, content, ids)
         if (spec := properties.PROPERTY_LINKS_BY_MODEL.get(model)) is not None:
             await properties.drop_values(session, spec.target, ids)
+        if (item := item_kinds.get(table)) is not None:
+            await plugin_metadata.drop_for_items(session, item, ids)
+        if (tool := layout_tools.get(table)) is not None:
+            await tool_layouts.drop_for_instances(session, tool, ids)
 
 
 #: The tables whose rows the purge hooks read, not just their ids, with the
@@ -281,6 +307,81 @@ _PURGE_LOADS: dict[type, tuple] = {
     Task: (),
     File: (undefer(File.content),),
 }
+
+
+async def _answered(session: AsyncSession, comments: list[Comment]) -> set[int]:
+    """Which of these comments have a reply under them, at any depth, that is
+    not in the trash. Asked as the platform when ``session`` is a person's: a
+    reply held for the platform reads as absent to them, and is still there.
+    """
+    from sqlalchemy.orm import aliased
+
+    from app.db import cohorts
+    from app.db.request_context import SystemGuild
+    from app.db.session import guild_context, set_rls_context
+
+    ids = [int(c.id) for c in comments if c.id is not None]
+    if not ids:
+        return set()
+    reply = aliased(Comment)
+    tree = select_including_deleted(
+        Comment.id.label("id"),  # type: ignore[union-attr]
+        Comment.parent_comment_id.label("root"),
+        Comment.deleted_at.label("gone"),
+    ).where(ids_in(Comment.parent_comment_id, ids))
+    walk = tree.cte("answers", recursive=True)
+    walk = walk.union_all(
+        select_including_deleted(reply.id, walk.c.root, reply.deleted_at).where(
+            reply.parent_comment_id == walk.c.id
+        )
+    )
+    query = (
+        select_including_deleted(walk.c.root).where(walk.c.gone.is_(None)).distinct()
+    )
+    context = guild_context(session)
+    if context is None:
+        return {int(r) for r in (await session.exec(query)).all()}
+    async with cohorts.system_session(context.guild_id) as system:
+        await set_rls_context(system, SystemGuild(context.guild_id, read_only=True))
+        found = {int(r) for r in (await system.exec(query)).all()}
+        await system.rollback()
+    return found
+
+
+async def _leave_tombstones(session: AsyncSession, ids: set[int]) -> set[str]:
+    """Turn these trashed comments into tombstones their authors left, and
+    return the stored names of the pictures pasted into them that nothing
+    else shows. Their words, reactions and links go as a purge's would."""
+    from app.core.reactions import ReactionTarget
+    from app.services.tenant import content_references
+    from app.services.tenant.attachments import purge_pasted_images
+    from app.services.tenant.reactions import purge_reactions_for
+
+    comments = list(
+        (
+            await session.exec(
+                select_including_deleted(Comment).where(ids_in(Comment.id, ids))
+            )
+        ).all()
+    )
+    released = await purge_pasted_images(session, comments)
+    await purge_reactions_for(
+        session, target=ReactionTarget.comment, target_ids=sorted(ids)
+    )
+    now = utcnow()
+    for comment in comments:
+        comment.content = ""
+        comment.removed_at = now
+        comment.removed_reason = None
+        comment.removal_id = None
+        comment.deleted_at = None
+        comment.deleted_by = None
+        comment.purge_at = None
+        session.add(comment)
+    await session.flush()
+    for comment in comments:
+        await content_references.sync_for_comment(session, comment)
+    return released
 
 
 async def hard_purge_entity(
@@ -310,7 +411,9 @@ async def hard_purge_entities(
     in the bin or not, then deleted a level at a time from the bottom up, one
     statement per table, so no foreign key is left pointing at a row that went
     first. For Files anywhere in the set, upload cleanup runs before the
-    DELETEs so ``Upload`` rows pinned only by the doomed files go too.
+    DELETEs so ``Upload`` rows pinned only by the doomed files go too. The
+    stored names returned include the evidence objects of doomed cases and
+    reports, which live in the same storage.
     """
     from app.services.tenant.files import unresolve_wikilinks_to_file
     from app.services.tenant.attachments import (
@@ -330,11 +433,24 @@ async def hard_purge_entities(
     # themselves in the trash. Transaction-local (see app.db.gucs.PURGING).
     await raise_flag(session, gucs.PURGING)
 
+    # A comment its author deleted with replies still under it keeps its
+    # place for them: the trash lets go of its words, not of it.
+    released: set[str] = set()
+    kept = await _answered(session, [r for r in roots if isinstance(r, Comment)])
+    if kept:
+        released |= await _leave_tombstones(session, kept)
+        roots = [r for r in roots if not (isinstance(r, Comment) and r.id in kept)]
+        if not roots:
+            return released
+
     levels = await subtree_levels(session, roots)
     doomed: Level = {}
     for level in levels:
         for model, ids in level.items():
             doomed.setdefault(model, []).extend(ids)
+    # Held content is never destroyed by a purge of what it sits in: the purge
+    # waits until the platform releases it (app.db.holds).
+    await refuse_if_held(session, roots, doomed)
 
     loaded: dict[type, list] = {}
     for model, options in _PURGE_LOADS.items():
@@ -351,7 +467,6 @@ async def hard_purge_entities(
 
     # A picture's blobs — every version and its thumbnail — go with it, the
     # way an uploaded file's do.
-    released: set[str] = set()
     if loaded.get(GalleryImage):
         released |= await purge_gallery_image_uploads(session, loaded[GalleryImage])
 
@@ -373,6 +488,16 @@ async def hard_purge_entities(
     # What is left of an initiative's files goes with it.
     if doomed.get(Initiative):
         released |= await purge_initiative_uploads(session, doomed[Initiative])
+
+    # Files attached to a doomed case or report, which go with their rows.
+    if doomed.get(Task) or doomed.get(Initiative):
+        from app.services.platform.evidence import released_by_purge
+
+        released |= await released_by_purge(
+            session,
+            task_ids=doomed.get(Task, ()),
+            initiative_ids=doomed.get(Initiative, ()),
+        )
 
     # Tombstones go with the edges: what one remembers is a link between two
     # things, and one of them is about to stop existing. Last of the sweeps,

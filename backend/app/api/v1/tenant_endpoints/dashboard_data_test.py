@@ -14,10 +14,18 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.messages import QueryMessages
 from app.models.platform.guild import CommunityRole
+from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskStatusCategory
 from app.services.query import executor
 from app.services.tenant.view_as_test import dashboard_body, dashboards_on
-from app.testing import create_project, create_task
+from app.testing import (
+    create_initiative,
+    create_project,
+    create_property_definition,
+    create_property_value,
+    create_queue,
+    create_task,
+)
 
 
 async def _canvas(client, actor, *statements: str) -> int:
@@ -81,6 +89,18 @@ async def test_the_canvas_answers_what_each_widget_answers(
         "SELECT status.name AS s, count(*) AS n FROM tasks GROUP BY status.name ORDER BY s",
         "SELECT t.id, p.id FROM tasks AS t JOIN projects AS p ON p.id = t.project_id ORDER BY t.id",
         "SELECT count(*) AS n FROM projects",
+        # A running total, as the builder writes one.
+        "SELECT date_trunc('day', due_date) AS day, "
+        "sum(count(*)) OVER (ORDER BY date_trunc('day', due_date)) AS total "
+        "FROM tasks GROUP BY 1 ORDER BY 1",
+        # A frame counted in days: its offset has to reach Postgres as written.
+        "SELECT title, count(*) OVER (ORDER BY due_date "
+        "RANGE BETWEEN '1 day' PRECEDING AND CURRENT ROW) AS near "
+        "FROM tasks ORDER BY due_date",
+        # A window repeating an output grouped by its alias.
+        "SELECT priority = 'high' AS hot, "
+        "sum(count(*)) OVER (ORDER BY priority = 'high') AS t "
+        "FROM tasks GROUP BY hot",
     )
     dashboard_id = await _canvas(client, author, *statements)
 
@@ -99,6 +119,8 @@ async def test_the_canvas_answers_what_each_widget_answers(
         assert entry["error"] is None, (sql, entry)
         assert entry["result"] == await _one(client, author, sql)
     assert canvas["w1"]["result"]["rows"] == [[3]]
+    assert [row[1] for row in canvas["w8"]["result"]["rows"]] == [1, 2, 3]
+    assert [row[1] for row in canvas["w9"]["result"]["rows"]] == [1, 2, 2]
 
 
 async def test_a_reader_sees_their_own_rows_or_the_initiatives(
@@ -130,6 +152,57 @@ async def test_a_reader_sees_their_own_rows_or_the_initiatives(
 
     after = await _data(client, reader, dashboard_id)
     assert [after[w]["result"]["rows"] for w in ("w1", "w2")] == [[[3]], [[1]]]
+
+
+async def test_a_property_is_reported_across_the_initiative(
+    client, session, acting_user
+):
+    """A property is the initiative's, so its values add up whatever carries
+    them. Another initiative's property of the same name stays out."""
+    author, project = await _author_with_tasks(session, acting_user)
+    points = await create_property_definition(
+        session, author.initiative, name="Points", type=PropertyType.number
+    )
+    task = await create_task(session, project, title="Pointed")
+    queue = await create_queue(session, author.initiative, author.user)
+    await create_property_value(session, task, points, value_number=5)
+    await create_property_value(session, queue, points, value_number=3)
+
+    elsewhere = await create_initiative(session, author.guild, author.user)
+    elsewhere_points = await create_property_definition(
+        session, elsewhere, name="Points", type=PropertyType.number
+    )
+    elsewhere_project = await create_project(session, elsewhere, author.user)
+    elsewhere_task = await create_task(session, elsewhere_project)
+    await create_property_value(
+        session, elsewhere_task, elsewhere_points, value_number=100
+    )
+
+    result = await _one(
+        client,
+        author,
+        "SELECT property.name AS p, sum(value_number) AS total "
+        "FROM property_values GROUP BY property.name",
+    )
+    assert [(name, float(total)) for name, total in result["rows"]] == [("Points", 8.0)]
+
+    releases = await create_property_definition(
+        session, author.initiative, name="Releases", type=PropertyType.multi_select
+    )
+    await create_property_value(session, task, releases, value_json=["a", "b"])
+    choices = await _one(
+        client,
+        author,
+        "SELECT value_json AS choices FROM property_values "
+        "WHERE property.name = 'Releases'",
+    )
+    assert choices["rows"] == [['["a", "b"]']]
+    one_choice = await _one(
+        client,
+        author,
+        "SELECT count(*) AS n FROM property_values WHERE value_json @> '[\"b\"]'",
+    )
+    assert one_choice["rows"] == [[1]]
 
 
 async def test_a_widget_that_fails_does_not_blank_the_canvas(

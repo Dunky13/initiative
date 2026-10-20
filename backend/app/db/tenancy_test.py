@@ -20,6 +20,8 @@ from app.db.tenancy import (
     INITIATIVE_SCOPED_TABLES,
     LEDGER_TABLES,
     OWN_ROW_TABLES,
+    PRIVATE_ROW_SHARED_READ,
+    PRIVATE_ROW_TABLES,
     SEAT_READ_TABLES,
     SEAT_TABLES,
     SHARED_TABLES,
@@ -80,7 +82,7 @@ def test_helpers_agree_with_sets():
 # and GUILD_SCOPED_TABLES derives from (initiative | guild-level), so the
 # "registry matches the set" and "they partition GUILD_SCOPED" invariants hold
 # by construction — no test needed. What still needs guarding: the two halves
-# must be disjoint, and the polymorphic recent_views path must cover every
+# must be disjoint, and the polymorphic personal_items path must cover every
 # entity type the app records.
 
 
@@ -94,19 +96,6 @@ def test_initiative_and_guild_level_are_disjoint():
     assert not overlap, (
         f"Tables in BOTH the initiative_rls registry and GUILD_LEVEL_TABLES: "
         f"{sorted(overlap)}. Pick one."
-    )
-
-
-def test_recent_views_path_covers_entity_types():
-    """recent_views' polymorphic RLS path must join every entity type the app can
-    record — otherwise rows of an uncovered type would be silently invisible."""
-    from app.db.initiative_rls import RECENT_ENTITY_TABLES
-    from app.models.tenant.recent_view import RECENT_ENTITY_TYPES
-
-    uncovered = set(RECENT_ENTITY_TYPES) - set(RECENT_ENTITY_TABLES)
-    assert not uncovered, (
-        f"recent_views_path() has no initiative join for entity types {sorted(uncovered)} "
-        "— add them to RECENT_ENTITY_TABLES in app/db/initiative_rls.py."
     )
 
 
@@ -141,6 +130,16 @@ def test_own_row_tables_are_guild_level():
         )
 
 
+def test_private_row_tables_are_initiative_scoped():
+    """PRIVATE_ROW_TABLES narrows an initiative gate, so every entry must be
+    initiative-scoped and name an owner column the table has; the shared-read
+    ones are a subset of it."""
+    assert set(PRIVATE_ROW_TABLES) <= INITIATIVE_SCOPED_TABLES
+    assert PRIVATE_ROW_SHARED_READ <= set(PRIVATE_ROW_TABLES)
+    for table, owner_col in PRIVATE_ROW_TABLES.items():
+        assert owner_col in SQLModel.metadata.tables[table].columns, table
+
+
 def test_seat_and_ledger_tables_are_guild_level():
     """SEAT_TABLES and LEDGER_TABLES are policy overlays, like the two above:
     every entry is GUILD_LEVEL, a seat-read table is a seat table, and a
@@ -148,6 +147,9 @@ def test_seat_and_ledger_tables_are_guild_level():
     assert SEAT_TABLES <= GUILD_LEVEL_TABLES
     assert SEAT_READ_TABLES <= SEAT_TABLES
     assert set(LEDGER_TABLES) <= GUILD_LEVEL_TABLES
-    for table, (parent, fk) in LEDGER_TABLES.items():
+    for table, parent_key in LEDGER_TABLES.items():
+        if parent_key is None:
+            continue
+        parent, fk = parent_key
         column = SQLModel.metadata.tables[table].columns[fk]
         assert {key.column.table.name for key in column.foreign_keys} == {parent}

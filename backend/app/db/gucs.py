@@ -234,6 +234,14 @@ INSTALL_READ = Guc("app.install_read", Kind.NAMES, standing=True)
 INSTALL_WRITE = Guc("app.install_write", Kind.NAMES, standing=True)
 #: The community's content is on hold (``read_only``) for this reader.
 CONTENT_HOLD = Guc("app.content_hold", Kind.BOOL, standing=True)
+#: A live content grant at ``moderate`` covers the request: it may read what
+#: the platform holds (``app.db.holds``). Never set by membership.
+PAM_MODERATE = Guc("app.pam_moderate", Kind.BOOL, standing=True)
+#: The membership row's rung is ``guest``: the request is a guest's.
+GUEST = Guc("app.guest", Kind.BOOL, standing=True)
+#: A guest's initiatives of the items shared with them one at a time. Empty
+#: for everyone else.
+GUEST_ITEM_INITIATIVES = Guc("app.guest_item_initiatives", Kind.IDS, standing=True)
 
 # --- Somebody who filed a case ------------------------------------------------
 #: The tasks of the cases the routed account filed, read by the filer seam
@@ -271,9 +279,20 @@ PURGING = Guc("app.purging", Kind.BOOL)
 RESTRUCTURING = Guc("app.restructuring", Kind.BOOL)
 
 
+#: Transaction-local flag marking a transaction as an import.
+#:
+#: An import writes what it brings in under the people it maps the source's
+#: authors to, so the author stamp (``app.db.guild_ddl.AUTHORED_TABLES``)
+#: keeps the author it is given while this is set.
+#:
+#: Raised by the import engine with ``app.db.session.raise_flag`` around the
+#: one call that writes an envelope, and lowered after it.
+IMPORTING = Guc("app.importing", Kind.BOOL)
+
+
 #: Raised for one transaction by the code that needs them
 #: (``app.db.session.raise_flag``), never by a routing.
-FLAGS: tuple[Guc, ...] = (PURGING, RESTRUCTURING)
+FLAGS: tuple[Guc, ...] = (PURGING, RESTRUCTURING, IMPORTING)
 
 #: Everything a routing writes: every variable declared above but the flags, in
 #: the order they are declared.

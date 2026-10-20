@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type PostRead, PropertyTarget } from "@/api/generated/initiativeAPI.schemas";
+import { type PostRead, PropertyTarget, Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
   invalidate,
   patchCachedPost,
@@ -50,6 +50,31 @@ describe("query-keys community scoping", () => {
     expect(meAggregate()).toBe(true);
   });
 
+  it("refreshes an initiative's list of layouts with its projects, and not with files", async () => {
+    const key = ["/api/v1/c/5/layouts/initiative", { initiative_id: 2 }];
+    const listed = seed(key);
+
+    setInvalidationCommunity(5);
+    await invalidate(q.allFiles());
+    expect(listed()).toBe(false);
+    await invalidate(q.allProjects());
+    expect(listed()).toBe(true);
+  });
+
+  it("refreshes the calendar entries with projects and posts, whose dates they show", async () => {
+    const entries = seed(["/api/v1/c/5/calendar-entries/"]);
+
+    setInvalidationCommunity(5);
+    await invalidate(q.allFiles());
+    expect(entries()).toBe(false);
+    await invalidate(q.toolLists(Tool.project));
+    expect(entries()).toBe(true);
+
+    const again = seed(["/api/v1/c/5/calendar-entries/", { include_polls: true }]);
+    await invalidate(q.toolLists(Tool.post));
+    expect(again()).toBe(true);
+  });
+
   it.each(TOOLS)("a %s list reaches its cross-community /me twin", async (tool) => {
     const communityList = seed([`/api/v1/c/5/${toolRouteSegment(tool)}/`]);
     const meList = seed([`/api/v1/me/${toolRouteSegment(tool)}`]);
@@ -96,7 +121,7 @@ describe("query-keys community scoping", () => {
       const communityScoped = seed(["/api/v1/c/5/initiatives/"]);
       const meTasks = seed(["/api/v1/me/tasks"]);
       const notifications = seed(["/api/v1/notifications/"]);
-      const recents = seed(["/api/v1/recents/"]);
+      const recents = seed(["/api/v1/me/personal-items"]);
 
       setInvalidationCommunity(5);
       await invalidate(q.allInitiatives());
@@ -166,8 +191,8 @@ describe("query-keys community scoping", () => {
         ["/api/v1/access-grants/queue", { status: "pending" }],
         ["/api/v1/me"],
         ["/api/v1/me/tasks", { page: 1 }],
-        // The recents bar spans every community, so a switch must not blank it.
-        ["/api/v1/recents/"],
+        // The tabs bar spans every community, so a switch must not blank it.
+        ["/api/v1/me/personal-items"],
         ["dm", "inbox"],
         // Hand-written community keys carry their community, so another community never reads them.
         ["query", 5, "SELECT 1", null],

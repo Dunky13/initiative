@@ -3,7 +3,7 @@ import type { DragEndEvent, DragOverEvent, UniqueIdentifier } from "@dnd-kit/cor
 /** The droppable a kanban drop landed on, reduced to what the move needs. */
 export type KanbanDropTarget = {
   id: UniqueIdentifier;
-  data: { type?: string; statusId?: number } | undefined;
+  data: { type?: string; statusId?: number; taskId?: number; group?: string } | undefined;
   rect: { top: number; height: number } | null;
 };
 
@@ -32,7 +32,7 @@ export const resolveKanbanDropTarget = (
   const container = event.collisions?.[0]?.data?.droppableContainer as
     | {
         id: UniqueIdentifier;
-        data: { current?: { type?: string; statusId?: number } };
+        data: { current?: KanbanDropTarget["data"] };
         rect: { current: { top: number; height: number } | null };
       }
     | undefined;

@@ -8,7 +8,7 @@
   "deleteComment": "Eliminar",
   "deleteConfirmTitle": "¿Eliminar este comentario?",
   "deleteConfirmDescription": "Se moverá a la papelera.",
-  "deleteConfirmWithReplies": "Se moverá a la papelera, junto con las respuestas que tiene debajo.",
+  "deleteConfirmWithReplies": "Va a tu papelera. Las respuestas se quedan, bajo una línea que dice que lo eliminaste.",
   "deleteError": "No se pudo eliminar el comentario.",
   "editPlaceholder": "Edita tu comentario...",
   "edited": "(editado)",
@@ -36,5 +36,12 @@
   "readOnlyNote": "Tienes acceso de solo lectura aquí, por lo que los comentarios están deshabilitados.",
   "reply": "Responder",
   "replyPlaceholder": "Escribe una respuesta...",
-  "title": "Comentarios"
+  "title": "Comentarios",
+  "unavailable": "No disponible",
+  "removed": {
+    "byModerator": "Retirado por un moderador · {{reason}}",
+    "legal": "Retirado por motivos legales",
+    "byAuthor": "Eliminado por su autor"
+  },
+  "locked": "Un moderador bloqueó los comentarios aquí."
 }

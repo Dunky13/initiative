@@ -40,6 +40,7 @@ import { invalidate, q } from "@/api/query-keys";
 import { BulkAccessSection } from "@/components/access/BulkAccessSection";
 import type { BulkAccessItem } from "@/components/access/BulkEditAccessDialog";
 import { SelectableGridItem } from "@/components/access/SelectableGridItem";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { FileCard } from "@/components/files/FileCard";
 import { useFileColumns } from "@/components/files/fileColumns";
@@ -67,7 +68,11 @@ import { parsePropertyFilters } from "@/components/properties/PropertyFilter";
 import { CardGridSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TagBrowseLayout } from "@/components/tags/TagBrowseLayout";
-import { ToolFilterFields, type ToolListFilters } from "@/components/tools/ToolFilterFields";
+import {
+  readToolListFilters,
+  ToolFilterFields,
+  type ToolListFilters,
+} from "@/components/tools/ToolFilterFields";
 import { SortableCards } from "@/components/tools/ToolIndexSortable";
 import {
   TABLE_SORT_FIELDS,
@@ -85,12 +90,19 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import { useGridSelection } from "@/hooks/useGridSelection";
 import { useToolCreateAccess } from "@/hooks/useInitiativeAccess";
-import { usePersistedTableState } from "@/hooks/usePersistedTableState";
+import {
+  deviceJSON,
+  LIST,
+  type ListViewSpec,
+  NO_PART_VIEW,
+  useListView,
+  viewKey,
+} from "@/hooks/useListView";
 import { useReorderProjects } from "@/hooks/useProjects";
+import { useKnownTagIds } from "@/hooks/useTags";
 import { useTagTreeSelection } from "@/hooks/useTagTreeSelection";
 import { useToolCounts } from "@/hooks/useToolCounts";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
-import { useViewPreference } from "@/hooks/useViewPreference";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { FILE_UPLOAD_ACCEPT } from "@/lib/fileUtils";
 import type { AppColumnDef } from "@/lib/table";
@@ -102,6 +114,7 @@ import {
   toolCamelPlural,
   toolDetailRoute,
   toolListingKind,
+  toolRouteSegment,
   toolViewParams,
   toolViews,
 } from "@/lib/tools";
@@ -182,6 +195,9 @@ export type ToolIndexEntry = {
     emptyTitle: string;
     emptyBody: string;
   };
+  /** The tool's card draws its bookmark among controls of its own, so the list
+   *  puts none on its corner. */
+  cardHasBookmark?: true;
   /** The layout a reader starts on, before they pick one. Cards otherwise. */
   defaultLayout?: ToolIndexLayout;
   /** Cards are small tiles, several to a row, rather than three across. */
@@ -319,6 +335,8 @@ const TOOL_INDEX: Record<Tool, ToolIndexEntry | ToolIndexOwnPage> = {
     // The rows are projects, which is what these columns read.
     table: { useColumns: useProjectColumns as unknown as () => AppColumnDef<ToolIndexRow>[] },
     reorder: { useReorder: useReorderProjects },
+    // Beside its pin and its drag handle.
+    cardHasBookmark: true,
   },
 
   [Tool.file]: {
@@ -385,9 +403,11 @@ const TOOL_INDEX: Record<Tool, ToolIndexEntry | ToolIndexOwnPage> = {
   },
 
   [Tool.gallery]: {
-    useList: makeRows(TOOL_HOOKS[Tool.gallery].useList, (gallery) => (
-      <GalleryCard gallery={gallery} />
-    )),
+    useList: makeRows(
+      TOOL_HOOKS[Tool.gallery].useList,
+      (gallery) => <GalleryCard gallery={gallery} />,
+      WITH_PREVIEW
+    ),
     text: {
       create: "createGallery",
       createDescription: "createGalleryDescription",
@@ -475,8 +495,43 @@ const useListPage = (tool: Tool) => {
   return { view, setView, page, pageSize, setPage, setPageSize };
 };
 
+const NO_TAGS: number[] = [];
+
 /** Newest first, the way a table opens until its reader picks an order. */
 const NEWEST_FIRST: SortingState = [{ id: "updated_at", desc: true }];
+
+/**
+ * Where one person's view of an initiative's tool list is kept: how it is
+ * drawn (cards, rows or by tag), their filters but for a typed search, and
+ * the table's order and columns. What an older release kept (how each tool
+ * was drawn, the same in every initiative, and the table's order and columns
+ * on the device) is carried over.
+ */
+const toolListViewSpec = (
+  tool: Tool,
+  communityId: number,
+  initiativeId: number,
+  reorders: boolean
+): ListViewSpec<ToolListFilters> => ({
+  key: viewKey(communityId, "initiative", initiativeId, toolRouteSegment(tool)),
+  read: readToolListFilters,
+  defaults: { filters: {}, ...NO_PART_VIEW, sorting: reorders ? [] : NEWEST_FIRST },
+  carryOver: (items) => {
+    const layout = items[`${tool}:view-mode`];
+    const order = deviceJSON(toolTableStorageKey(tool, "order")) as { sorting?: unknown } | null;
+    const columns = deviceJSON(toolTableStorageKey(tool, "columns"));
+    if (typeof layout !== "string" && !order && !columns) return null;
+    return {
+      layout: typeof layout === "string" ? layout : null,
+      parts: {
+        [LIST]: {
+          ...(Array.isArray(order?.sorting) ? { sorting: order.sorting } : {}),
+          ...(columns && typeof columns === "object" ? { columns } : {}),
+        },
+      },
+    };
+  },
+});
 
 /** The list's own narrowing, as the counts endpoint takes it for the tag tree:
  *  tags aside, since the tree counts every one. */
@@ -508,7 +563,25 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
   const communityId = useActiveCommunityId();
   const unread = useUnreadTree();
 
-  const [filters, setFilters] = useState<ToolListFilters>({});
+  // This person's view of the list. A typed search is for this visit only.
+  const viewSpec = useMemo(
+    () => toolListViewSpec(tool, communityId, fixedInitiativeId, Boolean(entry.reorder)),
+    [tool, communityId, fixedInitiativeId, entry.reorder]
+  );
+  const listView = useListView(viewSpec);
+  const [searchText, setSearchText] = useState("");
+  const filters = useMemo<ToolListFilters>(
+    () => ({ ...listView.filters, ...(searchText ? { search: searchText } : {}) }),
+    [listView.filters, searchText]
+  );
+  const { setFilters: keepFilters } = listView;
+  const setFilters = useCallback(
+    ({ search: typed, ...rest }: ToolListFilters) => {
+      setSearchText(typed ?? "");
+      keepFilters(rest);
+    },
+    [keepFilters]
+  );
   // Closed until asked for. The filter button carries a count of what's set, so
   // a narrowed list still says so with the panel shut — and the fields no
   // longer take the top of the page before the list itself.
@@ -518,32 +591,28 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
   const { view, setView, page, pageSize, setPage, setPageSize } = useListPage(tool);
   // How the list is drawn — cards, rows or by tag — remembered per tool.
   const defaultLayout = entry.defaultLayout ?? "grid";
-  const [savedLayout, setLayout] = useViewPreference<string>(`${tool}:view-mode`, defaultLayout);
-  const layout: ToolIndexLayout = isLayout(savedLayout) ? savedLayout : defaultLayout;
+  const layout: ToolIndexLayout = isLayout(listView.layout) ? listView.layout : defaultLayout;
+  const setLayout = listView.rememberLayout;
   const tagTree = useTagTreeSelection(layout === "tags");
 
   // The order a reader picks in a tool's table outlives the visit, and is the
   // list's order in every layout. A tool that keeps the reader's own order
   // opens in it: asked for no order, the server lists in that one.
-  const [tableState, { setSorting }] = usePersistedTableState(toolTableStorageKey(tool, "order"), {
-    sorting: entry.reorder ? [] : NEWEST_FIRST,
-  });
+  const tableState = { sorting: listView.sorting };
+  const { setSorting } = listView;
   const [sorted] = tableState.sorting;
   const sort =
     entry.table && sorted && TABLE_SORT_FIELDS.has(sorted.id)
       ? { sort_by: sorted.id, sort_dir: sorted.desc ? ("desc" as const) : ("asc" as const) }
       : {};
 
+  const knownTagIds = useKnownTagIds(filters.tag_ids ?? NO_TAGS);
   const listFilters: ToolIndexFilters["list"] = {
     ...filters,
     search: search || undefined,
     // A tag picked in the tree narrows by it; with none picked, the
     // filter panel's tags still apply.
-    tag_ids: tagTree.tagIds.length
-      ? tagTree.tagIds
-      : filters.tag_ids?.length
-        ? filters.tag_ids
-        : undefined,
+    tag_ids: tagTree.tagIds.length ? tagTree.tagIds : knownTagIds.length ? knownTagIds : undefined,
     ...(entry.untagged && tagTree.wantsUntagged ? { untagged: true as const } : {}),
   };
   const list = entry.useList(fixedInitiativeId, {
@@ -674,14 +743,26 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
   const ToolIcon = TOOL_ICONS[tool];
   const cardGrid = entry.tiles
     ? layout === "tags"
-      ? "grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4"
-      : "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-    : layout === "tags"
-      ? "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
-      : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+      ? "grid grid-cols-fill-36/4 gap-4"
+      : "grid grid-cols-fill-36/5 gap-4"
+    : "grid grid-cols-fill-60/3 gap-4";
+  // The list's own marks on a card's top corner, outside the card's link: the
+  // bookmark (unless the card draws its own), and the unread dot in the corner
+  // itself.
   const cardOf = (row: ToolIndexRow) => (
     <div className="relative">
       {row.card}
+      {entry.cardHasBookmark ? null : (
+        <BookmarkButton
+          tool={tool}
+          entityId={row.id}
+          name={row.name}
+          initiativeId={row.initiative_id}
+          iconSize="sm"
+          suppressNavigation
+          className="absolute top-4 right-6 z-10 bg-card/80 backdrop-blur-sm"
+        />
+      )}
       {unread.hasResource(communityId, tool, row.id) ? (
         <UnreadDot className="absolute top-3 right-3" />
       ) : null}
@@ -829,6 +910,8 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
                 setSorting(next);
                 setPage(1);
               }}
+              columnVisibility={listView.columns}
+              onColumnVisibilityChange={listView.setColumns}
             />
           ) : layout === "list" ? (
             <ul className="divide-y rounded-lg border">
@@ -840,18 +923,29 @@ const ToolIndexBody = ({ tool, entry, fixedInitiativeId, canCreate }: ToolIndexB
                     onToggle={(options) => selection.toggle(row, options)}
                     label={row.name}
                   >
-                    <Link
-                      to={gp(toolDetailRoute(tool, row.initiative_id, row.id))}
-                      className="flex min-w-0 items-center gap-3 px-3 py-2.5 hover:bg-accent/50"
-                    >
-                      <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="min-w-0 truncate font-medium text-sm">{row.name}</span>
-                      {unread.hasResource(communityId, tool, row.id) ? <UnreadDot /> : null}
-                      <span className="flex-1" />
-                      {row.tags?.length ? (
-                        <TagBadgeList tags={row.tags} limit={3} nested className="shrink-0" />
-                      ) : null}
-                    </Link>
+                    <div className="flex items-center hover:bg-accent/50">
+                      <Link
+                        to={gp(toolDetailRoute(tool, row.initiative_id, row.id))}
+                        className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-3"
+                      >
+                        <ToolIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0 truncate font-medium text-sm">{row.name}</span>
+                        {unread.hasResource(communityId, tool, row.id) ? <UnreadDot /> : null}
+                        <span className="flex-1" />
+                        {row.tags?.length ? (
+                          <TagBadgeList tags={row.tags} limit={3} nested className="shrink-0" />
+                        ) : null}
+                      </Link>
+                      {/* Beside the row's link rather than in it. */}
+                      <BookmarkButton
+                        tool={tool}
+                        entityId={row.id}
+                        name={row.name}
+                        initiativeId={row.initiative_id}
+                        iconSize="sm"
+                        className="mx-1.5"
+                      />
+                    </div>
                   </SelectableGridItem>
                 </li>
               ))}

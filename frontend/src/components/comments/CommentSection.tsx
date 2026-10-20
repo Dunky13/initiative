@@ -1,16 +1,25 @@
-import { HelpCircle, MessageSquarePlus } from "lucide-react";
+import { HelpCircle, Lock, LockOpen, MessageSquarePlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CommentCreate, CommentRead, Tool } from "@/api/generated/initiativeAPI.schemas";
+import {
+  type CommentCreate,
+  type CommentRead,
+  ModerationAct,
+  type Tool,
+} from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useCreateComment, useDeleteComment, useUpdateComment } from "@/hooks/useComments";
 import { useCommunities } from "@/hooks/useCommunities";
+import { useModerate } from "@/hooks/useModeration";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { linkedCommentId } from "@/lib/entityResolver";
 import { getErrorMessage } from "@/lib/errorMessage";
+import { toast } from "@/lib/mascotToast";
 import { referenceTypeFor } from "@/lib/references";
 import { referenceRef } from "@/lib/smartChips";
 import { getUserDisplayName } from "@/lib/userDisplay";
@@ -44,19 +53,41 @@ interface CommentSectionProps {
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
   initiativeId: number;
+  /** A moderator closed the thread: it reads as before, and nothing is
+   *  added to it until a moderator reopens it. */
+  locked?: boolean;
+  /** Whether this reader moderates the initiative the thread is in. */
+  canModerate?: boolean;
 }
 
 /** Later first; the id breaks a tie, since it only ever grows. */
-const newestFirst = (a: CommentRead, b: CommentRead) =>
-  Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id;
+const newestFirst = (
+  a: Pick<CommentRead, "created_at" | "id">,
+  b: Pick<CommentRead, "created_at" | "id">
+) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id;
+
+/** One conversation in the thread: a comment and its replies, or replies
+ *  whose comment the reader can't see — held, say — under a placeholder. */
+type ThreadEntry =
+  | { kind: "comment"; comment: CommentWithReplies }
+  | { kind: "unavailable"; parentId: number; created_at: string; replies: CommentWithReplies[] };
+
+const entryKey = (entry: ThreadEntry) =>
+  entry.kind === "comment" ? `comment-${entry.comment.id}` : `unavailable-${entry.parentId}`;
+
+const entryOrder = (entry: ThreadEntry) =>
+  entry.kind === "comment" ? entry.comment : { created_at: entry.created_at, id: -entry.parentId };
 
 /**
  * The thread as it reads: newest conversation at the top, under the box that
- * starts one, and each conversation's replies in the order they were said.
+ * starts one, and each conversation's replies in the order they were said. A
+ * reply is never promoted to a conversation of its own: where the comment it
+ * answers isn't there, it sits under an "Unavailable" placeholder instead.
  */
-function buildCommentTree(comments: CommentRead[]): CommentWithReplies[] {
+function buildCommentTree(comments: CommentRead[]): ThreadEntry[] {
   const map = new Map<number, CommentWithReplies>();
-  const roots: CommentWithReplies[] = [];
+  const entries: ThreadEntry[] = [];
+  const missing = new Map<number, Extract<ThreadEntry, { kind: "unavailable" }>>();
 
   // First pass: create all nodes
   for (const comment of comments) {
@@ -66,14 +97,29 @@ function buildCommentTree(comments: CommentRead[]): CommentWithReplies[] {
   // Second pass: link children to parents
   for (const comment of comments) {
     const node = map.get(comment.id)!;
-    if (comment.parent_comment_id && map.has(comment.parent_comment_id)) {
-      map.get(comment.parent_comment_id)!.replies.push(node);
+    const parentId = comment.parent_comment_id;
+    if (parentId && map.has(parentId)) {
+      map.get(parentId)!.replies.push(node);
+    } else if (parentId) {
+      const placeholder = missing.get(parentId);
+      if (placeholder) {
+        placeholder.replies.push(node);
+      } else {
+        const entry = {
+          kind: "unavailable" as const,
+          parentId,
+          created_at: comment.created_at,
+          replies: [node],
+        };
+        missing.set(parentId, entry);
+        entries.push(entry);
+      }
     } else {
-      roots.push(node);
+      entries.push({ kind: "comment", comment: node });
     }
   }
 
-  return roots.sort(newestFirst);
+  return entries.sort((a, b) => newestFirst(entryOrder(a), entryOrder(b)));
 }
 
 export const CommentSection = ({
@@ -89,9 +135,46 @@ export const CommentSection = ({
   isLoadingOlder = false,
   onLoadOlder,
   initiativeId,
+  locked = false,
+  canModerate = false,
 }: CommentSectionProps) => {
-  const { t } = useTranslation("comments");
+  const { t } = useTranslation(["comments", "moderation"]);
+  const communityId = useActiveCommunityId() ?? 0;
+  // A link to one comment lands on this thread: where it is in an older
+  // conversation than the first page holds, the older ones are read until it
+  // is here, and the thread scrolls to it.
+  const linkedId = typeof window !== "undefined" ? linkedCommentId(window.location.hash) : null;
+  const linkedLoaded = linkedId !== null && comments.some((comment) => comment.id === linkedId);
+  // How many comments the thread held when it last asked for older ones. A
+  // read that brought nothing — it failed, say — stops the search, and the
+  // reader's own Load older is left to try again.
+  // Kept per search — this thread, in this community, for this comment — so
+  // a new one starts afresh.
+  const searchKey = `${communityId}:${entityType}:${entityId}:${linkedId}`;
+  const askedAt = useRef<{ key: string; count: number } | null>(null);
+  useEffect(() => {
+    if (linkedId === null || linkedLoaded || !hasOlder || isLoadingOlder) return;
+    const asked = askedAt.current?.key === searchKey ? askedAt.current.count : null;
+    if (asked !== null && comments.length <= asked) return;
+    askedAt.current = { key: searchKey, count: comments.length };
+    onLoadOlder?.();
+  }, [searchKey, linkedId, linkedLoaded, hasOlder, isLoadingOlder, onLoadOlder, comments.length]);
   const { activeCommunityReadOnly } = useCommunities();
+  // A moderator closes or reopens the thread from the thread itself, the
+  // same on every kind of thing that takes comments.
+  const moderate = useModerate(communityId);
+  const toggleLock = () =>
+    moderate.mutate(
+      {
+        target_type: entityType,
+        target_id: entityId,
+        act: locked ? ModerationAct.unlock_comments : ModerationAct.lock_comments,
+      },
+      {
+        onSuccess: () =>
+          toast.success(locked ? t("moderation:menu.unlocked") : t("moderation:menu.locked")),
+      }
+    );
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -238,34 +321,60 @@ export const CommentSection = ({
               <MessageSquarePlus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <h3>{title ?? t("title")}</h3>
             </div>
-            <HoverCard>
-              <HoverCardTrigger asChild>
-                <button type="button" className="text-muted-foreground hover:text-foreground">
-                  <HelpCircle className="h-4 w-4" />
-                </button>
-              </HoverCardTrigger>
-              <HoverCardContent side="left" align="start" className="w-56">
-                <p className="font-medium text-sm">{t("mentionSyntax")}</p>
-                <ul className="mt-2 space-y-1.5 text-sm">
-                  <li>
-                    <code className="rounded bg-muted px-1 text-xs">@</code> {t("mentionUser")}
-                  </li>
-                  <li>
-                    <code className="rounded bg-muted px-1 text-xs">#</code> {t("mentionAnything")}
-                  </li>
-                  <li className="text-muted-foreground">{t("mentionNarrow")}</li>
-                </ul>
-                <p className="mt-3 font-medium text-sm">{t("formattingSyntax")}</p>
-                <p className="mt-1 text-muted-foreground text-sm">{t("markdownHint")}</p>
-              </HoverCardContent>
-            </HoverCard>
+            <div className="flex items-center gap-1">
+              {canModerate && !activeCommunityReadOnly ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 font-normal text-muted-foreground"
+                  disabled={moderate.isPending}
+                  onClick={toggleLock}
+                >
+                  {locked ? (
+                    <LockOpen className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Lock className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {locked ? t("moderation:menu.unlock") : t("moderation:menu.lock")}
+                </Button>
+              ) : null}
+              <HoverCard>
+                <HoverCardTrigger asChild>
+                  <button type="button" className="text-muted-foreground hover:text-foreground">
+                    <HelpCircle className="h-4 w-4" />
+                  </button>
+                </HoverCardTrigger>
+                <HoverCardContent side="left" align="start" className="w-56">
+                  <p className="font-medium text-sm">{t("mentionSyntax")}</p>
+                  <ul className="mt-2 space-y-1.5 text-sm">
+                    <li>
+                      <code className="rounded bg-muted px-1 text-xs">@</code> {t("mentionUser")}
+                    </li>
+                    <li>
+                      <code className="rounded bg-muted px-1 text-xs">#</code>{" "}
+                      {t("mentionAnything")}
+                    </li>
+                    <li className="text-muted-foreground">{t("mentionNarrow")}</li>
+                  </ul>
+                  <p className="mt-3 font-medium text-sm">{t("formattingSyntax")}</p>
+                  <p className="mt-1 text-muted-foreground text-sm">{t("markdownHint")}</p>
+                </HoverCardContent>
+              </HoverCard>
+            </div>
           </CardTitle>
         </CardHeader>
 
         <CardContent>
+          {locked && (
+            <p className="mb-3 flex items-center gap-2 text-muted-foreground text-sm">
+              <Lock className="h-4 w-4" aria-hidden="true" />
+              {t("locked")}
+            </p>
+          )}
           {activeCommunityReadOnly ? (
             <p className="text-muted-foreground text-sm">{t("readOnlyNote")}</p>
-          ) : (
+          ) : locked ? null : (
             <CommentInput
               value={content}
               onChange={setContent}
@@ -284,26 +393,42 @@ export const CommentSection = ({
             {isLoading ? (
               <p className="text-muted-foreground text-sm">{t("loading")}</p>
             ) : hasComments ? (
-              commentTree.map((comment) => (
-                <CommentThread
-                  key={comment.id}
-                  comment={comment}
-                  depth={0}
-                  onReply={handleReply}
-                  onDelete={handleDelete}
-                  onEdit={handleEdit}
-                  currentUserId={user?.id}
-                  initiativeId={initiativeId}
-                  subject={subject}
-                  isSubmitting={
-                    createComment.isPending || deleteComment.isPending || updateComment.isPending
-                  }
-                  canReact={!activeCommunityReadOnly}
-                  deleteError={deleteComment.variables === comment.id ? deleteError : null}
-                  userDisplayNames={userDisplayNames}
-                  unreadIds={unreadIds}
-                />
-              ))
+              commentTree.map((entry) => {
+                const thread = (comment: CommentWithReplies, depth: number) => (
+                  <CommentThread
+                    key={comment.id}
+                    comment={comment}
+                    depth={depth}
+                    onReply={handleReply}
+                    onDelete={handleDelete}
+                    onEdit={handleEdit}
+                    currentUserId={user?.id}
+                    initiativeId={initiativeId}
+                    subject={subject}
+                    isSubmitting={
+                      createComment.isPending || deleteComment.isPending || updateComment.isPending
+                    }
+                    canReact={!activeCommunityReadOnly}
+                    canReply={!activeCommunityReadOnly && !locked}
+                    canEdit={!locked}
+                    canModerate={canModerate}
+                    deleteError={deleteComment.variables === comment.id ? deleteError : null}
+                    userDisplayNames={userDisplayNames}
+                    unreadIds={unreadIds}
+                  />
+                );
+                if (entry.kind === "comment") return thread(entry.comment, 0);
+                return (
+                  <div key={entryKey(entry)}>
+                    <p className="rounded-md border border-dashed px-3 py-2 text-muted-foreground text-sm italic">
+                      {t("unavailable")}
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {entry.replies.map((reply) => thread(reply, 1))}
+                    </div>
+                  </div>
+                );
+              })
             ) : (
               <p className="text-muted-foreground text-sm">{t("empty")}</p>
             )}

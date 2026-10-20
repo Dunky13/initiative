@@ -52,10 +52,7 @@ export const PaginationBar = ({
   return (
     <nav
       aria-label={label}
-      className={cn(
-        "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
-        className
-      )}
+      className={cn("flex flex-wrap items-center justify-between gap-3", className)}
     >
       <div className="flex items-center gap-2">
         {onPageSizeChange ? (
@@ -82,7 +79,7 @@ export const PaginationBar = ({
           {t("pagination.rangeOf", { start, end, total: totalCount })}
         </span>
       </div>
-      <div className="flex items-center gap-2 self-end sm:self-auto">
+      <div className="ml-auto flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"

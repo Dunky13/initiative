@@ -1,14 +1,13 @@
 import { useParams } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
-import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import type { QueueItemCreate, QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
+import { Tool, ViewSource } from "@/api/generated/initiativeAPI.schemas";
 import { ToolCommentsPanel } from "@/components/comments/ToolCommentsPanel";
 import { ToolRelationsPanel } from "@/components/entities/ToolRelationsPanel";
 import { ActHeldButton } from "@/components/initiativeTools/queues/ActHeldButton";
-import { AddQueueItemDialog } from "@/components/initiativeTools/queues/AddQueueItemDialog";
 import { EditQueueItemDialog } from "@/components/initiativeTools/queues/EditQueueItemDialog";
 import { QueueControls } from "@/components/initiativeTools/queues/QueueControls";
 import { QueueItemRow } from "@/components/initiativeTools/queues/QueueItemRow";
@@ -17,6 +16,7 @@ import {
   type QueueView,
   QueueViewToggle,
 } from "@/components/initiativeTools/queues/QueueViewToggle";
+import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
 import {
   DetailPageSkeleton,
@@ -28,10 +28,15 @@ import { ToolChest, ToolChestSegment } from "@/components/tools/ToolChest";
 import { ToolPageHeader } from "@/components/tools/ToolPageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCanonicalInitiativeId } from "@/hooks/useCanonicalInitiativeId";
+import { useInitiative } from "@/hooks/useInitiatives";
+import { layoutViewSpec, useListView, viewKey } from "@/hooks/useListView";
 import { useReadOnOpen } from "@/hooks/useNotifications";
+import { useRecordOpen } from "@/hooks/usePersonalItems";
 import {
   useAdvanceTurn,
+  useCreateQueueItem,
   useHoldCurrent,
   usePreviousTurn,
   useQueue,
@@ -42,20 +47,17 @@ import {
   useStopQueue,
   useUpdateQueue,
 } from "@/hooks/useQueues";
-import { useRecordRecentView } from "@/hooks/useRecents";
 import { useToolRealtime } from "@/hooks/useResourceRealtime";
-import { useViewPreference } from "@/hooks/useViewPreference";
+import { instanceTarget } from "@/hooks/useToolLayouts";
 import { useCommunityPath } from "@/lib/communityUrl";
+import { blankQueueItem, QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
 import { toast } from "@/lib/mascotToast";
 import { getItem } from "@/lib/storage";
 import { toolListRoute, toolSettingsRoute } from "@/lib/tools";
 
 export function QueueDetailPage() {
   const { t } = useTranslation(["queues", "common"]);
-  const { communityId, queueId } = useParams({ strict: false }) as {
-    communityId: string;
-    queueId: string;
-  };
+  const { queueId } = useParams({ strict: false }) as { queueId: string };
   const parsedId = Number(queueId);
   const gp = useCommunityPath();
 
@@ -67,21 +69,24 @@ export function QueueDetailPage() {
   const initiativeId = useCanonicalInitiativeId(queue?.initiative_id);
 
   // Track recently viewed queues for the layout header tabs bar.
-  const recordViewMutation = useRecordRecentView(Tool.queue, Number(communityId));
   const viewedQueueId = queue?.id;
   useReadOnOpen(Tool.queue, viewedQueueId);
-  useEffect(() => {
-    if (!viewedQueueId) return;
-    recordViewMutation.mutate(viewedQueueId);
-  }, [viewedQueueId, recordViewMutation.mutate]);
+  useRecordOpen(Tool.queue, viewedQueueId);
 
-  // Per-queue view preference (list vs. on-deck). Falls back to the choice
-  // this device stored before the preference moved to the account.
-  const [storedView, setView] = useViewPreference<QueueView>(
-    `queue-${parsedId}-view`,
-    getItem(`queues.view.${parsedId}`) === "list" ? "list" : "on-deck"
+  // List or on-deck, kept in this person's view of the queue. What an older
+  // release kept, on the account or before that on this device, carries over.
+  const communityId = useActiveCommunityId();
+  const viewSpec = useMemo(
+    () =>
+      layoutViewSpec(
+        viewKey(communityId, "queue", parsedId),
+        (items) => items[`queue-${parsedId}-view`] ?? getItem(`queues.view.${parsedId}`)
+      ),
+    [communityId, parsedId]
   );
-  const view: QueueView = storedView === "list" ? "list" : "on-deck";
+  const queueView = useListView(viewSpec);
+  const view: QueueView = queueView.layout === "list" ? "list" : "on-deck";
+  const setView = queueView.rememberLayout as (next: QueueView) => void;
 
   // Turn controls just fire the mutation. The optimistic cache write happens
   // synchronously in the hook's `onMutate`; the On Deck component watches
@@ -128,9 +133,15 @@ export function QueueDetailPage() {
 
   // Item dialogs
   const [addItemOpen, setAddItemOpen] = useState(false);
+  const createItem = useCreateQueueItem(parsedId);
+  const leaving = useRef(false);
   const [editingItem, setEditingItem] = useState<QueueItemRead | null>(null);
+  // An item opens in its dialog.
+  useRecordOpen("queue_item", editingItem?.id, { source: ViewSource.direct });
 
   const canEdit = Boolean(queue?.can.edit);
+  const initiativeQuery = useInitiative(queue?.initiative_id ?? null);
+  const canModerate = Boolean(initiativeQuery.data?.can.moderate);
 
   // Drive the app-wide bottom-nav add button for this route.
   useRegisterPrimaryCreateAction(
@@ -172,6 +183,7 @@ export function QueueDetailPage() {
       <ToolPageHeader
         tool={Tool.queue}
         initiativeId={queue.initiative_id}
+        starId={queue.id}
         settingsTo={canEdit ? toolSettingsRoute(Tool.queue, initiativeId, queue.id) : undefined}
         title={queue.name}
         onRename={canEdit ? (name) => updateQueue.mutateAsync({ name }) : undefined}
@@ -270,12 +282,33 @@ export function QueueDetailPage() {
 
       <ToolCommentsPanel tool={Tool.queue} entity={queue} />
 
-      {/* Add Item Dialog */}
-      <AddQueueItemDialog
+      <AddItemDialog
         open={addItemOpen}
         onOpenChange={setAddItemOpen}
-        queueId={parsedId}
-        initiativeId={queue.initiative_id}
+        detail={QUEUE_ITEM_DETAIL}
+        blank={blankQueueItem(parsedId)}
+        context={{
+          readOnly: false,
+          queueId: parsedId,
+          initiativeId: queue.initiative_id,
+          leaving,
+          actions: null,
+        }}
+        layouts={() => instanceTarget(Tool.queue, parsedId)}
+        title={t("addItem")}
+        ready={(item) => item.label.trim() !== ""}
+        create={({ item, fields, properties }) =>
+          createItem.mutateAsync({
+            color: item.color,
+            is_visible: item.is_visible,
+            ...fields,
+            properties,
+          } as QueueItemCreate)
+        }
+        onAdded={() => {
+          toast.success(t("itemAdded"));
+          setAddItemOpen(false);
+        }}
       />
 
       {/* Edit Item Dialog */}
@@ -289,6 +322,7 @@ export function QueueDetailPage() {
           initiativeId={queue.initiative_id}
           item={editingItem}
           readOnly={!canEdit}
+          canModerate={canModerate}
         />
       )}
     </div>

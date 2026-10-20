@@ -101,6 +101,17 @@ Fonts are served from the deployment's own server, and no page loads a script fr
 !!! info "If you host it yourself"
     The tables above describe Initiative. A reverse proxy, CDN or web application firewall you put in front of it may add cookies of its own — that's yours to document if your obligations call for it.
 
+## What Initiative keeps about use
+
+Two records of how a community's content is used are kept inside that community's own data, and neither leaves the server.
+
+| What | Kept for | Used for |
+|---|---|---|
+| **Personal items.** What each person keeps about each item in a community, one row per person per item: their latest open (when it was, and whether it came from search or the activity feed), whether they bookmarked or subscribed to it, and where they put a project in their own list. | An open is kept at least 7 days, then only while the item is among the person's recent tabs. A bookmark, a subscription and a place last until the person removes them. The whole row is deleted when the item is purged from the trash, when they leave the community, or when they delete their account. | The recent-items tabs, Bookmarks, the order of their activity feed and project list, and, from opens only, the engagement levels below. Each person sees only their own. |
+| **Engagement levels.** A rough level for each item that at least three different people opened or changed in the last 7 days. No person, no count. | Worked out again every hour, so an item drops out once fewer than three people have engaged with it within the week. | Ordering search, the command palette and pickers. Shown to nobody, and read only beside items the reader can already open. |
+
+The levels are worked out from the opens recorded above and from the change log Initiative already keeps for 7 days. No decision is made about a person. Anyone can stop their own opens and changes counting under **My Settings → Privacy**; they stop counting from the next hourly update. A community holding its own security standard can turn the levels off, and whoever runs the server can turn them off for every community. Either way they are deleted within the hour. See [Ranking search by engagement](community-security.md#ranking-search-by-engagement).
+
 ## Your data rights
 
 ### Getting your data out
@@ -117,6 +128,8 @@ Initiative is built to avoid locking your information in:
 - **Anything you delete** goes to the **Trash** first, where it can be restored until the retention period passes — then it's permanently removed. Community admins set how long that is (see [Working with communities](../guides/communities.md#trash-and-retention)).
 - **Your account** can be **deactivated** (you can't sign in, but your content stays) or **deleted**. Deleting offers a choice: *anonymize* (your personal details are removed and your past contributions show as "Deleted user") or, for platform operators, *hard delete* (everything is removed). See [Profile & preferences](../account/profile-and-preferences.md).
 - **Deletion takes effect immediately and completes after a retention window.** A deleted account disappears for everyone else at once and is erased when the window ends; signing back in before then cancels the deletion. A deleted community behaves the same way and can be restored by a platform operator until its window ends. The deployment sets both windows — 30 days for accounts and 90 days for communities unless changed, or no automatic erasure at all where a deployment is required to retain records. See [How long deleted things are kept](../running-a-server/configuration.md#how-long-deleted-things-are-kept).
+
+- **A plug-in knows people by a name of its own.** Each plug-in in a community is given a random name for the community and for each member, never their account or email, and two plug-ins are given unrelated names for the same person. The names are kept while the plug-in is removed, so adding it back recognises the same people. They are forgotten when the community removes the plug-in and erases its data, when the community is deleted for good (each plug-in is asked to erase what it holds first), and when the person's account is erased.
 
 Together, the **export** tools above and these **removal** tools cover the two requests privacy laws ask for most often: handing someone a copy of the data held about them (a *right to access* request), and erasing their personal information (a *right to erasure* request).
 

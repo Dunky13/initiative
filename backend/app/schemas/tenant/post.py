@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from app.core.identity_boundary import PersonId, with_mention_markup
 from app.schemas.base import LexicalState, MentionStr, SanitizedBaseModel, TitleStr
+from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.property import PropertiesOnCreate
 from app.schemas.query import PageMeta
 from app.schemas.platform.user import ProfileDecorations
@@ -154,6 +155,9 @@ class PostSummary(PostBase, ToolSummaryBase):
     #: the API refuses to read or add one. The reactions already on it are kept,
     #: the same way turning a thread off keeps its comments.
     reactions_enabled: bool = True
+    #: When a moderator closed its comments: they still read, and nothing is
+    #: added or edited until it is reopened. Null while it is open.
+    comments_locked_at: Optional[datetime] = None
     #: How many comments the post has. Served with the board so a reader can
     #: see there is a conversation without opening the post to find out — and
     #: so an empty thread can invite the first one.
@@ -193,6 +197,10 @@ class PostRead(PostSummary):
     #: Absent from :class:`PostSummary` on purpose — a one-line surface shows a
     #: notice, not a ballot paper.
     poll: Optional[PollRead] = None
+    #: The values installed plug-ins show on the notice, from the installs on
+    #: and placed in its initiative. Its own read carries them; a board does
+    #: not.
+    plugin_values: List[PluginValueSummary] = Field(default_factory=list)
 
     @classmethod
     def derived_fields(

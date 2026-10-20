@@ -1,10 +1,16 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, useReducer } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildPage, buildUser } from "@/__tests__/factories";
-import { renderWithProviders } from "@/__tests__/helpers/render";
-import type { PlatformCommunityStorageRead } from "@/api/generated/initiativeAPI.schemas";
+import { renderPage as renderInRouter } from "@/__tests__/helpers/render";
+import type {
+  CommunityAction,
+  PlatformCommunityStorageRead,
+  UserRole,
+} from "@/api/generated/initiativeAPI.schemas";
+import { dateTimeFormat } from "@/lib/intl";
 
 const GIB = 1024 ** 3;
 
@@ -14,6 +20,17 @@ const GIB = 1024 ** 3;
 // ({ max_storage_bytes } vs { max_users }).
 const mutate = vi.fn();
 const restore = vi.fn();
+const setSuspension = vi.fn();
+
+// What an owner may do to a live community, as the server reports it: every
+// control the table and the sheet draw.
+const OWNER_ACTIONS: CommunityAction[] = [
+  "manage",
+  "set_status",
+  "billing_support",
+  "billing_operator",
+  "break_glass",
+];
 
 const communitiesData: PlatformCommunityStorageRead[] = [
   {
@@ -23,6 +40,7 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     tier_name: "Bespoke Plan",
     max_storage_bytes: 10 * GIB,
     max_users: 10,
+    max_guests: 10,
     status: "active",
     status_changed_at: null,
     status_choices: ["active", "read_only", "on_hold", "suspended"],
@@ -31,6 +49,8 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     auth_options: ["providers", "restrictions"],
     banner_image_enabled: true,
     support_enabled: false,
+    lifts_to: null,
+    allowed_actions: OWNER_ACTIONS,
   },
   {
     id: 8,
@@ -39,6 +59,7 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     tier_name: null,
     max_storage_bytes: null,
     max_users: null,
+    max_guests: null,
     status: "active",
     status_changed_at: null,
     status_choices: ["active", "read_only", "on_hold", "suspended"],
@@ -47,6 +68,8 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     auth_options: ["providers"],
     banner_image_enabled: true,
     support_enabled: true,
+    lifts_to: null,
+    allowed_actions: OWNER_ACTIONS,
   },
   {
     id: 9,
@@ -55,6 +78,7 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     tier_name: "Bespoke Plan",
     max_storage_bytes: null,
     max_users: 10,
+    max_guests: 10,
     status: "suspended",
     status_changed_at: "2026-07-05T00:00:00Z",
     status_choices: ["active", "read_only", "on_hold", "suspended"],
@@ -63,6 +87,8 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     auth_options: [],
     banner_image_enabled: false,
     support_enabled: false,
+    lifts_to: "active",
+    allowed_actions: OWNER_ACTIONS,
   },
   {
     id: 10,
@@ -71,6 +97,7 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     tier_name: null,
     max_storage_bytes: null,
     max_users: null,
+    max_guests: null,
     status: "deleted",
     status_changed_at: "2026-09-01T00:00:00Z",
     status_choices: [],
@@ -79,8 +106,14 @@ const communitiesData: PlatformCommunityStorageRead[] = [
     auth_options: [],
     banner_image_enabled: true,
     support_enabled: false,
+    lifts_to: null,
+    // Deleted is not a status anybody sets, so the row offers no control for it.
+    allowed_actions: OWNER_ACTIONS.filter((action) => action !== "set_status"),
   },
 ];
+
+// The rows the mocked list serves. Each test starts from the owner's view.
+let served: PlatformCommunityStorageRead[] = communitiesData;
 
 // The billing column only renders when a portal is configured; flip this to
 // exercise the self-hosted case (no portal, no column).
@@ -113,19 +146,50 @@ let narrowings: {
 }[] = [];
 const agreeNarrowing = vi.fn();
 
+// Where each community stands with the plug-ins that say, as its Usage tab
+// shows it, by community.
+let pluginSummaries: Record<number, unknown[]> = {};
+let pluginSummariesFail = false;
+
 vi.mock("@/api/generated/settings/settings", () => ({
   createPlatformCommunityBillingServiceHandoff: (communityId: number, answer: unknown) =>
     answer ? mintHandoff(communityId, answer) : mintHandoff(communityId),
-}));
-
-vi.mock("@/hooks/useSettings", () => ({
-  usePlatformCommunities: () => ({
-    data: { ...buildPage(communitiesData), support_bound: supportBound },
-    isLoading: false,
+  useListCommunityPluginSummaries: (communityId: number) =>
+    pluginSummariesFail
+      ? { data: undefined, isError: true }
+      : { data: { items: pluginSummaries[communityId] ?? [] }, isError: false },
+  useReadCommunityPluginSummary: () => ({
+    data: { values: { used: 250, allowed: 500 }, rows: [] },
     isError: false,
   }),
+}));
+
+// Every page drawing the list, so a test can draw them again with what the
+// list now holds — as a refetch would.
+const listReaders = new Set<() => void>();
+const refetchList = () =>
+  act(() => {
+    for (const redraw of listReaders) redraw();
+  });
+
+vi.mock("@/hooks/useSettings", () => ({
+  usePlatformCommunities: () => {
+    const [, redraw] = useReducer((n: number) => n + 1, 0);
+    useEffect(() => {
+      listReaders.add(redraw);
+      return () => {
+        listReaders.delete(redraw);
+      };
+    }, []);
+    return {
+      data: { ...buildPage(served), support_bound: supportBound },
+      isLoading: false,
+      isError: false,
+    };
+  },
   useUpdateCommunityStorage: () => ({ mutate, isPending: false }),
   useRestoreCommunity: () => ({ mutate: restore, isPending: false }),
+  useSetCommunitySuspension: () => ({ mutate: setSuspension, isPending: false }),
   useCommunityNarrowings: () => ({ data: narrowings, isLoading: false }),
   useAgreeCommunityNarrowing: () => ({ mutate: agreeNarrowing, isPending: false }),
 }));
@@ -147,15 +211,15 @@ let supportBound = true;
 
 import { OperatorDashboardCommunitiesPage } from "./OperatorDashboardCommunitiesPage";
 
-const renderPage = () =>
-  renderWithProviders(<OperatorDashboardCommunitiesPage />, {
-    auth: { user: buildUser({ role: "owner" }) },
+const renderPage = (role: UserRole = "owner") =>
+  renderInRouter(OperatorDashboardCommunitiesPage, {
+    auth: { user: buildUser({ role }) },
   });
 
 /** Render the page, ready to be clicked. */
-const mounted = () => {
+const mounted = (role: UserRole = "owner") => {
   const user = userEvent.setup();
-  renderPage();
+  renderPage(role);
   return user;
 };
 
@@ -170,6 +234,7 @@ const openSheet = async (communityName: string) => {
 
 const storageInput = () => screen.getByLabelText("Storage limit") as HTMLInputElement;
 const userLimitInput = () => screen.getByLabelText("Members") as HTMLInputElement;
+const guestLimitInput = () => screen.getByLabelText("Guests") as HTMLInputElement;
 
 /** Type into a box and leave it, which is the only way either cap is saved. */
 const typeAndLeave = (input: HTMLInputElement, value: string) => {
@@ -181,9 +246,13 @@ describe("OperatorDashboardCommunitiesPage", () => {
   beforeEach(() => {
     mutate.mockClear();
     restore.mockClear();
+    setSuspension.mockClear();
+    served = communitiesData;
     mintHandoff.mockReset();
     billingConfig = { url: "https://billing.example.com", operator_handoff: true };
     supportBound = true;
+    pluginSummaries = {};
+    pluginSummariesFail = false;
     narrowings = [];
   });
 
@@ -202,10 +271,10 @@ describe("OperatorDashboardCommunitiesPage", () => {
     });
   });
 
-  // Both caps are the same editor: pre-filled from what is stored, saved on
+  // Every cap is the same editor: pre-filled from what is stored, saved on
   // blur, blank meaning no limit at all, and anything the field cannot mean
-  // snapped back rather than sent. Capped Community holds both caps at 10;
-  // Open Community holds neither.
+  // snapped back rather than sent. Capped Community holds every cap at 10;
+  // Open Community holds none.
   describe.each([
     {
       what: "storage limit",
@@ -225,6 +294,19 @@ describe("OperatorDashboardCommunitiesPage", () => {
       cleared: { max_users: null },
       rejects: [
         ["zero", "0"],
+        ["a negative number", "-2"],
+        ["a fraction", "2.5"],
+      ],
+    },
+    {
+      what: "guest limit",
+      input: guestLimitInput,
+      stored: "10",
+      // 0 is a setting of its own: no new guests.
+      typed: "0",
+      saves: { max_guests: 0 },
+      cleared: { max_guests: null },
+      rejects: [
         ["a negative number", "-2"],
         ["a fraction", "2.5"],
       ],
@@ -285,6 +367,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
     it("applies a non-suspend change immediately (no confirm)", async () => {
       const user = mounted();
+      await screen.findByText("Capped Community");
 
       await user.click(statusControl("Capped Community"));
       await user.click(await screen.findByRole("option", { name: "Read-only" }));
@@ -294,6 +377,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
     it("gates suspend behind a confirm dialog", async () => {
       const user = mounted();
+      await screen.findByText("Capped Community");
 
       await user.click(statusControl("Capped Community"));
       await user.click(await screen.findByRole("option", { name: "Suspended" }));
@@ -308,6 +392,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
     it("gates a hold behind its own confirm dialog", async () => {
       const user = mounted();
+      await screen.findByText("Capped Community");
 
       await user.click(statusControl("Capped Community"));
       await user.click(await screen.findByRole("option", { name: "On hold" }));
@@ -338,7 +423,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
     it("shows what a save actually stored, not what was typed", async () => {
       const user = userEvent.setup();
-      const { rerender } = renderPage();
+      renderPage();
       await user.click(await screen.findByLabelText("Manage settings for Capped Community"));
       typeAndLeave(storageInput(), "5.0");
 
@@ -347,7 +432,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
       communitiesData[0] = { ...capped, max_storage_bytes: 5 * GIB };
       try {
         act(() => mutate.mock.calls[0][1].onSuccess());
-        rerender(<OperatorDashboardCommunitiesPage />);
+        refetchList();
         expect(storageInput().value).toBe("5");
       } finally {
         communitiesData[0] = capped;
@@ -477,6 +562,37 @@ describe("OperatorDashboardCommunitiesPage", () => {
       await user.click(screen.getByRole("button", { name: /withdraw/i }));
 
       expect(agreeNarrowing).toHaveBeenCalledWith({ connectionId: 3, agreed: false });
+    });
+  });
+
+  describe("plug-in summaries", () => {
+    it("shows the automation runs the community's Usage tab shows", async () => {
+      const capped = served.find((community) => community.name === "Capped Community");
+      pluginSummaries = {
+        [capped?.id ?? 0]: [
+          {
+            plugin_id: 4,
+            name: "Automations",
+            returns: [
+              { key: "used", type: "int", label: { en: "Runs this month" }, of: "allowed" },
+              { key: "allowed", type: "int", label: { en: "Monthly allowance" } },
+            ],
+          },
+        ],
+      };
+      await openSheet("Capped Community");
+
+      expect(screen.getByText("Automations")).toBeInTheDocument();
+      expect(screen.getByText("Runs this month")).toBeInTheDocument();
+      expect(screen.getByText("250 of 500")).toBeInTheDocument();
+      expect(screen.queryByText("Plug-in usage could not be loaded.")).not.toBeInTheDocument();
+    });
+
+    it("says the list could not be loaded rather than showing none", async () => {
+      pluginSummariesFail = true;
+      await openSheet("Capped Community");
+
+      expect(screen.getByText("Plug-in usage could not be loaded.")).toBeInTheDocument();
     });
   });
 
@@ -645,7 +761,7 @@ describe("OperatorDashboardCommunitiesPage", () => {
       // The purge date is an instant, not a calendar day, so it is drawn in
       // the reader's own timezone — computed here the same way rather than
       // written out, which would only pass in the timezone it was written in.
-      const expected = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+      const expected = dateTimeFormat(undefined, { dateStyle: "medium" }).format(
         new Date("2026-11-30T00:00:00Z")
       );
       expect(
@@ -671,6 +787,157 @@ describe("OperatorDashboardCommunitiesPage", () => {
         communityId: 10,
         data: { status: "active", seat_user_id: null },
       });
+    });
+  });
+
+  // Every control is drawn from the row's `allowed_actions`, which the server
+  // works out for the reader: nothing here asks the reader's role.
+  describe("what each reader may do", () => {
+    /** Serve every row with these actions and no status choices, the way the
+     *  server serves them to somebody who cannot set a status. */
+    const serveWith = (
+      actions: CommunityAction[],
+      overrides: Partial<PlatformCommunityStorageRead> = {}
+    ) => {
+      served = communitiesData.map((community) => ({
+        ...community,
+        status_choices: [],
+        allowed_actions: actions,
+        ...overrides,
+      }));
+    };
+
+    it("tells somebody without the list that they need a staff role", async () => {
+      renderPage("member");
+
+      expect(
+        await screen.findByText("You need a platform staff role to see communities.")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Capped Community")).not.toBeInTheDocument();
+    });
+
+    it("shows support each status as a tag, and nothing to manage", async () => {
+      serveWith(["billing_support", "request_access"]);
+      renderPage("support");
+
+      expect(await screen.findByText("Capped Community")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Status for Capped Community")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/^Manage settings for/)).not.toBeInTheDocument();
+      expect(screen.getAllByText("Active").length).toBeGreaterThan(0);
+      expect(screen.getByText("Suspended")).toBeInTheDocument();
+      // Deleted ones are listed for support too.
+      expect(screen.getByText("Deleted")).toBeInTheDocument();
+      // The support console is theirs to open.
+      expect(screen.getByLabelText("Open billing for Capped Community")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Suspend/ })).not.toBeInTheDocument();
+    });
+
+    it("offers the status control only where the row allows setting it", async () => {
+      served = communitiesData.map((community) =>
+        community.id === 7
+          ? community
+          : {
+              ...community,
+              status_choices: [],
+              allowed_actions: community.allowed_actions.filter(
+                (action) => action !== "set_status"
+              ),
+            }
+      );
+      renderPage();
+
+      expect(await screen.findByLabelText("Status for Capped Community")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Status for Open Community")).not.toBeInTheDocument();
+    });
+
+    it("leaves the support console out without billing support", async () => {
+      serveWith(["request_access"]);
+      renderPage("support");
+
+      expect(await screen.findByText("Capped Community")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Open billing for Capped Community")).not.toBeInTheDocument();
+    });
+
+    it("lets a moderator suspend a community once they confirm", async () => {
+      serveWith(["billing_support", "request_access", "suspend"]);
+      const user = mounted("moderator");
+
+      await user.click(await screen.findByRole("button", { name: "Suspend Capped Community" }));
+      expect(setSuspension).not.toHaveBeenCalled();
+      expect(await screen.findByText("Suspend Capped Community?")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Suspend community" }));
+      expect(setSuspension).toHaveBeenCalledWith({ communityId: 7, data: { suspended: true } });
+    });
+
+    it("says suspending a deleted community stops its countdown", async () => {
+      serveWith(["suspend"]);
+      const user = mounted("moderator");
+
+      await user.click(await screen.findByRole("button", { name: "Suspend Gone Community" }));
+
+      expect(await screen.findByText(/stops the countdown to its destruction/)).toBeInTheDocument();
+    });
+
+    it("says where lifting a suspension returns the community to", async () => {
+      serveWith(["lift"], { status: "suspended", lifts_to: "read_only" });
+      const user = mounted("moderator");
+
+      await user.click(
+        await screen.findByRole("button", { name: "Lift the suspension on Full Community" })
+      );
+
+      expect(
+        await screen.findByText(/It returns to the status it had before: Read-only\./)
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Lift suspension" }));
+      expect(setSuspension).toHaveBeenCalledWith({ communityId: 9, data: { suspended: false } });
+    });
+
+    it("warns that one suspended out of deletion goes back to counting down", async () => {
+      serveWith(["lift"], { status: "suspended", lifts_to: "deleted" });
+      const user = mounted("moderator");
+
+      await user.click(
+        await screen.findByRole("button", { name: "Lift the suspension on Gone Community" })
+      );
+
+      expect(
+        await screen.findByText(/goes back to being deleted, and the countdown/)
+      ).toBeInTheDocument();
+    });
+
+    it("opens the access request for the row's community", async () => {
+      serveWith(["request_access"]);
+      const user = mounted("support");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Capped Community" }));
+      const item = await screen.findByRole("menuitem", { name: "Request access" });
+
+      expect(item.getAttribute("href")).toContain("community=7");
+      expect(item.getAttribute("href")).toContain("form=request");
+      // Support doesn't moderate, so the request starts where it always did.
+      expect(item.getAttribute("href")).not.toContain("level=");
+      expect(screen.queryByRole("menuitem", { name: "Break glass" })).not.toBeInTheDocument();
+    });
+
+    it("starts a moderator's request on Moderate", async () => {
+      serveWith(["request_access"]);
+      const user = mounted("moderator");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Capped Community" }));
+      const item = await screen.findByRole("menuitem", { name: "Request access" });
+      expect(item.getAttribute("href")).toContain("level=moderate");
+    });
+
+    it("opens breaking glass for the row's community", async () => {
+      const user = mounted();
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Open Community" }));
+      const item = await screen.findByRole("menuitem", { name: "Break glass" });
+
+      expect(item.getAttribute("href")).toContain("community=8");
+      expect(item.getAttribute("href")).toContain("form=break_glass");
     });
   });
 });

@@ -37,7 +37,7 @@ from app.core.security import (
 )
 from app.core.routing import MOUNTED, route_endpoint
 from app.main import app
-from app.testing import create_user, get_auth_headers
+from app.testing import create_user, get_auth_headers, in_request_tasks
 
 
 class TestDefaultLimitsBuilder:
@@ -178,7 +178,7 @@ class TestDefaultLimitThrottlesUndecoratedRoute:
 
     async def test_burst_past_default_is_rejected(self):
         burst_app = self._build_app("3/minute")
-        transport = ASGITransport(app=burst_app)
+        transport = ASGITransport(app=in_request_tasks(burst_app))
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             statuses = [(await c.get("/undecorated")).status_code for _ in range(5)]
         # First 3 within the window succeed, the rest are throttled.
@@ -195,7 +195,7 @@ class TestDefaultLimitThrottlesUndecoratedRoute:
         monkeypatch.setattr(settings, "RATE_LIMIT_DEFAULT", "3/minute")
         unreachable = build_limiter("redis://127.0.0.1:1/0")
         burst_app = self._build_app("", unreachable)
-        transport = ASGITransport(app=burst_app)
+        transport = ASGITransport(app=in_request_tasks(burst_app))
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             statuses = [(await c.get("/undecorated")).status_code for _ in range(5)]
         assert unreachable._storage_dead
@@ -204,7 +204,7 @@ class TestDefaultLimitThrottlesUndecoratedRoute:
     async def test_empty_default_does_not_throttle(self):
         """With RATE_LIMIT_DEFAULT unset, undecorated routes are unthrottled."""
         burst_app = self._build_app("")
-        transport = ASGITransport(app=burst_app)
+        transport = ASGITransport(app=in_request_tasks(burst_app))
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             statuses = [(await c.get("/undecorated")).status_code for _ in range(10)]
         assert all(code == 200 for code in statuses)

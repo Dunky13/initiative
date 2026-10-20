@@ -1,4 +1,4 @@
-"""Projects and their tasks, favourites and recent views — and archiving, which
+"""Projects and their tasks, bookmarks and recent views — and archiving, which
 waits until everything a project holds exists.
 
 Every community seeds template and archived projects beside its active ones,
@@ -9,15 +9,14 @@ Templates and Archive tabs have the same variety the active list does.
 from __future__ import annotations
 
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import update
 
 from app.core.tools import Tool
 from app.models.tenant._mixins import archive_models
 from app.models.tenant.project import Project
-from app.models.tenant.project_favorite import ProjectFavorite
-from app.models.tenant.recent_view import RecentView
+from app.models.tenant.personal_item import PersonalItem, ViewSource
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.task import (
     Task,
@@ -28,7 +27,6 @@ from app.models.tenant.task import (
 )
 from app.schemas.tenant.task import mint_checklist_item_id
 from app.services.tenant.archive import archive_entity
-from app.services.tenant.filter_presets import ensure_default_presets
 from app.services.tenant.task_completion import sync_completed_at
 from app.services.tenant.task_statuses import ensure_default_statuses
 
@@ -1351,8 +1349,8 @@ PROJECTS: dict[str, list[dict]] = {
     ],
 }
 
-#: ``(person, project)`` — each person's starred projects.
-FAVORITES: dict[str, list[tuple[str, str]]] = {
+#: ``(person, project)`` — each person's bookmarked projects.
+BOOKMARKS: dict[str, list[tuple[str, str]]] = {
     "primary": [
         ("Dungeon Master", "Barovia Arc"),
         ("Dungeon Master", "Castle Ravenloft"),
@@ -1471,28 +1469,34 @@ def resolve_status(
 async def seed(c: Community) -> None:
     for d in PROJECTS[c.key]:
         await create_project(c, d)
-    for name, project in FAVORITES[c.key]:
-        c.session.add(
-            ProjectFavorite(user_id=c.users[name].id, project_id=c.projects[project].id)
-        )
-        c.ids["project_favorites"].append(c.projects[project].id)
-    for name, project in RECENT_VIEWS[c.key]:
-        c.session.add(
-            RecentView(
-                user_id=c.users[name].id,
-                entity_type=Tool.project.value,
-                entity_id=c.projects[project].id,
+    # A bookmark and an open on one project are one row.
+    kept: dict[tuple[int | None, int | None], PersonalItem] = {}
+
+    def row(name: str, project: str) -> PersonalItem:
+        key = (c.users[name].id, c.projects[project].id)
+        if key not in kept:
+            kept[key] = PersonalItem(
+                user_id=key[0], entity_type=Tool.project.value, entity_id=key[1]
             )
-        )
+        return kept[key]
+
+    now = datetime.now(timezone.utc)
+    for name, project in BOOKMARKS[c.key]:
+        row(name, project).bookmarked_at = now
+        c.ids["bookmarks"].append(c.projects[project].id)
+    for name, project in RECENT_VIEWS[c.key]:
+        item = row(name, project)
+        item.viewed_at, item.view_source = now, ViewSource.direct.value
+    c.session.add_all(kept.values())
     await c.session.flush()
 
 
 async def create_project(c: Community, d: dict) -> Project:
-    """A project, its sharing, its default statuses and presets, and its tasks.
+    """A project, its sharing, its default statuses, and its tasks.
 
     The seed builds Project rows directly rather than going through the create
     endpoint, so it owns every default that endpoint would have applied — the
-    filter presets included. Archived last, not first: archived work is
+    statuses included. Archived last, not first: archived work is
     read-only all the way down, so the date is remembered and stamped once the
     community holds everything it is meant to hold.
     """
@@ -1522,7 +1526,6 @@ async def create_project(c: Community, d: dict) -> Project:
         status.category: status
         for status in await ensure_default_statuses(c.session, project.id)
     }
-    await ensure_default_presets(c.session, project.id)
     for position, td in enumerate(d.get("tasks", ())):
         status = resolve_status(statuses, td["category"])
         await _create_task(c, project, status, position, td)
@@ -1571,7 +1574,7 @@ async def apply_archives(c: Community) -> None:
     """Archive the rows that asked for it, now that they have contents.
 
     Archived content takes no writes, so statuses, tasks, tags, comments and
-    favourites all have to be in place first — the order a real archive
+    bookmarks all have to be in place first — the order a real archive
     happens in. Archiving stamps one moment across everything it touched; the
     whole set is then moved to the date the def asked for, so the tasks inside
     still read as archived with their project and unarchiving still puts back

@@ -61,6 +61,7 @@ from app.services import permissions as permissions_service
 from app.services.cross_guild import gather_across_guilds, member_guild_ids
 from app.services.fields.spec import FieldContext, SortContext
 from app.services.permissions import with_tool
+from app.services.tenant import plugin_metadata
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
@@ -198,6 +199,7 @@ def _build_task_filter_fields(
     guild_id: int,
     current_user_id: int | None,
     property_definitions: Optional[dict[int, PropertyDefinition]] = None,
+    plugin_fields: Optional[dict] = None,
 ) -> dict:
     """The ``allowed_fields`` mapping for a task filter, from the field registry.
 
@@ -212,6 +214,7 @@ def _build_task_filter_fields(
             guild_id=guild_id,
             user_id=current_user_id,
             property_definitions=property_definitions or {},
+            plugin_fields=plugin_fields or {},
         ),
     )
 
@@ -451,6 +454,7 @@ async def list_reads(
     await _annotate_tasks(session, tasks)
     await tags_service.annotate_tags(session, tasks)
     await properties_service.annotate_properties(session, tasks)
+    await plugin_metadata.annotate_plugin_values(session, tasks)
     return [
         _task_to_list_read(task, head, has_description, guild_id=guild_id)
         for task, head, has_description in rows
@@ -525,6 +529,7 @@ async def load_tasks(session: AsyncSession, task_ids: list[int]) -> list[Task]:
     )
     await tags_service.annotate_tags(session, tasks)
     await properties_service.annotate_properties(session, tasks)
+    await plugin_metadata.annotate_plugin_values(session, tasks)
     await _annotate_series_sizes(session, tasks)
     return tasks
 
@@ -781,6 +786,7 @@ async def _gather_global_task_reads(
         )
         await tags_service.annotate_tags(guild_session, tasks)
         await properties_service.annotate_properties(guild_session, tasks)
+        await plugin_metadata.annotate_plugin_values(guild_session, tasks)
         return [
             (
                 placement[(_guild_id, task.id)],
@@ -884,17 +890,15 @@ class TaskListQuery:
     project_id: Optional[int]
     guild_ids: Optional[list]
     property_definitions: dict
+    #: The plug-in fields the reader may filter by (``plugin_metadata.filter_fields``).
+    plugin_fields: dict
 
 
 def _property_value_leaves(
-    conditions: list[FilterCondition | FilterGroup],
+    conditions: list[FilterCondition | FilterGroup], field: str = "property_values"
 ) -> list[FilterCondition]:
-    """Every ``property_values`` leaf, wherever it sits."""
-    return [
-        cond
-        for cond in iter_leaf_conditions(conditions)
-        if cond.field == "property_values"
-    ]
+    """Every ``property_values`` leaf, or ``plugin_values``, wherever it sits."""
+    return [cond for cond in iter_leaf_conditions(conditions) if cond.field == field]
 
 
 def check_task_conditions(
@@ -909,6 +913,7 @@ def check_task_conditions(
     check_ops(user_conditions, fields_registry.allowed_ops("tasks"))
     if (
         len(_property_value_leaves(user_conditions))
+        + len(_property_value_leaves(user_conditions, "plugin_values"))
         > properties_service.MAX_PROPERTY_FILTERS
     ):
         raise ValueError("too many property filters")
@@ -968,6 +973,20 @@ async def parse_task_list_query(
             session, property_ids_needed
         )
 
+    # A list across communities draws no plug-in's values, so filters by none.
+    plugin_fields = (
+        {}
+        if across_guilds_for is not None
+        else await plugin_metadata.filter_fields(
+            session,
+            [
+                str(cond.value.get("field"))
+                for cond in _property_value_leaves(user_conditions, "plugin_values")
+                if isinstance(cond.value, dict)
+            ],
+        )
+    )
+
     return TaskListQuery(
         user_conditions=user_conditions,
         sort_fields=sort_fields,
@@ -975,6 +994,7 @@ async def parse_task_list_query(
         project_id=extract_condition_value(user_conditions, "project_id"),
         guild_ids=guild_ids,
         property_definitions=property_definitions,
+        plugin_fields=plugin_fields,
     )
 
 
@@ -1090,6 +1110,7 @@ async def guild_task_query_builder(
         guild_id=context.guild_id,
         current_user_id=current_user.id if current_user is not None else None,
         property_definitions=q.property_definitions,
+        plugin_fields=q.plugin_fields,
     )
 
     def build(stmt):

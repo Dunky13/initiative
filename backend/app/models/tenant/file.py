@@ -22,11 +22,13 @@ from sqlmodel import Enum as SQLEnum, Field, Relationship
 from app.core.tools import Tool
 from app.models.tenant._mixins import (
     ArchiveMixin,
-    attach_actions,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
+    HoldMixin,
     ListingProvenanceMixin,
     SoftDeleteMixin,
+    attach_actions,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -52,6 +54,8 @@ _YJS_STATE = Column(LargeBinary, nullable=True)
 
 
 class File(
+    HoldMixin,
+    CommentLockMixin,
     CommentsToggleMixin,
     CreatedByMixin,
     ArchiveMixin,
@@ -72,7 +76,9 @@ class File(
     }
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    initiative_id: int = Field(foreign_key="initiatives.id", nullable=False)
+    initiative_id: int = Field(
+        foreign_key="initiatives.id", ondelete="CASCADE", nullable=False
+    )
     name: str = Field(nullable=False, index=True, max_length=255)
     content: dict = Field(default_factory=dict, sa_column=_CONTENT)
     created_at: datetime = Field(

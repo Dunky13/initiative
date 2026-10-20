@@ -37,6 +37,7 @@ from fastapi import (
 )
 from sqlalchemy import func
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
@@ -51,9 +52,10 @@ from app.api.deps import (
     plugin_scope,
 )
 from app.core.messages import (
+    ImageMessages,
     GalleryMessages,
 )
-from app.core.tools import Tool
+from app.core.tools import KINDS, Tool
 from app.db.query import apply_pagination, build_paginated_response
 from app.models.platform.user import User
 from app.models.tenant.gallery import Gallery, GalleryImage, GalleryImageVersion
@@ -75,8 +77,10 @@ from app.schemas.tenant.timeline import TimelineResponse
 from app.services.permissions import Action
 from app.services import storage_config
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from app.services.tenant import file_versions
 from app.services.tenant import galleries as galleries_service
+from app.services.tenant import plugin_metadata
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import timeline as timeline_service
@@ -132,12 +136,12 @@ async def _read_picture(
     except galleries_service.EmptyImageError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=GalleryMessages.IMAGE_EMPTY,
+            detail=ImageMessages.IMAGE_EMPTY,
         )
     except galleries_service.InvalidImageError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=GalleryMessages.INVALID_IMAGE,
+            detail=ImageMessages.IMAGE_INVALID,
         )
 
     # The second half of the gate: a header says what a file claims, and the
@@ -148,7 +152,7 @@ async def _read_picture(
     except galleries_service.InvalidImageError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=GalleryMessages.INVALID_IMAGE,
+            detail=ImageMessages.IMAGE_INVALID,
         )
     width, height = (
         (thumbnail.source_width, thumbnail.source_height)
@@ -384,10 +388,7 @@ async def read_after_write(
         session, gallery_id, populate_existing=True
     )
     if hydrated is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=Tool.gallery.not_found_code,
-        )
+        raise Tool.gallery.not_found()
     return serialize_tool(
         GalleryRead, hydrated, user_id=guild_context.user_id, context=guild_context
     )
@@ -557,7 +558,19 @@ async def read_gallery_image(
         session, GalleryImage, image_id, parent_id=gallery_id
     )
     await galleries_service.annotate_version_counts(session, [image])
-    return serialize_gallery_image(image, context=guild_context)
+    return await _serialized_image(session, image, guild_context)
+
+
+async def _serialized_image(
+    session: AsyncSession, image: GalleryImage, context: ActorContext
+) -> GalleryImageRead:
+    """One picture as its own read answers it: with the plug-ins' values on it."""
+    values = await plugin_metadata.values_on(
+        session, "gallery_image", {image.id: cast(Gallery, image.gallery).initiative_id}
+    )
+    return serialize_gallery_image(
+        image, context=context, plugin_values=values.get(image.id, ())
+    )
 
 
 @router.patch("/{gallery_id}/images/{image_id}", response_model=GalleryImageRead)
@@ -574,7 +587,11 @@ async def update_gallery_image(
     image = await resource_access.load_child(
         session, GalleryImage, image_id, access="write", parent_id=gallery_id
     )
-    update_data = image_in.model_dump(exclude_unset=True)
+    if "caption_base" in image_in.model_fields_set:
+        await overwrites.refuse_written_over(
+            session, image, "caption", image_in.caption_base
+        )
+    update_data = image_in.model_dump(exclude_unset=True, exclude={"caption_base"})
     if "title" in update_data:
         image.title = (update_data["title"] or "").strip() or None
     if "caption" in update_data:
@@ -593,7 +610,7 @@ async def update_gallery_image(
     await attachments_service.claim_uploads(session, image)
     await session.commit()
     hydrated = await _refetch_image(session, image.id)
-    return serialize_gallery_image(hydrated, context=guild_context)
+    return await _serialized_image(session, hydrated, guild_context)
 
 
 @router.delete(
@@ -658,10 +675,7 @@ async def bulk_delete_gallery_images(
         ).all()
     )
     if len(images) != len(ids):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=GalleryMessages.IMAGE_NOT_FOUND,
-        )
+        raise KINDS["gallery_image"].not_found()
     retention_days = await guilds_service.get_guild_retention_days(session)
     for image in images:
         await soft_delete_entity(
@@ -708,7 +722,7 @@ async def upload_gallery_image_version(
         session,
         guild_context.guild_id,
         version,
-        conflict=GalleryMessages.VERSION_CONFLICT,
+        conflict=True,
     )
     return file_versions.read(GalleryImageVersionRead, version, image)
 
@@ -752,8 +766,6 @@ async def delete_gallery_image_version(
     image = await resource_access.load_child(
         session, GalleryImage, image_id, action=Action.delete, parent_id=gallery_id
     )
-    deleted = await file_versions.delete_version(
-        session, image, version_id, GalleryMessages
-    )
+    deleted = await file_versions.delete_version(session, image, version_id)
     await session.commit()
     await file_versions.release_files(guild_context.guild_id, deleted)

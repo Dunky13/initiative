@@ -27,7 +27,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
-from app.core.messages import ReactionMessages
+from app.core.messages import KindMessages, ReactionMessages
 from app.core.reactions import ReactionTarget
 from app.core.tools import Tool
 from app.db import session as db_session
@@ -119,6 +119,9 @@ async def _resolve_comment(
         raise ReactionNotFoundError(ReactionMessages.TARGET_NOT_FOUND) from exc
     except comments_service.CommentPermissionError as exc:
         raise ReactionPermissionError(ReactionMessages.PERMISSION_DENIED) from exc
+    if comment.removed_at is not None:
+        # A tombstone has nothing left to react to.
+        raise ReactionDisabledError(ReactionMessages.DISABLED)
 
     return TargetContext(
         target=ReactionTarget.comment,
@@ -164,7 +167,9 @@ async def _resolve_post(
             access="read",
         )
     except Exception as exc:  # the DAC engine raises its own HTTP error type
-        raise ReactionPermissionError(Tool.post.no_access_code) from exc
+        raise ReactionPermissionError(
+            KindMessages.NO_ACCESS, params={"kind": Tool.post.value}
+        ) from exc
 
     return TargetContext(
         target=ReactionTarget.post,
@@ -405,14 +410,42 @@ async def _queue_reaction_notification(
     ctx: TargetContext,
     guild_id: int,
 ) -> None:
-    """Tell the author someone reacted — through the digest, never at once.
+    """Tell whoever a reaction concerns, as a comment on the same thing would.
 
-    A reaction is the lightest signal in the app and they arrive in flurries, so
-    the bell gets one entry immediately and email/push wait for the queue to
-    settle, exactly as task assignment does.
+    On a comment, its author: somebody answered what they said. Through the
+    digest, never at once: a reaction is the lightest signal in the app and
+    they arrive in flurries, so the bell gets one entry immediately and
+    email/push wait for the queue to settle, exactly as task assignment does.
+
+    On a post, everyone subscribed to it (``personal_items.subscribers_of``),
+    on the line their subscription keeps for the post, as a comment on it is
+    told.
     """
+    from app.models.platform.notification import NotificationType
     from app.services import notifications
+    from app.services.tenant import personal_items
 
+    if ctx.target is ReactionTarget.post:
+        subject = await notifications.resolve_subject(session, ctx.about)
+        if subject is None:
+            return
+        kind, entity_id = ctx.about
+        subscribed = await personal_items.subscribers_of(
+            session, {ctx.about: (subject.tool.value, subject.resource_id)}
+        )
+        name = await notifications.actor_name(session, reactor)
+        await notifications.notify(
+            session,
+            NotificationType.subscription_activity,
+            sorted(subscribed[ctx.about]),
+            about=subject,
+            key="subscription.reacted",
+            values={"actor": name, "context": ctx.title},
+            data={"entity_type": kind, "entity_id": entity_id, "verb": "reacted"},
+            actor=reactor,
+            rollup_key=f"subscription:{kind}:{entity_id}",
+        )
+        return
     if ctx.author_id is None or ctx.author_id == reactor.id:
         return
     # The line names what was reacted to, so it goes only to an author who can
@@ -455,6 +488,10 @@ async def _withdraw_reaction_notification(
     """
     from app.services import notifications
 
+    # A post's subscribers hear of it on their line for the post, as of a
+    # comment, which is not taken back.
+    if ctx.target is ReactionTarget.post:
+        return
     if ctx.author_id is None or ctx.author_id == reactor.id:
         return
     await notifications.withdraw_reaction_event(
@@ -498,8 +535,10 @@ async def purge_reactions_for(
     """Hard-delete every reaction on targets that are being purged.
 
     Reactions name their target polymorphically, so no foreign key carries them
-    out with it — the purge path says so explicitly instead.
+    out with it — the purge path says so explicitly instead. A reaction is its
+    reactor's alone, so the platform drops them.
     """
+    from app.db.cohorts import exec_as_system
     from app.models.tenant.reaction_digest import ReactionDigestItem
 
     if not target_ids:
@@ -511,9 +550,10 @@ async def purge_reactions_for(
             ReactionDigestItem.target_id.in_(ids),
         )
     )
-    await session.exec(
+    await exec_as_system(
+        session,
         sa_delete(Reaction).where(
             Reaction.target_type == target.value,
             Reaction.target_id.in_(ids),
-        )
+        ),
     )

@@ -1,7 +1,7 @@
 """A plug-in that asks for tokens, for the suites that exercise the token endpoint
 and the routes an installation token reaches.
 
-Holds the plug-in's two keypairs (RSA and P-256), the key set its registration
+Holds the plug-in's Ed25519 keypair, the key set its registration
 publishes, the client assertion it signs, and an install set up the way a
 community sets one up: placed in an initiative, granted scopes by its seat,
 and registered by the operator.
@@ -13,11 +13,11 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import jwt
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from jwt.algorithms import ECAlgorithm, RSAAlgorithm
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+from jwt.algorithms import OKPAlgorithm
 from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -41,9 +41,8 @@ from app.testing.schema_harness import route_session_to_guild
 
 __all__ = [
     "CLIENT",
-    "EC_KID",
+    "KID",
     "LISTING",
-    "RSA_KID",
     "InstalledPlugin",
     "assert_names_nobody",
     "client_jwks",
@@ -56,26 +55,25 @@ __all__ = [
 
 CLIENT = "tests.token-client"
 LISTING = "TOKENCLIENT001"
-RSA_KID = "token-client-rsa-1"
-EC_KID = "token-client-ec-1"
+KID = "token-client-1"
 
-_rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_ec_key = ec.generate_private_key(ec.SECP256R1())
+#: The test plug-in's key: Ed25519, the one kind a plug-in signs with.
+_key = ed25519.Ed25519PrivateKey.generate()
+#: A key the plug-in never registered, for assertions that must be refused.
+_foreign_rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 def client_jwks() -> dict[str, Any]:
-    """The key set the plug-in's registration publishes: one RSA key, one P-256."""
-    rsa_entry = json.loads(RSAAlgorithm.to_jwk(_rsa_key.public_key()))
-    rsa_entry["kid"] = RSA_KID
-    ec_entry = json.loads(ECAlgorithm.to_jwk(_ec_key.public_key()))
-    ec_entry["kid"] = EC_KID
-    return {"keys": [rsa_entry, ec_entry]}
+    """The key set the plug-in's registration publishes: its one Ed25519 key."""
+    entry = json.loads(OKPAlgorithm.to_jwk(_key.public_key()))
+    entry["kid"] = KID
+    return {"keys": [entry]}
 
 
 def mint_client_assertion(
     *,
     audience: str,
-    key: str = "rsa",
+    key: str = "plugin",
     client_id: str = CLIENT,
     kid: Optional[str] = None,
     algorithm: Optional[str] = None,
@@ -85,16 +83,16 @@ def mint_client_assertion(
     subject: Optional[str] = None,
     extra: Optional[dict[str, Any]] = None,
 ) -> str:
-    """A client assertion signed by one of the plug-in's keys.
+    """A client assertion signed by the plug-in's key (EdDSA).
 
-    ``key`` picks the signing key; ``kid`` and ``algorithm`` default to that
-    key's own, and either may be set to something else to make the header
-    disagree with the key. ``extra`` adds claims, as a member grant's
-    ``installation`` and ``purpose``.
+    ``key="foreign-rsa"`` signs with an RSA key the plug-in never registered,
+    RS256, under the plug-in's ``kid`` unless another is given: what an
+    attacker holding some other key would send. ``extra`` adds claims, as a
+    member grant's ``installation`` and ``purpose``.
     """
-    private = _rsa_key if key == "rsa" else _ec_key
-    default_kid = RSA_KID if key == "rsa" else EC_KID
-    default_alg = "RS256" if key == "rsa" else "ES256"
+    private, default_alg = (
+        (_key, "EdDSA") if key == "plugin" else (_foreign_rsa_key, "RS256")
+    )
     iat = int(time.time() if issued_at is None else issued_at)
     claims = {
         "iss": client_id,
@@ -109,7 +107,7 @@ def mint_client_assertion(
         claims,
         private,
         algorithm=algorithm or default_alg,
-        headers={"kid": kid or default_kid, "typ": "JWT"},
+        headers={"kid": kid or KID, "typ": "JWT"},
     )
 
 
@@ -127,6 +125,11 @@ class InstalledPlugin:
     def guild(self) -> Any:
         return self.seat.guild
 
+    @property
+    def public_id(self) -> str:
+        """The plug-in, whose sector the install's references are in."""
+        return self.plugin.definition["service"]["public_id"]
+
 
 async def install_plugin(
     session: AsyncSession,
@@ -139,13 +142,15 @@ async def install_plugin(
     register: bool = True,
     enabled: bool = True,
     requested: Optional[Sequence[str]] = None,
+    declares: Optional[Mapping[str, Any]] = None,
 ) -> InstalledPlugin:
     """An install of ``client_id``'s listing, placed in one of two
     initiatives and granted ``granted`` by the community's seat, with the
     operator's registration publishing :func:`client_jwks`.
 
     The pinned manifest requests ``requested``, every scope by default, so
-    the grant is what decides what a token carries."""
+    the grant is what decides what a token carries. ``declares`` adds to it,
+    such as its ``fields``."""
     seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
     unplaced = await create_initiative(session, seat.guild, seat.user, name="B")
     plugin = await create_guild_plugin(
@@ -159,6 +164,7 @@ async def install_plugin(
                 "protocol": 1,
                 "scopes": list(ALL_SCOPES if requested is None else requested),
             },
+            **(declares or {}),
         },
         listing_uid=listing_uid,
     )

@@ -17,12 +17,6 @@
     "wantsToConnect": "Cette personne souhaite se connecter.",
     "youAskedToConnect": "Vous avez demandé une connexion. Rien ne change tant qu'elle n'accepte pas."
   },
-  "groups": {
-    "unread": "Non lus",
-    "favorites": "Favoris",
-    "connections": "Connexions",
-    "messages": "Messages"
-  },
   "search": {
     "placeholder": "Rechercher",
     "label": "Rechercher dans les conversations",
@@ -40,7 +34,6 @@
     "noCommunities": "Personne à afficher. Vous ne partagez encore de communauté avec personne.",
     "unreachable": "Injoignable",
     "showMore": "Afficher plus",
-    "favorites": "Favoris",
     "addToGroup": "Ajouter {{name}} à un groupe",
     "removeFromGroup": "Retirer {{name}}",
     "groupHint": "Tout le monde ici sera invité avant de rejoindre.",
@@ -102,7 +95,8 @@
     "sendHistory": "Lui envoyer mon historique de messages",
     "verify": "Vérifier",
     "remove": "Pas le mien, le retirer",
-    "error": "Impossible d'enregistrer ta réponse. Réessaie."
+    "error": "Impossible d'enregistrer ta réponse. Réessaie.",
+    "gone": "Cet appareil s'est déconnecté ou a été retiré : il n'y a plus rien à vérifier."
   },
   "historyAsk": {
     "title": "Vérifie cet appareil depuis un autre des tiens",
@@ -192,7 +186,6 @@
     "pin": "Punaise"
   },
   "groupThreads": {
-    "heading": "Conversations de groupe",
     "invited": "Invitation"
   },
   "invitation": {

@@ -1,7 +1,7 @@
 """What a reaction can be attached to — the one place a target kind is declared.
 
 A reaction is deliberately NOT a comment feature: the row names its target by
-``(target_type, target_id)``, the same polymorphic shape ``recent_views`` and
+``(target_type, target_id)``, the same polymorphic shape ``personal_items`` and
 ``search_entries`` use, so the next thing worth reacting to
 joins by adding one member here plus the table it resolves through.
 

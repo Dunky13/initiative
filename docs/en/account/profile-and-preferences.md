@@ -77,9 +77,6 @@ Who you are and how you get in.
 
 - **Username** — your handle: the name you picked plus a four-digit number, like `jordan#1234`. The number is what lets two people share a name. A moderator can change it for you.
 - **Email addresses** — any confirmed one signs you in, and account mail goes to all of them. Adding one, making one primary or removing one asks for your current password, or for a fresh sign-in if you sign in without one. Your addresses hear about it when a new one is confirmed or the primary moves, and a confirmed address you remove is told too. Moving the primary or removing one can [wait two days](#changes-that-wait).
-- **Password** — current password, then the new one twice (12+ characters), then **Change password**.
-
-Sign in with a work login instead? Then your password lives with them, not us, and this section is none of your concern.
 
 ### Changes that wait
 
@@ -95,7 +92,7 @@ One change waits at a time. Ask for another and you'll be pointed at the first.
 
 ### "This wasn't me"
 
-Every email about a change to how you sign in — an address, a passkey, two-factor authentication, your password — carries a **This wasn't me** button. It opens **Wasn't you?**, where **Sign out everywhere** signs your account out of every browser, phone and computer and turns off its API keys. On its own it changes nothing else.
+Every email about a change to how you sign in — an address, a passkey, two-factor authentication, a new set of recovery codes, your password, a sign-in provider newly able to open your account — carries a **This wasn't me** button. It opens **Wasn't you?**, where **Sign out everywhere** signs your account out of every browser, phone and computer and turns off its API keys. On its own it changes nothing else.
 
 Sometimes it can do more. When a change looks out of place — not made with a passkey, not from somewhere you'd been signed in for a day, or one of several in a row — the emails to your older addresses can undo it as well:
 
@@ -132,6 +129,10 @@ How the app reads to you. Each choice saves as you make it — no Save button.
 
 Settings kept by this browser or computer rather than your account. **Keep screen awake** stops the screen dimming while Initiative is open, which is useful for a counter propped up on a door. The desktop app adds its own switches here: updating itself, staying in the tray, and opening when the computer starts.
 
+## Security
+
+Every way you sign in, in one place: your **password** (current one, then the new one twice, 12+ characters), your [passkeys](passkeys.md) and [two-factor authentication](two-factor-authentication.md). A way in your server doesn't offer isn't shown. Sign in with a work login instead? Then your password lives with them, not us, and that part is none of your concern.
+
 ## Where you're signed in
 
 **My Settings → Security** lists every browser, phone and computer with your account open, one row each: what each one is — *Chrome on macOS*, *Firefox on Windows* — where it last connected from, when it was last used, and which one is the one you're reading this on.
@@ -148,7 +149,7 @@ The same tab holds [two-factor authentication](two-factor-authentication.md), [p
 
 ## Privacy
 
-Who can ask to message you, your connections, and any requests waiting on you. **Ignored accounts** is here too: **Ignore by handle**, and that account's mentions, replies and reactions stop reaching you, along with anything it sends you. Communities you share carry on as normal: you each see the other's work there. See [Messages](../guides/messages.md#who-can-reach-you).
+Who can ask to message you, your connections, and any requests waiting on you. **Count my activity toward search ranking** decides whether what you open helps [search](../guides/search-and-shortcuts.md) list things first; nobody can see what you opened. **Ignored accounts** is here too: **Ignore by handle**, and that account's mentions, replies and reactions stop reaching you, along with anything it sends you. Communities you share carry on as normal: you each see the other's work there. See [Messages](../guides/messages.md#who-can-reach-you).
 
 ## Trash
 

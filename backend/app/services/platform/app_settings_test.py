@@ -235,9 +235,9 @@ async def test_a_deployment_with_no_platform_key_generates_one_and_keeps_it(
 
     # The published key carries the same kid: its RFC 7638 thumbprint.
     (entry,) = context_jwt.context_jwks()["keys"]
-    assert entry["alg"] == "RS256"
+    assert entry["alg"] == "EdDSA"
     members = json.dumps(
-        {"e": entry["e"], "kty": "RSA", "n": entry["n"]}, separators=(",", ":")
+        {"crv": "Ed25519", "kty": "OKP", "x": entry["x"]}, separators=(",", ":")
     )
     thumbprint = base64.urlsafe_b64encode(hashlib.sha256(members.encode()).digest())
     assert kid == entry["kid"] == thumbprint.rstrip(b"=").decode()
@@ -247,6 +247,48 @@ async def test_a_deployment_with_no_platform_key_generates_one_and_keeps_it(
     await load_plugin_platform_signing_key(session)
     assert security.resolve_plugin_platform_signing_material() == (pem, kid)
     assert await _stored_platform_key(session) == stored
+
+
+async def test_a_stored_rsa_platform_key_is_replaced_with_an_ed25519_one(
+    session: AsyncSession, monkeypatch
+):
+    """A key stored before the platform key became Ed25519 is replaced once, and
+    a later start keeps the replacement."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from app.core.encryption import encrypt_field
+
+    _without_a_platform_key(monkeypatch)
+    await seed_app_settings(session)
+    await load_plugin_platform_signing_key(session)
+    rsa_pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    await session.exec(
+        text(
+            "UPDATE app_setting_secrets SET plugin_platform_signing_key_encrypted = :v"
+        ).bindparams(v=encrypt_field(rsa_pem, SALT_PLUGIN_PLATFORM_SIGNING_KEY))
+    )
+    await session.commit()
+    monkeypatch.setattr(security, "_stored_plugin_platform_key", None)
+
+    await load_plugin_platform_signing_key(session)
+    pem, _ = security.resolve_plugin_platform_signing_material()
+    assert context_jwt.is_platform_key(pem)
+    replaced = await _stored_platform_key(session)
+    assert decrypt_field(replaced, SALT_PLUGIN_PLATFORM_SIGNING_KEY) == pem
+
+    monkeypatch.setattr(security, "_stored_plugin_platform_key", None)
+    await load_plugin_platform_signing_key(session)
+    assert security.resolve_plugin_platform_signing_material()[0] == pem
+    assert await _stored_platform_key(session) == replaced
 
 
 async def test_the_env_platform_key_wins(session: AsyncSession, monkeypatch):

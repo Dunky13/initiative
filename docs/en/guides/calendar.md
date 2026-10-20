@@ -36,7 +36,7 @@ Every date shows on the calendar, and every date sends its own reminder.
 
 ### Changing one date
 
-Move, rename, re-invite or delete a repeating event — in its settings, or by dragging it on the calendar — and Initiative asks which dates you mean:
+Move, rename, re-invite or delete a repeating event — on its own page, or by dragging it on the calendar — and Initiative asks which dates you mean:
 
 | | |
 |---|---|
@@ -46,7 +46,7 @@ Move, rename, re-invite or delete a repeating event — in its settings, or by d
 
 A few more things live on a repeating event:
 
-- **Skipped dates.** Deleting just one date skips it. The event's settings list every skipped date with **Restore** beside it, for when the cancelled rehearsal turns out to be happening after all.
+- **Skipped dates.** Deleting just one date skips it. The event's page lists every **Skipped date** with **Restore** beside it, for when the cancelled rehearsal turns out to be happening after all.
 - **Extra dates.** **Add a date** puts in a one-off, like the bonus session the week before the show.
 - **Make this its own event** lifts one date out of the series entirely. It keeps everything it had, and the series skips that date.
 
@@ -60,7 +60,7 @@ Pending isn't a rude answer, incidentally. It's the default, and it nearly alway
 
 On a repeating event, each date gets its own answer. Accepting one Tuesday is not accepting every Tuesday until the end of time.
 
-Anyone who can see an event can RSVP to it, and answering adds them to the attendees. For a guest list rather than an open door, turn off **Anyone who can see it may RSVP** under the event's **Settings → Attendees**: then only the people you added can answer. A repeating event's dates all follow the series.
+Anyone who can see an event can RSVP to it, and answering adds them to the attendees. For a guest list rather than an open door, turn off **Anyone who can see it may RSVP** on the event's page: then only the people you added can answer. A repeating event's dates all follow the series.
 
 ## Reminders
 
@@ -90,6 +90,16 @@ Events **import and export as standard `.ics` files**, which every other calenda
 So you can pull a whole season's fixtures in at once, or push the rehearsal schedule straight into everyone's phone calendar — including the members who will never, under any circumstances, open Initiative.
 
 Repeats go both ways too, with their skipped dates and any date changed on its own.
+
+### Subscribing from another calendar app
+
+A file is a snapshot. A **subscription** keeps itself up to date. **Subscribe**, in the same **More actions** menu, gives each calendar its own link for Google Calendar, Apple Calendar or Outlook, so it stays a separate calendar there. **Get link**, then **Copy link** or **Open in calendar app**.
+
+- **The link is yours.** It shows that calendar's events as you see them, and every refresh checks you still can.
+- **Keep it to yourself.** Anyone holding it can read that calendar. It's shown once; getting a new one stops the old one working.
+- **It's a personal [API key](../account/api-keys-and-integrations.md) underneath**, good for that one calendar's feed and nothing else. Delete it under **My Settings → Security**. Events the other app already copied stay there.
+
+No **Subscribe** in the menu? The community has switched off your [API access](../security/community-security.md#api-access), or the initiative keeps its content in.
 
 ??? techspec "Repeats in files and the API"
     A repeat is an RFC 5545 rule (`RRULE`, with `EXDATE` for skipped dates and `RDATE` for extra ones), kept in UTC. In an `.ics` file, a date changed on its own is a second `VEVENT` with the series' `UID` and a `RECURRENCE-ID`. Over the API, `PATCH` and `DELETE` on a repeating event take `scope` (`this`, `following`, `all`) and the `occurrence` they start from.

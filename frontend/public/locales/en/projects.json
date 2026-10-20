@@ -32,30 +32,15 @@
       "in_progress": "In progress",
       "done": "Done"
     },
-    "customFilters": "Custom filters",
     "modified": "modified",
-    "saveAsPreset": "Save preset",
-    "updatePreset": "Update “{{name}}”",
-    "presetName": "Preset name",
-    "presetNamePlaceholder": "e.g. Blocked work",
-    "presetSetDefault": "Make this the project's default",
-    "presetSaved": "Preset saved",
-    "presetUnavailable": "That preset no longer exists on this project, so the project default is shown instead.",
-    "presetSaveError": "Couldn't save the preset",
-    "presetDeleteError": "Couldn't delete the preset",
-    "preset": "Preset",
-    "resetToPreset": "Reset to preset",
     "assignedToMe": "Assigned to me",
     "unassigned": "Unassigned",
     "archived": "Archived",
-    "statusCategory": "Status category",
-    "savePresetDescription": "Everyone in this project will see this preset.",
-    "seededPresets": {
-      "all": "All",
-      "incomplete": "Incomplete",
-      "unassigned": "Unassigned",
-      "mine": "Mine"
-    }
+    "statusCategory": "Status category"
+  },
+  "layouts": {
+    "label": "Layout",
+    "loadError": "Couldn't load this project's layouts."
   },
   "createDialog": {
     "title": "Create project",
@@ -104,23 +89,13 @@
     "closeOthers": "Close others",
     "closeAll": "Close all"
   },
-  "favorite": {
-    "remove": "Remove from favorites",
-    "add": "Add to favorites"
-  },
   "pin": {
     "pinned": "Pinned project",
     "unpin": "Unpin project",
     "pin": "Pin project"
   },
   "taskComposer": {
-    "title": "Create task",
-    "description": "Add work to be done.",
-    "archivedMessage": "This project is archived. Unarchive it to add new tasks.",
-    "noWriteAccess": "You need write access to create tasks.",
-    "saving": "Saving…",
-    "createTask": "Create task",
-    "createError": "Unable to create task."
+    "createTask": "Create task"
   },
   "assignee": {
     "emptyMessage": "Invite initiative members to assign tasks.",
@@ -173,19 +148,7 @@
     "unknownError": "Unknown error"
   },
   "settings": {
-    "tabTaskStatuses": "Task statuses",
-    "tabFilterPresets": "Views",
-    "filterPresetsHeading": "Filter presets",
-    "filterPresetsDescription": "Saved filter sets everyone in this project can pick from. The default is what the project opens on.",
-    "defaultView": "Default view",
-    "defaultViewHint": "Which task view this project opens on for someone who hasn't chosen one.",
-    "presetDefaultColumn": "Default",
-    "presetNoFilters": "No filters — every task",
-    "deletePreset": "Delete preset",
-    "deletePresetConfirm": "Delete “{{name}}”? Anyone using it will fall back to the project default.",
-    "noPresets": "No presets yet.",
-    "presetMoveUp": "Move preset up",
-    "presetMoveDown": "Move preset down"
+    "tabTaskStatuses": "Task statuses"
   },
   "files": {
     "newFile": "New file"
@@ -195,7 +158,7 @@
     "addTask": "Add task",
     "enterTooltip": "Hit ‘enter’ to create a new task",
     "viewTable": "Table",
-    "viewKanban": "Kanban",
+    "viewBoard": "Board",
     "viewCalendar": "Calendar",
     "archiveDoneTasks": "Archive done tasks",
     "archiveDialogTitle": "Archive tasks",
@@ -223,9 +186,11 @@
     "markInProgress": "Mark task as in progress",
     "markDone": "Mark task as done",
     "taskColumn": "Task",
-    "tagGroup": "Tag",
     "untagged": "Untagged",
-    "commentsColumn": "Comments",
+    "noValue": "No {{name}}",
+    "checked": "{{name}}: yes",
+    "unchecked": "{{name}}: no",
+    "moveError": "Couldn't move the task to that group.",
     "statusColumn": "Status",
     "filterPlaceholder": "Filter tasks...",
     "reorderTask": "Reorder task",
@@ -258,7 +223,11 @@
       "comments": "Comments",
       "blockers": "Blockers",
       "tags": "Tags"
-    }
+    },
+    "limitCount": "{{count}} / {{limit}}",
+    "limitTitle": "Takes at most {{limit}} open tasks",
+    "full": "Full",
+    "statusFull": "{{name}} is full"
   },
   "recurrence": {
     "repeat": "Repeat",
@@ -316,14 +285,20 @@
     "archivedOn": "Archived {{date}}",
     "reorder": "Reorder project"
   },
-  "activitySidebar": {
-    "title": "Project activity",
-    "activity": "Activity",
-    "expand": "Expand activity sidebar",
-    "collapse": "Collapse activity sidebar",
-    "loading": "Loading activity…",
-    "noComments": "No comments yet.",
-    "commentedOn": "commented on",
-    "loadMore": "Load more"
+  "presets": {
+    "label": "Presets",
+    "placeholder": "Choose a preset",
+    "incomplete": "Incomplete",
+    "unassigned": "Unassigned",
+    "mine": "Mine"
+  },
+  "quickActions": {
+    "assignToMe": "Assign to me",
+    "assignToMeFor": "Assign {{title}} to me",
+    "unassignMe": "Unassign me",
+    "assigned": "Assigned to you",
+    "unassigned": "You're off this task",
+    "assignError": "Couldn't change who's on this task.",
+    "moveTo": "Move to"
   }
 }

@@ -79,7 +79,7 @@ export const SettingsPluginServicesPage = () => {
               base_url: values.baseUrl,
               // Always sent, so emptying the field clears it and puts both
               // surfaces back on the base URL.
-              embed_origin: values.embedOrigin,
+              page_origin: values.pageOrigin,
               allowed_origins: origins,
               // Null leaves the stored key set alone; {} clears it.
               ...(values.jwks === null ? {} : { jwks: values.jwks }),
@@ -92,6 +92,8 @@ export const SettingsPluginServicesPage = () => {
           data: {
             ...placement,
             mandatory: values.mandatory,
+            operations_only: values.operationsOnly,
+            shared_routes: values.sharedRoutes,
             // Only the values that were typed; a secret left alone is kept.
             ...(Object.keys(values.vendorValues).length > 0
               ? { vendor_values: values.vendorValues }
@@ -114,11 +116,12 @@ export const SettingsPluginServicesPage = () => {
       {
         public_id: values.publicId,
         base_url: values.baseUrl,
-        embed_origin: values.embedOrigin || null,
+        page_origin: values.pageOrigin || null,
         allowed_origins: origins,
         jwks: values.jwks,
         jwks_uri: values.jwksUri || null,
         mandatory: values.mandatory,
+        operations_only: values.operationsOnly,
       },
       {
         onSuccess: () => {
@@ -218,8 +221,18 @@ export const SettingsPluginServicesPage = () => {
                         {registration.source === "registry" && (
                           <Badge variant="secondary">{t("pluginServices.registryBadge")}</Badge>
                         )}
-                        {registration.mandatory && (
-                          <Badge variant="secondary">{t("pluginServices.mandatoryBadge")}</Badge>
+                        {registration.operations_only ? (
+                          <Badge variant="secondary">
+                            {t(
+                              registration.mandatory
+                                ? "pluginServices.operationsMandatoryBadge"
+                                : "pluginServices.operationsOnlyBadge"
+                            )}
+                          </Badge>
+                        ) : (
+                          registration.mandatory && (
+                            <Badge variant="secondary">{t("pluginServices.mandatoryBadge")}</Badge>
+                          )
                         )}
                       </div>
                       {declarative ? (
@@ -240,10 +253,10 @@ export const SettingsPluginServicesPage = () => {
                           {t("pluginServices.imageSummary", { image: registration.image_digest })}
                         </p>
                       )}
-                      {registration.embed_origin && (
+                      {registration.page_origin && (
                         <p className="truncate text-muted-foreground text-sm">
-                          {t("pluginServices.embedOriginSummary", {
-                            origin: registration.embed_origin,
+                          {t("pluginServices.pageOriginSummary", {
+                            origin: registration.page_origin,
                           })}
                         </p>
                       )}
@@ -328,7 +341,15 @@ export const SettingsPluginServicesPage = () => {
                     )}
                     {keysMissing && <p>{t("pluginServices.noKeysHelp")}</p>}
                     {!registration.vendor_ready && <p>{t("pluginServices.vendorMissingHelp")}</p>}
-                    {registration.mandatory && <p>{t("pluginServices.mandatoryHelp")}</p>}
+                    {registration.operations_only ? (
+                      <p>
+                        {t("pluginServices.operationsOnlyHelp")}
+                        {registration.mandatory &&
+                          ` ${t("pluginServices.operationsMandatoryHelp")}`}
+                      </p>
+                    ) : (
+                      registration.mandatory && <p>{t("pluginServices.mandatoryHelp")}</p>
+                    )}
                   </div>
                 </li>
               );

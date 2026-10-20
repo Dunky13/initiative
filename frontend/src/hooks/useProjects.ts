@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   ListMyProjectsParams,
+  ListProjectsParams,
   ProjectListResponse,
   ProjectRead,
   TaskStatusCreate,
@@ -12,14 +13,10 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
-  favoriteProject,
-  favoriteProjects,
-  getFavoriteProjectsQueryKey,
   getListProjectsQueryKey,
   getReadProjectQueryKey,
   listProjects,
   reorderProjects,
-  unfavoriteProject,
   updateProject,
 } from "@/api/generated/projects/projects";
 import {
@@ -58,16 +55,18 @@ export const useSetProjectGrants = projects.useSetGrants;
 export const useTemplateProjects = (open: boolean) =>
   useProjects({ is_template: true }, { enabled: open });
 
-/** Every live project the reader may edit — where a task can be moved to; a
- *  template takes no tasks moved into it. Walks the list's windows, so no
- *  destination is left off a long list. */
-export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) => {
+/** Every live project `filters` match, every window of the list read — for a
+ *  picker that has to offer all of them rather than the first page. */
+export const useAllProjects = (
+  filters: ListProjectsParams = {},
+  options?: QueryOpts<ProjectListResponse>
+) => {
   const communityId = useActiveCommunityId();
   const params = {
-    writable: true,
     slim: true,
     page_size: 0,
     ...toolViewParams(Tool.project, "active"),
+    ...filters,
   };
   return useQuery<ProjectListResponse>({
     queryKey: getListProjectsQueryKey(communityId, params),
@@ -77,15 +76,10 @@ export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) =>
   });
 };
 
-export const useFavoriteProjects = (options?: QueryOpts<ProjectRead[]>) => {
-  const communityId = useActiveCommunityId();
-  return useQuery<ProjectRead[]>({
-    queryKey: getFavoriteProjectsQueryKey(communityId),
-    queryFn: () => favoriteProjects(communityId),
-    staleTime: 30 * 1000,
-    ...options,
-  });
-};
+/** Every live project the reader may edit — where a task can be moved to; a
+ *  template takes no tasks moved into it. */
+export const useWritableProjects = (options?: QueryOpts<ProjectListResponse>) =>
+  useAllProjects({ writable: true }, options);
 
 export const useProjectTaskStatuses = (
   projectId: number | null,
@@ -133,70 +127,7 @@ export const useReorderProjects = (options?: MutationOpts<void, number[]>) => {
   });
 };
 
-// ── Favorite / Pin Mutations ────────────────────────────────────────────────
-
-interface ToggleFavoriteArgs {
-  projectId: number;
-  nextState: boolean;
-}
-
-interface ToggleFavoriteResponse {
-  project_id: number;
-  is_favorited: boolean;
-}
-
-const updateProjectListFavorite = (
-  prev: ProjectListResponse | undefined,
-  response: ToggleFavoriteResponse
-): ProjectListResponse | undefined => {
-  if (!prev) return prev;
-  return {
-    ...prev,
-    items: prev.items.map((project) =>
-      project.id === response.project_id
-        ? { ...project, is_favorited: response.is_favorited }
-        : project
-    ),
-  };
-};
-
-export const useToggleProjectFavorite = (
-  options?: MutationOpts<ToggleFavoriteResponse, ToggleFavoriteArgs>
-) => {
-  const communityId = useActiveCommunityId();
-  const qc = useQueryClient();
-  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
-
-  return useMutation({
-    ...rest,
-    mutationFn: async ({ projectId, nextState }: ToggleFavoriteArgs) => {
-      if (nextState) {
-        await favoriteProject(communityId, projectId);
-      } else {
-        await unfavoriteProject(communityId, projectId);
-      }
-      return { project_id: projectId, is_favorited: nextState };
-    },
-    onSuccess: (...args) => {
-      const data = args[0];
-      // Every cached project list, whatever it was narrowed by — the keys carry
-      // an initiative and a page now, so naming them one by one silently misses
-      // the list the reader is actually looking at.
-      qc.setQueriesData<ProjectListResponse>(
-        { queryKey: getListProjectsQueryKey(communityId) },
-        (prev) => updateProjectListFavorite(prev, data)
-      );
-      qc.setQueryData<ProjectRead>(
-        getReadProjectQueryKey(communityId, data.project_id),
-        (project) => (project ? { ...project, is_favorited: data.is_favorited } : project)
-      );
-      void invalidate(q.favoriteProjects());
-      onSuccess?.(...args);
-    },
-    onError,
-    onSettled,
-  });
-};
+// ── Pin Mutations ────────────────────────────────────────────────────────────
 
 interface TogglePinArgs {
   projectId: number;
@@ -228,7 +159,9 @@ export const useToggleProjectPin = (options?: MutationOpts<ProjectRead, TogglePi
     },
     onSuccess: (...args) => {
       const data = args[0];
-      // See useToggleProjectFavorite: match the endpoint, not one exact shape.
+      // Every cached project list, whatever it was narrowed by — the keys carry
+      // an initiative and a page, so naming them one by one silently misses the
+      // list the reader is actually looking at.
       qc.setQueriesData<ProjectListResponse>(
         { queryKey: getListProjectsQueryKey(communityId) },
         (prev) => replaceProjectInList(prev, data)

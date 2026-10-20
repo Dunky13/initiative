@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import re
+import uuid
 from collections.abc import Sequence
 from enum import Enum
 from functools import lru_cache
@@ -50,6 +51,26 @@ def is_device(request: Request) -> bool:
     longer than a browser.
     """
     return request.headers.get("origin") in CAPACITOR_NATIVE_ORIGINS
+
+
+#: Where the app names the copy of itself a request comes from.
+INSTALL_HEADER = "X-Initiative-Install"
+
+
+def install_id(request: Request) -> uuid.UUID | None:
+    """The installed copy of the app a request names, read beside
+    :func:`is_device` and only where it holds.
+
+    The app makes the name once per server and keeps it through sign-out, so a
+    device signing in again continues its own session rather than counting as
+    another device. ``None`` for a browser, or an app too old to send one.
+    """
+    if not is_device(request):
+        return None
+    try:
+        return uuid.UUID(request.headers.get(INSTALL_HEADER, ""))
+    except ValueError:
+        return None
 
 
 # Third-party origins the built SPA legitimately embeds in iframes, used to build
@@ -313,6 +334,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # A setting that fails is named in the error, never shown.
+        hide_input_in_errors=True,
     )
 
     # The database, in one of two shapes.
@@ -630,10 +653,10 @@ class Settings(BaseSettings):
         ``'unsafe-inline'`` because the charting component and some UI libraries
         inject inline ``<style>``. Origins the app genuinely loads (Google
         Fonts, file embeds, and — when configured — the captcha provider and
-        app embeds) are listed explicitly rather than via a blanket
+        plug-in pages) are listed explicitly rather than via a blanket
         ``https:``.
 
-        ``plugin_frame_origins`` is how a marketplace plug-in's embedded surface gets
+        ``plugin_frame_origins`` is how a marketplace plug-in's page gets
         framed. It holds the origins of the plug-in services this deployment has
         registered — the operator's trusted-site list, passed in by
         ``app.api.embed_csp`` on the documents where ``frame-src`` applies, and
@@ -883,6 +906,8 @@ class Settings(BaseSettings):
         ),
     )
     DISABLE_GUILD_CREATION: bool = False
+    # Runs this deployment as the product demo.
+    DEMO_MODE: bool = False
     # Communities one account may create in a day; 0 means no limit. Accounts
     # holding ``communities.manage`` are not held to it.
     GUILD_CREATION_DAILY_LIMIT: int = Field(default=5, ge=0)
@@ -942,17 +967,16 @@ class Settings(BaseSettings):
         absolute = parts.scheme in ("http", "https") and bool(parts.netloc)
         if not (same_origin_path or absolute):
             raise ValueError(
-                "FARO_COLLECTOR_URL must be a path starting with / or an "
-                f"http(s) URL; got {value!r}"
+                "FARO_COLLECTOR_URL must be a path starting with / or an http(s) URL"
             )
         return url
 
-    # RSA private key (PEM) for signing handoff JWTs. Handoff tokens cross a
-    # trust boundary — the receiving service verifies them with the matching
-    # public key — so signing is always RS256 and no secret is shared across
-    # that boundary. Required by whichever handoff a deployment uses: unset,
-    # those mint endpoints fail closed (503).
-    # Generate a 2048-bit keypair with ``openssl genrsa -out private.pem 2048``
+    # Ed25519 private key (PEM) for signing handoff JWTs. Handoff tokens cross
+    # a trust boundary — the receiving service verifies them with the matching
+    # public key — so signing is always EdDSA and no secret is shared across
+    # that boundary. Required by whichever handoff a deployment uses: unset, or
+    # any other kind of key, and those mint endpoints fail closed (503).
+    # Generate one with ``openssl genpkey -algorithm ed25519 -out private.pem``
     # and feed the PEM here.
     HANDOFF_SIGNING_PRIVATE_KEY_PEM: str | None = None
     # Key id stamped on the JWT header. The proprietary side reads ``kid``
@@ -965,11 +989,12 @@ class Settings(BaseSettings):
     # install generates its own signing key, and an owner wires plug-ins up from
     # the settings pages.
     #
-    # RSA private key (PEM) signing what Initiative sends a plug-in. Optional:
-    # unset, Initiative generates one on first start and keeps it in the
-    # database, encrypted under SECRET_KEY, so every replica signs with the same
-    # key. Set it to supply your own (``openssl genrsa -out plugin-platform.pem
-    # 2048``); while set it wins, and changing it is how the key is rotated.
+    # Ed25519 private key (PEM) signing what Initiative sends a plug-in, EdDSA.
+    # Optional: unset, Initiative generates one on first start and keeps it in
+    # the database, encrypted under SECRET_KEY, so every replica signs with the
+    # same key. Set it to supply your own (``openssl genpkey -algorithm ed25519
+    # -out plugin-platform.pem``); while set it wins, and changing it is how the
+    # key is rotated. Any other kind of key is refused when it is used.
     PLUGIN_PLATFORM_SIGNING_PRIVATE_KEY_PEM: str | None = None
     # Key id stamped on the JWT header for the key above, so a plug-in picks it out
     # of the published JWKS during a rotation. A generated key uses its RFC 7638
@@ -981,19 +1006,21 @@ class Settings(BaseSettings):
     # from the marketplace, and an entry naming a listing field is refused:
     #   [{"public_id": "acme.shopify",
     #     "base_url": "http://shopify:9100",
-    #     "embed_origin": "https://shopify.example.com",
+    #     "page_origin": "https://shopify.example.com",
     #     "jwks": {"keys": […]},
     #     "allowed_origins": ["https://shopify.example.com"],
     #     "vendor_env": {"client_secret": "SHOPIFY_CLIENT_SECRET"},
-    #     "mandatory": false}]
+    #     "mandatory": false,
+    #     "operations_only": false}]
     # ``base_url`` is where this server calls the plug-in, so it may be an address
-    # only the container network resolves; ``embed_origin`` is where a browser
+    # only the container network resolves; ``page_origin`` is where a browser
     # loads its pages, omitted when the plug-in answers both at one address. Give
     # the plug-in's public keys as ``jwks``, or as ``jwks_uri`` when the plug-in serves
     # them at ``base_url``'s origin (``/.well-known/jwks.json`` for a plug-in built
     # on the SDK). ``vendor_env`` maps a vendor value to the environment
     # variable holding it, so the file names no secret and can be a plain
-    # ConfigMap. An entry waits until its plug-in's listing
+    # ConfigMap. ``operations_only`` offers the plug-in to the operations
+    # community alone. An entry waits until its plug-in's listing
     # arrives. Unset (the default) ⇒ nothing is reconciled.
     # Reconciliation never re-enables a registration an operator disabled, and
     # never blocks boot.
@@ -1007,7 +1034,7 @@ class Settings(BaseSettings):
     # solely by what the operator sets (PATCH /settings/communities/{id}).
     #
     # Inbound calls from the billing service (initiative-billing). Requests
-    # carry an RS256 service JWT (verified against this public key) plus an
+    # carry an EdDSA service JWT (verified against this Ed25519 public key) plus an
     # HMAC-SHA256 over METHOD\nPATH\nTIMESTAMP\nsha256(body) keyed by the
     # shared secret. Both must be configured or the /billing endpoints
     # refuse every request.
@@ -1017,20 +1044,6 @@ class Settings(BaseSettings):
     # let billing start signing with it, then drop the old block. A token is
     # accepted if any block verifies it. The HMAC has a second accepted value
     # for the same staged rotation protocol.
-    # --- A bundled service's own channel ----------------------------------
-    # A plug-in this deployment ships rather than installs from the marketplace,
-    # named by the ``public_id`` its registration carries, plus the secret it
-    # signs its calls on that channel with.
-    #
-    # What it is for: a reference is minted per sector, so one party's name for
-    # a guild is unrelated to another's and only this deployment holds both. A
-    # bundled service that has to reconcile two of them asks here.
-    #
-    # Either value unset ⇒ the channel answers 503 and nothing on it is
-    # reachable.
-    BUNDLED_SERVICE_PUBLIC_ID: str | None = None
-    BUNDLED_SERVICE_SHARED_SECRET: str | None = None
-
     BILLING_PUBLIC_KEY_PEM: str | None = None
     BILLING_HMAC_SECRET: str | None = None
     # Second accepted HMAC value during a staged rotation. It may hold the next
@@ -1070,7 +1083,8 @@ class Settings(BaseSettings):
     #
     # ``MARKETPLACE_REGISTRY_ROOT`` is a path to a different trusted root, for a
     # repository signed under somebody else's keys. Listings and plug-ins from it
-    # land as usual; reference sectors are honoured only under the shipped root.
+    # land as usual; a package's entitlement terms are honoured only under the
+    # shipped root.
     MARKETPLACE_REGISTRY_URL: str = (
         "https://beyonders-studio.github.io/initiative-developer/public/"
     )

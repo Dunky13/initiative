@@ -2,14 +2,13 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { type ProjectRead, Tool } from "@/api/generated/initiativeAPI.schemas";
-import { FavoriteProjectButton } from "@/components/projects/FavoriteProjectButton";
+import { BookmarkButton } from "@/components/BookmarkButton";
 import { PinProjectButton } from "@/components/projects/PinProjectButton";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { ToolIndexDragHandle } from "@/components/tools/ToolIndexSortable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { ProgressCircle } from "@/components/ui/progress-circle";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { formatDate } from "@/lib/formatDate";
 import { toolDetailRoute } from "@/lib/tools";
@@ -31,9 +30,11 @@ export const ProjectCard = ({ project }: { project: ProjectRead }) => {
           canPin={project.can.configure}
           suppressNavigation
         />
-        <FavoriteProjectButton
-          projectId={project.id}
-          isFavorited={project.is_favorited ?? false}
+        <BookmarkButton
+          tool={Tool.project}
+          entityId={project.id}
+          name={project.name}
+          initiativeId={project.initiative_id}
           suppressNavigation
         />
         <ToolIndexDragHandle label={t("preview.reorder")} />
@@ -104,16 +105,11 @@ const ProjectProgress = ({ summary }: { summary?: ProjectRead["task_summary"] })
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="@container flex w-full items-center justify-between gap-4">
-      <div className="@xs:flex hidden w-full flex-col gap-2">
-        <span className="flex justify-end text-muted-foreground text-xs">
-          {t("preview.tasksDone", { completed, total })}
-        </span>
-        <Progress value={percent} className="h-2" aria-label={t("progressLabel")} />
-      </div>
-      <div className="flex @xs:hidden w-full items-center justify-end gap-3">
-        <ProgressCircle value={percent} />
-      </div>
+    <div className="flex w-full flex-col gap-2">
+      <span className="flex justify-end text-muted-foreground text-xs">
+        {t("preview.tasksDone", { completed, total })}
+      </span>
+      <Progress value={percent} className="h-2" aria-label={t("progressLabel")} />
     </div>
   );
 };

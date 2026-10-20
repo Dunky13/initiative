@@ -26,18 +26,19 @@ from app.models.platform.plugin_service_registration import (
     RegistrationKind,
 )
 from app.models.tenant.guild_plugin import GuildPlugin
-from app.services.marketplace import plugin_oauth
+from app.services.marketplace import plugin_installs, plugin_oauth
 from app.services.marketplace.plugin_refs import ensure_plugin_guild_ref
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.tenant import plugin_updates
 from app.testing import route_session_to_guild
 from app.testing.plugin_clients import (
     CLIENT,
-    RSA_KID,
     InstalledPlugin,
     install_plugin,
     mint_client_assertion,
 )
+from app.core.audit_events import AuditEventType
+from app.testing.audit import emitted
 
 TOKEN_URL = "/api/v1/plugin-platform/oauth/token"
 INSTALLATIONS_URL = "/api/v1/plugin-platform/installations"
@@ -63,9 +64,22 @@ def _error(response) -> str:
     return response.json()["error"]
 
 
+async def _limit_to_operations(session: AsyncSession) -> None:
+    """Limit the client's registration to the operations community, which no
+    test community is."""
+    await session.exec(
+        text(
+            "UPDATE public.plugin_service_registrations SET operations_only = true "
+            "WHERE public_id = :c"
+        ).bindparams(c=CLIENT)
+    )
+    await session.commit()
+    invalidate_registrations()
+
+
 async def _installation(installed: InstalledPlugin) -> str:
     return await ensure_plugin_guild_ref(
-        guild_id=installed.guild.id, plugin_install_id=installed.plugin.id
+        guild_id=installed.guild.id, public_id=installed.public_id
     )
 
 
@@ -92,14 +106,31 @@ async def test_a_plugin_token_names_only_the_client(
     assert token == PluginAccessToken(client_id=CLIENT, exp=token.exp)
 
 
-async def test_a_p256_key_authenticates_too(
-    client: AsyncClient, session: AsyncSession, acting_user, role_session
+async def test_an_assertion_presented_twice_is_refused_and_written_down(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session, capfd
 ):
     await install_plugin(session, acting_user, role_session, granted=["files:read"])
+    assertion = _assertion()
+    assert (await _ask(client, assertion=assertion)).status_code == 200
 
-    response = await _ask(client, assertion=_assertion(key="ec"))
+    emitted(capfd)
+    again = await _ask(client, assertion=assertion)
+    assert again.status_code == 401
+    (line,) = emitted(capfd, AuditEventType.SECURITY_REPLAY_REJECTED)
+    assert line["detail"] == {"channel": "plugin_assertion", "install": CLIENT}
 
-    assert response.status_code == 200, response.text
+
+async def test_a_key_the_plugin_never_registered_is_refused(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    """Only the registered Ed25519 key authenticates: an RSA key, even under the
+    plug-in's own kid, is refused, as is any non-EdDSA algorithm."""
+    await install_plugin(session, acting_user, role_session, granted=["files:read"])
+
+    response = await _ask(client, assertion=_assertion(key="foreign-rsa"))
+
+    assert response.status_code == 401
+    assert _error(response) == "invalid_client"
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +616,20 @@ async def test_another_clients_installation_is_refused(
     assert _error(response) == "invalid_grant"
 
 
+async def test_an_operations_only_plugin_gets_no_token_elsewhere(
+    client: AsyncClient, session: AsyncSession, acting_user, role_session
+):
+    installed = await install_plugin(
+        session, acting_user, role_session, granted=["files:read"]
+    )
+    await _limit_to_operations(session)
+
+    response = await _ask(client, installation=await _installation(installed))
+
+    assert response.status_code == 400
+    assert _error(response) == "invalid_grant"
+
+
 async def test_the_member_grant_takes_no_client_assertion(
     client: AsyncClient, session: AsyncSession, acting_user, role_session
 ):
@@ -621,9 +666,9 @@ async def test_an_unknown_grant_type_is_unsupported(
     [
         pytest.param({"audience": "https://elsewhere.example/token"}, id="bad-aud"),
         pytest.param({"kid": "no-such-kid"}, id="unknown-kid"),
-        # Signed with the P-256 key under the RSA key's kid: the header says
-        # ES256 and the key it names is RSA.
-        pytest.param({"key": "ec", "kid": RSA_KID}, id="alg-disagrees-with-key"),
+        # Signed RS256 with a key the plug-in never registered, under its own
+        # kid: the key the kid names decides the algorithm, never the header.
+        pytest.param({"key": "foreign-rsa"}, id="foreign-key-under-the-kid"),
         pytest.param({"lifetime": 301}, id="lives-too-long"),
         pytest.param({"issued_ago": 120, "lifetime": 60}, id="expired"),
         pytest.param({"issued_ago": -300, "lifetime": 60}, id="issued-in-future"),
@@ -748,7 +793,9 @@ async def test_a_plugin_token_lists_the_installs_a_page_at_a_time(
     assert "link" not in last.headers
 
 
-@pytest.mark.parametrize("paused_by", ["install_off", "guild_on_hold", "guild_deleted"])
+@pytest.mark.parametrize(
+    "paused_by", ["install_off", "guild_on_hold", "guild_deleted", "operations_only"]
+)
 async def test_a_paused_install_is_listed_as_inactive(
     client: AsyncClient,
     session: AsyncSession,
@@ -768,6 +815,8 @@ async def test_a_paused_install_is_listed_as_inactive(
             headers=installed.seat.headers,
         )
         assert switched.status_code == 200, switched.text
+    elif paused_by == "operations_only":
+        await _limit_to_operations(session)
     else:
         status = "on_hold" if paused_by == "guild_on_hold" else "deleted"
         await session.exec(
@@ -776,6 +825,9 @@ async def test_a_paused_install_is_listed_as_inactive(
             )
         )
     await session.commit()
+    # The index follows the install on the index sweep's next visit.
+    await route_session_to_guild(session, installed.guild.id)
+    await plugin_installs.reindex_community(session, installed.guild.id)
 
     response = await client.get(
         INSTALLATIONS_URL, headers={"Authorization": f"Bearer {plugin_token}"}

@@ -131,7 +131,7 @@ describe("ToolSettingsDetailsPage properties", () => {
     );
 
     expect(await screen.findByText("Budget")).toBeInTheDocument();
-    expect(screen.getByText("Properties")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Properties" })).toBeInTheDocument();
   });
 
   it("offers none on a community-level tool, which has no definitions to add", async () => {

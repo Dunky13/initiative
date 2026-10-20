@@ -1,9 +1,9 @@
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { readAccountChange, signOutEverywhere, undoAccountChange } from "@/api/generated/auth/auth";
-import type { AccountChangeRead } from "@/api/generated/initiativeAPI.schemas";
+import type { AccountChangeDone, AccountChangeRead } from "@/api/generated/initiativeAPI.schemas";
 import { ServerChip } from "@/components/auth/ServerChoice";
 import { SignInFrame } from "@/components/auth/SignInFrame";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { useEmailLinkToken } from "@/hooks/useEmailLinkToken";
 import { getErrorMessage } from "@/lib/errorMessage";
 
 type Step = "reading" | "ready" | "done" | "undone" | "invalid";
@@ -36,6 +37,7 @@ const SUBJECT_KEYS = {
   secondFactor: "notMe.subject.secondFactor",
   passwordChanged: "notMe.subject.password",
   passwordRemoved: "notMe.subject.password",
+  identity: "notMe.subject.identity",
 } as const;
 
 const subjectKey = (notice: string) => {
@@ -51,14 +53,16 @@ const subjectKey = (notice: string) => {
  * Opening the link changes nothing: mail scanners open links too. The page
  * reads the token, says what will happen, and only a button acts: signing the
  * account out everywhere, or, where this copy of the email may, undoing the
- * change as well.
+ * change as well. Either way the people who run the server are told; where
+ * nobody is set up to hear it, the page names who to tell instead.
  */
 export const AccountNotMePage = () => {
   const { t } = useTranslation("auth");
-  const { token } = useSearch({ strict: false }) as { token?: string };
+  const token = useEmailLinkToken();
   const { user, refreshUser } = useAuth();
   const [step, setStep] = useState<Step>(token ? "reading" : "invalid");
   const [answer, setAnswer] = useState<AccountChangeRead | null>(null);
+  const [done, setDone] = useState<AccountChangeDone | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +81,7 @@ export const AccountNotMePage = () => {
     setSubmitting(true);
     setError(null);
     try {
-      await (undo ? undoAccountChange({ token }) : signOutEverywhere({ token }));
+      setDone(await (undo ? undoAccountChange({ token }) : signOutEverywhere({ token })));
       setStep(undo ? "undone" : "done");
       // This browser may be one of the sessions just ended. Asking for its
       // own account finds out, and the usual expiry handling signs it out
@@ -112,6 +116,11 @@ export const AccountNotMePage = () => {
                   : t("notMe.undoneTitle")}
             </CardTitle>
             <CardDescription>{t("notMe.doneBody")}</CardDescription>
+            {done?.platform_told ? (
+              <p className="pt-2 text-sm">{t("notMe.told")}</p>
+            ) : done?.contact ? (
+              <p className="pt-2 text-sm">{t("notMe.tellThem", { contact: done.contact })}</p>
+            ) : null}
           </CardHeader>
         ) : step === "invalid" ? (
           <CardHeader>

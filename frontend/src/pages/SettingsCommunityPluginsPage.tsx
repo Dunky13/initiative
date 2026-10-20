@@ -35,26 +35,31 @@ import { PluginConnectionsPanel } from "@/components/plugins/PluginConnectionsPa
 import { PluginMembersPanel } from "@/components/plugins/PluginMembersPanel";
 import { PluginPlacementPanel } from "@/components/plugins/PluginPlacementPanel";
 import { PluginScopesPanel } from "@/components/plugins/PluginScopesPanel";
+import { PluginSettingsPanel } from "@/components/plugins/PluginSettingsPanel";
 import { PluginUpdatesPanel } from "@/components/plugins/PluginUpdatesPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPluginDetail } from "@/hooks/useCommunityPluginDetail";
 import {
   useCommunityPlugins,
   useUninstallCommunityPlugin,
+  useUninstallNotice,
   useUpdateCommunityPlugin,
 } from "@/hooks/useCommunityPlugins";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { formatDate } from "@/lib/formatDate";
 import { toast } from "@/lib/mascotToast";
-import { declaredEmbeds } from "@/lib/pluginSurfaces";
+import { hasInitiativeSurfaces } from "@/lib/pluginSurfaces";
 import { cn } from "@/lib/utils";
 
 export function SettingsCommunityPluginsPage() {
@@ -66,6 +71,8 @@ export function SettingsCommunityPluginsPage() {
   // community, are the seat's. Connecting your own account is not, and
   // happens from the plug-in itself rather than here.
   const holdsTheSeat = Boolean(activeCommunity?.can.seat);
+  // Erasing a plug-in's data with it is for the community's own admins.
+  const administers = Boolean(activeCommunity?.can.administer_content);
 
   const plugins = pluginsQuery.data?.items ?? [];
 
@@ -80,7 +87,12 @@ export function SettingsCommunityPluginsPage() {
           <Skeleton className="h-20 w-full" />
         ) : plugins.length ? (
           plugins.map((plugin) => (
-            <PluginRow key={plugin.id} plugin={plugin} canManage={Boolean(holdsTheSeat)} />
+            <PluginRow
+              key={plugin.id}
+              plugin={plugin}
+              canManage={Boolean(holdsTheSeat)}
+              canErase={holdsTheSeat && administers}
+            />
           ))
         ) : (
           <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
@@ -88,7 +100,7 @@ export function SettingsCommunityPluginsPage() {
             {holdsTheSeat && (
               <Button variant="outline" asChild>
                 <Link to={gp("/marketplace")} search={{ kind: ListingKind.plugin }}>
-                  <Store className="mr-1.5 h-4 w-4" />
+                  <Store className="h-4 w-4" />
                   {t("plugins:manage.browse")}
                 </Link>
               </Button>
@@ -121,10 +133,19 @@ export interface PluginListItem {
   available?: boolean;
 }
 
-function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: boolean }) {
-  const { t } = useTranslation(["plugins", "common"]);
+function PluginRow({
+  plugin,
+  canManage,
+  canErase,
+}: {
+  plugin: PluginListItem;
+  canManage: boolean;
+  canErase: boolean;
+}) {
+  const { t, i18n } = useTranslation(["plugins", "common"]);
   const [name, setName] = useState(plugin.name);
   const [confirming, setConfirming] = useState(false);
+  const [erase, setErase] = useState(false);
   const [open, setOpen] = useState(false);
   const update = useUpdateCommunityPlugin(plugin.id);
   const uninstall = useUninstallCommunityPlugin();
@@ -136,13 +157,21 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
     });
 
   const remove = () =>
-    uninstall.mutate(plugin.id, {
-      onSuccess: () => {
-        toast.success(t("plugins:manage.removed", { name: plugin.name }));
-        setConfirming(false);
-      },
-      onError: (error) => toast.error(getErrorMessage(error, "plugins:error")),
-    });
+    uninstall.mutate(
+      { pluginId: plugin.id, erase: canErase && erase },
+      {
+        onSuccess: () => {
+          toast.success(t("plugins:manage.removed", { name: plugin.name }));
+          setConfirming(false);
+        },
+        onError: (error) => toast.error(getErrorMessage(error, "plugins:error")),
+      }
+    );
+
+  const confirm = (open: boolean) => {
+    setConfirming(open);
+    if (!open) setErase(false);
+  };
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border">
@@ -203,10 +232,10 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
                 onClick={() => save({ enabled: !plugin.enabled })}
                 disabled={update.isPending}
               >
-                {update.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {plugin.enabled ? t("plugins:manage.disable") : t("plugins:manage.enable")}
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>
+              <Button size="sm" variant="destructive" onClick={() => confirm(true)}>
                 {t("plugins:manage.remove")}
               </Button>
             </>
@@ -230,22 +259,79 @@ function PluginRow({ plugin, canManage }: { plugin: PluginListItem; canManage: b
 
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={confirm}
         title={t("plugins:manage.removeTitle", { name: plugin.name })}
-        description={t("plugins:manage.removeBody")}
-        confirmLabel={t("plugins:manage.remove")}
+        description={
+          <>
+            {t("plugins:manage.removeBody")}
+            {confirming && (
+              <RemovalNotice pluginId={plugin.id} locale={i18n.resolvedLanguage ?? i18n.language} />
+            )}
+          </>
+        }
+        confirmLabel={erase ? t("plugins:manage.removeAndErase") : t("plugins:manage.remove")}
         onConfirm={remove}
         isLoading={uninstall.isPending}
         destructive
-      />
+      >
+        {/* Removing keeps what the plug-in calls the community and its members,
+            so installing it again picks up where it left off. Erasing is the
+            community admins' separate choice. */}
+        {canErase && (
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id={`erase-${plugin.id}`}
+              checked={erase}
+              onCheckedChange={(checked) => setErase(checked === true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor={`erase-${plugin.id}`}>{t("plugins:manage.erase")}</Label>
+              <p className="text-muted-foreground text-xs">{t("plugins:manage.eraseHelp")}</p>
+            </div>
+          </div>
+        )}
+      </ConfirmDialog>
     </Collapsible>
   );
 }
 
 /**
- * The plug-in's connections, and — for the seat — where it appears and who opens
- * it there, what it can reach, who has connected to it and how it takes new
- * versions.
+ * What removing this plug-in means beyond the usual, when somebody other than
+ * this server has a say in it: their own sentence, shown as they gave it, or a
+ * neutral one when they did not answer in time. Nothing for any other plug-in.
+ */
+function RemovalNotice({ pluginId, locale }: { pluginId: number; locale: string }) {
+  const { t } = useTranslation(["plugins"]);
+  const notice = useUninstallNotice(pluginId, locale, true);
+  const { activeCommunity } = useCommunities();
+  const { canSell, openAddress } = useBillingPortal();
+  const data = notice.data;
+  if (!data?.managed) return null;
+  const actionUrl = data.action_url;
+  return (
+    <span className="mt-2 block">
+      {data.message ?? t("plugins:manage.removeManagedNeutral")}
+      {actionUrl && canSell && activeCommunity && (
+        <>
+          {" "}
+          <Button
+            variant="link"
+            className="h-auto p-0"
+            onClick={() => void openAddress(activeCommunity.id, actionUrl)}
+          >
+            {t("plugins:manage.removeManagedAction")}
+          </Button>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The plug-in's connections, and — for the seat — its settings, where it appears
+ * and who opens it there, what it can reach, who has connected to it and how it
+ * takes new versions.
  */
 function PluginDetailPanels({ pluginId, canManage }: { pluginId: number; canManage: boolean }) {
   const { t } = useTranslation(["plugins", "common"]);
@@ -264,8 +350,10 @@ function PluginDetailPanels({ pluginId, canManage }: { pluginId: number; canMana
 
       {canManage && (
         <>
+          <PluginSettingsPanel pluginId={pluginId} settings={detail.data.settings ?? []} />
+
           {/* Only a plug-in with an initiative surface has somewhere to place. */}
-          {declaredEmbeds(detail.data.definition, "initiative").length > 0 && (
+          {hasInitiativeSurfaces(detail.data.definition) && (
             <PluginPlacementPanel plugin={detail.data} />
           )}
 

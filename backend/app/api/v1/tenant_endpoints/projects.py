@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, case, func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import case, func
 from sqlalchemy.orm import selectinload, undefer
-from sqlmodel import delete, select
+from sqlmodel import select
 
 from app.services.tenant import attachments as attachments_service
 from app.api.actor_route import ActorRoute
@@ -26,19 +25,14 @@ from app.models.tenant.project import (
 from app.models.tenant.resource_grant import (
     ResourceGrant,
 )
-from app.models.tenant.project_order import ProjectOrder
-from app.models.tenant.project_favorite import ProjectFavorite
-from app.models.tenant.recent_view import RecentView
 from app.models.tenant.task import (
     Task,
     TaskStatus,
     TaskStatusCategory,
 )
-from app.models.tenant.comment import Comment, in_thread
 from app.models.platform.user import User
 from app.api import resource_access, tool_copy
 from app.core.tools import Tool
-from app.db.query import build_paginated_response, paginated_query
 from app.db.session import require_actor_context
 from app.services import notifications as notifications_service
 from app.services.tenant import ownership as ownership_service
@@ -46,10 +40,10 @@ from app.services import permissions as permissions_service
 from app.services import reachability
 from app.services.tenant import named_people
 from app.services.tenant import properties as properties_service
+from app.services.tenant import personal_items as personal_items_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import archive as archive_service
 from app.services.tenant import tool_listing
-from app.services.tenant import filter_presets as filter_presets_service
 from app.services.tenant import task_statuses as task_statuses_service
 from app.core.messages import ProjectMessages
 from app.schemas.tenant.project import (
@@ -59,10 +53,7 @@ from app.schemas.tenant.project import (
     ProjectTaskSummary,
     ProjectReorderRequest,
     ProjectUpdate,
-    ProjectActivityEntry,
-    ProjectActivityResponse,
 )
-from app.schemas.tenant.comment import CommentAuthor
 from app.services.tenant import project_grants
 from app.schemas.tenant.tool import serialize_tool
 
@@ -124,12 +115,10 @@ async def _get_project_or_404(
     )
     if not project:
         raise await reachability.missing_or_denied(
-            Tool.project.plural,
+            Tool.project,
             project_id,
             user_id,
             guild_id,
-            not_found=Tool.project.not_found_code,
-            denied=Tool.project.no_access_code,
         )
     return project
 
@@ -194,35 +183,17 @@ async def _project_reads(
     user_id: int | None,
     projects: List[Project],
 ) -> List[ProjectRead]:
-    """``ProjectRead`` for each project, in the order given, with the reader's
-    own favourites and last visits. An installed plug-in (``user_id`` ``None``)
-    keeps neither."""
+    """``ProjectRead`` for each project, in the order given."""
     if not projects:
         return []
-
-    project_ids = [project.id for project in projects if project.id is not None]
 
     await _attach_task_summaries(session, projects)
     await tags_service.annotate_tags(session, projects)
     await properties_service.annotate_properties(session, projects)
     await ownership_service.annotate_owner_plugins(session, projects)
-    favorite_ids: set[int] = set()
-    view_map: dict[int, datetime] = {}
-    if user_id is not None:
-        favorite_ids, view_map = await _project_metadata_for_user(
-            session, user_id, project_ids
-        )
-
     context = require_actor_context(session)
     return [
-        serialize_tool(
-            ProjectRead,
-            project,
-            context=context,
-            user_id=user_id,
-            is_favorited=project.id in favorite_ids,
-            last_viewed_at=view_map.get(project.id or 0),
-        )
+        serialize_tool(ProjectRead, project, context=context, user_id=user_id)
         for project in projects
     ]
 
@@ -232,7 +203,7 @@ def _slim_project_reads(
 ) -> List[ProjectRead]:
     """Build lightweight ``ProjectRead`` rows for the slim projection.
 
-    Carries only ``{id, name, icon, initiative_id, can}`` plus
+    Carries only ``{id, name, icon, initiative_id, can}``, its dates, plus
     the cheap scalar flags and who owns it (``owner_id``, or ``owner_plugin`` as
     the caller annotated it); files/grants/tags/the owner's profile/nested
     initiative are left at their defaults so no heavy relationship is
@@ -247,6 +218,8 @@ def _slim_project_reads(
                 name=project.name,
                 description=None,
                 icon=project.icon,
+                start_date=project.start_date,
+                end_date=project.end_date,
                 owner_id=ownership_service.owner_user_id_of(project),
                 initiative_id=project.initiative_id,
                 created_at=project.created_at,
@@ -283,29 +256,6 @@ async def serialize_project_page(
             projects, user_id, context=require_actor_context(session)
         )
     return await _project_reads(session, user_id, projects)
-
-
-async def _project_metadata_for_user(
-    session: SessionDep,
-    user_id: int,
-    project_ids: List[int],
-) -> tuple[set[int], dict[int, datetime]]:
-    """The reader's own favorites and last visits for these projects, as
-    ``(favorite_ids, view_map)``."""
-    favorites = await session.exec(
-        select(ProjectFavorite.project_id).where(
-            ProjectFavorite.user_id == user_id,
-            ProjectFavorite.project_id.in_(project_ids),
-        )
-    )
-    views = await session.exec(
-        select(RecentView.entity_id, RecentView.last_viewed_at).where(
-            RecentView.user_id == user_id,
-            RecentView.entity_type == Tool.project.value,
-            RecentView.entity_id.in_(project_ids),
-        )
-    )
-    return set(favorites.all()), dict(views.all())
 
 
 async def _project_read_for_user(
@@ -377,8 +327,8 @@ async def create_project(
         )
         session.add(project)
         await session.flush()
-        # Sharing before anything that hangs off it: a status or a preset is
-        # reached through the project, so the project has to be reachable first.
+        # Sharing before anything that hangs off it: a status is reached
+        # through the project, so the project has to be reachable first.
         await resource_access.grant_initial_sharing(
             session,
             guild_context,
@@ -391,7 +341,6 @@ async def create_project(
         )
         await session.flush()
         await task_statuses_service.ensure_default_statuses(session, project.id)
-        await filter_presets_service.ensure_default_presets(session, project.id)
         await attachments_service.claim_uploads(session, project)
     await properties_service.write_on_create(session, project, project_in.properties)
     settled = named_people.Governing.of(Tool.project, project)
@@ -411,127 +360,6 @@ async def create_project(
         await notifications_service.notify_project_added(session, project, current_user)
         await session.commit()
     return await _project_read_for_user(session, guild_context.user_id, project)
-
-
-@router.get("/favorites", response_model=List[ProjectRead])
-async def favorite_projects(
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-) -> List[ProjectRead]:
-    """The reader's favorite projects, most recently favorited first, in the
-    slim projection the projects list returns for ``slim=true``."""
-    favorites = await session.exec(
-        select(Project)
-        .join(ProjectFavorite, ProjectFavorite.project_id == Project.id)
-        .where(
-            ProjectFavorite.user_id == current_user.id,
-            *visible_project_conditions(
-                current_user.id,
-                context=guild_context,
-                archived=None,
-                is_template=None,
-            ),
-        )
-        .order_by(ProjectFavorite.created_at.desc())
-        .options(*project_load_options(slim=True))
-    )
-    reads = await serialize_project_page(
-        session, current_user.id, list(favorites.all()), slim=True
-    )
-    # Every row here is a favorite, so the flag is known without a lookup.
-    return [read.model_copy(update={"is_favorited": True}) for read in reads]
-
-
-@router.post("/{project_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
-async def favorite_project(
-    project_id: int,
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-) -> Response:
-    """Favorite a project. Idempotent: the pair is the row's key, so a second
-    favorite is a no-op rather than a conflict."""
-    project = await resource_access.load_authorized(
-        session, Tool.project, project_id, current_user, guild_context
-    )
-    await session.exec(
-        pg_insert(ProjectFavorite)
-        .values(
-            user_id=current_user.id,
-            project_id=project.id,
-            created_at=datetime.now(timezone.utc),
-        )
-        .on_conflict_do_nothing(index_elements=["user_id", "project_id"])
-    )
-    await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete("/{project_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
-async def unfavorite_project(
-    project_id: int,
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-) -> Response:
-    project = await resource_access.load_authorized(
-        session, Tool.project, project_id, current_user, guild_context
-    )
-    await session.exec(
-        delete(ProjectFavorite).where(
-            ProjectFavorite.user_id == current_user.id,
-            ProjectFavorite.project_id == project.id,
-        )
-    )
-    await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get("/{project_id}/activity", response_model=ProjectActivityResponse)
-async def project_activity_feed(
-    project_id: int,
-    session: RLSSessionDep,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    guild_context: GuildContextDep,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=20),
-) -> ProjectActivityResponse:
-    project = await resource_access.load_authorized(
-        session, Tool.project, project_id, current_user, guild_context
-    )
-    on_project = and_(Task.project_id == project.id, in_thread())
-    rows, total_count, actual_page = await paginated_query(
-        session,
-        select(Comment, Task)
-        .join(Task, Comment.task_id == Task.id)
-        .where(on_project)
-        .options(selectinload(Comment.author))
-        .order_by(Comment.created_at.desc(), Comment.id.desc()),
-        select(func.count())
-        .select_from(Comment)
-        .join(Task, Comment.task_id == Task.id)
-        .where(on_project),
-        page,
-        page_size,
-    )
-    entries: list[ProjectActivityEntry] = []
-    for comment, task in rows:
-        author = comment.author
-        author_payload = CommentAuthor.model_validate(author) if author else None
-        entries.append(
-            ProjectActivityEntry(
-                comment_id=comment.id,
-                content=comment.content,
-                created_at=comment.created_at,
-                author=author_payload,
-                task_id=task.id,
-                task_title=task.title,
-            )
-        )
-    return ProjectActivityResponse(
-        **build_paginated_response(entries, total_count, actual_page, page_size)
-    )
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
@@ -560,12 +388,11 @@ async def update_project(
         session, Tool.project, project_id, current_user, guild_context, access="write"
     )
     update_data = project_in.model_dump(exclude_unset=True)
-    # Fields that configure the project itself rather than describe it: they
-    # need a project manager, the project owner, or a guild admin, where plain
+    # Pinning configures the project itself rather than describing it: it
+    # needs a project manager, the project owner, or a guild admin, where plain
     # write access is enough for the rest of the payload.
-    if update_data.keys() & {"pinned", "default_view_mode"}:
-        permissions_service.require_project_configure(project, context=guild_context)
     if "pinned" in update_data:
+        permissions_service.require_project_configure(project, context=guild_context)
         pinned = update_data.pop("pinned")
         project.pinned_at = datetime.now(timezone.utc) if pinned else None
 
@@ -600,26 +427,23 @@ async def reorder_projects(
             )
         )
     ).all()
-    existing_orders = {
-        order.project_id: order
-        for order in (
-            await session.exec(
-                select(ProjectOrder).where(
-                    ProjectOrder.user_id == current_user.id,
-                    ProjectOrder.project_id.in_(visible_ids),
-                )
+    placed = {
+        project_id: row.sort_order
+        for project_id, row in (
+            await personal_items_service.rows_for(
+                session,
+                user_id=current_user.id,
+                kind=Tool.project.value,
+                ids=visible_ids,
             )
-        ).all()
+        ).items()
+        if row.sort_order is not None
     }
     # The order as it stands: those the reader has placed first, then the
     # rest by id.
     current_ids = sorted(
         visible_ids,
-        key=lambda pid: (
-            pid not in existing_orders,
-            existing_orders[pid].sort_order if pid in existing_orders else 0.0,
-            pid,
-        ),
+        key=lambda pid: (pid not in placed, placed.get(pid, 0.0), pid),
     )
     visible = set(visible_ids)
     final_order = list(
@@ -628,13 +452,9 @@ async def reorder_projects(
         )
     )
     if final_order != current_ids:
-        for index, project_id in enumerate(final_order):
-            order = existing_orders.get(project_id) or ProjectOrder(
-                user_id=current_user.id, project_id=project_id
-            )
-            order.sort_order = float(index)
-            session.add(order)
-        await session.commit()
+        await personal_items_service.place_projects(
+            session, user_id=current_user.id, order=final_order
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

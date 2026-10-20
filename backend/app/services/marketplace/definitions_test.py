@@ -34,7 +34,7 @@ from app.services.marketplace.definitions import (
     reserved_prefix_problem,
 )
 from app.services.marketplace.manifest_values import IDENTIFIER_CHARS
-from app.services.marketplace.service_plugins import EMBED_CAPABILITIES
+from app.services.marketplace.service_plugins import PAGE_CAPABILITIES
 
 
 def _label(text: str = "A label") -> dict[str, str]:
@@ -243,13 +243,13 @@ class TestFeaturesMatchBlocks:
 
     def test_features_are_stored_in_a_stable_order(self):
         definition = _normalize(
-            features=["endpoints", "embeds", "endpoints"],
+            features=["endpoints", "pages", "endpoints"],
             endpoints=[
                 {"id": "plugin.tests.widget-co.thing-happened", "direction": "emit"}
             ],
-            embeds=[{"id": "main", "path": "/embed", "name": _label()}],
+            pages=[{"id": "main", "path": "/page", "name": _label()}],
         )
-        assert definition["features"] == ["embeds", "endpoints"]
+        assert definition["features"] == ["endpoints", "pages"]
 
     @pytest.mark.parametrize("feature", sorted(service_plugins.FEATURES))
     def test_every_feature_names_a_block(self, feature):
@@ -380,6 +380,22 @@ class TestConnections:
                 ],
             )
 
+    def test_a_value_after_the_host_is_filled_in(self):
+        """A value in the query of an address with no path is not in its host."""
+        [connection] = _normalize(
+            vendor=VENDOR,
+            connections=[
+                {
+                    "id": "account",
+                    "scope": "interactive",
+                    "label": _label(),
+                    "flow": {**FLOW, "authorize_url": "https://vendor.test?as={login}"},
+                    "fields": [_managed("login")],
+                }
+            ],
+        )["connections"]
+        assert connection["flow"]["authorize_url"] == "https://vendor.test?as={login}"
+
     @pytest.mark.parametrize(
         ("change", "problem"),
         [
@@ -388,6 +404,11 @@ class TestConnections:
             (
                 {"token_url": "https://vendor.test/{tenant}/token"},
                 "not a field of this connection",
+            ),
+            ({"token_url": "https://{login}.vendor.test/token"}, "into its host"),
+            (
+                {"authorize_url": "https://{vendor.app_slug}.vendor.test/oauth"},
+                "into its host",
             ),
             ({"revoke": "rfc7009"}, "revoke_url"),
             ({"revoke": "github_grant"}, "revoke_url"),
@@ -398,6 +419,8 @@ class TestConnections:
             "plain http",
             "an undeclared vendor value",
             "an undeclared field",
+            "a field filled into the host",
+            "a vendor value filled into the host",
             "rfc7009 with nowhere to post",
             "github_grant with nowhere to send",
             "an unknown revocation",
@@ -472,6 +495,50 @@ class TestConnections:
             )
 
     @pytest.mark.parametrize(
+        ("body", "problem"),
+        [
+            ({"permissions": {"issues": "write"}, "repositories": ["{owner}"]}, None),
+            ('{"permissions": connection.owner = "acme" ? {"members": "read"}}', None),
+            ({"repositories": ["{repo}"]}, "not a field of this connection"),
+            ({"app": "{vendor.nope}"}, "vendor block does not declare"),
+            ('{"permissions": {"issues": "write"}', "does not parse"),
+            (["{owner}"], "must be an object"),
+        ],
+        ids=[
+            "an object",
+            "an expression",
+            "an undeclared field",
+            "an undeclared vendor value",
+            "an expression that does not parse",
+            "a list",
+        ],
+    )
+    def test_a_token_s_exchange_body_is_an_object_or_an_expression(self, body, problem):
+        token = {
+            "type": "jwt_bearer",
+            "exchange_url": "https://vendor.test/{owner}/token",
+            "exchange_body": body,
+            "iss": "{vendor.client_id}",
+            "key": "{vendor.client_secret}",
+        }
+        connections = [
+            {
+                "id": "workspace",
+                "scope": "static",
+                "label": _label(),
+                "flow": FLOW,
+                "fields": [_managed()],
+                "token": token,
+            }
+        ]
+        if problem is not None:
+            with pytest.raises(ListingDefinitionError, match=problem):
+                _normalize(vendor=VENDOR, connections=connections)
+            return
+        [connection] = _normalize(vendor=VENDOR, connections=connections)["connections"]
+        assert connection["token"]["exchange_body"] == body
+
+    @pytest.mark.parametrize(
         ("verify", "route", "problem"),
         [
             ({"secret": "{vendor.nope}"}, {}, "verify.secret"),
@@ -530,8 +597,9 @@ class TestConnections:
         with pytest.raises(ListingDefinitionError, match=problem):
             _normalize(vendor=VENDOR, connections=connections, webhooks=webhooks)
 
-    def test_a_field_may_not_take_a_token_key(self):
-        with pytest.raises(ListingDefinitionError, match="keeps its tokens"):
+    @pytest.mark.parametrize("key", ["access_token", "removed_at"])
+    def test_a_field_may_not_take_a_reserved_key(self, key: str):
+        with pytest.raises(ListingDefinitionError, match="is reserved for"):
             _normalize(
                 vendor=VENDOR,
                 connections=[
@@ -540,7 +608,7 @@ class TestConnections:
                         "scope": "interactive",
                         "label": _label(),
                         "flow": FLOW,
-                        "fields": [_managed("access_token")],
+                        "fields": [_managed(key)],
                     }
                 ],
             )
@@ -932,31 +1000,31 @@ class TestWidgetTypeNamespacing:
             plugin_widget_type("K7M2QX8N4TVB9C", "sum:mary")
 
 
-class TestEmbeds:
-    def _embed(self, **overrides) -> dict:
-        embed = {
+class TestPages:
+    def _page(self, **overrides) -> dict:
+        page = {
             "id": "orders",
-            "path": "/embed/orders",
+            "path": "/page/orders",
             "admin_only": True,
             "name": _label("Orders"),
         }
-        embed.update(overrides)
-        return _normalize(features=["embeds"], embeds=[embed])
+        page.update(overrides)
+        return _normalize(features=["pages"], pages=[page])
 
-    def test_an_embed_names_itself_for_the_sidebar(self):
+    def test_a_page_names_itself_for_the_sidebar(self):
         with pytest.raises(ListingDefinitionError, match="label"):
-            self._embed(name=None)
+            self._page(name=None)
 
-    def test_an_embed_declares_a_path_not_an_address(self):
+    def test_a_page_declares_a_path_not_an_address(self):
         with pytest.raises(ListingDefinitionError, match="path"):
-            self._embed(path="https://widget.test/embed/orders")
+            self._page(path="https://widget.test/page/orders")
 
-    def test_an_embed_is_stored_canonically(self):
-        definition = self._embed()
-        assert definition["embeds"] == [
+    def test_a_page_is_stored_canonically(self):
+        definition = self._page()
+        assert definition["pages"] == [
             {
                 "id": "orders",
-                "path": "/embed/orders",
+                "path": "/page/orders",
                 "scopes": ["community"],
                 "admin_only": True,
                 "name": {"en": "Orders"},
@@ -972,16 +1040,16 @@ class TestWhatASurfaceMayAskItsFrameFor:
     pinned before this existed says, and what their frames now get.
     """
 
-    def _embed(self, **overrides) -> dict:
-        embed = {"id": "board", "path": "/embed", "name": _label("Board")}
-        embed.update(overrides)
-        return _normalize(features=["embeds"], embeds=[embed])["embeds"][0]
+    def _page(self, **overrides) -> dict:
+        page = {"id": "board", "path": "/page", "name": _label("Board")}
+        page.update(overrides)
+        return _normalize(features=["pages"], pages=[page])["pages"][0]
 
     def test_a_surface_asking_for_nothing_stores_nothing(self):
-        assert "capabilities" not in self._embed()
+        assert "capabilities" not in self._page()
 
     def test_a_surface_may_ask_for_what_it_needs(self):
-        assert self._embed(capabilities=["clipboard-write"])["capabilities"] == [
+        assert self._page(capabilities=["clipboard-write"])["capabilities"] == [
             "clipboard-write"
         ]
 
@@ -989,14 +1057,14 @@ class TestWhatASurfaceMayAskItsFrameFor:
         """Sorted and de-duplicated, so re-publishing the same manifest produces
         the same document."""
         asked = ["fullscreen", "clipboard-write", "fullscreen"]
-        assert self._embed(capabilities=asked)["capabilities"] == [
+        assert self._page(capabilities=asked)["capabilities"] == [
             "clipboard-write",
             "fullscreen",
         ]
 
     def test_a_capability_outside_the_vocabulary_is_refused(self):
         with pytest.raises(ListingDefinitionError, match="not a capability"):
-            self._embed(capabilities=["midi"])
+            self._page(capabilities=["midi"])
 
     @pytest.mark.parametrize(
         "entry", [{"camera": True}, ["camera"], 7, None, True], ids=repr
@@ -1006,14 +1074,14 @@ class TestWhatASurfaceMayAskItsFrameFor:
         one of the names. Set membership is defined only for a hashable value,
         so an entry is typed before it is looked up rather than after."""
         with pytest.raises(ListingDefinitionError, match="not a capability"):
-            self._embed(capabilities=[entry])
+            self._page(capabilities=[entry])
 
     def test_payment_is_not_namable(self):
-        """The platform takes payment on its own pages, so an embedded surface
+        """The platform takes payment on its own screens, so a plug-in's page
         has no reading of this to request."""
-        assert "payment" not in EMBED_CAPABILITIES
+        assert "payment" not in PAGE_CAPABILITIES
         with pytest.raises(ListingDefinitionError, match="not a capability"):
-            self._embed(capabilities=["payment"])
+            self._page(capabilities=["payment"])
 
 
 class TestWhereASurfaceRenders:
@@ -1024,33 +1092,33 @@ class TestWhereASurfaceRenders:
     places rather than two surfaces to keep in step.
     """
 
-    def _embed(self, **overrides) -> dict:
-        embed = {"id": "board", "path": "/embed", "name": _label("Board")}
-        embed.update(overrides)
-        return _normalize(features=["embeds"], embeds=[embed])["embeds"][0]
+    def _page(self, **overrides) -> dict:
+        page = {"id": "board", "path": "/page", "name": _label("Board")}
+        page.update(overrides)
+        return _normalize(features=["pages"], pages=[page])["pages"][0]
 
-    def test_saying_nothing_keeps_the_placement_embeds_already_had(self):
-        assert self._embed()["scopes"] == ["community"]
+    def test_saying_nothing_keeps_the_placement_pages_already_had(self):
+        assert self._page()["scopes"] == ["community"]
 
     def test_a_surface_may_render_in_both(self):
-        assert self._embed(scopes=["initiative", "community"])["scopes"] == [
+        assert self._page(scopes=["initiative", "community"])["scopes"] == [
             "community",
             "initiative",
         ]
 
     def test_a_surface_may_render_only_inside_initiatives(self):
-        assert self._embed(scopes=["initiative"])["scopes"] == ["initiative"]
+        assert self._page(scopes=["initiative"])["scopes"] == ["initiative"]
 
     def test_an_unknown_scope_is_refused(self):
         with pytest.raises(ListingDefinitionError, match="unknown scope"):
-            self._embed(scopes=["project"])
+            self._page(scopes=["project"])
 
     def test_nowhere_to_render_is_refused(self):
         with pytest.raises(ListingDefinitionError, match="nowhere to render"):
-            self._embed(scopes=[])
+            self._page(scopes=[])
 
     def test_a_repeated_scope_is_stored_once(self):
-        assert self._embed(scopes=["community", "community"])["scopes"] == ["community"]
+        assert self._page(scopes=["community", "community"])["scopes"] == ["community"]
 
 
 class TestAdminOnlySurfaces:
@@ -1060,37 +1128,37 @@ class TestAdminOnlySurfaces:
     role, so the manifest says only whether a surface is for admins alone.
     """
 
-    def _embed(self, **overrides) -> dict:
-        embed = {
+    def _page(self, **overrides) -> dict:
+        page = {
             "id": "board",
-            "path": "/embed",
+            "path": "/page",
             "name": _label("Board"),
             "scopes": ["initiative"],
         }
-        embed.update(overrides)
-        return _normalize(features=["embeds"], embeds=[embed])["embeds"][0]
+        page.update(overrides)
+        return _normalize(features=["pages"], pages=[page])["pages"][0]
 
     def test_saying_nothing_is_not_admin_only(self):
-        assert self._embed()["admin_only"] is False
+        assert self._page()["admin_only"] is False
 
     @pytest.mark.parametrize(
         "scopes", [["community"], ["initiative"], ["community", "initiative"]]
     )
     def test_any_surface_may_be_admin_only(self, scopes):
-        assert self._embed(scopes=scopes, admin_only=True)["admin_only"] is True
+        assert self._page(scopes=scopes, admin_only=True)["admin_only"] is True
 
     @pytest.mark.parametrize("value", ["true", 1, None, []])
     def test_anything_but_a_boolean_is_refused(self, value):
         if value is None:
             # Absent and null read the same: the default.
-            assert self._embed(admin_only=value)["admin_only"] is False
+            assert self._page(admin_only=value)["admin_only"] is False
             return
         with pytest.raises(ListingDefinitionError, match="admin_only"):
-            self._embed(admin_only=value)
+            self._page(admin_only=value)
 
     def test_the_retired_audience_term_is_refused(self):
         with pytest.raises(ListingDefinitionError, match="visibility"):
-            self._embed(visibility="initiative_manager")
+            self._page(visibility="initiative_manager")
 
 
 class TestEmissions:
@@ -1127,6 +1195,380 @@ class TestEmissions:
             )
 
 
+#: The write an action runs, spelled once.
+WRITE_ID = "plugin.tests.widget-co.create-link"
+
+
+def _nested(depth: int) -> dict:
+    """A field node inside sections, ``depth`` nodes deep."""
+    node: dict = {"type": "field", "props": {"field": "demo.link"}}
+    for _ in range(depth - 1):
+        node = {"type": "section", "children": [node]}
+    return node
+
+
+#: A field's state facet, with one key.
+FACET = {"name": _label("Status"), "values": {"open": {"label": _label("Open")}}}
+
+
+def _items(change=None) -> dict:
+    """A plug-in with a field, an action and a part on tasks, and the write the
+    action runs. ``change`` edits the manifest before it is published."""
+    body = _service(
+        features=["endpoints", "fields", "parts", "actions"],
+        endpoints=[
+            {"id": WRITE_ID, "direction": "write"},
+            {"id": READ_ID, "direction": "read"},
+        ],
+        fields=[
+            {"key": "demo.link", "name": _label("Demo"), "kind": "link", "on": ["task"]}
+        ],
+        actions=[
+            {
+                "id": "new-link",
+                "name": _label("New link"),
+                "endpoint": WRITE_ID,
+                "on": ["task"],
+            }
+        ],
+        parts=[
+            {
+                "id": "demo",
+                "name": _label("Demo"),
+                "on": ["task"],
+                "tree": {
+                    "type": "section",
+                    "children": [
+                        {"type": "field", "props": {"field": "demo.link"}},
+                        {"type": "button", "props": {"action": "new-link"}},
+                    ],
+                },
+            }
+        ],
+    )
+    if change is not None:
+        change(body)
+    return normalize_listing_definition("plugin", body)
+
+
+class TestFieldsPartsAndActions:
+    """What a plug-in adds to items, re-checked as the SDK's validator checks
+    it: each declared once, every part a tree Initiative can draw on every kind
+    it is offered on, and every action a write."""
+
+    def test_they_are_stored_canonically(self):
+        definition = _items(
+            lambda b: b["fields"][0].update(
+                on=["task", "post"],
+                list=True,
+                states={
+                    "status": {
+                        **FACET,
+                        "values": {
+                            "open": {"label": _label("Open"), "tone": "positive"},
+                            "shut": {"label": _label("Shut"), "colour": "red"},
+                        },
+                    }
+                },
+            )
+        )
+        assert definition["fields"] == [
+            {
+                "key": "demo.link",
+                "name": {"en": "Demo"},
+                "kind": "link",
+                "on": ["post", "task"],
+                "list": True,
+                "states": {
+                    "status": {
+                        "name": {"en": "Status"},
+                        "values": {
+                            "open": {"label": {"en": "Open"}, "tone": "positive"},
+                            "shut": {"label": {"en": "Shut"}},
+                        },
+                    }
+                },
+            }
+        ]
+        # Stored only when it is a list.
+        assert (
+            "list"
+            not in _items(lambda b: b["fields"][0].update(list=False))["fields"][0]
+        )
+        assert definition["actions"] == [
+            {
+                "id": "new-link",
+                "name": {"en": "New link"},
+                "endpoint": WRITE_ID,
+                "on": ["task"],
+                "menu": False,
+            }
+        ]
+        assert definition["parts"] == [
+            {
+                "id": "demo",
+                "name": {"en": "Demo"},
+                "on": ["task"],
+                "tree": {
+                    "type": "section",
+                    "children": [
+                        {"type": "field", "props": {"field": "demo.link"}},
+                        {"type": "button", "props": {"action": "new-link"}},
+                    ],
+                },
+            }
+        ]
+
+    def test_an_action_asks_the_reader_for_what_its_endpoint_requires(self):
+        """A parameter the endpoint requires is sent once the action asks the
+        reader for it."""
+
+        def asking(body: dict) -> None:
+            body["endpoints"][0]["params"] = [
+                {"key": "x", "type": "string", "label": _label(), "required": True},
+                {"key": "y", "type": "int", "label": _label()},
+            ]
+            body["actions"][0]["params"] = ["y", "x"]
+
+        assert _items(asking)["actions"][0]["params"] == ["y", "x"]
+
+    def test_a_tree_at_its_bounds_is_kept(self):
+        widest = {
+            "type": "section",
+            "children": [
+                {"type": "value", "props": {"field": "demo.link"}}
+                for _ in range(service_plugins.MAX_PART_NODES - 1)
+            ],
+        }
+        for tree in (widest, _nested(service_plugins.MAX_PART_DEPTH)):
+            assert (
+                _items(lambda b: b["parts"][0].update(tree=tree))["parts"][0]["tree"]
+                == tree
+            )
+
+    @pytest.mark.parametrize(
+        ("change", "problem"),
+        [
+            (lambda b: b["fields"].append(b["fields"][0]), "two fields share the key"),
+            (lambda b: b["parts"].append(b["parts"][0]), "two parts share the id"),
+            (
+                lambda b: b["actions"].append(b["actions"][0]),
+                "two actions share the id",
+            ),
+            (lambda b: b["fields"][0].update(key="Demo"), "lowercase letter"),
+            (lambda b: b["fields"][0].update(key="1demo"), "lowercase letter"),
+            (lambda b: b["fields"][0].update(kind="colour"), "kind must be one of"),
+            (lambda b: b["fields"][0].update(on=["wiki_page"]), "not an item kind"),
+            (lambda b: b["fields"][0].update(on=[]), "names no item kind"),
+            (lambda b: b["fields"][0].update(list="yes"), "true or false"),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        f"f{index}": FACET
+                        for index in range(service_plugins.MAX_FACETS + 1)
+                    }
+                ),
+                f"more than {service_plugins.MAX_FACETS} facets",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        "status": {
+                            **FACET,
+                            "values": {
+                                f"k{index}": {"label": _label()}
+                                for index in range(service_plugins.MAX_FACET_VALUES + 1)
+                            },
+                        }
+                    }
+                ),
+                f"more than {service_plugins.MAX_FACET_VALUES} keys",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={"status": {**FACET, "values": {"open": {}}}}
+                ),
+                "must carry a label",
+            ),
+            (
+                lambda b: b["fields"][0].update(
+                    states={
+                        "status": {
+                            **FACET,
+                            "values": {"open": {"label": _label(), "tone": "loud"}},
+                        }
+                    }
+                ),
+                "tone must be one of",
+            ),
+            (lambda b: b["actions"][0].update(on=["task", "task"]), "twice"),
+            (lambda b: b["actions"][0].update(endpoint=READ_ID), "a read endpoint"),
+            (
+                lambda b: b["endpoints"][0].update(
+                    params=[
+                        {
+                            "key": "x",
+                            "type": "string",
+                            "label": _label(),
+                            "required": True,
+                        }
+                    ]
+                ),
+                "requires 'x', which the action does not ask the reader for",
+            ),
+            (
+                lambda b: b["actions"][0].update(
+                    endpoint="plugin.tests.widget-co.missing"
+                ),
+                "does not declare",
+            ),
+            (lambda b: b["actions"][0].update(menu="yes"), "true or false"),
+            (
+                lambda b: b["actions"][0].update(params=["colour"]),
+                "'colour' is not a parameter of",
+            ),
+            (
+                lambda b: b.update(
+                    settings=[
+                        {
+                            "key": "prefix",
+                            "type": "string",
+                            "label": _label(),
+                            "assigned": "community_name",
+                        }
+                    ]
+                ),
+                "only a unique setting's value is assigned",
+            ),
+            (
+                lambda b: b.update(
+                    help={"en": "x" * (service_plugins.MAX_HELP_LENGTH + 1)}
+                ),
+                "help in 'en' is longer than",
+            ),
+            (
+                lambda b: b["parts"][0].update(tree={"type": "image"}),
+                "type must be one of",
+            ),
+            (
+                lambda b: b["parts"][0]["tree"].update(style="bold"),
+                "not a term of the contract",
+            ),
+            (
+                lambda b: b["parts"][0]["tree"].update(props={"colour": "red"}),
+                "not a prop of a section",
+            ),
+            (
+                lambda b: b["parts"][0].update(
+                    tree={"type": "stack", "props": {"direction": "diagonal"}}
+                ),
+                "direction must be one of",
+            ),
+            (
+                lambda b: b["parts"][0].update(
+                    tree={"type": "text", "props": {"text": _label(), "tone": "loud"}}
+                ),
+                "tone must be one of",
+            ),
+            (
+                lambda b: b["parts"][0].update(
+                    tree={"type": "value", "props": {"field": "demo.other"}}
+                ),
+                "not one of this manifest's fields",
+            ),
+            (
+                lambda b: b["parts"][0].update(
+                    tree={"type": "button", "props": {"action": "other"}}
+                ),
+                "not one of this manifest's actions",
+            ),
+            (
+                lambda b: b["parts"][0].update(on=["post", "task"]),
+                "'demo.link' is not offered on post",
+            ),
+            (
+                lambda b: (
+                    b["fields"][0].update(on=["post", "task"]),
+                    b["parts"][0].update(on=["post", "task"]),
+                ),
+                "'new-link' is not offered on post",
+            ),
+            (
+                lambda b: b["parts"][0].update(
+                    tree=_nested(service_plugins.MAX_PART_DEPTH + 1)
+                ),
+                "nested deeper than",
+            ),
+            (
+                lambda b: b["parts"][0]["tree"].update(
+                    children=[
+                        {"type": "value", "props": {"field": "demo.link"}}
+                        for _ in range(service_plugins.MAX_PART_NODES)
+                    ]
+                ),
+                f"more than {service_plugins.MAX_PART_NODES} nodes",
+            ),
+            (
+                lambda b: b.update(
+                    fields=[
+                        {
+                            "key": f"k{index}",
+                            "name": _label(),
+                            "kind": "text",
+                            "on": ["task"],
+                        }
+                        for index in range(service_plugins.MAX_FIELDS + 1)
+                    ]
+                ),
+                "holds more than",
+            ),
+            (
+                lambda b: b.update(features=["endpoints", "fields", "actions"]),
+                "parts is present",
+            ),
+        ],
+        ids=[
+            "field-twice",
+            "part-twice",
+            "action-twice",
+            "key-not-lowercase",
+            "key-not-letter-first",
+            "unknown-field-kind",
+            "unknown-item-kind",
+            "offered-nowhere",
+            "list-not-a-boolean",
+            "too-many-facets",
+            "too-many-state-keys",
+            "state-key-without-a-label",
+            "unknown-state-tone",
+            "item-kind-twice",
+            "action-runs-a-read",
+            "action-runs-a-write-needing-params",
+            "action-runs-nothing-declared",
+            "menu-not-a-boolean",
+            "action-asks-for-what-its-endpoint-does-not-take",
+            "assigned-setting-not-unique",
+            "help-too-long",
+            "unknown-component",
+            "unknown-node-term",
+            "unknown-prop",
+            "unknown-direction",
+            "unknown-tone",
+            "node-names-no-field",
+            "node-names-no-action",
+            "field-not-where-the-part-is",
+            "action-not-where-the-part-is",
+            "too-deep",
+            "too-many-nodes",
+            "too-many-fields",
+            "block-without-its-feature",
+        ],
+    )
+    def test_what_the_sdk_refuses_is_refused_here(self, change, problem):
+        with pytest.raises(ListingDefinitionError, match=problem):
+            _items(change)
+
+
 class TestCanonicalShape:
     def test_unknown_keys_are_dropped(self):
         definition = _normalize(
@@ -1146,7 +1588,7 @@ class TestCanonicalShape:
         which route, and the deployment's registration says where. The one kind
         of address it may hold is its vendor's, in a flow Initiative runs."""
         definition = _normalize(
-            features=["endpoints", "embeds"],
+            features=["endpoints", "pages"],
             service={
                 "public_id": "tests.widget-co",
                 "protocol": 1,
@@ -1162,12 +1604,12 @@ class TestCanonicalShape:
             ],
             vendor=VENDOR,
             endpoints=[{"id": READ_ID, "direction": "read"}],
-            embeds=[
+            pages=[
                 {
                     "id": "orders",
-                    "path": "/embed/orders",
+                    "path": "/page/orders",
                     "name": _label(),
-                    "url": "https://widget.test/embed/orders",
+                    "url": "https://widget.test/page/orders",
                 }
             ],
         )
@@ -1193,10 +1635,10 @@ class TestCanonicalShape:
     def test_a_block_longer_than_its_cap_is_refused_not_truncated(self):
         with pytest.raises(ListingDefinitionError, match="more than"):
             _normalize(
-                features=["embeds"],
-                embeds=[
-                    {"id": f"e{index}", "path": f"/embed/{index}", "name": _label()}
-                    for index in range(service_plugins.MAX_EMBEDS + 1)
+                features=["pages"],
+                pages=[
+                    {"id": f"e{index}", "path": f"/page/{index}", "name": _label()}
+                    for index in range(service_plugins.MAX_PAGES + 1)
                 ],
             )
 
@@ -1480,8 +1922,8 @@ class TestListingAudience:
         assert not guild & user
         assert guild | user == LISTING_KINDS
 
-    def test_a_profile_pack_installs_to_a_person(self):
-        assert kinds_for_audience("user") == {"profile_pack"}
+    def test_a_profile_pack_and_a_home_layout_install_to_a_person(self):
+        assert kinds_for_audience("user") == {"profile_pack", "home_layout"}
 
     def test_an_unknown_audience_is_named_rather_than_empty(self):
         with pytest.raises(ValueError):

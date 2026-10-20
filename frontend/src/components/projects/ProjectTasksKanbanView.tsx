@@ -11,33 +11,39 @@ import {
   pointerWithin,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
+import type { GroupingState } from "@tanstack/react-table";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  CardPartInput,
+  LayoutGrouping,
   PropertyDefinitionRead,
   TaskListRead,
-  TaskPriority,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { KanbanColumn } from "@/components/projects/KanbanColumn";
-import { KanbanFieldsMenu } from "@/components/projects/KanbanFieldsMenu";
-import {
-  buildKanbanCardFields,
-  type KanbanCardFields,
-  kanbanFieldsStorageKey,
-} from "@/components/projects/kanbanFields";
-import type { PriorityBadgeVariant } from "@/components/projects/projectTasksConfig";
+import { KanbanBands } from "@/components/projects/KanbanBands";
+import { type ColumnFill, KanbanColumn } from "@/components/projects/KanbanColumn";
+import { priorityVariant } from "@/components/projects/projectTasksConfig";
+import { resolveKanbanDropTarget } from "@/components/projects/taskOrdering";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { Badge } from "@/components/ui/badge";
+import { GroupBySelect } from "@/components/ui/data-table";
 import { MentionText } from "@/components/user/MentionText";
-import { MentionedPeopleScope, ReportMentionedPeople } from "@/hooks/useMentionedPeople";
-import { usePersistedColumnVisibility } from "@/hooks/usePersistedColumnVisibility";
+import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
 import { useProperties } from "@/hooks/useProperties";
+import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { formatDateTime } from "@/lib/formatDate";
+import { cardOf } from "@/lib/layouts/draft";
+import { useProjectLayoutEnv } from "@/lib/layouts/fields";
+import { boardBands, offeredGroupings, taskGroupings } from "@/lib/layouts/grouping";
+import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
+import { taskFields } from "@/lib/layouts/tasks";
+import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/tree";
 import { cn } from "@/lib/utils";
 
 import { TaskAssigneeList } from "./TaskAssigneeList";
+import { type BoardActions, BoardActionsContext, TaskCardActions } from "./TaskQuickActions";
 
 type ProjectTasksKanbanViewProps = {
   projectId: number;
@@ -46,8 +52,12 @@ type ProjectTasksKanbanViewProps = {
   groupedTasks: Record<number, TaskListRead[]>;
   collapsedStatusIds: Set<number>;
   canReorderTasks: boolean;
+  /** The reader may change the tasks: each card offers what can be done with
+   *  it beside its title. */
+  canEditTasks?: boolean;
+  /** Moves a task to a column from its card's menu, as dropping it there would. */
+  onStatusChange?: (taskId: number, taskStatusId: number) => void;
   taskHref: (taskId: number) => string;
-  priorityVariant: Record<TaskPriority, PriorityBadgeVariant>;
   sensors: DndContextProps["sensors"];
   activeTask: TaskListRead | null;
   onDragStart: (event: DragStartEvent) => void;
@@ -57,10 +67,28 @@ type ProjectTasksKanbanViewProps = {
   onToggleCollapse: (statusId: number) => void;
   onArchiveDoneTasks?: (statusId: number) => void;
   isArchivingDoneTasks?: boolean;
-  /** The properties the cards can show. When given, the board asks for none:
-   *  a listing's preview has no initiative to ask. */
+  /** The properties the cards can show. When given, the board asks for none,
+   *  nor for plug-ins: a listing's preview has no initiative to ask. */
   propertyDefinitions?: PropertyDefinitionRead[];
+  /** The view's card, where it has its own. */
+  /** The project's own card; none draws the shipped one. */
+  card?: LayoutNode | null;
+  /** What the board is grouped by, as its reader's view keeps it. */
+  grouping?: GroupingState;
+  /** Where the reader picks what it is grouped by; left out, nowhere. */
+  onGroupingChange?: (grouping: GroupingState) => void;
+  /** The groupings the board offers, in order, where its layout names them. */
+  viewGroupings?: LayoutGrouping[] | null;
+  /** How full its limited columns are. */
+  columnLimits?: ColumnLimits;
+  /** While the view is edited: the path of each part of its card. */
+  editing?: WeakMap<LayoutNode, string>;
 };
+
+// One empty list while the definitions load, so the fields aren't rebuilt on
+// every pass until they arrive.
+const NO_DEFINITIONS: PropertyDefinitionRead[] = [];
+const NOT_GROUPED: GroupingState = [];
 
 export const ProjectTasksKanbanView = ({
   projectId,
@@ -69,8 +97,9 @@ export const ProjectTasksKanbanView = ({
   groupedTasks,
   collapsedStatusIds,
   canReorderTasks,
+  canEditTasks = false,
+  onStatusChange,
   taskHref,
-  priorityVariant,
   sensors,
   activeTask,
   onDragStart,
@@ -81,42 +110,135 @@ export const ProjectTasksKanbanView = ({
   onArchiveDoneTasks,
   isArchivingDoneTasks,
   propertyDefinitions: givenDefinitions,
+  card: ownCard,
+  grouping = NOT_GROUPED,
+  onGroupingChange,
+  viewGroupings,
+  columnLimits = NO_COLUMN_LIMITS,
+  editing,
 }: ProjectTasksKanbanViewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   useHorizontalDragScroll(scrollContainerRef);
 
-  // Which fields each card shows. Scoped to this project's initiative, like
-  // the table's property columns, so the menu lists the properties a task
-  // here can actually carry. No default-hidden ids: a board that has never
-  // been configured shows everything, as it did before the menu existed.
-  const { data: fetchedDefinitions = [] } = useProperties({
+  // The properties the cards can show, scoped to this project's initiative.
+  // What a card shows is its view's card.
+  const { data: fetchedDefinitions = NO_DEFINITIONS } = useProperties({
     initiativeId,
     enabled: !givenDefinitions,
   });
   const propertyDefinitions = givenDefinitions ?? fetchedDefinitions;
-  // The hook holds this in state, so its identity is stable between changes —
-  // which is what lets the memoized card skip re-rendering on every parent pass.
-  const [fieldVisibility, setFieldVisibility] = usePersistedColumnVisibility(
-    kanbanFieldsStorageKey(projectId),
-    EMPTY_DEFAULT_HIDDEN
-  );
   // Built once per change rather than once per card, and stable in between so
-  // the memoized cards skip re-rendering on an unrelated parent pass.
-  const visibleFields = useMemo(
-    () => buildKanbanCardFields(fieldVisibility, propertyDefinitions),
-    [fieldVisibility, propertyDefinitions]
+  // the memoized cards skip re-rendering on an unrelated parent pass. What the
+  // renderers share is held apart, so a change of fields redraws the cards but
+  // not the values on them.
+  const projectEnv = useProjectLayoutEnv(taskHref);
+  const env = useMemo(
+    () => (canEditTasks ? { ...projectEnv, itemActions: TaskCardActions } : projectEnv),
+    [projectEnv, canEditTasks]
+  );
+  // The handler changes with every list of tasks; the cards' menus hold one
+  // that doesn't, so a refetch neither redraws every card nor closes a menu.
+  const moveRef = useRef(onStatusChange);
+  useEffect(() => {
+    moveRef.current = onStatusChange;
+  });
+  const canMove = onStatusChange !== undefined;
+  const boardActions = useMemo<BoardActions | null>(
+    () =>
+      canMove
+        ? {
+            statuses: taskStatuses,
+            moveTo: (taskId, statusId) => moveRef.current?.(taskId, statusId),
+            isFull: columnLimits.isFull,
+          }
+        : null,
+    [canMove, taskStatuses, columnLimits]
+  );
+  const fillOf = (statusId: number): ColumnFill | undefined => {
+    const limit = columnLimits.limitOf(statusId);
+    return limit === undefined ? undefined : { count: columnLimits.countOf(statusId), limit };
+  };
+  const { i18n } = useTranslation();
+  const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
+  const fields = useMemo(
+    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
+    [propertyDefinitions, plugins, i18n.language]
+  );
+  const card = useMemo(
+    () => cardOf({ card: ownCard as CardPartInput | null | undefined }, fields),
+    [ownCard, fields]
+  );
+  const view = useMemo<LayoutContext>(
+    () => ({
+      fields,
+      plugins,
+      card,
+      variant: "card",
+      env,
+      editing,
+    }),
+    [fields, plugins, card, env, editing]
   );
 
-  // The people the cards' excerpts mention, asked about once for the board.
-  const excerpts = useMemo(
-    () =>
-      visibleFields.shows("description")
-        ? Object.values(groupedTasks).flatMap((tasks) =>
-            tasks.flatMap((task) => task.description_excerpt ?? [])
-          )
-        : [],
-    [groupedTasks, visibleFields]
+  // What the board offers to group by, and the bands of the one it is.
+  const tasks = useMemo(
+    () => taskStatuses.flatMap((status) => groupedTasks[status.id] ?? []),
+    [taskStatuses, groupedTasks]
   );
+  const offered = useMemo(
+    () =>
+      offeredGroupings(
+        taskGroupings({ fields, statuses: taskStatuses, tasks, t: projectEnv.t }),
+        viewGroupings,
+        "board"
+      ),
+    [fields, taskStatuses, tasks, projectEnv.t, viewGroupings]
+  );
+  const active = offered.find((each) => grouping.includes(each.grouping.column));
+  const bands = useMemo(() => (active ? boardBands(active, tasks) : null), [active, tasks]);
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        taskStatuses.map((status) => [status.id, groupedTasks[status.id]?.length ?? 0])
+      ),
+    [taskStatuses, groupedTasks]
+  );
+
+  // A card dropped into another band changes the field the board is grouped
+  // by, beside what the drop does to its column and its place in it. One
+  // dropped on an empty part of a cell in its own column changes only that.
+  const { mutate: moveTask } = useMoveTaskToGroup();
+  const lastOver = useRef<DragOverEvent["over"] | null>(null);
+  const handleDragOver = (event: DragOverEvent) => {
+    if (event.over) lastOver.current = event.over;
+    onDragOver(event);
+  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    const target = resolveKanbanDropTarget(event, lastOver.current);
+    lastOver.current = null;
+    const dragged = event.active.data.current;
+    const from = dragged?.group;
+    const to = target?.data?.group;
+    const intoFull =
+      target?.data?.statusId !== undefined &&
+      target.data.statusId !== dragged?.statusId &&
+      columnLimits.isFull(target.data.statusId);
+    const intoBand =
+      active?.grouping.move !== undefined &&
+      canEditTasks &&
+      !intoFull &&
+      typeof from === "string" &&
+      typeof to === "string" &&
+      from !== to;
+    if (intoBand && target?.data?.type === "column" && target.data.statusId === dragged?.statusId) {
+      onDragCancel();
+    } else {
+      onDragEnd(event);
+    }
+    if (!intoBand || typeof dragged?.taskId !== "number") return;
+    const move = active.grouping.move?.(from, to);
+    if (move && !("status" in move)) moveTask({ taskId: dragged.taskId, move });
+  };
 
   const taskStatusesLength = taskStatuses.length;
   // Basis rather than min-width: it is what the collapse animates.
@@ -126,65 +248,79 @@ export const ProjectTasksKanbanView = ({
   );
 
   return (
-    <MentionedPeopleScope>
-      <ReportMentionedPeople texts={excerpts} />
+    <BoardActionsContext.Provider value={boardActions}>
+      {onGroupingChange && offered.length > 0 && !editing ? (
+        <div className="mb-3 flex justify-end">
+          <GroupBySelect
+            options={offered.map(({ grouping: each }) => ({ id: each.column, label: each.label }))}
+            value={active?.grouping.column ?? null}
+            onChange={(id) => onGroupingChange(id === null ? [] : [id])}
+          />
+        </div>
+      ) : null}
       <DndContext
         sensors={sensors}
         collisionDetection={kanbanCollisionDetection}
         onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
         onDragCancel={onDragCancel}
       >
-        <div className="mb-3 flex justify-end">
-          <KanbanFieldsMenu
-            propertyDefinitions={propertyDefinitions}
-            visibility={fieldVisibility}
-            onChange={setFieldVisibility}
-          />
-        </div>
         <div
           ref={scrollContainerRef}
-          className="scrollbar-thin cursor-grab overflow-x-auto pb-4"
+          className={cn(
+            "scrollbar-thin cursor-grab overflow-x-auto pb-4",
+            bands && "max-h-[75vh] overflow-y-auto"
+          )}
           data-kanban-scroll-container
         >
-          <div className="flex gap-4">
-            {taskStatuses.map((status) => {
-              const isCollapsed = collapsedStatusIds.has(status.id);
-              return (
-                <KanbanColumn
-                  key={status.id}
-                  status={status}
-                  tasks={groupedTasks[status.id] ?? []}
-                  canWrite={canReorderTasks}
-                  priorityVariant={priorityVariant}
-                  visibleFields={visibleFields}
-                  taskHref={taskHref}
-                  collapsed={isCollapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  taskCount={groupedTasks[status.id]?.length ?? 0}
-                  className={cn(
-                    "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
-                    isCollapsed ? "grow-0 basis-12" : columnBasis
-                  )}
-                  onArchiveDoneTasks={onArchiveDoneTasks}
-                  isArchiving={isArchivingDoneTasks}
-                />
-              );
-            })}
-          </div>
+          {active && bands ? (
+            <KanbanBands
+              bands={bands}
+              grouping={active.grouping}
+              statuses={taskStatuses}
+              counts={counts}
+              fillOf={fillOf}
+              collapsedStatusIds={collapsedStatusIds}
+              onToggleCollapse={onToggleCollapse}
+              canWrite={canReorderTasks}
+              view={view}
+              columnBasis={columnBasis}
+              onArchiveDoneTasks={onArchiveDoneTasks}
+              isArchiving={isArchivingDoneTasks}
+            />
+          ) : (
+            <div className="flex gap-4">
+              {taskStatuses.map((status) => {
+                const isCollapsed = collapsedStatusIds.has(status.id);
+                return (
+                  <KanbanColumn
+                    key={status.id}
+                    status={status}
+                    tasks={groupedTasks[status.id] ?? []}
+                    canWrite={canReorderTasks}
+                    view={view}
+                    collapsed={isCollapsed}
+                    onToggleCollapse={onToggleCollapse}
+                    taskCount={groupedTasks[status.id]?.length ?? 0}
+                    fill={fillOf(status.id)}
+                    className={cn(
+                      "max-h-[70vh] min-h-[70vh] shrink-0 transition-[flex-basis,flex-grow] duration-200",
+                      isCollapsed ? "grow-0 basis-12" : columnBasis
+                    )}
+                    onArchiveDoneTasks={onArchiveDoneTasks}
+                    isArchiving={isArchivingDoneTasks}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
         <DragOverlay>
-          {activeTask ? (
-            <TaskDragOverlay
-              task={activeTask}
-              priorityVariant={priorityVariant}
-              visibleFields={visibleFields}
-            />
-          ) : null}
+          {activeTask ? <TaskDragOverlay task={activeTask} card={card} /> : null}
         </DragOverlay>
       </DndContext>
-    </MentionedPeopleScope>
+    </BoardActionsContext.Provider>
   );
 };
 
@@ -217,19 +353,10 @@ const getDroppableType = (
   id: UniqueIdentifier
 ): string | undefined => containers.find((container) => container.id === id)?.data.current?.type;
 
-const TaskDragOverlay = ({
-  task,
-  priorityVariant,
-  visibleFields,
-}: {
-  task: TaskListRead;
-  priorityVariant: Record<TaskPriority, PriorityBadgeVariant>;
-  visibleFields: KanbanCardFields;
-}) => {
+const TaskDragOverlay = ({ task, card }: { task: TaskListRead; card: LayoutNode }) => {
   const { t } = useTranslation("projects");
-  // The thing being dragged is the card, so it drops the same fields the card
-  // dropped — otherwise picking one up puts back what you just turned off.
-  const { shows } = visibleFields;
+  // The thing being dragged is the card, so it shows what the card names.
+  const shows = (fieldId: string) => namesField(card, fieldId);
   return (
     <div className="w-64 space-y-3 rounded-lg border bg-card p-3 shadow-lg">
       <div className="space-y-1">
@@ -260,7 +387,6 @@ const TaskDragOverlay = ({
 
 // Module-level so its identity is stable; the hook re-seeds defaults whenever
 // this array's contents change.
-const EMPTY_DEFAULT_HIDDEN: string[] = [];
 
 const useHorizontalDragScroll = (ref: React.RefObject<HTMLDivElement | null>) => {
   useEffect(() => {
@@ -273,8 +399,9 @@ const useHorizontalDragScroll = (ref: React.RefObject<HTMLDivElement | null>) =>
     let scrollStart = 0;
     let pointerId: number | null = null;
 
+    // An icon inside a control is an SVG element, not an HTML one.
     const shouldIgnoreEvent = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) {
+      if (!(target instanceof Element)) {
         return false;
       }
       return Boolean(target.closest('[data-kanban-scroll-lock="true"]'));

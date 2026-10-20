@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, exists, func, or_
@@ -23,7 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.platform.guild import Guild, CommunityStatus
+from app.models.platform.guild import Guild, GuildInvite
 from app.models.platform.identity_ref import (
     REF_ENTROPY_BYTES,
     REF_GRACE_PERIOD,
@@ -57,6 +58,7 @@ __all__ = [
     "reissue_ref",
     "resolve_billing_ref",
     "resolve_ref",
+    "resolve_refs",
 ]
 
 logger = logging.getLogger(__name__)
@@ -79,14 +81,19 @@ async def ensure_ref(
     purpose: IdentityPurpose,
     sector_guild_id: int | None = None,
     sector_id: int | None = None,
+    sector_plugin: str | None = None,
+    before_mint: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     """This entity's live reference for this sector, minting one on first use.
+
+    ``before_mint`` runs only when there is none to return, before one is
+    minted, and refuses the mint by raising.
 
     Idempotent under concurrency: two callers racing the same first mint both
     insert, one loses on the partial unique index, and both read back the same
     row.
     """
-    sector = (sector_guild_id, sector_id)
+    sector = (sector_guild_id, sector_id, sector_plugin)
     existing = await _live_ref(
         session,
         entity_type=entity_type,
@@ -96,6 +103,8 @@ async def ensure_ref(
     )
     if existing is not None:
         return existing.ref
+    if before_mint is not None:
+        await before_mint()
 
     await session.exec(
         pg_insert(IdentityRef.__table__)
@@ -106,6 +115,7 @@ async def ensure_ref(
             purpose=purpose.value,
             sector_guild_id=sector_guild_id,
             sector_id=sector_id,
+            sector_plugin=sector_plugin,
             created_at=datetime.now(timezone.utc),
         )
         # A core-level insert, so the model's default factories do not run and
@@ -118,6 +128,7 @@ async def ensure_ref(
                 "purpose",
                 "sector_guild_id",
                 "sector_id",
+                "sector_plugin",
             ],
             index_where=IdentityRef.retired_at.is_(None),
         )
@@ -164,6 +175,7 @@ async def existing_ref(
     purpose: IdentityPurpose,
     sector_guild_id: int | None = None,
     sector_id: int | None = None,
+    sector_plugin: str | None = None,
 ) -> str | None:
     """This entity's live reference for one sector, or None if it has none.
 
@@ -180,7 +192,7 @@ async def existing_ref(
             entity_type=entity_type,
             entity_id=entity_id,
             purpose=purpose,
-            sector=(sector_guild_id, sector_id),
+            sector=(sector_guild_id, sector_id, sector_plugin),
         )
     return None if row is None else row.ref
 
@@ -246,25 +258,43 @@ async def resolve_ref(
     A retired reference still resolves until its grace window closes; past
     that it is treated as unknown even while the row waits to be swept.
     """
-    if not ref or len(ref) > REF_MAX_LENGTH:
-        return None
+    found = await resolve_refs(session, refs=[ref], now=now)
+    return found[0] if found else None
+
+
+async def resolve_refs(
+    session: AsyncSession, *, refs: Sequence[str], now: datetime | None = None
+) -> list[IdentityRef]:
+    """The rows ``refs`` name, in one read, as :func:`resolve_ref` resolves
+    each. A value that names nothing is left out."""
+    wanted = [ref for ref in refs if ref and len(ref) <= REF_MAX_LENGTH]
+    if not wanted:
+        return []
     moment = now or datetime.now(timezone.utc)
-    return (
-        await session.exec(
-            select(IdentityRef).where(
-                IdentityRef.ref == ref,
-                or_(
-                    IdentityRef.retired_at.is_(None),
-                    IdentityRef.retired_at > moment - REF_GRACE_PERIOD,
-                ),
+    return list(
+        (
+            await session.exec(
+                select(IdentityRef).where(
+                    IdentityRef.ref.in_(wanted),
+                    or_(
+                        IdentityRef.retired_at.is_(None),
+                        IdentityRef.retired_at > moment - REF_GRACE_PERIOD,
+                    ),
+                )
             )
-        )
-    ).first()
+        ).all()
+    )
 
 
-def _sector_clause(sector: tuple[int | None, int | None]):
+#: ``(sector_guild_id, sector_id, sector_plugin)``: the guild a sector belongs
+#: to, and the row or the plug-in in it that the sector is. All unset for a
+#: platform-wide purpose.
+Sector = tuple[int | None, int | None, str | None]
+
+
+def _sector_clause(sector: Sector):
     """Match one sector, treating an unset one as a value rather than unknown."""
-    guild_id, sector_id = sector
+    guild_id, sector_id, plugin = sector
     return and_(
         IdentityRef.sector_guild_id.is_(None)
         if guild_id is None
@@ -272,6 +302,9 @@ def _sector_clause(sector: tuple[int | None, int | None]):
         IdentityRef.sector_id.is_(None)
         if sector_id is None
         else IdentityRef.sector_id == sector_id,
+        IdentityRef.sector_plugin.is_(None)
+        if plugin is None
+        else IdentityRef.sector_plugin == plugin,
     )
 
 
@@ -283,6 +316,7 @@ async def reissue_ref(
     purpose: IdentityPurpose,
     sector_guild_id: int | None = None,
     sector_id: int | None = None,
+    sector_plugin: str | None = None,
     now: datetime | None = None,
 ) -> str:
     """Replace one entity's reference for one sector, and return the new one.
@@ -291,7 +325,7 @@ async def reissue_ref(
     the entity moves, and no other entity is touched.
     """
     moment = now or datetime.now(timezone.utc)
-    sector = (sector_guild_id, sector_id)
+    sector = (sector_guild_id, sector_id, sector_plugin)
     await session.exec(
         update(IdentityRef)
         .where(
@@ -310,6 +344,7 @@ async def reissue_ref(
         purpose=purpose,
         sector_guild_id=sector_guild_id,
         sector_id=sector_id,
+        sector_plugin=sector_plugin,
     )
 
 
@@ -320,6 +355,7 @@ async def reissue_all_refs(
     purpose: IdentityPurpose,
     sector_guild_id: int | None = None,
     sector_id: int | None = None,
+    sector_plugin: str | None = None,
     now: datetime | None = None,
 ) -> int:
     """Replace every entity's reference for one sector. Returns the count.
@@ -331,7 +367,7 @@ async def reissue_all_refs(
     skipped.
     """
     moment = now or datetime.now(timezone.utc)
-    sector = (sector_guild_id, sector_id)
+    sector = (sector_guild_id, sector_id, sector_plugin)
     retired = await session.exec(
         update(IdentityRef)
         .where(
@@ -366,6 +402,7 @@ async def reissue_all_refs(
             purpose=purpose,
             sector_guild_id=sector_guild_id,
             sector_id=sector_id,
+            sector_plugin=sector_plugin,
         )
     return len(entity_ids)
 
@@ -392,49 +429,48 @@ async def drop_sector_refs(
     *,
     sector_guild_id: int,
     sector_id: int | None = None,
+    sector_plugin: str | None = None,
     purpose: IdentityPurpose | None = None,
 ) -> int:
     """Remove every reference minted for one sector. Returns the count.
 
-    ``sector_id`` omitted takes the whole guild's sectors, which is what guild
-    deletion needs. Neither column is a foreign key — the thing a sector names
-    lives in a guild schema and this table does not — so this stands in for the
-    cascade.
+    ``sector_id`` and ``sector_plugin`` both omitted take the whole guild's
+    sectors, which is what guild deletion needs. No sector column is a foreign
+    key — the thing a sector names lives in a guild schema, or is a plug-in's
+    name, and this table holds neither — so this stands in for the cascade.
 
     ``purpose`` names which kind of thing ``sector_id`` is. The ids a sector is
-    built from are per-guild-schema sequences, so an install and a webhook
-    subscription in one guild can both be number three; the purpose is what
-    tells those two sectors apart. Every caller naming a ``sector_id`` passes
-    it. Guild deletion does not, because it is taking all of them.
+    built from are per-guild-schema sequences, so two kinds of row in one guild
+    can both be number three; the purpose is what tells those sectors apart.
+    Every caller naming a ``sector_id`` passes it. Guild deletion does not,
+    because it is taking all of them.
     """
     clause = IdentityRef.sector_guild_id == sector_guild_id
     if sector_id is not None:
         clause = and_(clause, IdentityRef.sector_id == sector_id)
+    if sector_plugin is not None:
+        clause = and_(clause, IdentityRef.sector_plugin == sector_plugin)
     if purpose is not None:
         clause = and_(clause, IdentityRef.purpose == purpose.value)
     result = await session.exec(delete(IdentityRef).where(clause))
     return result.rowcount or 0
 
 
-async def drop_guild_refs(
-    session: AsyncSession, *, guild_id: int, keep_billing: bool = False
-) -> int:
-    """Everything a deleted guild leaves in this table. Returns the count.
+async def drop_guild_refs(session: AsyncSession, *, guild_id: int) -> int:
+    """Everything a purged guild leaves in this table. Returns the count.
 
     Two halves, because a guild appears here in two ways. The sectors INSIDE
-    it name its members to each plug-in installed there. The guild itself is also
-    named — by billing, whose sector is the whole deployment and whose rows
+    it name its members to each plug-in and subscriber there. The guild itself is
+    also named — by billing, whose sector is the whole deployment and whose rows
     therefore carry no ``sector_guild_id`` to find them by.
 
-    ``keep_billing`` takes the first half only, for a guild that is deleted but
-    not yet purged, so its billing reference outlives the delete. The purge
-    drops it.
+    A guild that is deleted but not yet purged keeps both: it can still come
+    back, under the names its plug-ins already hold.
     """
     dropped = await drop_sector_refs(session, sector_guild_id=guild_id)
-    if not keep_billing:
-        dropped += await drop_entity_refs(
-            session, entity_type=IdentityEntity.guild, entity_id=guild_id
-        )
+    dropped += await drop_entity_refs(
+        session, entity_type=IdentityEntity.guild, entity_id=guild_id
+    )
     return dropped
 
 
@@ -465,31 +501,27 @@ async def forget_user(*, user_id: int) -> int:
 
 
 async def purge_orphaned_sector_refs(session: AsyncSession) -> int:
-    """Drop references whose sector guild is deleted or gone. Returns the count.
+    """Drop references whose sector guild is gone. Returns the count.
 
     The sector columns cannot be foreign keys, so a guild's references are
-    removed by the deletion path rather than by a cascade. This reclaims the
-    ones that path did not manage to remove — it runs after the deletion has
-    committed, where there is nothing left to roll back. A guild that is
-    deleted but not yet purged has let its plug-ins go already, so its sectors are
-    taken too.
+    removed by the purge rather than by a cascade. This reclaims the ones the
+    purge did not manage to remove — it runs after the guild row has gone,
+    where there is nothing left to roll back. A guild that is deleted but not
+    yet purged keeps its sectors: its plug-ins are told to erase them first,
+    at the purge.
     """
     result = await session.exec(
         delete(IdentityRef).where(
             IdentityRef.sector_guild_id.is_not(None),
-            ~exists(
-                select(Guild.id).where(
-                    Guild.id == IdentityRef.sector_guild_id,
-                    Guild.status != CommunityStatus.deleted.value,
-                )
-            ),
+            ~exists(select(Guild.id).where(Guild.id == IdentityRef.sector_guild_id)),
         )
     )
     return result.rowcount or 0
 
 
 async def purge_orphaned_entity_refs(session: AsyncSession) -> int:
-    """Drop references naming an erased account or a purged guild.
+    """Drop references naming an erased account, a purged guild or a deleted
+    demo link (an invite into a pitch).
 
     Returns the count. The entity column cannot be a foreign key — erasure
     keeps the ``users`` row as an anonymized husk — so these are removed by
@@ -503,6 +535,7 @@ async def purge_orphaned_entity_refs(session: AsyncSession) -> int:
         User.status != UserStatus.anonymized,
     )
     live_guild = select(Guild.id).where(Guild.id == IdentityRef.entity_id)
+    live_link = select(GuildInvite.id).where(GuildInvite.id == IdentityRef.entity_id)
     result = await session.exec(
         delete(IdentityRef).where(
             or_(
@@ -513,6 +546,10 @@ async def purge_orphaned_entity_refs(session: AsyncSession) -> int:
                 and_(
                     IdentityRef.entity_type == IdentityEntity.guild,
                     ~exists(live_guild),
+                ),
+                and_(
+                    IdentityRef.entity_type == IdentityEntity.demo_link,
+                    ~exists(live_link),
                 ),
             )
         )
@@ -569,7 +606,7 @@ async def _live_ref(
     entity_type: IdentityEntity,
     entity_id: int,
     purpose: IdentityPurpose,
-    sector: tuple[int | None, int | None],
+    sector: Sector,
 ) -> IdentityRef | None:
     return (
         await session.exec(

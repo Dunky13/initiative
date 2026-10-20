@@ -182,4 +182,39 @@ describe("chooseNoCommunityLayout", () => {
       ).toBe("empty");
     });
   });
+
+  describe("when the community list could not be read", () => {
+    it("asks to try again rather than starting the account over", () => {
+      expect(
+        chooseNoCommunityLayout({
+          hasCommunities: false,
+          listFailed: true,
+          pathname: "/",
+          canAccessPlatformAreas: false,
+        })
+      ).toBe("unavailable");
+    });
+
+    it("still opens the settings shell on a path that needs no community", () => {
+      expect(
+        chooseNoCommunityLayout({
+          hasCommunities: false,
+          listFailed: true,
+          pathname: "/profile",
+          canAccessPlatformAreas: false,
+        })
+      ).toBe("shell");
+    });
+
+    it("keeps the communities it already has", () => {
+      expect(
+        chooseNoCommunityLayout({
+          hasCommunities: true,
+          listFailed: true,
+          pathname: "/",
+          canAccessPlatformAreas: false,
+        })
+      ).toBe("main");
+    });
+  });
 });

@@ -43,6 +43,8 @@ interface MarkdownComposerProps {
   id?: string;
   placeholder?: string;
   rows?: number;
+  /** The most characters the text may hold, as the server allows. */
+  maxLength?: number;
   disabled?: boolean;
   autoFocus?: boolean;
   /** The caller's own handle on the field — for caret measurement, focus, and
@@ -86,6 +88,7 @@ export const MarkdownComposer = ({
   id,
   placeholder,
   rows,
+  maxLength,
   disabled = false,
   autoFocus = false,
   textareaRef,
@@ -104,7 +107,8 @@ export const MarkdownComposer = ({
   // Opening on the preview is a way to *read* what is there, so it only makes
   // sense once there is something to read: an empty field — or one whose text
   // has not loaded yet — opens ready to type and settles on the caller's
-  // default when the text arrives. A tab the reader picks themselves stands.
+  // default when the text arrives. A tab the reader picks themselves stands,
+  // and so does the one they are typing in.
   const [chosenMode, setChosenMode] = useState<ComposerMode | null>(null);
   const mode: ComposerMode =
     chosenMode ?? (defaultMode === "preview" && !value.trim() ? "write" : defaultMode);
@@ -135,6 +139,7 @@ export const MarkdownComposer = ({
   const commit = useCallback(
     (next: MarkdownSelection) => {
       pendingSelection.current = [next.start, next.end];
+      setChosenMode((chosen) => chosen ?? "write");
       onChange(next.value);
     },
     [onChange]
@@ -342,7 +347,10 @@ export const MarkdownComposer = ({
             id={id}
             ref={assignRef}
             value={value}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => {
+              setChosenMode((chosen) => chosen ?? "write");
+              onChange(event.target.value);
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             onDrop={handleDrop}
@@ -350,6 +358,7 @@ export const MarkdownComposer = ({
             onBlur={onBlur}
             placeholder={placeholder}
             rows={rows ?? (compact ? 3 : 6)}
+            maxLength={maxLength}
             disabled={disabled}
             autoFocus={autoFocus}
             className="resize-y rounded-none rounded-b-md border-0 shadow-none focus-visible:ring-0"

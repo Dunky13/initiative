@@ -135,13 +135,16 @@ def _wire(value: Any) -> Any:
     the app's: a moment becomes epoch milliseconds UTC, which is the one
     spelling of a timestamp the widgets take; and an exact number becomes a
     number, where the database's arbitrary-precision type would otherwise arrive
-    as a string and stop counting as one. Anything else with no JSON spelling is
-    written out rather than dropped.
+    as a string and stop counting as one. A JSON document is its text, as a
+    compiled canvas spells it. Anything else with no JSON spelling is written
+    out rather than dropped.
     """
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, (list, dict)):
+        return json.dumps(value)
     # Before date, because every datetime is one.
     if isinstance(value, datetime):
         moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -285,9 +288,11 @@ def _as_query(
     Every entry point below establishes the same thing, so it is said once: the
     reader is whoever the request admitted, the role is the query role, and the
     scope is the surface's if it named one. Only a member or a content grantee
-    reads here.
+    reads here, and a guest is neither.
     """
-    if not isinstance(context, QUERYABLE):
+    if not isinstance(context, QUERYABLE) or (
+        isinstance(context, Member) and context.standing.routes_as_guest
+    ):
         raise QueryError(QueryMessages.MISSING_RELATION)
     return replace(
         context,

@@ -28,7 +28,7 @@ from app.models.tenant.task import Task, TaskStatusCategory
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.testing.schema_harness import route_session_to_guild
 from app.models.tenant.task_assignment_digest import TaskAssignmentDigestItem
-from app.core.messages import TaskMessages
+from app.core.messages import CommonMessages, TaskMessages
 from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.testing.factories import (
@@ -366,6 +366,30 @@ async def test_create_task(client: AsyncClient, session: AsyncSession, acting_us
     assert hourly.status_code == 422
 
 
+async def test_a_category_moves_a_task_to_its_column(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A caller that knows "done" but not which column that is sends the
+    category, and the task lands in the project's column of it. A task already
+    in that category stays in its column."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    task = await create_task(session, a.project)
+
+    async def move(category: str) -> dict:
+        response = await client.patch(
+            a.g(f"/tasks/{task.id}"),
+            headers=a.headers,
+            json={"status_category": category},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["task_status"]
+
+    done = await move("done")
+    assert done["category"] == "done"
+    assert (await move("done"))["id"] == done["id"]
+    assert (await move("in_progress"))["category"] == "in_progress"
+
+
 async def test_create_task_with_status(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
@@ -589,6 +613,32 @@ async def test_update_task(client: AsyncClient, session: AsyncSession, acting_us
     assert data["description"] == "Updated description"
 
 
+async def test_a_description_written_over_an_old_one_is_refused(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A description names the one it was written over, and is refused once
+    that is no longer the stored one."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    task = await create_task(session, a.project, description="First")
+
+    def write(base: str | None):
+        return client.patch(
+            a.g(f"/tasks/{task.id}"),
+            headers=a.headers,
+            json={"description": "Mine", "description_base": base},
+        )
+
+    stale = await write("Older")
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == CommonMessages.DESCRIPTION_CHANGED
+
+    saved = await write("First")
+    assert saved.status_code == 200
+    assert saved.json()["description"] == "Mine"
+
+
 @pytest.mark.parametrize(
     ("method", "payload"),
     [("PATCH", {"title": "Hacked Title"}), ("DELETE", None)],
@@ -664,6 +714,60 @@ async def test_assign_user_to_task(
     data = response.json()
     assignee_ids = {a["id"] for a in data["assignees"]}
     assert assignee.user.id in assignee_ids
+
+
+async def test_adding_and_removing_assignees_leaves_the_others(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Putting someone on a task, or taking them off, works against whoever
+    is on it when the change lands, not a list the caller read earlier."""
+    user = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    other = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=user.guild,
+        initiative=user.initiative,
+        initiative_role="member",
+    )
+    await create_resource_grant(session, user.project, user=other.user)
+    task = await _create_task(session, user.project)
+    url = user.g(f"/tasks/{task.id}")
+
+    async def assignees(payload: dict) -> set[int]:
+        response = await client.patch(url, headers=user.headers, json=payload)
+        assert response.status_code == 200, response.text
+        return {a["id"] for a in response.json()["assignees"]}
+
+    assert await assignees({"add_assignee_ids": [other.user.id]}) == {other.user.id}
+    # Added beside the one already on it, rather than in their place.
+    assert await assignees({"add_assignee_ids": [user.user.id]}) == {
+        user.user.id,
+        other.user.id,
+    }
+    # Adding someone already on it changes nothing.
+    assert await assignees({"add_assignee_ids": [user.user.id]}) == {
+        user.user.id,
+        other.user.id,
+    }
+    assert await assignees({"remove_assignee_ids": [user.user.id]}) == {other.user.id}
+
+
+async def test_assignee_ids_is_not_combined_with_adding_or_removing(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    user = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    task = await _create_task(session, user.project)
+
+    response = await client.patch(
+        user.g(f"/tasks/{task.id}"),
+        headers=user.headers,
+        json={"assignee_ids": [], "add_assignee_ids": [user.user.id]},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_unassigning_withdraws_the_pending_digest_item(
@@ -2193,3 +2297,80 @@ async def test_a_blocker_the_reader_cannot_open_is_not_counted(
 
     assert response.status_code == 200
     assert response.json()["blocked_by_open_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Column limits
+# ---------------------------------------------------------------------------
+
+
+async def test_a_full_column_takes_no_more_from_a_person(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """A person can't put a task into a column at its board's limit, by moving
+    one there or adding one; a task already in it still changes and moves
+    within it. A limited column reads as its limit and its open tasks, to
+    those who can open the project."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    held = await create_task(
+        session, a.project, status_category=TaskStatusCategory.in_progress
+    )
+    waiting = await create_task(session, a.project)
+    await session.commit()
+    full = held.task_status_id
+    limited = await client.put(
+        a.g("/layouts/"),
+        params={"tool": "project", "tool_id": a.project.id},
+        json={
+            "kind": "board",
+            "definition": {"limits": [{"status_id": full, "limit": 1}]},
+        },
+        headers=a.headers,
+    )
+    assert limited.status_code == 200, limited.text
+
+    moved = await client.patch(
+        a.g(f"/tasks/{waiting.id}"), headers=a.headers, json={"task_status_id": full}
+    )
+    added = await client.post(
+        a.g("/tasks/"),
+        headers=a.headers,
+        json={"title": "One more", "project_id": a.project.id, "task_status_id": full},
+    )
+    changed = await client.patch(
+        a.g(f"/tasks/{held.id}"), headers=a.headers, json={"title": "Still here"}
+    )
+    within = await client.post(
+        a.g("/tasks/reorder"),
+        headers=a.headers,
+        json={
+            "project_id": a.project.id,
+            "items": [{"id": held.id, "task_status_id": full, "position": 5}],
+        },
+    )
+    outsider = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    fills = [
+        await client.get(
+            a.g("/tasks/column-limits"),
+            params={"project_id": a.project.id},
+            headers=reader.headers,
+        )
+        for reader in (a, outsider)
+    ]
+
+    for refused in (moved, added):
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"] == TaskMessages.STATUS_AT_LIMIT
+    assert changed.status_code == 200, changed.text
+    assert within.status_code == 200, within.text
+    assert [fill.json() for fill in fills] == [
+        [{"project_id": a.project.id, "status_id": full, "limit": 1, "count": 1}],
+        [],
+    ]

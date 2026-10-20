@@ -49,6 +49,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -63,6 +65,7 @@ from app.core import webhook_events
 from app.core.messages import WebhookSubscriptionMessages
 from app.db.guild_standing import InstallContext
 from app.models.platform.user import User
+from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.tenant.webhook_subscription import WebhookSubscription
 from app.schemas.tenant.webhook_subscription import (
     WebhookSubscriptionCreate,
@@ -70,6 +73,7 @@ from app.schemas.tenant.webhook_subscription import (
     WebhookSubscriptionRead,
     WebhookSubscriptionUpdate,
 )
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import webhook_refs
 from app.services.tenant import webhook_subscriptions as subscriptions_service
 from app.services.webhook_target_url import (
@@ -112,7 +116,27 @@ async def _validate_target_url(url: str) -> None:
         ) from exc
 
 
+async def _subscriber_plugins(
+    session: AsyncSession, install_ids: set[int]
+) -> dict[int, str]:
+    """The ``public_id`` of the plug-in behind each install in ``install_ids``,
+    for those that have one: the sector a subscription it registered is named
+    in."""
+    if not install_ids:
+        return {}
+    installs = (
+        await session.exec(select(GuildPlugin).where(GuildPlugin.id.in_(install_ids)))
+    ).all()
+    named: dict[int, str] = {}
+    for install in installs:
+        public_id = await guild_plugins_service.install_public_id(install)
+        if public_id is not None:
+            named[int(install.id)] = public_id
+    return named
+
+
 async def _named(
+    session: AsyncSession,
     rows: list[WebhookSubscription],
     *,
     guild_id: int,
@@ -136,12 +160,29 @@ async def _named(
             for row in rows
             if row.plugin_install_id == actor.install_id and row.created_by is None
         }
+    # An install's own subscriptions are its token's plug-in; any other is read
+    # from its install row.
+    known = (
+        {actor.install_id: actor.client_id} if isinstance(actor, InstallContext) else {}
+    )
+    plugins = known | await _subscriber_plugins(
+        session,
+        {
+            row.plugin_install_id
+            for row in rows
+            if row.id not in own
+            and row.plugin_install_id is not None
+            and row.plugin_install_id not in known
+        },
+    )
     minted = iter(
         await webhook_refs.names_for_subscribers(
             guild_id=guild_id,
             subscribers=[
                 (
-                    row.plugin_install_id,
+                    plugins.get(row.plugin_install_id)
+                    if row.plugin_install_id is not None
+                    else None,
                     row.id,
                     () if row.created_by is None else (row.created_by,),
                 )
@@ -225,6 +266,7 @@ async def create_subscription(
         # A subscription that was just created has no delivery history yet.
         **(
             await _named(
+                session,
                 [subscription],
                 guild_id=guild_context.guild_id,
                 dead_letter_counts={},
@@ -250,7 +292,7 @@ async def list_subscriptions(
         session, subscription_ids=[row.id for row in rows]
     )
     return await _named(
-        rows, guild_id=guild_context.guild_id, dead_letter_counts=counts
+        session, rows, guild_id=guild_context.guild_id, dead_letter_counts=counts
     )
 
 
@@ -285,7 +327,7 @@ async def update_subscription(
         session, subscription_ids=[row.id]
     )
     (read,) = await _named(
-        [row], guild_id=guild_context.guild_id, dead_letter_counts=counts
+        session, [row], guild_id=guild_context.guild_id, dead_letter_counts=counts
     )
     return read
 

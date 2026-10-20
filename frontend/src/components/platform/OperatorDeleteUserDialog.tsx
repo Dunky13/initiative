@@ -85,6 +85,8 @@ const ACTION_META = {
 
 interface OperatorDeleteUserDialogProps extends DialogWithSuccessProps {
   targetUser: OperatorUserRead;
+  /** The operations case the deletion is for, which hears of it. */
+  caseTaskId?: number | null;
 }
 
 export function OperatorDeleteUserDialog({
@@ -92,6 +94,7 @@ export function OperatorDeleteUserDialog({
   onOpenChange,
   onSuccess,
   targetUser,
+  caseTaskId,
 }: OperatorDeleteUserDialogProps) {
   const { t } = useTranslation(["settings", "errors"]);
   const validActions = validActionsFor(targetUser.status);
@@ -122,16 +125,20 @@ export function OperatorDeleteUserDialog({
     isFetching: isCheckingEligibility,
   } = useUserDeletionEligibility(targetUser.id, open);
 
-  const deleteUser = useOperatorDeleteUser(targetUser.id, {
-    onSuccess: (data) => {
-      toast.success(data.message);
-      onSuccess();
-      onOpenChange(false);
+  const deleteUser = useOperatorDeleteUser(
+    targetUser.id,
+    {
+      onSuccess: (data) => {
+        toast.success(data.message);
+        onSuccess();
+        onOpenChange(false);
+      },
+      onError: (error: unknown) => {
+        toast.error(getErrorMessage(error, "settings:operatorDeleteUser.deleteError"));
+      },
     },
-    onError: (error: unknown) => {
-      toast.error(getErrorMessage(error, "settings:operatorDeleteUser.deleteError"));
-    },
-  });
+    caseTaskId
+  );
 
   // Check again once the blocker is resolved inside the community.
   const refreshEligibility = async () => {

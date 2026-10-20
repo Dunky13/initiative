@@ -37,7 +37,7 @@ stored, so the stored form has to be a fixed point.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.core import recurrence
@@ -343,12 +343,56 @@ def _date_slots(tool: Tool, env: dict[str, Any]) -> list[tuple[dict[str, Any], s
     elif tool is Tool.calendar:
         for event in env.get("events") or []:
             if isinstance(event, dict):
-                slots += [(event, "start_at"), (event, "end_at")]
+                slots += [
+                    (event, "start_at"),
+                    (event, "end_at"),
+                    (event, "original_start"),
+                ]
                 slots += _recurrence_slot(event)
     # A date-typed property plans with its date, on whatever carries it.
     for owner, key in _property_lists(env):
         slots += _property_date_slots(owner[key])
     return slots
+
+
+def _history_slots(tool: Tool, env: dict[str, Any]) -> list[tuple[dict[str, Any], str]]:
+    """Every place an item records when something happened to it. A listing
+    carries none of them (:func:`strip_for_listing`); a backup carries them
+    all."""
+    slots: list[tuple[dict[str, Any], str]] = []
+    if tool is Tool.project:
+        project = env.get("project")
+        if isinstance(project, dict):
+            slots.append((project, "archived_at"))
+        for task in env.get("tasks") or []:
+            if isinstance(task, dict):
+                slots += [
+                    (task, "archived_at"),
+                    (task, "created_at"),
+                    (task, "updated_at"),
+                    *_comment_slots(task),
+                ]
+    elif tool is Tool.calendar:
+        for event in env.get("events") or []:
+            if isinstance(event, dict):
+                slots.append((event, "created_at"))
+    elif tool is Tool.wiki:
+        for page in env.get("pages") or []:
+            if isinstance(page, dict):
+                slots += [
+                    (page, "created_at"),
+                    (page, "updated_at"),
+                    *_comment_slots(page),
+                ]
+    return slots
+
+
+def _comment_slots(owner: dict[str, Any]) -> list[tuple[dict[str, Any], str]]:
+    return [
+        (comment, "created_at")
+        for comment in owner.get("comments") or []
+        if isinstance(comment, dict)
+    ]
 
 
 def _parse(value: Any) -> date | datetime | None:
@@ -367,21 +411,90 @@ def _day_of(value: date | datetime) -> date:
 
 
 def shift_dates(tool: Tool, envelope: dict[str, Any], days: int) -> dict[str, Any]:
-    """``envelope`` with every planning date moved by ``days``. Works on a
-    copy; a value that is not a date is left as it was."""
+    """``envelope`` with every date it carries moved by ``days``, the ones it
+    plans with and the ones it records. Works on a copy; a value that is not a
+    date is left as it was."""
     import copy
 
     shifted = copy.deepcopy(envelope)
     if days == 0:
         return shifted
     delta = timedelta(days=days)
-    for owner, key in _date_slots(tool, shifted):
+    done = _move_series(tool, shifted, delta)
+    for owner, key in [*_date_slots(tool, shifted), *_history_slots(tool, shifted)]:
+        parsed = _parse(owner.get(key))
+        if parsed is not None and (id(owner), key) not in done:
+            owner[key] = (parsed + delta).isoformat()
+    return shifted
+
+
+def _move_series(
+    tool: Tool, env: dict[str, Any], delta: timedelta
+) -> set[tuple[int, str]]:
+    """Move each repeating item by about ``delta`` on its own rule
+    (:func:`recurrence.moved`), with the occurrences of its that have items of
+    their own; the dates it moved, by owner and key."""
+    done: set[tuple[int, str]] = set()
+    items = env.get("tasks" if tool is Tool.project else "events") or []
+    keys = (
+        ("due_date", "start_date") if tool is Tool.project else ("start_at", "end_at")
+    )
+    own_rows: dict[str, list[tuple[dict[str, Any], datetime]]] = {}
+    for other in items:
+        if (
+            isinstance(other, dict)
+            and isinstance(ref := other.get("series_ref"), str)
+            and (was := _instant(other.get("original_start"))) is not None
+        ):
+            own_rows.setdefault(ref, []).append((other, was))
+    for item in _repeating(tool, env):
+        key = next((k for k in keys if _instant(item.get(k)) is not None), None)
+        start = _instant(item.get(key)) if key else None
+        if start is None:
+            continue
+        ref = item.get("external_ref")
+        rows = own_rows.get(ref, []) if isinstance(ref, str) else []
+        series = recurrence.moved(
+            item["recurrence"],
+            start,
+            int(item.get("recurrence_shift") or 0),
+            delta,
+            occurrences=[was for _, was in rows],
+        )
+        item["recurrence"] = series.text
+        done |= _moved_by(item, keys, series.start - start)
+        for row, was in rows:
+            by = series.occurrences[was] - was
+            done |= _moved_by(row, (*keys, "original_start"), by)
+    return done
+
+
+def _moved_by(
+    owner: dict[str, Any], keys: tuple[str, ...], by: timedelta
+) -> set[tuple[int, str]]:
+    """``owner``'s dates at ``keys`` moved by ``by``; the slots it moved."""
+    moved: set[tuple[int, str]] = set()
+    for key in keys:
         parsed = _parse(owner.get(key))
         if parsed is not None:
-            owner[key] = (parsed + delta).isoformat()
-    for owner in _repeating(tool, shifted):
-        owner["recurrence"] = recurrence.moved(owner["recurrence"], delta)
-    return shifted
+            owner[key] = (
+                parsed + by
+                if isinstance(parsed, datetime)
+                else parsed + timedelta(days=round(by / timedelta(days=1)))
+            ).isoformat()
+            moved.add((id(owner), key))
+    return moved
+
+
+def _instant(value: Any) -> datetime | None:
+    """A date the envelope keeps, as an instant: a date at midnight UTC, as is
+    a time without a zone. None for anything that is not a date."""
+    parsed = _parse(value)
+    if isinstance(parsed, datetime):
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    if parsed is None:
+        return None
+    return datetime.combine(parsed, datetime.min.time(), timezone.utc)
 
 
 def anchor_dates(tool: Tool, envelope: dict[str, Any]) -> dict[str, Any]:

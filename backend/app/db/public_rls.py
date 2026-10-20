@@ -49,7 +49,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.core.capabilities import Capability, roles_with_capability
 from app.core.config import settings
 from app.db import gucs
-from app.db.authorization import GUILD_ADMIN, SETTINGS_ADMIN, SYSTEM_SESSION
+from app.db.authorization import (
+    GUILD_ADMIN,
+    SETTINGS_ADMIN,
+    SYSTEM_SESSION,
+    live_membership,
+)
 from app.models.platform.user import UserRole
 
 logger = logging.getLogger(__name__)
@@ -137,11 +142,13 @@ def routed_and_own(guild_col: str, user_col: str) -> str:
 
 
 def member_of_guild(col: str = "guild_id") -> str:
-    """The reader is a member of the row's community, by the membership table."""
+    """The reader is a member of the row's community, by the membership table:
+    a member, or a guest whose time has not run out."""
     return (
         "EXISTS (SELECT 1 FROM guild_memberships"
         f" WHERE guild_memberships.guild_id = {{table}}.{col}"
-        f" AND guild_memberships.user_id = {gucs.USER_ID})"
+        f" AND guild_memberships.user_id = {gucs.USER_ID}"
+        f" AND {live_membership('guild_memberships')})"
     )
 
 
@@ -242,8 +249,11 @@ LIVE_WINDOW = (
 )
 CLIENT_SECTOR = "purpose = 'client' AND entity_type = 'user'"
 #: A reference in the routed install's own sector: what an installed plug-in's
-#: request calls somebody, and nothing any other install or purpose holds.
-INSTALL_SECTOR = f"purpose = 'plugin' AND sector_guild_id = {gucs.GUILD_ID} AND sector_id = {gucs.INSTALL_ID}"
+#: request calls somebody, and nothing any other plug-in or purpose holds. The
+#: sector is the plug-in in the routed community, named by the client its token
+#: was issued to, which the install standing holds to the install's
+#: registration.
+INSTALL_SECTOR = f"purpose = 'plugin' AND sector_guild_id = {gucs.GUILD_ID} AND sector_plugin = {gucs.TOKEN_CLIENT_ID}"
 #: A reference an installed plug-in's request mints: in its own sector, live, and
 #: naming a person or its own community.
 INSTALL_SECTOR_MINT = (
@@ -296,6 +306,7 @@ SHARED_ROLES = frozenset(
         "app_dm_reader",
         "app_profile_reader",
         "app_superadmin",
+        "guest_base",
         "plugin_install_base",
         "platform_base",
         "platform_base_ro",
@@ -390,11 +401,14 @@ class Grants:
       inherits.
     * ``plugin_install_base`` — the install floor, which only ``guild_<id>_plugin``
       inherits: an installed plug-in's reach into ``public``.
+    * ``guest_base`` — the guest floor, which only ``guild_<id>_guest`` and
+      ``guild_<id>_guest_ro`` inherit: what a guest's standing and the
+      community's sign-in check read, and nothing else.
 
     The two floors are granted the other way round from the rest: the schema
     default gives each full DML on a new table, and the migration that adds
     the table takes back what it does not want. The seat and install floors
-    take no default privileges at all. Column-scoped grants live in the column
+    take no default privileges at all, nor does the guest floor. Column-scoped grants live in the column
     ACL, not the table ACL, and are asserted separately
     (``security_invariants_test``, ``install_standing_test``).
     """
@@ -405,6 +419,7 @@ class Grants:
     platform_base: Verbs = None
     app_superadmin: Verbs = None
     plugin_install_base: Verbs = None
+    guest_base: Verbs = None
 
 
 @dataclass(frozen=True)
@@ -445,6 +460,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # narrowed to the reader's own grants by access_grants_self.
             app_guild_base=frozenset({SELECT}),
             platform_base=frozenset({SELECT}),
+            # A guest's standing reads their own, as anyone's does.
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # An announcement's pictures. Deployment-wide, like the announcement.
@@ -572,6 +589,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # (app_settings_read, TO public): a notification an install's write sends
             # asks whether the deployment sends mail (migration 20260924_0386).
             plugin_install_base=frozenset({SELECT}),
+            # Whether guests are on, which every guest membership is read under.
+            guest_base=frozenset({SELECT}),
         ),
         # Deployment configuration is written under the tier that manages it
         # (app_settings_owner); every request role reads it through its floor.
@@ -646,6 +665,12 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             platform_base=frozenset({SELECT, INSERT, DELETE}),
         ),
     ),
+    # The demo deployment's copies and the addresses visitors leave
+    # (``DEMO_MODE``): written when a link is opened, when a visitor leaves an
+    # address, and by the pool loop, and read for an account's own copy and for
+    # the sales plug-in, all on the system engine. No request role reaches them.
+    "demo_leads": SharedTable(rls=FORCED_NO_POLICY, grants=Grants(app_admin=DML)),
+    "demo_sandboxes": SharedTable(rls=FORCED_NO_POLICY, grants=Grants(app_admin=DML)),
     # Part of the direct-message transport, per-account and cross-guild (see
     # ``dm_devices``).
     "dm_conversation_members": SharedTable(
@@ -928,18 +953,19 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ),
                     using=routed_or_member("guild_id"),
                 ),
-                # A routed request reads its own community's row.
+                # A routed request reads its own community's row; a guest's,
+                # for the community's sign-in check.
                 Policy(
                     "guild_administration_select_routed",
                     SELECT,
-                    ("app_guild_base",),
+                    ("app_guild_base", "guest_base"),
                     using=routed_or_pam("guild_id"),
                 ),
-                # The operator's list of every community reads each one's caps.
+                # The staff list of every community reads each one's caps.
                 Policy(
                     "guild_administration_guilds_manage_read",
                     SELECT,
-                    Capability.COMMUNITIES_MANAGE,
+                    Capability.COMMUNITIES_READ,
                     using=OPEN,
                 ),
                 # A settings rung routed read-only reads the community it
@@ -969,6 +995,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # caps and plan label (guild_administration_select_routed).
             app_guild_base=frozenset({SELECT}),
             platform_base=frozenset({SELECT}),
+            # The community's sign-in check reads which options it holds.
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # A community's sign-in requirement, read before routing by the gate.
@@ -985,8 +1013,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("platform_base",),
                     using=member_of_guild("guild_id"),
                 ),
-                # A routed request, the seat's included, reads its own community's
-                # rule.
+                # A routed request, the seat's and a guest's included, reads its
+                # own community's rule.
                 Policy(
                     "guild_auth_policies_routed_read",
                     SELECT,
@@ -994,6 +1022,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                         "app_guild_base",
                         "app_guild_base_ro",
                         "app_superadmin",
+                        "guest_base",
                     ),
                     using=routed_or_pam("guild_id"),
                 ),
@@ -1029,6 +1058,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             app_guild_base=frozenset({SELECT}),
             platform_base=frozenset({SELECT}),
             app_superadmin=DML,
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # The pictures a guild is known by — its icon, and the two renditions of its banner.
@@ -1193,6 +1223,14 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("plugin_install_base",),
                     using=f"guild_id = {gucs.GUILD_ID} AND {own_row('user_id')}",
                 ),
+                # A guest reads their own row in the routed community, and no
+                # one else's.
+                Policy(
+                    "guest_reads_own_membership",
+                    SELECT,
+                    ("guest_base",),
+                    using=f"guild_id = {gucs.GUILD_ID} AND {own_row('user_id')}",
+                ),
             ),
         ),
         grants=Grants(
@@ -1211,8 +1249,11 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             platform_base=frozenset({SELECT}),
             # No TABLE grant: a column-scoped SELECT on (guild_id, user_id), which a
             # member token's standing reads for the member's own row in the routed
-            # community (install_reads_its_member; migration 20260924_0385).
+            # community (install_reads_its_member; migration 20260924_0385), and
+            # on (guest_until, role), to ask whether that row is live (0488).
             plugin_install_base=None,
+            # Their own row (guest_reads_own_membership), for the standing.
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # Which of the platform's providers a community signs in through, and the tenant it
@@ -1231,13 +1272,15 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("platform_base",),
                     using=member_of_guild("guild_id"),
                 ),
-                # A routed request reads its own community's connections.
+                # A routed request, a guest's included, reads its own
+                # community's connections.
                 Policy(
                     "guild_provider_connections_routed_read",
                     SELECT,
                     (
                         "app_guild_base",
                         "app_guild_base_ro",
+                        "guest_base",
                     ),
                     using=routed_or_pam("guild_id"),
                 ),
@@ -1255,6 +1298,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # system engine's.
             app_guild_base=frozenset({SELECT}),
             platform_base=frozenset({SELECT}),
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # The tenancy roster: read before a request is routed.
@@ -1285,8 +1329,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ),
                     using=routed_or_member("id"),
                 ),
-                # A routed request, the seat's and a read-only one's included,
-                # reads its own community.
+                # A routed request, the seat's, a read-only one's and a guest's
+                # included, reads its own community.
                 Policy(
                     "guild_select_routed",
                     SELECT,
@@ -1294,17 +1338,18 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                         "app_guild_base",
                         "app_guild_base_ro",
                         "app_superadmin",
+                        "guest_base",
                     ),
                     using=routed_or_pam("id"),
                 ),
                 Policy(
                     "guild_update", UPDATE, ("public",), using=routed_admin_write("id")
                 ),
-                # The operator's list of every community.
+                # The staff list of every community.
                 Policy(
                     "guilds_manage_read",
                     SELECT,
-                    Capability.COMMUNITIES_MANAGE,
+                    Capability.COMMUNITIES_READ,
                     using=OPEN,
                 ),
                 Policy("guilds_pam_read", SELECT, ("public",), using=pam_read("id")),
@@ -1352,6 +1397,9 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # pg_attribute, not relacl, so they are asserted separately
             # (install_standing_test).
             plugin_install_base=None,
+            # The routed community (guild_select_routed), for the standing and
+            # the sign-in check.
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # What outside parties — a payment processor, an installed plug-in — call a user or
@@ -1366,9 +1414,10 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("app_user",),
                     using=CLIENT_SECTOR,
                 ),
-                # An installed plug-in's request reads what its install calls people and
+                # An installed plug-in's request reads what its plug-in calls people and
                 # its community, and mints what it has not been told yet — in its
-                # own sector only (plugin_refs.install_refs; migration 20260924_0383).
+                # own sector only (plugin_refs.install_refs; migrations 20260924_0383,
+                # 20261016_0515).
                 Policy(
                     "install_reads_its_sector",
                     SELECT,
@@ -1564,47 +1613,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # Read by the routed community's gate beside its connections.
             app_guild_base=frozenset({SELECT}),
             platform_base=frozenset({SELECT}),
-        ),
-    ),
-    # Who one account has starred on My Contacts. Personal, cross-guild and
-    # one-directional: the list is the holder's, and it may name people they share no
-    # guild with.
-    "profile_favorites": SharedTable(
-        rls=TableRls(
-            policies=(
-                Policy(
-                    "profile_favorites_self_delete",
-                    DELETE,
-                    ("platform_base",),
-                    using=own_row("user_id"),
-                ),
-                Policy(
-                    "profile_favorites_self_insert",
-                    INSERT,
-                    ("platform_base",),
-                    check=own_row("user_id"),
-                ),
-                Policy(
-                    "profile_favorites_self_read",
-                    SELECT,
-                    ("platform_base",),
-                    using=own_row("user_id"),
-                ),
-            ),
-        ),
-        grants=Grants(
-            # My Contacts stars. The request path owns every write under its own-row
-            # policies; the system engine reads and deletes only for erasure, which has
-            # to clear an anonymized account off other people's lists too — the row
-            # survives the husk, so the FK cascade never fires for it.
-            app_admin=frozenset({SELECT, DELETE}),
-            # A contacts list belongs to a signed-in account, and the bare pre-routing
-            # login role serves nobody in particular.
-            app_user=None,
-            # Platform-tier path only: every policy on these is TO platform_base, and
-            # the migration that added each took the schema default back.
-            app_guild_base=None,
-            platform_base=frozenset({SELECT, INSERT, DELETE}),
+            guest_base=frozenset({SELECT}),
         ),
     ),
     # The picture on a user's profile. Public-plane identity like the row it hangs off:
@@ -1961,6 +1970,27 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             plugin_install_base=None,
         ),
     ),
+    # What the security rules counted, per key and window
+    # (app.services.platform.security_signals). Keys are HMACs, never an
+    # address or an account.
+    "access_grant_activity": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(
+            # The request audit middleware adds a row per request served
+            # through a grant, the grant sweep reads them into its case's
+            # digests, and they go with their grant — all on the system engine.
+            app_admin=frozenset({SELECT, INSERT, DELETE}),
+        ),
+    ),
+    "security_signal_windows": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(
+            # Every instance adds its counts here, stamps a window that crossed
+            # its rule's threshold, and the intake sweep drops windows no rule
+            # can still read — all on the system engine.
+            app_admin=DML,
+        ),
+    ),
     # Spent client-assertion jtis from the plug-in token endpoint. Hangs off a
     # registration, which is platform-wide.
     "plugin_assertion_jtis": SharedTable(
@@ -1974,6 +2004,15 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             app_user=None,
         ),
     ),
+    # The current entitlement statement per (community, listing), from this
+    # deployment's issuer: the signed statement as sent, with its version and
+    # values. Written by the billing verb and read by the plug-in's
+    # pull route, the install gate and the hook delivery, all on the system
+    # engine after the caller is authenticated. No request role reaches it.
+    "plugin_entitlements": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(app_admin=frozenset({SELECT, INSERT, UPDATE})),
+    ),
     # Which community holds which install, and the value a vendor webhook routes to it
     # by. An index over the guild schemas, holding no content.
     "plugin_installs": SharedTable(
@@ -1982,6 +2021,64 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # The install index: kept in step with each community's installs, read to
             # list a plug-in's installs and to route its vendor webhooks.
             app_admin=DML,
+        ),
+    ),
+    # The values each install holds for its plug-in's unique settings, current and
+    # earlier, in one index over every community. Goes with its plugin_installs
+    # row.
+    "plugin_install_claims": SharedTable(
+        rls=TableRls(
+            policies=(
+                # An install claims a value in the transaction that stores it,
+                # for the routed community only; the unique index answers
+                # whether another community holds it, and the community reads
+                # its own rows to tell a value it holds already from one
+                # another holds.
+                Policy(
+                    "plugin_install_claims_claim_routed",
+                    INSERT,
+                    ("app_guild_base",),
+                    check=routed_or_pam("guild_id"),
+                ),
+                Policy(
+                    "plugin_install_claims_read_routed",
+                    SELECT,
+                    ("app_guild_base", "app_guild_base_ro"),
+                    using=routed_or_pam("guild_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The system engine reads them with the install index and drops them
+            # with its row.
+            app_admin=DML,
+            # A routed write claims, and reads its own community's rows alone.
+            app_guild_base=frozenset({SELECT, INSERT}),
+        ),
+    ),
+    # The community hooks waiting to reach a plug-in: written at install,
+    # uninstall and erase, and when a community's status moves, and sent,
+    # retried and swept by the plugin_hooks sweep timer
+    # (app.services.marketplace.community_hooks;
+    # migration 20261016_0515).
+    "plugin_community_hooks": SharedTable(
+        rls=TableRls(
+            policies=(
+                # An install or an uninstall appends its hooks in its own
+                # transaction, for the routed community only.
+                Policy(
+                    "plugin_community_hooks_append_routed",
+                    INSERT,
+                    ("app_guild_base",),
+                    check=routed_or_pam("guild_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The plugin_hooks sweep sends, retries, settles and sweeps them.
+            app_admin=DML,
+            # A routed write appends hooks and never reads one back.
+            app_guild_base=frozenset({INSERT}),
         ),
     ),
     # The settings' stored credentials.
@@ -2004,8 +2101,8 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
     # never per guild — and owner-managed.
     # Everything else is the system engine's. An installed plug-in's standing reads
     # the registration its token was issued to (its column grant is public_id,
-    # listing_uid, enabled, publisher_id, jwks, jwks_uri, base_url and
-    # vendor_ready alone).
+    # listing_uid, enabled, publisher_id, jwks, jwks_uri, base_url, vendor_ready,
+    # kind and operations_only alone).
     "plugin_service_registrations": SharedTable(
         rls=TableRls(
             policies=(
@@ -2028,12 +2125,21 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             # Deployment wiring: read and written on the system engine alone.
             app_user=None,
             # No TABLE grant: a column-scoped SELECT on (public_id, listing_uid,
-            # enabled, publisher_id, jwks, jwks_uri, base_url), for the registration
-            # the install's token names (install_reads_its_registration; migrations
-            # 20260924_0379, 20260924_0387, 20260924_0388 and 20260924_0390). Asserted
-            # in install_standing_test beside the one on guilds.
+            # enabled, publisher_id, jwks, jwks_uri, base_url, vendor_ready, kind,
+            # operations_only), for the registration the install's token names
+            # (install_reads_its_registration; migrations 20260924_0379,
+            # 20260924_0387, 20260924_0388, 20260924_0390, 20260925_0393,
+            # 20261001_0437 and 20261010_0482). Asserted in install_standing_test
+            # beside the one on guilds.
             plugin_install_base=None,
         ),
+    ),
+    # The latest total a plug-in reported per (community, listing, meter, month).
+    # Written by the usage route on the system engine once the installation
+    # token is admitted. No request role reaches it.
+    "plugin_usage": SharedTable(
+        rls=FORCED_NO_POLICY,
+        grants=Grants(app_admin=frozenset({SELECT, INSERT, UPDATE})),
     ),
     # Who publishes the plug-ins in ``plugin_service_registrations``: one row per
     # public_id prefix, with the switch that stops every plug-in under it. Deployment
@@ -2349,6 +2455,33 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             platform_base=frozenset({INSERT}),
             # What an install's write causes is told the same way.
             plugin_install_base=frozenset({INSERT}),
+            # And what a guest's does.
+            guest_base=frozenset({INSERT}),
+        ),
+    ),
+    # When a background sweep next has work in a community: the community, the
+    # sweep and a time, and nothing else (``app.db.timers``).
+    "community_timers": SharedTable(
+        rls=TableRls(
+            policies=(
+                # Armed by a trigger in the community's schema, as a step of
+                # the write that made the work, for that community only.
+                Policy(
+                    "community_timers_arm_routed",
+                    INSERT,
+                    ("app_guild_base", "plugin_install_base", "guest_base"),
+                    check=routed_or_pam("community_id"),
+                ),
+            )
+        ),
+        grants=Grants(
+            # The worker claims what is due, runs it and deletes it.
+            app_admin=DML,
+            app_user=None,
+            # A routed request adds timers and never reads one back.
+            app_guild_base=frozenset({INSERT}),
+            plugin_install_base=frozenset({INSERT}),
+            guest_base=frozenset({INSERT}),
         ),
     ),
     # A device of one account, which spans many guilds.

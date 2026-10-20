@@ -10,13 +10,13 @@ import { useMemo, useRef } from "react";
 import type * as Y from "yjs";
 
 import type { SearchEntityType } from "@/api/generated/initiativeAPI.schemas";
+import { ImageLightboxScope } from "@/components/markdown/ProseImage";
+import { EditorInitiativeContext } from "@/components/ui/editor/context/editor-initiative-context";
 import { DocumentOutlineTracker } from "@/components/ui/editor/DocumentOutline";
 import { COLLAB_EXCLUDED_PROPERTIES } from "@/components/ui/editor/nodes/image-node";
 import type { EditorVariant } from "@/components/ui/editor/variant";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSelfInCommunity } from "@/hooks/useCommunities";
-import { MentionedPeopleScope } from "@/hooks/useMentionedPeople";
-import { SmartChipScope } from "@/hooks/useSmartChips";
 import { getUserColorHsl } from "@/lib/userColor";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { cn } from "@/lib/utils";
@@ -135,11 +135,13 @@ export function Editor({
           </div>
         </div>
       )}
-      {/* Outside the composer on purpose: chips, references and mentions render
-          as Lexical decorators, which the composer portals in itself. Only
-          something above it is an ancestor of all of them. */}
-      <SmartChipScope>
-        <MentionedPeopleScope>
+      {/* Outside the composer on purpose: embeds render as Lexical
+          decorators, which the composer portals in itself. Only something above
+          it is an ancestor of all of them. */}
+      <EditorInitiativeContext.Provider value={initiativeId ?? null}>
+        {/* Above the composer for the same reason: its pictures, being read,
+            open full size and page through the document's others. */}
+        <ImageLightboxScope>
           <LexicalExtensionComposer extension={appExtension} contentEditable={null}>
             <TooltipProvider>
               <Plugins
@@ -189,8 +191,8 @@ export function Editor({
               )}
             </TooltipProvider>
           </LexicalExtensionComposer>
-        </MentionedPeopleScope>
-      </SmartChipScope>
+        </ImageLightboxScope>
+      </EditorInitiativeContext.Provider>
     </div>
   );
 }

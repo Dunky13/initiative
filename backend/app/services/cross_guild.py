@@ -13,10 +13,9 @@ cut from their merge.
 
 from typing import Any, Awaitable, Callable, Optional, Sequence, TypeVar
 
-from sqlalchemy import or_
 from sqlmodel import select
 
-from app.core.guild_auth_options import CommunityAuthOption
+from app.services.membership import live_membership_clause
 from app.services.platform import guild_entitlements
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -27,6 +26,7 @@ from app.db.query import effective_page_size, paginate_sequence
 from app.db.session import set_rls_context
 from app.models.platform.guild import (
     LIVE_STATUS_VALUES,
+    CommunityRole,
     Guild,
     GuildMembership,
 )
@@ -53,6 +53,7 @@ async def member_guild_ids(
     user_id: int,
     *,
     restrict_to: Optional[Sequence[int]] = None,
+    guests: bool = True,
 ) -> list[int]:
     """Guild ids the user belongs to, sorted (optionally intersected with
     ``restrict_to``). Routes to the user-only context so the user's own rows in
@@ -73,21 +74,25 @@ async def member_guild_ids(
     request is carrying a personal API key, which is the same twinning:
     ``/c/{community_id}`` refuses that caller, so an aggregate cannot be the
     way its content is read instead.
-    A key limited to one guild reaches that guild alone, for the same reason."""
+    A key limited to one guild reaches that guild alone, for the same reason.
+
+    ``guests=False`` leaves out the guilds the user is a guest of, for a reader
+    of what a guild offers its members rather than of what was shared with
+    them."""
     await set_rls_context(session, Platform(user_id=user_id))
     conditions = [
         GuildMembership.user_id == user_id,
+        live_membership_clause(),
         Guild.status.in_(LIVE_STATUS_VALUES),
         User.status != UserStatus.suspended,
     ]
+    if not guests:
+        conditions.append(GuildMembership.role != CommunityRole.guest)
     recorded = auth_context.current()
     if recorded.api_key_credential:
         conditions.append(
-            or_(
-                GuildMembership.api_keys_allowed.is_(True),
-                ~guild_entitlements.holds_option(
-                    Guild.id, CommunityAuthOption.restrictions
-                ),
+            guild_entitlements.accepts_api_keys(
+                Guild.id, GuildMembership.api_keys_allowed
             )
         )
     pinned = recorded.api_key_guild_id

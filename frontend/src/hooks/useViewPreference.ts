@@ -4,9 +4,9 @@
  * Drop-in shape for the old `useState` + `getItem`/`setItem` pattern:
  *
  * ```tsx
- * const [filters, setFilters] = useViewPreference<StoredFilters>(
- *   `project:${projectId}:view-filters`,
- *   DEFAULT_FILTERS,
+ * const [mode, setMode] = useViewPreference<CalendarViewMode>(
+ *   CALENDAR_VIEW_MODE_KEY,
+ *   "month",
  * );
  * ```
  *
@@ -16,7 +16,7 @@
  * into one network request. Pending writes are flushed on unmount.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 
 import type { UserViewPreferencesMap } from "@/api/generated/initiativeAPI.schemas";
@@ -53,16 +53,50 @@ const flushWrite = async (scopeKey: string): Promise<void> => {
 };
 
 /**
- * Returns `[value, setValue, { isLoaded }]`.
+ * Set one preference outside the hook: shown at once from the cache, written
+ * after the same pause. For a caller whose keys are not known up front (a
+ * page with one preference per view it keeps).
+ */
+export const writeViewPreference = (
+  queryClient: QueryClient,
+  scopeKey: string,
+  value: unknown
+): void => {
+  queryClient.setQueryData<UserViewPreferencesMap>(VIEW_PREFERENCES_QUERY_KEY, (old) => ({
+    items: { ...(old?.items ?? {}), [scopeKey]: value },
+  }));
+
+  const existing = pendingWrites.get(scopeKey);
+  if (existing) clearTimeout(existing.timer);
+  pendingWrites.set(scopeKey, {
+    value,
+    timer: setTimeout(() => {
+      flushWrite(scopeKey).catch(() => {
+        // Server rejected the write — drop our optimistic state and
+        // resync from disk so the UI matches reality.
+        pendingWrites.delete(scopeKey);
+        void queryClient.invalidateQueries({ queryKey: VIEW_PREFERENCES_QUERY_KEY });
+      });
+    }, WRITE_DEBOUNCE_MS),
+  });
+};
+
+/**
+ * Returns `[value, setValue, { isLoaded, items }]`.
  *
  * `isLoaded` is false until the initial server fetch resolves; consumers
  * that gate other queries on the persisted filters being available can
  * use it to avoid a redundant "fetch-with-defaults then re-fetch" pair.
+ * `items` is the whole map, for a reader that carries an older key over.
  */
 export function useViewPreference<T>(
   scopeKey: string,
   fallback: T
-): [T, (next: T | ((prev: T) => T)) => void, { isLoaded: boolean }] {
+): [
+  T,
+  (next: T | ((prev: T) => T)) => void,
+  { isLoaded: boolean; items: Readonly<Record<string, unknown>> | undefined },
+] {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -83,22 +117,6 @@ export function useViewPreference<T>(
 
   const value = (query.data?.items?.[scopeKey] as T | undefined) ?? fallback;
 
-  const mutation = useMutation({
-    mutationFn: async (scope: string) => flushWrite(scope),
-    onError: (_err, scope) => {
-      // Server rejected the write — drop our optimistic state and
-      // resync from disk so the UI matches reality.
-      pendingWrites.delete(scope);
-      void queryClient.invalidateQueries({ queryKey: VIEW_PREFERENCES_QUERY_KEY });
-    },
-  });
-
-  // TanStack Query stabilises `mutate` independently of the `useMutation`
-  // result object, which churns reference on every status transition. Depend
-  // on `mutate` only so `setValue` stays referentially stable across PUTs;
-  // otherwise every downstream useCallback/useEffect that lists `setValue`
-  // re-runs after each write.
-  const { mutate } = mutation;
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
       // Compute the resolved next value off the *current* cache, not the
@@ -110,20 +128,9 @@ export function useViewPreference<T>(
         ] as T | undefined) ?? fallback;
       const resolved = typeof next === "function" ? (next as (prev: T) => T)(current) : next;
 
-      queryClient.setQueryData<UserViewPreferencesMap>(VIEW_PREFERENCES_QUERY_KEY, (old) => ({
-        items: { ...(old?.items ?? {}), [scopeKey]: resolved },
-      }));
-
-      const existing = pendingWrites.get(scopeKey);
-      if (existing) clearTimeout(existing.timer);
-      pendingWrites.set(scopeKey, {
-        value: resolved,
-        timer: setTimeout(() => {
-          mutate(scopeKey);
-        }, WRITE_DEBOUNCE_MS),
-      });
+      writeViewPreference(queryClient, scopeKey, resolved);
     },
-    [queryClient, scopeKey, fallback, mutate]
+    [queryClient, scopeKey, fallback]
   );
 
   // Flush any pending write on unmount so navigating away doesn't drop
@@ -142,5 +149,5 @@ export function useViewPreference<T>(
   // so they don't block forever.
   const isLoaded = user === null || query.isSuccess || query.isError;
 
-  return [value, setValue, { isLoaded }];
+  return [value, setValue, { isLoaded, items: query.data?.items }];
 }

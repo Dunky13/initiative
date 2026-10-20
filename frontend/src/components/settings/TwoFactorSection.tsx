@@ -45,7 +45,13 @@ type Errand = "enrol" | "regenerate";
  * Three things happen here and each asks for the password again, because each
  * changes how the account is signed into. An account that holds no password —
  * provisioned through an identity provider, or signing in with a passkey — has
- * none to re-check, and the server is what says so.
+ * none to re-check, and the server is what says so; a recent sign-in answers
+ * for it instead, so its setup starts at the code to scan.
+ *
+ * Setup is offered to every account wherever the deployment offers the app:
+ * the code answers a community's or the deployment's ask for a second factor
+ * as well as a sign-in, so an account whose sign-in never asks for it can
+ * still need one.
  *
  * An account with no password keeps a set of recovery codes whether or not it
  * is enrolled here: with nothing to reset, they are how it sets a password
@@ -93,8 +99,15 @@ export const TwoFactorSection = () => {
         setUri(data.otpauth_uri);
         commit("scan");
         setError(null);
+        // Opened here rather than on the click, for the account that is asked
+        // for no password: there is no step to show until the seed arrives.
+        setEnrolOpen(true);
       },
-      onError: (err) => setError(getErrorMessage(err, "settings:twoFactor.enrolError")),
+      onError: (err) => {
+        const message = getErrorMessage(err, "settings:twoFactor.enrolError");
+        setError(message);
+        if (!enrolOpen) toast.error(message);
+      },
     },
   });
 
@@ -187,8 +200,24 @@ export const TwoFactorSection = () => {
   // Re-issuing skips the authenticator app, and skips the password too where
   // there is none to re-check.
   const regenerateSteps: EnrolStep[] = passwordRequired ? ["password", "codes"] : ["codes"];
-  const walked: EnrolStep[] =
-    errand === "regenerate" ? regenerateSteps : ["password", "scan", "codes"];
+  const enrolSteps: EnrolStep[] = passwordRequired
+    ? ["password", "scan", "codes"]
+    : ["scan", "codes"];
+  const walked: EnrolStep[] = errand === "regenerate" ? regenerateSteps : enrolSteps;
+
+  const startEnrol = () => {
+    setErrand("enrol");
+    setPassword("");
+    setError(null);
+    reset();
+    if (!passwordRequired) {
+      // Nothing to re-check: a recent sign-in answers, and the dialog opens on
+      // the code to scan once it is here.
+      begin.mutate({ data: { current_password: null } });
+      return;
+    }
+    setEnrolOpen(true);
+  };
 
   const startRegenerate = () => {
     setErrand("regenerate");
@@ -263,13 +292,7 @@ export const TwoFactorSection = () => {
             {offered ? t("twoFactor.notSetUp") : t("twoFactor.notOffered")}
           </p>
           {offered ? (
-            <Button
-              onClick={() => {
-                setErrand("enrol");
-                setError(null);
-                setEnrolOpen(true);
-              }}
-            >
+            <Button onClick={startEnrol} disabled={begin.isPending}>
               {t("twoFactor.setUp")}
             </Button>
           ) : null}
@@ -316,7 +339,7 @@ export const TwoFactorSection = () => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                required={passwordRequired}
+                required
               />
             </div>
             {error ? <p className="text-destructive text-sm">{error}</p> : null}
@@ -378,17 +401,19 @@ export const TwoFactorSection = () => {
             <DialogDescription>{t("twoFactor.turnOffPrompt")}</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitDisable}>
-            <div className="space-y-2">
-              <Label htmlFor="two-factor-off-password">{t("twoFactor.passwordLabel")}</Label>
-              <Input
-                id="two-factor-off-password"
-                type="password"
-                autoComplete="current-password"
-                value={offPassword}
-                onChange={(event) => setOffPassword(event.target.value)}
-                required={passwordRequired}
-              />
-            </div>
+            {passwordRequired ? (
+              <div className="space-y-2">
+                <Label htmlFor="two-factor-off-password">{t("twoFactor.passwordLabel")}</Label>
+                <Input
+                  id="two-factor-off-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={offPassword}
+                  onChange={(event) => setOffPassword(event.target.value)}
+                  required
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="two-factor-off-code">{t("twoFactor.codeOrRecoveryLabel")}</Label>
               <Input

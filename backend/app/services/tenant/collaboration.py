@@ -182,17 +182,22 @@ class CollaborationRoom:
                 try:
                     self.doc.apply_update(yjs_state)
                     logger.info(
-                        f"{self.resource_type} {self.resource_id}: restored from Yjs state"
+                        "%s %s: restored from Yjs state",
+                        self.resource_type,
+                        self.resource_id,
                     )
                 except Exception as e:
                     logger.warning(
-                        f"{self.resource_type} {self.resource_id}: "
-                        f"failed to restore Yjs state: {e}"
+                        "%s %s: failed to restore Yjs state: %s",
+                        self.resource_type,
+                        self.resource_id,
+                        e,
                     )
             else:
                 logger.info(
-                    f"{self.resource_type} {self.resource_id}: no Yjs state, "
-                    "the first editor will fill it"
+                    "%s %s: no Yjs state, the first editor will fill it",
+                    self.resource_type,
+                    self.resource_id,
                 )
 
             self._initialized = True
@@ -448,8 +453,10 @@ class CollaborationManager:
                 room = CollaborationRoom(guild_id, resource_type, resource_id)
                 self._rooms[key] = room
                 logger.info(
-                    f"Created collaboration room for {resource_type} "
-                    f"{resource_id} in guild {guild_id}"
+                    "Created collaboration room for %s %s in guild %s",
+                    resource_type,
+                    resource_id,
+                    guild_id,
                 )
 
         await room.load_once(session)
@@ -478,7 +485,7 @@ class CollaborationManager:
             room.detached = True
             del self._rooms[key]
             logger.info(
-                f"Removed empty collaboration room for {resource_type} {resource_id}"
+                "Removed empty collaboration room for %s %s", resource_type, resource_id
             )
 
     async def invalidate_room_if_empty(
@@ -506,20 +513,25 @@ class CollaborationManager:
                 if room.is_dirty:
                     # Empty but still owing the database: the sweep has it.
                     logger.info(
-                        f"{resource_type} {resource_id} has unsaved state; keeping its "
-                        "room until it is written"
+                        "%s %s has unsaved state; keeping its room until it is written",
+                        resource_type,
+                        resource_id,
                     )
                     return False
                 room.detached = True
                 del self._rooms[key]
                 logger.info(
-                    f"Invalidated empty collaboration room for {resource_type} {resource_id}"
+                    "Invalidated empty collaboration room for %s %s",
+                    resource_type,
+                    resource_id,
                 )
                 return True
             else:
                 logger.warning(
-                    f"{resource_type} {resource_id} has active collaborators - "
-                    "they may see stale wikilinks until reload"
+                    "%s %s has active collaborators - "
+                    "they may see stale wikilinks until reload",
+                    resource_type,
+                    resource_id,
                 )
                 return False
 
@@ -548,8 +560,14 @@ class CollaborationManager:
         if room.is_dirty:
             try:
                 await self.save(room)
-            except Exception:
-                logger.exception(f"Failed to save {resource_type} {resource_id}")
+            except Exception as exc:
+                logger.error(
+                    "Failed to save %s %s in guild %s (%s)",
+                    resource_type,
+                    resource_id,
+                    guild_id,
+                    type(exc).__name__,
+                )
         await self.remove_room(guild_id, resource_type, resource_id)
 
     async def _write_room(self, room: CollaborationRoom, session: AsyncSession) -> None:
@@ -617,10 +635,13 @@ class CollaborationManager:
                     body=content,
                     fix_content=True,
                 )
-            except Exception:
-                logger.exception(
-                    f"Failed to sync references for {room.resource_type} "
-                    f"{room.resource_id}"
+            except Exception as exc:
+                logger.error(
+                    "Failed to sync references for %s %s in guild %s (%s)",
+                    room.resource_type,
+                    room.resource_id,
+                    room.guild_id,
+                    type(exc).__name__,
                 )
                 fixed = None
             values[spec.content_column] = fixed if fixed else content
@@ -648,7 +669,9 @@ class CollaborationManager:
                 room.mark_persisted(revision)
                 room.stored_digest = _digest(state)
                 logger.debug(
-                    f"Persisted Yjs state for {room.resource_type} {room.resource_id}"
+                    "Persisted Yjs state for %s %s",
+                    room.resource_type,
+                    room.resource_id,
                 )
             else:
                 # The row was not reachable on this session — deleted, or the
@@ -656,13 +679,18 @@ class CollaborationManager:
                 # written, and the room stays dirty rather than reporting a
                 # save that did not happen.
                 logger.warning(
-                    f"Persisting {room.resource_type} {room.resource_id} in guild "
-                    f"{room.guild_id} matched no row; leaving it unsaved"
+                    "Persisting %s %s in guild %s matched no row; leaving it unsaved",
+                    room.resource_type,
+                    room.resource_id,
+                    room.guild_id,
                 )
         except Exception as e:
             logger.error(
-                f"Failed to persist Yjs state for {room.resource_type} "
-                f"{room.resource_id}: {e}"
+                "Failed to persist Yjs state for %s %s in guild %s (%s)",
+                room.resource_type,
+                room.resource_id,
+                room.guild_id,
+                type(e).__name__,
             )
             await session.rollback()
 
@@ -686,9 +714,13 @@ class CollaborationManager:
         for room in targets:
             try:
                 await self.save(room)
-            except Exception:
-                logger.exception(
-                    f"Sweep failed to persist {room.resource_type} {room.resource_id}"
+            except Exception as exc:
+                logger.error(
+                    "Sweep failed to persist %s %s in guild %s (%s)",
+                    room.resource_type,
+                    room.resource_id,
+                    room.guild_id,
+                    type(exc).__name__,
                 )
         async with self._lock:
             idle = [key for key, room in self._rooms.items() if room.is_empty()]
@@ -715,8 +747,10 @@ class CollaborationManager:
                 await task
         try:
             await self.persist_dirty_rooms()
-        except Exception:
-            logger.exception("final collaboration persistence sweep failed")
+        except Exception as exc:
+            logger.error(
+                "final collaboration persistence sweep failed (%s)", type(exc).__name__
+            )
 
     async def _persistence_loop(self) -> None:
         """Write changed rooms on an interval.
@@ -729,8 +763,10 @@ class CollaborationManager:
             await asyncio.sleep(self._persistence_interval)
             try:
                 await self.persist_dirty_rooms()
-            except Exception:
-                logger.exception("collaboration persistence sweep failed")
+            except Exception as exc:
+                logger.error(
+                    "collaboration persistence sweep failed (%s)", type(exc).__name__
+                )
 
     def has_active_collaborators(
         self, guild_id: int, resource_type: str, resource_id: int

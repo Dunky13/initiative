@@ -87,6 +87,7 @@
     "noAccess": "You do not have access to any features in this initiative. Contact an initiative manager for assistance.",
     "member_one": "{{count}} member",
     "member_other": "{{count}} members",
+    "guest": "Guest",
     "online_one": "{{count}} online",
     "online_other": "{{count}} online",
     "initiativeSettings": "Initiative settings",
@@ -272,7 +273,14 @@
       "turnedOffHeading": "Turned off for this initiative",
       "turnedOffNote": "These grant nothing until the tool is turned back on under Details. Nothing in them is lost meanwhile."
     },
-    "managerDescription": "Managers run this initiative — its members, its roles and its settings — and can view and create in every tool. Which individual items they can open is still decided by how each one is shared."
+    "managerDescription": "Managers run this initiative — its members, its roles and its settings — and can view and create in every tool. Which individual items they can open is still decided by how each one is shared.",
+    "layoutsTab": "Layouts",
+    "layouts": {
+      "heading": "Layouts",
+      "description": "How each tool in this initiative draws what it holds: each layout, when it was last changed, and which list a project opens on. They are changed in each one's editor.",
+      "noProjects": "This initiative has no projects yet.",
+      "loadError": "Couldn't load the layouts."
+    }
   },
   "advancedTools": "Tools",
   "advancedToolsDescription": "Choose what this initiative is made of. Projects and files are on to begin with; the rest are yours to add.",

@@ -34,7 +34,13 @@ Run standalone with ``python -m app.db.bootstrap``.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import logging
+import os
+import stringprep
+import unicodedata
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -135,7 +141,67 @@ def login_roles() -> tuple[LoginRole, LoginRole, LoginRole]:
 #
 # Role DDL takes no bind parameters, so the name and password travel as
 # transaction-local GUCs and are quoted server-side with format(%I) / format(%L)
-# — the same shape the baseline migration's role DDL uses.
+# — the same shape the baseline migration's role DDL uses. The password goes as
+# the SCRAM-SHA-256 verifier Postgres stores (:func:`scram_verifier`), as
+# psql's ``\password`` sends it.
+
+#: The iteration count of a verifier, Postgres's own ``scram_iterations``
+#: default.
+SCRAM_ITERATIONS = 4096
+
+#: The characters RFC 4013 refuses in a prepared password.
+_SASLPREP_PROHIBITED = (
+    stringprep.in_table_c12,
+    stringprep.in_table_c21,
+    stringprep.in_table_c22,
+    stringprep.in_table_c3,
+    stringprep.in_table_c4,
+    stringprep.in_table_c5,
+    stringprep.in_table_c6,
+    stringprep.in_table_c7,
+    stringprep.in_table_c8,
+    stringprep.in_table_c9,
+    stringprep.in_table_a1,
+)
+
+
+def _saslprep(password: str) -> str:
+    """``password`` as Postgres prepares it before hashing (``pg_saslprep``,
+    RFC 4013): an ASCII password as it is, and one the profile refuses as
+    given."""
+    if password.isascii():
+        return password
+    mapped = "".join(
+        " " if stringprep.in_table_c12(char) else char
+        for char in password
+        if not stringprep.in_table_b1(char)
+    )
+    prepared = unicodedata.normalize("NFKC", mapped)
+    if any(test(char) for char in prepared for test in _SASLPREP_PROHIBITED):
+        return password
+    right_to_left = [stringprep.in_table_d1(char) for char in prepared]
+    if any(right_to_left) and (
+        any(stringprep.in_table_d2(char) for char in prepared)
+        or not (right_to_left[0] and right_to_left[-1])
+    ):
+        return password
+    return prepared
+
+
+def scram_verifier(password: str) -> str:
+    """``password`` as the SCRAM-SHA-256 verifier Postgres keeps for it
+    (RFC 5802, RFC 7677), with a fresh salt. Postgres stores a password given
+    in this form as it is."""
+    salt = os.urandom(16)
+    salted = hashlib.pbkdf2_hmac(
+        "sha256", _saslprep(password).encode(), salt, SCRAM_ITERATIONS
+    )
+    client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+    server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
+    stored_key = hashlib.sha256(client_key).digest()
+    encoded = [base64.b64encode(raw).decode() for raw in (salt, stored_key, server_key)]
+    return f"SCRAM-SHA-256${SCRAM_ITERATIONS}:{encoded[0]}${encoded[1]}:{encoded[2]}"
+
 
 _ENSURE_ROLE = """
 DO $$
@@ -549,7 +615,7 @@ def _ensure_role_steps(role: LoginRole) -> list[_Step]:
         ("app._bootstrap_role", role.name),
         ("app._bootstrap_attrs", role.attributes),
         ("app._bootstrap_attrs_superuser", role.attributes_if_superuser),
-        ("app._bootstrap_pw", role.password or ""),
+        ("app._bootstrap_pw", scram_verifier(role.password) if role.password else ""),
         _ENSURE_ROLE,
     ]
 
@@ -614,7 +680,10 @@ async def _bootstrap_lock(url: str):
     base = make_url(url)
     for database in _MAINTENANCE_DATABASES:
         engine = create_async_engine(
-            base.set(database=database), poolclass=NullPool, echo=False
+            base.set(database=database),
+            poolclass=NullPool,
+            echo=False,
+            hide_parameters=True,
         )
         try:
             conn = await engine.connect()
@@ -902,7 +971,9 @@ async def ensure_database_bootstrap(
         return await _verify_only()
 
     roles = login_roles()
-    engine = create_async_engine(url, poolclass=NullPool, echo=False)
+    engine = create_async_engine(
+        url, poolclass=NullPool, echo=False, hide_parameters=True
+    )
     try:
         async with _bootstrap_lock(url), engine.begin() as conn:
             await advisory_lock(conn, LockNamespace.DATABASE_BOOTSTRAP)
@@ -1014,7 +1085,9 @@ async def ensure_set_config_narrowed(bootstrap_url: str | None = None) -> bool:
     url = bootstrap_url or settings.DATABASE_URL_BOOTSTRAP
     holders = set_config_holders()
     if url:
-        engine = create_async_engine(url, poolclass=NullPool, echo=False)
+        engine = create_async_engine(
+            url, poolclass=NullPool, echo=False, hide_parameters=True
+        )
         try:
             async with _bootstrap_lock(url), engine.begin() as conn:
                 if await conn.scalar(_IS_SUPERUSER) and await conn.scalar(

@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.initiative import InitiativeRoleModel
-from app.core.messages import RelationshipMessages, SharingMessages
+from app.core.messages import RelationshipMessages
 from app.core.tools import Tool
 from app.testing import (
     Actor,
@@ -243,6 +243,8 @@ async def test_add_queue_item(client: AsyncClient, acting_user):
     assert data["label"] == "Player 1"
     assert data["position"] == 15
     assert data["color"] == "#FF0000"
+    # Who added it, so whoever wrote it is not offered a report of it.
+    assert data["created_by"] == a.user.id
 
     # A queue item names only someone who can open the queue.
     outsider = await acting_user(guild_role=CommunityRole.member, guild=a.guild)
@@ -323,6 +325,21 @@ async def test_update_queue_item(client: AsyncClient, acting_user):
         a.g(f"/queue-items/{item_data['id']}"), headers=a.headers, json={"notes": None}
     )
     assert cleared.json()["notes"] is None
+
+    # Notes written over others than these are refused, as a description is.
+    stale = await client.patch(
+        a.g(f"/queue-items/{item_data['id']}"),
+        headers=a.headers,
+        json={"notes": "Mine", "notes_base": "Concentrating"},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "DESCRIPTION_CHANGED"
+    current = await client.patch(
+        a.g(f"/queue-items/{item_data['id']}"),
+        headers=a.headers,
+        json={"notes": "Mine", "notes_base": None},
+    )
+    assert current.json()["notes"] == "Mine"
 
 
 async def test_delete_queue_item(client: AsyncClient, acting_user):
@@ -829,7 +846,7 @@ async def test_sharing_does_not_reach_past_the_role_gate(
     )
 
     assert response.status_code == 422, response.text
-    assert response.json()["detail"] == SharingMessages.grantee_lacks_tool(Tool.queue)
+    assert response.json() == Tool.queue.grantee_lacks_access().body
 
     # Nothing was written, and the queue is still not theirs to open.
     seen = await client.get(b.g(f"/queues/{queue_data['id']}"), headers=b.headers)

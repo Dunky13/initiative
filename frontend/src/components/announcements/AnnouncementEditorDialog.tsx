@@ -247,7 +247,7 @@ export const AnnouncementEditorDialog = ({
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-pair gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="announcement-category">{t("operator.fields.category")}</Label>
                   <Select
@@ -299,7 +299,7 @@ export const AnnouncementEditorDialog = ({
                   </p>
                 </div>
 
-                <div className="space-y-2 sm:col-span-2">
+                <div className="col-span-full space-y-2">
                   <Label htmlFor="announcement-accounts">
                     {t("operator.fields.audienceAccounts")}
                   </Label>
@@ -347,7 +347,7 @@ export const AnnouncementEditorDialog = ({
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-pair gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="announcement-dismissals">
                     {t("operator.fields.dismissalsRequired")}
@@ -396,8 +396,8 @@ export const AnnouncementEditorDialog = ({
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2 sm:col-span-2">
+              <div className="grid grid-cols-pair gap-4">
+                <div className="col-span-full space-y-2">
                   {/* Both times are entered and shown in whatever timezone this
                       browser is in, and stored as an instant (UTC) — so a
                       notice published "at 9am" appears at the author's 9am, not
@@ -476,7 +476,7 @@ export const AnnouncementEditorDialog = ({
                       }))
                     }
                   >
-                    <Plus className="mr-1 h-4 w-4" />
+                    <Plus className="h-4 w-4" />
                     {t("operator.addSection")}
                   </Button>
                 </div>
@@ -505,7 +505,7 @@ export const AnnouncementEditorDialog = ({
 
           <DialogFooter className="shrink-0 border-t pt-4">
             <Button type="button" variant="ghost" onClick={() => setPreviewOpen(true)}>
-              <Eye className="mr-1 h-4 w-4" />
+              <Eye className="h-4 w-4" />
               {t("operator.preview")}
             </Button>
             <div className="flex-1" />
@@ -517,7 +517,7 @@ export const AnnouncementEditorDialog = ({
               onClick={() => void handleSave()}
               disabled={saving || triggerProblem !== null}
             >
-              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {t("common:save")}
             </Button>
           </DialogFooter>
@@ -651,9 +651,9 @@ const SectionEditor = ({
             onSelect={handleFile}
           >
             {upload.isPending ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <ImagePlus className="mr-1 h-4 w-4" />
+              <ImagePlus className="h-4 w-4" />
             )}
             {section.image_url ? t("operator.replaceImage") : t("operator.addImage")}
           </ImagePicker>

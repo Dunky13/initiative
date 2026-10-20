@@ -250,15 +250,20 @@ class TestConfiguring:
 
 
 class TestUninstalling:
+    @pytest.mark.parametrize("erase", [False, True])
     async def test_removal_records_what_went_with_it(
-        self, client: AsyncClient, acting_user, calendar_plugin, capfd
+        self, client: AsyncClient, acting_user, calendar_plugin, capfd, erase
     ):
+        """Including whether the community asked for the plug-in's data to be
+        erased with it."""
         a = await acting_user(guild_role=CommunityRole.superadmin)
         plugin = await _install(client, a)
         capfd.readouterr()
 
         response = await client.delete(
-            a.g(f"/plugins/{plugin['id']}"), headers=a.headers
+            a.g(f"/plugins/{plugin['id']}"),
+            headers=a.headers,
+            params={"erase": "true"} if erase else {},
         )
         assert response.status_code == 204, response.text
 
@@ -270,4 +275,5 @@ class TestUninstalling:
             "listing_uid": CALENDAR_PLUGIN_UID,
             "connections": 0,
             "consents": 0,
+            "erase": erase,
         }

@@ -274,3 +274,12 @@ async def test_a_long_document_keeps_its_blocks_when_one_is_added():
 async def test_content_the_editor_refuses_is_an_error():
     with pytest.raises(EditorError):
         await editor_engine.bootstrap(_document({"type": "no-such-node", "version": 1}))
+
+
+async def test_an_edit_the_editor_refuses_is_an_error():
+    state = await editor_engine.bootstrap(_paragraphs("A"))
+
+    with pytest.raises(EditorError):
+        await editor_engine.apply(
+            state, _document({"type": "no-such-node", "version": 1})
+        )

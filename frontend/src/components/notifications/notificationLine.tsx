@@ -95,7 +95,9 @@ export const notificationLink = (notification: NotificationRead): string | null 
   switch (notification.type) {
     // These hold ids and nothing else, so they address the `/go` resolver,
     // which reads the entity and works out where it lives.
-    case "task_assignment": {
+    case "task_assignment":
+    case "case_opened":
+    case "case_replied": {
       const taskId = Number(data.task_id);
       if (Number.isFinite(taskId) && data.task_id != null) {
         return entityRefRoute("task", taskId);
@@ -122,8 +124,6 @@ export const notificationLink = (notification: NotificationRead): string | null 
         ? buildCommunityPath(communityId, "/settings/data")
         : null;
     }
-    case "user_pending_approval":
-      return "/settings";
     case "direct_message":
       // The page opens the conversation itself: the thread is read out of this
       // device's own store, so there is nothing for a route param to fetch.
@@ -139,6 +139,8 @@ export const notificationLink = (notification: NotificationRead): string | null 
     case "mention":
     case "comment_reply":
     case "comment_on_resource":
+    case "subscription_activity":
+    case "assigned_activity":
       return entityRefFromData(data);
     case "post_published":
       if (typeof data.post_id === "number") {
@@ -153,7 +155,6 @@ export const notificationLink = (notification: NotificationRead): string | null 
       // (the queue). It's a platform route, not community-scoped.
       return "/settings/operator/access";
     case "event_invitation":
-    case "event_updated":
     case "event_cancelled":
     case "event_rsvp":
     case "event_reminder": {
@@ -227,6 +228,18 @@ const reactionSummary = (
 // A comment notification rolls up every comment on the same thing, so the line
 // names who and how many rather than repeating per comment. Rows written before
 // the rollup carry only ``commenter_name``, which reads here as a rollup of one.
+/** What a subscription line can say happened, as the feed names it. */
+const SUBSCRIPTION_VERBS = [
+  "created",
+  "completed",
+  "commented",
+  "edited",
+  "moved",
+  "scheduled",
+  "published",
+  "reacted",
+] as const;
+
 export const commentSummary = (
   data: Record<string, unknown>
 ): { name: string; others: number; count: number } => {
@@ -270,10 +283,6 @@ export const notificationText = (
         projectName: data.project_name ?? t("notifications.plain.project"),
         initiativeName: data.initiative_name ?? t("notifications.plain.initiativeIn"),
       });
-    case "user_pending_approval":
-      return t("notifications.userPendingApproval", {
-        email: data.email ?? t("notifications.plain.user"),
-      });
     case "mention":
       // A comment, a task's description, or a file.
       if (data.comment_id) {
@@ -311,6 +320,17 @@ export const notificationText = (
           : t("notifications.commentsOnResource", { name, count, entityName });
       }
       return t("notifications.commentOnResource", { commenterName: name, entityName });
+    }
+    case "subscription_activity":
+    case "assigned_activity": {
+      // One line per subscribed item: who changed it, and how, or how many did.
+      const { name, others } = commentSummary(data);
+      const entityName = data.entity_name ?? t("notifications.plain.item");
+      if (others > 0) {
+        return t("notifications.subscriptionMulti", { name, count: others, entityName });
+      }
+      const verb = SUBSCRIPTION_VERBS.find((each) => each === data.verb) ?? "edited";
+      return t(`notifications.subscription.${verb}`, { name, entityName });
     }
     case "post_published":
       return t("notifications.postPublished", {
@@ -397,16 +417,6 @@ export const notificationText = (
         organizer: data.organizer_name ?? t("notifications.someone"),
         eventTitle: data.event_title ?? t("notifications.plain.event"),
       });
-    case "event_updated":
-      return data.time_changed
-        ? t("notifications.eventRescheduled", {
-            editor: data.editor_name ?? t("notifications.someone"),
-            eventTitle: data.event_title ?? t("notifications.plain.event"),
-          })
-        : t("notifications.eventUpdated", {
-            editor: data.editor_name ?? t("notifications.someone"),
-            eventTitle: data.event_title ?? t("notifications.plain.event"),
-          });
     case "event_cancelled":
       return t("notifications.eventCancelled", {
         canceller: data.canceller_name ?? t("notifications.someone"),
@@ -452,6 +462,13 @@ export const notificationText = (
       });
     case "avatar_removed":
       return t("notifications.avatarRemoved");
+    // Names what went, never who took it.
+    case "profile_field_cleared": {
+      const field = typeof data.field === "string" ? data.field : "other";
+      return t(`notifications.profileCleared.${field}`, {
+        defaultValue: t("notifications.profileCleared.other"),
+      });
+    }
     case "account_suspended":
       return typeof data.reason === "string" && data.reason.trim()
         ? t("notifications.accountSuspendedWithReason", { reason: data.reason.trim() })
@@ -502,9 +519,41 @@ export const notificationText = (
           : "notifications.communityTrialEnded",
         { community: typeof data.community === "string" ? data.community : "" }
       );
+    // Never names the moderator, or who reported it.
+    case "moderation_removal": {
+      const reason = typeof data.reason === "string" ? data.reason : "";
+      return reason === "illegal"
+        ? t("notifications.moderationRemovedLegal")
+        : t("notifications.moderationRemoved", {
+            reason: t(`moderation:removalReasons.${reason}`, { defaultValue: reason }),
+          });
+    }
+    case "moderation_warning":
+      return t("notifications.moderationWarned", {
+        message: typeof data.message === "string" ? data.message : "",
+      });
+    // A case's title is read when the line is; the stream is what it names.
+    case "case_opened":
+      return t("notifications.caseOpened", {
+        stream: t(`notifications.caseStreams.${String(data.stream)}`, {
+          defaultValue: String(data.stream ?? ""),
+        }),
+        taskTitle: data.task_title ?? t("notifications.plain.task"),
+      });
+    case "case_replied": {
+      const { name, count } = commentSummary(data);
+      const taskTitle = data.task_title ?? t("notifications.plain.taskObject");
+      return count > 1
+        ? t("notifications.caseRepliedMany", { name, count, taskTitle })
+        : t("notifications.caseReplied", { name, taskTitle });
+    }
     case "ticket_updated": {
       const subject = typeof data.subject === "string" && data.subject ? data.subject : null;
       const state = typeof data.state === "string" ? data.state : "";
+      // Feedback closed is feedback read, whether or not the team wrote.
+      if (data.stream === "feedback" && state === "closed") {
+        return t("notifications.feedbackRead");
+      }
       // A reply is the news where there is one; the state says the rest.
       const key = data.replied
         ? "notifications.ticketReplied"

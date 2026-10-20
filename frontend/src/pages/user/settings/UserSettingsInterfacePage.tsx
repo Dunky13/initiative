@@ -162,7 +162,7 @@ function ThemePicker({
     <div
       role="radiogroup"
       aria-label={t("interface.colorTheme")}
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      className="grid grid-cols-fill-56/3 gap-3"
     >
       {getThemeList().map((theme) => {
         const selected = theme.id === value;
@@ -275,7 +275,7 @@ export const UserSettingsInterfacePage = ({ user, acceptUser }: UserSettingsInte
       if (variables.recent_tabs_limit !== undefined) {
         // The header tabs bar caches recents for 30s; refetch so a higher
         // limit surfaces more items immediately.
-        void invalidate(q.recents());
+        void invalidate(q.personalItems());
       }
       if (variables.locale) {
         void i18n.changeLanguage(variables.locale);

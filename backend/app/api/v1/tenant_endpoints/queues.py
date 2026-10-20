@@ -11,7 +11,6 @@ import logging
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
     WebSocket,
     status,
 )
@@ -22,6 +21,7 @@ from app.core.relationships import RelationshipType
 from app.core.search import SearchEntityType
 from app.services.tenant import properties as properties_service
 from app.services.tenant import attachments as attachments_service
+from app.services.tenant import overwrites
 from app.services.tenant import relationships
 from app.api.actor_route import ActorRoute
 from app.api.deps import (
@@ -57,6 +57,7 @@ from app.core.tools import Tool
 from app.db.session import require_actor_context
 from app.services.tenant import queues as queues_service
 from app.services.tenant import named_people
+from app.services.tenant import plugin_metadata
 from app.services.tenant import tags as tags_service
 from app.services.content_sockets import sockets
 from app.api.content_socket import serve_tool_stream
@@ -73,11 +74,15 @@ async def _serialized_queue(
         [item.id for item in active_items(queue)],
         relationship_type=RelationshipType.attached,
     )
+    items = active_items(queue)
     return serialize_queue(
         queue,
         context=require_actor_context(session),
         user_id=user_id,
         attachment_counts=counts,
+        plugin_values=await plugin_metadata.values_on(
+            session, "queue_item", {item.id: queue.initiative_id for item in items}
+        ),
     )
 
 
@@ -90,7 +95,14 @@ async def _serialized_queue_item(
         [item.id],
         relationship_type=RelationshipType.attached,
     )
-    return serialize_queue_item(item, attachment_count=counts.get(item.id, 0))
+    values = await plugin_metadata.values_on(
+        session, "queue_item", {item.id: cast(Queue, item.queue).initiative_id}
+    )
+    return serialize_queue_item(
+        item,
+        attachment_count=counts.get(item.id, 0),
+        plugin_values=values.get(item.id, ()),
+    )
 
 
 router = APIRouter(route_class=ActorRoute)
@@ -131,10 +143,7 @@ async def read_after_write(
         session, queue_id, populate_existing=True
     )
     if not queue:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=Tool.queue.not_found_code,
-        )
+        raise Tool.queue.not_found()
     return await _serialized_queue(session, queue, user_id=guild_context.user_id)
 
 
@@ -360,8 +369,10 @@ async def update_queue_item(
 ) -> QueueItemRead:
     """Update a queue item. Requires write access on the queue."""
     item = await resource_access.load_child(session, QueueItem, item_id, access="write")
+    if "notes_base" in item_in.model_fields_set:
+        await overwrites.refuse_written_over(session, item, "notes", item_in.notes_base)
     update_data = item_in.model_dump(
-        exclude_unset=True, exclude={"tag_ids", "properties"}
+        exclude_unset=True, exclude={"tag_ids", "properties", "notes_base"}
     )
     if update_data.get("user_id") is not None:
         await named_people.require_readers(

@@ -14,7 +14,9 @@ picks the change up within the TTL.
 
 Whether a registration is live is computed by the database with the one rule
 in :func:`~app.models.platform.plugin_service_registration.registration_live_sql`,
-the same one the install standing asks, and carried on the snapshot.
+the same one the install standing asks, and carried on the snapshot. Whether
+it is live in one community also asks whether it is limited to the operations
+community, which the snapshot carries beside it (:meth:`RegistrationSnapshot.live_in`).
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ from sqlalchemy import literal_column
 from sqlmodel import select
 
 from app.db import session as db_session
+from app.models.platform.app_setting import AppSetting
+from app.models.platform.marketplace import MarketplaceListing
 from app.models.platform.plugin_service_registration import (
     PluginServiceRegistration,
     RegistrationKind,
@@ -75,7 +79,7 @@ class RegistrationSnapshot:
     base_url: str
     #: Where a person's browser loads its surfaces, when the plug-in answers there
     #: rather than at ``base_url``. Read through :attr:`browser_base`.
-    embed_origin: Optional[str]
+    page_origin: Optional[str]
     #: Origins this plug-in's surfaces may be framed from and postMessage'd to.
     allowed_origins: tuple[str, ...]
     #: Public verification keys this plug-in signs with — its client assertions at
@@ -83,7 +87,9 @@ class RegistrationSnapshot:
     #: snapshot is built rather than per token.
     #: Empty on a plug-in that has not been provisioned with a pasted set.
     keys: Mapping[str, Any]
-    #: The deployment installs this plug-in in every guild (§7.7).
+    #: The deployment installs this plug-in in every guild (§7.7): the
+    #: registration says so, or the package serving its listing does. The
+    #: package's word adds the flag and never clears it.
     mandatory: bool
     #: The operator's kill switch on the registration itself.
     enabled: bool
@@ -101,11 +107,29 @@ class RegistrationSnapshot:
     #: Initiative makes this plug-in's calls itself, from its manifest; it has no
     #: location and no keys.
     declarative: bool = False
+    #: The plug-in is for the deployment's operations community alone.
+    operations_only: bool = False
+    #: The deployment's operations community when the snapshot was loaded.
+    operations_guild_id: Optional[int] = None
 
     @property
     def browser_base(self) -> str:
         """The base to build an address a browser will be sent to."""
         return browser_base(self)
+
+    def serves(self, guild_id: Optional[int]) -> bool:
+        """Whether this plug-in is for community ``guild_id``: any community,
+        unless it is limited to the operations community and that is another
+        one, or none is named."""
+        return not self.operations_only or (
+            guild_id is not None and guild_id == self.operations_guild_id
+        )
+
+    def live_in(self, guild_id: Optional[int]) -> bool:
+        """Whether anything may flow through this plug-in in community
+        ``guild_id``: the snapshot's spelling of ``registration_live_sql``
+        asked for that community."""
+        return self.live and self.serves(guild_id)
 
 
 def _parse_keys(row: PluginServiceRegistration) -> Mapping[str, Any]:
@@ -156,41 +180,62 @@ async def load_registrations(*, force: bool = False) -> dict[str, RegistrationSn
 
     Runs on the system engine: the table carries no request-path grant beyond
     the install standing's few columns, so this is the reader everything else
-    shares. One statement joins each registration to its publisher.
+    shares. One statement joins each registration to its publisher and its
+    listing, and reads the operations community beside it.
     """
+    from app.services.marketplace.catalog import REGISTRY_SOURCE
+    from app.services.marketplace.tuf_registry import configured_root_is_builtin
+
     global _cache, _loaded_at
     if not force and _cache is not None:
         if (time.monotonic() - _loaded_at) < CACHE_TTL_SECONDS:
             return _cache
 
+    operations = (
+        select(AppSetting.operations_guild_id)
+        .where(AppSetting.id == 1)
+        .scalar_subquery()
+    )
     async with db_session.SystemSessionLocal() as session:
         rows = (
             await session.exec(
                 select(
                     PluginServiceRegistration,
                     live_registration_clause().label("live"),
+                    operations.label("operations_guild_id"),
+                    MarketplaceListing.mandatory,
+                    MarketplaceListing.source,
                 )
                 .join(Publisher, Publisher.id == PluginServiceRegistration.publisher_id)
+                .outerjoin(
+                    MarketplaceListing,
+                    MarketplaceListing.uid == PluginServiceRegistration.listing_uid,
+                )
                 .order_by(PluginServiceRegistration.public_id)
             )
         ).all()
+    # The package's terms hold only under the shipped root.
+    packaged = configured_root_is_builtin()
 
     snapshots = {
         row.public_id: RegistrationSnapshot(
             public_id=row.public_id,
             listing_uid=row.listing_uid,
             base_url=row.base_url or "",
-            embed_origin=row.embed_origin,
+            page_origin=row.page_origin,
             allowed_origins=tuple(row.allowed_origins or []),
             keys=_parse_keys(row),
-            mandatory=bool(row.mandatory),
+            mandatory=bool(row.mandatory)
+            or (packaged and bool(signed) and source == REGISTRY_SOURCE),
             enabled=bool(row.enabled),
             live=bool(live),
             scope_ceiling=tuple(sorted(row.scope_ceiling or [])),
             jwks_uri=row.jwks_uri,
             declarative=row.kind == RegistrationKind.DECLARATIVE,
+            operations_only=row.operations_only,
+            operations_guild_id=operations_guild_id,
         )
-        for row, live in rows
+        for row, live, operations_guild_id, signed, source in rows
     }
     _cache = snapshots
     _loaded_at = time.monotonic()
@@ -238,8 +283,7 @@ def service_public_id(
     """The plug-in a pinned definition names, if it names one.
 
     Only a ``service`` plug-in has one — a tool instance mounts one of this build's
-    own tools and an embed opens a configured surface, and neither has a
-    container behind it. A container names itself in its ``service`` block; a
+    own tools and has no container behind it. A container names itself in its ``service`` block; a
     declarative plug-in has none, and is its listing's ``listing_public_id``.
     """
     if is_declarative(definition):
@@ -309,11 +353,17 @@ def _has_registration(definition: Mapping[str, Any] | None) -> bool:
 
 
 async def install_state(
-    definition: dict[str, Any] | None, *, listing_uid: Optional[str] = None
+    definition: dict[str, Any] | None,
+    *,
+    guild_id: Optional[int],
+    listing_uid: Optional[str] = None,
 ) -> InstallState:
-    """The registration-derived state of one install.
+    """The registration-derived state of one install in community ``guild_id``.
 
-    A plug-in with no service behind it — a tool instance, an embed — is always
+    One limited to the operations community is neither mandatory nor available
+    in any other.
+
+    A plug-in with no service behind it — a tool instance — is always
     available and never mandatory: there is no registration for it to depend on.
     """
     if not _has_registration(definition):
@@ -324,34 +374,40 @@ async def install_state(
         # no longer does). Nothing it offers can be reached.
         return InstallState(mandatory=False, available=False)
     return InstallState(
-        mandatory=snapshot.mandatory,
-        available=snapshot.live,
+        mandatory=snapshot.mandatory and snapshot.serves(guild_id),
+        available=snapshot.live_in(guild_id),
         scope_ceiling=snapshot.scope_ceiling,
     )
 
 
-async def enabled_service_ids() -> frozenset[str]:
-    """Every plug-in service this deployment has wired up and switched on.
+async def enabled_service_ids(guild_id: Optional[int]) -> frozenset[str]:
+    """Every plug-in service this deployment has wired up and switched on, for
+    community ``guild_id`` (``None`` for no community).
 
     What the catalog reads to decide which plug-in listings it offers: a plug-in is
     published to everyone, and registering it is how a deployment says it runs
     that one. A listing naming a service that is not in here is not offered,
     because installing it would produce a plug-in with nothing behind it.
 
-    Only live registrations: a plug-in switched off, or whose publisher is, or
-    that has no key set, is not offered.
+    Only registrations live there: a plug-in switched off, or whose publisher
+    is, or that has no key set, is not offered, nor is one limited to the
+    operations community anywhere else.
     """
     return frozenset(
         snapshot.public_id
         for snapshot in (await load_registrations()).values()
-        if snapshot.live
+        if snapshot.live_in(guild_id)
     )
 
 
 async def plugin_is_offered(
-    definition: dict[str, Any] | None, *, listing_uid: Optional[str] = None
+    definition: dict[str, Any] | None,
+    *,
+    guild_id: Optional[int],
+    listing_uid: Optional[str] = None,
 ) -> bool:
-    """Whether this deployment offers the plug-in a listing describes.
+    """Whether this deployment offers the plug-in a listing describes to
+    community ``guild_id``.
 
     The per-listing spelling of :func:`enabled_service_ids`, for the paths that
     hold one definition rather than a query: the listing page and the install.
@@ -363,7 +419,7 @@ async def plugin_is_offered(
     if not _has_registration(definition):
         return True
     snapshot = await registration_for_definition(definition, listing_uid=listing_uid)
-    return snapshot is not None and snapshot.live
+    return snapshot is not None and snapshot.live_in(guild_id)
 
 
 async def mandatory_registrations() -> list[RegistrationSnapshot]:

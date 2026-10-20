@@ -227,9 +227,7 @@ const InitiativeManagersCell = ({ initiative }: { initiative: InitiativeRead }) 
                     disabled={pending || (isManager && !knownManagers.has(candidate.id))}
                     onSelect={() => toggle(candidate.id)}
                   >
-                    <Check
-                      className={cn("mr-2 h-4 w-4", isManager ? "opacity-100" : "opacity-0")}
-                    />
+                    <Check className={cn("h-4 w-4", isManager ? "opacity-100" : "opacity-0")} />
                     {getUserDisplayName(candidate)}
                   </CommandItem>
                 );

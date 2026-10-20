@@ -100,6 +100,35 @@
       "body": "<strong>{{actor}}</strong> hat auf deinen Kommentar zu <strong>{{context}}</strong> geantwortet"
     }
   },
+  "subscription": {
+    "changed": {
+      "subject": "{{context}} hat sich geändert",
+      "title": "Etwas, das du abonniert hast, hat sich geändert",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> geändert"
+    },
+    "commented": {
+      "subject": "Neuer Kommentar zu {{context}}",
+      "title": "Neuer Kommentar zu etwas, das du abonniert hast",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> kommentiert"
+    },
+    "reacted": {
+      "subject": "Neue Reaktion auf {{context}}",
+      "title": "Neue Reaktion auf etwas, das du abonniert hast",
+      "body": "<strong>{{actor}}</strong> hat auf <strong>{{context}}</strong> reagiert"
+    }
+  },
+  "assigned": {
+    "changed": {
+      "subject": "{{context}} hat sich geändert",
+      "title": "Etwas, an dem du beteiligt bist, hat sich geändert",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> geändert"
+    },
+    "commented": {
+      "subject": "Neuer Kommentar zu {{context}}",
+      "title": "Neuer Kommentar zu etwas, an dem du beteiligt bist",
+      "body": "<strong>{{actor}}</strong> hat <strong>{{context}}</strong> kommentiert"
+    }
+  },
   "post": {
     "published": {
       "subject": "Neuer Beitrag: {{post}}",
@@ -112,16 +141,6 @@
       "subject": "Du bist eingeladen: {{event}}",
       "title": "Neue Termineinladung",
       "body": "<strong>{{organizer}}</strong> hat dich zu <strong>{{event}}</strong> (<strong>{{when}}</strong>) eingeladen."
-    },
-    "rescheduled": {
-      "subject": "Termin verschoben: {{event}}",
-      "title": "Termin verschoben",
-      "body": "<strong>{{editor}}</strong> hat <strong>{{event}}</strong> auf <strong>{{when}}</strong> verschoben."
-    },
-    "updated": {
-      "subject": "Termin aktualisiert: {{event}}",
-      "title": "Termin aktualisiert",
-      "body": "<strong>{{editor}}</strong> hat <strong>{{event}}</strong> (<strong>{{when}}</strong>) aktualisiert."
     },
     "cancelled": {
       "subject": "Termin abgesagt: {{event}}",
@@ -156,6 +175,7 @@
     "greeting": "Hallo <strong>{{name}}</strong>,",
     "levelRead": "Lesezugriff",
     "levelReadWrite": "Lese- und Schreibzugriff",
+    "levelModerate": "Moderationszugriff",
     "levelAdmin": "auf Community-Einstellungen (Admin)",
     "levelSuperadmin": "auf Community-Einstellungen (Superadmin)",
     "requested": {
@@ -259,6 +279,11 @@
       "subject": "Zwei-Faktor-Authentifizierung wird deaktiviert",
       "title": "Zwei-Faktor-Authentifizierung wird deaktiviert",
       "body": "Die Zwei-Faktor-Authentifizierung wird am <strong>{{date}}</strong> deaktiviert. Bis dahin fragt dein Konto bei der Anmeldung weiter einen Code ab, und du kannst es in deinen Einstellungen unter Sicherheit abbrechen."
+    },
+    "recoveryRegenerated": {
+      "subject": "Für dein Konto wurden neue Wiederherstellungscodes erstellt",
+      "title": "Für dein Konto wurden neue Wiederherstellungscodes erstellt",
+      "body": "Für dein Konto wurde ein neuer Satz Wiederherstellungscodes erstellt, und deine bisherigen funktionieren nicht mehr. Bewahre die neuen sicher auf."
     }
   },
   "passwordRemoved": {
@@ -350,24 +375,18 @@
     },
     "noCommunity": {
       "direct_messages": "Direktnachrichten",
-      "connections": "Kontakte",
       "account": "Dein Konto",
       "other": "Aus deinen Communities"
     },
     "category": {
-      "mentions": "Erwähnungen",
-      "replies": "Antworten",
-      "comments": "Kommentare zu deiner Arbeit",
-      "reactions": "Reaktionen",
-      "assignments": "Aufgabenzuweisungen",
-      "due_dates": "Überfällige Aufgaben",
-      "membership": "Neue Mitgliedschaften",
+      "mentions": "Erwähnungen und Antworten",
+      "assignments": "Dir zugewiesen",
+      "subscriptions": "Abonniert",
+      "news": "Neu in deinen Communities",
       "approvals": "Wartet auf dich",
-      "posts": "Beiträge",
-      "events": "Termine",
-      "event_reminders": "Terminerinnerungen",
-      "direct_messages": "Direktnachrichten",
-      "connections": "Kontakte",
+      "moderation": "Moderation",
+      "cases": "Fälle",
+      "direct_messages": "Nachrichten und Kontakte",
       "jobs": "Exporte und Importe",
       "account": "Dein Konto"
     }
@@ -465,6 +484,38 @@
       "m10": "Oktober",
       "m11": "November",
       "m12": "Dezember"
+    }
+  },
+  "moderation": {
+    "removed": {
+      "subject": "Ein Moderator hat etwas von dir entfernt",
+      "title": "Ein Moderator hat etwas von dir entfernt",
+      "body": "Etwas, das du geschrieben hast, hat gegen die Regeln dieser Community verstoßen und wurde entfernt. Die Benachrichtigung in der App nennt den Grund."
+    },
+    "warned": {
+      "subject": "Eine Warnung der Moderatoren dieser Community",
+      "title": "Eine Warnung der Moderatoren dieser Community",
+      "body": "Die Moderatoren schreiben:<br><br>{{message}}"
+    }
+  },
+  "case": {
+    "opened": {
+      "subject": "Ein neuer Fall wurde eröffnet",
+      "title": "Ein neuer Fall wurde eröffnet",
+      "body": "Dort, wo du Fälle bearbeitest, wurde gerade ein Fall eröffnet, und noch niemand hat ihn übernommen. Öffne ihn in Initiative, um ihn zu lesen."
+    },
+    "replied": {
+      "subject": "Eine Antwort auf einen Fall, den niemand übernommen hat",
+      "title": "Eine Antwort auf einen Fall, den niemand übernommen hat",
+      "body": "Wer einen Fall eingereicht hat, hat darauf geantwortet, und noch niemand hat ihn übernommen. Öffne ihn in Initiative, um ihn zu lesen."
+    }
+  },
+  "identity": {
+    "fallbackText": "Falls du das nicht warst, ändere sofort dein Passwort und wende dich an die Betreiber dieser Seite.",
+    "linked": {
+      "subject": "Eine neue Möglichkeit, dich anzumelden",
+      "title": "Eine neue Möglichkeit, dich anzumelden",
+      "body": "Du kannst dich jetzt über <strong>{{provider}}</strong> bei deinem Konto anmelden, weil dort eine deiner Adressen bestätigt wurde."
     }
   }
 }

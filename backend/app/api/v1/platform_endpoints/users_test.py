@@ -8,6 +8,8 @@ Tests the user API endpoints at /api/v1/users including:
 - User deletion
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import text, update
 from sqlmodel import select
@@ -194,34 +196,62 @@ async def test_returning_a_switch_to_its_default_leaves_no_trace(client, acting_
         "/api/v1/me/notification-preferences",
         headers=a.headers,
         json={
-            "channels": [{"category": "reactions", "channel": "push", "enabled": False}]
+            "channels": [
+                {"category": "subscriptions", "channel": "push", "enabled": False}
+            ]
         },
     )
-    assert off.json()["settings"]["reactions"]["push"] is False
+    assert off.json()["settings"]["subscriptions"]["push"] is False
 
     back_on = await client.put(
         "/api/v1/me/notification-preferences",
         headers=a.headers,
         json={
-            "channels": [{"category": "reactions", "channel": "push", "enabled": True}]
+            "channels": [
+                {"category": "subscriptions", "channel": "push", "enabled": True}
+            ]
         },
     )
     assert back_on.json()["settings"] == {}
 
 
-async def test_a_community_can_be_set_to_say_less(client, acting_user):
-    """The one dial almost everybody will use."""
+async def test_a_community_can_say_less_or_nothing(client, acting_user):
+    """A row switched off in one community, and a community muted; a row a
+    community cannot switch on its own does not move."""
     a = await acting_user(guild_role=CommunityRole.member)
 
     response = await client.put(
         "/api/v1/me/notification-preferences",
         headers=a.headers,
-        json={"levels": [{"community_id": a.guild.id, "level": "personal"}]},
+        json={
+            "rows": [
+                {"community_id": a.guild.id, "category": "news", "enabled": False},
+                {"community_id": a.guild.id, "category": "approvals", "enabled": False},
+            ]
+        },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     listed = {g["community_id"]: g for g in response.json()["communities"]}
-    assert listed[a.guild.id]["level"] == "personal"
+    assert listed[a.guild.id] == {
+        "community_id": a.guild.id,
+        "community_name": a.guild.name,
+        "muted": False,
+        "off": ["news"],
+    }
+
+    response = await client.put(
+        "/api/v1/me/notification-preferences",
+        headers=a.headers,
+        json={
+            "rows": [{"community_id": a.guild.id, "category": "news", "enabled": True}],
+            "mutes": [{"community_id": a.guild.id, "muted": True}],
+        },
+    )
+
+    listed = {g["community_id"]: g for g in response.json()["communities"]}
+    assert listed[a.guild.id]["muted"] is True
+    assert listed[a.guild.id]["off"] == []
 
 
 async def test_quiet_hours_round_trip(client, acting_user):
@@ -613,7 +643,11 @@ async def test_self_service_password_change_revokes_sessions_on_every_device(
     a = await acting_user()
     old_jwt = get_auth_token(a.user)
     phone = await session_service.create_session(
-        session, user_id=a.user.id, amr=["pwd"], satisfied_providers=[], device=True
+        session,
+        user_id=a.user.id,
+        amr=["pwd"],
+        satisfied_providers=[],
+        install_id=uuid.uuid4(),
     )
     phone_id = phone.session.id
     await session.commit()
@@ -2227,3 +2261,29 @@ async def test_member_search_narrows_to_one_initiative(client, acting_user):
     )
     assert refused.status_code == 403, refused.text
     assert refused.json()["detail"] == "INITIATIVE_NOT_A_MEMBER"
+
+
+async def test_the_shipped_home_layouts_are_on_the_shelf(client, session, acting_user):
+    """Home layouts reach a person the way packs do: through the catalog,
+    seeded from their manifests, each with the widgets it places."""
+    a = await acting_user()
+    for manifest in load_builtin_manifests():
+        if manifest.get("kind") == "home_layout":
+            await marketplace_catalog.upsert_listing(
+                session, manifest, source="builtin"
+            )
+    await session.commit()
+
+    response = await client.get("/api/v1/me/home-layouts", headers=a.headers)
+
+    assert response.status_code == 200
+    items = {item["public_id"]: item for item in response.json()["items"]}
+    assert {"core.home-week-ahead", "core.home-study-session"} <= set(items)
+    timer = next(
+        w for w in items["core.home-study-session"]["widgets"] if w["type"] == "clock"
+    )
+    assert timer["options"] == {"mode": "timer", "timer": {"duration": 1500}}
+    # Only home layouts: a pack is not a page.
+    assert not any(
+        public_id.startswith("core.") and "home" not in public_id for public_id in items
+    )

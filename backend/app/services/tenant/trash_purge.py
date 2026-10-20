@@ -1,8 +1,8 @@
 """Auto-purge background worker for trashed entities past their retention.
 
-Visited by the hourly pass in every active guild, on a system session routed
-into the guild's schema; the policies' system leg names that login. See
-:func:`purge_guild`.
+Visited in an active guild when its ``trash`` timer comes due (armed as a row
+is trashed, for its ``purge_at``), on a system session routed into the guild's
+schema; the policies' system leg names that login. See :func:`purge_guild`.
 
 Each table's due rows are purged together, parents first, through the same
 ``hard_purge_entities`` the trash can's purge button uses: files and
@@ -26,6 +26,7 @@ from app.services.tenant.attachments import (
 )
 from app.services.tenant.lifecycle_tree import parents_first
 from app.services.tenant.soft_delete import hard_purge_entities
+from app.services.tenant.held import holds_under
 
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ async def _run_purge_pass(
             .with_for_update(skip_locked=True)
         )
         rows = list((await session.exec(stmt)).all())
+        # What holds something the platform holds waits for its release, and
+        # is tried again on the next pass (app.db.holds).
+        rows = [row for row in rows if not await holds_under(session, [row])]
         if rows:
             released |= await hard_purge_entities(session, rows)
             purged[_entity_type(model)] = len(rows)
