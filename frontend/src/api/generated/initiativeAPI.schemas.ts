@@ -4441,6 +4441,20 @@ export const DatasetName = {
 } as const;
 
 /**
+ * What a date is grouped by: the calendar's day, week, month, quarter or
+ * year it falls in. A week starts on Monday, as Postgres counts one.
+ */
+export type DateBucket = (typeof DateBucket)[keyof typeof DateBucket];
+
+export const DateBucket = {
+  day: "day",
+  week: "week",
+  month: "month",
+  quarter: "quarter",
+  year: "year",
+} as const;
+
+/**
  * One decoration an account may wear, and where it came from.
  *
  * ``source`` names the marketplace pack that granted it, and is ``None`` for
@@ -5502,6 +5516,15 @@ export interface RelationDescription {
 }
 
 /**
+ * A field a list of the dataset can be grouped by.
+ */
+export interface GroupingDescription {
+  name: string;
+  kind: string;
+  bucket?: boolean;
+}
+
+/**
  * Every field a dataset offers, in the order a client lists them.
  */
 export interface FieldCatalogResponse {
@@ -5509,6 +5532,7 @@ export interface FieldCatalogResponse {
   fields: FieldDescription[];
   relations?: RelationDescription[];
   default_filters?: DefaultFilter[];
+  groupings?: GroupingDescription[];
 }
 
 export type FileCreateContent = { [key: string]: unknown } | null;
@@ -5958,6 +5982,24 @@ export interface GrantCaseRead {
 export interface GrantCaseList {
   items: GrantCaseRead[];
   required: boolean;
+}
+
+/**
+ * One group of a grouped list.
+ */
+export interface GroupRead {
+  key: string;
+  label?: string | null;
+}
+
+export type GroupsResponseRows = { [key: string]: string[] };
+
+/**
+ * A list's groups by one field, and the groups each row is in.
+ */
+export interface GroupsResponse {
+  groups: GroupRead[];
+  rows: GroupsResponseRows;
 }
 
 export type ValidationErrorCtx = { [key: string]: unknown };
@@ -6647,27 +6689,12 @@ export interface LayoutPreset {
 }
 
 /**
- * What a project's tasks are grouped by beside their properties: their
- * date window and status, which are not fields, and the built-in fields whose
- * values group. In the order a list offers them as shipped: the two a table
- * always offered first.
- */
-export type TaskGroupingId = (typeof TaskGroupingId)[keyof typeof TaskGroupingId];
-
-export const TaskGroupingId = {
-  date: "date",
-  tags: "tags",
-  status: "status",
-  priority: "priority",
-  assignees: "assignees",
-} as const;
-
-/**
  * One way a list offers to group its tasks, and the groups it leaves out
  * while grouped by it.
  */
 export interface LayoutGrouping {
-  field: TaskGroupingId | string;
+  field: string;
+  bucket?: DateBucket | null;
   /**
    * @maxItems 200
    * @items.maxLength 64
@@ -6679,15 +6706,15 @@ export interface LayoutGrouping {
  * How a list draws its items, and the presets and groupings it offers.
  * What it leaves out is drawn as shipped: a board with no ``card`` draws the
  * shipped card, a table with no ``columns`` the shipped columns, a list with
- * no ``presets`` the shipped presets and none with no ``groupings`` the
- * built-in groupings.
+ * no ``presets`` the shipped presets and none with no ``groupings`` every
+ * field of what it lists that groups without a bucket.
  */
 export interface ListLayoutDefinitionOutput {
   card?: CardPartOutput | null;
   columns?: (TaskColumnFieldId | string)[] | null;
   presets?: LayoutPreset[] | null;
   groupings?: LayoutGrouping[] | null;
-  group_by?: TaskGroupingId | string | null;
+  group_by?: string | null;
   limits?: ColumnLimit[] | null;
 }
 
@@ -6886,15 +6913,15 @@ export interface LegalIndexRead {
  * How a list draws its items, and the presets and groupings it offers.
  * What it leaves out is drawn as shipped: a board with no ``card`` draws the
  * shipped card, a table with no ``columns`` the shipped columns, a list with
- * no ``presets`` the shipped presets and none with no ``groupings`` the
- * built-in groupings.
+ * no ``presets`` the shipped presets and none with no ``groupings`` every
+ * field of what it lists that groups without a bucket.
  */
 export interface ListLayoutDefinitionInput {
   card?: CardPartInput | null;
   columns?: (TaskColumnFieldId | string)[] | null;
   presets?: LayoutPreset[] | null;
   groupings?: LayoutGrouping[] | null;
-  group_by?: TaskGroupingId | string | null;
+  group_by?: string | null;
   limits?: ColumnLimit[] | null;
 }
 
@@ -12474,6 +12501,21 @@ export type ListTasksParams = {
   tz?: string | null;
 };
 
+export type ListTaskGroupsParams = {
+  /**
+   * The field the list is grouped by, as the field catalog's ``groupings`` name it, or ``property:<id>``
+   * @maxLength 64
+   */
+  group_by: string;
+  /**
+   * For a date: the bucket of the calendar it groups by
+   */
+  bucket?: DateBucket | null;
+  conditions?: (FilterCondition | FilterGroup)[];
+  include_archived?: boolean;
+  tz?: string | null;
+};
+
 export type ListColumnLimitsParams = {
   /**
    * @minItems 1
@@ -12682,6 +12724,18 @@ export type ExportTasksParams = {
    * Report layout. Markdown: a table (default) or a GitHub-style task list (checklist). PDF: the default table, or 'detailed' for a one-task-per-page report with description, checklist and comments. Ignored by csv/xlsx.
    */
   layout?: ExportTasksLayout;
+  /**
+   * The field the list is grouped by, as GET /tasks/groups takes it: each task is listed under every group it is in, the groups in the list's order
+   */
+  group_by?: string | null;
+  /**
+   * For a date: the bucket of the calendar it groups by
+   */
+  bucket?: DateBucket | null;
+  /**
+   * The keys of the groups the list leaves out
+   */
+  hidden_groups?: string[] | null;
 };
 
 export type ExportTasksFormat = (typeof ExportTasksFormat)[keyof typeof ExportTasksFormat];

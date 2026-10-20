@@ -60,6 +60,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useColumnLimits } from "@/hooks/useColumnLimits";
+import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useInitiative } from "@/hooks/useInitiatives";
 import {
   type ProjectViewSearch,
@@ -85,6 +86,7 @@ import {
   matchesDueWindow,
   taskFilterCount,
 } from "@/lib/filters/taskFilters";
+import { activeGrouping, catalogChoices } from "@/lib/layouts/grouping";
 import { presetName } from "@/lib/layouts/presets";
 import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import type { LayoutNode } from "@/lib/layouts/tree";
@@ -247,10 +249,27 @@ export const ProjectTasksSection = ({
   // own sort while it is showing, and the project's order in every other
   // layout.
   const tableState = useProjectTaskTableState(grouping, setGrouping, sorting, setSorting);
-  const exportSorting = useMemo(() => {
+  // What an export carries of this person's view: its order, and what it is
+  // grouped by, less the groups the layout leaves out.
+  const { groupings: groupingCatalog } = useFieldCatalog("tasks");
+  const exportView = useMemo(() => {
     const fields = taskViewSorting(kind, sorting);
-    return fields.length > 0 ? { sorting: fields, tz: browserTimezone() } : {};
-  }, [kind, sorting]);
+    const grouped = activeGrouping(
+      layout?.definition.groupings,
+      kind,
+      grouping,
+      catalogChoices(groupingCatalog)
+    );
+    return {
+      ...(fields.length > 0 && { sorting: fields }),
+      ...(grouped && {
+        group_by: grouped.field,
+        bucket: grouped.bucket,
+        hidden_groups: grouped.hidden,
+      }),
+      tz: browserTimezone(),
+    };
+  }, [kind, sorting, grouping, layout, groupingCatalog]);
   const [isBulkEditDialogOpen, setIsBulkEditDialogOpen] = useState(false);
   const [isBulkEditTagsDialogOpen, setIsBulkEditTagsDialogOpen] = useState(false);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
@@ -894,7 +913,7 @@ export const ProjectTasksSection = ({
                 params={{
                   conditions: buildTaskConditions(appliedSpec, { projectId }),
                   include_archived: appliedSpec.include_archived,
-                  ...exportSorting,
+                  ...exportView,
                 }}
                 resumePending
               />
@@ -959,6 +978,7 @@ export const ProjectTasksSection = ({
             initiativeId={initiativeId}
             taskStatuses={sortedTaskStatuses}
             groupedTasks={groupedTasks}
+            listParams={taskListParams}
             collapsedStatusIds={collapsedStatuses}
             canReorderTasks={canReorderTasks}
             canEditTasks={canEditTaskDetails}
@@ -1003,7 +1023,7 @@ export const ProjectTasksSection = ({
                         // Selection came from the visible list, which may include
                         // archived rows when the toggle is on.
                         include_archived: appliedSpec.include_archived,
-                        ...exportSorting,
+                        ...exportView,
                       }
                 }
                 onEdit={() => setIsBulkEditDialogOpen(true)}
@@ -1026,6 +1046,7 @@ export const ProjectTasksSection = ({
                 projectId={projectId}
                 initiativeId={initiativeId}
                 tasks={statusFilteredTasks}
+                listParams={taskListParams}
                 taskStatuses={sortedTaskStatuses}
                 sensors={listSensors}
                 canReorderTasks={canReorderTasks}

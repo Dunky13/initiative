@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Eye, EyeClosed } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { LayoutGrouping, TaskListRead } from "@/api/generated/initiativeAPI.schemas";
+import type { DateBucket, LayoutGrouping } from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -14,16 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useGroupables } from "@/hooks/useTaskGroupings";
 import type { ListLayout } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
 import {
+  DATE_BUCKETS,
   groupingsFor,
   groupingsOf,
   MAX_GROUPINGS,
   MAX_HIDDEN_GROUPS,
-  NO_GROUP,
   type OfferedGrouping,
-  taskGroupings,
 } from "@/lib/layouts/grouping";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
@@ -32,10 +32,14 @@ import type { LayoutEdits } from "./LayoutEditor";
 
 const NOT_GROUPED = "__none__";
 
+/** What a date is grouped by until somebody picks another bucket. */
+const FIRST_BUCKET: DateBucket = "week";
+
 /**
  * What a list offers to group by: every field whose values group, ticked
- * where the list offers it, in the order it offers them, and the one everyone
- * starts on. Saved with the layout.
+ * where the list offers it, in the order it offers them, a date's with the
+ * bucket of the calendar it groups by, and the one everyone starts on. Saved
+ * with the layout.
  */
 export const LayoutGroupings = ({
   layout,
@@ -48,13 +52,10 @@ export const LayoutGroupings = ({
 }) => {
   const { t } = useTranslation(LAYOUT_NAMESPACES);
   const translate = t as TranslateFn;
-  const all = useMemo(
-    () =>
-      groupingsFor(taskGroupings({ fields, statuses: [], tasks: [], t: translate }), layout.kind),
-    [fields, translate, layout.kind]
-  );
+  const groupable = useGroupables(fields, translate);
+  const all = useMemo(() => groupingsFor(groupable, layout.kind), [groupable, layout.kind]);
   const { groupings, group_by: groupBy = null } = layout.definition;
-  const entries = groupingsOf(groupings, layout.kind);
+  const entries = groupingsOf(groupings, layout.kind, groupable);
   const byId = new Map(all.map((each) => [each.id, each]));
   const ticked = entries.flatMap((entry) => byId.get(entry.field) ?? []);
   const unticked = all.filter((each) => !entries.some((entry) => entry.field === each.id));
@@ -73,6 +74,9 @@ export const LayoutGroupings = ({
     [next[from], next[to]] = [next[to], next[from]];
     change(next);
   };
+  // A date's groups are its buckets, so the ones it left out go with them.
+  const rebucket = (id: string, bucket: DateBucket) =>
+    change(entries.map((entry) => (entry.field === id ? { field: id, bucket } : entry)));
 
   return (
     <div className="space-y-3">
@@ -91,6 +95,26 @@ export const LayoutGroupings = ({
             <Label htmlFor={`grouping-${grouping.id}`} className="min-w-0 flex-1 truncate">
               {grouping.label}
             </Label>
+            {grouping.bucket ? (
+              <Select
+                value={entries.find((entry) => entry.field === grouping.id)?.bucket ?? FIRST_BUCKET}
+                onValueChange={(value) => rebucket(grouping.id, value as DateBucket)}
+              >
+                <SelectTrigger
+                  className="h-7 w-28"
+                  aria-label={translate("layouts:groupings.bucket", { name: grouping.label })}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DATE_BUCKETS.map((bucket) => (
+                    <SelectItem key={bucket} value={bucket}>
+                      {translate(`layouts:groupings.buckets.${bucket}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -121,7 +145,14 @@ export const LayoutGroupings = ({
               id={`grouping-${grouping.id}`}
               checked={false}
               disabled={full}
-              onCheckedChange={() => change([...entries, { field: grouping.id }])}
+              onCheckedChange={() =>
+                change([
+                  ...entries,
+                  grouping.bucket
+                    ? { field: grouping.id, bucket: FIRST_BUCKET }
+                    : { field: grouping.id },
+                ])
+              }
             />
             <Label htmlFor={`grouping-${grouping.id}`} className="min-w-0 flex-1 truncate">
               {grouping.label}
@@ -164,33 +195,31 @@ export const LayoutGroupings = ({
  */
 export const CanvasGrouping = ({
   offered,
+  active,
   grouping: picked,
   onGroupingChange,
-  tasks,
   disabled,
   onToggle,
 }: {
   offered: OfferedGrouping[];
+  /** The grouping picked, once its groups are in. */
+  active?: OfferedGrouping;
   grouping: GroupingState;
   onGroupingChange: (next: GroupingState) => void;
-  tasks: TaskListRead[];
   /** A save is under way, and nothing changes until it answers. */
   disabled: boolean;
   onToggle: (id: string, key: string, shown: boolean) => void;
 }) => {
   const { t } = useTranslation(LAYOUT_NAMESPACES);
-  const active = offered.find((each) => picked.includes(each.grouping.column));
+  const pickedColumn = offered.find((each) => picked.includes(each.grouping.column))?.grouping
+    .column;
   const hiddenFull = (active?.hidden.size ?? 0) >= MAX_HIDDEN_GROUPS;
+  // Every group there is, the hidden ones among them.
   const keys = useMemo(() => {
     if (!active) return [];
     const { grouping, hidden } = active;
-    const seen = new Set<string>([...(grouping.values ?? []), ...hidden]);
-    for (const task of tasks) {
-      const held = grouping.keys(task);
-      for (const key of held.length > 0 ? held : [NO_GROUP]) seen.add(key);
-    }
-    return [...seen].sort(grouping.compare);
-  }, [active, tasks]);
+    return [...new Set([...(grouping.values ?? []), ...hidden])].sort(grouping.compare);
+  }, [active]);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -198,7 +227,7 @@ export const CanvasGrouping = ({
         {t("layouts:groupings.heading")}
       </Label>
       <Select
-        value={active?.grouping.column ?? NOT_GROUPED}
+        value={pickedColumn ?? NOT_GROUPED}
         onValueChange={(value) => onGroupingChange(value === NOT_GROUPED ? [] : [value])}
       >
         <SelectTrigger id="canvas-group-by" className="w-44">

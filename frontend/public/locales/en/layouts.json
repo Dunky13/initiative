@@ -151,7 +151,32 @@
     "notGrouped": "Not grouped",
     "shown": "Groups shown:",
     "full": "A layout offers at most {{count}} groupings. Untick one to offer another.",
-    "hiddenFull": "At most {{count}} groups can be left out of one grouping. Show one to leave out another."
+    "hiddenFull": "At most {{count}} groups can be left out of one grouping. Show one to leave out another.",
+    "fields": {
+      "date_group": "Date window",
+      "priority": "Priority",
+      "task_status_id": "Status",
+      "assignee_ids": "Assignees",
+      "created_by": "Created by",
+      "tag_ids": "Tags",
+      "project_id": "Project",
+      "archived_at": "Archived",
+      "completed_at": "Completed",
+      "created_at": "Created",
+      "due_date": "Due date",
+      "start_date": "Start date",
+      "updated_at": "Updated"
+    },
+    "buckets": {
+      "day": "By day",
+      "week": "By week",
+      "month": "By month",
+      "quarter": "By quarter",
+      "year": "By year"
+    },
+    "weekOf": "Week of {{date}}",
+    "quarter": "Q{{quarter}} {{year}}",
+    "bucket": "How {{name}} is grouped"
   },
   "limits": {
     "heading": "Column limits",

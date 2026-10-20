@@ -22,6 +22,7 @@ import {
 } from "@/api/generated/initiativeAPI.schemas";
 import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import {
   deviceJSON,
   type ListViewSpec,
@@ -44,7 +45,7 @@ import {
   taskFiltersEqual,
   taskSortFields,
 } from "@/lib/filters/taskFilters";
-import { viewGrouping } from "@/lib/layouts/grouping";
+import { catalogChoices, viewGrouping } from "@/lib/layouts/grouping";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
 
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
@@ -221,9 +222,11 @@ export function useProjectTaskView({
   const tag_ids = useKnownTagIds(spec_.tag_ids);
 
   const { grouping: kept, groupingKept } = view;
+  const { groupings: catalog } = useFieldCatalog("tasks");
   const grouping = useMemo(
-    () => viewGrouping(layout?.definition, kind, groupingKept ? kept : null),
-    [layout, kind, kept, groupingKept]
+    () =>
+      viewGrouping(layout?.definition, kind, groupingKept ? kept : null, catalogChoices(catalog)),
+    [layout, kind, kept, groupingKept, catalog]
   );
 
   /**

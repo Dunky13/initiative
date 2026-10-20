@@ -1,4 +1,5 @@
 import type {
+  GroupingDescription,
   TaskAssigneeSummary,
   TaskListRead,
   TaskListResponse,
@@ -104,3 +105,17 @@ export function buildTaskListResponse(
     ...itemsOrOverrides,
   };
 }
+
+/** The task fields the field catalog says a list groups by, as the server's
+ *  registry declares them. */
+export const TASK_GROUPINGS: GroupingDescription[] = [
+  { name: "date_group", kind: "number", bucket: false },
+  { name: "priority", kind: "select", bucket: false },
+  { name: "task_status_id", kind: "task_status", bucket: false },
+  { name: "assignee_ids", kind: "member", bucket: false },
+  { name: "created_by", kind: "member", bucket: false },
+  { name: "tag_ids", kind: "tag", bucket: false },
+  { name: "project_id", kind: "project", bucket: false },
+  { name: "due_date", kind: "date", bucket: true },
+  { name: "start_date", kind: "date", bucket: true },
+];

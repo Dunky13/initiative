@@ -3,7 +3,7 @@ import { ExportButton, type ExportFormatOption } from "@/components/exports/Expo
 
 export type ExportParams = Pick<
   ExportTasksParams,
-  "conditions" | "sorting" | "tz" | "include_archived"
+  "conditions" | "sorting" | "tz" | "include_archived" | "group_by" | "bucket" | "hidden_groups"
 >;
 
 interface ExportTasksButtonProps {

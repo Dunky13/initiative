@@ -206,6 +206,7 @@
   "PUSH_NOTIFICATIONS_DISABLED": "This server does not send push notifications.",
   "QUERY_INVALID_CONDITIONS": "Invalid filter conditions",
   "QUERY_INVALID_SORT_FIELDS": "Invalid sort fields",
+  "QUERY_INVALID_GROUPING": "This list can't be grouped that way",
   "QUERY_UNKNOWN_VIEW": "This list has no such view",
   "QUERY_UNPARSEABLE": "That is not SQL this build can read.",
   "QUERY_ONE_STATEMENT_ONLY": "A query is one statement.",

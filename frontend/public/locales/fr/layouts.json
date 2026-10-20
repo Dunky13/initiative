@@ -151,7 +151,32 @@
     "notGrouped": "Non groupé",
     "shown": "Groupes affichés :",
     "full": "Une disposition propose au plus {{count}} regroupements. Décochez-en un pour en proposer un autre.",
-    "hiddenFull": "Au plus {{count}} groupes peuvent être masqués dans un regroupement. Affichez-en un pour en masquer un autre."
+    "hiddenFull": "Au plus {{count}} groupes peuvent être masqués dans un regroupement. Affichez-en un pour en masquer un autre.",
+    "fields": {
+      "date_group": "Période",
+      "priority": "Priorité",
+      "task_status_id": "Statut",
+      "assignee_ids": "Assignés",
+      "created_by": "Créé par",
+      "tag_ids": "Étiquettes",
+      "project_id": "Projet",
+      "archived_at": "Archivé",
+      "completed_at": "Terminé",
+      "created_at": "Créé",
+      "due_date": "Date d'échéance",
+      "start_date": "Date de début",
+      "updated_at": "Modifié"
+    },
+    "buckets": {
+      "day": "Par jour",
+      "week": "Par semaine",
+      "month": "Par mois",
+      "quarter": "Par trimestre",
+      "year": "Par année"
+    },
+    "weekOf": "Semaine du {{date}}",
+    "quarter": "T{{quarter}} {{year}}",
+    "bucket": "Regroupement de {{name}}"
   },
   "limits": {
     "heading": "Limites de colonne",
