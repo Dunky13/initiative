@@ -73,6 +73,24 @@ continuation rather than guessing historical intent. Already-lost historical
 phase cannot be reconstructed. Legacy counts may have included extra dates; the
 migration conservatively retains that consumption rather than restarting COUNT.
 
+The review of PR #2917 identified that the initial backfill test used the
+privileged setup connection, hiding the migration login's row-security
+restrictions. That [valid finding](https://github.com/beyonders-studio/initiative/pull/2917#discussion_r4328945602)
+was reproduced with the configured provisioning login: it owns the task table,
+has neither superuser nor BYPASSRLS privileges, and has no request context. With
+forced row security still active, the backfill silently left anchors empty and
+counts at zero. The regression now connects as that actual login and checks
+the deployed ownership and row-security conditions explicitly.
+
+Lifting row security also exposed a write-guard failure under that login:
+task/ancestor guards reject updates without request context. The backfill now
+temporarily lifts forced row security and suspends the task table's user
+triggers in the migration transaction, restoring both in `finally`. Only the
+two new recurrence fields are updated; archive, trash and hold state is
+preserved. A savepoint around the update lets cleanup run after a SQL error
+without masking the original error. A failed upgrade rolls back its schema
+and data changes along with the temporary protection changes.
+
 The downgrade drops the two added columns. Code can be rolled back, but dropping
 anchor state and later re-upgrading cannot recover intervening phase history.
 Back up the database before an operational downgrade. No production migration or
@@ -88,6 +106,12 @@ recurrence/statistics/query batch passed **322 tests**. The branch was then reba
 onto `efbef4e7a` (the shared recurrence owner from PR #2914), preserving that
 refactor. The post-integration batch passed **288 tests**, including the added
 fixed-to-rolling COUNT lifecycle regression and all shared completion/skip callers.
+
+The PR #2917 review follow-up passed **6 actual-provisioner migration tests**.
+The combined migration/recurrence follow-up passed **58 tests**; **370** static
+backfill-order cases were skipped because those revisions create no table.
+That batch covers the six migration cases, task-series lifecycles, per-guild
+migration routing and rollback, and the new-table backfill-order guard.
 
 A real browser loaded the actual CalendarView and DateTimePicker components with
 fixture data, in Europe/Amsterdam, at 1280px and 390px widths. It confirmed 09:00
@@ -118,6 +142,29 @@ as CI; the PR records its result separately from remote CI.
 
 ```sh
 scripts/ci/check
+```
+
+The review regression uses a separate connection from the configured migration
+URL, pointed at the checkout's isolated test database. It checks active,
+archived, trashed and held tasks, carried continuation and consumed COUNT,
+restored row security and triggers, Python failure cleanup, and SQL failure
+rollback with the original error preserved:
+
+```sh
+cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
+  app/db/task_recurrence_anchor_migration_test.py
+```
+
+The broader review follow-up ran:
+
+```sh
+cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
+  app/db/task_recurrence_anchor_migration_test.py \
+  app/services/tenant/task_series_test.py \
+  app/db/guild_migrations_test.py \
+  app/db/migration_backfill_order_test.py
 ```
 
 The post-integration backend batch covers the moved shared owner and all its

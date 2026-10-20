@@ -30,17 +30,27 @@ def _add() -> None:
             "recurrence_anchor_count", sa.Integer(), nullable=False, server_default="0"
         ),
     )
-    op.execute(
-        """
-        UPDATE tasks AS task
-        SET recurrence_anchor = COALESCE(
-            (task.recurrence_carry ->> 'due_date')::timestamptz,
-            task.due_date, task.start_date
-        ),
-        recurrence_anchor_count = task.recurrence_occurrence_count
-        WHERE task.recurrence IS NOT NULL AND task.recurrence_strategy = 'fixed'
-        """
-    )
+    # FORCE binds the provisioning owner too. Hold it and user triggers only
+    # for this transactional backfill; the savepoint keeps restoration SQL
+    # executable after an error while preserving the original failure.
+    op.execute("ALTER TABLE tasks NO FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE tasks DISABLE TRIGGER USER")
+    try:
+        with op.get_bind().begin_nested():
+            op.execute(
+                """
+                UPDATE tasks AS task
+                SET recurrence_anchor = COALESCE(
+                    (task.recurrence_carry ->> 'due_date')::timestamptz,
+                    task.due_date, task.start_date
+                ),
+                recurrence_anchor_count = task.recurrence_occurrence_count
+                WHERE task.recurrence IS NOT NULL AND task.recurrence_strategy = 'fixed'
+                """
+            )
+    finally:
+        op.execute("ALTER TABLE tasks ENABLE TRIGGER USER")
+        op.execute("ALTER TABLE tasks FORCE ROW LEVEL SECURITY")
 
 
 def _drop() -> None:
