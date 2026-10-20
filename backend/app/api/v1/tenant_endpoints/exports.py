@@ -38,7 +38,9 @@ from app.models.platform.user import User
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.initiative import Initiative
+from app.schemas.query import DateBucket
 from app.schemas.tenant.backup_export import BackupEstimate
+from app.schemas.tenant.tool_layout import MAX_HIDDEN_GROUPS
 from app.schemas.tenant.export_job import (
     ExportJobRead,
     CommunityExportStatus,
@@ -159,6 +161,23 @@ async def export_tasks(
             "Ignored by csv/xlsx."
         ),
     ),
+    group_by: Optional[str] = Query(
+        default=None,
+        max_length=64,
+        description=(
+            "The field the list is grouped by, as GET /tasks/groups takes it: "
+            "each task is listed under every group it is in, the groups in the "
+            "list's order"
+        ),
+    ),
+    bucket: Optional[DateBucket] = Query(
+        default=None, description="For a date: the bucket of the calendar it groups by"
+    ),
+    hidden_groups: Optional[List[str]] = Query(
+        default=None,
+        max_length=MAX_HIDDEN_GROUPS,
+        description="The keys of the groups the list leaves out",
+    ),
 ) -> Union[Response, JSONResponse]:
     """Export the task list (the same visibility and filters as ``GET
     /tasks/``) as a formatted file. Small results render inline and return
@@ -176,6 +195,9 @@ async def export_tasks(
             "tz": tz,
             "include_archived": include_archived,
             "layout": layout,
+            "group_by": group_by,
+            "bucket": bucket.value if bucket else None,
+            "hidden_groups": hidden_groups,
         },
     )
     return _export_response(result, guild_context)

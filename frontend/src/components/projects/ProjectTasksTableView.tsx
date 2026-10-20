@@ -18,6 +18,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import type {
   LayoutGrouping,
+  ListTasksParams,
   TaskListRead,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -33,6 +34,7 @@ import { TableRow } from "@/components/ui/table";
 import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
+import { useTaskGroupings } from "@/hooks/useTaskGroupings";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { fieldColumnId } from "@/lib/layouts/columns";
 import { columnsOf } from "@/lib/layouts/draft";
@@ -41,9 +43,7 @@ import {
   groupRowId,
   groupRows,
   NO_GROUP,
-  offeredGroupings,
   type TaskGroupRow,
-  taskGroupings,
   uniqueTasksFromRows,
 } from "@/lib/layouts/grouping";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
@@ -60,6 +60,8 @@ type ProjectTasksListViewProps = {
    */
   initiativeId: number;
   tasks: TaskListRead[];
+  /** The list `tasks` are, which its groups are worked out for. */
+  listParams: ListTasksParams;
   taskStatuses: TaskStatusRead[];
   sensors: DndContextProps["sensors"];
   canReorderTasks: boolean;
@@ -280,6 +282,7 @@ const ProjectTasksTableViewComponent = ({
   projectId,
   initiativeId,
   tasks,
+  listParams,
   taskStatuses,
   sensors,
   canReorderTasks,
@@ -310,19 +313,20 @@ const ProjectTasksTableViewComponent = ({
     () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
     [propertyDefinitions, plugins, i18n.language]
   );
-  // What the view offers to group by, and the groups each leaves out.
-  const offered = useMemo(
-    () =>
-      offeredGroupings(
-        taskGroupings({ fields, statuses: taskStatuses, tasks, t: env.t }),
-        viewGroupings,
-        "table"
-      ),
-    [fields, taskStatuses, tasks, env.t, viewGroupings]
-  );
-  const groupings = useMemo(() => offered.map((each) => each.grouping), [offered]);
   const { grouping, sorting } = tableState;
-  const active = offered.find((each) => grouping.includes(each.grouping.column));
+  // What the view offers to group by, the groups each leaves out, and the
+  // groups of the one it is grouped by.
+  const { offered, active } = useTaskGroupings({
+    fields,
+    statuses: taskStatuses,
+    tasks,
+    groupings: viewGroupings,
+    kind: "table",
+    grouping,
+    params: listParams,
+    t: env.t,
+  });
+  const groupings = useMemo(() => offered.map((each) => each.grouping), [offered]);
   const grouped = active?.grouping;
   // What the table's headers group by: the grouping its rows are shaped for.
   const groupedColumn = grouped?.column;

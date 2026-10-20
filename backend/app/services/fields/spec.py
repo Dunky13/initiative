@@ -219,6 +219,12 @@ class FieldSpec:
     #: The values this field accepts, when it accepts a closed set of them.
     #: Read off the column that stores them, so a client needs no copy.
     options: tuple[str, ...] = ()
+    #: Whether its values read highest first: a list grouped by it starts at
+    #: the last of ``options`` (the most urgent priority).
+    descending: bool = False
+    #: Whether what it orders by is a set of groups: a sort expression whose
+    #: values a list is grouped into (a task's date window).
+    buckets: bool = False
 
     @property
     def type(self) -> FieldType:
@@ -390,6 +396,7 @@ def column(
     nullable: bool = True,
     offer: bool = True,
     options: tuple[str, ...] = (),
+    descending: bool = False,
 ) -> FieldSpec:
     """A field that is a column. ``ops`` defaults to what its type supports."""
     return FieldSpec(
@@ -402,6 +409,7 @@ def column(
         nullable=nullable,
         offer=offer,
         options=options,
+        descending=descending,
     )
 
 

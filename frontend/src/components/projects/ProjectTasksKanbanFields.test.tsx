@@ -180,6 +180,18 @@ describe("a card's excerpt", () => {
 });
 
 describe("a grouped board", () => {
+  // The server's groups by priority: every one, most urgent first.
+  beforeEach(() => {
+    server.use(
+      communityHttp.get("/tasks/groups", () =>
+        HttpResponse.json({
+          groups: ["urgent", "high", "medium", "low"].map((key) => ({ key })),
+          rows: { "51": ["medium"] },
+        })
+      )
+    );
+  });
+
   it("starts in its layout's bands, one for every priority, holding a task or not", async () => {
     server.use(
       communityHttp.get("/layouts/", () =>

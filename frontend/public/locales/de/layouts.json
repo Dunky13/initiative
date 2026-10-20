@@ -151,7 +151,32 @@
     "notGrouped": "Nicht gruppiert",
     "shown": "Angezeigte Gruppen:",
     "full": "Ein Layout bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
-    "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen."
+    "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen.",
+    "fields": {
+      "date_group": "Zeitraum",
+      "priority": "Priorität",
+      "task_status_id": "Status",
+      "assignee_ids": "Zuständige",
+      "created_by": "Erstellt von",
+      "tag_ids": "Tags",
+      "project_id": "Projekt",
+      "archived_at": "Archiviert",
+      "completed_at": "Erledigt",
+      "created_at": "Erstellt",
+      "due_date": "Fälligkeitsdatum",
+      "start_date": "Startdatum",
+      "updated_at": "Geändert"
+    },
+    "buckets": {
+      "day": "Nach Tag",
+      "week": "Nach Woche",
+      "month": "Nach Monat",
+      "quarter": "Nach Quartal",
+      "year": "Nach Jahr"
+    },
+    "weekOf": "Woche ab {{date}}",
+    "quarter": "Q{{quarter}} {{year}}",
+    "bucket": "Wie {{name}} gruppiert wird"
   },
   "limits": {
     "heading": "Spaltenlimits",

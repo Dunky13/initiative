@@ -62,5 +62,44 @@
   "fallback": {
     "untitled": "(sin título)",
     "formerMember": "Exmiembro"
+  },
+  "fields": {
+    "tag_ids": "Etiquetas",
+    "assignee_ids": "Asignados",
+    "task_status_id": "Estado",
+    "priority": "Prioridad",
+    "date_group": "Periodo",
+    "project_id": "Proyecto",
+    "created_by": "Creado por",
+    "archived_at": "Archivado",
+    "completed_at": "Completado",
+    "created_at": "Creado",
+    "due_date": "Vence",
+    "start_date": "Inicio",
+    "updated_at": "Actualizado"
+  },
+  "groups": {
+    "empty": {
+      "tag_ids": "Sin etiqueta",
+      "assignee_ids": "Sin asignar",
+      "created_by": "Sin autor"
+    },
+    "none": "Sin {{name}}",
+    "true": "{{name}}: sí",
+    "false": "{{name}}: no",
+    "bucket": {
+      "day": "{{date}}",
+      "week": "Semana del {{date}}",
+      "month": "{{month}}/{{year}}",
+      "quarter": "T{{quarter}} {{year}}",
+      "year": "{{year}}"
+    }
+  },
+  "date_group": {
+    "0": "Vencidas",
+    "1": "Hoy",
+    "2": "Esta semana",
+    "3": "Este mes",
+    "4": "Más adelante"
   }
 }

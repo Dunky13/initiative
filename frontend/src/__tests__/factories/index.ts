@@ -89,6 +89,7 @@ export {
   buildTaskAssignee,
   buildTaskListResponse,
   resetCounter as resetTaskCounter,
+  TASK_GROUPINGS,
 } from "./task.factory";
 export { buildSavedLayoutSet, buildToolLayoutSet } from "./toolLayout.factory";
 export {

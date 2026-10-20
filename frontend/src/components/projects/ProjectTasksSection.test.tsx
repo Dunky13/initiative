@@ -86,10 +86,30 @@ const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
 };
 
 /** Seed this person's view of project 1. */
-const rememberView = (view: Record<string, unknown>) => {
+/** This person's view of project 1, in community 1: the layout they were
+ *  last in, and their filters and sort for each layout. */
+const rememberView = ({
+  layout,
+  filters = {},
+  sorting = {},
+}: {
+  layout: string;
+  filters?: Record<string, unknown>;
+  sorting?: Record<string, unknown>;
+}) => {
+  const kinds = [...new Set([...Object.keys(filters), ...Object.keys(sorting)])];
+  const parts = Object.fromEntries(
+    kinds.map((kind) => [
+      kind,
+      {
+        ...(filters[kind] !== undefined && { filters: filters[kind] }),
+        ...(sorting[kind] !== undefined && { sorting: sorting[kind] }),
+      },
+    ])
+  );
   server.use(
     http.get("/api/v1/user-view-preferences", () =>
-      HttpResponse.json({ items: { "project:1:views": view } })
+      HttpResponse.json({ items: { "view:1:project:1": { layout, mode: null, parts } } })
     )
   );
 };
@@ -455,16 +475,6 @@ describe("ProjectTasksSection a person's filters", () => {
           parts: { table: expect.not.objectContaining({ filters: expect.anything() }) },
         })
       )
-    );
-  });
-
-  it("reads filters an older release kept, by the view they were set on", async () => {
-    rememberView({ view: "board", filters: { board: { assignees: ["me"] } } });
-    section();
-
-    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent(/Board/));
-    await waitFor(() =>
-      expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "in_", value: ["me"] })
     );
   });
 

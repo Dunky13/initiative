@@ -17,6 +17,7 @@ import {
   buildTask,
   buildTaskListResponse,
   buildToolLayoutSet,
+  TASK_GROUPINGS,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
@@ -29,7 +30,6 @@ import {
   type ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { instanceTarget, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
-import { SHIPPED_GROUPINGS } from "@/lib/layouts/grouping";
 import { MAX_PRESETS } from "@/lib/layouts/presets";
 import { TASK_COLUMNS } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
@@ -97,6 +97,8 @@ const canvas = () => screen.findByRole("region", { name: /preview/i });
 beforeEach(() => {
   sent = [];
   server.use(
+    // Ahead of the one task, which its path would otherwise match.
+    communityHttp.get("/tasks/groups", () => HttpResponse.json({ groups: [], rows: {} })),
     communityHttp.get("/tasks/:taskId", () =>
       HttpResponse.json({
         ...buildTask({
@@ -358,13 +360,21 @@ describe("LayoutEditor", () => {
 
     await waitFor(() => expect(saved("table")).toBeDefined());
     expect(saved("table")?.groupings).toEqual([
-      ...SHIPPED_GROUPINGS.map((field) => ({ field })),
+      ...TASK_GROUPINGS.filter((entry) => !entry.bucket).map((entry) => ({ field: entry.name })),
       { field: "property:12" },
     ]);
     expect(saved("table")?.group_by).toBe("property:12");
   });
 
   it("leaves out a group clicked above the grouped preview", async () => {
+    server.use(
+      communityHttp.get("/tasks/groups", () =>
+        HttpResponse.json({
+          groups: STATUSES.map((status) => ({ key: String(status.id), label: status.name })),
+          rows: {},
+        })
+      )
+    );
     const { user } = editor(
       "table",
       vi.fn(),
@@ -373,7 +383,7 @@ describe("LayoutEditor", () => {
           {
             kind: "table",
             is_default: true,
-            definition: { group_by: "status" },
+            definition: { group_by: "task_status_id" },
             updated_at: "2026-10-01T12:00:00.000Z",
           },
         ],
@@ -388,7 +398,7 @@ describe("LayoutEditor", () => {
 
     await waitFor(() => expect(saved("table")).toBeDefined());
     const groupings = saved("table")?.groupings as { field: string; hidden?: string[] }[];
-    expect(groupings.find((entry) => entry.field === "status")?.hidden).toEqual([
+    expect(groupings.find((entry) => entry.field === "task_status_id")?.hidden).toEqual([
       String(STATUSES[2].id),
     ]);
   });

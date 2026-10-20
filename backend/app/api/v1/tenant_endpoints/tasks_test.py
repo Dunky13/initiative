@@ -165,6 +165,58 @@ async def test_list_tasks_sorts_by_status_and_by_tag(
     assert await titles("tag_name", "desc") == ["Done", "Backlog", "Untagged"]
 
 
+async def test_task_groups_are_the_lists_in_its_order_with_each_tasks(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """The groups of the filtered list in the order it shows them, a closed
+    vocabulary's whether or not a task is in them, and each task's groups: a
+    task under each of its tags, an untagged one in none."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    both = await create_task(session, a.project, title="Both")
+    untagged = await create_task(session, a.project, title="Untagged")
+    beta = await create_tag(session, a.guild, name="Beta")
+    alpha = await create_tag(session, a.guild, name="alpha")
+    for tag in (beta, alpha):
+        await assign_tag(session, both, tag)
+    await session.commit()
+
+    async def groups(**params) -> dict:
+        response = await client.get(
+            a.g("/tasks/groups"), params=params, headers=a.headers
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    by_tag = await groups(group_by="tag_ids")
+    assert by_tag["groups"] == [
+        {"key": str(alpha.id), "label": "alpha"},
+        {"key": str(beta.id), "label": "Beta"},
+        {"key": "", "label": None},
+    ]
+    assert by_tag["rows"] == {str(both.id): [str(beta.id), str(alpha.id)]}
+    assert str(untagged.id) not in by_tag["rows"]
+
+    by_priority = await groups(group_by="priority")
+    assert [g["key"] for g in by_priority["groups"]] == [
+        "urgent",
+        "high",
+        "medium",
+        "low",
+    ]
+
+    by_week = await groups(group_by="created_at", bucket="week")
+    assert len(by_week["groups"]) == 1  # both made this week
+
+    for refused in ({"group_by": "title"}, {"group_by": "created_at"}):
+        response = await client.get(
+            a.g("/tasks/groups"), params=refused, headers=a.headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "QUERY_INVALID_GROUPING"
+
+
 async def test_list_tasks_hides_a_project_the_member_holds_no_grant_on(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

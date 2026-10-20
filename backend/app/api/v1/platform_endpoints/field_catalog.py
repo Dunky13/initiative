@@ -23,10 +23,12 @@ from app.schemas.field_catalog import (
     DefaultFilter,
     FieldCatalogResponse,
     FieldDescription,
+    GroupingDescription,
     RelationDescription,
 )
 from app.schemas.sql_query import QueryVocabulary
 from app.services import fields as fields_registry
+from app.services.fields.grouping import describe_groupings
 from app.services.fields.registry import DatasetName, dataset_names
 from app.services.query.resolve import ALLOWED_FUNCTIONS, VIEWER
 
@@ -58,6 +60,9 @@ def read_field_catalog(dataset: DatasetName) -> FieldCatalogResponse:
         default_filters=[
             DefaultFilter(**condition)
             for condition in fields_registry.default_filters(dataset.value)
+        ],
+        groupings=[
+            GroupingDescription(**entry) for entry in describe_groupings(dataset.value)
         ],
     )
 

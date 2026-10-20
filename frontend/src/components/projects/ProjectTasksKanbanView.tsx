@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import type {
   CardPartInput,
   LayoutGrouping,
+  ListTasksParams,
   PropertyDefinitionRead,
   TaskListRead,
   TaskStatusRead,
@@ -32,11 +33,12 @@ import { GroupBySelect } from "@/components/ui/data-table";
 import { MentionText } from "@/components/user/MentionText";
 import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
 import { useProperties } from "@/hooks/useProperties";
+import { useTaskGroupings } from "@/hooks/useTaskGroupings";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { formatDateTime } from "@/lib/formatDate";
 import { cardOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
-import { boardBands, offeredGroupings, taskGroupings } from "@/lib/layouts/grouping";
+import { boardBands } from "@/lib/layouts/grouping";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import { type LayoutContext, type LayoutNode, namesField } from "@/lib/layouts/tree";
@@ -50,6 +52,9 @@ type ProjectTasksKanbanViewProps = {
   initiativeId: number;
   taskStatuses: TaskStatusRead[];
   groupedTasks: Record<number, TaskListRead[]>;
+  /** The list the board's tasks are, which its bands are worked out for. A
+   *  board drawn from no list (a listing's preview) is never grouped. */
+  listParams?: ListTasksParams;
   collapsedStatusIds: Set<number>;
   canReorderTasks: boolean;
   /** The reader may change the tasks: each card offers what can be done with
@@ -95,6 +100,7 @@ export const ProjectTasksKanbanView = ({
   initiativeId,
   taskStatuses,
   groupedTasks,
+  listParams,
   collapsedStatusIds,
   canReorderTasks,
   canEditTasks = false,
@@ -185,16 +191,16 @@ export const ProjectTasksKanbanView = ({
     () => taskStatuses.flatMap((status) => groupedTasks[status.id] ?? []),
     [taskStatuses, groupedTasks]
   );
-  const offered = useMemo(
-    () =>
-      offeredGroupings(
-        taskGroupings({ fields, statuses: taskStatuses, tasks, t: projectEnv.t }),
-        viewGroupings,
-        "board"
-      ),
-    [fields, taskStatuses, tasks, projectEnv.t, viewGroupings]
-  );
-  const active = offered.find((each) => grouping.includes(each.grouping.column));
+  const { offered, active } = useTaskGroupings({
+    fields,
+    statuses: taskStatuses,
+    tasks,
+    groupings: viewGroupings,
+    kind: "board",
+    grouping,
+    params: listParams,
+    t: projectEnv.t,
+  });
   const bands = useMemo(() => (active ? boardBands(active, tasks) : null), [active, tasks]);
   const counts = useMemo(
     () =>

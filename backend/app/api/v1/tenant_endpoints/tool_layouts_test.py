@@ -478,17 +478,45 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
-        (_table(groupings=[{"field": "title"}]), 422, None),
-        (_table(groupings=[{"field": "plugin:3:ci"}]), 422, None),
-        (_table(groupings=[{"field": "status"}, {"field": "status"}]), 422, None),
-        (_table(groupings=[{"field": "status"}], group_by="tags"), 422, None),
         (
-            {"kind": "calendar", "definition": {"group_by": "status"}},
+            _table(groupings=[{"field": "title"}]),
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
         (
-            {"kind": "board", "definition": {"groupings": [{"field": "status"}]}},
+            _table(groupings=[{"field": "due_date"}]),
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (
+            _table(groupings=[{"field": "priority", "bucket": "month"}]),
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (_table(groupings=[{"field": "plugin:3:ci"}]), 422, None),
+        (
+            _table(
+                groupings=[{"field": "task_status_id"}, {"field": "task_status_id"}]
+            ),
+            422,
+            None,
+        ),
+        (
+            _table(groupings=[{"field": "task_status_id"}], group_by="tag_ids"),
+            422,
+            None,
+        ),
+        (_table(group_by="due_date"), 400, "TOOL_LAYOUTS_KIND_NOT_ALLOWED"),
+        (
+            {"kind": "calendar", "definition": {"group_by": "task_status_id"}},
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (
+            {
+                "kind": "board",
+                "definition": {"groupings": [{"field": "task_status_id"}]},
+            },
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
@@ -530,9 +558,12 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "a preset past the limit of property and plug-in filters together",
         "a sort on a board's preset, which a board does not sort by",
         "a grouping by a field whose values do not group",
+        "a date grouped without a bucket",
+        "a bucket on something that is not a date",
         "a grouping by a plug-in field",
         "a grouping offered twice",
         "starting on a grouping the list does not offer",
+        "starting on a date the shipped groupings do not offer",
         "a grouped calendar",
         "a board in bands of the statuses its columns are",
         "a column limit on a table, which has no columns of statuses",
@@ -607,7 +638,7 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
     sprint = {"field": "property:9", "hidden": ["s1"]}
     definition = {
         "presets": [_preset(filters=filters)],
-        "groupings": [{"field": "status", "hidden": ["1", "2"]}, sprint],
+        "groupings": [{"field": "task_status_id", "hidden": ["1", "2"]}, sprint],
         "group_by": "property:9",
         "limits": [{"status_id": 1, "limit": 3}, {"status_id": 2, "limit": 4}],
     }
@@ -626,7 +657,7 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
     # So with groupings: a status grouping leaves out the copy's statuses, and
     # a property's goes, with starting on it, where the property is not there.
     assert copied["groupings"] == [
-        {"field": "status", "hidden": ["11"]},
+        {"field": "task_status_id", "hidden": ["11"]},
         *([sprint] if same_initiative else []),
     ]
     assert copied.get("group_by") == ("property:9" if same_initiative else None)
@@ -651,6 +682,20 @@ async def test_a_layout_at_the_limits_is_kept(client: AsyncClient, acting_user):
         a.g("/layouts/"), params=_project(a), json=card, headers=a.headers
     )
 
+    assert response.status_code == 200, response.text
+
+    # A table grouped by any field that groups, a date by its bucket.
+    grouped = _table(
+        groupings=[
+            {"field": "due_date", "bucket": "week"},
+            {"field": "project_id"},
+            {"field": "property:9"},
+        ],
+        group_by="due_date",
+    )
+    response = await client.put(
+        a.g("/layouts/"), params=_project(a), json=grouped, headers=a.headers
+    )
     assert response.status_code == 200, response.text
 
 
