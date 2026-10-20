@@ -75,6 +75,30 @@ export const storedLayout = (root: LayoutNode): DetailLayoutDefinitionInput => {
   } as DetailLayoutDefinitionInput;
 };
 
+/**
+ * A detail's parts in the order a page reads them on one column: the header's,
+ * then the columns' by where each falls (`order`, main ahead of side where
+ * they fall together), each part's own parts inside it. A field is named by
+ * its field, any other part by its kind. A plug-in's part, which only a browser
+ * draws, is left out. What an export of the page draws, top to bottom.
+ */
+export const pageParts = (tree: LayoutNode): string[] => {
+  const [header, main, side] = tree.children ?? [];
+  const columns = [...(main?.children ?? []), ...(side?.children ?? [])]
+    .map((node, index) => ({ node, index }))
+    .sort(
+      (a, b) =>
+        Number(a.node.props?.order ?? 0) - Number(b.node.props?.order ?? 0) || a.index - b.index
+    )
+    .map(({ node }) => node);
+  const walk = (node: LayoutNode): string[] => {
+    if (node.type === "plugin") return [];
+    if (node.type === "field") return [String(node.props?.field)];
+    return node.children ? node.children.flatMap(walk) : [node.type];
+  };
+  return [...(header?.children ?? []), ...columns].flatMap(walk);
+};
+
 /** The parts any detail lays out with, as against its own. */
 const LAYOUT_PARTS = new Set(["section", "stack", "field", "properties", "plugin"]);
 

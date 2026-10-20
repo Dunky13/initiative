@@ -236,7 +236,7 @@ Next time, start *from* it and skip the fiddling. Its checklists arrive exactly 
 
 **Export a project** to a portable file — an offline copy, a move somewhere else, or a backup of one specific project. It imports back in later. It's in **Project settings → Advanced**, next to deleting it, and it belongs to the same people: whoever owns the project, and anyone who can see everything in its initiative.
 
-The task list has an **Export** of its own: the tasks you've filtered to, or the ones you've selected, as a PDF, a spreadsheet or Markdown. It comes out the way you're looking at it, in your sort and your grouping, minus any groups the layout leaves out. Grouped by tag, a task with two tags turns up under both, same as on screen.
+The task list has an **Export** of its own: the tasks you've filtered to, or the ones you've selected, as a PDF, a spreadsheet or Markdown. It comes out the way you're looking at it, in your sort and your grouping, minus any groups the layout leaves out. Grouped by tag, a task with two tags turns up under both, same as on screen. The columns are the table's, properties included, and the detailed PDF follows the task page from top to bottom, so rearranging the layout rearranges the printout.
 
 !!! note "People are named by handle"
     An export identifies assignees, event attendees and person-type fields by **handle** (`foobar#1234`), because a handle is the same in every community and an email address isn't.

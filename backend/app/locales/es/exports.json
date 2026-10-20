@@ -1,22 +1,4 @@
 {
-  "columns": {
-    "task": "Tarea",
-    "project": "Proyecto",
-    "status": "Estado",
-    "priority": "Prioridad",
-    "due": "Vence",
-    "assignees": "Asignados",
-    "counter": "Contador",
-    "count": "Valor",
-    "min": "Mín",
-    "max": "Máx",
-    "step": "Paso",
-    "order": "N.º",
-    "item": "Elemento",
-    "member": "Miembro",
-    "tags": "Etiquetas",
-    "notes": "Notas"
-  },
   "title": {
     "tasks": "Tareas"
   },
@@ -76,7 +58,22 @@
     "created_at": "Creado",
     "due_date": "Vence",
     "start_date": "Inicio",
-    "updated_at": "Actualizado"
+    "updated_at": "Actualizado",
+    "title": "Tarea",
+    "description": "Descripción",
+    "checklist": "Lista de verificación",
+    "comments": "Comentarios",
+    "blockers": "Bloqueada por",
+    "label": "Elemento",
+    "user_id": "Miembro",
+    "notes": "Notas",
+    "order": "N.º",
+    "status": "Estado",
+    "name": "Contador",
+    "count": "Valor",
+    "min": "Mín",
+    "max": "Máx",
+    "step": "Paso"
   },
   "groups": {
     "empty": {
@@ -101,5 +98,9 @@
     "2": "Esta semana",
     "3": "Este mes",
     "4": "Más adelante"
+  },
+  "values": {
+    "yes": "Sí",
+    "no": "No"
   }
 }

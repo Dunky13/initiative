@@ -1,22 +1,4 @@
 {
-  "columns": {
-    "task": "Aufgabe",
-    "project": "Projekt",
-    "status": "Status",
-    "priority": "Priorität",
-    "due": "Fällig",
-    "assignees": "Zuständige",
-    "counter": "Zähler",
-    "count": "Stand",
-    "min": "Min",
-    "max": "Max",
-    "step": "Schritt",
-    "order": "#",
-    "item": "Eintrag",
-    "member": "Mitglied",
-    "tags": "Tags",
-    "notes": "Notizen"
-  },
   "title": {
     "tasks": "Aufgaben"
   },
@@ -76,7 +58,22 @@
     "created_at": "Erstellt",
     "due_date": "Fällig",
     "start_date": "Beginn",
-    "updated_at": "Geändert"
+    "updated_at": "Geändert",
+    "title": "Aufgabe",
+    "description": "Beschreibung",
+    "checklist": "Checkliste",
+    "comments": "Kommentare",
+    "blockers": "Blockiert durch",
+    "label": "Eintrag",
+    "user_id": "Mitglied",
+    "notes": "Notizen",
+    "order": "#",
+    "status": "Status",
+    "name": "Zähler",
+    "count": "Stand",
+    "min": "Min",
+    "max": "Max",
+    "step": "Schritt"
   },
   "groups": {
     "empty": {
@@ -101,5 +98,9 @@
     "2": "Diese Woche",
     "3": "Diesen Monat",
     "4": "Später"
+  },
+  "values": {
+    "yes": "Ja",
+    "no": "Nein"
   }
 }

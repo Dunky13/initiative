@@ -343,14 +343,14 @@ async def _image_file(session, a, *, name: str, key: str):
 # Task exports
 # ---------------------------------------------------------------------------
 
-_TASK_COLUMNS = "Task,Project,Status,Priority,Due,Assignees"
+_TASK_COLUMNS = "Task,Assignees,Due,Priority,Status"
 
 _TASK_REPORTS: dict[str, dict[str, Any]] = {
     "pdf": {},
     "csv": {"present": (_TASK_COLUMNS, "Task 0", "Task 1")},
     "xlsx": {"disposition": ('filename="tasks.xlsx"',)},
     "md": {
-        "present": ("| Task | Project | Status | Priority | Due | Assignees |",),
+        "present": ("| Task | Assignees | Due | Priority | Status |",),
         "disposition": ('filename="tasks.md"',),
     },
 }
@@ -544,6 +544,100 @@ async def test_task_export_groups_by_each_kind_of_field(
         str((now - timedelta(days=2)).year),
         str((now + timedelta(days=3)).year),
     ]
+
+
+async def test_task_export_shows_the_columns_its_view_shows(
+    client: AsyncClient, acting_user, session
+):
+    """The layout fields the view's table shows, in its order, a property by
+    its name and value; recurrence, which only the app writes in words, and a
+    property the community no longer has are left out; the status comes last,
+    as the table draws it."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    effort = await create_property_definition(
+        session,
+        a.initiative,
+        name="Effort",
+        type=PropertyType.select,
+        options=[{"value": "big", "label": "Big"}],
+    )
+    task = await create_task(
+        session, a.project, title="Map", priority=TaskPriority.high
+    )
+    await create_property_value(session, task, effort, value_text="big")
+
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="md",
+        # The longest id a layout can name: an install's field it no longer
+        # declares, which is left out rather than refused.
+        columns=[
+            "priority",
+            f"property:{effort.id}",
+            "recurrence",
+            "property:999",
+            f"plugin:9999999999:{'k' * 64}",
+        ],
+    )
+    _assert_export(
+        resp,
+        "md",
+        present=(
+            "| Task | Priority | Effort | Status |",
+            "| Map | High | Big | To Do |",
+        ),
+    )
+
+
+async def test_detailed_task_export_follows_the_task_page(
+    client: AsyncClient, acting_user, session
+):
+    """Each page draws the task page's parts in its order: a property placed
+    on the page, then the description with its mentions named."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    a.membership.display_name = "Ada"
+    session.add(a.membership)
+    effort = await create_property_definition(
+        session, a.initiative, name="Effort", type=PropertyType.text
+    )
+    task = await create_task(
+        session,
+        a.project,
+        title="Map",
+        description=f"Pair with @[]({a.user.id})",
+    )
+    await create_property_value(session, task, effort, value_text="Large")
+
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="pdf",
+        layout="detailed",
+        detail=[f"property:{effort.id}", "description", "status"],
+    )
+    assert resp.status_code == 200, resp.text
+    page = " ".join(_pdf_pages(resp)[0].split())
+    assert page.index("Effort: Large") < page.index("Description")
+    assert page.index("Description") < page.index("Status:")
+    assert "Pair with @Ada" in page and "](" not in page
+
+
+async def test_project_report_shows_the_columns_its_view_shows(
+    client: AsyncClient, acting_user, session
+):
+    a = await _actor_with_tasks(acting_user, session, count=1)
+    resp = await _export(
+        client,
+        a,
+        "project",
+        ids=[a.project.id],
+        format="csv",
+        filters=json.dumps({"tasks": {"columns": ["priority"]}}),
+    )
+    _assert_export(resp, "csv", present=("Task,Priority,Status", "Task 0,Medium,To Do"))
 
 
 async def test_detailed_task_export_names_each_task_page_by_its_group(
@@ -760,7 +854,7 @@ async def test_inline_project_export_returns_envelope(
 # What each report format carries beyond the task titles all of them render.
 _PROJECT_REPORTS: dict[str, tuple[str, ...]] = {
     "pdf": (),
-    "csv": ("Task,Status,Priority,Due,Assignees",),
+    "csv": ("Task,Assignees,Due,Priority,Status",),
     "xlsx": (),
 }
 
@@ -1906,11 +2000,11 @@ async def test_task_export_localizes_report_content(
     a = await _actor_with_tasks(acting_user, session, count=1)
     await _set_locale(session, a.user, "es")
 
-    # Spanish headers, not "Task,Project,Status,...".
+    # Spanish headers, not "Task,Assignees,...".
     _assert_export(
         await _export(client, a, "tasks", format="csv"),
         "csv",
-        present=("Tarea,Proyecto,Estado,Prioridad,Vence,Asignados",),
+        present=("Tarea,Asignados,Vence,Prioridad,Estado",),
     )
     _assert_export(
         await _export(client, a, "tasks", format="md"),

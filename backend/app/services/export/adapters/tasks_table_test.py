@@ -65,32 +65,10 @@ def test_flatten_mentions_keeps_display_text():
     assert _flatten_mentions("![](/uploads/9/pasted-a.png)") == "[image]"
 
 
-def test_detail_flattens_mentions_in_the_description():
-    from types import SimpleNamespace
+def test_every_task_layout_field_says_how_it_exports():
+    """A field a task's layout can show has an entry, a way to write it or
+    ``None`` to leave it out, so a new one cannot quietly miss exports."""
+    from app.schemas.tenant.tool_layout import TaskFieldId
+    from app.services.export.adapters.tasks_table import TASK_EXPORT_FIELDS
 
-    from app.services.export.adapters.tasks_table import _detail
-
-    # Only the fields the report reads; the loader supplies the rest.
-    task = SimpleNamespace(
-        title="Ship it",
-        description="Pair with @[](7) on **#task[Fix boss](12)**",
-        project=None,
-        task_status=None,
-        priority=None,
-        due_date=None,
-        start_date=None,
-        assignees=[],
-        tags=[],
-        checklist=[],
-    )
-
-    # The name each mention reads as now is written in before it flattens.
-    def named(text):
-        return text.replace("@[](7)", "@[Ada L](7)")
-
-    blocks = str(_detail(task, [], "en", named)["description_blocks"])  # type: ignore[arg-type]
-
-    assert "@Ada L" in blocks
-    assert "Fix boss" in blocks
-    assert "](7)" not in blocks
-    assert "#task[" not in blocks
+    assert set(TaskFieldId) <= TASK_EXPORT_FIELDS.keys()
