@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Running as a non-root user**: the container starts when Docker's `user:`/`--user` or a Kubernetes `runAsUser` already runs it as a non-root user, instead of failing with "Only root may add a user or group to the system". It then runs as that user, without `PUID`/`PGID` or a chown, so the uploads folder must already be writable by it. The first line of the log says which way the container started.
 
 - **Home on a phone**: customizing no longer piles the view tabs under the Add widget and Banner buttons, a widget's move and remove buttons sit above it instead of over its title, the greeting wraps a long name instead of cutting it off, and the calendar widget is no longer a card inside a card.
+- **Calendar subscriptions**: a subscribed calendar arrives named after the calendar and its initiative (or community), instead of after its link, and listed in your own time zone instead of UTC. Calendar apps take the name when you subscribe, so to see it on a calendar you already subscribed to, subscribe to its link again.
 - **Updating the app**: in the phone and desktop apps, a new version shows one prompt instead of two, and its **Reload** button always installs the update.
 
 ### Changed
