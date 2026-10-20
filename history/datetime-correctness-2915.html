@@ -207,6 +207,41 @@ PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
   app/core/recurrence_test.py \
   app/services/tenant/task_series_test.py --tb=short -q
 </code></pre>
+<h2>Maintainer review follow-up</h2>
+<p>The <a href="https://github.com/beyonders-studio/initiative/pull/2917#pullrequestreview-5590996288">maintainer review</a>
+identified unnecessary row copies and repeated anchor derivation. Query
+evaluation now builds normalized row dictionaries only when the declared
+fields include a date; other evaluations use the original mappings. All
+<strong>93 query-evaluator tests</strong> passed, including datetime comparisons and text
+fields that look like dates.</p>
+<p><code>task_series.anchor_from_dates</code> now owns the Python derivation of the effective
+carried due/start date and consumed count. Task edits, legacy imports and the
+model listener call it at their existing write boundaries. The migration SQL
+remains a self-contained revision snapshot.</p>
+<p><code>next_dates</code> uses the same pure helper as a local fallback without setting ORM
+fields. The new read-purity regression failed before the change because it
+changed <code>(None, 0)</code> anchor state and dirtied the task. Completion and skip now
+initialize a missing fixed anchor before changing dates or releasing carry,
+preserving the original phase even when the next occurrence is an extra date.
+Regression coverage includes carried dates, zero-duration spans, retained COUNT
+and the absence of ORM dirty state after a read.</p>
+<p>The focused recurrence/import batch passed <strong>29 tests</strong>. The migration rollback
+fixture now inserts its deliberately malformed legacy carry via SQL after a
+valid model save: shared write-time derivation otherwise rejects it before the
+migration is reached. Its original SQL-error, protection-restoration and data
+rollback assertions remain in place.</p>
+<p>Another <strong>111 tests</strong> passed across task creation, task/status endpoints,
+calendar aggregation and the actual-provisioner migration suite. Together
+with the 93 evaluator and 29 recurrence/import tests, these are <strong>233 focused
+tests</strong> across distinct files. The additional integration command was:</p>
+<pre><code class="language-sh">cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
+  app/services/tenant/task_creation_test.py \
+  app/api/v1/tenant_endpoints/tasks_test.py \
+  app/api/v1/tenant_endpoints/task_statuses_test.py \
+  app/api/v1/tenant_endpoints/calendar_entries_test.py \
+  app/db/task_recurrence_anchor_migration_test.py --tb=short -q
+</code></pre>
 <h2>Reproducible checks</h2>
 <p>Run from the repository root with the documented dependencies and PostgreSQL
 test environment configured. The pre-push hook executes the same quality checks

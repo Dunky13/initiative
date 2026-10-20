@@ -160,6 +160,19 @@ def carried(task: Task) -> dict[str, Any]:
     }
 
 
+def anchor_from_dates(task: Task) -> tuple[datetime | None, int]:
+    """A fresh anchor and consumed count from the series' effective dates.
+
+    Used when writing a new baseline, or as a read-only fallback for a task
+    without a saved anchor. A this-only edit keeps the series' dates in carry.
+    """
+    values = carried(task)
+    start = values.get("due_date", task.due_date) or values.get(
+        "start_date", task.start_date
+    )
+    return (start if task.recurrence else None), task.recurrence_occurrence_count
+
+
 def repeat_edited(
     task: Task,
     sent: str | None | EllipsisType,
@@ -198,6 +211,7 @@ def next_dates(
     due = values.get("due_date", task.due_date)
     start = values.get("start_date", task.start_date)
     rolling = task.recurrence_strategy == RecurrenceStrategy.rolling
+    done = task.recurrence_occurrence_count
     if rolling:
         # Rolling counts from the completer's local day, at the task's own
         # local time of day: a 5pm LA task is midnight UTC the next day, so a
@@ -218,9 +232,9 @@ def next_dates(
         )
     else:
         if task.recurrence_anchor is None:
-            task.recurrence_anchor = due
-            task.recurrence_anchor_count = task.recurrence_occurrence_count
-        base = task.recurrence_anchor
+            base, done = anchor_from_dates(task)
+        else:
+            base, done = task.recurrence_anchor, task.recurrence_anchor_count
     # Rolling tasks restart from completion, so their counter ends a COUNT.
     # Fixed tasks keep their anchor: dateutil counts only the rule's starts,
     # before EXDATE/RDATE, as RFC 5545 requires.
@@ -233,7 +247,7 @@ def next_dates(
         task.recurrence_shift,
         count=not rolling,
         after=None if rolling else due,
-        done=task.recurrence_anchor_count,
+        done=done,
     )
     if next_due is None:
         return None
@@ -325,6 +339,12 @@ async def _next_task(
     """The next task of the series, on ``dates``: ``task`` itself moved on
     (``in_place``, a skip), or a new task copied from it (a completion). Both
     take what an edit of just ``task`` changed from (:func:`carried`)."""
+    if (
+        task.recurrence_strategy == RecurrenceStrategy.fixed
+        and task.recurrence_anchor is None
+    ):
+        # Save the effective baseline before advancing dates or releasing carry.
+        task.recurrence_anchor, task.recurrence_anchor_count = anchor_from_dates(task)
     values = carried(task)
     task.series_id = task.series_id or task.id
     default_status = await task_statuses_service.get_default_status(

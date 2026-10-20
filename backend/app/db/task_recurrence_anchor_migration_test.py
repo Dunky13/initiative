@@ -234,7 +234,15 @@ async def test_a_sql_backfill_error_rolls_back_columns_data_and_rls(
         recurrence="RRULE:FREQ=DAILY;COUNT=4",
         due_date=due,
         recurrence_occurrence_count=2,
-        recurrence_carry={"due_date": "invalid date for rollback test"},
+    )
+    # Seed corrupt historical data after a valid save, so the migration's SQL
+    # error is exercised rather than the model's current date validation.
+    connection = await session.connection()
+    await connection.execute(
+        text(
+            "UPDATE tasks SET recurrence_carry = jsonb_build_object('due_date', CAST(:due AS text)) WHERE id = :id"
+        ),
+        {"due": "invalid date for rollback test", "id": task.id},
     )
     await _prepare_migration_owner(session, a.guild.id)
     migration = _migration()

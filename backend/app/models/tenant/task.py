@@ -234,8 +234,11 @@ def _write_recurrence_until(_mapper, _connection, task: Task) -> None:
     start = task.due_date or task.start_date
     if task.recurrence and task.recurrence_strategy == RecurrenceStrategy.fixed:
         if task.recurrence_anchor is None:
-            task.recurrence_anchor = start
-            task.recurrence_anchor_count = task.recurrence_occurrence_count
+            from app.services.tenant.task_series import anchor_from_dates
+
+            task.recurrence_anchor, task.recurrence_anchor_count = anchor_from_dates(
+                task
+            )
         start = task.recurrence_anchor or start
     task.recurrence_until = (
         recurrence.last_start(

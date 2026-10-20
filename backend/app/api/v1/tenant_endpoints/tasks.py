@@ -637,16 +637,9 @@ async def update_task(
         task.recurrence_shift,
         task.recurrence_strategy,
     ) or (start != previous_start and scope != "this"):
-        baseline = task_series.carried(task)
-        task.recurrence_anchor = (
-            (
-                baseline.get("due_date", task.due_date)
-                or baseline.get("start_date", task.start_date)
-            )
-            if task.recurrence
-            else None
+        task.recurrence_anchor, task.recurrence_anchor_count = (
+            task_series.anchor_from_dates(task)
         )
-        task.recurrence_anchor_count = task.recurrence_occurrence_count
     if before is not None:
         if scope == "all":
             series = await _writable_series(session, task, current_user, guild_context)

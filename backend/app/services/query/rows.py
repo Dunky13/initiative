@@ -455,13 +455,15 @@ def evaluate(
     # aggregates read it. Converting only the output makes equivalent ISO
     # spellings compare as different text and picks the wrong min/max.
     temporal = {column.name for column in plan.reads if column.type is FieldType.date}
-    normalized = (
-        {
-            key: _as_datetime(value) if key in temporal else value
-            for key, value in row.items()
-        }
-        for row in rows
-    )
+    normalized = rows
+    if temporal:
+        normalized = (
+            {
+                key: _as_datetime(value) if key in temporal else value
+                for key, value in row.items()
+            }
+            for row in rows
+        )
     kept = [row for row in normalized if _truthy(_value(select.whereClause, row, None))]
     groups = _grouped(
         select,

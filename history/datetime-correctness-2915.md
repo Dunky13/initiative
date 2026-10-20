@@ -161,6 +161,49 @@ PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
 ```
 
 
+## Maintainer review follow-up
+
+The [maintainer review](https://github.com/beyonders-studio/initiative/pull/2917#pullrequestreview-5590996288)
+identified unnecessary row copies and repeated anchor derivation. Query
+evaluation now builds normalized row dictionaries only when the declared
+fields include a date; other evaluations use the original mappings. All
+**93 query-evaluator tests** passed, including datetime comparisons and text
+fields that look like dates.
+
+`task_series.anchor_from_dates` now owns the Python derivation of the effective
+carried due/start date and consumed count. Task edits, legacy imports and the
+model listener call it at their existing write boundaries. The migration SQL
+remains a self-contained revision snapshot.
+
+`next_dates` uses the same pure helper as a local fallback without setting ORM
+fields. The new read-purity regression failed before the change because it
+changed `(None, 0)` anchor state and dirtied the task. Completion and skip now
+initialize a missing fixed anchor before changing dates or releasing carry,
+preserving the original phase even when the next occurrence is an extra date.
+Regression coverage includes carried dates, zero-duration spans, retained COUNT
+and the absence of ORM dirty state after a read.
+
+The focused recurrence/import batch passed **29 tests**. The migration rollback
+fixture now inserts its deliberately malformed legacy carry via SQL after a
+valid model save: shared write-time derivation otherwise rejects it before the
+migration is reached. Its original SQL-error, protection-restoration and data
+rollback assertions remain in place.
+
+Another **111 tests** passed across task creation, task/status endpoints,
+calendar aggregation and the actual-provisioner migration suite. Together
+with the 93 evaluator and 29 recurrence/import tests, these are **233 focused
+tests** across distinct files. The additional integration command was:
+
+```sh
+cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -n 0 \
+  app/services/tenant/task_creation_test.py \
+  app/api/v1/tenant_endpoints/tasks_test.py \
+  app/api/v1/tenant_endpoints/task_statuses_test.py \
+  app/api/v1/tenant_endpoints/calendar_entries_test.py \
+  app/db/task_recurrence_anchor_migration_test.py --tb=short -q
+```
+
 ## Reproducible checks
 
 Run from the repository root with the documented dependencies and PostgreSQL
