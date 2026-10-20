@@ -124,6 +124,108 @@ async def _setup_event(session, acting_user):
     return a, a.guild, a.initiative, calendar, event
 
 
+@pytest.mark.parametrize(
+    "start,end",
+    [
+        ("2099-10-20T12:00:00", "2099-10-20T13:00:00"),
+        ("2099-10-20T12:00:00Z", "2099-10-20T13:00:00"),
+        ("2099-10-20T12:00:00", "2099-10-20T13:00:00Z"),
+    ],
+)
+async def test_event_creation_requires_offsets(
+    client, session, acting_user, start, end
+):
+    actor = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    calendar = await _enable_calendars(session, actor.initiative, actor.user)
+    response = await client.post(
+        actor.g("/calendar-events/"),
+        headers=actor.headers,
+        json={
+            "title": "Timed",
+            "calendar_id": calendar.id,
+            "start_at": start,
+            "end_at": end,
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("offset", ["Z", "+02:00"])
+async def test_event_creation_accepts_explicit_offsets(
+    client, session, acting_user, offset
+):
+    actor = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    calendar = await _enable_calendars(session, actor.initiative, actor.user)
+    response = await client.post(
+        actor.g("/calendar-events/"),
+        headers=actor.headers,
+        json={
+            "title": "Timed",
+            "calendar_id": calendar.id,
+            "start_at": f"2099-10-20T12:00:00{offset}",
+            "end_at": f"2099-10-20T13:00:00{offset}",
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert datetime.fromisoformat(
+        response.json()["start_at"]
+    ) == datetime.fromisoformat(f"2099-10-20T12:00:00{offset}")
+
+
+async def test_event_update_requires_offset(client, session, acting_user):
+    actor, _, _, _, event = await _setup_event(session, acting_user)
+    response = await client.patch(
+        actor.g(f"/calendar-events/{event.id}"),
+        headers=actor.headers,
+        json={"start_at": "2099-10-20T12:00:00"},
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("path", ["", "/detach", "/restore", "/add"])
+async def test_occurrence_requests_require_offset(client, session, acting_user, path):
+    actor, _, _, _, event = await _setup_event(session, acting_user)
+    response = await client.post(
+        actor.g(f"/calendar-events/{event.id}/occurrences{path}"),
+        headers=actor.headers,
+        json={"start": "2099-10-20T12:00:00"},
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_rsvp_occurrence_requires_offset(client, session, acting_user):
+    actor, _, _, _, event = await _setup_event(session, acting_user)
+    response = await client.patch(
+        actor.g(f"/calendar-events/{event.id}/rsvp"),
+        headers=actor.headers,
+        json={"rsvp_status": "accepted", "occurrence": "2099-10-20T12:00:00"},
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("GET", "", None),
+        ("POST", "/duplicate", None),
+        ("DELETE", "", None),
+        ("PUT", "/attendees", []),
+    ],
+)
+async def test_occurrence_query_requires_offset(
+    client, session, acting_user, method, path, payload
+):
+    actor, _, _, _, event = await _setup_event(session, acting_user)
+    response = await client.request(
+        method,
+        actor.g(f"/calendar-events/{event.id}{path}"),
+        headers=actor.headers,
+        params={"occurrence": "2099-10-20T12:00:00"},
+        json=payload,
+    )
+    assert response.status_code == 422, response.text
+
+
 async def test_event_summary_includes_tags(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

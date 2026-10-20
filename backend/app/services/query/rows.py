@@ -451,7 +451,20 @@ def evaluate(
     which is the shape every other read of this surface answers with.
     """
     select = plan.select
-    kept = [row for row in rows if _truthy(_value(select.whereClause, row, None))]
+    # A declared moment must already be a moment when WHERE, grouping and
+    # aggregates read it. Converting only the output makes equivalent ISO
+    # spellings compare as different text and picks the wrong min/max.
+    temporal = {column.name for column in plan.reads if column.type is FieldType.date}
+    normalized = rows
+    if temporal:
+        normalized = (
+            {
+                key: _as_datetime(value) if key in temporal else value
+                for key, value in row.items()
+            }
+            for row in rows
+        )
+    kept = [row for row in normalized if _truthy(_value(select.whereClause, row, None))]
     groups = _grouped(
         select,
         kept,
@@ -975,9 +988,14 @@ def _extract(part: Any, value: Any) -> Any:
 
 
 def _as_datetime(value: Any) -> Optional[datetime]:
-    """A moment, from whatever spelling the plug-in sent it in."""
+    """A UTC moment, from whatever spelling the plug-in sent it in.
+
+    A source's offset spells an instant, not a separate timezone in which to
+    bucket it. The query surface groups moments on UTC boundaries.
+    """
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return moment.astimezone(timezone.utc)
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
     if isinstance(value, (int, float)):
@@ -987,7 +1005,8 @@ def _as_datetime(value: Any) -> Optional[datetime]:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        moment = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return moment.astimezone(timezone.utc)
     return None
 
 
@@ -1004,7 +1023,9 @@ def _compare(left: Any, right: Any) -> int:
         return 0 if bool(left) == bool(right) else 1
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return (float(left) > float(right)) - (float(left) < float(right))
-    if isinstance(left, (datetime, date)) and isinstance(right, (datetime, date)):
+    # The other side may be a SQL literal. Only a typed temporal operand
+    # triggers this coercion; two date-looking text values remain text.
+    if isinstance(left, (datetime, date)) or isinstance(right, (datetime, date)):
         first, second = _as_datetime(left), _as_datetime(right)
         if first is not None and second is not None:
             return (first > second) - (first < second)

@@ -548,6 +548,8 @@ export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead =
   recurrence_strategy: "fixed",
   recurrence_occurrence_count: 0,
   recurrence_shift: 0,
+  recurrence_anchor: null,
+  recurrence_anchor_count: 0,
   recurrence_until: null,
   series_id: null,
   series_size: 0,

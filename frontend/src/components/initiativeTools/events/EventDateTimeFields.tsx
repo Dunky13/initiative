@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatClockSlot } from "@/lib/timeFormat";
 
 import {
+  composeDateTime,
   datesAreValid,
   endTimeOptionsFor,
   parseLocalDate,
@@ -23,13 +24,15 @@ import {
 } from "./eventDateTime";
 
 /** An event's start and end as the form holds them: `yyyy-MM-dd` dates and
- * `HH:MM` half-hour slots. */
+ * `HH:MM` values, with original instants retained for precise unchanged fields. */
 export interface EventTiming {
   allDay: boolean;
   startDate: string;
   startTime: string;
   endDate: string;
   endTime: string;
+  startInstant?: string;
+  endInstant?: string;
 }
 
 /**
@@ -38,23 +41,26 @@ export interface EventTiming {
  * runs from the start day's midnight to the end of its last day.
  */
 export function useEventTiming(timing: EventTiming): { start_at: string; end_at: string } | null {
-  const { allDay, startDate, startTime, endDate, endTime } = timing;
+  const { allDay, startDate, startTime, endDate, endTime, startInstant, endInstant } = timing;
   return useMemo(
-    () => eventRange({ allDay, startDate, startTime, endDate, endTime }),
-    [allDay, startDate, startTime, endDate, endTime]
+    () => eventRange({ allDay, startDate, startTime, endDate, endTime, startInstant, endInstant }),
+    [allDay, startDate, startTime, endDate, endTime, startInstant, endInstant]
   );
 }
 
 /** {@link useEventTiming}'s range, worked out where a hook cannot be used. */
 export function eventRange(timing: EventTiming): { start_at: string; end_at: string } | null {
-  const { allDay, startDate, startTime, endDate, endTime } = timing;
-  if (!datesAreValid(allDay, startDate, startTime, endDate, endTime)) return null;
+  const { allDay, startDate, startTime, endDate, endTime, startInstant, endInstant } = timing;
+  if (!datesAreValid(allDay, startDate, startTime, endDate, endTime, startInstant, endInstant))
+    return null;
   const lastDate = endDate || startDate;
-  // An all-day event is its dates, the same for every viewer: stored as UTC.
-  const [start, end] = allDay
-    ? [`${startDate}T00:00:00Z`, `${lastDate}T23:59:59Z`]
-    : [`${startDate}T${startTime}:00`, `${lastDate}T${endTime}:00`];
-  return { start_at: new Date(start).toISOString(), end_at: new Date(end).toISOString() };
+  const start = allDay
+    ? new Date(`${startDate}T00:00:00Z`)
+    : composeDateTime(startDate, startTime, startInstant);
+  const end = allDay
+    ? new Date(`${lastDate}T23:59:59Z`)
+    : composeDateTime(lastDate, endTime, endInstant);
+  return start && end ? { start_at: start.toISOString(), end_at: end.toISOString() } : null;
 }
 
 const TimeSelect = ({
@@ -71,11 +77,16 @@ const TimeSelect = ({
       <SelectValue />
     </SelectTrigger>
     <SelectContent className="max-h-60">
-      {options.map((opt) => (
-        <SelectItem key={opt.value} value={opt.value}>
-          {formatClockSlot(opt.value)}
-        </SelectItem>
-      ))}
+      {[
+        ...options,
+        ...(value && !options.some((option) => option.value === value) ? [{ value }] : []),
+      ]
+        .sort((a, b) => a.value.localeCompare(b.value))
+        .map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            {formatClockSlot(opt.value)}
+          </SelectItem>
+        ))}
     </SelectContent>
   </Select>
 );
@@ -93,7 +104,7 @@ export const EventDateTimeFields = ({
   value: EventTiming;
   onChange: (patch: Partial<EventTiming>) => void;
 }) => {
-  const { t } = useTranslation(["calendars", "common"]);
+  const { t } = useTranslation(["calendars", "common", "dates"]);
   const allDayId = useId();
   const { allDay, startDate, startTime, endDate, endTime } = value;
 
@@ -108,7 +119,16 @@ export const EventDateTimeFields = ({
     onChange({
       startDate: nextDate,
       startTime: nextTime,
-      ...shiftEndPreservingDuration(startDate, startTime, endDate, endTime, nextDate, nextTime),
+      ...shiftEndPreservingDuration(
+        startDate,
+        startTime,
+        endDate,
+        endTime,
+        nextDate,
+        nextTime,
+        value.startInstant,
+        value.endInstant
+      ),
     });
 
   const startDateField = (
@@ -137,6 +157,14 @@ export const EventDateTimeFields = ({
         <Label htmlFor={allDayId}>{t("common:calendar.allDay")}</Label>
       </div>
 
+      {!allDay && !eventRange(value) && startDate && endDate ? (
+        <p role="alert" className="text-destructive text-sm">
+          {composeDateTime(startDate, startTime, value.startInstant) &&
+          composeDateTime(endDate, endTime, value.endInstant)
+            ? t("dates:picker.invalidEventRange")
+            : t("dates:picker.invalidLocalDateTime")}
+        </p>
+      ) : null}
       {allDay ? (
         <div className="grid grid-cols-2 gap-4">
           {startDateField}

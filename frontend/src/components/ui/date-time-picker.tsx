@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeFormat } from "@/hooks/useTimeFormat";
+import { parseLocalCalendarDate, resolveLocalDateTime } from "@/lib/localDateTime";
 import { dateTimePattern } from "@/lib/timeFormat";
 import { cn } from "@/lib/utils";
 
@@ -26,15 +27,8 @@ interface DateTimePickerProps {
 const formatForStorage = (date: Date, includeTime: boolean) =>
   includeTime ? format(date, "yyyy-MM-dd'T'HH:mm") : format(date, "yyyy-MM-dd");
 
-const applyTimeToDate = (date: Date, time: string) => {
-  const [hours, minutes] = time.split(":").map((segment) => Number.parseInt(segment, 10));
-  const next = new Date(date);
-  next.setHours(Number.isFinite(hours) ? hours : 0);
-  next.setMinutes(Number.isFinite(minutes) ? minutes : 0);
-  next.setSeconds(0);
-  next.setMilliseconds(0);
-  return next;
-};
+const applyTimeToDate = (date: Date, time: string) =>
+  resolveLocalDateTime(format(date, "yyyy-MM-dd"), time, date.toISOString());
 
 // Candidate formats tried (in order) when parsing a manually typed date.
 const DATE_FORMATS = [
@@ -65,8 +59,8 @@ const DATE_TIME_FORMATS = [
 ];
 
 // Parse a free-form typed string into a Date, trying known formats first and
-// falling back to native parsing. Fields absent from a matched format (e.g. the
-// time when only a date is typed) inherit from `reference`.
+// accepting only complete, round-tripping calendar values. Native parsing
+// would silently normalize impossible dates such as February 30.
 const parseManualDate = (input: string, includeTime: boolean, reference: Date): Date | null => {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -75,12 +69,22 @@ const parseManualDate = (input: string, includeTime: boolean, reference: Date): 
   const formats = includeTime ? [...DATE_TIME_FORMATS, ...DATE_FORMATS] : DATE_FORMATS;
   for (const fmt of formats) {
     const parsed = parse(trimmed, fmt, reference);
-    if (isValid(parsed)) {
-      return parsed;
+    // Date-fns rejects invalid days, but local DST gaps can still normalize.
+    const normalized = (text: string) =>
+      text
+        .toLowerCase()
+        .replace(/\b0+(\d)/g, "$1")
+        .replace(/\s+/g, " ");
+    if (isValid(parsed) && normalized(format(parsed, fmt)) === normalized(trimmed)) {
+      if (!includeTime) return parsed;
+      const time =
+        fmt.includes("H") || fmt.includes("h")
+          ? format(parsed, "HH:mm")
+          : format(reference, "HH:mm");
+      return resolveLocalDateTime(format(parsed, "yyyy-MM-dd"), time, reference.toISOString());
     }
   }
-  const native = new Date(trimmed);
-  return isValid(native) ? native : null;
+  return null;
 };
 
 export const DateTimePicker = ({
@@ -97,18 +101,14 @@ export const DateTimePicker = ({
   const { user } = useAuth();
   // Read so the typed and trigger labels re-render on a clock change.
   useTimeFormat();
-  const selectedDate = value
+  const parsedValue = value
     ? includeTime
       ? new Date(value)
-      : (() => {
-          // Parse date-only string as local date to avoid timezone issues
-          const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-          if (match) {
-            return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-          }
-          return new Date(value);
-        })()
-    : undefined;
+      : parseLocalCalendarDate(value.slice(0, 10))
+    : null;
+  const selectedDate = parsedValue && isValid(parsedValue) ? parsedValue : undefined;
+  const [invalid, setInvalid] = React.useState(false);
+  const errorId = React.useId();
   const timeValue = selectedDate ? format(selectedDate, "HH:mm") : "";
   const defaultPlaceholder = includeTime ? t("picker.pickDateTime") : t("picker.pickDate");
 
@@ -120,6 +120,7 @@ export const DateTimePicker = ({
   // Keep the text field in sync whenever the committed value changes.
   React.useEffect(() => {
     setInputValue(displayValue);
+    setInvalid(false);
   }, [displayValue]);
 
   const [open, setOpen] = React.useState(false);
@@ -158,14 +159,24 @@ export const DateTimePicker = ({
 
   const handleSelectDate = (date: Date | undefined) => {
     if (!date) {
+      setInvalid(false);
+      setInputValue("");
       onChange("");
       return;
     }
     if (includeTime) {
       const baseTime = selectedDate ? format(selectedDate, "HH:mm") : format(new Date(), "HH:mm");
       const next = applyTimeToDate(date, baseTime);
+      if (!next) {
+        setInvalid(true);
+        return;
+      }
+      setInvalid(false);
+      setInputValue(format(next, dateTimePattern("MMM d, yyyy")));
       onChange(formatForStorage(next, includeTime));
     } else {
+      setInvalid(false);
+      setInputValue(format(date, "MMM d, yyyy"));
       onChange(formatForStorage(date, includeTime));
     }
   };
@@ -175,6 +186,12 @@ export const DateTimePicker = ({
       return;
     }
     const next = applyTimeToDate(selectedDate, nextTime);
+    if (!next) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    setInputValue(format(next, dateTimePattern("MMM d, yyyy")));
     onChange(formatForStorage(next, includeTime));
   };
 
@@ -185,6 +202,7 @@ export const DateTimePicker = ({
   // Clearing is intentional only via Enter or the Clear button.
   const commitInput = (allowClear: boolean) => {
     const trimmed = inputValue.trim();
+    setInvalid(false);
     if (!trimmed) {
       if (allowClear) {
         if (value) {
@@ -197,9 +215,9 @@ export const DateTimePicker = ({
     }
     const parsed = parseManualDate(trimmed, includeTime, selectedDate ?? new Date());
     if (!parsed) {
-      // Couldn't parse — revert to the last valid value.
-      setInputValue(displayValue);
-      return;
+      // Retain the input so the reader can correct it; do not save a different day.
+      setInvalid(true);
+      return false;
     }
     const next = formatForStorage(parsed, includeTime);
     if (next === value) {
@@ -211,11 +229,14 @@ export const DateTimePicker = ({
   };
 
   const handleClear = () => {
+    setInvalid(false);
+    setInputValue("");
     onChange("");
   };
 
   const handleOpenChange = (next: boolean) => {
     if (next) {
+      setInvalid(false);
       // On open, jump the calendar back to the selected date and reset the text
       // field — closing via Escape unmounts the input without firing onBlur, so
       // any uncommitted text would otherwise linger until the value changes.
@@ -256,16 +277,26 @@ export const DateTimePicker = ({
             placeholder={t("picker.typeDate")}
             aria-label={t("picker.typeDate")}
             disabled={disabled}
-            onChange={(event) => setInputValue(event.target.value)}
+            aria-invalid={invalid || undefined}
+            aria-describedby={invalid ? errorId : undefined}
+            onChange={(event) => {
+              setInputValue(event.target.value);
+              setInvalid(false);
+            }}
             onBlur={() => commitInput(false)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                commitInput(true);
+                if (commitInput(true) === false) event.stopPropagation();
               }
             }}
           />
         </div>
+        {invalid ? (
+          <p id={errorId} role="alert" className="px-3 py-2 text-destructive text-sm">
+            {t(includeTime ? "picker.invalidLocalDateTime" : "picker.invalidDate")}
+          </p>
+        ) : null}
         <Calendar
           {...mergedCalendarProps}
           mode="single"
@@ -287,6 +318,8 @@ export const DateTimePicker = ({
               <Input
                 id={`${id ?? "datetime"}-time`}
                 type="time"
+                aria-invalid={invalid || undefined}
+                aria-describedby={invalid ? errorId : undefined}
                 step={300}
                 value={timeValue}
                 onChange={(event) => handleTimeChange(event.target.value)}

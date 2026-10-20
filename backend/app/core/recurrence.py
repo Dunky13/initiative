@@ -414,15 +414,34 @@ def first(text: str, start: datetime, shift: int, n: int) -> list[datetime]:
     return list(islice(_walk(parse(text), start, shift, start), n))
 
 
+def _remaining(repeat: Recurrence, done: int) -> Recurrence:
+    if done and (total := repeat.rule.get("COUNT")):
+        return Recurrence(
+            {**repeat.rule, "COUNT": [max(total[0] - done, 0)]},
+            repeat.exdates,
+            repeat.rdates,
+        )
+    return repeat
+
+
 def next_start(
-    text: str, start: datetime, shift: int = 0, *, count: bool = True
+    text: str,
+    start: datetime,
+    shift: int = 0,
+    *,
+    count: bool = True,
+    after: datetime | None = None,
+    done: int = 0,
 ) -> datetime | None:
-    """The first occurrence after ``start`` of a series starting there."""
+    """The first occurrence after ``after`` (by default ``start``), keeping
+    the series anchored at ``start`` even after an off-cadence extra date."""
+    lower = start if after is None else after
+    repeat = _remaining(parse(text), done)
     return next(
         (
             value
-            for value in _walk(parse(text), start, shift, start, count=count)
-            if value > start
+            for value in _walk(repeat, start, shift, lower, count=count)
+            if value > lower
         ),
         None,
     )
@@ -450,12 +469,8 @@ def last_start(
         if not isinstance(end, datetime):
             end = datetime.combine(end, _END_OF_DAY, timezone.utc) - offset
         return max([end.astimezone(timezone.utc), *extra])
-    if count := recurrence.rule.get("COUNT"):
-        left = Recurrence(
-            {**recurrence.rule, "COUNT": [max(count[0] - done, 1)]},
-            recurrence.exdates,
-            recurrence.rdates,
-        )
+    if "COUNT" in recurrence.rule:
+        left = _remaining(recurrence, done)
         return max(_walk(left, start, shift, start), default=None)
     return None
 
@@ -469,10 +484,13 @@ def between(
     *,
     count: bool = True,
     at_most: int | None = None,
+    done: int = 0,
 ) -> list[datetime]:
     """The occurrences starting in ``[lower, upper]``: the first ``at_most``
     of them, with one."""
-    starts = _walk(parse(text), start, shift, lower, upper, count=count)
+    starts = _walk(
+        _remaining(parse(text), done), start, shift, lower, upper, count=count
+    )
     return list(islice(starts, at_most))
 
 

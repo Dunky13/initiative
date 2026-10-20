@@ -176,7 +176,7 @@ def occurrences(
     start_before: datetime,
     tz: Optional[str] = None,
     changed: Mapping[int, set[datetime]] | None = None,
-    budget: int = recurrence.MAX_EXPANDED,
+    budget: int | None = None,
 ) -> list[CalendarEventSummary]:
     """The events starting in the window, a repeating one once for each of
     its occurrences there, ordered by start.
@@ -187,6 +187,8 @@ def occurrences(
 
     A window whose repeats hold more than ``budget`` occurrences is refused,
     for a shorter one."""
+    if budget is None:
+        budget = recurrence.MAX_EXPANDED
     first = _window_day(start_after, _NO_ZONE_INWARD, tz)
     last = _window_day(start_before, -_NO_ZONE_INWARD, tz)
     found: list[CalendarEventSummary] = []

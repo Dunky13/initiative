@@ -286,3 +286,21 @@ async def test_a_length_of_time_is_not_a_moment(guild):
         "SELECT interval '3 days' AS gap FROM tasks", context=_context(guild)
     )
     assert columns == (QueryColumn(name="gap", type=FieldType.text),)
+
+
+async def test_calendar_dates_keep_their_kind_beside_timestamps(guild):
+    statement = resolve("SELECT title FROM tasks")
+    values = type(statement)(
+        sql=(
+            "SELECT date '2026-08-03' AS day,"
+            " timestamp '2026-08-03 00:00:00' AS local_at,"
+            " timestamptz '2026-08-03T00:00:00Z' AS at"
+        ),
+        parameters=(),
+        relations=("tasks",),
+    )
+    result = await execute(values, context=_context(guild))
+    assert [column.date_only for column in result.columns] == [True, False, False]
+    # The numeric wire spelling stays compatible; metadata preserves the
+    # distinction a viewer west of UTC needs when formatting these values.
+    assert result.rows == ((1785715200000, 1785715200000, 1785715200000),)

@@ -132,7 +132,7 @@ function render(data, config, context) {
       label: column.name || say("column") + " " + (index + 1),
       align: column.type === "number" ? "end" : "start",
     };
-    if (column.type === "date") spec.format = "date";
+    if (column.type === "date") spec.format = column.date_only ? "date-only" : "date";
     return spec;
   });
 

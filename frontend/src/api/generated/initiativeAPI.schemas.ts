@@ -1508,6 +1508,9 @@ export interface TaskListRead {
   assignees: TaskAssigneeSummary[];
   recurrence_occurrence_count: number;
   recurrence_shift: number;
+  recurrence_anchor: string | null;
+  /** @minimum 0 */
+  recurrence_anchor_count: number;
   recurrence_until: string | null;
   comment_count: number;
   blocked_by_open_count: number;
@@ -4257,6 +4260,7 @@ export interface QueryColumnDescription {
   name: string;
   type: FieldType;
   grain?: string | null;
+  date_only?: boolean;
 }
 
 /**
@@ -10466,6 +10470,9 @@ export interface TaskRead {
   assignees: UserPublic[];
   recurrence_occurrence_count: number;
   recurrence_shift: number;
+  recurrence_anchor: string | null;
+  /** @minimum 0 */
+  recurrence_anchor_count: number;
   recurrence_until: string | null;
   series_id: number | null;
   series_size: number;

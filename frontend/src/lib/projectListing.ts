@@ -62,6 +62,8 @@ export interface ProjectListingTask {
   recurrence_strategy?: RecurrenceStrategy;
   recurrence_shift?: number;
   recurrence_occurrence_count?: number;
+  recurrence_anchor?: string | null;
+  recurrence_anchor_count?: number;
   position?: number;
   status_name: string;
   checklist: { text: string; done: boolean }[];
@@ -217,6 +219,8 @@ export const projectListingBoard = (
       recurrence_strategy: task.recurrence_strategy ?? "fixed",
       recurrence_shift: task.recurrence_shift ?? 0,
       recurrence_occurrence_count: task.recurrence_occurrence_count ?? 0,
+      recurrence_anchor: shifted(task.recurrence_anchor, shift),
+      recurrence_anchor_count: task.recurrence_anchor_count ?? 0,
       recurrence_until: null,
       description_excerpt: task.description ? markdownExcerpt(task.description) : null,
       has_description: Boolean(task.description),

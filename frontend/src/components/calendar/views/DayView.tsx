@@ -22,7 +22,10 @@ export function DayView({
 }: CalendarGridViewProps) {
   const { t } = useTranslation(["common"]);
 
-  const entriesByDate = useMemo(() => buildEntriesByDate(entries), [entries]);
+  const entriesByDate = useMemo(
+    () => buildEntriesByDate(entries, { start: focusDate, end: focusDate }),
+    [entries, focusDate]
+  );
   const dayEntries = entriesByDate.get(dateKey(focusDate)) ?? [];
   const allDayEntries = dayEntries.filter((e) => e.allDay);
 

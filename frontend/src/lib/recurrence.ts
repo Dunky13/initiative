@@ -503,6 +503,18 @@ const STEP_DAYS: Record<RecurrenceFrequency, number> = {
 export const maxOccurrences = (rule: RecurrenceRule) =>
   Math.min(10000, Math.floor((100 * 366) / (STEP_DAYS[rule.frequency] * rule.interval)) + 1);
 
+/** One clamped day in each chosen month, independent of leap years. January
+ * uses its year-day; later months count back from year end so February's leap
+ * day cannot move them. A clamped February date is its last day in either year. */
+const yearlyClampedDays = (months: number[], day: number): number[] =>
+  [...new Set(months)]
+    .map((month) => {
+      if (month === 1) return day;
+      const last = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+      return (Date.UTC(2001, month - 1, Math.min(day, last)) - Date.UTC(2002, 0, 1)) / 86_400_000;
+    })
+    .sort((a, b) => a - b);
+
 /**
  * The RRULE for a rule as picked. Send it with `tz: browserTimezone()`, the
  * zone its days are in. An all-day event ends on a date.
@@ -530,9 +542,14 @@ export const toRRule = (rule: RecurrenceRule, options?: { allDay?: boolean }): s
       parts.push(`BYDAY=${weekdays}`, `BYSETPOS=${rule.set_position === "first" ? 1 : -1}`);
     } else if (rule.monthly_mode === "day_of_month" && days.length === 1 && days[0] > 28) {
       // A day a short month lacks falls on that month's last day.
-      parts.push(
-        `BYMONTHDAY=${Array.from({ length: days[0] - 27 }, (_, i) => 28 + i).join(",")};BYSETPOS=-1`
-      );
+      parts.push(`BYMONTHDAY=${Array.from({ length: days[0] - 27 }, (_, i) => 28 + i).join(",")}`);
+      if (rule.frequency === "yearly" && new Set(rule.months).size > 1) {
+        // BYSETPOS would select only once across the entire year. Explicit
+        // year-days select the clamped date independently in every month.
+        parts.push(`BYYEARDAY=${yearlyClampedDays(rule.months, days[0]).join(",")}`);
+      } else {
+        parts.push("BYSETPOS=-1");
+      }
     } else if (rule.monthly_mode === "day_of_month" && days.length) {
       parts.push(`BYMONTHDAY=${days.join(",")}`);
     }
@@ -609,6 +626,9 @@ const toLocalParts = (parts: Parts, start: Date, shift: number): Parts | null =>
   const picked = new Date(start.getTime() + shift * 60_000);
   const days = localDayNumber(start) - utcDayNumber(picked);
   if (!days) return parts;
+  // A viewer-day shift can cross a year boundary. Keep year-day rules custom
+  // rather than pretending an unchanged year-day still represents the form.
+  if (parts.has("BYYEARDAY")) return null;
   const moved: Parts = new Map(parts);
   const byday = parts.get("BYDAY") ?? [];
   const monthly = ["MONTHLY", "YEARLY"].includes(parts.get("FREQ")?.[0] ?? "");
@@ -688,6 +708,7 @@ export const fromStored = (
     "BYMONTHDAY",
     "BYMONTH",
     "BYSETPOS",
+    "BYYEARDAY",
   ]);
   if ([...parts.keys()].some((key) => !known.has(key))) return "custom";
 
@@ -699,13 +720,29 @@ export const fromStored = (
   const byday = parts.get("BYDAY") ?? [];
   const monthdays = (parts.get("BYMONTHDAY") ?? []).map(Number);
   const setpos = parts.get("BYSETPOS");
+  const yeardays = (parts.get("BYYEARDAY") ?? []).map(Number);
+  const months = (parts.get("BYMONTH") ?? []).map(Number);
+  const clampedDay = 27 + monthdays.length;
+  const clampedYear =
+    freq === "yearly" &&
+    months.length > 1 &&
+    months.every((month) => month >= 1 && month <= 12) &&
+    !byday.length &&
+    !setpos &&
+    clampedDay >= 29 &&
+    clampedDay <= 31 &&
+    monthdays.every((day, index) => day === 28 + index) &&
+    yearlyClampedDays(months, clampedDay).join() === [...yeardays].sort((a, b) => a - b).join();
+  if (yeardays.length && !clampedYear) return "custom";
   if (freq === "weekly") {
     if (monthdays.length || setpos || byday.some((code) => !WEEKDAY_OF[code])) return "custom";
     rule.weekdays = byday.map((code) => WEEKDAY_OF[code]);
   } else if (freq === "monthly" || freq === "yearly") {
     const plain = byday.length > 0 && byday.every((code) => WEEKDAY_OF[code]);
     const position = byday.length === 1 ? POSITION_OF[Number(byday[0].slice(0, -2))] : undefined;
-    if (position && !monthdays.length && !setpos) {
+    if (clampedYear) {
+      rule.month_days = [clampedDay];
+    } else if (position && !monthdays.length && !setpos) {
       rule.monthly_mode = "weekday";
       rule.weekday_position = position;
       rule.weekday = WEEKDAY_OF[byday[0].slice(-2)] ?? null;
@@ -742,7 +779,6 @@ export const fromStored = (
     } else if (byday.length || monthdays.length || setpos) {
       return "custom";
     }
-    const months = (parts.get("BYMONTH") ?? []).map(Number);
     if (months.length && freq === "monthly") return "custom";
     rule.months = months;
   } else if (byday.length || monthdays.length || setpos || parts.has("BYMONTH")) {

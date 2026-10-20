@@ -1,8 +1,11 @@
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { addDays, format, parseISO, startOfDay } from "date-fns";
 import type { CSSProperties, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { UnreadDot } from "@/components/notifications/UnreadDot";
+import { resolveLocalDateTime } from "@/lib/localDateTime";
+import { toast } from "@/lib/mascotToast";
 import { formatHourLabel, formatCompactTime as formatTime } from "@/lib/timeFormat";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +40,7 @@ export const SPAN_BAR_HEIGHT = 20; // px per lane
 export const SPAN_BAR_GAP = 2;
 
 const ROW_HEIGHT = 40; // px per hour row in day/week views
+const MIN_BLOCK_HEIGHT = 20;
 
 /** Hours shown in the day and week time grids. */
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -64,19 +68,25 @@ export function kindLabelKey(kind: CalendarEntryKind): "calendar.start" | "calen
 function daySegmentHours(
   day: Date,
   entry: CalendarEntry
-): { startHour: number; endHour: number } | null {
+): { startHour: number; endHour: number; clockChange: boolean } | null {
   const { start, end } = parseEntry(entry);
   if (Number.isNaN(start.getTime())) return null;
   const safeEnd = Number.isNaN(end.getTime()) ? start : end;
   const dayStart = startOfDay(day);
-  const nextDay = addDays(dayStart, 1);
+  const nextDay = startOfDay(addDays(dayStart, 1));
   if (safeEnd <= dayStart || start >= nextDay) return null;
   const segStart = start < dayStart ? dayStart : start;
   const segEnd = safeEnd > nextDay ? nextDay : safeEnd;
-  const startHour = (segStart.getTime() - dayStart.getTime()) / 3_600_000;
-  let endHour = (segEnd.getTime() - dayStart.getTime()) / 3_600_000;
-  if (endHour <= startHour) endHour = Math.min(startHour + 1, 24);
-  return { startHour, endHour };
+  const wallHour = (date: Date) =>
+    date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+  const startHour = wallHour(segStart);
+  let endHour = segEnd.getTime() === nextDay.getTime() ? 24 : wallHour(segEnd);
+  const clockChange = endHour <= startHour && segEnd > segStart;
+  // A backwards wall-clock span cannot be drawn to scale on a 24-row grid.
+  // Use the existing minimum-height marker and label the actual offsets below.
+  // In particular, do not fabricate an extra hour of wall-clock duration.
+  if (endHour <= startHour) endHour = startHour;
+  return { startHour, endHour, clockChange };
 }
 
 /**
@@ -100,24 +110,28 @@ function assignLanes<T extends { lane: number }>(
 }
 
 /** Every entry, placed on each day it spans (start through end inclusive). */
-export function buildEntriesByDate(entries: CalendarEntry[]): Map<string, CalendarEntry[]> {
+export function buildEntriesByDate(
+  entries: CalendarEntry[],
+  visible: { start: Date; end: Date }
+): Map<string, CalendarEntry[]> {
   const map = new Map<string, CalendarEntry[]>();
   for (const entry of entries) {
     const { start, end } = parseEntry(entry);
     if (Number.isNaN(start.getTime())) continue;
 
     const endDay = Number.isNaN(end.getTime()) ? start : end;
-    const cursor = new Date(startOfDay(start));
-    const last = startOfDay(endDay);
-    // Safety cap to avoid runaway loops on bad data
-    let iterations = 0;
-    while (cursor <= last && iterations < 90) {
+    const cursor = new Date(
+      Math.max(startOfDay(start).getTime(), startOfDay(visible.start).getTime())
+    );
+    const last = new Date(
+      Math.min(startOfDay(endDay).getTime(), startOfDay(visible.end).getTime())
+    );
+    while (cursor <= last) {
       const key = dateKey(cursor);
       const list = map.get(key) ?? [];
       list.push(entry);
       map.set(key, list);
-      cursor.setDate(cursor.getDate() + 1);
-      iterations++;
+      cursor.setTime(startOfDay(addDays(cursor, 1)).getTime());
     }
   }
   return map;
@@ -350,8 +364,15 @@ export function DayColumn({
   /** The narrower week column: tighter padding, times only on taller blocks. */
   compact?: boolean;
 }) {
+  const { t } = useTranslation("dates");
   const key = dateKey(day);
-  const blocks: { entry: CalendarEntry; startHour: number; endHour: number; lane: number }[] = [];
+  const blocks: {
+    entry: CalendarEntry;
+    startHour: number;
+    endHour: number;
+    clockChange: boolean;
+    lane: number;
+  }[] = [];
   for (const entry of entries) {
     const seg = daySegmentHours(day, entry);
     if (seg) blocks.push({ entry, ...seg, lane: 0 });
@@ -360,15 +381,19 @@ export function DayColumn({
     assignLanes(
       blocks,
       (b) => b.startHour,
-      (b) => b.endHour
+      (b) => Math.max(b.endHour, b.startHour + MIN_BLOCK_HEIGHT / ROW_HEIGHT)
     ),
     1
   );
 
   const clickSlot = (hour: number) => {
-    const slotDate = new Date(day);
-    slotDate.setHours(hour, 0, 0, 0);
-    onSlotClick?.(slotDate);
+    if (!onSlotClick) return;
+    const slotDate = resolveLocalDateTime(key, `${String(hour).padStart(2, "0")}:00`);
+    if (!slotDate) {
+      toast.error(t("picker.invalidLocalDateTime"));
+      return;
+    }
+    onSlotClick(slotDate);
   };
 
   return (
@@ -395,8 +420,11 @@ export function DayColumn({
       ))}
 
       {blocks.map((block) => {
-        const height = Math.max((block.endHour - block.startHour) * ROW_HEIGHT, 20);
+        const height = Math.max((block.endHour - block.startHour) * ROW_HEIGHT, MIN_BLOCK_HEIGHT);
         const { start, end } = parseEntry(block.entry);
+        const rangeLabel = block.clockChange
+          ? `${formatTime(start)} (${format(start, "xxx")}) – ${formatTime(end)} (${format(end, "xxx")})`
+          : `${formatTime(start)} – ${formatTime(end)}`;
         return (
           // A multi-day timed event renders one block per day, so the dnd-kit
           // id carries the day to stay unique (data.entry is unchanged, so
@@ -405,6 +433,7 @@ export function DayColumn({
             key={`${block.entry.id}-${key}`}
             dragId={`${block.entry.id}-${key}`}
             entry={block.entry}
+            title={block.clockChange ? `${block.entry.title}: ${rangeLabel}` : undefined}
             enabled={dndEnabled}
             onSelect={onEntryClick}
             className={cn(
@@ -424,9 +453,7 @@ export function DayColumn({
             <div className={cn("flex flex-col", compact ? "px-1.5 py-0.5" : "px-2 py-1")}>
               <span className="truncate font-medium">{block.entry.title}</span>
               {!compact || height >= 32 ? (
-                <span className="text-3xs text-muted-foreground">
-                  {formatTime(start)} – {formatTime(end)}
-                </span>
+                <span className="text-3xs text-muted-foreground">{rangeLabel}</span>
               ) : null}
             </div>
           </DraggableEntryButton>

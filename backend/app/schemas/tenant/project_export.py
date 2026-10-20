@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, AwareDatetime, Field
 
 from app.schemas.base import SanitizedBaseModel
 
@@ -121,6 +121,8 @@ class ProjectExportTask(SanitizedBaseModel):
     # RRULE lines; an export taken before RRULE carries the older JSON shape.
     recurrence: Optional[str | dict] = None
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[AwareDatetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     recurrence_strategy: str = "fixed"
     recurrence_occurrence_count: int = 0
     #: The repeating series the task is in, as a number the tasks of one series

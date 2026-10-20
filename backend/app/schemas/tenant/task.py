@@ -230,6 +230,8 @@ class TaskRead(TaskBase):
     assignees: List[UserPublic] = []
     recurrence_occurrence_count: int = 0
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[datetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     #: No occurrence of the series starts after this; None while it goes on.
     recurrence_until: Optional[datetime] = None
     #: The first task of the repeating series; None until the series moves on.
@@ -276,6 +278,8 @@ class TaskListRead(TaskBase):
     assignees: List[TaskAssigneeSummary] = []
     recurrence_occurrence_count: int = 0
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[datetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     #: No occurrence of the series starts after this; None while it goes on.
     recurrence_until: Optional[datetime] = None
     comment_count: int = 0

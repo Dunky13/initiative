@@ -34,6 +34,63 @@ def run(sql: str, rows=ROWS):
     return evaluate(plan(sql, READS), rows)
 
 
+class TestTemporalValues:
+    """A declared datetime is an instant even when its ISO spellings differ."""
+
+    @pytest.fixture
+    def moments(self):
+        return [
+            {"shop": "utc", "at": "2026-10-20T08:00:00Z"},
+            {"shop": "offset", "at": "2026-10-20T10:00:00+02:00"},
+            {"shop": "earlier", "at": "2026-10-20T09:00:00+02:00"},
+        ]
+
+    @pytest.mark.parametrize(
+        "predicate,expected",
+        [
+            ("at = '2026-10-20T08:00:00Z'", 2),
+            ("'2026-10-20T10:00:00+02:00' = at", 2),
+            ("at < '2026-10-20T07:30:00Z'", 1),
+            ("at IN ('2026-10-20T08:00:00Z')", 2),
+        ],
+    )
+    def test_predicates_compare_instants(self, moments, predicate, expected):
+        assert len(run(f"SELECT shop FROM rows WHERE {predicate}", moments)) == expected
+
+    def test_aggregates_and_groups_use_instants(self, moments):
+        assert run("SELECT min(at), max(at) FROM rows", moments) == (
+            (1792479600000, 1792483200000),
+        )
+        assert run(
+            "SELECT at, count(*) AS n FROM rows GROUP BY at ORDER BY at", moments
+        ) == ((1792479600000, 1), (1792483200000, 2))
+        assert run("SELECT count(DISTINCT at) FROM rows", moments) == ((2,),)
+
+    def test_ordering_a_date_not_selected_uses_instants(self, moments):
+        assert run("SELECT shop FROM rows ORDER BY at, shop", moments) == (
+            ("earlier",),
+            ("offset",),
+            ("utc",),
+        )
+
+    def test_equivalent_instants_share_a_utc_bucket(self, moments):
+        assert run(
+            "SELECT date_trunc('day', at), count(*) FROM rows "
+            "GROUP BY date_trunc('day', at)",
+            moments,
+        ) == ((1792454400000, 3),)
+
+    def test_date_looking_text_stays_text(self, moments):
+        text_plan = plan(
+            "SELECT at FROM rows ORDER BY at", [RowColumn("at", FieldType.text)]
+        )
+        assert evaluate(text_plan, moments) == (
+            ("2026-10-20T08:00:00Z",),
+            ("2026-10-20T09:00:00+02:00",),
+            ("2026-10-20T10:00:00+02:00",),
+        )
+
+
 class TestWhatThePlannerRefuses:
     def test_a_column_the_endpoint_does_not_return(self):
         """The whole reason a plug-in declares its output: this is refused while
