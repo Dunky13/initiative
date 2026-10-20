@@ -3,7 +3,13 @@
 A repeating task makes the next task of its series when it is completed
 (``task_creation.advance_recurrence_if_needed``), copied from itself. Every task
 the series has made carries ``series_id``, the id of its first task, from the
-moment the series first moves on.
+moment the series first moves on. The repeat moves to the new task, and the
+finished one stops repeating.
+
+The next task's date is counted by the task's ``recurrence_strategy``
+(:func:`next_dates`): "On schedule" (``fixed``) from the due date, "After
+completion" (``rolling``) from when the task was finished. Skipping a task
+(:func:`skip`) moves it to the date the next task would have had.
 
 An edit asks which tasks it is for:
 
@@ -157,8 +163,9 @@ def next_dates(
     if (task.recurrence_strategy or "fixed") == "rolling":
         # Rolling counts from the completer's local day, at the task's own
         # local time of day: a 5pm LA task is midnight UTC the next day, so a
-        # UTC day would land a day early. The zone is the request's, read here
-        # and never stored.
+        # UTC day would land a day early. The zone is whoever finished it:
+        # the day a completion counts on is theirs, so it is read here and
+        # never stored on the task.
         zone = resolve_zone(user_timezone)
         due_local = due.astimezone(zone)
         base = (

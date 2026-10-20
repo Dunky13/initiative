@@ -329,6 +329,8 @@ All `HTTPException` detail strings must use constants from `backend/app/core/mes
 
 Python uses 4-space indentation, full type hints, `snake_case` modules/functions, and `PascalCase` SQLModel or schema classes; keep routing thin and push validation to `schemas` and `services`. React components are `PascalCase` files, hooks follow the `useThing` convention, and shared helpers live in `frontend/src/lib` or `api`. Ruff and ESLint must pass before opening a PR.
 
+**Extend before adding.** Before adding a strategy, enum value, column or service, find the mechanism that already does most of it and extend that: a task that repeats "after completion" is the existing `rolling` strategy, not a new one. A request or issue that names a shape (a stored timezone, a new mode) describes the need, not the design; when the existing mechanism covers it differently, say so instead of building the shape as written. A new kind of thing needs a maintainer's agreement on an issue first.
+
 ### Security-sensitive comments
 
 **Do not write code comments that reference direct security issues** — specific vulnerabilities, exploit or bypass mechanisms, "without this an attacker could…" narratives, or step-by-step descriptions of how a control could be defeated. This source is public, so such comments are an attack-targeting surface: they hand an attacker a roadmap. Keep comments to **simple functional explanations** of what the code does and why, not how a protection works internally or how it could fail. Put exploit-level detail in the private issue tracker or a security doc, not inline.

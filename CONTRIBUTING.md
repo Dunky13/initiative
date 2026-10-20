@@ -163,6 +163,8 @@ Commit the updated generated files alongside your schema changes. CI will fail i
 
 ## Submitting Changes
 
+**Agree the shape before you build something new.** A change that adds a new kind of thing (a new option on a model, an enum value, a table, a setting) starts as an issue, and the pull request follows once a maintainer has agreed how it should work. Extend what's already there before adding something beside it: a new way for a task to repeat belongs in the existing repeat rules, not in a second schedule next to them.
+
 1. Fork the repo and create a branch from **`dev`**
 2. Make your changes
 3. Ensure tests and linters pass

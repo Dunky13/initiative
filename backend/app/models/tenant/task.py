@@ -146,6 +146,9 @@ class Task(
     recurrence_until: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    # How the next task's date is counted (``task_series.next_dates``):
+    # ``fixed`` is "On schedule" in the app, from this task's due date;
+    # ``rolling`` is "After completion", from when this task was finished.
     recurrence_strategy: str = Field(
         default="fixed",
         sa_column=Column(String(length=20), nullable=False, server_default="fixed"),
