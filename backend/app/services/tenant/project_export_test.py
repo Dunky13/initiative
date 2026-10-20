@@ -8,6 +8,9 @@ checklists, assignees, and property values.
 
 from datetime import datetime, timezone
 
+import pytest
+from pydantic import ValidationError
+
 from app.core.user_display import handle_of
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -25,6 +28,7 @@ from app.models.tenant.tag import Tag
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.import_envelopes import CURRENT_SCHEMA_VERSION
 from app.models.tenant.task import Task, TaskAssignee, TaskStatusCategory
+from app.schemas.tenant.project_export import ProjectExportEnvelope
 from app.services.tenant import project_export as export_service
 from app.services.tenant import project_import as import_service
 from app.services.tenant.project_grants import get_project_hydrated
@@ -266,6 +270,9 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     stage = await create_property_definition(
         session, source_initiative, name="Stage", type=PropertyType.text
     )
+    lead = await create_property_definition(
+        session, source_initiative, name="Lead", type=PropertyType.user_reference
+    )
     tag = (await session.exec(select(Tag))).one()
     plugin = await create_guild_plugin(
         session,
@@ -306,6 +313,9 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
                         "status_ids": [todo.id],
                         "assignees": ["me", str(assignee.id)],
                         "tag_ids": [tag.id],
+                        "properties": [
+                            {"property_id": lead.id, "op": "eq", "value": assignee.id}
+                        ],
                     },
                 }
             ],
@@ -317,6 +327,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
                 {"field": "task_status_id", "hidden": [str(done.id)]},
                 {"field": f"property:{severity.id}", "hidden": ["low"]},
                 {"field": "assignee_ids", "hidden": [str(assignee.id)]},
+                {"field": f"property:{lead.id}", "hidden": [str(assignee.id)]},
             ],
             "group_by": f"property:{severity.id}",
         },
@@ -348,7 +359,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     exported = {layout.kind: layout.definition for layout in envelope.layouts}
     place = {p.name: n for n, p in enumerate(envelope.property_definitions, start=1)}
     todo_place = 1 + [s.name for s in envelope.task_statuses].index(todo.name)
-    assert set(place) == {"Severity", "Stage"}
+    assert set(place) == {"Severity", "Stage", "Lead"}
     assert exported["board"]["card"]["children"] == [
         title,
         {"type": "field", "props": {"field": f"property:{place['Stage']}"}},
@@ -357,9 +368,14 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
         "status_ids": [todo_place],
         "assignees": ["me"],
         "tag_ids": [],
+        "properties": [],
     }
     assert exported["board"]["limits"] == [{"status_id": todo_place, "limit": 3}]
-    assert exported["table"]["groupings"][2] == {"field": "assignee_ids", "hidden": []}
+    # Nor the people a person property names.
+    assert exported["table"]["groupings"][2:] == [
+        {"field": "assignee_ids", "hidden": []},
+        {"field": f"property:{place['Lead']}", "hidden": []},
+    ]
     assert exported["task"]["side"] == [
         {"type": "field", "props": {"field": f"property:{place['Severity']}"}}
     ]
@@ -424,6 +440,31 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
         panel,
     ]
     assert imported["default"] == {"kind": "board"}
+
+
+async def test_an_envelope_holds_one_layout_of_each_kind_as_read(
+    session: AsyncSession,
+):
+    owner, _assignee, _guild, _initiative, project = await _seed_populated_project(
+        session
+    )
+    body = (
+        await export_service.build_project_export(
+            session, await get_project_hydrated(session, project.id)
+        )
+    ).model_dump(mode="json")
+    board = {
+        "kind": "board",
+        "definition": {"limits": [{"status_id": "1", "limit": 2}]},
+    }
+
+    # What is remapped is what was checked: the id as a number.
+    [layout] = ProjectExportEnvelope.model_validate(
+        {**body, "layouts": [board]}
+    ).layouts
+    assert layout.definition == {"limits": [{"status_id": 1, "limit": 2}]}
+    with pytest.raises(ValidationError):
+        ProjectExportEnvelope.model_validate({**body, "layouts": [board, board]})
 
 
 async def test_property_type_collision_renames(session: AsyncSession):

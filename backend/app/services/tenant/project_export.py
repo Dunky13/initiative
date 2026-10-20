@@ -43,6 +43,7 @@ from app.core.version import get_version
 from app.models.tenant.comment import Comment, in_thread
 from app.models.tenant.relationship import EntityRelationship
 from app.models.tenant.project import Project
+from app.models.tenant.property import PropertyType
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.tag import Tag
 from app.models.tenant.task import Task, TaskStatus
@@ -247,6 +248,11 @@ async def build_project_export(
     for property_id in sorted(referenced_property_ids):
         property_place(property_id)
     status_places = {s.id: place for place, s in enumerate(statuses_sorted, start=1)}
+    people = frozenset(
+        property_id
+        for property_id, definition in definitions.items()
+        if definition.type == PropertyType.user_reference
+    )
     layout_rows = await tool_layouts_service.list_rows(
         session,
         tool_layouts_service.Target(Tool.project, project.id, project.initiative_id),
@@ -260,6 +266,7 @@ async def build_project_export(
                     statuses=status_places.get,
                     properties=property_place,
                     community=False,
+                    people=people,
                 ),
             ),
         )

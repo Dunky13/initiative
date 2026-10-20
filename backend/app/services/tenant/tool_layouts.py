@@ -412,11 +412,14 @@ class Remap:
     its map, and one with no counterpart is left out; ``properties`` None keeps
     them as they are, beside the instance. People, tags and plug-in installs
     are the community's, so a layout leaving it (``community`` False) keeps
-    none of them: their parts, fields, filters and the groups they name."""
+    none of them: their parts, fields, filters and the groups they name, the
+    filters and groups of a person property (``people``, by the ids the layout
+    names) among them."""
 
     statuses: IdMap
     properties: Optional[IdMap] = None
     community: bool = True
+    people: frozenset[int] = frozenset()
 
 
 def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, Any]:
@@ -469,7 +472,8 @@ def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, A
                     "property_id": int(mapped.removeprefix(PROPERTY_FIELD_PREFIX)),
                 }
                 for entry in spec["properties"]
-                if (mapped := field(f"{PROPERTY_FIELD_PREFIX}{entry['property_id']}"))
+                if (remap.community or entry["property_id"] not in remap.people)
+                and (mapped := field(f"{PROPERTY_FIELD_PREFIX}{entry['property_id']}"))
             ]
         if not remap.community:
             for key in ("plugins", "tag_ids", "community_ids"):
@@ -491,7 +495,10 @@ def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, A
                 for key in keys
                 if key.isdigit() and (mapped := remap.statuses(int(key))) is not None
             ]
-        if grouping.get("field") in _COMMUNITY_GROUPINGS and not remap.community:
+        if not remap.community and (
+            grouping.get("field") in _COMMUNITY_GROUPINGS
+            or _person_property(grouping.get("field"), remap.people)
+        ):
             return []
         return keys
 
@@ -533,6 +540,12 @@ def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, A
 
 def _of_property(field: Any) -> bool:
     return isinstance(field, str) and field.startswith(PROPERTY_FIELD_PREFIX)
+
+
+def _person_property(field: Any, people: frozenset[int]) -> bool:
+    return (
+        _of_property(field) and int(field.removeprefix(PROPERTY_FIELD_PREFIX)) in people
+    )
 
 
 async def copy_layouts(

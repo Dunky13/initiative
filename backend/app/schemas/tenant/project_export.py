@@ -11,7 +11,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import AliasChoices, AwareDatetime, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    AwareDatetime,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.schemas.base import SanitizedBaseModel
 from app.schemas.recurrence import validate_task_recurrence
@@ -216,12 +222,16 @@ class ProjectExportLayout(SanitizedBaseModel):
         if self.kind not in _PROJECT_LAYOUTS:
             raise ValueError(f"a project's layouts are {', '.join(_PROJECT_LAYOUTS)}")
         if self.kind == LAYOUT_DEFAULT:
-            ToolLayoutDefaultWrite.model_validate(self.definition)
+            read = ToolLayoutDefaultWrite.model_validate(self.definition)
         else:
             write = (
                 ListLayoutWrite if self.kind in _PROJECT_LISTS else DetailLayoutWrite
             )
-            write.model_validate({"kind": self.kind, "definition": self.definition})
+            read = write.model_validate(
+                {"kind": self.kind, "definition": self.definition}
+            ).definition
+        # Kept as read, so what is remapped is what was checked.
+        self.definition = read.model_dump(mode="json", exclude_unset=True)
         return self
 
 
@@ -251,3 +261,13 @@ class ProjectExportEnvelope(_EnvelopeBase):
     # Empty in an export taken before projects carried their layouts, and for
     # a project drawn as shipped.
     layouts: List[ProjectExportLayout] = []
+
+    @field_validator("layouts")
+    @classmethod
+    def _one_of_each(
+        cls, value: List[ProjectExportLayout]
+    ) -> List[ProjectExportLayout]:
+        kinds = [layout.kind for layout in value]
+        if len(set(kinds)) != len(kinds):
+            raise ValueError("a project has one layout of each kind")
+        return value
