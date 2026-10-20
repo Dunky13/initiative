@@ -12,12 +12,13 @@ import binascii
 import json
 from datetime import date
 from enum import Enum
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    StringConstraints,
     ValidationError,
     field_validator,
     model_validator,
@@ -205,6 +206,27 @@ class BillingCommunityNameRead(SanitizedBaseModel):
 
     community_ref: str
     name: str
+
+
+#: The most guilds one ``POST /billing/community-names`` may ask about.
+COMMUNITY_NAMES_MAX = 200
+
+
+class BillingCommunityNamesRequest(SanitizedBaseModel):
+    """Body of ``POST /billing/community-names``: the batch of
+    ``/community-name``, for a page that names many guilds at once."""
+
+    community_refs: list[
+        Annotated[str, StringConstraints(min_length=1, max_length=REF_MAX_LENGTH)]
+    ] = Field(min_length=1, max_length=COMMUNITY_NAMES_MAX)
+
+
+class BillingCommunityNamesRead(SanitizedBaseModel):
+    """What each guild asked about calls itself. One that is gone, or that the
+    reference does not name, is left out rather than refused: a page naming
+    many should name the rest."""
+
+    names: list[BillingCommunityNameRead]
 
 
 class BillingCommunityStatusRequest(SanitizedBaseModel):

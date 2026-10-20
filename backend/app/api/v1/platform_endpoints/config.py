@@ -67,8 +67,11 @@ class BillingConfig(BaseModel):
     # Whether the billing service's insights page can be opened from here:
     # the operator dashboard's Billing tab shows its button only then.
     insights: bool = False
-    # The same for its contracts console: the same key opens it.
+    # The same for its contracts console, its owner directory and Control:
+    # the same key opens them.
     contracts: bool = False
+    directory: bool = False
+    control: bool = False
 
 
 class AppConfig(BaseModel):
@@ -166,6 +169,8 @@ async def get_app_config(session: SessionDep) -> AppConfig:
             manages_plans=billing_managed(),
             insights=billing_insights_handoff_enabled(),
             contracts=billing_insights_handoff_enabled(),
+            directory=billing_insights_handoff_enabled(),
+            control=billing_insights_handoff_enabled(),
         )
         if settings.BILLING_URL
         else None

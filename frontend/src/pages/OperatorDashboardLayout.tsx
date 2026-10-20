@@ -54,13 +54,18 @@ export const OperatorDashboardLayout = () => {
         capabilities: [Capability.announcementsManage],
       },
       // Only on a server connected to a billing service that can open it.
-      ...(billing?.insights || billing?.contracts
+      ...(billing?.insights || billing?.contracts || billing?.directory || billing?.control
         ? [
             {
               value: "billing",
               label: t("operatorDashboard.tabs.billing"),
               path: "/settings/operator/billing",
-              capabilities: [Capability.billingInsights, Capability.billingContracts],
+              capabilities: [
+                Capability.billingInsights,
+                Capability.billingContracts,
+                Capability.billingDirectory,
+                Capability.billingControl,
+              ],
             },
           ]
         : []),
@@ -72,7 +77,7 @@ export const OperatorDashboardLayout = () => {
       },
     ];
     return all.filter((tab) => tab.capabilities.some((c) => hasCapability(user, c)));
-  }, [t, user, billing?.insights, billing?.contracts]);
+  }, [t, user, billing?.insights, billing?.contracts, billing?.directory, billing?.control]);
 
   if (!canAccessOperatorDashboard(user)) {
     return <Navigate to={canManagePlatformConfig(user) ? "/settings/platform" : "/"} replace />;

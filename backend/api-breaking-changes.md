@@ -15,6 +15,42 @@ matter and can be deleted.
 - GET /api/v1/notifications/{notification_id}/alert added the new `community_pause_reminder` enum value to the `notification/type` response property for the response status `200`
 - POST /api/v1/notifications/{notification_id}/read added the new `community_pause_reminder` enum value to the `type` response property for the response status `200`
 - POST /api/v1/notifications/{notification_id}/unread added the new `community_pause_reminder` enum value to the `type` response property for the response status `200`
+- POST /api/v1/auth/register added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `201`
+- POST /api/v1/auth/register added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `201`
+- GET /api/v1/me added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/me added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/operator/users added the new `billing.control` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- GET /api/v1/operator/users added the new `billing.directory` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/profile/{field} added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/profile/{field} added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sessions added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sessions added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
 
 ### Groupings name the field they group by
 

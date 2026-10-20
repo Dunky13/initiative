@@ -18,6 +18,8 @@ from app.api.deps import (
 from app.api.v1.platform_endpoints.access_grants import check_second_factor
 from app.api.v1.platform_endpoints.operator import (
     BillingContractsDep,
+    BillingControlDep,
+    BillingDirectoryDep,
     BillingInsightsDep,
     CommunitiesReadDep,
     CommunitiesSuspendDep,
@@ -100,6 +102,8 @@ from app.core.security import (
     BillingSupportHandoffNotConfiguredError,
     HandoffSigningNotConfiguredError,
     create_billing_contracts_handoff_token,
+    create_billing_control_handoff_token,
+    create_billing_directory_handoff_token,
     create_billing_insights_handoff_token,
     create_billing_support_handoff_token,
 )
@@ -1730,6 +1734,86 @@ async def create_billing_contracts_handoff(
         "billing contracts: operator %s (%s) opened the contracts console",
         operator.id,
         operator.role.value,
+    )
+    return BillingPortalHandoffResponse(
+        handoff_token=token,
+        expires_in_seconds=expires_in_seconds,
+    )
+
+
+@router.post(
+    "/billing/directory-handoff",
+    response_model=BillingPortalHandoffResponse,
+)
+async def create_billing_directory_handoff(
+    owner: BillingDirectoryDep,
+) -> BillingPortalHandoffResponse:
+    """Mint the handoff into the billing service's owner directory.
+
+    Backs the operator dashboard's Billing tab (``billing.directory``, owners
+    only). Like the insights handoff it names no community and needs no access
+    grant: the page lists every account, read-only. The person is named by
+    billing's pairwise reference, which is what billing records each read
+    under.
+    """
+    if not app_config.BILLING_URL:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BillingMessages.PORTAL_NOT_CONFIGURED,
+        )
+    try:
+        token, expires_in_seconds = create_billing_directory_handoff_token(
+            user_ref=await billing_ref(IdentityEntity.user, owner.id),
+        )
+    except HandoffSigningNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=BillingMessages.PORTAL_SIGNING_NOT_CONFIGURED,
+        ) from exc
+    logger.info(
+        "billing directory: owner %s (%s) opened the directory",
+        owner.id,
+        owner.role.value,
+    )
+    return BillingPortalHandoffResponse(
+        handoff_token=token,
+        expires_in_seconds=expires_in_seconds,
+    )
+
+
+@router.post(
+    "/billing/control-handoff",
+    response_model=BillingPortalHandoffResponse,
+)
+async def create_billing_control_handoff(
+    owner: BillingControlDep,
+) -> BillingPortalHandoffResponse:
+    """Mint the handoff into the billing service's Control.
+
+    Backs the operator dashboard's Billing tab (``billing.control``, owners
+    only), where the deployment's plans are defined. It names no community
+    and needs no access grant: a plan is every community's. The person is
+    named by billing's pairwise reference, which is what billing attributes
+    each change to.
+    """
+    if not app_config.BILLING_URL:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BillingMessages.PORTAL_NOT_CONFIGURED,
+        )
+    try:
+        token, expires_in_seconds = create_billing_control_handoff_token(
+            user_ref=await billing_ref(IdentityEntity.user, owner.id),
+        )
+    except HandoffSigningNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=BillingMessages.PORTAL_SIGNING_NOT_CONFIGURED,
+        ) from exc
+    logger.info(
+        "billing control: owner %s (%s) opened Control",
+        owner.id,
+        owner.role.value,
     )
     return BillingPortalHandoffResponse(
         handoff_token=token,

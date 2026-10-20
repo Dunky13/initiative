@@ -2126,5 +2126,23 @@
     "noCommunity": "It opens no community and needs no access grant. A community is put on a contract from its own billing operations console.",
     "open": "Open contracts",
     "openError": "The contracts console could not be opened."
+  },
+  "billingDirectory": {
+    "title": "Directory",
+    "description": "Every account that pays, in one list: the Paddle customers and the contracts.",
+    "lists": "Each account's communities, their plans and status, the next charge or invoice due, a dedicated deployment's key, and what reconciliation found.",
+    "readOnly": "Read-only. Act on an account from its community's billing consoles, under their own access grants.",
+    "ownersOnly": "Owners only: it names every paying customer at once.",
+    "open": "Open the directory",
+    "openError": "The directory could not be opened."
+  },
+  "billingControl": {
+    "title": "Control",
+    "description": "Where this server's plans are defined: what each plan allows, its words in each language, and the prices that sell it.",
+    "revisions": "Every change is saved as a new revision of the catalog, with who made it.",
+    "ownersOnly": "Owners only: it changes what every community is sold and allowed.",
+    "noCommunity": "It opens no community and needs no access grant.",
+    "open": "Open Control",
+    "openError": "Control could not be opened."
   }
 }

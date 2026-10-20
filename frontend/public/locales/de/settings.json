@@ -2126,5 +2126,23 @@
     "noCommunity": "Sie öffnet keine Community und braucht keine Zugriffsfreigabe. Eine Community kommt über ihre eigene Abrechnungs-Operator-Konsole auf einen Vertrag.",
     "open": "Verträge öffnen",
     "openError": "Die Vertragskonsole konnte nicht geöffnet werden."
+  },
+  "billingDirectory": {
+    "title": "Verzeichnis",
+    "description": "Jedes zahlende Konto in einer Liste: die Paddle-Kunden und die Verträge.",
+    "lists": "Die Communities jedes Kontos, ihre Pläne und ihr Status, die nächste Abbuchung oder fällige Rechnung, der Schlüssel einer eigenen Bereitstellung und was der Abgleich gefunden hat.",
+    "readOnly": "Nur zum Lesen. Handeln Sie über die Abrechnungskonsolen der Community, mit deren eigenen Zugriffsfreigaben.",
+    "ownersOnly": "Nur für Eigentümer: Es nennt alle zahlenden Kunden auf einmal.",
+    "open": "Verzeichnis öffnen",
+    "openError": "Das Verzeichnis konnte nicht geöffnet werden."
+  },
+  "billingControl": {
+    "title": "Control",
+    "description": "Hier werden die Tarife dieses Servers festgelegt: was jeder Tarif erlaubt, seine Texte in jeder Sprache und die Preise, zu denen er verkauft wird.",
+    "revisions": "Jede Änderung wird als neue Revision des Katalogs gespeichert, mit der Person, die sie vorgenommen hat.",
+    "ownersOnly": "Nur für Eigentümer: Es ändert, was jeder Community verkauft und erlaubt wird.",
+    "noCommunity": "Es öffnet keine Community und braucht keine Zugriffsfreigabe.",
+    "open": "Control öffnen",
+    "openError": "Control konnte nicht geöffnet werden."
   }
 }

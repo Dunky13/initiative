@@ -2126,5 +2126,23 @@
     "noCommunity": "Elle n'ouvre aucune communauté et ne demande aucun accès. Une communauté est rattachée à un contrat depuis sa propre console d'opérations de facturation.",
     "open": "Ouvrir les contrats",
     "openError": "La console des contrats n'a pas pu s'ouvrir."
+  },
+  "billingDirectory": {
+    "title": "Annuaire",
+    "description": "Chaque compte payant dans une seule liste : les clients Paddle et les contrats.",
+    "lists": "Les communautés de chaque compte, leurs plans et leur statut, le prochain prélèvement ou la prochaine facture due, la clé d'un déploiement dédié et ce que le rapprochement a trouvé.",
+    "readOnly": "En lecture seule. Agissez sur un compte depuis les consoles de facturation de sa communauté, avec leurs propres autorisations d'accès.",
+    "ownersOnly": "Réservé aux propriétaires : il nomme tous les clients payants à la fois.",
+    "open": "Ouvrir l'annuaire",
+    "openError": "Impossible d'ouvrir l'annuaire."
+  },
+  "billingControl": {
+    "title": "Control",
+    "description": "Là où les forfaits de ce serveur sont définis : ce que chaque forfait permet, ses textes dans chaque langue et les prix auxquels il est vendu.",
+    "revisions": "Chaque modification est enregistrée comme une nouvelle révision du catalogue, avec la personne qui l'a faite.",
+    "ownersOnly": "Réservé aux propriétaires : il change ce qui est vendu et permis à chaque communauté.",
+    "noCommunity": "Il n'ouvre aucune communauté et ne demande aucun accès.",
+    "open": "Ouvrir Control",
+    "openError": "Impossible d'ouvrir Control."
   }
 }

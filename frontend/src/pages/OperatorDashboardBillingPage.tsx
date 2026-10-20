@@ -7,18 +7,25 @@
  * - **Contracts** (`billing.contracts`): the enterprise payers invoiced by
  *   hand — their terms, their invoices, and a dedicated deployment's
  *   registration key file. It writes, so it is its own capability.
+ * - **Directory** (`billing.directory`, owners only): every account that pays,
+ *   its communities, what comes next and what reconciliation found.
+ *   Read-only; acting on an account goes through the consoles.
+ * - **Control** (`billing.control`, owners only): where the deployment's plans
+ *   are defined — what each allows, its words, the prices that sell it.
  *
- * Unlike the per-community billing buttons on the Communities tab, neither
+ * Unlike the per-community billing buttons on the Communities tab, none
  * opens a community or takes an access grant: the handoff names only the
  * person opening it, and each page's audience is its own.
  */
 
-import { BarChart3, ExternalLink, FileText } from "lucide-react";
+import { BarChart3, BookUser, ExternalLink, FileText, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   createBillingContractsHandoff,
+  createBillingControlHandoff,
+  createBillingDirectoryHandoff,
   createBillingInsightsHandoff,
 } from "@/api/generated/settings/settings";
 import { Button } from "@/components/ui/button";
@@ -29,11 +36,20 @@ import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import { Capability, hasCapability } from "@/lib/permissions";
 
-type Door = "insights" | "contracts";
+type Door = "insights" | "contracts" | "directory" | "control";
 
 const MINT: Record<Door, () => Promise<{ handoff_token: string }>> = {
   insights: createBillingInsightsHandoff,
   contracts: createBillingContractsHandoff,
+  directory: createBillingDirectoryHandoff,
+  control: createBillingControlHandoff,
+};
+
+const OPEN_ERROR: Record<Door, string> = {
+  insights: "settings:billingInsights.openError",
+  contracts: "settings:billingContracts.openError",
+  directory: "settings:billingDirectory.openError",
+  control: "settings:billingControl.openError",
 };
 
 export const OperatorDashboardBillingPage = () => {
@@ -44,7 +60,9 @@ export const OperatorDashboardBillingPage = () => {
 
   const canInsights = hasCapability(user, Capability.billingInsights);
   const canContracts = hasCapability(user, Capability.billingContracts);
-  if (!canInsights && !canContracts) {
+  const canDirectory = hasCapability(user, Capability.billingDirectory);
+  const canControl = hasCapability(user, Capability.billingControl);
+  if (!canInsights && !canContracts && !canDirectory && !canControl) {
     return <p className="text-muted-foreground text-sm">{t("billingInsights.platformOnly")}</p>;
   }
 
@@ -65,14 +83,7 @@ export const OperatorDashboardBillingPage = () => {
       else window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       tab?.close();
-      toast.error(
-        getErrorMessage(
-          err,
-          door === "insights"
-            ? "settings:billingInsights.openError"
-            : "settings:billingContracts.openError"
-        )
-      );
+      toast.error(getErrorMessage(err, OPEN_ERROR[door]));
     } finally {
       setOpening(null);
     }
@@ -127,6 +138,60 @@ export const OperatorDashboardBillingPage = () => {
                 {opening === "contracts"
                   ? t("billingInsights.opening")
                   : t("billingContracts.open")}
+              </Button>
+            ) : (
+              <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {canDirectory && (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookUser className="h-5 w-5" aria-hidden />
+              {t("billingDirectory.title")}
+            </CardTitle>
+            <CardDescription>{t("billingDirectory.description")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
+              <li>{t("billingDirectory.lists")}</li>
+              <li>{t("billingDirectory.readOnly")}</li>
+              <li>{t("billingDirectory.ownersOnly")}</li>
+            </ul>
+            {billing?.directory ? (
+              <Button onClick={() => void open("directory")} disabled={opening !== null}>
+                <ExternalLink className="h-4 w-4" aria-hidden />
+                {opening === "directory"
+                  ? t("billingInsights.opening")
+                  : t("billingDirectory.open")}
+              </Button>
+            ) : (
+              <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {canControl && (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-5 w-5" aria-hidden />
+              {t("billingControl.title")}
+            </CardTitle>
+            <CardDescription>{t("billingControl.description")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-sm">
+              <li>{t("billingControl.revisions")}</li>
+              <li>{t("billingControl.ownersOnly")}</li>
+              <li>{t("billingControl.noCommunity")}</li>
+            </ul>
+            {billing?.control ? (
+              <Button onClick={() => void open("control")} disabled={opening !== null}>
+                <ExternalLink className="h-4 w-4" aria-hidden />
+                {opening === "control" ? t("billingInsights.opening") : t("billingControl.open")}
               </Button>
             ) : (
               <p className="text-muted-foreground text-sm">{t("billingInsights.notConfigured")}</p>
