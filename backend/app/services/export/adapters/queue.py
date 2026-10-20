@@ -44,26 +44,9 @@ from app.services.export.adapters._common import (
 from app.schemas.tenant.tag import annotated_tags
 from app.services.export.contract import RenderItem
 from app.services.export.property_values import exported_properties
+from app.services.export import values
 from app.services.export.i18n import et, export_locale
 from app.core.user_display import display_name
-
-# (row key, ``exports`` label key, Typst width hint) — labels resolve to the
-# creator's locale at build time.
-_COLUMNS = (
-    ("order", "columns.order", "auto"),
-    ("title", "columns.item", "2fr"),
-    ("member", "columns.member", "1fr"),
-    ("tags", "columns.tags", "1fr"),
-    ("notes", "columns.notes", "2fr"),
-    ("status", "columns.status", "auto"),
-)
-
-
-def _columns(locale: str) -> list[dict]:
-    return [
-        {"key": key, "label": et(label_key, locale), "width": width}
-        for key, label_key, width in _COLUMNS
-    ]
 
 
 class QueueAdapter(ToolExportAdapter):
@@ -206,6 +189,39 @@ def _envelope(
 
 def _report_payload(queue: Queue, items: list[QueueItem], user: User) -> dict[str, Any]:
     loc = export_locale(user)
+    # Where each item falls in the turn order, its own fields, then what the
+    # rotation says of it.
+    order = {item.id: n for n, item in enumerate(items, 1)}
+
+    def status(item: QueueItem) -> str:
+        flags = []
+        if item.id == queue.current_item_id:
+            flags.append(et("status.current", loc))
+        if item.held_at_round is not None:
+            flags.append(et("status.held", loc))
+        if not item.is_visible:
+            flags.append(et("status.hidden", loc))
+        return ", ".join(flags)
+
+    columns = [
+        values.Column(
+            "order", values.label("order", loc), lambda i: order[i.id], "auto"
+        ),
+        values.Column("title", values.label("label", loc), lambda i: i.label, "2fr"),
+        values.Column(
+            "member", values.label("user_id", loc), lambda i: _member(i) or ""
+        ),
+        values.Column(
+            "tags", values.label("tag_ids", loc), lambda i: ", ".join(_tags(i))
+        ),
+        values.Column(
+            "notes",
+            values.label("notes", loc),
+            lambda i: values.text(i.notes),
+            "2fr",
+        ),
+        values.Column("status", values.label("status", loc), status, "auto"),
+    ]
     parts = [et("summary.items", loc, count=len(items))]
     if queue.is_active:
         parts.append(et("round", loc, round=queue.current_round))
@@ -219,30 +235,15 @@ def _report_payload(queue: Queue, items: list[QueueItem], user: User) -> dict[st
         # Markdown renders the rotation as a numbered turn-order list; the
         # other formats consume the columns/rows table.
         "layout": "numbered",
-        "columns": _columns(loc),
+        "columns": values.head(columns),
         "empty_message": et("empty.generic", loc),
         "untitled": et("fallback.untitled", loc),
-        "rows": [_row(queue, item, order, loc) for order, item in enumerate(items, 1)],
-    }
-
-
-def _row(queue: Queue, item: QueueItem, order: int, locale: str) -> dict[str, Any]:
-    flags = []
-    if item.id == queue.current_item_id:
-        flags.append(et("status.current", locale))
-    if item.held_at_round is not None:
-        flags.append(et("status.held", locale))
-    if not item.is_visible:
-        flags.append(et("status.hidden", locale))
-    return {
-        "order": order,
-        "title": item.label,
-        "member": _member(item) or "",
-        "tags": ", ".join(_tags(item)),
-        "notes": item.notes or "",
-        "status": ", ".join(flags),
-        # Not a projected column: drives the numbered layout's current marker.
-        "current": item.id == queue.current_item_id,
+        "rows": [
+            values.cells(columns, item)
+            # Not a column: the numbered layout's current marker.
+            | {"current": item.id == queue.current_item_id}
+            for item in items
+        ],
     }
 
 

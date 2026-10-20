@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Annotated, Any, List, Literal, Optional, Union
 
+from pydantic import Field
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, not_
@@ -40,7 +42,8 @@ from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.initiative import Initiative
 from app.schemas.query import DateBucket
 from app.schemas.tenant.backup_export import BackupEstimate
-from app.schemas.tenant.tool_layout import MAX_HIDDEN_GROUPS
+from app.schemas.tenant.tool_layout import MAX_HIDDEN_GROUPS, MAX_SLUG_LENGTH
+from app.services.export.adapters.tasks_table import MAX_COLUMNS
 from app.schemas.tenant.export_job import (
     ExportJobRead,
     CommunityExportStatus,
@@ -178,6 +181,24 @@ async def export_tasks(
         max_length=MAX_HIDDEN_GROUPS,
         description="The keys of the groups the list leaves out",
     ),
+    columns: Optional[List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]]] = Query(
+        default=None,
+        max_length=MAX_COLUMNS,
+        description=(
+            "The layout fields the list's table shows, in order (``title``, "
+            "``dueDate``, ``property:<id>``, ``plugin:<install>:<key>``). "
+            "The status follows them, as the table draws it."
+        ),
+    ),
+    detail: Optional[List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]]] = Query(
+        default=None,
+        max_length=MAX_COLUMNS,
+        description=(
+            "For the detailed PDF: the task page's parts in its order, its "
+            "fields and ``status``, ``dates``, ``properties``, ``description``, "
+            "``checklist`` and ``comments``"
+        ),
+    ),
 ) -> Union[Response, JSONResponse]:
     """Export the task list (the same visibility and filters as ``GET
     /tasks/``) as a formatted file. Small results render inline and return
@@ -198,6 +219,8 @@ async def export_tasks(
             "group_by": group_by,
             "bucket": bucket.value if bucket else None,
             "hidden_groups": hidden_groups,
+            "columns": columns,
+            "detail": detail,
         },
     )
     return _export_response(result, guild_context)

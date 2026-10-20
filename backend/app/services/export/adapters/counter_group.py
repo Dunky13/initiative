@@ -19,12 +19,11 @@ under the caller's RLS session.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from app.core.tools import Tool, tool_envelope_type
 from app.models.platform.user import User
-from app.models.tenant.counter import Counter, CounterGroup
+from app.models.tenant.counter import CounterGroup
 from app.services.export.adapters._common import (
     BuildContext,
     ToolExportAdapter,
@@ -34,24 +33,8 @@ from app.services.export.adapters._common import (
 from app.schemas.tenant.tag import annotated_tags
 from app.services.export.contract import RenderItem
 from app.services.export.property_values import exported_properties
+from app.services.export import values
 from app.services.export.i18n import et, export_locale
-
-# (row key, ``exports`` label key, Typst width hint) — labels resolve to the
-# creator's locale at build time.
-_COLUMNS = (
-    ("title", "columns.counter", "2fr"),
-    ("count", "columns.count", "auto"),
-    ("min", "columns.min", "auto"),
-    ("max", "columns.max", "auto"),
-    ("step", "columns.step", "auto"),
-)
-
-
-def _columns(locale: str) -> list[dict]:
-    return [
-        {"key": key, "label": et(label_key, locale), "width": width}
-        for key, label_key, width in _COLUMNS
-    ]
 
 
 class CounterGroupAdapter(ToolExportAdapter):
@@ -93,13 +76,13 @@ def _envelope(group: CounterGroup) -> dict[str, Any]:
             {
                 "name": counter.name,
                 "color": counter.color,
-                "count": _number(counter.count),
-                "min": _number(counter.min),
-                "max": _number(counter.max),
-                "step": _number(counter.step),
-                "initial_count": _number(counter.initial_count),
+                "count": values.number(counter.count),
+                "min": values.number(counter.min),
+                "max": values.number(counter.max),
+                "step": values.number(counter.step),
+                "initial_count": values.number(counter.initial_count),
                 "view_mode": counter.view_mode.value,
-                "position": _number(counter.position),
+                "position": values.number(counter.position),
                 "properties": exported_properties(counter),
                 # What a reference to this counter — a chip reading its value
                 # — points at across one import.
@@ -113,6 +96,19 @@ def _envelope(group: CounterGroup) -> dict[str, Any]:
 def _report_payload(group: CounterGroup, user: User) -> dict[str, Any]:
     counters = group.counters
     loc = export_locale(user)
+    # A counter's name and its numbers, in the group's order.
+    columns = [
+        values.Column("title", values.label("name", loc), lambda c: c.name, "2fr"),
+        *(
+            values.Column(
+                field,
+                values.label(field, loc),
+                lambda c, field=field: values.number(getattr(c, field)),
+                "auto",
+            )
+            for field in ("count", "min", "max", "step")
+        ),
+    ]
     return {
         # The group name is user data — never translated.
         "title": group.name,
@@ -120,30 +116,7 @@ def _report_payload(group: CounterGroup, user: User) -> dict[str, Any]:
         "footer": et("footer.counters", loc, name=group.name),
         "page_of": et("pageOf", loc),
         "description": group.description or "",
-        "columns": _columns(loc),
+        "columns": values.head(columns),
         "empty_message": et("empty.generic", loc),
-        "rows": [_row(counter) for counter in counters],
+        "rows": [values.cells(columns, counter) for counter in counters],
     }
-
-
-def _row(counter: Counter) -> dict[str, Any]:
-    return {
-        "title": counter.name,
-        "count": _number(counter.count),
-        "min": _number(counter.min) if counter.min is not None else "",
-        "max": _number(counter.max) if counter.max is not None else "",
-        "step": _number(counter.step),
-    }
-
-
-def _number(value: Decimal | None) -> int | float | None:
-    """NUMERIC(20,10) comes back as ``Decimal`` — not JSON-serializable, and
-    ugly as text (``5.0000000000``). Integral values become int, the rest
-    float; counter values are user-clicked numbers, so float precision is a
-    non-issue."""
-    if value is None:
-        return None
-    decimal = value if isinstance(value, Decimal) else Decimal(str(value))
-    if decimal == decimal.to_integral_value():
-        return int(decimal)
-    return float(decimal)

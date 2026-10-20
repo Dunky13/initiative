@@ -470,13 +470,6 @@ _LIST_ROW_OPTIONS = (
     selectinload(Task.task_status),
 )
 
-#: What an export row reads beyond the task itself.
-_EXPORT_ROW_OPTIONS = (
-    selectinload(Task.project),
-    selectinload(Task.assignees),
-    selectinload(Task.task_status),
-)
-
 
 def list_statement(build, q: "TaskListQuery", *options, columns=()):
     """``build``'s tasks, each with ``columns`` beside it, in the order ``q``
@@ -1177,7 +1170,7 @@ async def task_ids_for_export(
     return list(await session.exec(build(select(Task.id)).limit(limit)))
 
 
-async def query_tasks_for_export(
+async def query_task_reads_for_export(
     session,
     current_user: User,
     *,
@@ -1186,10 +1179,10 @@ async def query_tasks_for_export(
     tz: Optional[str] = None,
     include_archived: bool = False,
     max_rows: int,
-) -> list[Task]:
-    """The tasks export adapter's query seam: the exact ``list_tasks``
-    visibility/filter/sort pipeline, unpaginated up to ``max_rows``, with the
-    eager loads the export payload needs."""
+) -> list[TaskListRead]:
+    """The task list's own rows for an export: the ``list_tasks`` visibility,
+    filters and order, unpaginated up to ``max_rows``, read as the list reads
+    them, so an export holds what the list shows."""
     q = await parse_task_list_query(session, conditions, sorting, tz)
     build = await guild_task_query_builder(
         session,
@@ -1200,46 +1193,56 @@ async def query_tasks_for_export(
     )
     if build is None:
         return []
-    statement = list_statement(build, q, *_EXPORT_ROW_OPTIONS)
-    tasks = list(await session.exec(statement.limit(max_rows)))
-    await tags_service.annotate_tags(session, tasks)
-    await properties_service.annotate_properties(session, tasks)
-    return tasks
+    rows = list(await session.exec(list_row_statement(build, q).limit(max_rows)))
+    return await list_reads(session, rows, routed_guild_id(session))
 
 
-async def query_tasks_for_detailed_export(
+async def task_reads_by_id(
     session,
     current_user: User,
-    *,
-    conditions: Optional[str] = None,
-    sorting: Optional[str] = None,
-    tz: Optional[str] = None,
-    include_archived: bool = False,
-    max_rows: int,
-) -> tuple[list[Task], dict[int, list[Comment]]]:
-    """Detailed-report seam: the same ``list_tasks`` visibility/filter/sort
-    pipeline as ``query_tasks_for_export``, but with the extra eager loads a
-    one-task-per-page report needs (tags) plus each task's comments
-    batch-loaded by id. Comments have no ``Task`` relationship, so they are
-    fetched separately — under the caller's RLS session, scoped to the same
-    initiatives the tasks came from (the tasks are already visibility-filtered,
-    so their comments are in reachable initiatives)."""
-    q = await parse_task_list_query(session, conditions, sorting, tz)
+    project_ids: Collection[int],
+    task_ids: Collection[int],
+) -> dict[int, TaskListRead]:
+    """The task list's rows for these tasks of these projects, archived ones
+    included, by id: for an export that has already been allowed the projects
+    and chosen their tasks (a project's report)."""
+    if not task_ids:
+        return {}
+    q = await parse_task_list_query(session, None, None, None)
     build = await guild_task_query_builder(
         session,
         current_user,
         require_guild_context(session),
         q=q,
-        include_archived=include_archived,
+        include_archived=True,
+        projects=project_ids,
     )
     if build is None:
-        return [], {}
-    statement = list_statement(build, q, *_EXPORT_ROW_OPTIONS)
-    tasks = list(await session.exec(statement.limit(max_rows)))
-    await tags_service.annotate_tags(session, tasks)
-    await properties_service.annotate_properties(session, tasks)
-    comments = await _load_comments_for_tasks(session, [t.id for t in tasks if t.id])
-    return tasks, comments
+        return {}
+    statement = list_row_statement(build, q).where(Task.id.in_(list(task_ids)))
+    reads = await list_reads(
+        session, list(await session.exec(statement)), routed_guild_id(session)
+    )
+    return {read.id: read for read in reads}
+
+
+async def task_details_for_export(
+    session, task_ids: list[int]
+) -> tuple[dict[int, tuple[Optional[str], list]], dict[int, list[Comment]]]:
+    """What a detailed report adds to listed tasks: each one's description and
+    checklist, and its comments. Read under the caller's session, for tasks
+    the list already let them see."""
+    if not task_ids:
+        return {}, {}
+    details = {
+        task_id: (description, checklist or [])
+        for task_id, description, checklist in await session.exec(
+            select(Task.id, Task.description, Task.checklist).where(
+                Task.id.in_(task_ids)
+            )
+        )
+    }
+    return details, await _load_comments_for_tasks(session, task_ids)
 
 
 async def _load_comments_for_tasks(

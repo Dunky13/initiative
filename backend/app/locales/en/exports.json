@@ -1,22 +1,4 @@
 {
-  "columns": {
-    "task": "Task",
-    "project": "Project",
-    "status": "Status",
-    "priority": "Priority",
-    "due": "Due",
-    "assignees": "Assignees",
-    "counter": "Counter",
-    "count": "Count",
-    "min": "Min",
-    "max": "Max",
-    "step": "Step",
-    "order": "#",
-    "item": "Item",
-    "member": "Member",
-    "tags": "Tags",
-    "notes": "Notes"
-  },
   "title": {
     "tasks": "Tasks"
   },
@@ -76,7 +58,22 @@
     "created_at": "Created",
     "due_date": "Due",
     "start_date": "Start",
-    "updated_at": "Updated"
+    "updated_at": "Updated",
+    "title": "Task",
+    "description": "Description",
+    "checklist": "Checklist",
+    "comments": "Comments",
+    "blockers": "Blocked by",
+    "label": "Item",
+    "user_id": "Member",
+    "notes": "Notes",
+    "order": "#",
+    "status": "Status",
+    "name": "Counter",
+    "count": "Count",
+    "min": "Min",
+    "max": "Max",
+    "step": "Step"
   },
   "groups": {
     "empty": {
@@ -101,5 +98,9 @@
     "2": "This week",
     "3": "This month",
     "4": "Later"
+  },
+  "values": {
+    "yes": "Yes",
+    "no": "No"
   }
 }
