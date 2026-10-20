@@ -123,6 +123,8 @@ type CalendarViewProps = {
   hideListView?: boolean;
   /** The page offers the views in its own toolbar, so the calendar does not. */
   hideViewSwitch?: boolean;
+  /** Draws its own card. Off where something around it already is one. */
+  framed?: boolean;
   /** Multi-select on the list view (opt-in — only the list view uses these, and
    *  only the entries `isEntrySelectable` accepts get a checkbox). */
   selectionActive?: boolean;
@@ -342,6 +344,7 @@ export const CalendarView = ({
   isLoading = false,
   hideListView = false,
   hideViewSwitch = false,
+  framed = true,
   selectionActive = false,
   selectedEntryIds,
   isEntrySelectable,
@@ -418,7 +421,7 @@ export const CalendarView = ({
 
   if (isLoading) {
     return (
-      <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+      <div className={cn("space-y-4", framed && "rounded-xl border bg-card p-4 shadow-sm")}>
         <CalendarSkeleton />
       </div>
     );
@@ -454,7 +457,7 @@ export const CalendarView = ({
   );
 
   return (
-    <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+    <div className={cn("space-y-4", framed && "rounded-xl border bg-card p-4 shadow-sm")}>
       <CalendarHeader
         viewMode={viewMode}
         onViewModeChange={onViewModeChange}
