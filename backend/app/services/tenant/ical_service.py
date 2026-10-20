@@ -108,17 +108,25 @@ def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
-def ical_from_export_dicts(events: List[dict]) -> bytes:
+def ical_from_export_dicts(
+    events: List[dict], *, name: Optional[str] = None, tz: Optional[str] = None
+) -> bytes:
     """Serialize event export dicts (``event_export_dict`` shape) to iCal
     bytes — the render half of the split, callable from the export engine's
     worker replay where only JSON survives.
 
     Times are UTC and an all-day event's days are its UTC dates, as stored, so
-    every client shows the file in its own zone."""
+    every client shows the file in its own zone. ``name`` and ``tz`` are the
+    calendar's own: what a subscribing app calls it, and the zone it lists it
+    in (``X-WR-TIMEZONE``), which moves no event."""
     cal = icalendar.Calendar()
     cal.add("prodid", "-//Initiative//EN")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
+    if name:
+        cal.calendar_name = name
+    if tz:
+        cal.add("x-wr-timezone", tz)
     fixed_zones: set[str] = set()
 
     for event in events:

@@ -96,6 +96,7 @@ Repeats go both ways too, with their skipped dates and any date changed on its o
 A file is a snapshot. A **subscription** keeps itself up to date. **Subscribe**, in the same **More actions** menu, gives each calendar its own link for Google Calendar, Apple Calendar or Outlook, so it stays a separate calendar there. **Get link**, then **Copy link** or **Open in calendar app**.
 
 - **The link is yours.** It shows that calendar's events as you see them, and every refresh checks you still can.
+- **It arrives with a proper name**: the calendar's, then its initiative's (or the community's), in the time zone from your [Preferences](../account/index.md). Some calendar apps only read the name when you subscribe, so a rename here may not reach them.
 - **Keep it to yourself.** Anyone holding it can read that calendar. It's shown once; getting a new one stops the old one working.
 - **It's a personal [API key](../account/api-keys-and-integrations.md) underneath**, good for that one calendar's feed and nothing else. Delete it under **My Settings → Security**. Events the other app already copied stay there.
 
