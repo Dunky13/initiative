@@ -218,3 +218,48 @@ async def test_task_edits_reanchor_the_effective_series_date(
         assert response.status_code == 200, response.text
         (current,) = [row for row in response.json()["items"] if row["recurrence"]]
     assert datetime.fromisoformat(current["due_date"]) == expected
+
+
+async def test_fixed_to_rolling_count_keeps_the_remaining_series_end(
+    client, session, acting_user
+):
+    from datetime import timedelta
+
+    a = await acting_user(guild_role="member", initiative=True, project=True)
+    first = await create_task(
+        session,
+        a.project,
+        due_date=datetime(2026, 10, 5, 9, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=DAILY;COUNT=3",
+    )
+    response = await client.patch(
+        a.g(f"/tasks/{first.id}"),
+        headers=a.headers,
+        json={"recurrence_strategy": "rolling"},
+    )
+    assert response.status_code == 200, response.text
+    task_id = first.id
+    conditions = json.dumps(
+        [{"field": "project_id", "op": "eq", "value": a.project.id}]
+    )
+    for consumed in (1, 2, 3):
+        response = await client.patch(
+            a.g(f"/tasks/{task_id}"),
+            headers=a.headers,
+            json={"status_category": "done"},
+        )
+        assert response.status_code == 200, response.text
+        response = await client.get(
+            a.g(f"/tasks/?conditions={conditions}"), headers=a.headers
+        )
+        assert response.status_code == 200, response.text
+        active = [row for row in response.json()["items"] if row["recurrence"]]
+        if consumed == 3:
+            assert active == []
+            break
+        (current,) = active
+        task_id = current["id"]
+        assert current["recurrence_occurrence_count"] == consumed
+        assert datetime.fromisoformat(current["recurrence_until"]) == (
+            datetime.fromisoformat(current["due_date"]) + timedelta(days=2 - consumed)
+        )

@@ -243,7 +243,8 @@ def _write_recurrence_until(_mapper, _connection, task: Task) -> None:
             start,
             task.recurrence_shift,
             done=task.recurrence_anchor_count
-            if task.recurrence_anchor
+            if task.recurrence_strategy == RecurrenceStrategy.fixed
+            and task.recurrence_anchor
             else task.recurrence_occurrence_count,
         )
         if task.recurrence and start

@@ -2,7 +2,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { buildCalendarEvent } from "@/__tests__/factories";
+import { buildCalendarEventSummary } from "@/__tests__/factories";
 import { renderWithProviders } from "@/__tests__/helpers/render";
 import { toast } from "@/lib/mascotToast";
 
@@ -30,7 +30,7 @@ describe("calendar date rescheduling", () => {
   it("ends a midnight-gap day at the next midnight rather than the next 01:00", () => {
     vi.stubEnv("TZ", "America/Sao_Paulo");
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         title: "Tomorrow's event",
         start_at: "2018-11-05T00:30:00-02:00",
         end_at: "2018-11-05T00:45:00-02:00",
@@ -60,7 +60,7 @@ describe("calendar date rescheduling", () => {
     vi.stubEnv("TZ", "Europe/Amsterdam");
     const entries = ["First fold marker", "Second fold marker"].map((title, index) =>
       buildEventCalendarEntry(
-        buildCalendarEvent({
+        buildCalendarEventSummary({
           id: index + 1,
           title,
           start_at: "2026-10-25T02:30:00+02:00",
@@ -83,7 +83,7 @@ describe("calendar date rescheduling", () => {
     (view) => {
       vi.stubEnv("TZ", "America/Sao_Paulo");
       const entry = buildEventCalendarEntry(
-        buildCalendarEvent({
+        buildCalendarEventSummary({
           all_day: true,
           title: "Midnight gap span",
           start_at: "2018-01-01T00:00:00Z",
@@ -116,7 +116,7 @@ describe("calendar date rescheduling", () => {
   ])("keeps an all-day event one calendar day when moved %s to %s", (from, to, zone) => {
     vi.stubEnv("TZ", zone);
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         all_day: true,
         start_at: `${from}T00:00:00Z`,
         end_at: `${from}T23:59:59Z`,
@@ -143,6 +143,7 @@ describe("calendar date rescheduling", () => {
           rect: { current: { initial: null, translated: null } },
         },
         over: {
+          disabled: false,
           id: to,
           data: { current: { type: "day", dateKey: to } },
           rect: { top: 0, left: 0, bottom: 40, right: 40, width: 40, height: 40 },
@@ -158,7 +159,7 @@ describe("calendar date rescheduling", () => {
   it("labels an imported backwards-clock span without inventing a one-hour block", () => {
     vi.stubEnv("TZ", "Europe/Amsterdam");
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         title: "Fold span",
         start_at: "2026-10-25T02:30:00+02:00",
         end_at: "2026-10-25T02:15:00+01:00",
@@ -183,7 +184,7 @@ describe("calendar date rescheduling", () => {
 
   it("renders a long event on every day of its visible year", () => {
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         title: "Year event",
         all_day: true,
         start_at: "2026-01-01T00:00:00Z",
@@ -206,7 +207,7 @@ describe("calendar date rescheduling", () => {
 
   it("clips long list spans to the focus month without dropping later days", () => {
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         title: "Long event",
         all_day: true,
         start_at: "2026-01-01T00:00:00Z",
@@ -233,7 +234,7 @@ describe("calendar date rescheduling", () => {
   ])("positions %s %s at its wall-clock row", (day, time, expectedTop) => {
     vi.stubEnv("TZ", "Europe/Amsterdam");
     const entry = buildEventCalendarEntry(
-      buildCalendarEvent({
+      buildCalendarEventSummary({
         title: "Morning event",
         start_at: new Date(`${day}T${time}`).toISOString(),
         end_at: new Date(`${day}T10:00:00`).toISOString(),
