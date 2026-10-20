@@ -39,6 +39,9 @@ class QueryColumnDescription(SanitizedBaseModel):
     #: ``day``, ``week``, ``month``, ``quarter`` or ``year``. A chart labels
     #: its points by this rather than by guessing from the dates.
     grain: Optional[str] = None
+    #: A SQL DATE is a calendar label, encoded at UTC midnight rather than a
+    #: timestamp to convert into the viewer's timezone.
+    date_only: bool = False
 
 
 class QueryShapeResponse(SanitizedBaseModel):

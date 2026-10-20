@@ -21,8 +21,8 @@ a device, which 0.76 copied into the view as though its reader had picked
 The downgrade names them as they were. A grouping by a field the five ids
 had no name for, and a date's bucket, are left out.
 
-Revision ID: 20261020_0527
-Revises: 20261019_0526
+Revision ID: 20261020_0529
+Revises: 20261020_0528
 Create Date: 2026-10-20
 """
 
@@ -34,8 +34,8 @@ from alembic import op
 
 from app.db.guild_migrations import run_for_each_guild_schema
 
-revision = "20261020_0527"
-down_revision = "20261019_0526"
+revision = "20261020_0529"
+down_revision = "20261020_0528"
 branch_labels = None
 depends_on = None
 

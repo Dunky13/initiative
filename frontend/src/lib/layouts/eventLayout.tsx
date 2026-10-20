@@ -25,7 +25,7 @@ import {
   type EventTiming,
   eventRange,
 } from "@/components/initiativeTools/events/EventDateTimeFields";
-import { toDateKey, toTimeSlotRounded } from "@/components/initiativeTools/events/eventDateTime";
+import { toDateKey, toTimeSlot } from "@/components/initiativeTools/events/eventDateTime";
 import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
 import type { OccurrenceScope } from "@/components/recurrence/OccurrenceScopeDialog";
 import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
@@ -239,11 +239,13 @@ const timingOf = (start: string, end: string, allDay: boolean): EventTiming => {
   const [from, to] = [new Date(start), new Date(end)];
   return {
     allDay,
+    startInstant: start,
+    endInstant: end,
     // An all-day event's dates are UTC dates.
     startDate: allDay ? utcDateKey(from.toISOString()) : toDateKey(from),
-    startTime: toTimeSlotRounded(from),
+    startTime: toTimeSlot(from),
     endDate: allDay ? utcDateKey(to.toISOString()) : toDateKey(to),
-    endTime: toTimeSlotRounded(to),
+    endTime: toTimeSlot(to),
   };
 };
 

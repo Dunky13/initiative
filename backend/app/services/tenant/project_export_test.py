@@ -6,6 +6,8 @@ verify the new project has equivalent tags, statuses, properties, tasks,
 checklists, assignees, and property values.
 """
 
+from datetime import datetime, timezone
+
 from app.core.user_display import handle_of
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -91,6 +93,9 @@ async def _seed_populated_project(session: AsyncSession):
         description="Important",
         position=1024.0,
         series_id=4242,
+        due_date=datetime(2026, 10, 7, 9, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=WEEKLY\nRDATE:20261007T090000Z",
+        recurrence_anchor=datetime(2026, 10, 5, 9, tzinfo=timezone.utc),
         recurrence_carry={
             "title": "Fix it once",
             "tag_ids": [tag.id],
@@ -154,6 +159,9 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
     assert exported_task.properties[0].property_name == "Severity"
     assert exported_task.properties[0].value_text == "high"
     assert exported_task.series == 4242
+    assert exported_task.recurrence_anchor == datetime(
+        2026, 10, 5, 9, tzinfo=timezone.utc
+    )
     assert exported_task.recurrence_carry == {
         "title": "Fix it once",
         "tags": [{"name": "blocker", "color": "#FF0000"}],
@@ -203,6 +211,12 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
     assert new_task.title == "Fix the thing"
     # Its series is named after the first task of it the import made.
     assert new_task.series_id == new_task.id
+    assert new_task.recurrence_anchor == datetime(2026, 10, 5, 9, tzinfo=timezone.utc)
+    from app.services.tenant.task_series import next_dates
+
+    dates = next_dates(new_task, now=new_task.due_date, user_timezone="UTC")
+    assert dates is not None
+    assert dates[1] == datetime(2026, 10, 12, 9, tzinfo=timezone.utc)
     await tags_service.annotate_tags(session, [new_task])
     assert new_task.recurrence_carry == {
         "title": "Fix it once",
@@ -464,3 +478,38 @@ async def test_a_status_with_no_look_gets_its_categorys(session: AsyncSession):
     assert {r.category: (r.color, r.icon) for r in rows} == {
         c: defaults_for_category(c) for c in TaskStatusCategory
     }
+
+
+async def test_legacy_envelope_keeps_carried_dates_and_consumed_count(session):
+    owner, _, guild, _, project = await _seed_populated_project(session)
+    envelope = await export_service.build_project_export(
+        session,
+        await get_project_hydrated(session, project.id),
+        exported_by_handle=handle_of(owner),
+    )
+    old_task = envelope.tasks[0]
+    old_task.recurrence_anchor = None
+    old_task.recurrence_anchor_count = 0
+    old_task.recurrence_occurrence_count = 2
+    old_task.due_date = datetime(2026, 10, 9, 9, tzinfo=timezone.utc)
+    old_task.recurrence_carry = {"due_date": "2026-10-07T09:00:00+00:00"}
+    target = await create_initiative(session, guild, owner, name="Legacy restore")
+    await route_as(session, user_id=owner.id, guild_id=guild.id)
+    result = await import_service.import_project(
+        session,
+        envelope=envelope,
+        target_initiative=target,
+        importer=owner,
+    )
+    restored = (
+        await session.exec(select(Task).where(Task.project_id == result.entity_id))
+    ).one()
+    assert restored.recurrence_anchor == datetime(2026, 10, 7, 9, tzinfo=timezone.utc)
+    assert restored.recurrence_anchor_count == 2
+    from app.services.tenant.task_series import next_dates
+
+    dates = next_dates(
+        restored, now=datetime(2026, 10, 10, tzinfo=timezone.utc), user_timezone="UTC"
+    )
+    assert dates is not None
+    assert dates[1] == datetime(2026, 10, 14, 9, tzinfo=timezone.utc)

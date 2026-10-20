@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import recurrence
@@ -337,7 +338,7 @@ async def read_calendar_event(
     current_user: ActorUserDep,
     guild_context: CalendarsRead,
     include_deleted: IncludeDeletedDep = False,
-    occurrence: Optional[datetime] = Query(
+    occurrence: Optional[AwareDatetime] = Query(
         default=None,
         description="One occurrence of a repeating event, whose answers to show.",
     ),
@@ -426,7 +427,7 @@ async def duplicate_calendar_event(
     session: ActorSessionDep,
     current_user: ActorUserDep,
     guild_context: CalendarsWrite,
-    occurrence: Optional[datetime] = Query(
+    occurrence: Optional[AwareDatetime] = Query(
         default=None,
         description="One date of a repeating event, copied as an event of its own.",
     ),
@@ -717,7 +718,7 @@ async def delete_calendar_event(
     current_user: Annotated[User, Depends(get_current_active_user)],
     guild_context: GuildContextDep,
     scope: Optional[OccurrenceScope] = Query(default=None),
-    occurrence: Optional[datetime] = Query(default=None),
+    occurrence: Optional[AwareDatetime] = Query(default=None),
 ) -> None:
     """Soft-delete a calendar event. Requires write access on the calendar.
 
@@ -942,7 +943,7 @@ async def set_attendees(
     current_user: ActorUserDep,
     guild_context: CalendarsWrite,
     scope: Optional[OccurrenceScope] = Query(default=None),
-    occurrence: Optional[datetime] = Query(default=None),
+    occurrence: Optional[AwareDatetime] = Query(default=None),
 ) -> CalendarEventRead:
     """Set attendees. Requires write access on the calendar.
 

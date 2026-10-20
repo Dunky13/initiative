@@ -1,6 +1,7 @@
 export { buildActivityEntry } from "./activity.factory";
 export {
   buildCalendarEvent,
+  buildCalendarEventSummary,
   buildEventAttendee,
   resetCounter as resetCalendarEventCounter,
 } from "./calendarEvent.factory";

@@ -1,3 +1,5 @@
+import { parseLocalCalendarDate, resolveLocalDateTime } from "@/lib/localDateTime";
+
 // Shared date/time helpers for the event create dialog and edit page so both
 // use the identical pickers, half-hour slots, and duration-preserving logic.
 
@@ -29,28 +31,18 @@ export const offsetEndTime = (start: string): string =>
 
 // Parse a "yyyy-MM-dd" string as a local date to avoid the UTC-midnight shift
 // that `new Date("yyyy-MM-dd")` introduces in negative-offset timezones.
-export const parseLocalDate = (value: string): Date | undefined => {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : undefined;
-};
+export const parseLocalDate = (value: string): Date | undefined =>
+  parseLocalCalendarDate(value) ?? undefined;
 
-// Combine a "yyyy-MM-dd" date and "HH:MM" slot into a local Date (null if no date).
-export const composeDateTime = (date: string, time: string): Date | null => {
-  if (!date) return null;
-  const d = new Date(`${date}T${time || "00:00"}:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-};
+// Gap/fold input is refused unless an unchanged original identifies the instant.
+export const composeDateTime = (date: string, time: string, original?: string): Date | null =>
+  resolveLocalDateTime(date, time || "00:00", original);
 
 export const toDateKey = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export const toTimeSlot = (d: Date): string =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-
-// Local "HH:MM" snapped to the nearest half-hour slot, so a Select bound to
-// TIME_OPTIONS can display the time of an existing (possibly off-grid) event.
-export const toTimeSlotRounded = (d: Date): string =>
-  toSlot(Math.round((d.getHours() * 60 + d.getMinutes()) / 30) * 30);
 
 /**
  * Given the current start/end (each a date + time slot) and a new start,
@@ -64,16 +56,22 @@ export const shiftEndPreservingDuration = (
   prevEndDate: string,
   prevEndTime: string,
   nextDate: string,
-  nextTime: string
-): { endDate: string; endTime: string } | null => {
-  const nextStart = composeDateTime(nextDate, nextTime);
+  nextTime: string,
+  originalStart?: string,
+  originalEnd?: string
+): { endDate: string; endTime: string; endInstant: string } | null => {
+  const nextStart = composeDateTime(nextDate, nextTime, originalStart);
   if (!nextStart) return null;
-  const prevStart = composeDateTime(prevStartDate, prevStartTime);
-  const prevEnd = composeDateTime(prevEndDate || prevStartDate, prevEndTime);
+  const prevStart = composeDateTime(prevStartDate, prevStartTime, originalStart);
+  const prevEnd = composeDateTime(prevEndDate || prevStartDate, prevEndTime, originalEnd);
   const durationMs = prevStart && prevEnd ? prevEnd.getTime() - prevStart.getTime() : 0;
   const keepMs = durationMs > 0 ? durationMs : DEFAULT_DURATION_MINUTES * 60_000;
   const nextEnd = new Date(nextStart.getTime() + keepMs);
-  return { endDate: toDateKey(nextEnd), endTime: toTimeSlot(nextEnd) };
+  return {
+    endDate: toDateKey(nextEnd),
+    endTime: toTimeSlot(nextEnd),
+    endInstant: nextEnd.toISOString(),
+  };
 };
 
 // When the end date moves onto the start day and the current end time is no
@@ -106,7 +104,9 @@ export const datesAreValid = (
   startDate: string,
   startTime: string,
   endDate: string,
-  endTime: string
+  endTime: string,
+  originalStart?: string,
+  originalEnd?: string
 ): boolean => {
   if (!startDate) return false;
   if (allDay) {
@@ -114,7 +114,7 @@ export const datesAreValid = (
     const e = parseLocalDate(endDate || startDate);
     return !!s && !!e && e >= s;
   }
-  const s = composeDateTime(startDate, startTime);
-  const e = composeDateTime(endDate || startDate, endTime);
+  const s = composeDateTime(startDate, startTime, originalStart);
+  const e = composeDateTime(endDate || startDate, endTime, originalEnd);
   return !!s && !!e && e > s;
 };

@@ -8,6 +8,15 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { AddItemDialog } from "@/components/layouts/AddItemDialog";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -27,7 +36,7 @@ import { getItem, setItem } from "@/lib/storage";
 import type { DialogProps } from "@/types/dialog";
 
 import { eventRange } from "./EventDateTimeFields";
-import { offsetEndTime, toDateKey } from "./eventDateTime";
+import { shiftEndPreservingDuration, toDateKey } from "./eventDateTime";
 
 /** A calendar the user may author events in — `can.contribute` on the
  * calendar is the event-create gate (like task creation via project write). */
@@ -114,7 +123,7 @@ export const CreateEventDialog = ({
   defaultStartTime,
   onSuccess,
 }: CreateEventDialogProps) => {
-  const { t } = useTranslation("calendars");
+  const { t } = useTranslation(["calendars", "dates", "common"]);
   const { user } = useAuth();
   const communityId = useActiveCommunityId();
   const leaving = useRef(false);
@@ -144,17 +153,38 @@ export const CreateEventDialog = ({
     (writableCalendars.length === 1 ? writableCalendars[0] : undefined);
   const startDate = defaultStartDate ?? toDateKey(new Date());
   const startTime = defaultStartTime ?? "09:00";
+  const initialEnd = shiftEndPreservingDuration("", "", "", "", startDate, startTime);
   const range = eventRange({
     allDay: false,
     startDate,
     startTime,
-    endDate: startDate,
-    endTime: offsetEndTime(startTime),
+    endDate: initialEnd?.endDate ?? startDate,
+    endTime: initialEnd?.endTime ?? startTime,
+    endInstant: initialEnd?.endInstant,
   });
 
   // Drawn once the calendars it may go in are known, so it starts in one.
   const known = calendarId !== undefined ? locked !== undefined : calendarsQuery.isSuccess;
-  if (!range || !known) return null;
+  if (!known) return null;
+  if (!range) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{t("createEvent")}</DialogTitle>
+            <DialogDescription role="alert">
+              {t("dates:picker.invalidLocalDateTime")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" onClick={() => onOpenChange(false)}>
+              {t("common:close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   return (
     <AddItemDialog
       open={open}

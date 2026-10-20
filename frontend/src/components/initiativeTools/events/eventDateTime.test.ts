@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { eventRange } from "./EventDateTimeFields";
 import {
   datesAreValid,
   endTimeOptionsFor,
   offsetEndTime,
   reconcileEndTime,
   shiftEndPreservingDuration,
-  toTimeSlotRounded,
+  toTimeSlot,
 } from "./eventDateTime";
 
 describe("offsetEndTime", () => {
@@ -28,7 +29,7 @@ describe("shiftEndPreservingDuration", () => {
         "2026-07-01",
         "16:00"
       )
-    ).toEqual({
+    ).toMatchObject({
       endDate: "2026-07-01",
       endTime: "17:00",
     });
@@ -45,14 +46,16 @@ describe("shiftEndPreservingDuration", () => {
         "2026-07-05",
         "09:00"
       )
-    ).toEqual({
+    ).toMatchObject({
       endDate: "2026-07-06",
       endTime: "10:00",
     });
   });
 
   it("defaults to a one-hour duration when there is no prior end", () => {
-    expect(shiftEndPreservingDuration("", "09:00", "", "10:00", "2026-07-01", "14:00")).toEqual({
+    expect(
+      shiftEndPreservingDuration("", "09:00", "", "10:00", "2026-07-01", "14:00")
+    ).toMatchObject({
       endDate: "2026-07-01",
       endTime: "15:00",
     });
@@ -103,9 +106,25 @@ describe("reconcileEndTime", () => {
   });
 });
 
-describe("toTimeSlotRounded", () => {
-  it("snaps an off-grid time to the nearest half hour", () => {
-    expect(toTimeSlotRounded(new Date("2026-07-01T14:15:00"))).toBe("14:30");
-    expect(toTimeSlotRounded(new Date("2026-07-01T14:07:00"))).toBe("14:00");
+describe("toTimeSlot", () => {
+  it("preserves imported off-grid times", () => {
+    expect(toTimeSlot(new Date("2026-07-01T14:15:00"))).toBe("14:15");
+    expect(toTimeSlot(new Date("2026-07-01T14:07:00"))).toBe("14:07");
+  });
+});
+
+describe("precise event ranges", () => {
+  it("preserves an unchanged off-grid start when its end changes", () => {
+    const start = new Date("2026-07-01T09:15:27.123").toISOString();
+    expect(
+      eventRange({
+        allDay: false,
+        startDate: "2026-07-01",
+        startTime: "09:15",
+        endDate: "2026-07-01",
+        endTime: "11:00",
+        startInstant: start,
+      })
+    ).toEqual({ start_at: start, end_at: new Date("2026-07-01T11:00:00").toISOString() });
   });
 });

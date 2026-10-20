@@ -69,6 +69,53 @@ beforeEach(() => {
 });
 
 describe("an event's page", () => {
+  it("keeps an imported quarter-hour start and seconds when editing only the end", async () => {
+    const start = new Date("2026-07-01T09:15:27.123").toISOString();
+    serve(
+      buildCalendarEvent({
+        id: 9,
+        title: "Imported event",
+        start_at: start,
+        end_at: new Date("2026-07-01T10:15:00").toISOString(),
+      })
+    );
+    open();
+    const user = userEvent.setup();
+    const when = await screen.findByRole("group", { name: /^when$/i });
+    const selectors = within(when).getAllByRole("combobox");
+    const endTime = selectors[1];
+    if (!endTime) throw new Error("Missing end time selector");
+    await user.click(endTime);
+    await user.click(await screen.findByRole("option", { name: "11:00 AM" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      start_at: start,
+      end_at: new Date("2026-07-01T11:00:00").toISOString(),
+    });
+  });
+
+  it("retains the second occurrence of a repeated hour when editing the end", async () => {
+    vi.stubEnv("TZ", "Europe/Amsterdam");
+    const start = "2026-10-25T01:30:27.123Z";
+    serve(
+      buildCalendarEvent({
+        id: 9,
+        title: "Fold event",
+        start_at: start,
+        end_at: "2026-10-25T02:30:00Z",
+      })
+    );
+    open();
+    const user = userEvent.setup();
+    const when = await screen.findByRole("group", { name: /^when$/i });
+    const endTime = within(when).getAllByRole("combobox")[1];
+    if (!endTime) throw new Error("Missing end time selector");
+    await user.click(endTime);
+    await user.click(await screen.findByRole("option", { name: "4:00 AM" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ start_at: start, end_at: "2026-10-25T03:00:00.000Z" });
+  });
+
   it("saves a field on its own, and only that field", async () => {
     serve(buildCalendarEvent({ id: 9, title: "Standup", location: "Room 2" }));
     open();

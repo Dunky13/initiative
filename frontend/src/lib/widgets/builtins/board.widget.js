@@ -222,7 +222,10 @@ function render(data, config, context) {
       if (value !== null) chips.push(value);
     }
     if (chips.length) card.chips = chips;
-    if (dateAt !== undefined && typeof row[dateAt] === "number") card.date = row[dateAt];
+    if (dateAt !== undefined && typeof row[dateAt] === "number") {
+      card.date = row[dateAt];
+      if (columnsMeta[dateAt].date_only) card.date_only = true;
+    }
     return card;
   };
 

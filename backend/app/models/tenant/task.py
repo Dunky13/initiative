@@ -150,6 +150,17 @@ class Task(
     recurrence_shift: int = Field(
         default=0, sa_column=Column(Integer, nullable=False, server_default="0")
     )
+    # The fixed series' phase survives extra dates and in-place skips. Unlike
+    # series_id it remains usable after older task rows have been purged.
+    recurrence_anchor: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    # Already-consumed starts before a retained anchor when older history was
+    # purged (or skipped in place before anchors existed). A conservative
+    # legacy bound; new series always retain their complete phase with zero.
+    recurrence_anchor_count: int = Field(
+        default=0, sa_column=Column(Integer, nullable=False, server_default="0")
+    )
     # No occurrence of the series starts after this; null when it never ends.
     # Written from ``recurrence`` on every save (see the listener below).
     recurrence_until: Optional[datetime] = Field(
@@ -221,12 +232,23 @@ class Task(
 def _write_recurrence_until(_mapper, _connection, task: Task) -> None:
     # A task series starts at its due date, or its start date without one.
     start = task.due_date or task.start_date
+    if task.recurrence and task.recurrence_strategy == RecurrenceStrategy.fixed:
+        if task.recurrence_anchor is None:
+            from app.services.tenant.task_series import anchor_from_dates
+
+            task.recurrence_anchor, task.recurrence_anchor_count = anchor_from_dates(
+                task
+            )
+        start = task.recurrence_anchor or start
     task.recurrence_until = (
         recurrence.last_start(
             task.recurrence,
             start,
             task.recurrence_shift,
-            done=task.recurrence_occurrence_count,
+            done=task.recurrence_anchor_count
+            if task.recurrence_strategy == RecurrenceStrategy.fixed
+            and task.recurrence_anchor
+            else task.recurrence_occurrence_count,
         )
         if task.recurrence and start
         else None

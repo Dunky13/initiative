@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildCalendarEvent, writerCan } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -28,8 +28,9 @@ const CALENDAR = {
 };
 
 describe("adding an event", () => {
-  it("starts in the only calendar it can go in, and is made whole by Create", async () => {
-    const sent: Record<string, unknown>[] = [];
+  it("retains the inferred end instant when the first hour ends in a fold", async () => {
+    vi.stubEnv("TZ", "Europe/Amsterdam");
+    const sent: string[] = [];
     server.use(
       communityHttp.get("/calendars/", () =>
         HttpResponse.json({
@@ -41,28 +42,100 @@ describe("adding an event", () => {
         })
       ),
       communityHttp.post("/calendar-events/", async ({ request }) => {
-        const body = (await request.json()) as Record<string, unknown>;
-        sent.push(body);
+        sent.push(await request.text());
         return HttpResponse.json(buildCalendarEvent({ id: 9, calendar_id: 7 }));
       })
     );
     renderPage(() => (
-      <CreateEventDialog open onOpenChange={() => {}} defaultStartDate="2026-10-20" />
+      <CreateEventDialog
+        open
+        onOpenChange={() => {}}
+        defaultStartDate="2026-10-25"
+        defaultStartTime="01:00"
+      />
     ));
     const user = userEvent.setup();
-
-    expect(await screen.findByText("Rehearsals")).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText("Event title"), "Dress rehearsal");
+    await user.type(await screen.findByPlaceholderText("Event title"), "Before the fold");
     await user.click(screen.getByRole("button", { name: "Create Event" }));
-
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toMatchObject({
-      calendar_id: 7,
-      title: "Dress rehearsal",
-      all_day: false,
-      start_at: new Date("2026-10-20T09:00:00").toISOString(),
-      properties: [],
-    });
-    expect(sent[0].attendee_ids).toHaveLength(1);
+    expect(sent[0]).toContain('"start_at":"2026-10-24T23:00:00.000Z"');
+    expect(sent[0]).toContain('"end_at":"2026-10-25T00:00:00.000Z"');
   });
+
+  it("shows an invalid initial time instead of hiding the creation dialog", async () => {
+    vi.stubEnv("TZ", "Europe/Amsterdam");
+    server.use(
+      communityHttp.get("/calendars/", () =>
+        HttpResponse.json({
+          items: [CALENDAR],
+          total_count: 1,
+          page: 1,
+          page_size: 200,
+          has_next: false,
+        })
+      )
+    );
+    const close = vi.fn();
+    renderPage(() => (
+      <CreateEventDialog
+        open
+        onOpenChange={close}
+        defaultStartDate="2026-10-25"
+        defaultStartTime="02:00"
+      />
+    ));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/skipped or repeated/i);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(close).toHaveBeenCalledWith(false);
+  });
+
+  it.each(["09:00", "23:30"])(
+    "starts at %s in the only calendar it can go in, and is made whole by Create",
+    async (startTime) => {
+      const sent: Record<string, unknown>[] = [];
+      server.use(
+        communityHttp.get("/calendars/", () =>
+          HttpResponse.json({
+            items: [CALENDAR],
+            total_count: 1,
+            page: 1,
+            page_size: 200,
+            has_next: false,
+          })
+        ),
+        communityHttp.post("/calendar-events/", async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          sent.push(body);
+          return HttpResponse.json(buildCalendarEvent({ id: 9, calendar_id: 7 }));
+        })
+      );
+      renderPage(() => (
+        <CreateEventDialog
+          open
+          onOpenChange={() => {}}
+          defaultStartDate="2026-10-20"
+          defaultStartTime={startTime}
+        />
+      ));
+      const user = userEvent.setup();
+
+      expect(await screen.findByText("Rehearsals")).toBeInTheDocument();
+      await user.type(screen.getByPlaceholderText("Event title"), "Dress rehearsal");
+      await user.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect(sent[0]).toMatchObject({
+        calendar_id: 7,
+        title: "Dress rehearsal",
+        all_day: false,
+        start_at: new Date(`2026-10-20T${startTime}:00`).toISOString(),
+        end_at: new Date(
+          new Date(`2026-10-20T${startTime}:00`).getTime() + 60 * 60_000
+        ).toISOString(),
+        properties: [],
+      });
+      expect(sent[0].attendee_ids).toHaveLength(1);
+    }
+  );
 });

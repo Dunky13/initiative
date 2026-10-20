@@ -46,6 +46,8 @@ _INTERNAL = frozenset(
         "recurrence",
         "recurrence_until",
         "recurrence_shift",
+        "recurrence_anchor",
+        "recurrence_anchor_count",
         "recurrence_strategy",
         "recurrence_occurrence_count",
         "series_id",

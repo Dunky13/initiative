@@ -42,17 +42,21 @@ export const normalizeQueryRows = (
   columns: (Omit<DataColumn, "grain"> & { grain?: string | null })[],
   rows: unknown[][]
 ): { columns: DataColumn[]; rows: CellValue[][] } => ({
-  columns: columns.map(({ name, type, grain }) =>
-    grain && (COLUMN_GRAINS as readonly string[]).includes(grain)
-      ? { name, type, grain: grain as ColumnGrain }
-      : { name, type }
-  ),
+  columns: columns.map(({ name, type, grain, date_only }) => ({
+    name,
+    type,
+    ...(isColumnGrain(grain) ? { grain } : {}),
+    ...(date_only === undefined ? {} : { date_only }),
+  })),
   rows: rows.map((row) => columns.map((_column, index) => cell(row[index]))),
 });
 
 /** The periods a column may say it is rounded to. Anything else is dropped,
  *  so a widget only ever reads a grain it knows. */
 const COLUMN_GRAINS = ["day", "week", "month", "quarter", "year"] as const;
+
+const isColumnGrain = (grain: string | null | undefined): grain is ColumnGrain =>
+  COLUMN_GRAINS.some((known) => known === grain);
 
 /**
  * What a column of sheet cells holds.

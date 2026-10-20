@@ -34,12 +34,18 @@ export function YearView({
 
   const year = focusDate.getFullYear();
 
-  const entriesByDate = useMemo(() => buildEntriesByDate(entries), [entries]);
+  const entriesByDate = useMemo(
+    () => buildEntriesByDate(entries, { start: new Date(year, 0, 1), end: new Date(year, 11, 31) }),
+    [entries, year]
+  );
 
   const months = useMemo(() => Array.from({ length: 12 }, (_, i) => new Date(year, i, 1)), [year]);
 
   const weekdayLabelsShort = useMemo(() => {
-    const labels = WEEKDAY_KEYS.map((key) => t(`dates:weekdaysShort.${key}`).charAt(0));
+    const labels = WEEKDAY_KEYS.map((key) => ({
+      key,
+      label: t(`dates:weekdaysShort.${key}`).charAt(0),
+    }));
     return labels.slice(weekStartsOn).concat(labels.slice(0, weekStartsOn));
   }, [weekStartsOn, t]);
 
@@ -57,8 +63,8 @@ export function YearView({
             <p className="font-semibold text-sm">{t(`dates:months.${monthIndex}`)}</p>
             {/* Mini weekday header */}
             <div className="grid grid-cols-7 text-center">
-              {weekdayLabelsShort.map((label) => (
-                <div key={label} className="py-0.5 font-medium text-3xs text-muted-foreground">
+              {weekdayLabelsShort.map(({ key, label }) => (
+                <div key={key} className="py-0.5 font-medium text-3xs text-muted-foreground">
                   {label}
                 </div>
               ))}

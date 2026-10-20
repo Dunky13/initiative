@@ -1,6 +1,7 @@
 import type {
   CalendarEventAttendeeRead,
   CalendarEventRead,
+  CalendarEventSummary,
 } from "@/api/generated/initiativeAPI.schemas";
 
 let counter = 0;
@@ -41,6 +42,13 @@ export function buildCalendarEvent(overrides: Partial<CalendarEventRead> = {}): 
     plugin_values: [],
     ...overrides,
   };
+}
+
+/** The list/calendar shape, with the attendee previews its endpoint supplies. */
+export function buildCalendarEventSummary(
+  overrides: Partial<CalendarEventSummary> = {}
+): CalendarEventSummary {
+  return { ...buildCalendarEvent(), attendee_previews: [], ...overrides };
 }
 
 /** One person asked to an event, not yet answered. */

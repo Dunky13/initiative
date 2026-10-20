@@ -1,7 +1,7 @@
 """The tasks of one repeating series, and changing one of them alone.
 
 A repeating task makes the next task of its series when it is completed
-(``task_creation.advance_recurrence_if_needed``), copied from itself. Every task
+(``advance_recurrence_if_needed``), copied from itself. Every task
 the series has made carries ``series_id``, the id of its first task, from the
 moment the series first moves on. The repeat moves to the new task, and the
 finished one stops repeating.
@@ -160,6 +160,19 @@ def carried(task: Task) -> dict[str, Any]:
     }
 
 
+def anchor_from_dates(task: Task) -> tuple[datetime | None, int]:
+    """A fresh anchor and consumed count from the series' effective dates.
+
+    Used when writing a new baseline, or as a read-only fallback for a task
+    without a saved anchor. A this-only edit keeps the series' dates in carry.
+    """
+    values = carried(task)
+    start = values.get("due_date", task.due_date) or values.get(
+        "start_date", task.start_date
+    )
+    return (start if task.recurrence else None), task.recurrence_occurrence_count
+
+
 def repeat_edited(
     task: Task,
     sent: str | None | EllipsisType,
@@ -197,7 +210,9 @@ def next_dates(
     values = carried(task)
     due = values.get("due_date", task.due_date)
     start = values.get("start_date", task.start_date)
-    if task.recurrence_strategy == RecurrenceStrategy.rolling:
+    rolling = task.recurrence_strategy == RecurrenceStrategy.rolling
+    done = task.recurrence_occurrence_count
+    if rolling:
         # Rolling counts from the completer's local day, at the task's own
         # local time of day: a 5pm LA task is midnight UTC the next day, so a
         # UTC day would land a day early. The zone is whoever finished it:
@@ -216,19 +231,28 @@ def next_dates(
             .astimezone(zone)
         )
     else:
-        base = due
-    # The task's own counter ends a COUNT series: every successor is a new row
-    # whose start moves, so dateutil would count from the wrong place.
+        if task.recurrence_anchor is None:
+            base, done = anchor_from_dates(task)
+        else:
+            base, done = task.recurrence_anchor, task.recurrence_anchor_count
+    # Rolling tasks restart from completion, so their counter ends a COUNT.
+    # Fixed tasks keep their anchor: dateutil counts only the rule's starts,
+    # before EXDATE/RDATE, as RFC 5545 requires.
     count = rule.get("COUNT", [None])[0]
-    if count is not None and task.recurrence_occurrence_count + 1 >= count:
+    if rolling and count is not None and task.recurrence_occurrence_count + 1 >= count:
         return None
     next_due = recurrence.next_start(
-        task.recurrence, base, task.recurrence_shift, count=False
+        task.recurrence,
+        base,
+        task.recurrence_shift,
+        count=not rolling,
+        after=None if rolling else due,
+        done=done,
     )
     if next_due is None:
         return None
     length: timedelta | None = due - start if start and due else None
-    return (next_due - length if length else None), next_due
+    return (next_due - length if length is not None else None), next_due
 
 
 async def retag(session: AsyncSession, task_id: int, tag_ids: list[int]) -> None:
@@ -315,6 +339,12 @@ async def _next_task(
     """The next task of the series, on ``dates``: ``task`` itself moved on
     (``in_place``, a skip), or a new task copied from it (a completion). Both
     take what an edit of just ``task`` changed from (:func:`carried`)."""
+    if (
+        task.recurrence_strategy == RecurrenceStrategy.fixed
+        and task.recurrence_anchor is None
+    ):
+        # Save the effective baseline before advancing dates or releasing carry.
+        task.recurrence_anchor, task.recurrence_anchor_count = anchor_from_dates(task)
     values = carried(task)
     task.series_id = task.series_id or task.id
     default_status = await task_statuses_service.get_default_status(
@@ -332,6 +362,8 @@ async def _next_task(
             priority=task.priority,
             recurrence=task.recurrence,
             recurrence_shift=task.recurrence_shift,
+            recurrence_anchor=task.recurrence_anchor,
+            recurrence_anchor_count=task.recurrence_anchor_count,
             recurrence_strategy=task.recurrence_strategy,
             position=await next_position(session, task.project_id),
             series_id=task.series_id,

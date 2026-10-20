@@ -20,7 +20,7 @@ matter and can be deleted.
 
 A list layout's groupings name a field of what it lists (`task_status_id`,
 `tag_ids`, `date_group`, `assignee_ids`, …) or `property:<id>`, rather than one
-of five ids of their own; migration `20261020_0527` rewrites every stored
+of five ids of their own; migration `20261020_0529` rewrites every stored
 layout.
 
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId` from the `oneOf[subschema #1: ListLayoutWrite]/definition/group_by` request property `anyOf` list

@@ -1,4 +1,4 @@
-"""Migration 20261020_0527 names a list's groupings by their fields, in the
+"""Migration 20261020_0529 names a list's groupings by their fields, in the
 layouts every guild stores and in each person's view of a project.
 
 Loaded by path and run on a guild the test builds, as
@@ -65,7 +65,7 @@ async def test_groupings_name_their_fields_and_come_back(session) -> None:
     schema = f"guild_{guild.id}"
     initiative = await create_initiative(session, guild, user)
     project = await create_project(session, initiative, user)
-    migration = _load("20261020_0527_groupings_name_fields")
+    migration = _load("20261020_0529_groupings_name_fields")
     scope = f"view:{guild.id}:project:{project.id}"
 
     async def sql(statement: str, **params):
@@ -129,7 +129,7 @@ async def test_groupings_name_their_fields_and_come_back(session) -> None:
 
 
 def test_the_downgrade_leaves_out_what_the_old_ids_cannot_name() -> None:
-    migration = _load("20261020_0527_groupings_name_fields")
+    migration = _load("20261020_0529_groupings_name_fields")
     definition = {
         "groupings": [
             {"field": "due_date", "bucket": "week"},
