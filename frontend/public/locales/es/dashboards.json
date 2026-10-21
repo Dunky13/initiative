@@ -307,7 +307,8 @@
     "counter_groups": "Grupos de contadores",
     "task_statuses": "Estados de tarea",
     "property_values": "Valores de propiedades",
-    "property_definitions": "Propiedades"
+    "property_definitions": "Propiedades",
+    "relationships": "Vínculos"
   },
   "viewMode": {
     "label": "Ejecutar el panel como",

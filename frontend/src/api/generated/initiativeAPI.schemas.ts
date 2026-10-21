@@ -4472,6 +4472,7 @@ export const DatasetName = {
   members: "members",
   property_definitions: "property_definitions",
   property_values: "property_values",
+  relationships: "relationships",
   files: "files",
   file_versions: "file_versions",
   queues: "queues",

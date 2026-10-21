@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hourly repeats after completion**: repeat a task a set number of hours after it is finished, with an optional maximum per day. Daily limits use the completing person’s timezone and resume at the first task’s time, preserving the gap overnight.
 - **The front page shows people working together.** A new section draws three people on the same plan at once: live cursors, a comment landing in the margin, and a task handed to a second person. The headline now reads "Your group has a lot going on. It's time to take the Initiative."
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
+- **Dashboards can read links.** In the SQL tab, `relationships` holds what each thing is linked to, so a Gantt can group subtasks under their parent. A link shows only to someone who can see both ends, and one that was unlinked is left out.
 
 ### Fixed
 
