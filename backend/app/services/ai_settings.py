@@ -495,6 +495,7 @@ async def update_platform_connection(
     data = payload.model_dump(exclude_unset=True)
     before = audit_service.snapshot(row, AUDITED_CONNECTION_FIELDS)
     key_before = row.api_key_encrypted
+    destination = (row.provider, row.base_url)
     provider = payload.provider or AIProvider(row.provider)
     if "base_url" in data or "provider" in data:
         base_url = _connection_base_url(
@@ -513,6 +514,9 @@ async def update_platform_connection(
         row.api_key_encrypted = (
             encrypt_field(normalized, SALT_AI_API_KEY) if normalized else None
         )
+    elif (row.provider, row.base_url) != destination:
+        # A key goes only where it was given for.
+        row.api_key_encrypted = None
     if "enabled" in data and payload.enabled is not None:
         row.enabled = payload.enabled
     if "is_default" in data and payload.is_default is not None:
@@ -671,6 +675,7 @@ async def update_guild_connection(
         )
     ).first()
     key = key_before
+    destination = (row.provider, row.base_url)
     provider = payload.provider or AIProvider(row.provider)
     if "base_url" in data or "provider" in data:
         base_url = _connection_base_url(
@@ -687,6 +692,9 @@ async def update_guild_connection(
     if "api_key" in data:
         normalized = _normalize_optional_string(payload.api_key)
         key = encrypt_field(normalized, SALT_AI_API_KEY) if normalized else None
+    elif (row.provider, row.base_url) != destination:
+        # A key goes only where it was given for.
+        key = None
     if "enabled" in data and payload.enabled is not None:
         row.enabled = payload.enabled
     if "is_default" in data and payload.is_default is not None:

@@ -1687,6 +1687,8 @@ class AIMessages:
     MODEL_NOT_FOUND = "AI_MODEL_NOT_FOUND"
     #: The connection names no model yet.
     MODEL_REQUIRED = "AI_MODEL_REQUIRED"
+    #: The community already has as many AI requests open as it may.
+    BUSY = "AI_BUSY"
 
 
 class NativeMessages:

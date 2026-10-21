@@ -1750,7 +1750,7 @@
     "labelPlaceholder": "p. ex. OpenAI de l'équipe",
     "apiKeyPlaceholderExisting": "••••••••",
     "apiKeyPlaceholderNew": "Saisissez la clé d'API",
-    "apiKeyHelpExisting": "Laissez vide pour conserver la clé existante.",
+    "apiKeyHelpExisting": "Laissez vide pour conserver la clé existante. Changer de fournisseur ou d'adresse l'efface.",
     "apiKeyHelpNew": "La clé partagée utilisée par tous les membres pour cette connexion.",
     "modelPlaceholder": "Sélectionnez ou saisissez un modèle",
     "modelSearchPlaceholder": "Rechercher ou saisir un nom de modèle…",

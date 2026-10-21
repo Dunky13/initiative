@@ -1750,7 +1750,7 @@
     "labelPlaceholder": "z. B. Team OpenAI",
     "apiKeyPlaceholderExisting": "••••••••",
     "apiKeyPlaceholderNew": "API-Schlüssel eingeben",
-    "apiKeyHelpExisting": "Leer lassen, um den vorhandenen Schlüssel beizubehalten.",
+    "apiKeyHelpExisting": "Leer lassen, um den vorhandenen Schlüssel beizubehalten. Beim Wechsel des Anbieters oder der Adresse wird er entfernt.",
     "apiKeyHelpNew": "Der gemeinsame Schlüssel, den alle Mitglieder für diese Verbindung verwenden.",
     "modelPlaceholder": "Modell auswählen oder eingeben",
     "modelSearchPlaceholder": "Modellnamen suchen oder eingeben…",

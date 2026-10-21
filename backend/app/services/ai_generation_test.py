@@ -72,8 +72,10 @@ async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
     monkeypatch.setattr(
         ai_provider,
         "PinnedTransport",
-        lambda *, allow_private: safe_http.PinnedTransport(
-            allow_private=allow_private, inner=httpx.MockTransport(handler)
+        lambda *, allow_private, max_bytes: safe_http.PinnedTransport(
+            allow_private=allow_private,
+            max_bytes=max_bytes,
+            inner=httpx.MockTransport(handler),
         ),
     )
     _resolving_to(monkeypatch)

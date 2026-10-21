@@ -13,7 +13,8 @@ A connection always names its model; nothing here picks one.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
@@ -26,7 +27,7 @@ from pydantic import BaseModel, ValidationError
 from app.core.errors import CodedError
 from app.core.messages import AIMessages
 from app.schemas.ai_settings import AIProvider
-from app.services.safe_http import PinnedTransport
+from app.services.safe_http import PinnedTransport, ResponseTooLargeError
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
     WebhookTargetUrlPrivateError,
@@ -41,10 +42,16 @@ _PROVIDER_FAULTS = frozenset(
 
 class AIRequestError(CodedError):
     """A request for AI work that failed, with the message code and status
-    the endpoint answers: a fault on the provider's side is a bad gateway."""
+    the endpoint answers: a fault on the provider's side is a bad gateway, and
+    a community with too many requests open is asked to wait."""
 
     def __init__(self, code: str) -> None:
-        super().__init__(code, 502 if code in _PROVIDER_FAULTS else 400)
+        status = 400
+        if code in _PROVIDER_FAULTS:
+            status = 502
+        elif code == AIMessages.BUSY:
+            status = 429
+        super().__init__(code, status)
 
 
 class Shape(str, Enum):
@@ -92,6 +99,16 @@ PRESETS: dict[AIProvider, Preset] = {
 #: has to sit well above any real catalog; when it does trim, the list is
 #: incomplete and callers must not read absence from it as "no such model".
 MODEL_LIST_CAP = 1000
+
+#: The largest reply read from an OpenAI-compatible server, a model list
+#: included. The answers asked for here are a few kilobytes.
+MAX_REPLY_BYTES = 8 * 1024 * 1024
+
+#: AI requests one community may have open at once, in one process. A slow
+#: provider holds each for up to its job's timeout; the rest of the server is
+#: not held with them.
+CALLS_PER_COMMUNITY = 4
+_in_flight: dict[int, int] = {}
 
 
 def allow_private(provider: AIProvider, scope: str) -> bool:
@@ -167,10 +184,16 @@ def _openai_client(target: Target, timeout: float) -> openai.AsyncOpenAI:
         api_key=target.api_key or "none",
         base_url=_endpoint(target.provider, target.base_url),
         timeout=timeout,
+        # A hosted service's retries are worth waiting for; a server somebody
+        # runs answers the same way the second time.
+        max_retries=0 if PRESETS[target.provider].self_hosted else 2,
+        default_headers={"User-Agent": "Initiative"},
         http_client=httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=False,
-            transport=PinnedTransport(allow_private=target.allow_private),
+            transport=PinnedTransport(
+                allow_private=target.allow_private, max_bytes=MAX_REPLY_BYTES
+            ),
         ),
     )
 
@@ -183,6 +206,9 @@ def _failure_code(exc: BaseException, provider: AIProvider, *, sent_key: bool) -
         isinstance(cause, (WebhookTargetUrlError, WebhookTargetUrlPrivateError))
     ):
         return AIMessages.INVALID_BASE_URL
+    if isinstance(cause, ResponseTooLargeError):
+        logger.warning("AI provider %s answered past the size bound", provider.value)
+        return AIMessages.PROVIDER_ERROR
     status = getattr(exc, "status_code", None)
     logger.warning(
         "AI provider %s failed: %s %s",
@@ -325,6 +351,37 @@ async def _send(
     if not target.model:
         raise AIRequestError(AIMessages.MODEL_REQUIRED)
     send = _SENDERS[PRESETS[target.provider].shape]
+    with _slot(guild_id):
+        text, used = await _sent(send, target, job, prompt, schema)
+    _log_usage(target, job, guild_id, used)
+    return text
+
+
+@contextmanager
+def _slot(guild_id: int | None) -> Iterator[None]:
+    """Hold one of the community's open requests, or refuse when it has
+    none left."""
+    if guild_id is None:
+        yield
+        return
+    if _in_flight.get(guild_id, 0) >= CALLS_PER_COMMUNITY:
+        raise AIRequestError(AIMessages.BUSY)
+    _in_flight[guild_id] = _in_flight.get(guild_id, 0) + 1
+    try:
+        yield
+    finally:
+        _in_flight[guild_id] -= 1
+        if not _in_flight[guild_id]:
+            del _in_flight[guild_id]
+
+
+async def _sent(
+    send: Callable[..., Any],
+    target: Target,
+    job: Job,
+    prompt: tuple[str, str],
+    schema: dict | None,
+) -> tuple[str, tuple[int, int, int]]:
     try:
         try:
             text, used = await send(target, job, prompt, schema)
@@ -340,8 +397,7 @@ async def _send(
         raise AIRequestError(
             _failure_code(exc, target.provider, sent_key=bool(target.api_key))
         ) from exc
-    _log_usage(target, job, guild_id, used)
-    return text
+    return text, used
 
 
 async def complete_text(

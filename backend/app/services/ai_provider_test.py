@@ -142,8 +142,10 @@ def _openai_answers(monkeypatch, handler) -> None:
     monkeypatch.setattr(
         ai_provider,
         "PinnedTransport",
-        lambda *, allow_private: safe_http.PinnedTransport(
-            allow_private=allow_private, inner=httpx.MockTransport(handler)
+        lambda *, allow_private, max_bytes: safe_http.PinnedTransport(
+            allow_private=allow_private,
+            max_bytes=max_bytes,
+            inner=httpx.MockTransport(handler),
         ),
     )
 
@@ -373,3 +375,41 @@ async def test_models_are_listed_by_name(monkeypatch, caplog):
     # The kind of error the provider named is logged; what it said is not.
     assert "404 not_found_error" in caplog.text
     assert "sk-12" not in caplog.text
+
+
+async def test_a_community_at_its_limit_waits_and_others_do_not(monkeypatch):
+    fake = _Provider(monkeypatch, reply=lambda body: _chat_reply("ok"))
+    monkeypatch.setattr(ai_provider, "_in_flight", {7: ai_provider.CALLS_PER_COMMUNITY})
+
+    with pytest.raises(AIRequestError) as busy:
+        await ai_provider.complete_text(
+            _target(AIProvider.groq), JOB, PROMPT, guild_id=7
+        )
+    assert (busy.value.code, busy.value.status_code) == (AIMessages.BUSY, 429)
+    assert fake.sent == []
+
+    with _resolves_to(PUBLIC_IP):
+        await ai_provider.complete_text(
+            _target(AIProvider.groq), JOB, PROMPT, guild_id=8
+        )
+    # A finished request gives its place back.
+    assert ai_provider._in_flight == {7: ai_provider.CALLS_PER_COMMUNITY}
+
+
+async def test_a_server_somebody_runs_is_asked_once_and_read_within_a_bound(
+    monkeypatch,
+):
+    """It is not retried, and a reply past the bound is a provider error."""
+    target = _target(AIProvider.custom, base_url="https://llm.example.com/v1")
+    fake = _Provider(monkeypatch, reply=lambda body: _chat_reply("ok"), status=500)
+    with _resolves_to(PUBLIC_IP), pytest.raises(AIRequestError) as failed:
+        await ai_provider.complete_text(target, JOB, PROMPT, guild_id=None)
+    assert failed.value.code == AIMessages.PROVIDER_ERROR
+    assert len(fake.sent) == 1
+
+    fake.status = 200
+    fake.reply = lambda body: _chat_reply("x" * 2_000)
+    monkeypatch.setattr(ai_provider, "MAX_REPLY_BYTES", 1_000)
+    with _resolves_to(PUBLIC_IP), pytest.raises(AIRequestError) as too_long:
+        await ai_provider.complete_text(target, JOB, PROMPT, guild_id=None)
+    assert too_long.value.code == AIMessages.PROVIDER_ERROR
