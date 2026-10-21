@@ -327,6 +327,7 @@
   "AI_PROVIDER_ERROR": "El proveedor de IA devolvió un error. Inténtalo de nuevo o revisa la configuración de la conexión.",
   "AI_DOCUMENT_EMPTY": "Este documento no tiene contenido que resumir.",
   "AI_MODEL_NOT_FOUND": "El proveedor no ofrece el modelo de esta conexión. Elige uno de su lista.",
+  "AI_MODEL_REQUIRED": "Esta conexión aún no tiene modelo. Elige uno de la lista del proveedor.",
   "CALENDAR_COMMUNITY_PLUGIN_REQUIRED": "El complemento de calendario de la comunidad no está instalado, así que no hay dónde poner un calendario de la comunidad",
   "CALENDAR_PLUGIN_INITIATIVE_REQUIRED": "Un complemento crea un calendario en una iniciativa. Elige la iniciativa a la que pertenece.",
   "CALENDAR_EVENT_ENDS_BEFORE_START": "Un evento no puede terminar antes de empezar",

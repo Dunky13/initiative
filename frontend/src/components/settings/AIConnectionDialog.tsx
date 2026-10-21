@@ -37,6 +37,7 @@ interface AIConnectionDialogProps {
   providers: AIProvider[];
   connection: AIConnectionResponse | null;
   mutations: ConnectionMutations;
+  onNeedsModel: (connection: AIConnectionResponse) => void;
 }
 
 export const AIConnectionDialog = ({
@@ -46,6 +47,7 @@ export const AIConnectionDialog = ({
   providers,
   connection,
   mutations,
+  onNeedsModel,
 }: AIConnectionDialogProps) => {
   const { t } = useTranslation("settings");
   const {
@@ -56,6 +58,7 @@ export const AIConnectionDialog = ({
     showApiKeyField,
     showBaseUrlField,
     modelOptions,
+    canSave,
     isFetchingModels,
     isPending,
     changeProvider,
@@ -66,6 +69,7 @@ export const AIConnectionDialog = ({
     connection,
     mutations,
     onClose: () => onOpenChange(false),
+    onNeedsModel,
   });
 
   return (
@@ -108,6 +112,9 @@ export const AIConnectionDialog = ({
                 ))}
               </SelectContent>
             </Select>
+            {form.provider === "custom" && (
+              <p className="text-muted-foreground text-xs">{t("aiConnections.customHint")}</p>
+            )}
           </div>
 
           {showApiKeyField && (
@@ -157,9 +164,7 @@ export const AIConnectionDialog = ({
                 suggestions={modelOptions}
                 value={form.model}
                 onValueChange={(value) => setField("model", value)}
-                placeholder={
-                  providerConfig?.modelPlaceholder ?? t("aiConnections.modelPlaceholder")
-                }
+                placeholder={t("aiConnections.modelPlaceholder")}
                 searchPlaceholder={t("aiConnections.modelSearchPlaceholder")}
                 loadingLabel={t("aiConnections.modelsLoading")}
                 emptyLabel={t("aiConnections.modelsEmpty")}
@@ -167,6 +172,11 @@ export const AIConnectionDialog = ({
                 onOpen={fetchModels}
                 isLoading={isFetchingModels}
               />
+              {!form.model && (
+                <p className="text-muted-foreground text-xs">
+                  {isEdit ? t("aiConnections.modelHintPick") : t("aiConnections.modelHintNew")}
+                </p>
+              )}
             </div>
           )}
 
@@ -200,7 +210,7 @@ export const AIConnectionDialog = ({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t("aiConnections.cancel")}
             </Button>
-            <Button type="submit" disabled={isPending || !form.provider || !form.label}>
+            <Button type="submit" disabled={isPending || !canSave}>
               {isPending ? t("aiConnections.saving") : t("aiConnections.save")}
             </Button>
           </DialogFooter>

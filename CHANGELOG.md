@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hourly repeats after completion**: repeat a task a set number of hours after it is finished, with an optional maximum per day. Daily limits use the completing person’s timezone and resume at the first task’s time, preserving the gap overnight.
 - **The front page shows people working together.** A new section draws three people on the same plan at once: live cursors, a comment landing in the margin, and a task handed to a second person. The headline now reads "Your group has a lot going on. It's time to take the Initiative."
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
+- **More AI providers.** A connection can use Google Gemini, DeepSeek, Groq, xAI, Together AI or OpenRouter, or any OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI, or a gateway). The server's operator can point an OpenAI-compatible server at a machine on their own network, as with Ollama. OpenAI connections can use every OpenAI model, Codex models included.
 
 ### Fixed
 
@@ -35,10 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Home on a phone**: customizing no longer piles the view tabs under the Add widget and Banner buttons, a widget's move and remove buttons sit above it instead of over its title, the greeting wraps a long name instead of cutting it off, and the calendar widget is no longer a card inside a card.
 - **Calendar subscriptions**: a subscribed calendar arrives named after the calendar and its initiative (or community), instead of after its link, and listed in your own time zone instead of UTC. Calendar apps take the name when you subscribe, so to see it on a calendar you already subscribed to, subscribe to its link again.
 - **Updating the app**: in the phone and desktop apps, a new version shows one prompt instead of two, and its **Reload** button always installs the update.
+- **AI with current Claude models.** Suggestions and summaries from a model that thinks before it answers are read correctly instead of failing with a provider error.
 
 ### Changed
 
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
+- **An AI connection names its model.** Save a connection, then pick a model from its provider's list; a connection without one is not used until somebody picks one. Connections that relied on a built-in default model need one picked.
 
 ### Removed
 

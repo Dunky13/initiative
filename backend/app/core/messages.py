@@ -1685,6 +1685,8 @@ class AIMessages:
     DOCUMENT_EMPTY = "AI_DOCUMENT_EMPTY"
     #: The connection names a model its provider does not list.
     MODEL_NOT_FOUND = "AI_MODEL_NOT_FOUND"
+    #: The connection names no model yet.
+    MODEL_REQUIRED = "AI_MODEL_REQUIRED"
 
 
 class NativeMessages:

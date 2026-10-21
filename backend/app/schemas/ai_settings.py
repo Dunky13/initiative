@@ -14,8 +14,18 @@ from app.schemas.base import RawTextStr, SanitizedBaseModel
 
 
 class AIProvider(str, Enum):
+    """Where a connection sends its requests. ``ollama`` and ``custom`` are
+    servers somebody runs, at the address the connection gives; the rest are
+    hosted services at their own (``app.services.ai_provider.PRESETS``)."""
+
     openai = "openai"
     anthropic = "anthropic"
+    gemini = "gemini"
+    deepseek = "deepseek"
+    groq = "groq"
+    xai = "xai"
+    together = "together"
+    openrouter = "openrouter"
     ollama = "ollama"
     custom = "custom"
 

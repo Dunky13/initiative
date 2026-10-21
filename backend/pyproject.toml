@@ -54,6 +54,8 @@ dependencies = [
     "tuf>=7.0.1",
     "cryptography>=50.0.0",
     "jsonata-python>=0.7.0,<0.8",        # JSONata for declarative plug-ins (app/services/marketplace/expressions.py)
+    "anthropic>=1,<2",                   # Claude connections (app/services/ai_provider.py)
+    "openai>=2,<3",                      # OpenAI and OpenAI-compatible connections
 ]
 
 [dependency-groups]

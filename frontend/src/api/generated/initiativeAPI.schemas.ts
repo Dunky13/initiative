@@ -17,11 +17,22 @@ export const AIConfigMode = {
   community: "community",
 } as const;
 
+/**
+ * Where a connection sends its requests. ``ollama`` and ``custom`` are
+ * servers somebody runs, at the address the connection gives; the rest are
+ * hosted services at their own (``app.services.ai_provider.PRESETS``).
+ */
 export type AIProvider = (typeof AIProvider)[keyof typeof AIProvider];
 
 export const AIProvider = {
   openai: "openai",
   anthropic: "anthropic",
+  gemini: "gemini",
+  deepseek: "deepseek",
+  groq: "groq",
+  xai: "xai",
+  together: "together",
+  openrouter: "openrouter",
   ollama: "ollama",
   custom: "custom",
 } as const;

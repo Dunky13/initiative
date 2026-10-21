@@ -327,6 +327,7 @@
   "AI_PROVIDER_ERROR": "Le fournisseur d'IA a renvoyé une erreur. Réessayez ou vérifiez les paramètres de la connexion.",
   "AI_DOCUMENT_EMPTY": "Ce document n'a aucun contenu à résumer.",
   "AI_MODEL_NOT_FOUND": "Le fournisseur ne propose pas le modèle de cette connexion. Choisissez-en un dans sa liste.",
+  "AI_MODEL_REQUIRED": "Cette connexion n'a pas encore de modèle. Choisissez-en un dans la liste du fournisseur.",
   "CALENDAR_COMMUNITY_PLUGIN_REQUIRED": "Le plug-in calendrier de la communauté n'est pas installé, il n'y a donc nulle part où placer un calendrier de communauté",
   "CALENDAR_PLUGIN_INITIATIVE_REQUIRED": "Un plug-in crée un calendrier dans une initiative. Choisissez l'initiative à laquelle il appartient.",
   "CALENDAR_EVENT_ENDS_BEFORE_START": "Un événement ne peut pas se terminer avant de commencer",

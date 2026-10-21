@@ -327,6 +327,7 @@
   "AI_PROVIDER_ERROR": "Der KI-Anbieter hat einen Fehler gemeldet. Versuche es erneut oder überprüfe die Einstellungen der Verbindung.",
   "AI_DOCUMENT_EMPTY": "Dieses Dokument hat keinen Inhalt, der sich zusammenfassen lässt.",
   "AI_MODEL_NOT_FOUND": "Der Anbieter bietet das Modell dieser Verbindung nicht an. Wähle eines aus seiner Liste.",
+  "AI_MODEL_REQUIRED": "Diese Verbindung hat noch kein Modell. Wähle eines aus der Liste des Anbieters.",
   "CALENDAR_COMMUNITY_PLUGIN_REQUIRED": "Das Community-Kalender-Plug-in ist nicht installiert, daher gibt es keinen Ort für einen Community-Kalender",
   "CALENDAR_PLUGIN_INITIATIVE_REQUIRED": "Ein Plug-in erstellt einen Kalender in einer Initiative. Wähle die Initiative, zu der er gehört.",
   "CALENDAR_EVENT_ENDS_BEFORE_START": "Ein Termin kann nicht enden, bevor er beginnt",

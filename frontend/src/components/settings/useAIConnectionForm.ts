@@ -8,7 +8,7 @@ import type {
   AIProvider,
 } from "@/api/generated/initiativeAPI.schemas";
 import { useServerForm } from "@/hooks/useServerForm";
-import { getModelsForProvider, PROVIDER_CONFIGS } from "@/lib/ai-providers";
+import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 
@@ -49,6 +49,8 @@ interface UseAIConnectionFormArgs {
   connection: AIConnectionResponse | null;
   mutations: ConnectionMutations;
   onClose: () => void;
+  /** A connection made without a model, to pick one for next. */
+  onNeedsModel: (connection: AIConnectionResponse) => void;
 }
 
 /**
@@ -60,6 +62,7 @@ export const useAIConnectionForm = ({
   connection,
   mutations,
   onClose,
+  onNeedsModel,
 }: UseAIConnectionFormArgs) => {
   const { t } = useTranslation("settings");
   const isEdit = connection !== null;
@@ -82,9 +85,11 @@ export const useAIConnectionForm = ({
   ) => serverForm.set({ [key]: value } as Partial<AIConnectionFormState>);
 
   const providerConfig = form.provider ? PROVIDER_CONFIGS[form.provider] : null;
-  const showApiKeyField = providerConfig?.requiresApiKey ?? false;
+  const showApiKeyField = providerConfig?.hasApiKey ?? false;
   const showBaseUrlField = providerConfig?.requiresBaseUrl ?? false;
-  const modelOptions = getModelsForProvider(form.provider, availableModels);
+  // A connection is saved once to reach its provider's list; after that it
+  // needs a model to be used.
+  const canSave = Boolean(form.provider && form.label && (!isEdit || form.model));
 
   const changeProvider = (value: string) => {
     if (!value) return;
@@ -97,8 +102,7 @@ export const useAIConnectionForm = ({
   };
 
   const fetchModels = () => {
-    // Models come from a live connection, so only existing (edit) rows can
-    // populate the dropdown; new connections use the provider defaults.
+    // Models come from a saved connection's provider.
     if (!isEdit || !connection || mutations.fetchModels.isPending) return;
     mutations.fetchModels.mutate(connection.id, {
       onSuccess: (data) => {
@@ -109,7 +113,7 @@ export const useAIConnectionForm = ({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.provider) return;
+    if (!form.provider || !canSave) return;
     const baseUrl = showBaseUrlField ? form.baseUrl || null : null;
 
     if (isEdit && connection) {
@@ -146,9 +150,10 @@ export const useAIConnectionForm = ({
       is_default: form.isDefault,
     };
     mutations.create.mutate(payload, {
-      onSuccess: () => {
+      onSuccess: (created) => {
         toast.success(t("aiConnections.created"));
-        onClose();
+        if (created.model) onClose();
+        else onNeedsModel(created);
       },
       onError: (error) => toast.error(getErrorMessage(error, "settings:aiConnections.saveError")),
     });
@@ -163,7 +168,8 @@ export const useAIConnectionForm = ({
     providerConfig,
     showApiKeyField,
     showBaseUrlField,
-    modelOptions,
+    modelOptions: availableModels,
+    canSave,
     isFetchingModels: mutations.fetchModels.isPending,
     isPending,
     changeProvider,

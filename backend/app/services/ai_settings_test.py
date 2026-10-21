@@ -1,110 +1,58 @@
 """Unit tests for the AI settings service (mode-based connections).
 
 Covers the security-critical pure logic that needs no DB:
-- ``allow_private`` is derived ONLY from (provider == ollama, scope == platform).
-- A stored connection's ``base_url`` is validated public-only except for a
-  platform Ollama connection.
-- The model-list / probe egress threads ``allow_private`` through the pinned
-  ``request_public_target``.
+- A stored connection's ``base_url`` is validated public-only, except the
+  operator's connection to a server somebody runs.
+- A hosted service keeps no address of its own.
+- The probe reads the provider's catalog (``ai_provider.list_models``).
 
 End-to-end resolution, connection CRUD, and the exfil-impossible property are
-covered by the endpoint integration tests (``ai_connections_test.py``).
+covered by the endpoint integration tests.
 """
 
-import logging
-
-import httpx
 import pytest
 from fastapi import HTTPException
 
 from app.core.messages import AIMessages
 from app.schemas.ai_settings import AIProvider
-from app.services import ai_settings
+from app.services import ai_provider, ai_settings
 from app.services.ai_settings import (
-    _allow_private_for,
+    _connection_base_url,
     _validate_connection_base_url,
 )
 
 
-def test_allow_private_only_for_platform_ollama():
-    assert _allow_private_for(AIProvider.ollama, "platform") is True
-    # Every other combination is public-only.
-    assert _allow_private_for(AIProvider.ollama, "community") is False
-    assert _allow_private_for(AIProvider.custom, "platform") is False
-    assert _allow_private_for(AIProvider.openai, "platform") is False
-    assert _allow_private_for(AIProvider.custom, "community") is False
-
-
-async def test_guild_ollama_private_base_url_rejected():
-    """A guild admin can never persist a private/internal target."""
+@pytest.mark.parametrize(
+    ("provider", "scope"),
+    [
+        (AIProvider.ollama, "community"),
+        (AIProvider.custom, "community"),
+        (AIProvider.openai, "platform"),
+    ],
+)
+async def test_a_private_base_url_is_refused(provider, scope):
+    """A community can never persist a private/internal target, and nor can
+    anyone for a hosted service."""
     with pytest.raises(HTTPException) as exc:
-        await _validate_connection_base_url(
-            AIProvider.ollama, "http://169.254.169.254", "community"
-        )
+        await _validate_connection_base_url(provider, "http://169.254.169.254", scope)
     assert exc.value.status_code == 400
     assert exc.value.detail == AIMessages.INVALID_BASE_URL
 
 
-async def test_platform_custom_private_base_url_rejected():
-    """Even the operator gets the guard for a custom connection — only Ollama is
-    exempt at platform scope."""
-    with pytest.raises(HTTPException):
-        await _validate_connection_base_url(
-            AIProvider.custom, "http://10.0.0.1", "platform"
-        )
+@pytest.mark.parametrize("provider", [AIProvider.ollama, AIProvider.custom])
+async def test_the_operators_own_server_may_be_private(provider):
+    await _validate_connection_base_url(provider, "http://10.0.0.1:11434", "platform")
 
 
-async def test_platform_ollama_private_base_url_allowed():
-    """The one permitted private egress: an operator Ollama connection."""
-    # Should not raise.
-    await _validate_connection_base_url(
-        AIProvider.ollama, "http://10.0.0.1:11434", "platform"
+def test_a_hosted_service_keeps_no_address_of_its_own():
+    assert _connection_base_url(AIProvider.groq, "https://elsewhere.example") is None
+    assert (
+        _connection_base_url(AIProvider.custom, " https://llm.example/v1 ")
+        == "https://llm.example/v1"
     )
 
 
-async def test_no_base_url_is_allowed():
-    await _validate_connection_base_url(AIProvider.openai, None, "platform")
-
-
-async def test_list_ollama_models_threads_allow_private(monkeypatch):
-    captured: dict = {}
-
-    class _Resp:
-        status_code = 200
-
-        def json(self):
-            return {"models": [{"name": "llama3.2"}]}
-
-    async def fake_request(method, url, **kwargs):
-        captured["url"] = url
-        captured["allow_private"] = kwargs.get("allow_private")
-        return _Resp()
-
-    monkeypatch.setattr(ai_settings, "request_public_target", fake_request)
-    models, error = await ai_settings._list_ollama_models(
-        "http://10.0.0.1:11434", allow_private=True
-    )
-    assert error is None
-    assert "llama3.2" in models
-    assert captured["allow_private"] is True
-    assert captured["url"].endswith("/api/tags")
-
-
-async def test_list_custom_models_rejects_private_when_not_allowed(monkeypatch):
-    # Real pinned egress: a private literal IP with allow_private=False is
-    # refused before any network call.
-    models, error = await ai_settings._list_custom_models(
-        None, "http://192.168.1.5", allow_private=False
-    )
-    assert models == []
-    assert error == AIMessages.INVALID_BASE_URL
-
-
-def _openai_compatible_catalog(count: int) -> list[dict[str, str]]:
-    return [{"id": f"vendor/model-{i}"} for i in range(count)]
-
-
-def _custom_conn(model: str) -> ai_settings._ConnRow:
+def _custom_conn(model: str | None) -> ai_settings._ConnRow:
     return ai_settings._ConnRow(
         scope="community",
         id=1,
@@ -119,93 +67,30 @@ def _custom_conn(model: str) -> ai_settings._ConnRow:
     )
 
 
-def _stub_catalog(monkeypatch, catalog: list[dict[str, str]]) -> None:
-    class _Resp:
-        status_code = 200
+def _stub_catalog(monkeypatch, count: int) -> None:
+    async def list_models(target):
+        return [f"vendor/model-{i}" for i in range(count)]
 
-        def json(self):
-            return {"data": catalog}
-
-    async def fake_request(method, url, **kwargs):
-        return _Resp()
-
-    monkeypatch.setattr(ai_settings, "request_public_target", fake_request)
+    monkeypatch.setattr(ai_provider, "list_models", list_models)
 
 
-async def test_list_custom_models_returns_whole_catalog(monkeypatch):
-    # Gateways like OpenRouter list hundreds of models; a short cap would hide
-    # most of them from the selector and from the probe's membership check.
-    _stub_catalog(monkeypatch, _openai_compatible_catalog(400))
-    models, error = await ai_settings._list_custom_models(
-        "key", "https://openrouter.test/api/v1", allow_private=False
-    )
-    assert error is None
-    assert len(models) == 400
-    assert "vendor/model-399" in models
+async def test_the_probe_checks_the_model_against_the_whole_catalog(monkeypatch):
+    # Gateways like OpenRouter list hundreds of models; a model past the first
+    # page is still found.
+    _stub_catalog(monkeypatch, 400)
+    found = await ai_settings._probe(_custom_conn("vendor/model-314"), "key")
+    assert found.success is True
+
+    missing = await ai_settings._probe(_custom_conn("vendor/nope"), "key")
+    assert (missing.success, missing.message) == (False, AIMessages.MODEL_NOT_FOUND)
+
+    unnamed = await ai_settings._probe(_custom_conn(None), "key")
+    assert (unnamed.success, unnamed.message) == (False, AIMessages.MODEL_REQUIRED)
+    assert unnamed.available_models and len(unnamed.available_models) == 400
 
 
-async def test_probe_accepts_model_beyond_the_first_page(monkeypatch):
-    _stub_catalog(monkeypatch, _openai_compatible_catalog(400))
-    result = await ai_settings._probe(_custom_conn("vendor/model-114"), "key")
-    assert result.success is True
-
-
-async def test_probe_reports_a_model_the_catalog_does_not_have(monkeypatch):
-    _stub_catalog(monkeypatch, _openai_compatible_catalog(400))
-    result = await ai_settings._probe(_custom_conn("vendor/nope"), "key")
-    assert result.success is False
-    assert result.message == AIMessages.MODEL_NOT_FOUND
-
-
-async def test_probe_does_not_reject_against_a_truncated_catalog(monkeypatch):
+async def test_the_probe_does_not_reject_against_a_truncated_catalog(monkeypatch):
     # At the cap the listing is known-incomplete, so absence proves nothing.
-    _stub_catalog(
-        monkeypatch, _openai_compatible_catalog(ai_settings._MODEL_LIST_CAP + 10)
-    )
+    _stub_catalog(monkeypatch, ai_provider.MODEL_LIST_CAP + 10)
     result = await ai_settings._probe(_custom_conn("vendor/unlisted"), "key")
     assert result.success is True
-
-
-async def test_list_anthropic_models_requests_a_full_page(monkeypatch):
-    captured: dict = {}
-
-    class _Resp:
-        status_code = 200
-
-        def json(self):
-            return {"data": [{"id": "claude-haiku-4-5-20251001"}]}
-
-    class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def get(self, url, **kwargs):
-            captured["params"] = kwargs.get("params")
-            return _Resp()
-
-    monkeypatch.setattr(ai_settings.httpx, "AsyncClient", lambda **kw: _Client())
-    models, error = await ai_settings._list_anthropic_models("key")
-    assert error is None
-    assert models == ["claude-haiku-4-5-20251001"]
-    # Without an explicit limit the endpoint returns only its small first page.
-    assert captured["params"] == {"limit": ai_settings._MODEL_LIST_CAP}
-
-
-def test_a_refusal_logs_the_kind_of_error_the_provider_named(caplog):
-    answer = httpx.Response(
-        401,
-        json={
-            "error": {
-                "type": "authentication_error",
-                "message": "Incorrect API key provided: sk-12...abcd",
-            }
-        },
-    )
-    with caplog.at_level(logging.WARNING, logger=ai_settings.logger.name):
-        code = ai_settings.refusal_code(AIProvider.openai, answer, sent_key=True)
-    assert code == AIMessages.INVALID_API_KEY
-    assert "answered 401: authentication_error" in caplog.text
-    assert "sk-12" not in caplog.text
