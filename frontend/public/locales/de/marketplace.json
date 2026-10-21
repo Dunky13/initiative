@@ -9,7 +9,8 @@
     "installed": "Installiert",
     "version": "v{{version}}",
     "needsUpdate": "Benötigt neuere App",
-    "unavailable": "Noch nicht verfügbar"
+    "unavailable": "Noch nicht verfügbar",
+    "request": "Auf Anfrage"
   },
   "provenance": {
     "builtin": "von Initiative",

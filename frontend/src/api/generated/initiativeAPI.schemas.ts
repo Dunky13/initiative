@@ -3278,6 +3278,16 @@ export interface CommunityPluginListingRef {
 }
 
 /**
+ * What the entitlement statement held for an install's listing says, as
+ * the plug-in's page reads it: whether it entitles the community, and why
+ * not when it says (``term_full``: the deployment's term has no seat free).
+ */
+export interface CommunityPluginEntitlementRead {
+  active: boolean;
+  reason: string | null;
+}
+
+/**
  * An install plus its connections, for the settings page.
  *
  * Separate from the list payload because the connection blocks carry the whole
@@ -3322,6 +3332,7 @@ export interface CommunityPluginDetail {
   pending_update: CommunityPluginUpgradeAsks | null;
   plugin_names: CommunityPluginDetailPluginNames;
   listing: CommunityPluginListingRef | null;
+  entitlement: CommunityPluginEntitlementRead | null;
 }
 
 /**

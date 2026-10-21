@@ -85,8 +85,11 @@ export function MarketplaceListingPage() {
   // A listing this community cannot install yet says why, and where the seat
   // can do something about it.
   const unavailable = listing?.unavailable ?? null;
-  const { canSell, openAddress } = useBillingPortal();
+  const { billing, canSell, openAddress, openPortal } = useBillingPortal();
   const actionUrl = unavailable?.action_url ?? null;
+  // The deployment's term has no seat free for this community: the way on is
+  // a request to its owners, which the seat makes in the billing portal.
+  const termFull = unavailable?.reason === "term_full";
   // Whether this community already has it. Every member may read the installs, so
   // this answers for the person asking as well as the one who could act.
   //
@@ -214,6 +217,30 @@ export function MarketplaceListingPage() {
               <span className="text-muted-foreground text-xs">
                 {listing.available ? t("detail.needsUpdate") : t("detail.withdrawn")}
               </span>
+            ) : termFull && !isInstalled ? (
+              <div className="flex max-w-xs flex-col items-end gap-1 text-right">
+                <span className="text-muted-foreground text-xs">
+                  {t("plugins:install.termFull", { name: listing.name })}
+                </span>
+                {holdsTheSeat && billing && activeCommunity ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void openPortal(activeCommunity.id, "manage", null, {
+                        request: "plugin",
+                        listing: listing.uid,
+                      })
+                    }
+                  >
+                    {t("plugins:install.termFullRequest")}
+                  </Button>
+                ) : (
+                  <span className="text-muted-foreground text-xs">
+                    {t("plugins:install.termFullAskAdmins")}
+                  </span>
+                )}
+              </div>
             ) : unavailable && !isInstalled ? (
               <div className="flex max-w-xs flex-col items-end gap-1 text-right">
                 <span className="text-muted-foreground text-xs">

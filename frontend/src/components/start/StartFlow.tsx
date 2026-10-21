@@ -389,7 +389,7 @@ const StartSteps = ({
       }
       if (planTab.current) {
         toast.info(t("communities:billingSetup.opening", { community: community.name }));
-        void openPortal(community.id, "upgrade", planTab.current, pickedPlan);
+        void openPortal(community.id, "upgrade", planTab.current, { plan: pickedPlan });
         planTab.current = null;
       } else if (wantsPlan) {
         setPlanByButton(true);
@@ -710,7 +710,9 @@ const StartSteps = ({
             communityId={made.id}
             origin={getServerOrigin() ?? window.location.origin}
             planButton={
-              planByButton ? () => void openPortal(made.id, "upgrade", null, pickedPlan) : undefined
+              planByButton
+                ? () => void openPortal(made.id, "upgrade", null, { plan: pickedPlan })
+                : undefined
             }
             onDone={() => void leave(() => landOn(made.id, null))}
             doneLabel={t("start.people.goToCommunity", { community: made.name })}

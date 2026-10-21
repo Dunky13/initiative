@@ -67,7 +67,10 @@
       "member": "Miembros"
     },
     "entitlementRequired": "Hay que activar este complemento para tu comunidad antes de poder añadirlo.",
-    "entitlementAction": "Ver opciones"
+    "entitlementAction": "Ver opciones",
+    "termFull": "El plan de esta instalación no tiene plazas libres para {{name}}.",
+    "termFullRequest": "Solicitar",
+    "termFullAskAdmins": "Pide a los administradores de tu comunidad que lo soliciten."
   },
   "connections": {
     "none": "Este complemento no pide nada que configurar.",

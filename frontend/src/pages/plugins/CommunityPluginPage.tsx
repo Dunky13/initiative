@@ -37,11 +37,13 @@ import {
   SkeletonPillRow,
   SkeletonRegion,
 } from "@/components/skeletons/PageSkeletons";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { effectiveThemeColors } from "@/hooks/useColorTheme";
+import { useCommunities } from "@/hooks/useCommunities";
 import { useCommunityPluginDetail } from "@/hooks/useCommunityPluginDetail";
 import { useServer } from "@/hooks/useServer";
 import { useTheme } from "@/hooks/useTheme";
@@ -72,6 +74,7 @@ export interface CommunityPluginPageProps {
 export function CommunityPluginPage({ pluginId, initiativeId }: CommunityPluginPageProps) {
   const { t, i18n } = useTranslation(["plugins", "common"]);
   const communityId = useActiveCommunityId();
+  const { activeCommunity } = useCommunities();
   const detail = useCommunityPluginDetail(pluginId);
   const plugin = detail.data;
 
@@ -126,10 +129,14 @@ export function CommunityPluginPage({ pluginId, initiativeId }: CommunityPluginP
     [communityId, initiativeId, pluginId, activeId]
   );
 
+  // A plug-in the deployment's term has no seat free for is not opened: the
+  // page shows the request in its place, and mints nothing.
+  const termFull = plugin?.entitlement?.reason === "term_full";
+
   // Mint for the surface being opened. Re-runs when the surface changes, which
   // is also when the iframe is replaced.
   useEffect(() => {
-    if (!activeId || held) return;
+    if (!activeId || held || termFull) return;
     let cancelled = false;
     setHandoff(null);
     setError(null);
@@ -144,7 +151,7 @@ export function CommunityPluginPage({ pluginId, initiativeId }: CommunityPluginP
     return () => {
       cancelled = true;
     };
-  }, [activeId, held, mint, t]);
+  }, [activeId, held, termFull, mint, t]);
 
   const origin = useMemo(() => {
     if (!handoff?.page_url) return null;
@@ -184,7 +191,7 @@ export function CommunityPluginPage({ pluginId, initiativeId }: CommunityPluginP
   themeColorsRef.current = themeColors;
   // Asked at delivery rather than read at render: a phone's store may not
   // have answered yet when the frame announces itself.
-  const { sellsNow } = useBillingPortal();
+  const { billing, openPortal, sellsNow } = useBillingPortal();
   const sellsNowRef = useRef(sellsNow);
   sellsNowRef.current = sellsNow;
 
@@ -298,6 +305,39 @@ export function CommunityPluginPage({ pluginId, initiativeId }: CommunityPluginP
         description={t("plugins:page.unavailableDescription")}
       />
     );
+  // The deployment's term has no seat free for this community: in place of
+  // the plug-in, the request that would bring it back, which the seat makes
+  // in the billing portal.
+  if (termFull) {
+    const listingUid = plugin.listing_uid;
+    return (
+      <Notice
+        title={t("plugins:install.termFull", { name: plugin.name })}
+        description={
+          activeCommunity?.can.seat && billing && listingUid
+            ? undefined
+            : t("plugins:install.termFullAskAdmins")
+        }
+        action={
+          activeCommunity?.can.seat && billing && listingUid ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              onClick={() =>
+                void openPortal(activeCommunity.id, "manage", null, {
+                  request: "plugin",
+                  listing: listingUid,
+                })
+              }
+            >
+              {t("plugins:install.termFullRequest")}
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }
   // Anything but our own can be reported from here, on every platform.
   const reportable = plugin.listing?.first_party ? null : plugin.listing;
   const report = reportable ? (

@@ -435,6 +435,17 @@ class CommunityPluginListingRef(SanitizedBaseModel):
     first_party: bool
 
 
+class CommunityPluginEntitlementRead(SanitizedBaseModel):
+    """What the entitlement statement held for an install's listing says, as
+    the plug-in's page reads it: whether it entitles the community, and why
+    not when it says (``term_full``: the deployment's term has no seat free)."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    active: bool
+    reason: Optional[str] = None
+
+
 class CommunityPluginDetail(CommunityPluginRead):
     """An install plus its connections, for the settings page.
 
@@ -472,6 +483,8 @@ class CommunityPluginDetail(CommunityPluginRead):
     #: The catalog listing behind this install. Absent when the catalog no
     #: longer holds it.
     listing: Optional[CommunityPluginListingRef] = None
+    #: The entitlement statement held for the install's listing, when one is.
+    entitlement: Optional[CommunityPluginEntitlementRead] = None
 
 
 class CommunityPluginListResponse(SanitizedBaseModel):
@@ -741,6 +754,7 @@ def serialize_guild_plugin_detail(
     plugin_names: Optional[Dict[str, str]] = None,
     viewer: AgeViewer,
     listing: Any = None,
+    entitlement: Optional[CommunityPluginEntitlementRead] = None,
 ) -> CommunityPluginDetail:
     """The install and its connections, from the viewer's own perspective.
 
@@ -805,6 +819,7 @@ def serialize_guild_plugin_detail(
             if listing is not None and listing.id is not None
             else None
         ),
+        entitlement=entitlement,
     )
 
 

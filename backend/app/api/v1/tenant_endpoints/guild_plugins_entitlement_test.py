@@ -54,17 +54,17 @@ def _definition() -> dict:
     }
 
 
-async def _hold(guild_id: int, values: dict) -> str:
-    """Keep a version-1 statement of ``values`` for the community, as the
+async def _hold(guild_id: int, values: dict, *, version: int = 1) -> str:
+    """Keep a statement of ``values`` for the community at ``version``, as the
     billing verb would; the signed statement is returned."""
     statement = entitlement_statement(
         community_ref=await billing_guild_ref(guild_id),
         listing_uid=SERVICE_UID,
-        version=1,
+        version=version,
         values=values,
     )
     await plugin_entitlements.store_statement(
-        guild_id, SERVICE_UID, statement=statement, version=1, values=values
+        guild_id, SERVICE_UID, statement=statement, version=version, values=values
     )
     return statement
 
@@ -206,6 +206,25 @@ class TestGating:
             if item["uid"] == SERVICE_UID
         ] == [{"reason": "term_full", "action_url": None}]
         assert install.status_code == 409
+
+    async def test_an_install_whose_term_fills_says_so_on_its_page(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        """The plug-in's page reads the statement held for the install: once
+        billing marks the term full, the page shows the request in place of
+        the plug-in."""
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": True})
+        installed = await _install(client, a)
+        assert installed.status_code == 201, installed.text
+        page = a.g(f"/plugins/{installed.json()['id']}")
+
+        working = await client.get(page, headers=a.headers)
+        await _hold(a.guild.id, {"active": False, "reason": "term_full"}, version=2)
+        full = await client.get(page, headers=a.headers)
+
+        assert working.json()["entitlement"] == {"active": True, "reason": None}
+        assert full.json()["entitlement"] == {"active": False, "reason": "term_full"}
 
     async def test_the_catalog_says_it_is_unavailable_and_where_to_go(
         self, client: AsyncClient, acting_user, entitled, billing

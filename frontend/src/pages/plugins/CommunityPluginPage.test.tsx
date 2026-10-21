@@ -20,8 +20,21 @@ const mint = vi.fn();
 
 // Whether this host may sell here, as `useBillingPortal` decides it.
 const sale = vi.hoisted(() => ({ canSell: false }));
+const portal = vi.hoisted(() => ({ open: null as unknown as ReturnType<typeof vi.fn> }));
 vi.mock("@/hooks/useBillingPortal", () => ({
-  useBillingPortal: () => ({ canSell: sale.canSell, sellsNow: async () => sale.canSell }),
+  useBillingPortal: () => ({
+    billing: { url: "https://billing.example.com" },
+    canSell: sale.canSell,
+    openPortal: portal.open,
+    sellsNow: async () => sale.canSell,
+  }),
+}));
+
+// Who is reading: the seat, or a member who can't open the billing portal.
+const reader = vi.hoisted(() => ({ seat: true }));
+vi.mock("@/hooks/useCommunities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useCommunities")>()),
+  useCommunities: () => ({ activeCommunity: { id: 3, can: { seat: reader.seat } } }),
 }));
 
 vi.mock("@/api/generated/plugins/plugins", () => ({
@@ -44,6 +57,9 @@ const ADMIN_ACCESS = [
 
 let surfaceAccess = ADMIN_ACCESS;
 
+/** The statement held for the install's listing, as the detail read reports it. */
+let entitlement: { active: boolean; reason: string | null } | null = null;
+
 /** The catalog listing behind the install, as the detail read reports it. */
 type ListingRef = { id: number; source: string; publisher: string; first_party: boolean } | null;
 let listingRef: ListingRef = null;
@@ -51,6 +67,7 @@ let listingRef: ListingRef = null;
 const detail = {
   id: 1,
   name: "Automations",
+  listing_uid: "AUTOMATIONS001",
   enabled: true,
   available: true,
   definition: {
@@ -70,7 +87,7 @@ const detail = {
 
 vi.mock("@/hooks/useCommunityPluginDetail", () => ({
   useCommunityPluginDetail: () => ({
-    data: { ...detail, surface_access: surfaceAccess, listing: listingRef },
+    data: { ...detail, surface_access: surfaceAccess, listing: listingRef, entitlement },
     isLoading: false,
   }),
 }));
@@ -98,6 +115,9 @@ let frameWindow: { postMessage: ReturnType<typeof vi.fn> };
 
 beforeEach(() => {
   mint.mockReset();
+  portal.open = vi.fn();
+  reader.seat = true;
+  entitlement = null;
   sale.canSell = false;
   surfaceAccess = ADMIN_ACCESS;
   listingRef = null;
@@ -370,5 +390,37 @@ describe("CommunityPluginPage, who a plug-in comes from", () => {
     await screen.findByTitle("Automations");
     expect(screen.queryByText("Before you open Automations")).toBeNull();
     expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
+  });
+});
+
+describe("a plug-in the deployment's term has no seat free for", () => {
+  it("shows the seat a request in place of the plug-in", async () => {
+    entitlement = { active: false, reason: "term_full" };
+    const user = userEvent.setup();
+    const { CommunityPluginPage } = await import("./CommunityPluginPage");
+    renderPage(() => <CommunityPluginPage pluginId={1} />);
+
+    expect(
+      await screen.findByText("This deployment's plan has no seat free for Automations.")
+    ).toBeInTheDocument();
+    expect(mint).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Request" }));
+    expect(portal.open).toHaveBeenCalledWith(3, "manage", null, {
+      request: "plugin",
+      listing: "AUTOMATIONS001",
+    });
+  });
+
+  it("tells a member to ask the community's admins, with no button", async () => {
+    entitlement = { active: false, reason: "term_full" };
+    reader.seat = false;
+    const { CommunityPluginPage } = await import("./CommunityPluginPage");
+    renderPage(() => <CommunityPluginPage pluginId={1} />);
+
+    expect(
+      await screen.findByText("Ask your community's admins to request it.")
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request" })).toBeNull();
+    expect(mint).not.toHaveBeenCalled();
   });
 });
