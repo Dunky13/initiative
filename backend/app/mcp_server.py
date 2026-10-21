@@ -54,9 +54,10 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 # Read surface: every GET route carrying these FastAPI tags becomes a tool.
-# ``task-statuses`` exposes only its GET (list a project's statuses) — its
-# POST/PATCH/reorder routes aren't in the write allow-list, so they stay
-# excluded — giving a caller the status ids needed to place or move a task.
+# ``task-statuses`` and ``task-types`` expose only their GETs (list a
+# project's statuses, or its types) — their other routes aren't in the write
+# allow-list, so they stay excluded — giving a caller the ids needed to place,
+# type or move a task.
 #
 # Every tool an initiative holds is readable, not only the two it starts with.
 # An agent asked "how is this going" was previously answering from tasks alone,
@@ -71,6 +72,7 @@ READ_TAGS = (
     "tasks",
     "initiatives",
     "task-statuses",
+    "task-types",
     "calendar-events",
     # A window of a calendar: its events, a repeating one expanded into its
     # occurrences, beside the tasks due in it. The events have no list of
