@@ -85,8 +85,8 @@ import type { TranslateFn } from "@/types/i18n";
 /** Platform roles ordered least → most privileged. */
 export const PLATFORM_ROLE_ORDER: UserRole[] = [
   "member",
-  "support",
   "moderator",
+  "support",
   "operator",
   "owner",
 ];

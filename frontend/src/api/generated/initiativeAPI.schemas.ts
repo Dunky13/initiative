@@ -569,8 +569,8 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
   member: "member",
-  support: "support",
   moderator: "moderator",
+  support: "support",
   operator: "operator",
   owner: "owner",
 } as const;
@@ -2040,6 +2040,7 @@ export const Capability = {
   rolesassign: "roles.assign",
   databypass: "data.bypass",
   accessrequest: "access.request",
+  accessrequest_any: "access.request_any",
   accessapprove: "access.approve",
   configmanage: "config.manage",
   pluginsmanage: "plugins.manage",

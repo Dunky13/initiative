@@ -167,7 +167,7 @@ vi.mock(import("@/hooks/useSettings"), async (importOriginal) => ({
 import { SettingsAccessGrantsPage } from "./SettingsAccessGrantsPage";
 
 const render = (
-  capabilities: string[] = ["access.request"],
+  capabilities: string[] = ["access.request", "access.request_any"],
   routerSearch?: Record<string, unknown>
 ) =>
   renderPage(SettingsAccessGrantsPage, {
@@ -259,13 +259,27 @@ describe("SettingsAccessGrantsPage", () => {
     expect(screen.queryByRole("option", { name: "Moderate" })).toBeNull();
     unmount();
 
-    render(["access.request", "content.moderate"]);
+    render(["access.request", "access.request_any", "content.moderate"]);
     await pickCommunity(user);
     await user.click(screen.getByLabelText(/^content access$/i));
     await user.click(await screen.findByRole("option", { name: "Moderate" }));
     await user.type(screen.getByLabelText(/reason/i), "a held comment");
     await user.click(screen.getByRole("button", { name: /request access/i }));
     expect(createRequest.mock.calls[0][0]).toMatchObject({ access_level: "moderate" });
+  });
+
+  it("offers a moderator moderation access alone", async () => {
+    const user = userEvent.setup();
+    render(["access.request", "content.moderate"]);
+    await pickCommunity(user);
+    expect(screen.queryByLabelText(/^settings access$/i)).toBeNull();
+    await user.click(screen.getByLabelText(/^content access$/i));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Moderate"]);
+    await user.keyboard("{Escape}");
+    await user.type(screen.getByLabelText(/reason/i), "a held comment");
+    await user.click(screen.getByRole("button", { name: /request access/i }));
+    expect(createRequest.mock.calls[0][0]).toMatchObject({ access_level: "moderate" });
+    expect(createRequest.mock.calls[0][0].settings_level).toBeUndefined();
   });
 
   it("offers the windows up to the ceiling the server reports", async () => {
@@ -393,8 +407,8 @@ describe("SettingsAccessGrantsPage", () => {
   });
 
   it.each([
-    [["access.request", "content.moderate"], "moderate"],
-    [["access.request"], "read"],
+    [["access.request", "access.request_any", "content.moderate"], "moderate"],
+    [["access.request", "access.request_any"], "read"],
   ])(
     "starts on the level it was opened for, where the reader may ask for it (%s)",
     async (capabilities, sent) => {

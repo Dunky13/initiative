@@ -449,8 +449,14 @@ const BreakGlassSection = () => {
 };
 
 /** The content rung the request form starts on: the one the link that opened
- *  it named, where the reader may ask for it, and read-only otherwise. */
-const startingLevel = (search: AccessGrantsSearch, canModerate: boolean): string => {
+ *  it named, where the reader may ask for it, and read-only otherwise. A
+ *  moderator, who asks for nothing else, starts on moderate. */
+const startingLevel = (
+  search: AccessGrantsSearch,
+  canModerate: boolean,
+  canAskAny: boolean
+): string => {
+  if (!canAskAny) return "moderate";
   if (search.form !== "request" || !search.level) return "read";
   return search.level === "moderate" && !canModerate ? "read" : search.level;
 };
@@ -461,6 +467,9 @@ const RequestSection = () => {
   // Reading what the platform holds is moderation work: only those who
   // moderate content may ask for it.
   const canModerate = hasCapability(user, Capability.contentModerate);
+  // Everything else — read, read-write, settings — is access.request_any's: a
+  // moderator asks for moderation access alone.
+  const canAskAny = hasCapability(user, Capability.accessRequestAny);
   const myGrants = useMyAccessGrants();
   const limits = useAccessGrantLimits();
   const sortedGrants = useMemo(
@@ -480,7 +489,7 @@ const RequestSection = () => {
   // Two axes, asked for independently. "none" is how you say you do not want
   // one — clearing up after an incident wants both; having a look wants only
   // the first.
-  const [level, setLevel] = useState<string>(() => startingLevel(search, canModerate));
+  const [level, setLevel] = useState<string>(() => startingLevel(search, canModerate, canAskAny));
   const [settingsLevel, setSettingsLevel] = useState("none");
   // Null until chosen: the offered windows arrive with the limits above.
   const [chosenDuration, setDuration] = useState<string | null>(null);
@@ -545,9 +554,13 @@ const RequestSection = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">{t("accessGrants.levelNone")}</SelectItem>
-                <SelectItem value="read">{t("accessGrants.levelRead")}</SelectItem>
-                <SelectItem value="read_write">{t("accessGrants.levelReadWrite")}</SelectItem>
+                {canAskAny ? (
+                  <>
+                    <SelectItem value="none">{t("accessGrants.levelNone")}</SelectItem>
+                    <SelectItem value="read">{t("accessGrants.levelRead")}</SelectItem>
+                    <SelectItem value="read_write">{t("accessGrants.levelReadWrite")}</SelectItem>
+                  </>
+                ) : null}
                 {canModerate ? (
                   <SelectItem value="moderate">{t("accessGrants.levelModerate")}</SelectItem>
                 ) : null}
@@ -555,20 +568,24 @@ const RequestSection = () => {
             </Select>
             <p className="text-muted-foreground text-xs">{t("accessGrants.purposeContentHelp")}</p>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="ag-settings-level">{t("accessGrants.purposeSettings")}</Label>
-            <Select value={settingsLevel} onValueChange={setSettingsLevel}>
-              <SelectTrigger id="ag-settings-level">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t("accessGrants.levelNone")}</SelectItem>
-                <SelectItem value="admin">{t("accessGrants.levelAdmin")}</SelectItem>
-                <SelectItem value="superadmin">{t("accessGrants.levelSuperadmin")}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">{t("accessGrants.purposeSettingsHelp")}</p>
-          </div>
+          {canAskAny ? (
+            <div className="space-y-1">
+              <Label htmlFor="ag-settings-level">{t("accessGrants.purposeSettings")}</Label>
+              <Select value={settingsLevel} onValueChange={setSettingsLevel}>
+                <SelectTrigger id="ag-settings-level">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t("accessGrants.levelNone")}</SelectItem>
+                  <SelectItem value="admin">{t("accessGrants.levelAdmin")}</SelectItem>
+                  <SelectItem value="superadmin">{t("accessGrants.levelSuperadmin")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                {t("accessGrants.purposeSettingsHelp")}
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label htmlFor="ag-duration">{t("accessGrants.durationLabel")}</Label>
             <Select value={duration} onValueChange={setDuration}>
