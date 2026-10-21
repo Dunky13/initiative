@@ -6,7 +6,7 @@
 #
 # Usage:
 #   scripts/ci/api-compat           # against the latest release
-#   scripts/ci/api-compat v0.75.3   # against a named one (0.75.3 or later)
+#   scripts/ci/api-compat v0.76.0   # against a named one (0.76.0 or later)
 #
 # Needs backend/.venv (cd backend && uv sync), docker and gh.
 
@@ -17,8 +17,14 @@ cd "$ROOT"
 
 OASDIFF=docker.io/tufin/oasdiff:v1.32.1@sha256:3b14fe0112e5d1bf862f91ab234a4bcd161a3f399e98f8b0b665ce70857694ac
 ACCEPTED=backend/api-breaking-changes.md
+# The oldest release this check compares with.
+FLOOR=v0.76.0
 
 release="${1:-$(gh release view --json tagName -q .tagName)}"
+if [ "$(printf '%s\n' "$FLOOR" "$release" | sort -V | head -n1)" != "$FLOOR" ]; then
+  echo "$release is older than $FLOOR, the oldest release this check compares with." >&2
+  exit 1
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 

@@ -430,6 +430,7 @@ async def _forward_authorization(request: httpx.Request) -> None:
 # ``mcp_server_test`` fails for one that is not.
 _FILTER_DATASETS: dict[str, str] = {
     "list_tasks": "tasks",
+    "list_task_groups": "tasks",
     "list_my_tasks": "tasks",
     "list_calendar_entries": "tasks",
     "list_my_calendar_entries": "tasks",
