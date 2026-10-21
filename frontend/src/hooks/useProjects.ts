@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   ListMyProjectsParams,
@@ -105,6 +105,18 @@ export const useProjectTaskStatuses = (
     queryFn: () => listTaskStatuses(communityId, projectId!),
     enabled: projectId !== null && Number.isFinite(projectId) && userEnabled,
     ...rest,
+  });
+};
+
+/** The task types of each of these projects, in their order: what a filter
+ *  across several projects picks from. Shares each project's own read. */
+export const useTaskTypesOf = (projectIds: readonly number[]) => {
+  const communityId = useActiveCommunityId();
+  return useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: getListTaskTypesQueryKey(communityId, projectId),
+      queryFn: () => listTaskTypes(communityId, projectId),
+    })),
   });
 };
 
@@ -277,6 +289,8 @@ export const useCreateTaskType = (
     options
   );
 
+/** Changing a type. Every task of it carries its name, look and shape, so
+ *  the tasks read anew too. */
 export const useUpdateTaskType = (
   projectId: number,
   options?: MutationOpts<TaskTypeRead, { typeId: number; data: TaskTypeUpdate }>
@@ -285,7 +299,7 @@ export const useUpdateTaskType = (
     {
       mutationFn: (communityId, { typeId, data }) =>
         updateTaskType(communityId, projectId, typeId, data),
-      invalidate: () => invalidateTaskTypes(projectId),
+      invalidate: () => invalidateTaskTypes(projectId, q.allTasks()),
     },
     options
   );

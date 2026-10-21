@@ -199,6 +199,7 @@
     "value": "Valeur",
     "empty": "Aucun filtre — affiche tout dans l'initiative.",
     "chooseValue": "Choisir…",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relative",
     "absolute": "À une date",
     "relativeDays": "Jours à partir d'aujourd'hui",

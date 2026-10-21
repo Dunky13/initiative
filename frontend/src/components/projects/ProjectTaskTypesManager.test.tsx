@@ -143,6 +143,35 @@ describe("ProjectTaskTypesManager", () => {
     expect(updates[0]).toEqual({ typeId: "3", body: { name: "Proposal" } });
   });
 
+  it("keeps a name not yet saved when the list refreshes", async () => {
+    let types = buildTypes();
+    server.use(
+      communityHttp.patch("/projects/:projectId/task-types/:typeId", ({ params }) => {
+        types = types.map((type) => ({ ...type, is_default: type.id === Number(params.typeId) }));
+        return HttpResponse.json(types.find((type) => type.id === Number(params.typeId)));
+      })
+    );
+    const { queryClient } = renderManager();
+    server.use(
+      communityHttp.get("/projects/:projectId/task-types/", () => HttpResponse.json(types))
+    );
+    const user = userEvent.setup();
+
+    const field = await screen.findByDisplayValue("Idea");
+    await user.clear(field);
+    await user.type(field, "Proposal");
+    await user.click(screen.getByRole("checkbox", { name: /make bug the default/i }));
+    // The list reads anew once the change is saved, as the app's client does.
+    await waitFor(() => expect(types[1].is_default).toBe(true));
+    await queryClient.invalidateQueries();
+
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: /make bug the default/i })).toBeChecked()
+    );
+    expect(screen.getByDisplayValue("Proposal")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Idea")).not.toBeInTheDocument();
+  });
+
   it("moves a deleted type's tasks to the type the reader picks", async () => {
     const deletes = capture(
       "delete",

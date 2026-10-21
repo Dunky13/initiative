@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
-import { useProjects } from "@/hooks/useProjects";
+import { useProjects, useTaskTypesOf } from "@/hooks/useProjects";
 import { useProperties } from "@/hooks/useProperties";
 import { useTags } from "@/hooks/useTags";
 import type { MemberSearchScope } from "@/hooks/useUsers";
@@ -408,6 +408,41 @@ export function FilterBuilder({ value, onChange, initiativeId, dataset }: Filter
   );
 }
 
+/**
+ * The types of the initiative's projects to pick from, each project's read
+ * only once a filter on type is there. A type is one project's, so where there
+ * are several projects each says whose it is.
+ */
+function TaskTypeValues({
+  projects,
+  selected,
+  onChange,
+}: {
+  projects: Options["project"];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const { t } = useTranslation("dashboards");
+  const reads = useTaskTypesOf(projects.map((project) => Number(project.value)));
+  const choices = projects.flatMap((project, index) =>
+    (reads[index]?.data ?? []).map((type) => ({
+      value: String(type.id),
+      label:
+        projects.length > 1
+          ? t("filterBuilder.typeInProject", { type: type.name, project: project.label })
+          : type.name,
+    }))
+  );
+  return (
+    <MultiSelect
+      selectedValues={selected}
+      options={choices}
+      placeholder={t("filterBuilder.chooseValue")}
+      onChange={onChange}
+    />
+  );
+}
+
 type Options = {
   project: { value: string; label: string }[];
   tag: { value: string; label: string }[];
@@ -570,6 +605,15 @@ function ValueControl({
           : spec.kind === "property"
             ? options.property
             : [];
+    if (spec.kind === "task_type") {
+      return (
+        <TaskTypeValues
+          projects={options.project}
+          selected={list}
+          onChange={(values) => onChange(values.map(Number))}
+        />
+      );
+    }
     return (
       <MultiSelect
         selectedValues={list}

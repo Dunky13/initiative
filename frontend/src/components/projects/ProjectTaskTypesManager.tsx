@@ -27,7 +27,7 @@ import { Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import { GripVertical, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -157,17 +157,32 @@ export const ProjectTaskTypesManager = ({
     },
   });
 
+  // What each type was when its draft was last taken from it: a field the
+  // reader has changed from that is theirs, and a refresh keeps it.
+  const savedRef = useRef<Record<number, TaskTypeRead>>({});
   useEffect(() => {
     if (!typesQuery.data || reorderTypes.isPending) {
       return;
     }
     const sorted = sortTypes(typesQuery.data);
     setOrderedTypes(sorted);
-    const nextDrafts: Record<number, TypeDraft> = {};
-    sorted.forEach((type) => {
-      nextDrafts[type.id] = { name: type.name, color: type.color, icon: type.icon as IconName };
+    const saved = savedRef.current;
+    setDrafts((prev) => {
+      const nextDrafts: Record<number, TypeDraft> = {};
+      sorted.forEach((type) => {
+        const draft = prev[type.id];
+        const was = saved[type.id];
+        const edited = (field: DraftField) =>
+          draft !== undefined && was !== undefined && draft[field] !== was[field];
+        nextDrafts[type.id] = {
+          name: edited("name") ? draft.name : type.name,
+          color: edited("color") ? draft.color : type.color,
+          icon: edited("icon") ? draft.icon : (type.icon as IconName),
+        };
+      });
+      return nextDrafts;
     });
-    setDrafts(nextDrafts);
+    savedRef.current = Object.fromEntries(sorted.map((type) => [type.id, type]));
   }, [typesQuery.data, reorderTypes.isPending]);
 
   const createType = useCreateTaskType(projectId, {

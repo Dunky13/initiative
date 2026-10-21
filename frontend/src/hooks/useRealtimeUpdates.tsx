@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { getAuthToken } from "@/api/client";
 import type { DashboardDataResponse } from "@/api/generated/initiativeAPI.schemas";
 import { readMe } from "@/api/generated/users/users";
-import { invalidate, q, type Spec } from "@/api/query-keys";
+import { compose, invalidate, q, type Spec } from "@/api/query-keys";
 import { syncComments } from "@/hooks/useComments";
 import { canvasIsStale, dashboardDataKey } from "@/hooks/useSqlQuery";
 import { openLiveSocket } from "@/lib/liveSocket";
@@ -139,11 +139,13 @@ const CONTAINER_SPECS: Record<string, (id: number, direct: boolean) => Spec[]> =
  * `changed`, where the facet is read at an address of its own rather than under
  * the resource's: a project's views, or an initiative's calendar views. A
  * project's columns are read by every chip showing a task's status, and the
- * change names the project rather than its tasks, so it reaches them all.
+ * change names the project rather than its tasks, so it reaches them all. Its
+ * types are carried by every task of them, in lists and on its page as well.
  */
 const FACET_SPECS: Record<string, Spec> = {
   layouts: q.layouts(),
   statuses: q.allReferences("task"),
+  types: compose(q.allTasks(), q.allReferences("task")),
 };
 
 const isRef = (value: unknown): value is ResourceRef => {
