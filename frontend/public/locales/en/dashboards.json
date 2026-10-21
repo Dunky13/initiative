@@ -257,7 +257,8 @@
     "column": "Column",
     "date": "Date",
     "total": "Total",
-    "series": "Split by"
+    "series": "Split by",
+    "done": "Done"
   },
   "builder": {
     "dataset": "Show data from",
