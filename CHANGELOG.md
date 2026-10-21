@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
+- **Platform moderators sit just above member, and moderate only.** The ladder runs member → moderator → support → operator → owner. A moderator finds accounts and communities, renames an account or clears its picture and profile, suspends an account, and asks for a **Moderate** grant on a community, and nothing else: no settings, billing, read or read-write grants, no account recovery, no billing console. Support holds everything a moderator does plus account recovery (sign-in lock, two-factor, sessions, password, API keys, reactivate, restore), which moderators held before. **Server operators:** anybody you want doing account recovery needs the support role.
 
 ## [0.76.0] - 2026-10-20
 
