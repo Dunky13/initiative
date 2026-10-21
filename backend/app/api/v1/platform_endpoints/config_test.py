@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.config import settings
+from app.core.config import CAPACITOR_NATIVE_ORIGINS, settings
 from app.services import captcha_config
 from app.services.captcha_config import ResolvedCaptchaConfig
 from app.core.version import get_min_desktop_version, get_min_native_version
@@ -154,6 +154,38 @@ async def test_config_captcha_exposes_provider_and_site_key(
     assert body["captcha"] == {"provider": provider, "site_key": "public-site-key"}
     # Belt-and-braces: the secret must never appear in the public payload.
     assert "very-private-secret" not in response.text
+
+
+async def test_captcha_frame_draws_the_widget_for_the_apps(
+    client: AsyncClient, monkeypatch
+):
+    """The apps frame this page, so it carries the site key and the provider's
+    script, may be framed by the apps alone, and never names the secret."""
+
+    async def _resolved() -> ResolvedCaptchaConfig:
+        return ResolvedCaptchaConfig(
+            provider="turnstile",
+            site_key="public-site-key",
+            secret_key="very-private-secret",
+        )
+
+    monkeypatch.setattr(captcha_config, "ensure_captcha_config_fresh", _resolved)
+
+    response = await client.get("/api/v1/config/captcha")
+
+    assert response.status_code == 200
+    assert "public-site-key" in response.text
+    assert "https://challenges.cloudflare.com/turnstile/v0/api.js" in response.text
+    assert "very-private-secret" not in response.text
+    policy = response.headers["content-security-policy"]
+    assert "frame-ancestors " + " ".join(CAPACITOR_NATIVE_ORIGINS) in policy
+    assert "x-frame-options" not in response.headers
+
+
+async def test_captcha_frame_is_absent_without_a_captcha(client: AsyncClient):
+    response = await client.get("/api/v1/config/captcha")
+
+    assert response.status_code == 404
 
 
 async def test_config_says_cookie_consent_and_guests_are_off_by_default(

@@ -494,7 +494,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        # A response whose own policy names who may frame it is answered by
+        # that alone (the captcha page the apps frame).
+        if "frame-ancestors" not in response.headers.get("Content-Security-Policy", ""):
+            response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault(
             "Referrer-Policy", "strict-origin-when-cross-origin"
         )
