@@ -1,10 +1,10 @@
 /**
  * The landing page's set dressing: a starfield, floating shapes that drift
- * against the scroll, and the observer that lets a section fade in the first
- * time it is scrolled into view.
+ * against the scroll, the observer that lets a section fade in the first
+ * time it is scrolled into view, and text that types itself out.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Reveal-on-scroll
@@ -79,6 +79,73 @@ export function useRevealOnScroll<T extends HTMLElement = HTMLDivElement>(thresh
 /** The transition classes a revealed block swaps between. */
 export const reveal = (visible: boolean, hidden = "translate-y-8 opacity-0") =>
   visible ? "translate-y-0 opacity-100" : hidden;
+
+// ---------------------------------------------------------------------------
+// Typing
+// ---------------------------------------------------------------------------
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Text that types itself out, a character at a time, once `play` is true.
+ * Somebody who has asked for less motion gets the whole text at once.
+ */
+export function useTypewriter(text: string, play: boolean, delayMs: number, charMs: number) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (!play) return;
+    if (prefersReducedMotion()) {
+      setShown(text.length);
+      return;
+    }
+    let count = 0;
+    let timer = window.setTimeout(function tick() {
+      count += 1;
+      setShown(count);
+      if (count < text.length) timer = window.setTimeout(tick, charMs);
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [play, text, delayMs, charMs]);
+
+  return text.slice(0, shown);
+}
+
+/**
+ * A line that types itself out behind a caret. The whole text is laid out
+ * invisibly underneath, so the line takes its finished size from the start
+ * and wraps the same way in every language; the typed part is drawn over
+ * it, with the caret attached to its end.
+ */
+export const Typed = ({
+  text,
+  play = true,
+  delayMs = 0,
+  charMs = 70,
+  caret,
+}: {
+  text: string;
+  play?: boolean;
+  delayMs?: number;
+  charMs?: number;
+  caret: ReactNode;
+}) => {
+  const shown = useTypewriter(text, play, delayMs, charMs);
+  return (
+    <span className="relative block">
+      <span className="invisible" aria-hidden="true">
+        {text}
+      </span>
+      <span className="absolute inset-0">
+        {shown}
+        {caret}
+      </span>
+    </span>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Starfield
@@ -224,6 +291,29 @@ export const LANDING_KEYFRAMES = `
     0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
     50% { transform: translateY(-10px) rotate(var(--tilt, 0deg)); }
   }
+  /* The collaboration drawing. Each piece is styled as the finished picture
+     and animates in from nothing, paused until the drawing is in view. */
+  @keyframes liveWidth {
+    from { max-width: 0; }
+    to { max-width: 100%; }
+  }
+  @keyframes livePop {
+    from { opacity: 0; transform: scale(0.4); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes liveSlideIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes liveIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes liveBlink {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  .landing-live:not(.landing-live--on) [data-live] { animation-play-state: paused; }
   /* The header's in-page links glide rather than jump. Scoped to the landing
      page by living in its own style block, and dropped for anybody who has
      asked the system for less movement. */
@@ -232,5 +322,6 @@ export const LANDING_KEYFRAMES = `
     html { scroll-behavior: auto; }
     .landing-ribbon__track { animation: none !important; }
     .landing-float { animation: none !important; }
+    .landing-live [data-live] { animation: none !important; }
   }
 `;

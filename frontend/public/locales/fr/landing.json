@@ -11,9 +11,9 @@
     "skip": "Aller au contenu"
   },
   "hero": {
-    "titleLine1": "Sortez du chat de groupe.",
-    "titleLine2": "Tout au même endroit.",
-    "titleAria": "Sortez du chat de groupe. Tout au même endroit.",
+    "titleLine1": "Votre groupe a beaucoup à gérer.",
+    "titleLine2": "Il est temps de prendre l'Initiative.",
+    "titleAria": "Votre groupe a beaucoup à gérer. Il est temps de prendre l'Initiative.",
     "subtitle": "Les projets, tâches, fichiers et plans de votre groupe, au même endroit. Plutôt qu'éparpillés entre un chat de groupe, deux tableurs, un fil d'e-mails de mars et la tête de la personne qui s'en occupe depuis le plus longtemps.",
     "freeTitle": "L'inscription est gratuite",
     "freeBody": "Votre compte et votre première communauté sont gratuits, et chaque forfait payant commence par 14 jours d'essai gratuits.",
@@ -69,6 +69,46 @@
     "wikis": "Notez ce que le groupe sait, avec des liens qui marchent toujours après un renommage.",
     "posts": "Des annonces qui ne se perdent pas, avec sondages et accusés de lecture.",
     "galleries": "Les photos de la journée réunies, plutôt que dans six téléphones différents."
+  },
+  "together": {
+    "titleStart": "Fait pour le faire",
+    "titleHighlight": "ensemble",
+    "description": "Trois personnes sur le même plan en même temps, sans que la copie de l'un l'emporte et sans « c'est quelle version, ça ? ». Partagez une page avec tout le groupe ou seulement le comité, confiez une tâche à deux personnes et @mentionnez la personne suivante.",
+    "drawingAria": "Un dessin de trois personnes modifiant le même plan en même temps, avec des commentaires qui arrivent dans la marge",
+    "people": {
+      "maya": "Maya",
+      "dev": "Dev",
+      "priya": "Priya",
+      "hana": "Hana"
+    },
+    "doc": {
+      "title": "Plan du barbecue",
+      "sharedWith": "Partagé avec le comité",
+      "live": "En direct",
+      "heading": "Barbecue de début de saison",
+      "line1": "Samedi juste après le match, à Riverside Park. Chacun apporte une chaise.",
+      "line2Start": "On mange à partir de",
+      "line2Selected": "11h30",
+      "line2End": ", donc l'installation commence à 9h.",
+      "task1": "Demander au parc pour l'emplacement du barbecue",
+      "task2": "Emprunter des tables pliantes à la salle paroissiale",
+      "typed": "Dev apporte le barbecue, Luis la glace, et"
+    },
+    "comments": {
+      "title": "Commentaires",
+      "justNow": "à l'instant",
+      "mention": "@Luis",
+      "text": "tu peux être là à 9h pour aider à installer ?",
+      "reply": "J'arrive tôt aussi, j'ai un chariot pour les tables"
+    },
+    "points": {
+      "sameTitle": "Sur la même page, littéralement",
+      "sameBody": "Les pages, tableurs et tableaux blancs se mettent à jour pendant que les gens tapent, avec le curseur de chacun là où il est. Personne ne renvoie une copie par mail.",
+      "shareTitle": "Partagez juste ce que vous voulez",
+      "shareBody": "Un tableau pour tout le groupe, un budget pour les trois personnes qui en ont besoin. Chacun ne voit que ce qu'on lui a donné.",
+      "handTitle": "Passez le relais à voix haute",
+      "handBody": "Confiez une tâche à deux personnes, @mentionnez la personne suivante, et la conversation reste sur ce dont elle parle."
+    }
   },
   "hangout": {
     "titleStart": "C'est aussi là que votre communauté",
@@ -351,7 +391,7 @@
     "error": "Impossible de charger les nouveautés. Patientez un instant et réessayez."
   },
   "meta": {
-    "homeTitle": "Initiative : sortez du chat de groupe, tout au même endroit",
+    "homeTitle": "Initiative : votre groupe a beaucoup à gérer, et il est temps de prendre l'Initiative",
     "homeDescription": "Les projets, tâches, fichiers, événements et discussions de votre groupe au même endroit, sur le web, Android, iPhone et votre ordinateur.",
     "downloadTitle": "Télécharger Initiative",
     "downloadDescription": "Installez Initiative sur Android, iPhone, iPad ou votre ordinateur, ou continuez dans le navigateur.",

@@ -168,6 +168,22 @@ describe("HomePage", () => {
     });
   });
 
+  it("draws people working on the same page at once", async () => {
+    renderHome();
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: `${landing.together.titleStart} ${landing.together.titleHighlight}`,
+      })
+    ).toBeInTheDocument();
+    const drawing = screen.getByRole("img", { name: landing.together.drawingAria });
+    // Three people on it: Maya typing, Dev selecting, Priya commenting.
+    expect(within(drawing).getByText(landing.together.people.maya)).toBeInTheDocument();
+    expect(within(drawing).getByText(landing.together.people.dev)).toBeInTheDocument();
+    expect(within(drawing).getByText(landing.together.comments.text)).toBeInTheDocument();
+  });
+
   it("says accounts are free only where this deployment sells plans", async () => {
     renderHome();
     await screen.findByRole("heading", { level: 1, name: landing.hero.titleAria });
