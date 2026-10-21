@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CaptchaConfig } from "@/api/generated/initiativeAPI.schemas";
+import { useServer } from "@/hooks/useServer";
 import { captchaProvider } from "@/lib/captchaProviders";
 
 /**
@@ -19,6 +20,10 @@ import { captchaProvider } from "@/lib/captchaProviders";
  * expiry / error / reset it calls ``onToken("")`` so the parent form
  * can re-disable submit. The parent owns the token state — this
  * component is a pure render adapter.
+ *
+ * In the phone and desktop apps the page is served from the device, an
+ * address no provider's site key names, so there the widget is drawn by a
+ * page the server serves (``/config/captcha``) and framed here.
  */
 
 interface CaptchaWidgetProps {
@@ -84,7 +89,7 @@ const loadScript = (url: string): Promise<void> =>
     document.head.appendChild(el);
   });
 
-export const CaptchaWidget = ({ config, onToken }: CaptchaWidgetProps) => {
+const InlineCaptcha = ({ config, onToken }: CaptchaWidgetProps) => {
   const { t } = useTranslation("auth");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | number | null>(null);
@@ -163,4 +168,62 @@ export const CaptchaWidget = ({ config, onToken }: CaptchaWidgetProps) => {
   }
 
   return <div ref={containerRef} />;
+};
+
+/** How long the server's captcha page has to draw its widget. */
+const FRAME_TIMEOUT_MS = 10_000;
+
+interface CaptchaFrameProps {
+  src: string;
+  /** The server's origin, the only one whose messages are read. */
+  origin: string;
+  onToken: (token: string) => void;
+}
+
+const CaptchaFrame = ({ src, origin, onToken }: CaptchaFrameProps) => {
+  const { t } = useTranslation("auth");
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== origin || event.source !== frameRef.current?.contentWindow) return;
+      const data = event.data as { type?: unknown; height?: unknown; token?: unknown } | null;
+      if (data?.type !== "initiative-captcha") return;
+      if (typeof data.height === "number") setHeight(data.height);
+      if (typeof data.token === "string") onToken(data.token);
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [origin, onToken]);
+
+  useEffect(() => {
+    if (height !== null) return;
+    const timer = window.setTimeout(() => setTimedOut(true), FRAME_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [height]);
+
+  if (timedOut && height === null) {
+    return <p className="text-destructive text-sm">{t("captcha.timeout")}</p>;
+  }
+
+  return (
+    <iframe
+      ref={frameRef}
+      src={src}
+      title={t("captcha.frameTitle")}
+      className="w-full border-0"
+      style={{ height: height ?? 0 }}
+    />
+  );
+};
+
+export const CaptchaWidget = ({ config, onToken }: CaptchaWidgetProps) => {
+  const { isNativePlatform, serverUrl, getServerOrigin } = useServer();
+  const origin = getServerOrigin();
+  if (isNativePlatform && serverUrl && origin) {
+    return <CaptchaFrame src={`${serverUrl}/config/captcha`} origin={origin} onToken={onToken} />;
+  }
+  return <InlineCaptcha config={config} onToken={onToken} />;
 };

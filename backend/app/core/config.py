@@ -166,6 +166,29 @@ def _format_csp(directives: dict[str, list[str]]) -> str:
     )
 
 
+def captcha_frame_content_security_policy(provider: str, nonce: str) -> str:
+    """The policy for the captcha page the apps frame (``/config/captcha``).
+
+    The page holds one widget and nothing else, so it may load only the
+    provider and its own script, and only the apps may frame it.
+    """
+    provider_origins = CSP_CAPTCHA_ORIGINS[provider]
+    return _format_csp(
+        {
+            "default-src": ["'none'"],
+            "script-src": [f"'nonce-{nonce}'", *provider_origins],
+            "style-src": ["'unsafe-inline'", *provider_origins],
+            "img-src": ["data:", *provider_origins],
+            "connect-src": provider_origins,
+            "frame-src": provider_origins,
+            "object-src": ["'none'"],
+            "base-uri": ["'none'"],
+            "form-action": ["'none'"],
+            "frame-ancestors": CAPACITOR_NATIVE_ORIGINS,
+        }
+    )
+
+
 #: The billing portal's pricing grid, the one page of it the front door frames.
 BILLING_PRICING_EMBED_PATH = "/embed/pricing"
 
