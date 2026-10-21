@@ -57,7 +57,7 @@ async def _sign_in(
     by the origin it presents."""
     headers = {"user-agent": user_agent}
     if device:
-        headers["Origin"] = "https://studio.beyonders.initiative"
+        headers["Origin"] = "https://native.initiativetasks.com"
     return await client.post(
         "/api/v1/auth/token",
         data={"username": email, "password": PASSWORD},
