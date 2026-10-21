@@ -23,6 +23,7 @@ from app.testing import (
     create_guild,
     create_initiative,
     create_project,
+    create_task,
     create_user,
 )
 from app.db.request_context import SystemGuild, Unattributed
@@ -160,6 +161,34 @@ async def test_a_case_is_the_type_its_binding_names(session, bound):
     await set_rls_context(session, SystemGuild(bound["guild"].id))
     again = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
     assert again.task_type_id == task_type.id
+
+
+async def test_a_cases_starting_outline_records_what_it_points_at(session, bound):
+    """An outline naming a task lists the case among that task's references."""
+    from app.core.relationships import RelationshipType
+    from app.models.tenant.relationship import EntityRelationship
+    from app.services.tenant import task_types as task_types_service
+
+    guide = await create_task(session, bound["project"], title="Triage guide")
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    default = await task_types_service.get_default_type(session, bound["project"].id)
+    default.starting_values = {"description": f"Read #task[Guide]({guide.id})"}
+    session.add(default)
+    await session.commit()
+
+    outcome = await intake_service.open_case(IntakeStream.support, title="Help")
+    assert outcome is not None
+
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    edges = await session.exec(
+        select(EntityRelationship.target_type, EntityRelationship.target_id).where(
+            EntityRelationship.source_type == "task",
+            EntityRelationship.source_id == outcome.task_id,
+            EntityRelationship.relationship_type == RelationshipType.references.value,
+            EntityRelationship.removed_at.is_(None),
+        )
+    )
+    assert set(edges.all()) == {("task", guide.id)}
 
 
 async def test_a_system_opened_case_names_no_author(session, bound):

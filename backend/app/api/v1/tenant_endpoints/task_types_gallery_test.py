@@ -1,15 +1,18 @@
 """Ready-made task types, what a type starts a task with, and copying types
 between projects."""
 
+from typing import Any, Optional
+
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
+from app.models.platform.user import User
 from app.models.tenant.property import PropertyDefinition, PropertyType
 from app.models.tenant.tool_layout import ToolLayout
 from app.services.tenant import task_types as task_types_service
-from app.testing import guild_of, route_session_to_guild
+from app.testing import Actor, guild_of, route_session_to_guild
 from app.testing.factories import (
     create_initiative,
     create_project,
@@ -17,16 +20,16 @@ from app.testing.factories import (
 )
 
 
-def _types_url(a, project_id: int) -> str:
+def _types_url(a: Actor, project_id: int) -> str:
     return a.g(f"/projects/{project_id}/task-types/")
 
 
-def _set(values):
+def _set(values: Optional[dict[str, Any]]) -> dict[str, Any]:
     """Starting values as read, without the fields they leave empty."""
     return {k: v for k, v in (values or {}).items() if v not in (None, [])}
 
 
-async def _speaks(session: AsyncSession, user, locale: str) -> None:
+async def _speaks(session: AsyncSession, user: User, locale: str) -> None:
     user.locale = locale
     session.add(user)
     await session.commit()

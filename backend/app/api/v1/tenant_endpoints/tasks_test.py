@@ -13,6 +13,7 @@ Tests the task API endpoints at /api/v1/tasks including:
 """
 
 import json
+from typing import Any
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
@@ -2719,7 +2720,7 @@ async def test_a_new_task_starts_with_what_its_type_starts_one_with(
         )
     ).json()
 
-    async def make(**body):
+    async def make(**body: Any) -> dict[str, Any]:
         response = await client.post(
             a.g("/tasks/"),
             headers=a.headers,
