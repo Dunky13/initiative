@@ -289,6 +289,9 @@ PREVIOUSLY_OFFERED = {
 #: no control ever offered.
 NEWLY_OFFERED = {"description", "updated_at", "created_by"}
 
+#: Added with the field it filters on: a task's type.
+LATER_OFFERED = {"task_type_id"}
+
 
 class TestDescription:
     def test_everything_the_old_frontend_list_offered_still_is(self):
@@ -300,7 +303,7 @@ class TestDescription:
 
     def test_the_offered_set_is_the_old_one_plus_the_agreed_additions(self):
         offered = {entry["name"] for entry in describe("tasks")}
-        assert offered == set(PREVIOUSLY_OFFERED) | NEWLY_OFFERED
+        assert offered == set(PREVIOUSLY_OFFERED) | NEWLY_OFFERED | LATER_OFFERED
 
     def test_bookkeeping_is_hidden_everywhere_rather_than_per_dataset(self):
         """Soft-delete columns, the surrogate key, the tenant key and the
