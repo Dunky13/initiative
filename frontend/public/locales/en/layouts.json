@@ -19,7 +19,6 @@
   "stay": "Keep editing",
   "compact": "Layouts are edited on a wider screen. Open this page on a tablet or a computer.",
   "canvas": "Preview",
-  "calendarNote": "A calendar has no card or columns to lay out. Whether the project opens on it is set on the right.",
   "outline": "Outline",
   "card": "Card",
   "row": "Row",
@@ -104,7 +103,7 @@
   "listHelp": {
     "table": "How the project's tasks are listed as a table: which columns, in what order.",
     "board": "How each task shows on the board: what its card holds.",
-    "calendar": "The project's tasks on a calendar, by their dates."
+    "gantt": "The project's tasks on a timeline, by their dates, joined to what each depends on."
   },
   "noEvents": "This initiative has no events this year. Add one to see its detail here.",
   "eventDetail": {

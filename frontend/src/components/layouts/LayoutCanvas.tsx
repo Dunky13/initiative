@@ -20,6 +20,7 @@ import type {
   TaskListRead,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
+import { ProjectTasksGanttView } from "@/components/projects/ProjectTasksGanttView";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
 import { columnLimitsOf } from "@/hooks/useColumnLimits";
@@ -647,8 +648,19 @@ export const LayoutCanvas = ({
           editing
         />
       ) : null}
-      {layout === "calendar" ? (
-        <p className="text-muted-foreground text-sm">{t("layouts:calendarNote")}</p>
+      {layout === "gantt" ? (
+        <ProjectTasksGanttView
+          initiativeId={initiativeId}
+          projectId={projectId}
+          tasks={tasks}
+          taskStatuses={statuses}
+          listParams={params}
+          scale="week"
+          grouping={grouping}
+          viewGroupings={definition.groupings}
+          taskHref={taskHref}
+          editing
+        />
       ) : null}
     </CanvasFrame>
   );

@@ -146,7 +146,7 @@ Edit or delete a repeating task and Initiative asks which ones you mean:
 | **Tasks after this point** | This one and every one after it. |
 | **All tasks in the series** | Every one, finished ones included. It reaches the title, description, priority, assignees and tags. Dates stay each task's own. |
 
-Dragging a repeating task on a calendar asks too, minus the last option.
+Dragging a repeating task on a calendar or the [Gantt](#gantt) asks too, minus the last option.
 
 **Skip this occurrence**, in the task's menu, moves it on to its next date without finishing it. That's the week the bins weren't collected because of the bank holiday. Deleting just this task does the same, so the series carries on — unless it was the last one, in which case it's simply deleted.
 
@@ -160,7 +160,7 @@ Pick your preferred celebration in **My Settings → Preferences**, or set it to
 
 There's optional sound and vibration too, for anyone who wants the full experience. No judgement. Some weeks you need the coins.
 
-## Three ways to look at a board
+## Three ways to look at a project
 
 The same tasks, three ways of looking at them. The switcher sits at the top of any project board.
 
@@ -198,11 +198,26 @@ What a card shows is up to the project's [layout](#layouts). Take off what this 
 
 ![A project in Kanban view](../images/projects/view-kanban.png)
 
-### Calendar
+### Gantt
 
-Your tasks laid out by their start and due dates.
+Each task is a bar from its start date to its due date, on a timeline you scroll sideways. A task with one date is a diamond on that day. A task with no dates gets an empty row, waiting patiently.
 
-**Best for:** seeing *when* everything lands, and noticing the Thursday onto which you have cheerfully scheduled six deadlines.
+**Best for:** planning, seeing what has to finish before what, and noticing the Thursday onto which you have cheerfully scheduled six deadlines.
+
+- **Drag a bar** to move the task, or drag one end to change just that date.
+- **Drag across an empty row** to give a task its dates.
+- **Arrows** run from a task to the ones [blocked by](mentions-and-links.md#connections) it. An arrow turns red when a task starts before the thing it's waiting on is done, which is your cue to have a word with somebody.
+- A task's **parts** (the tasks that are **Part of** it) sit under it and fold away with it. The thin line over its row shows how far they stretch.
+- **Day**, **Week** and **Month** set how much fits on screen. **Today** brings you back.
+- **Group** it like the board, and each group gets a band of its own.
+
+The initiative's [calendar](calendar.md) shows the same dated tasks by month, week or day, beside everybody's events.
+
+!!! screenshot "A project in Gantt view"
+    **Show:** a project grouped by assignee in Week scale, one task folded open over its parts, two dependency arrows (one red), and an undated task's empty row.
+
+    Save as `en/images/projects/view-gantt.png`, then replace this box with:
+    `![A project in Gantt view](../images/projects/view-gantt.png)`. Retake `view-switcher.png` while you're there: it still shows Calendar in the switcher.
 
 ### So which one?
 
@@ -210,7 +225,7 @@ No wrong answer. A rhythm that works for most people:
 
 - **Board** day to day, for nudging things along.
 - **Table** when you're tidying up, sorting, or editing a lot at once.
-- **Calendar** when you're planning ahead, or working out how bad next week is going to be.
+- **Gantt** when you're planning ahead, or working out how bad next week is going to be.
 
 Your choice is yours alone, and it follows you to any device, along with your filters, sort, grouping and columns. Until you pick, the project opens on whichever one its layouts say.
 
@@ -234,12 +249,12 @@ Each of the project's three lists has a layout, and so does a task:
 |---|---|
 | **Table** | Which columns, in what order. |
 | **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
-| **Calendar** | Only its presets. A calendar is a calendar. |
+| **Gantt** | Only its presets and groupings. Bars are bars. |
 | **Task pages** | Where everything sits when a task is open, and in **Create task**. One per [task type](#task-types), each starting from a shape that suits it. |
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
-The table and board layouts also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
+All three also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 
 Change any of it from **Project settings → Layouts → Edit layouts**. That's for the project's owner, its initiative's managers and community admins; everybody else sees the result. See [Layouts](layouts.md) for the editor.
 

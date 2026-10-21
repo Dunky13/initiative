@@ -1,7 +1,7 @@
 /**
  * How a project's tasks are shown, and what a link to them means.
  *
- * A project draws its tasks in its layouts (a table, a board, a calendar); what
+ * A project draws its tasks in its layouts (a table, a board, a Gantt); what
  * one person narrows the list to and how they sort it are theirs, kept per
  * layout in their view of the project. These cover choosing a layout (which
  * writes it to the URL, so it is linkable), a person's own filters and sort,
@@ -188,7 +188,7 @@ describe("ProjectTasksSection layouts", () => {
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "Table",
       "Board",
-      "Calendar",
+      "Gantt",
     ]);
   });
 

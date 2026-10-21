@@ -132,7 +132,7 @@
     },
     "tasks": {
       "title": "My tasks",
-      "description": "Your tasks from every community, as a table or a calendar.",
+      "description": "Your tasks from every community, as a table.",
       "empty": "Nothing is assigned to you yet. When someone gives you a task, or you add one of your own, it lands here.",
       "chooseList": "Choose a list to add to",
       "add": "Add",

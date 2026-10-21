@@ -31,7 +31,7 @@ export function buildToolLayoutSet(
 ): ToolLayoutSetRead {
   const { layouts = [], tool = "project", ...rest } = overrides;
   const lists: ListLayoutReadKind[] =
-    tool === "project" ? ["table", "board", "calendar"] : ["calendar"];
+    tool === "project" ? ["table", "board", "gantt"] : ["calendar"];
   const shipped: (ListLayoutRead | DetailLayoutRead)[] = [
     ...lists.map((kind, index) => ({
       kind,

@@ -19,7 +19,6 @@
   "stay": "Weiter bearbeiten",
   "compact": "Layouts werden auf einem breiteren Bildschirm bearbeitet. Öffne diese Seite auf einem Tablet oder Computer.",
   "canvas": "Vorschau",
-  "calendarNote": "Ein Kalender hat keine Karte und keine Spalten zum Anordnen. Ob das Projekt damit öffnet, stellst du rechts ein.",
   "outline": "Gliederung",
   "card": "Karte",
   "row": "Zeile",
@@ -104,7 +103,7 @@
   "listHelp": {
     "table": "Wie die Aufgaben des Projekts als Tabelle aufgelistet werden: welche Spalten, in welcher Reihenfolge.",
     "board": "Wie jede Aufgabe auf dem Board erscheint: was ihre Karte zeigt.",
-    "calendar": "Die Aufgaben des Projekts in einem Kalender, nach ihren Daten."
+    "gantt": "Die Aufgaben des Projekts auf einer Zeitleiste, nach ihren Daten, verbunden mit dem, wovon jede abhängt."
   },
   "noEvents": "Diese Initiative hat dieses Jahr keine Termine. Füge einen hinzu, um sein Detail hier zu sehen.",
   "eventDetail": {

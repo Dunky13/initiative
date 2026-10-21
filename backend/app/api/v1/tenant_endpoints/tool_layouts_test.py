@@ -136,7 +136,7 @@ async def test_a_project_draws_its_layouts_as_shipped_until_one_changes(
     ] == [
         ("table", True, None, None),
         ("board", False, None, None),
-        ("calendar", False, None, None),
+        ("gantt", False, None, None),
         *(("task", None, task_type.id, None) for task_type in types),
     ]
 
@@ -571,7 +571,7 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         ),
         (_table(group_by="due_date"), 400, "TOOL_LAYOUTS_KIND_NOT_ALLOWED"),
         (
-            {"kind": "calendar", "definition": {"group_by": "task_status_id"}},
+            {"kind": "calendar", "definition": {}},
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
@@ -627,7 +627,7 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "a grouping offered twice",
         "starting on a grouping the list does not offer",
         "starting on a date the shipped groupings do not offer",
-        "a grouped calendar",
+        "a calendar, which a project no longer draws",
         "a board in bands of the statuses its columns are",
         "a column limit on a table, which has no columns of statuses",
         "a column that takes no tasks at all",

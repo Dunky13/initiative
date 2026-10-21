@@ -132,7 +132,7 @@
     },
     "tasks": {
       "title": "Mes tâches",
-      "description": "Vos tâches de toutes les communautés, en tableau ou en calendrier.",
+      "description": "Vos tâches de toutes les communautés, en tableau.",
       "empty": "Rien ne vous est encore assigné. Quand quelqu'un vous confie une tâche, ou que vous en ajoutez une, elle arrive ici.",
       "chooseList": "Choisir une liste",
       "add": "Ajouter",
