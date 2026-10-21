@@ -51,6 +51,14 @@ _VERIFY_URLS: dict[str, str] = {
     CaptchaProvider.recaptcha: "https://www.google.com/recaptcha/api/siteverify",
 }
 
+#: Provider → the script that draws its widget, as the web app loads it
+#: (``frontend/src/lib/captchaProviders.ts``).
+SCRIPT_URLS: dict[str, str] = {
+    CaptchaProvider.hcaptcha: "https://js.hcaptcha.com/1/api.js?render=explicit",
+    CaptchaProvider.turnstile: "https://challenges.cloudflare.com/turnstile/v0/api.js",
+    CaptchaProvider.recaptcha: "https://www.google.com/recaptcha/api.js?render=explicit",
+}
+
 
 def is_configured(cfg: ResolvedCaptchaConfig | None = None) -> bool:
     """Captcha enforcement is on iff a known provider AND a secret are
