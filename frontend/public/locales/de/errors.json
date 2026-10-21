@@ -482,6 +482,7 @@
   "PROJECT_CONFIGURE_REQUIRED": "Das können nur Projektleitung, Projektinhaber:in oder Community-Admins ändern.",
   "TOOL_LAYOUTS_TARGET_INVALID": "Dafür lassen sich keine Layouts einrichten.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "Dieses Tool stellt dieses Layout nicht dar.",
+  "TOOL_LAYOUTS_ONE_LIST_SHOWN": "Ein Projekt zeigt mindestens eines seiner Layouts. Blende ein anderes ein, bevor du dieses ausblendest.",
   "TOOL_LAYOUTS_TOO_LARGE": "Dieses Layout hat zu viele Teile. Entferne einige und versuche es erneut.",
   "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "Eine Karte oder ein Detail kann bis zu {{max}} Teile desselben Plug-ins enthalten.",
   "COMMUNITY_NOT_A_COMMUNITY": "Diese Community ist nicht im Community-Verzeichnis eingetragen.",

@@ -648,6 +648,9 @@ export const LayoutCanvas = ({
           editing
         />
       ) : null}
+      {layout === "calendar" ? (
+        <p className="text-muted-foreground text-sm">{t("layouts:calendarNote")}</p>
+      ) : null}
       {layout === "gantt" ? (
         <ProjectTasksGanttView
           initiativeId={initiativeId}

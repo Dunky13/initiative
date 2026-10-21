@@ -482,6 +482,7 @@
   "PROJECT_CONFIGURE_REQUIRED": "Only a project manager, the project owner, or a community admin can change this.",
   "TOOL_LAYOUTS_TARGET_INVALID": "Layouts can't be set up for that.",
   "TOOL_LAYOUTS_KIND_NOT_ALLOWED": "This tool doesn't draw that layout.",
+  "TOOL_LAYOUTS_ONE_LIST_SHOWN": "A project shows one of its layouts at least. Show another before hiding this one.",
   "TOOL_LAYOUTS_TOO_LARGE": "That layout has too many parts. Remove some and try again.",
   "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS": "A card or a detail can hold up to {{max}} parts from the same plug-in.",
   "COMMUNITY_NOT_A_COMMUNITY": "That community is not open to the community directory.",

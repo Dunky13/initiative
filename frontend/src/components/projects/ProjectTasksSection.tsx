@@ -22,6 +22,15 @@ import type {
   TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import {
+  buildTaskCalendarEntries,
+  type CalendarEntry,
+  type CalendarEntryReschedule,
+  CalendarView,
+  type CalendarViewMode,
+  rescheduledDates,
+  type TaskEntryMeta,
+} from "@/components/calendar";
 import { ToolFilterPanel } from "@/components/initiativeTools/shared/ToolFilterPanel";
 import { ToolLayoutSelect } from "@/components/initiativeTools/shared/ToolLayoutSelect";
 import { ToolListToolbar } from "@/components/initiativeTools/shared/ToolListToolbar";
@@ -86,6 +95,7 @@ import { presetName } from "@/lib/layouts/presets";
 import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import { toast } from "@/lib/mascotToast";
+import { getProjectColor } from "@/lib/projectColor";
 import { getItem, setItem } from "@/lib/storage";
 import { taskReadToListRow } from "@/lib/taskUtils";
 import { browserTimezone } from "@/lib/timezones";
@@ -275,9 +285,12 @@ export const ProjectTasksSection = ({
   const lastKanbanOverRef = useRef<DragOverEvent["over"] | null>(null);
 
   const { user } = useAuth();
-  // How much of the calendar the Gantt shows is part of this person's view of
-  // the project.
+  const weekStartsOn = (user?.week_starts_on ?? 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  // How much of the calendar the Gantt or the calendar shows is one choice in
+  // this person's view of the project.
   const ganttScale = isGanttScale(mode) ? mode : "week";
+  const calendarViewMode = (mode ?? "month") as CalendarViewMode;
+  const [calendarFocusDate, setCalendarFocusDate] = useState(() => new Date());
 
   // Fetch tasks with server-side filtering (page_size=0 fetches all for
   // drag-and-drop). buildTaskListParams is shared with the route loader's
@@ -573,11 +586,11 @@ export const ProjectTasksSection = ({
   // Filtering is entirely server-side now.
   const statusFilteredTasks = tasks;
 
-  // New dates from the Gantt. A repeating task asks whether the tasks after
-  // it move too.
+  // New dates from the Gantt or the calendar. A repeating task asks whether
+  // the tasks after it move too.
   const scopePrompt = useScopePrompt();
   const { mutateAsync: writeTaskDates } = rescheduleTaskDates;
-  const handleGanttReschedule = useCallback(
+  const rescheduleTask = useCallback(
     async (task: TaskListRead, dates: Pick<TaskUpdate, "start_date" | "due_date">) => {
       const scope = task.recurrence
         ? await scopePrompt.ask("edit", { tool: "tasks", scopes: ["this", "following"] })
@@ -592,6 +605,27 @@ export const ProjectTasksSection = ({
       );
     },
     [writeTaskDates, scopePrompt.ask]
+  );
+
+  // The calendar draws tasks as every calendar does: start and due markers,
+  // a same-day span, its tags and its type.
+  const typed = (taskTypes?.length ?? 0) > 1;
+  const calendarEntries = useMemo(
+    () =>
+      statusFilteredTasks.flatMap((task): CalendarEntry[] =>
+        buildTaskCalendarEntries(task, getProjectColor(task.project_id), canEditTaskDetails, {
+          typed,
+        })
+      ),
+    [statusFilteredTasks, canEditTaskDetails, typed]
+  );
+  const handleCalendarReschedule = useCallback(
+    ({ entry, startAt, endAt }: CalendarEntryReschedule) => {
+      const meta = entry.meta as Partial<TaskEntryMeta> | undefined;
+      const task = meta?.type === "task" ? tasks.find((each) => each.id === meta.taskId) : null;
+      if (task) void rescheduleTask(task, rescheduledDates(meta?.kind, startAt, endAt));
+    },
+    [tasks, rescheduleTask]
   );
 
   // Count of archivable done tasks (non-archived tasks in done category)
@@ -1081,7 +1115,22 @@ export const ProjectTasksSection = ({
             onGroupingChange={setGrouping}
             viewGroupings={layout?.definition.groupings}
             taskHref={taskHref}
-            onReschedule={canEditTaskDetails ? handleGanttReschedule : undefined}
+            onReschedule={canEditTaskDetails ? rescheduleTask : undefined}
+          />
+        ) : null}
+        {kind === "calendar" ? (
+          <CalendarView
+            entries={calendarEntries}
+            viewMode={calendarViewMode}
+            onViewModeChange={setMode}
+            focusDate={calendarFocusDate}
+            onFocusDateChange={setCalendarFocusDate}
+            onEntryClick={(entry) => {
+              const meta = entry.meta as { taskId?: number } | undefined;
+              if (meta?.taskId) void navigate({ to: taskHref(meta.taskId) });
+            }}
+            onEntryReschedule={canEditTaskDetails ? handleCalendarReschedule : undefined}
+            weekStartsOn={weekStartsOn}
           />
         ) : null}
       </div>

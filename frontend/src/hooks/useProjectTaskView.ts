@@ -69,19 +69,26 @@ export const projectViewSpec = (
  *  whoever opens it. */
 export type ProjectViewSearch = { layout?: string; preset?: string };
 
-/** The layout a person sees: the one the URL names (a link means the same
- *  layout for whoever opens it), else the one they were last in, else the one
- *  the project opens on. */
+/** The lists a project's menu offers: those it has not hidden. */
+const shownOf = (layouts: readonly ListLayoutRead[]) => layouts.filter((each) => !each.hidden);
+
+/** The layout a person sees, of those the project shows: the one the URL
+ *  names (a link means the same layout for whoever opens it), else the one
+ *  they were last in, else the one the project opens on. */
 const layoutShown = (
   search: ProjectViewSearch,
-  layouts: readonly ListLayoutRead[],
+  lists: readonly ListLayoutRead[],
   view: StoredListView
-) =>
-  layouts.find((each) => each.kind === search.layout) ??
-  layouts.find((each) => each.kind === view.layout) ??
-  layouts.find((each) => each.is_default) ??
-  layouts[0] ??
-  null;
+) => {
+  const layouts = shownOf(lists);
+  return (
+    layouts.find((each) => each.kind === search.layout) ??
+    layouts.find((each) => each.kind === view.layout) ??
+    layouts.find((each) => each.is_default) ??
+    layouts[0] ??
+    null
+  );
+};
 
 /**
  * Which layout a person sees and their filters and sort for it. A preset the
@@ -95,7 +102,7 @@ export const resolveProjectView = (
   view: StoredListView
 ) => {
   const layout = layoutShown(search, layouts, view);
-  const kind: ListLayoutReadKind = layout?.kind ?? "table";
+  const kind: ListLayoutReadKind = layout?.kind ?? "board";
   const presets = presetsOf(layout?.definition, TASK_PRESETS);
   const preset = presets.find((each) => each.slug === search.preset) ?? null;
   const own = partOf(view, kind, { read: readTaskFilters, defaults: TASK_DEFAULTS });
@@ -136,7 +143,8 @@ export function useProjectTaskView({
   const { refetch: refetchLayouts } = layoutsQuery;
   const retryLayouts = useCallback(() => void refetchLayouts(), [refetchLayouts]);
   const canConfigure = layoutsQuery.data?.can_configure ?? false;
-  const layouts = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
+  const lists = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
+  const layouts = useMemo(() => shownOf(lists), [lists]);
 
   // What an export of the tasks shows: the table's columns, and the task
   // page's parts in its order, as the project's default type lays it out. The
@@ -146,7 +154,8 @@ export function useProjectTaskView({
   const types = useProjectTaskTypes(projectId).data;
   const defaultType = types?.find((type) => type.is_default) ?? types?.[0];
   const exportFields = useMemo(() => {
-    const table = layouts.find((each) => each.kind === "table");
+    // Hidden or not, the table's columns are what an export lists.
+    const table = lists.find((each) => each.kind === "table");
     const fields = new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field]));
     return {
       columns: columnsOf((table?.definition ?? {}) as ListLayoutDefinitionInput, fields),
@@ -157,9 +166,9 @@ export function useProjectTaskView({
         )
       ),
     };
-  }, [layouts, plugins, i18n.language, layoutsQuery.data, defaultType]);
+  }, [lists, plugins, i18n.language, layoutsQuery.data, defaultType]);
 
-  const view = useListView(spec, (kept) => layoutShown(search, layouts, kept)?.kind ?? "table");
+  const view = useListView(spec, (kept) => layoutShown(search, lists, kept)?.kind ?? "board");
   const kind = view.part as ListLayoutReadKind;
   const layout = layouts.find((each) => each.kind === kind) ?? null;
   const presets = useMemo(() => presetsOf(layout?.definition, TASK_PRESETS), [layout]);
