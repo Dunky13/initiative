@@ -47,6 +47,7 @@ export const ListLayoutSettings = ({
   presets,
   help,
   opensFirst,
+  shown,
   stored,
   fields,
   statuses,
@@ -62,6 +63,9 @@ export const ListLayoutSettings = ({
   help: string;
   /** Whether the target opens on it; left out where it has no other list. */
   opensFirst?: boolean;
+  /** Whether the target's menu offers it, and whether it may stop: one list
+   *  always shows. Left out where a target shows every list it has. */
+  shown?: { value: boolean; canHide: boolean };
   /** Whether the project changed it, as against drawing it as shipped. */
   stored: boolean;
   fields: ReadonlyMap<string, FieldDef>;
@@ -78,7 +82,19 @@ export const ListLayoutSettings = ({
       {selection.kind === "layout" ? (
         <Panel heading={translate(listLayoutLooks[layout.kind].labelKey)}>
           <p className="text-muted-foreground text-sm">{translate(help)}</p>
-          {opensFirst !== undefined ? (
+          {shown ? (
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="layout-shown">{translate("layouts:shownInMenu")}</Label>
+              <Switch
+                id="layout-shown"
+                checked={shown.value}
+                // The last list shown stays shown.
+                disabled={shown.value && !shown.canHide}
+                onCheckedChange={edits.showList}
+              />
+            </div>
+          ) : null}
+          {opensFirst !== undefined && shown?.value !== false ? (
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="layout-default">{translate("layouts:opensFirst")}</Label>
               <Switch

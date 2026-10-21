@@ -226,8 +226,6 @@ class ProjectExportTask(SanitizedBaseModel):
 #: page, and the list it opens on.
 _PROJECT_LISTS = LIST_LAYOUTS[Tool.project]
 _PROJECT_LAYOUTS = (*_PROJECT_LISTS, *DETAIL_LAYOUTS[Tool.project], LAYOUT_DEFAULT)
-#: A list a project drew in an older release, and the one it draws instead.
-_RENAMED_LISTS = {"calendar": "gantt"}
 
 
 class ProjectExportLayout(SanitizedBaseModel):
@@ -249,15 +247,6 @@ class ProjectExportLayout(SanitizedBaseModel):
 
     @model_validator(mode="after")
     def _a_layout(self) -> "ProjectExportLayout":
-        self.kind = _RENAMED_LISTS.get(self.kind, self.kind)
-        if (
-            self.kind == LAYOUT_DEFAULT
-            and self.definition.get("kind") in _RENAMED_LISTS
-        ):
-            self.definition = {
-                **self.definition,
-                "kind": _RENAMED_LISTS[self.definition["kind"]],
-            }
         if self.kind not in _PROJECT_LAYOUTS:
             raise ValueError(f"a project's layouts are {', '.join(_PROJECT_LAYOUTS)}")
         if self.task_type is not None and self.kind != TYPED_DETAILS[Tool.project]:

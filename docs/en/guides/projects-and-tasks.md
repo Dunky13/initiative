@@ -160,9 +160,9 @@ Pick your preferred celebration in **My Settings → Preferences**, or set it to
 
 There's optional sound and vibration too, for anyone who wants the full experience. No judgement. Some weeks you need the coins.
 
-## Three ways to look at a project
+## Four ways to look at a project
 
-The same tasks, three ways of looking at them. The switcher sits at the top of any project board.
+The same tasks, four ways of looking at them: a table, a board, a Gantt and a calendar. A new project shows just its board, which is plenty for most things. Switch the others on in **Edit layouts**, under [Layouts](#layouts), and the switcher at the top of the project offers them. Switch off the ones nobody uses, as long as one stays on.
 
 Switching changes nothing about the tasks themselves — only what's on your screen — so there's no wrong choice here and nothing whatsoever you can break by trying one.
 
@@ -217,6 +217,12 @@ The initiative's [calendar](calendar.md) shows the same dated tasks by month, we
 
 ![A project in Gantt view, grouped by assignee](../images/projects/view-gantt.png)
 
+### Calendar
+
+Your tasks laid out by their start and due dates, by month, week or day. A task with no dates doesn't appear, which is the point and also the catch.
+
+**Best for:** a project whose work all happens on dates. Drag a task to another day to move it.
+
 ### So which one?
 
 No wrong answer. A rhythm that works for most people:
@@ -224,6 +230,7 @@ No wrong answer. A rhythm that works for most people:
 - **Board** day to day, for nudging things along.
 - **Table** when you're tidying up, sorting, or editing a lot at once.
 - **Gantt** when you're planning ahead, or working out how bad next week is going to be.
+- **Calendar** when every task has a date and the question is only ever "when".
 
 Your choice is yours alone, and it follows you to any device, along with your filters, sort, grouping and columns. Until you pick, the project opens on whichever one its layouts say.
 
@@ -241,18 +248,21 @@ Your choice is yours alone, and it follows you to any device, along with your fi
 
 ## Layouts
 
-Each of the project's three lists has a layout, and so does a task:
+Each of the project's four lists has a layout, and so does a task:
 
 | Layout | What it decides |
 |---|---|
 | **Table** | Which columns, in what order. |
 | **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
 | **Gantt** | Only its presets and groupings. Bars are bars. |
+| **Calendar** | Only its presets. A calendar is a calendar. |
 | **Task pages** | Where everything sits when a task is open, and in **Create task**. One per [task type](#task-types), each starting from a shape that suits it. |
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
-All three also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
+Each list can be **shown in the layout menu** or not. A new project shows its board alone; at least one list always stays shown, and the project opens on one of those.
+
+The table, board and Gantt also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 
 Change any of it from **Project settings → Layouts → Edit layouts**. That's for the project's owner, its initiative's managers and community admins; everybody else sees the result. See [Layouts](layouts.md) for the editor.
 

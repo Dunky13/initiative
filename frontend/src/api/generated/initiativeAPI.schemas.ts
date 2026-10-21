@@ -6800,6 +6800,7 @@ export interface ListLayoutDefinitionOutput {
   groupings?: LayoutGrouping[] | null;
   group_by?: string | null;
   limits?: ColumnLimit[] | null;
+  hidden?: boolean | null;
 }
 
 /**
@@ -6808,6 +6809,7 @@ export interface ListLayoutDefinitionOutput {
 export interface ListLayoutRead {
   kind: ListLayoutReadKind;
   is_default: boolean;
+  hidden: boolean;
   definition: ListLayoutDefinitionOutput;
   updated_at: string | null;
 }
@@ -7020,6 +7022,7 @@ export interface ListLayoutDefinitionInput {
   groupings?: LayoutGrouping[] | null;
   group_by?: string | null;
   limits?: ColumnLimit[] | null;
+  hidden?: boolean | null;
 }
 
 export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof ListLayoutWriteKind];

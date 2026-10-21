@@ -74,7 +74,7 @@ Learn how one works and you've learned how the next one works. That's the whole 
 
 ### The two you'll start with
 
-**Projects** are boards. A project holds **tasks**, and shows them however you like — a **Table**, a drag-and-drop **Kanban** board, or a **Gantt** timeline. Same work, three ways of looking at it, so the person who thinks in tidy lists and the person who thinks in columns can share a project without either of them quietly suffering.
+**Projects** are boards. A project holds **tasks**, and shows them however you like — a **Table**, a drag-and-drop **Kanban** board, a **Gantt** timeline or a **Calendar**. Same work, four ways of looking at it, so the person who thinks in tidy lists and the person who thinks in columns can share a project without either of them quietly suffering.
 
 A **task** carries a description, a status, a priority, dates, the people doing it, a checklist and tags. This is where the day-to-day actually happens. See [Projects & tasks](../guides/projects-and-tasks.md).
 

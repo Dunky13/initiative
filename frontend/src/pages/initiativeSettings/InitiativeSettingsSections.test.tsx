@@ -293,10 +293,17 @@ describe("initiative settings sections", () => {
             name: "Launch",
             ...buildToolLayoutSet({
               layouts: [
-                { kind: "table", is_default: false, definition: {}, updated_at: null },
+                {
+                  kind: "table",
+                  is_default: false,
+                  hidden: false,
+                  definition: {},
+                  updated_at: null,
+                },
                 {
                   kind: "board",
                   is_default: true,
+                  hidden: false,
                   definition: {},
                   updated_at: "2026-10-01T12:00:00.000Z",
                 },

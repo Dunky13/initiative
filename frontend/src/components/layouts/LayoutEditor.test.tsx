@@ -44,6 +44,7 @@ const TASK_TYPE = {
   name: "Task",
   position: 0,
   is_default: true,
+  hidden: false,
   color: "#94A3B8",
   icon: "square-check",
   layout_preset: "plain",
@@ -275,14 +276,29 @@ describe("LayoutEditor", () => {
     expect(saved("table")?.columns).toEqual(TASK_COLUMNS);
   });
 
-  it("opens the project on the open list as a change of its own", async () => {
-    const { user } = editor("board");
+  it("shows a list, and opens the project on it, as changes of their own", async () => {
+    const { user } = editor("gantt");
     await outline();
 
+    // A hidden list is not one to open on, and the last one shown stays shown.
+    expect(screen.queryByRole("switch", { name: /opens first/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: /shown in the layout menu/i }));
     await user.click(screen.getByRole("switch", { name: /opens first/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-    await waitFor(() => expect(sent).toEqual([{ opensOn: "board" }]));
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { save: { kind: "gantt", definition: { hidden: false } } },
+        { opensOn: "gantt" },
+      ])
+    );
+  });
+
+  it("keeps the last list a project shows", async () => {
+    editor("board");
+    await outline();
+
+    expect(screen.getByRole("switch", { name: /shown in the layout menu/i })).toBeDisabled();
   });
 
   it("adds a preset to the open list beside the shipped ones, sorted as chosen", async () => {
@@ -324,6 +340,7 @@ describe("LayoutEditor", () => {
           {
             kind: "table",
             is_default: true,
+            hidden: false,
             definition: { presets },
             updated_at: "2026-10-01T12:00:00.000Z",
           },
@@ -395,6 +412,7 @@ describe("LayoutEditor", () => {
           {
             kind: "table",
             is_default: true,
+            hidden: false,
             definition: { group_by: "task_status_id" },
             updated_at: "2026-10-01T12:00:00.000Z",
           },
