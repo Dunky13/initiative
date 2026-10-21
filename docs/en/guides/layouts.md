@@ -14,7 +14,7 @@ You can ignore this page entirely. Every layout ships ready to use, and plenty o
 
 | Tool | Its layouts |
 |---|---|
-| [Projects](projects-and-tasks.md#layouts) | **Table**, **Board**, **Calendar**, and a page for each [task type](projects-and-tasks.md#task-types), per project. |
+| [Projects](projects-and-tasks.md#layouts) | **Table**, **Board**, **Gantt**, and a page for each [task type](projects-and-tasks.md#task-types), per project. |
 | [Queues](queues.md) | **Queue item detail**, per queue. |
 | [Counters](counters.md) | **Counter detail**, per counter group. |
 | [Galleries](galleries.md) | **Picture detail**, per gallery. |

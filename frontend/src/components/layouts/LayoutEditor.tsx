@@ -417,7 +417,7 @@ export const LayoutEditor = ({
   // Wherever a field can be placed, a new one can be made: a property of the
   // initiative's, placed where Add was opened.
   const choices =
-    current?.kind === "calendar" || (!current && !detail)
+    current?.kind === "calendar" || current?.kind === "gantt" || (!current && !detail)
       ? listed
       : { ...listed, newField: initiativeId };
   const addersAt = (place?: Place): Adders =>

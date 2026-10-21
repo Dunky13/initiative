@@ -1,6 +1,7 @@
 import {
   Calendar,
   CalendarDays,
+  ChartGantt,
   FileText,
   Hash,
   Image,
@@ -44,6 +45,7 @@ type Look = { icon: LucideIcon; labelKey: string };
 export const listLayoutLooks: Record<ListLayoutReadKind, Look> = {
   table: { icon: Table, labelKey: "tasks.viewTable" },
   board: { icon: Kanban, labelKey: "tasks.viewBoard" },
+  gantt: { icon: ChartGantt, labelKey: "tasks.viewGantt" },
   calendar: { icon: Calendar, labelKey: "tasks.viewCalendar" },
 };
 

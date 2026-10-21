@@ -254,7 +254,7 @@ export function useProjectTaskView({
     /** Name a preset in the URL, which applies it; or none. */
     pickPreset,
     rememberLayout,
-    /** How they show the calendar: month, week, day or a list. */
+    /** How much of the calendar the Gantt shows: a day, a week or a month. */
     mode: view.mode,
     setMode: view.setMode,
     grouping,

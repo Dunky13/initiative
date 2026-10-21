@@ -19,7 +19,6 @@
   "stay": "Seguir editando",
   "compact": "Los diseños se editan en una pantalla más ancha. Abre esta página en una tableta o un ordenador.",
   "canvas": "Vista previa",
-  "calendarNote": "Un calendario no tiene tarjeta ni columnas que organizar. Si el proyecto se abre en él se ajusta a la derecha.",
   "outline": "Esquema",
   "card": "Tarjeta",
   "row": "Fila",
@@ -104,7 +103,7 @@
   "listHelp": {
     "table": "Cómo se listan las tareas del proyecto en una tabla: qué columnas, en qué orden.",
     "board": "Cómo se muestra cada tarea en el tablero: qué contiene su tarjeta.",
-    "calendar": "Las tareas del proyecto en un calendario, según sus fechas."
+    "gantt": "Las tareas del proyecto en una línea de tiempo, según sus fechas, unidas a aquello de lo que depende cada una."
   },
   "noEvents": "Esta iniciativa no tiene eventos este año. Añade uno para ver su detalle aquí.",
   "eventDetail": {

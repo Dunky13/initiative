@@ -21,7 +21,7 @@ It starts out arranged for whatever you told us when you signed up: your own lis
 | **Greeting** | Hello, today's date, and how much is overdue or due today, with Yonder reacting to it. Turn him off in its settings if you'd rather he didn't. |
 | **Getting started** | A few first things to do, ticked off as you do them. |
 | **Focus** | What wants doing now. More on it below. |
-| **My tasks** | Everything assigned to you, from every community, as a table or a calendar. Pick a list in its settings and it gets a line for adding a task straight to it. |
+| **My tasks** | Everything assigned to you, from every community, as a table. Pick a list in its settings and it gets a line for adding a task straight to it. |
 | **Coming up** | Events and task dates over the next few days. You pick how many. |
 | **My calendar** | The whole of [My Calendar](#my-calendar), filters and all, by month or week. |
 | **Recent** | What you opened lately, or what changed lately, across every kind of tool and every community. Narrow it to a few kinds in its settings. |
@@ -54,7 +54,7 @@ The **⋯** next to the tabs renames, copies, moves or deletes the view you're o
 
 ### My tasks
 
-Group it **by date** or **by community**, filter by priority or status, or swap the table for a **calendar**.
+Group it **by date** or **by community**, and filter by priority or status. Dated tasks are on [My Calendar](#my-calendar) too.
 
 If you only ever look at one widget in Initiative for the rest of your life, it's this one.
 
