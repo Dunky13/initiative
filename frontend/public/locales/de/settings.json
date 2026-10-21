@@ -1780,6 +1780,7 @@
     "communitiesHelpNone": "Sie bedient jede Community, der keine andere Verbindung zugewiesen ist.",
     "communitiesHelpGiven": "Sie bedient nur diese Communities. Eine hier zugewiesene Community verlässt jede andere Verbindung, der sie zugewiesen war.",
     "removeCommunity": "{{name}} entfernen",
+    "goneCommunity": "Gelöschte Community #{{id}}",
     "servesOnly": "Nur für {{communities}}",
     "failingSince": "Fehlerhaft seit {{since}}: {{error}}"
   },

@@ -42,21 +42,24 @@ export const AIConnectionCommunitiesField = ({
       <Label>{t("aiConnections.communitiesLabel")}</Label>
       {communities.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {communities.map((community) => (
-            <Badge key={community.id} variant="secondary">
-              {community.name}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4"
-                aria-label={t("aiConnections.removeCommunity", { name: community.name })}
-                onClick={() => onChange(communities.filter((c) => c.id !== community.id))}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </Badge>
-          ))}
+          {communities.map((community) => {
+            const name = community.name ?? t("aiConnections.goneCommunity", { id: community.id });
+            return (
+              <Badge key={community.id} variant="secondary">
+                {name}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4"
+                  aria-label={t("aiConnections.removeCommunity", { name })}
+                  onClick={() => onChange(communities.filter((c) => c.id !== community.id))}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </Badge>
+            );
+          })}
         </div>
       )}
       <AsyncCombobox

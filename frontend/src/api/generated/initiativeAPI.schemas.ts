@@ -18,11 +18,12 @@ export const AIConfigMode = {
 } as const;
 
 /**
- * A community an operator's connection serves.
+ * A community an operator's connection serves. No name when the
+ * community no longer exists.
  */
 export interface AIConnectionCommunity {
   id: number;
-  name: string;
+  name: string | null;
 }
 
 /**

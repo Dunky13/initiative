@@ -1780,6 +1780,7 @@
     "communitiesHelpNone": "Atiende a todas las comunidades que no tienen otra conexión asignada.",
     "communitiesHelpGiven": "Atiende solo a estas comunidades. Una comunidad asignada aquí deja cualquier otra conexión a la que estuviera asignada.",
     "removeCommunity": "Quitar {{name}}",
+    "goneCommunity": "Comunidad eliminada #{{id}}",
     "servesOnly": "Solo para {{communities}}",
     "failingSince": "Falla desde {{since}}: {{error}}"
   },

@@ -1780,6 +1780,7 @@
     "communitiesHelpNone": "It serves every community no other connection is given to.",
     "communitiesHelpGiven": "It serves only these communities. A community given here leaves any other connection it was given to.",
     "removeCommunity": "Remove {{name}}",
+    "goneCommunity": "Deleted community #{{id}}",
     "servesOnly": "Only for {{communities}}",
     "failingSince": "Failing since {{since}}: {{error}}"
   },

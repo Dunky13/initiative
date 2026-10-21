@@ -57,7 +57,10 @@ export const AIConnectionRow = ({
           <p className="text-muted-foreground text-xs">
             {t("aiConnections.servesOnly", {
               communities: listFormat(i18n.language, { type: "conjunction" }).format(
-                connection.communities.map((community) => community.name)
+                connection.communities.map(
+                  (community) =>
+                    community.name ?? t("aiConnections.goneCommunity", { id: community.id })
+                )
               ),
             })}
           </p>

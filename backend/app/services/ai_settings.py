@@ -39,7 +39,7 @@ from app.core.guild_auth_options import CommunityAuthOption
 from app.models.platform.ai_connection import PlatformAIConnection
 from app.models.platform.guild import CommunityStatus, Guild
 from app.models.tenant.ai_connection import GuildAIConnection, GuildAIConnectionKey
-from app.services.platform.app_settings import get_app_settings
+from app.services.platform.app_settings import get_app_settings, locked_settings
 from app.services.platform import guild_entitlements
 from app.schemas.ai_settings import (
     AIConfigMode,
@@ -476,27 +476,28 @@ def _platform_conn_response(
         is_default=row.is_default,
         communities=sorted(
             (
-                AIConnectionCommunity(id=gid, name=names[gid])
+                AIConnectionCommunity(id=gid, name=names.get(gid))
                 for gid in row.community_ids
-                if gid in names
             ),
-            key=lambda community: community.name.casefold(),
+            key=lambda community: (community.name or "").casefold(),
         ),
         last_error=row.last_error,
         last_error_at=row.last_error_at,
     )
 
 
-async def _community_names(session: AsyncSession, ids: Iterable[int]) -> dict[int, str]:
-    """The live communities among ``ids``, by name."""
+async def _community_names(
+    session: AsyncSession, ids: Iterable[int], *, live: bool = False
+) -> dict[int, str]:
+    """The communities among ``ids`` that still exist, by name; with ``live``,
+    only those not deleted."""
     wanted = set(ids)
     if not wanted:
         return {}
-    rows = await session.exec(
-        select(Guild.id, Guild.name).where(
-            col(Guild.id).in_(wanted), Guild.status != CommunityStatus.deleted
-        )
-    )
+    statement = select(Guild.id, Guild.name).where(col(Guild.id).in_(wanted))
+    if live:
+        statement = statement.where(Guild.status != CommunityStatus.deleted)
+    rows = await session.exec(statement)
     return {gid: name for gid, name in rows.all()}  # type: ignore[misc]
 
 
@@ -513,9 +514,15 @@ async def _give_communities(
     session: AsyncSession, row: PlatformAIConnection, community_ids: list[int]
 ) -> None:
     """Give ``row`` these communities, and take them from any other
-    connection they were given to: a community has one connection of its own."""
+    connection they were given to: a community has one connection of its own.
+
+    A community added must be live; one it already had stays until removed,
+    deleted or not. Changes are made one at a time, under the settings row.
+    """
+    await locked_settings(session)
     wanted = set(community_ids)
-    if wanted - set(await _community_names(session, wanted)):
+    added = wanted - set(row.community_ids)
+    if added - set(await _community_names(session, added, live=True)):
         raise HTTPException(status_code=404, detail=GuildMessages.COMMUNITY_NOT_FOUND)
     row.community_ids = sorted(wanted)
     others = (

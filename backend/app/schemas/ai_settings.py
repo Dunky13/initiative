@@ -51,12 +51,13 @@ class ConnectionScope(str, Enum):
 
 # --- Connections (owner-controlled destination) ------------------------------
 class AIConnectionCommunity(SanitizedBaseModel):
-    """A community an operator's connection serves."""
+    """A community an operator's connection serves. No name when the
+    community no longer exists."""
 
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     id: int
-    name: str
+    name: Optional[str] = None
 
 
 class AIConnectionResponse(SanitizedBaseModel):

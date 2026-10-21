@@ -8,9 +8,11 @@ Proves the security properties end-to-end:
 """
 
 import pytest
+from sqlmodel import update
 
-from app.core.messages import AIMessages
-from app.models.platform.guild import CommunityRole
+from app.core.messages import AIMessages, GuildMessages
+from app.models.platform.ai_connection import PlatformAIConnection
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.services import ai_settings as ai_settings_service
 
 
@@ -225,7 +227,7 @@ async def test_connecting_a_provider_is_the_seat_s(client, acting_user):
 
 
 async def test_a_connection_given_to_a_community_serves_only_it(
-    client, acting_user, reading_as
+    client, acting_user, reading_as, session
 ):
     """A division runs on the key given to it; the rest share the connections
     given to nobody. Giving a community to another connection takes it from
@@ -282,6 +284,41 @@ async def test_a_connection_given_to_a_community_serves_only_it(
     assert off.status_code == 200, off.text
     assert await key_for(a) is None
     assert await key_for(b) == "sk-shared"
+
+    # A deleted community stays listed and kept until it is taken off, and one
+    # gone entirely is listed without a name; neither can be given anew.
+    reorganised = f"{PLATFORM_CONNS}/{listed['Reorganised']['id']}"
+    both = await client.put(
+        reorganised,
+        headers=owner.headers,
+        json={"community_ids": [a.guild.id, b.guild.id]},
+    )
+    assert both.status_code == 200, both.text
+    await session.exec(
+        update(Guild)
+        .where(Guild.id == b.guild.id)
+        .values(status=CommunityStatus.deleted)
+    )
+    await session.exec(
+        update(PlatformAIConnection)
+        .where(PlatformAIConnection.id == listed["Reorganised"]["id"])
+        .values(community_ids=[a.guild.id, b.guild.id, 999_999])
+    )
+    await session.commit()
+    kept = await client.put(reorganised, headers=owner.headers, json={"label": "Kept"})
+    assert kept.status_code == 200, kept.text
+    assert {(c["id"], c["name"]) for c in kept.json()["communities"]} == {
+        (a.guild.id, a.guild.name),
+        (b.guild.id, b.guild.name),
+        (999_999, None),
+    }
+    regiven = await client.put(
+        f"{PLATFORM_CONNS}/{listed['Division']['id']}",
+        headers=owner.headers,
+        json={"community_ids": [b.guild.id]},
+    )
+    assert regiven.status_code == 404
+    assert regiven.json()["detail"] == GuildMessages.COMMUNITY_NOT_FOUND
 
 
 async def test_a_community_can_switch_ai_off(client, acting_user):

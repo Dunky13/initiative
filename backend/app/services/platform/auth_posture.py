@@ -311,18 +311,6 @@ async def second_factor_available(session: AsyncSession) -> bool:
     return any(method in permitted for method in FACTOR_METHODS)
 
 
-async def _locked_settings(session: AsyncSession) -> AppSetting:
-    """The settings row, held for the rest of this transaction."""
-    await app_settings_service.ensure_settings_row(session)
-    return (
-        await session.exec(
-            select(AppSetting)
-            .where(AppSetting.id == GLOBAL_SETTINGS_ID)
-            .with_for_update()
-        )
-    ).one()
-
-
 async def hold_settings_for_read(session: AsyncSession) -> AppSetting:
     """The settings row under a shared lock, for a write that depends on what it
     says staying true until that write commits.
@@ -915,7 +903,7 @@ async def _load(ctx: RuleContext) -> None:
     """Take the rows the rules read: the settings row, held, for the
     deployment's; the community's row and its requirement for a community's."""
     if ctx.guild_id is None:
-        ctx.settings = await _locked_settings(ctx.session)
+        ctx.settings = await app_settings_service.locked_settings(ctx.session)
         return
     guild = await ctx.session.get(Guild, ctx.guild_id)
     if guild is None:
