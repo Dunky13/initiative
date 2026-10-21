@@ -94,7 +94,15 @@ type Drag = {
 
 /** A link being drawn from a task's bar to another task's row: where it
  *  starts and where the pointer is, on the chart. */
-type Linking = { task: TaskListRead; x1: number; y1: number; x2: number; y2: number };
+type Linking = {
+  task: TaskListRead;
+  /** The row it is drawn from, which stays drawn while it is. */
+  index: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+};
 
 type ProjectTasksGanttViewProps = {
   initiativeId: number;
@@ -268,6 +276,8 @@ export const ProjectTasksGanttView = ({
   ) => {
     if (event.button !== 0 || (!canMove && from !== undefined)) return;
     event.stopPropagation();
+    // Arrow-key moves not yet saved are saved before another change starts.
+    if (settle.current !== undefined) release();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     moveDrag({ key, task, hold, originX: event.clientX, days: 0, moved: false, from });
   };
@@ -284,6 +294,7 @@ export const ProjectTasksGanttView = ({
   const release = () => {
     const current = dragRef.current;
     window.clearTimeout(settle.current);
+    settle.current = undefined;
     moveDrag(null);
     if (!current) return;
     if (current.from !== undefined) {
@@ -363,7 +374,15 @@ export const ProjectTasksGanttView = ({
     keyed.current = false;
     body.current?.querySelector<HTMLElement>(`[data-row="${focused}"]`)?.focus();
   }, [focused]);
-  useEffect(() => () => window.clearTimeout(settle.current), []);
+  // Arrow-key moves are saved, not dropped, when the chart goes away.
+  const releaseOnLeave = useRef(release);
+  releaseOnLeave.current = release;
+  useEffect(
+    () => () => {
+      if (settle.current !== undefined) releaseOnLeave.current();
+    },
+    []
+  );
 
   /** Alt and an arrow: the row's task a day along, saved once the presses
    *  stop. A task with no dates starts on today. */
@@ -433,6 +452,7 @@ export const ProjectTasksGanttView = ({
       }
       case "Enter":
         if (row.type !== "task" || editing) return;
+        if (settle.current !== undefined) release();
         void navigate({ to: taskHref(row.task.id) });
         break;
       default:
@@ -459,7 +479,7 @@ export const ProjectTasksGanttView = ({
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const x1 = x(span.end);
     const y1 = index * ROW_HEIGHT + ROW_HEIGHT / 2;
-    setLinking({ task, x1, y1, x2: x1, y2: y1 });
+    setLinking({ task, index, x1, y1, x2: x1, y2: y1 });
   };
   const followLink = (event: ReactPointerEvent<HTMLElement>) => {
     const { x: x2, y: y2 } = onChart(event);
@@ -686,7 +706,12 @@ export const ProjectTasksGanttView = ({
                 {t("tasks.ganttEmpty")}
               </p>
             ) : null}
-            {drawnIndexes(first, last, focused).map((index) => {
+            {drawnIndexes(first, last, [
+              focused,
+              // The rows a drag or a link is drawn from, until it ends.
+              rows.findIndex((row) => row.type === "task" && row.key === drag?.key),
+              linking?.index ?? -1,
+            ]).map((index) => {
               const row = rows[index];
               if (!row) return null;
               const rowProps = {
@@ -818,12 +843,14 @@ export const ProjectTasksGanttView = ({
   );
 };
 
-/** The rows from `first` up to `last`, and `focused` wherever it is, so the
- *  row in the tab order is always there to take focus. */
-const drawnIndexes = (first: number, last: number, focused: number) => {
+/** The rows from `first` up to `last`, and each of `kept` wherever it is:
+ *  the row in the tab order, and any a drag or a link is drawn from. */
+const drawnIndexes = (first: number, last: number, kept: number[]) => {
   const indexes: number[] = [];
   for (let index = first; index < last; index++) indexes.push(index);
-  if (focused < first || focused >= last) indexes.push(focused);
+  for (const index of new Set(kept)) {
+    if (index >= 0 && (index < first || index >= last)) indexes.push(index);
+  }
   return indexes;
 };
 

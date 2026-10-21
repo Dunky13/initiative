@@ -190,6 +190,15 @@ describe("ProjectTasksGanttView", () => {
     expect((onReschedule.mock.calls[1] as unknown as [unknown, unknown])[1]).toEqual({
       due_date: at("2026-03-03"),
     });
+
+    // A move not yet saved is saved before Enter opens the task.
+    fireEvent.keyDown(focused, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(focused, { key: "Enter" });
+    expect(onReschedule).toHaveBeenCalledTimes(3);
+    expect(onReschedule.mock.calls[2]).toEqual([
+      expect.objectContaining({ id: second.id }),
+      { start_date: at("2026-03-03"), due_date: at("2026-03-05") },
+    ]);
   });
 
   it("draws only the rows in view", async () => {
