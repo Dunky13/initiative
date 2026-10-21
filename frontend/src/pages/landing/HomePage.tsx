@@ -29,7 +29,7 @@ import { TOOL_ICONS, TOOLS, toolCamelPlural, toolNavLabelKey } from "@/lib/tools
 
 import { BitsBetween } from "./BitsBetween";
 import { DarkBand } from "./DarkBand";
-import { FloatingShape, Typed } from "./effects";
+import { FloatingShape } from "./effects";
 import { HangOut } from "./HangOut";
 import { LandingShell } from "./LandingShell";
 import { Together } from "./Together";
@@ -266,20 +266,12 @@ const Hero = () => {
             aria-label={t("hero.titleAria")}
           >
             <span className="block text-4xl">{t("hero.titleLine1")}</span>
-            {/* The second line types itself out, with a caret that keeps
-                blinking after it. With less motion asked for it stands
-                finished. */}
-            <span className="block text-amber-400">
-              <Typed
-                text={t("hero.titleLine2")}
-                delayMs={600}
-                caret={
-                  <span
-                    className="landing-type ml-1.5 inline-block h-[0.85em] w-[0.08em] rounded-sm bg-amber-400 align-baseline"
-                    style={{ animation: "liveBlink 1s steps(2) infinite" }}
-                    aria-hidden="true"
-                  />
-                }
+            <span className="relative inline-block text-amber-400">
+              {t("hero.titleLine2")}
+              <span
+                className="absolute bottom-0 left-0 h-1.5 rounded-full bg-amber-400/35"
+                style={{ animation: "heroLine 1.2s ease-out 1s forwards", width: 0 }}
+                aria-hidden="true"
               />
             </span>
           </h1>

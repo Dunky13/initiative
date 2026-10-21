@@ -279,6 +279,10 @@ export const LANDING_KEYFRAMES = `
     0%, 100% { opacity: 0.4; filter: blur(60px); }
     50% { opacity: 0.7; filter: blur(80px); }
   }
+  @keyframes heroLine {
+    from { width: 0%; }
+    to { width: 100%; }
+  }
   @keyframes ribbonScroll {
     from { transform: translateX(0); }
     to { transform: translateX(-50%); }
@@ -319,6 +323,5 @@ export const LANDING_KEYFRAMES = `
     .landing-ribbon__track { animation: none !important; }
     .landing-float { animation: none !important; }
     .landing-live [data-live] { animation: none !important; }
-    .landing-type { animation: none !important; }
   }
 `;
