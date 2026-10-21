@@ -32,10 +32,13 @@ Never both. What they set up are **connections**: a provider, a model and a key.
 
 | Provider | Notes |
 |---|---|
-| **OpenAI** | Needs an API key. |
-| **Anthropic** | Needs an API key. |
-| **Custom (OpenAI-compatible)** | Anything that speaks the OpenAI API, at an address the connection gives. |
-| **Ollama (Local)** | Models running on a machine of the server owner's. Only they can set one up. |
+| **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Groq**, **xAI**, **Together AI**, **OpenRouter** | Hosted services. Each needs an API key from that company. |
+| **OpenAI-compatible server** | Anything that speaks the OpenAI API, at the address the connection gives: vLLM, llama.cpp, LM Studio, LocalAI, or a gateway your company already runs. The key is optional. |
+| **Ollama** | Models on a machine of the server owner's. Only they can set one up. |
+
+The model comes from the provider's own list, so save the connection once and pick from what it offers. A connection without a model sits there doing nothing until somebody picks one, which is at least restful.
+
+Only the server's owner can point a connection at a machine on a private network, and only for Ollama or an OpenAI-compatible server.
 
 With more than one connection, everybody uses the one marked as the default.
 
@@ -55,7 +58,7 @@ This is the one place in Initiative where your work deliberately goes somewhere 
 Which is precisely why the buttons are explicit, why nothing generates on its own, and why the whole thing can be switched off.
 
 !!! tip "Want a hard guarantee? Keep it local."
-    Whoever runs your server can configure a **local** provider (Ollama). The text never leaves your server, so there's no third party's terms to read and nothing to take anyone's word for. If your group's work is the kind you wouldn't hand a stranger, this is the option to ask for.
+    Whoever runs your server can configure a **local** provider: Ollama, or an OpenAI-compatible server such as vLLM on their own machine. The text never leaves your server, so there's no third party's terms to read and nothing to take anyone's word for. If your group's work is the kind you wouldn't hand a stranger, this is the option to ask for.
 
 Not sure what's configured on your server? Ask a community admin or whoever runs the server — or simply never press the buttons. Everything else in Initiative works exactly the same without them, and nobody is keeping score.
 

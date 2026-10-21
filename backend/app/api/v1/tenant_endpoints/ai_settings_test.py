@@ -133,9 +133,10 @@ async def test_guild_admin_cannot_save_private_base_url(client, acting_user):
 
 
 async def test_a_member_runs_on_the_community_s_key(client, acting_user, reading_as):
-    """A member reads that the seat's connection has a key, and their request
-    resolves to it though they cannot read the key table; clearing it is seen
-    the same way."""
+    """A connection is used once it names a model. A member then reads that
+    the seat's connection has a key, and their request resolves to it though
+    they cannot read the key table. A key goes only where it was given for:
+    sending the connection elsewhere clears it, which is seen the same way."""
     owner = await acting_user()
     await _set_mode(client, owner, "community")
     seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
@@ -162,6 +163,16 @@ async def test_a_member_runs_on_the_community_s_key(client, acting_user, reading
     resolved = await client.get(
         member.g("/settings/ai/resolved"), headers=member.headers
     )
+    assert resolved.json()["enabled"] is False
+    r = await client.put(
+        seat.g(f"/settings/ai/connections/{conn_id}"),
+        headers=seat.headers,
+        json={"model": "gpt-5-mini"},
+    )
+    assert r.status_code == 200, r.text
+    resolved = await client.get(
+        member.g("/settings/ai/resolved"), headers=member.headers
+    )
     assert resolved.json()["enabled"] is True
     asking = await reading_as(member.user.id, seat.guild.id)
     with_key = await ai_settings_service.resolve_ai_settings(
@@ -172,7 +183,7 @@ async def test_a_member_runs_on_the_community_s_key(client, acting_user, reading
     r = await client.put(
         seat.g(f"/settings/ai/connections/{conn_id}"),
         headers=seat.headers,
-        json={"api_key": None},
+        json={"provider": "anthropic", "model": "claude-haiku-5-5"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["has_api_key"] is False

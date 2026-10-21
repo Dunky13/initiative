@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The front page shows people working together.** A new section draws three people on the same plan at once: live cursors, a comment landing in the margin, and a task handed to a second person. The headline now reads "Your group has a lot going on. It's time to take the Initiative."
 - **Gantt view for projects.** A project's tasks as bars from start to due date on a timeline, by day, week or month. Drag a bar to move a task, drag an end to change one date, or drag across an undated task's row to give it dates. Arrows join each task to what it is blocked by, in red when it starts before that is done, and a task's parts sit under it and fold away. Group it like the board. A project that opened on its Calendar opens on its Gantt, with the same presets.
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
+- **More AI providers.** A connection can use Google Gemini, DeepSeek, Groq, xAI, Together AI or OpenRouter, or any OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI, or a gateway). The server's operator can point an OpenAI-compatible server at a machine on their own network, as with Ollama. OpenAI connections can use every OpenAI model, Codex models included.
 - **Dashboards can read links.** In the SQL tab, `relationships` holds what each thing is linked to, so a Gantt can group subtasks under their parent. A link shows only to someone who can see both ends, and one that was unlinked is left out.
 
 ### Fixed
@@ -38,10 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Home on a phone**: customizing no longer piles the view tabs under the Add widget and Banner buttons, a widget's move and remove buttons sit above it instead of over its title, the greeting wraps a long name instead of cutting it off, and the calendar widget is no longer a card inside a card.
 - **Calendar subscriptions**: a subscribed calendar arrives named after the calendar and its initiative (or community), instead of after its link, and listed in your own time zone instead of UTC. Calendar apps take the name when you subscribe, so to see it on a calendar you already subscribed to, subscribe to its link again.
 - **Updating the app**: in the phone and desktop apps, a new version shows one prompt instead of two, and its **Reload** button always installs the update.
+- **AI with current Claude models.** Suggestions and summaries from a model that thinks before it answers are read correctly instead of failing with a provider error.
 
 ### Changed
 
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
+- **An AI connection names its model.** Save a connection, then pick a model from its provider's list; a connection without one is not used until somebody picks one. Connections that relied on a built-in default model need one picked. Changing a connection's provider or address clears its key unless you enter it again.
 
 ### Removed
 

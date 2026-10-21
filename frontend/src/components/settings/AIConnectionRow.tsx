@@ -36,6 +36,7 @@ export const AIConnectionRow = ({
           <Badge variant={connection.enabled ? "default" : "outline"}>
             {connection.enabled ? t("ai.enabled") : t("ai.disabled")}
           </Badge>
+          {!connection.model && <Badge variant="warning">{t("aiConnections.needsModel")}</Badge>}
         </div>
         <p className="text-muted-foreground text-sm">
           {PROVIDER_CONFIGS[connection.provider]?.label ?? connection.provider}

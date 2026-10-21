@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from app.services.safe_http import (
+    PinnedTransport,
     ResponseTooLargeError,
     build_validated_request,
     request_public_target,
@@ -292,3 +293,33 @@ async def test_a_bounded_read_within_its_bound_reads_as_usual():
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert "content-encoding" not in response.headers
+
+
+async def test_a_pinned_client_sends_nothing_about_the_server_and_reads_a_bounded_reply():
+    """An SDK's platform headers are dropped and an uncompressed reply is asked
+    for; a compressed reply is refused, and a long one stops at the bound."""
+    seen: list[httpx.Request] = []
+    replies = [
+        httpx.Response(200, content=b"ok"),
+        httpx.Response(200, headers={"Content-Encoding": "gzip"}, content=b"x"),
+        httpx.Response(200, content=b"0" * 2_000),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return replies[len(seen) - 1]
+
+    transport = PinnedTransport(max_bytes=1_000, inner=httpx.MockTransport(handler))
+    headers = {"X-Stainless-OS": "Linux", "X-Stainless-Runtime-Version": "3.12"}
+    async with httpx.AsyncClient(transport=transport) as client:
+        with _resolves_to("93.184.216.34"):
+            ok = await client.get("https://llm.example.com/v1/models", headers=headers)
+            with pytest.raises(ResponseTooLargeError):
+                await client.get("https://llm.example.com/v1/models")
+            with pytest.raises(ResponseTooLargeError):
+                await client.get("https://llm.example.com/v1/models")
+
+    assert ok.content == b"ok"
+    assert seen[0].url.host == "93.184.216.34"
+    assert not [name for name in seen[0].headers if name.startswith("x-stainless")]
+    assert seen[0].headers["accept-encoding"] == "identity"

@@ -55,6 +55,48 @@ matter and can be deleted.
 - POST /api/v1/operator/users/{user_id}/suspension added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
 - PATCH /api/v1/operator/users/{user_id}/username added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
 - PATCH /api/v1/operator/users/{user_id}/username added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `deepseek` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `gemini` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `groq` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `openrouter` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `together` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `xai` enum value to the `items/provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `gemini` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `groq` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `together` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `xai` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `gemini` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `groq` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `together` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `xai` enum value to the `provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `deepseek` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `gemini` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `groq` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `openrouter` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `together` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `xai` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `deepseek` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `gemini` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `groq` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `openrouter` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `together` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `xai` enum value to the `items/provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `gemini` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `groq` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `together` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `xai` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `gemini` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `groq` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `together` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `xai` enum value to the `provider` response property for the response status `200`
 
 ### A task's type is a field
 

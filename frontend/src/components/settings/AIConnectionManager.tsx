@@ -126,6 +126,7 @@ export const AIConnectionManager = ({
         providers={providers}
         connection={editing}
         mutations={mutations}
+        onNeedsModel={openEdit}
       />
 
       <ConfirmDialog
