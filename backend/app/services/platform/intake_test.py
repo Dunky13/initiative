@@ -105,6 +105,48 @@ async def test_a_bound_stream_lands_a_task_in_its_project(session, bound):
     assert task.description == "It says my code expired."
 
 
+async def test_a_case_is_the_type_its_binding_names(session, bound):
+    """A binding naming one of the project's types files cases as it; one
+    naming a type since deleted files them as the project's default."""
+    from app.models.tenant.task import TaskType
+    from app.services.tenant import task_types as task_types_service
+
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    task_type, bug = (
+        await task_types_service.ensure_default_types(
+            session, bound["project"].id, locale="en"
+        )
+    )[:2]
+    binding = (
+        await session.exec(
+            select(IntakeBinding).where(IntakeBinding.id == bound["binding"].id)
+        )
+    ).one()
+    binding.task_type_id = bug.id
+    session.add(binding)
+    await session.commit()
+
+    outcome = await intake_service.open_case(IntakeStream.support, title="Broken")
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    filed = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert filed.task_type_id == bug.id
+
+    # Its type goes, its task moved off it first; the binding lets go of it.
+    filed.task_type_id = task_type.id
+    session.add(filed)
+    await session.flush()
+    await session.delete(
+        (await session.exec(select(TaskType).where(TaskType.id == bug.id))).one()
+    )
+    await session.commit()
+    outcome = await intake_service.open_case(IntakeStream.support, title="Again")
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    again = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert again.task_type_id == task_type.id
+
+
 async def test_a_system_opened_case_names_no_author(session, bound):
     """Nobody signed in created it, and ``created_by`` says so."""
     outcome = await intake_service.open_case(IntakeStream.support, title="Help")

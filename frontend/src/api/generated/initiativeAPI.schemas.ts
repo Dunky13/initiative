@@ -1453,6 +1453,24 @@ export interface TaskStatusRead {
 }
 
 /**
+ * What a new task of a type starts with, field by field, where whoever
+ * makes it leaves that field empty. A repeat starts only on a task with a
+ * date to count from.
+ */
+export interface TaskTypeStartingValues {
+  description?: string | null;
+  /**
+   * @maxItems 50
+   * @items.minLength 1
+   * @items.maxLength 2000
+   */
+  checklist?: string[];
+  priority?: TaskPriority | null;
+  recurrence?: string | null;
+  recurrence_strategy?: RecurrenceStrategy | null;
+}
+
+/**
  * One kind of task in a project, and the shape its page is drawn as until
  * the page is changed.
  */
@@ -1465,6 +1483,7 @@ export interface TaskTypeRead {
   color: string;
   icon: string;
   layout_preset: string;
+  starting_values: TaskTypeStartingValues | null;
 }
 
 /**
@@ -6807,6 +6826,8 @@ export interface IntakeBindingRead {
   initiative_name?: string | null;
   default_status_id?: number | null;
   default_status_name?: string | null;
+  task_type_id?: number | null;
+  task_type_name?: string | null;
   awaiting_filer_status_id?: number | null;
   active_status_id?: number | null;
   conversation?: Conversation;
@@ -6822,6 +6843,7 @@ export interface IntakeBindingRead {
 export interface IntakeBindingUpsert {
   project_id: number;
   default_status_id?: number | null;
+  task_type_id?: number | null;
   awaiting_filer_status_id?: number | null;
   active_status_id?: number | null;
   enabled?: boolean;
@@ -6850,12 +6872,21 @@ export interface IntakeStatusOption {
 }
 
 /**
+ * One type a case could be.
+ */
+export interface IntakeTypeOption {
+  id: number;
+  name: string;
+}
+
+/**
  * One project a stream could be bound to, and where a case would start.
  */
 export interface IntakeProjectOption {
   id: number;
   name: string;
   statuses: IntakeStatusOption[];
+  task_types?: IntakeTypeOption[];
 }
 
 /**
@@ -10601,6 +10632,16 @@ export interface TaskStatusUpdate {
   icon?: string | null;
 }
 
+/**
+ * Copy types from another project: each with its look, its page and its
+ * starting values. One whose name the project already has is left out.
+ */
+export interface TaskTypeCopyRequest {
+  /** @exclusiveMinimum 0 */
+  source_project_id: number;
+  type_ids?: number[] | null;
+}
+
 export interface TaskTypeCreate {
   /**
    * @minLength 1
@@ -10612,11 +10653,55 @@ export interface TaskTypeCreate {
   color?: string | null;
   icon?: string | null;
   start_from_type_id?: number | null;
+  gallery_key?: string | null;
   layout_preset?: string | null;
+  starting_values?: TaskTypeStartingValues | null;
+}
+
+/**
+ * A type just added, and the fields it brought from the gallery (the
+ * initiative's properties it created or reused), for its page to place.
+ */
+export interface TaskTypeCreated {
+  id: number;
+  project_id: number;
+  name: string;
+  position: number;
+  is_default: boolean;
+  color: string;
+  icon: string;
+  layout_preset: string;
+  starting_values: TaskTypeStartingValues | null;
+  field_ids: number[];
 }
 
 export interface TaskTypeDeleteRequest {
   fallback_type_id?: number | null;
+}
+
+export interface TaskTypeGalleryField {
+  name: string;
+  type: string;
+}
+
+/**
+ * One ready-made type, in the reader's language.
+ */
+export interface TaskTypeGalleryEntry {
+  key: string;
+  name: string;
+  hint: string;
+  icon: string;
+  color: string;
+  layout_preset: string;
+  fields: TaskTypeGalleryField[];
+  starting_values?: TaskTypeStartingValues | null;
+}
+
+export interface TaskTypeGalleryGroup {
+  key: string;
+  name: string;
+  entries: TaskTypeGalleryEntry[];
 }
 
 export interface TaskTypeReorderItem {
@@ -10635,6 +10720,7 @@ export interface TaskTypeUpdate {
   color?: string | null;
   icon?: string | null;
   layout_preset?: string | null;
+  starting_values?: TaskTypeStartingValues | null;
 }
 
 export type TaskUpdateScope = (typeof TaskUpdateScope)[keyof typeof TaskUpdateScope] | null;

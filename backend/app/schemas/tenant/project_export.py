@@ -86,6 +86,9 @@ class ProjectExportTaskType(SanitizedBaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
     layout_preset: Optional[str] = None
+    #: What a new task of the type starts with
+    #: (``app.schemas.tenant.task_type.TaskTypeStartingValues``).
+    starting_values: Optional[dict[str, Any]] = None
 
 
 class ProjectExportPropertyDefinition(SanitizedBaseModel):

@@ -10,7 +10,7 @@ from typing import Annotated, List, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
-from sqlmodel import select, update
+from sqlmodel import col, select, update
 
 from app.api import resource_access
 from app.api.actor_route import ActorRoute
@@ -25,6 +25,7 @@ from app.api.deps import (
 )
 from app.core.errors import CodedError
 from app.core.messages import TaskTypeMessages
+from app.core.task_type_gallery import GALLERY_BY_KEY
 from app.core.task_types import MAX_TASK_TYPES
 from app.core.tools import Tool
 from app.db import gucs
@@ -34,13 +35,17 @@ from app.models.tenant.project import Project
 from app.models.tenant.task import Task, TaskType
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.task_type import (
+    TaskTypeCopyRequest,
     TaskTypeCreate,
+    TaskTypeCreated,
     TaskTypeDeleteRequest,
+    TaskTypeGalleryGroup,
     TaskTypeRead,
     TaskTypeReorderRequest,
     TaskTypeUpdate,
 )
 from app.services.tenant import task_types as task_types_service
+from app.services.tenant import tool_layouts as tool_layouts_service
 
 router = APIRouter(
     prefix="/projects/{project_id}/task-types",
@@ -114,17 +119,39 @@ async def list_task_types(
     return await task_types_service.list_types(session, project_id)
 
 
-@router.post("/", response_model=TaskTypeRead, status_code=status.HTTP_201_CREATED)
+@router.get("/gallery", response_model=List[TaskTypeGalleryGroup])
+async def list_task_type_gallery(
+    project_id: int,
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsRead,
+) -> List[TaskTypeGalleryGroup]:
+    """The ready-made types the project can add, grouped by what they are for,
+    in the reader's language."""
+    await resource_access.load_authorized(
+        session,
+        resource_access.governing_tool("tasks"),
+        project_id,
+        current_user,
+        guild_context,
+    )
+    return task_types_service.gallery(getattr(current_user, "locale", None) or "en")
+
+
+@router.post("/", response_model=TaskTypeCreated, status_code=status.HTTP_201_CREATED)
 async def create_task_type(
     project_id: int,
     type_in: TaskTypeCreate,
     session: RLSSessionDep,
     current_user: CurrentUser,
     guild_context: GuildContextDep,
-) -> TaskType:
+) -> TaskTypeCreated:
     """Add a type, at the end unless a position is given. Started from another
-    of the project's types, it takes that type's shape, colour and icon unless
-    it names its own, and a copy of its page."""
+    of the project's types, it takes that type's shape, colour, icon and
+    starting values unless it names its own, and a copy of its page. Started
+    from the gallery, it takes the gallery type's, and its fields: the
+    initiative's properties of those names, made where it has none, which its
+    page is then given (``field_ids``)."""
     project = await _writable_project(session, project_id, current_user, guild_context)
     types = await task_types_service.list_types(session, project.id)
     if len(types) >= MAX_TASK_TYPES:
@@ -138,20 +165,30 @@ async def create_task_type(
         if type_in.start_from_type_id is not None
         else None
     )
+    entry = GALLERY_BY_KEY.get(type_in.gallery_key or "")
+    locale = current_user.locale or "en"
+    starting = type_in.starting_values
+    if "starting_values" not in type_in.model_fields_set:
+        if source is not None:
+            starting = task_types_service.starting_values_of(source)
+        elif entry is not None:
+            starting = task_types_service.gallery_starting_values(entry, locale)
     insert_at = max(
         0,
         min(
             type_in.position if type_in.position is not None else len(types), len(types)
         ),
     )
+    look = source or entry
     created = TaskType(
         project_id=project.id,
         name=name,
         is_default=type_in.is_default,
-        color=type_in.color or (source.color if source else "#94A3B8"),
-        icon=type_in.icon or (source.icon if source else "square-check"),
+        color=type_in.color or (look.color if look else "#94A3B8"),
+        icon=type_in.icon or (look.icon if look else "square-check"),
         layout_preset=type_in.layout_preset
-        or (source.layout_preset if source else "plain"),
+        or (source.layout_preset if source else entry.shape if entry else "plain"),
+        starting_values=task_types_service.stored_starting_values(starting),
     )
     types.insert(insert_at, created)
     if created.is_default:
@@ -178,9 +215,82 @@ async def create_task_type(
                     definition=page.definition,
                 )
             )
+    field_ids = (
+        await task_types_service.gallery_fields(
+            session, project.initiative_id, entry, locale=locale
+        )
+        if entry is not None
+        else []
+    )
     await session.commit()
     await session.refresh(created)
-    return created
+    return TaskTypeCreated.model_validate(
+        {**TaskTypeRead.model_validate(created).model_dump(), "field_ids": field_ids}
+    )
+
+
+@router.post("/copy", response_model=List[TaskTypeRead])
+async def copy_task_types(
+    project_id: int,
+    copy_in: TaskTypeCopyRequest,
+    session: RLSSessionDep,
+    current_user: CurrentUser,
+    guild_context: GuildContextDep,
+) -> Sequence[TaskType]:
+    """Copy types from another project the caller can read: each with its
+    look, its starting values and its page, after this project's own. One
+    whose name this project has is left out, and so is any past the limit;
+    the response is the copies made. A page from another initiative leaves out
+    the properties it placed, which are that initiative's."""
+    project = await _writable_project(session, project_id, current_user, guild_context)
+    source_project = await resource_access.load_authorized(
+        session,
+        resource_access.governing_tool("tasks"),
+        copy_in.source_project_id,
+        current_user,
+        guild_context,
+    )
+    sources = await task_types_service.list_types(session, source_project.id)
+    if copy_in.type_ids is not None:
+        by_id = {t.id: t for t in sources}
+        if any(type_id not in by_id for type_id in copy_in.type_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=TaskTypeMessages.NOT_FOUND,
+            )
+        wanted = set(copy_in.type_ids)
+        sources = [t for t in sources if t.id in wanted]
+    copies = await task_types_service.copy_types(
+        session, sources, target_project_id=project.id
+    )
+    same_initiative = source_project.initiative_id == project.initiative_id
+    pages = (
+        await session.exec(
+            select(ToolLayout).where(col(ToolLayout.task_type_id).in_(list(copies)))
+        )
+    ).all()
+    for page in pages:
+        assert page.task_type_id is not None
+        session.add(
+            ToolLayout(
+                initiative_id=project.initiative_id,
+                tool=Tool.project.value,
+                tool_id=project.id,
+                kind=page.kind,
+                task_type_id=copies[page.task_type_id].id,
+                definition=tool_layouts_service.remapped_definition(
+                    page.definition,
+                    tool_layouts_service.Remap(
+                        statuses=lambda _id: None,
+                        properties=None if same_initiative else lambda _id: None,
+                    ),
+                ),
+            )
+        )
+    await session.commit()
+    for copy in copies.values():
+        await session.refresh(copy)
+    return list(copies.values())
 
 
 @router.patch("/{type_id}", response_model=TaskTypeRead)
@@ -203,6 +313,10 @@ async def update_task_type(
     for field in ("color", "icon", "layout_preset"):
         if changes.get(field) is not None:
             setattr(target, field, changes[field])
+    if "starting_values" in changes:
+        target.starting_values = task_types_service.stored_starting_values(
+            type_in.starting_values
+        )
     if changes.get("is_default"):
         for other in types:
             other.is_default = other.id == target.id

@@ -25,6 +25,9 @@ class IntakeBindingRead(SanitizedBaseModel):
     initiative_name: Optional[str] = None
     default_status_id: Optional[int] = None
     default_status_name: Optional[str] = None
+    #: The type a new case is; null for the project's default.
+    task_type_id: Optional[int] = None
+    task_type_name: Optional[str] = None
     #: The status that tells whoever filed a case it is waiting on them, and
     #: the one a case moves back to when they answer. Without the first, a
     #: filer sees Received, In progress and Closed, never Waiting on you.
@@ -83,6 +86,8 @@ class IntakeBindingUpsert(SanitizedBaseModel):
 
     project_id: int
     default_status_id: Optional[int] = None
+    #: The type a new case is; null for the project's default.
+    task_type_id: Optional[int] = None
     awaiting_filer_status_id: Optional[int] = None
     active_status_id: Optional[int] = None
     enabled: bool = True
@@ -101,12 +106,20 @@ class IntakeStatusOption(SanitizedBaseModel):
     name: str
 
 
+class IntakeTypeOption(SanitizedBaseModel):
+    """One type a case could be."""
+
+    id: int
+    name: str
+
+
 class IntakeProjectOption(SanitizedBaseModel):
     """One project a stream could be bound to, and where a case would start."""
 
     id: int
     name: str
     statuses: List[IntakeStatusOption]
+    task_types: List[IntakeTypeOption] = []
 
 
 class IntakeInitiativeOption(SanitizedBaseModel):

@@ -25,7 +25,7 @@ from app.services.tenant.soft_delete import soft_delete_entity
 from app.testing import create_project, create_task, create_user
 
 #: The tables the revision changes in a community's schema.
-_TABLES = ("projects", "tasks", "tool_layouts", "task_types")
+_TABLES = ("projects", "tasks", "tool_layouts", "task_types", "intake_bindings")
 
 
 @pytest.fixture
@@ -140,7 +140,8 @@ async def test_every_project_gets_its_types_and_every_task_and_page_its_task_typ
     types = (
         await session.exec(
             text(
-                "SELECT project_id, name, position, is_default, layout_preset, id"
+                "SELECT project_id, name, position, is_default, layout_preset, id,"
+                " starting_values"
                 " FROM task_types ORDER BY project_id, position"
             )
         )
@@ -172,6 +173,10 @@ async def test_every_project_gets_its_types_and_every_task_and_page_its_task_typ
         "discussion",
         "dates",
     ]
+    # Bug starts with an outline of a report, in its maker's language.
+    starts = [row[6] for row in by_project[german_project.id]]
+    assert starts[0] is None and starts[2:] == [None, None]
+    assert starts[1]["description"].startswith("**Was ist passiert?**")
 
     defaults = {project: rows[0][5] for project, rows in by_project.items()}
     tasks = (

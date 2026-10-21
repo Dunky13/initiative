@@ -22,8 +22,11 @@ import type {
 
 import type {
   HTTPValidationError,
+  TaskTypeCopyRequest,
   TaskTypeCreate,
+  TaskTypeCreated,
   TaskTypeDeleteRequest,
+  TaskTypeGalleryGroup,
   TaskTypeRead,
   TaskTypeReorderRequest,
   TaskTypeUpdate,
@@ -182,8 +185,11 @@ export function useListTaskTypes<
 
 /**
  * Add a type, at the end unless a position is given. Started from another
- * of the project's types, it takes that type's shape, colour and icon unless
- * it names its own, and a copy of its page.
+ * of the project's types, it takes that type's shape, colour, icon and
+ * starting values unless it names its own, and a copy of its page. Started
+ * from the gallery, it takes the gallery type's, and its fields: the
+ * initiative's properties of those names, made where it has none, which its
+ * page is then given (``field_ids``).
  * @summary Create Task Type
  */
 export const createTaskType = (
@@ -193,7 +199,7 @@ export const createTaskType = (
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<TaskTypeRead>(
+  return apiMutator<TaskTypeCreated>(
     {
       url: `/api/v1/c/${communityId}/projects/${projectId}/task-types/`,
       method: "POST",
@@ -273,6 +279,251 @@ export const useCreateTaskType = <TError = ErrorType<HTTPValidationError>, TCont
   TContext
 > => {
   return useMutation(getCreateTaskTypeMutationOptions(options), queryClient);
+};
+/**
+ * The ready-made types the project can add, grouped by what they are for,
+ * in the reader's language.
+ * @summary List Task Type Gallery
+ */
+export const listTaskTypeGallery = (
+  communityId: number,
+  projectId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<TaskTypeGalleryGroup[]>(
+    {
+      url: `/api/v1/c/${communityId}/projects/${projectId}/task-types/gallery`,
+      method: "GET",
+      signal,
+    },
+    options
+  );
+};
+
+export const getListTaskTypeGalleryQueryKey = (communityId: number, projectId: number) => {
+  return [`/api/v1/c/${communityId}/projects/${projectId}/task-types/gallery`] as const;
+};
+
+export const getListTaskTypeGalleryQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTaskTypeGallery>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  projectId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTaskTypeGalleryQueryKey(communityId, projectId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaskTypeGallery>>> = ({ signal }) =>
+    listTaskTypeGallery(communityId, projectId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      communityId !== null &&
+      communityId !== undefined &&
+      projectId !== null &&
+      projectId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListTaskTypeGalleryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTaskTypeGallery>>
+>;
+export type ListTaskTypeGalleryQueryError = ErrorType<HTTPValidationError>;
+
+export function useListTaskTypeGallery<
+  TData = Awaited<ReturnType<typeof listTaskTypeGallery>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  projectId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskTypeGallery>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskTypeGallery>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTaskTypeGallery<
+  TData = Awaited<ReturnType<typeof listTaskTypeGallery>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  projectId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskTypeGallery>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskTypeGallery>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTaskTypeGallery<
+  TData = Awaited<ReturnType<typeof listTaskTypeGallery>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  projectId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Task Type Gallery
+ */
+
+export function useListTaskTypeGallery<
+  TData = Awaited<ReturnType<typeof listTaskTypeGallery>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  projectId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listTaskTypeGallery>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListTaskTypeGalleryQueryOptions(communityId, projectId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Copy types from another project the caller can read: each with its
+ * look, its starting values and its page, after this project's own. One
+ * whose name this project has is left out, and so is any past the limit;
+ * the response is the copies made. A page from another initiative leaves out
+ * the properties it placed, which are that initiative's.
+ * @summary Copy Task Types
+ */
+export const copyTaskTypes = (
+  communityId: number,
+  projectId: number,
+  taskTypeCopyRequest: BodyType<TaskTypeCopyRequest>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<TaskTypeRead[]>(
+    {
+      url: `/api/v1/c/${communityId}/projects/${projectId}/task-types/copy`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: taskTypeCopyRequest,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCopyTaskTypesMutationKey = () => ["copyTaskTypes"] as const;
+
+export const getCopyTaskTypesMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof copyTaskTypes>>,
+    TError,
+    CopyTaskTypesMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof copyTaskTypes>>,
+  TError,
+  CopyTaskTypesMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCopyTaskTypesMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof copyTaskTypes>>,
+    CopyTaskTypesMutationVariables
+  > = (props) => {
+    const { communityId, projectId, data } = props ?? {};
+
+    return copyTaskTypes(communityId, projectId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CopyTaskTypesMutationResult = NonNullable<Awaited<ReturnType<typeof copyTaskTypes>>>;
+export type CopyTaskTypesMutationBody = BodyType<TaskTypeCopyRequest>;
+export type CopyTaskTypesMutationError = ErrorType<HTTPValidationError>;
+export type CopyTaskTypesMutationVariables = {
+  communityId: number;
+  projectId: number;
+  data: BodyType<TaskTypeCopyRequest>;
+};
+
+/**
+ * @summary Copy Task Types
+ */
+export const useCopyTaskTypes = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof copyTaskTypes>>,
+      TError,
+      CopyTaskTypesMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof copyTaskTypes>>,
+  TError,
+  CopyTaskTypesMutationVariables,
+  TContext
+> => {
+  return useMutation(getCopyTaskTypesMutationOptions(options), queryClient);
 };
 /**
  * @summary Update Task Type

@@ -5,6 +5,95 @@
       "bug": "Error",
       "idea": "Idea",
       "milestone": "Hito"
+    },
+    "gallery": {
+      "groups": {
+        "planning": "Planificación",
+        "home": "En casa",
+        "groups": "Grupos y voluntariado",
+        "making": "Crear cosas",
+        "learning": "Aprendizaje"
+      },
+      "types": {
+        "milestone": {
+          "name": "Hito",
+          "hint": "Una fecha a la que llegar, y lo que tiene que pasar antes"
+        },
+        "event": {
+          "name": "Evento",
+          "hint": "O un concierto, una sesión, una quedada: una fecha y un lugar"
+        },
+        "appointment": {
+          "name": "Cita",
+          "hint": "Una hora y un lugar donde estar"
+        },
+        "chore": {
+          "name": "Tarea doméstica",
+          "hint": "Algo que vuelve cada semana"
+        },
+        "errand": {
+          "name": "Recado",
+          "hint": "Una lista que ir completando, como la compra"
+        },
+        "bill": {
+          "name": "Factura",
+          "hint": "Un importe que vence cada mes"
+        },
+        "shift": {
+          "name": "Turno de voluntariado",
+          "hint": "Cuándo, dónde y quién se ha apuntado"
+        },
+        "purchase": {
+          "name": "Compra",
+          "hint": "Algo que comprar: cuánto cuesta y dónde"
+        },
+        "question": {
+          "name": "Pregunta",
+          "hint": "Algo que hablar hasta tener una respuesta"
+        },
+        "idea": {
+          "name": "Idea",
+          "hint": "Algo en lo que vale la pena pensar"
+        },
+        "request": {
+          "name": "Solicitud",
+          "hint": "Algo que alguien ha pedido"
+        },
+        "bug": {
+          "name": "Error",
+          "hint": "Algo que está roto"
+        },
+        "feature": {
+          "name": "Función",
+          "hint": "Algo nuevo que construir"
+        },
+        "art": {
+          "name": "Arte",
+          "hint": "Una imagen, un sonido, una pieza de diseño"
+        },
+        "playtest": {
+          "name": "Nota de prueba de juego",
+          "hint": "Lo que pasó cuando alguien lo jugó"
+        },
+        "assignment": {
+          "name": "Trabajo",
+          "hint": "Trabajo con fecha de entrega"
+        },
+        "reading": {
+          "name": "Lectura",
+          "hint": "Algo que leer, y dónde encontrarlo"
+        }
+      },
+      "fields": {
+        "location": "Lugar",
+        "link": "Enlace",
+        "amount": "Importe",
+        "cost": "Coste"
+      },
+      "outlines": {
+        "bug": "**Qué pasó**\n\n\n**Qué debería haber pasado**\n\n\n**Cómo reproducirlo**\n\n",
+        "playtest": "**Quién jugó, y qué versión**\n\n\n**Qué funcionó**\n\n\n**Qué no**\n\n"
+      }
     }
   },
   "taskStatuses": {

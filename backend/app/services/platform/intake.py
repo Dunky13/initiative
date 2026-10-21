@@ -61,6 +61,7 @@ from app.schemas.tenant.property import PropertyValueInput
 from app.services.platform import case_activity, case_notices
 from app.services.tenant import properties as properties_service
 from app.services.tenant import task_creation as task_creation_service
+from app.services.tenant import task_types as task_types_service
 from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
@@ -447,6 +448,26 @@ async def _landing_status_id(
     return named
 
 
+async def _case_type_id(
+    session: AsyncSession, binding: IntakeBinding, project: Project
+) -> Optional[int]:
+    """The type a new case is, or ``None`` for the project's default. Checked
+    against the project as the landing status is: the team may delete it."""
+    if binding.task_type_id is None:
+        return None
+    named = await task_types_service.get_project_type(
+        session, binding.task_type_id, int(project.id or 0)
+    )
+    if named is None:
+        logger.warning(
+            "intake binding %s names a type the project no longer has; "
+            "filing as the project default",
+            binding.id,
+        )
+        return None
+    return named.id
+
+
 async def open_case(
     stream: IntakeStream,
     *,
@@ -604,6 +625,7 @@ async def open_case(
             session,
             project=project,
             task_status_id=await _landing_status_id(session, binding, project),
+            task_type_id=await _case_type_id(session, binding, project),
             now=moment,
             title=title,
             description=body,

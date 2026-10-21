@@ -114,6 +114,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "(backlog, todo, in_progress, done). Their ids are what `create_task` "
         "and `update_task` take as `task_status_id`."
     ),
+    "list_task_type_gallery": (
+        "Ready-made task types a project can add (Event, Chore, Bill, …), "
+        "grouped by what they are for, in the caller's language, with the "
+        "fields and starting values each brings."
+    ),
     "list_task_types": (
         "A project's task types (Task, Bug, Idea, Milestone, or the project's "
         "own), in order, with which is the default. Their ids are what "

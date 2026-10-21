@@ -2687,3 +2687,71 @@ async def test_a_duplicate_is_its_sources_type(
 
     assert response.status_code == 201, response.text
     assert response.json()["task_type_id"] == types["Milestone"].id
+
+
+async def test_a_new_task_starts_with_what_its_type_starts_one_with(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Where whoever made the task left a field empty, its type fills it: a
+    description outline, checklist lines, a priority, and a repeat once there
+    is a date to count from. What they gave is kept."""
+    from app.services.tenant.task_types import ensure_default_types
+
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    await ensure_default_types(session, a.project.id, locale="en")
+    await session.commit()
+    chore = (
+        await client.post(
+            a.g(f"/projects/{a.project.id}/task-types/"),
+            json={
+                "name": "Chore",
+                "starting_values": {
+                    "description": "**Where**\n\n",
+                    "checklist": ["Gloves"],
+                    "priority": "low",
+                    "recurrence": "RRULE:FREQ=WEEKLY",
+                    "recurrence_strategy": "rolling",
+                },
+            },
+            headers=a.headers,
+        )
+    ).json()
+
+    async def make(**body):
+        response = await client.post(
+            a.g("/tasks/"),
+            headers=a.headers,
+            json={"project_id": a.project.id, "task_type_id": chore["id"], **body},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    blank = await make(title="Gutters", due_date="2026-11-02T09:00:00Z")
+    assert blank["description"].startswith("**Where**")
+    assert [item["text"] for item in blank["checklist"]] == ["Gloves"]
+    assert blank["priority"] == "low"
+    assert blank["recurrence"].endswith("FREQ=WEEKLY")
+    assert blank["recurrence_strategy"] == "rolling"
+
+    given = await make(
+        title="Lawn",
+        description="Front only",
+        checklist=[{"text": "Mower"}],
+        priority="urgent",
+    )
+    assert given["description"] == "Front only"
+    assert [item["text"] for item in given["checklist"]] == ["Mower"]
+    assert given["priority"] == "urgent"
+    # No date to count a repeat from.
+    assert given["recurrence"] is None
+
+    # A type that starts nothing leaves a task as it was given.
+    plain = await client.post(
+        a.g("/tasks/"),
+        headers=a.headers,
+        json={"project_id": a.project.id, "title": "Plain"},
+    )
+    assert plain.json()["description"] in (None, "")
+    assert plain.json()["checklist"] == []
