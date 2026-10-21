@@ -520,7 +520,8 @@ export const usePutDefaultLayout = <TError = ErrorType<HTTPValidationError>, TCo
   return useMutation(getPutDefaultLayoutMutationOptions(options), queryClient);
 };
 /**
- * Draw one of the target's layouts as shipped again.
+ * Draw one of the target's layouts as shipped again: a project's task
+ * page names the type of task it is for.
  * @summary Reset Layout
  */
 export const resetLayout = (

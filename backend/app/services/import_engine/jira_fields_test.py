@@ -173,7 +173,8 @@ def test_the_built_ins_map_by_their_own_ids_without_a_catalog():
     )
     values = _values(mapped, "ACME-1")
     assert values["Priority"]["value_text"] == "Highest"
-    assert values["Issue type"]["value_text"] == "Bug"
+    # The issue type is the task's own type, not a property.
+    assert "Issue type" not in values
     assert values["Reporter"]["value_handle"] == "Robin"
     assert values["Fix versions"]["value_json"] == ["1.0", "1.1"]
     assert values["Original estimate (hours)"]["value_number"] == 1.5

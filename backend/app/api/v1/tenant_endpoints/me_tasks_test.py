@@ -12,6 +12,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.testing import guild_of
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import Task, TaskAssignee, TaskPriority
@@ -42,13 +43,16 @@ async def _create_task(
     # Route status setup + the task into the project's guild schema; a prior
     # setup may have left the search_path on a different guild.
     await route_as(session, user_id=created_by, guild_id=guild_of(project))
-    await task_statuses_service.ensure_default_statuses(session, project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, project.id)
 
     task = Task(
         title=title,
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         created_by=created_by,
         due_date=due_date,
         start_date=start_date,

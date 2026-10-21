@@ -36,7 +36,9 @@
     "assignedToMe": "Assigned to me",
     "unassigned": "Unassigned",
     "archived": "Archived",
-    "statusCategory": "Status category"
+    "statusCategory": "Status category",
+    "filterByType": "Filter by type",
+    "allTypes": "All types"
   },
   "layouts": {
     "label": "Layout",
@@ -147,8 +149,52 @@
     "bulkUpdateError": "Failed to update “{{name}}”: {{error}}",
     "unknownError": "Unknown error"
   },
+  "taskTypes": {
+    "description": "Types are the kinds of task this project holds, like a bug or an idea. Each has its own icon, color and page. New tasks start as the default type.",
+    "noManagePermission": "Only people who can edit this project can change its types.",
+    "existingTypes": "Types",
+    "saveChanges": "Save changes",
+    "addType": "Add type",
+    "limitReached": "A project can have up to {{max}} types.",
+    "iconColumn": "Icon",
+    "colorColumn": "Color",
+    "defaultColumn": "Default",
+    "iconPlaceholder": "Pick an icon",
+    "colorPlaceholder": "Pick a color",
+    "noTypes": "No types yet.",
+    "pagesOnWiderScreen": "A type's page is edited on a wider screen. Open this page on a tablet or a computer.",
+    "addTitle": "Add a type",
+    "addDescription": "Give the new type a name, and pick a type to copy.",
+    "nameLabel": "Name",
+    "namePlaceholder": "Type name",
+    "startFromLabel": "Start from",
+    "startFromHint": "The new type starts with this type's icon, color and page. You can change them afterwards.",
+    "add": "Add",
+    "deleteTitle": "Delete type",
+    "deleteType": "Delete {{name}}",
+    "deleteDescription": "Deleting “{{name}}” also deletes its page. Its tasks are kept and become the type you pick.",
+    "fallbackLabel": "Move its tasks to",
+    "onlyType": "This is the project's only type, and every task needs one.",
+    "reorder": "Reorder",
+    "makeDefault": "Make {{name}} the default",
+    "editPage": "Edit page",
+    "editPageFor": "Edit the page for {{name}}",
+    "orderSaved": "Type order saved",
+    "reorderError": "Couldn't reorder the types",
+    "created": "Type added",
+    "createError": "Couldn't add the type",
+    "updated": "Type updated",
+    "updateError": "Couldn't update the type",
+    "deleted": "Type deleted",
+    "deleteError": "Couldn't delete the type",
+    "noChanges": "No changes to save",
+    "bulkUpdated_one": "{{count}} type updated",
+    "bulkUpdated_other": "{{count}} types updated",
+    "bulkUpdateError": "Couldn't update “{{name}}”: {{error}}"
+  },
   "settings": {
-    "tabTaskStatuses": "Task statuses"
+    "tabTaskStatuses": "Task statuses",
+    "tabTaskTypes": "Task types"
   },
   "files": {
     "newFile": "New file"
@@ -222,7 +268,8 @@
       "priority": "Priority",
       "comments": "Comments",
       "blockers": "Blockers",
-      "tags": "Tags"
+      "tags": "Tags",
+      "type": "Type"
     },
     "limitCount": "{{count}} / {{limit}}",
     "limitTitle": "Takes at most {{limit}} open tasks",

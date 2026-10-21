@@ -33,7 +33,7 @@ import {
   usePresetLink,
   viewKey,
 } from "@/hooks/useListView";
-import { useProject, useProjectTaskStatuses } from "@/hooks/useProjects";
+import { useProject, useProjectTaskStatuses, useProjectTaskTypes } from "@/hooks/useProjects";
 import { useKnownTagIds } from "@/hooks/useTags";
 import { detailLayoutOf, listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import {
@@ -50,7 +50,7 @@ import { columnsOf } from "@/lib/layouts/draft";
 import { catalogChoices, viewGrouping } from "@/lib/layouts/grouping";
 import { pluginFields, shippedPluginParts, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
-import { TASK_LAYOUT } from "@/lib/layouts/tasks";
+import { taskLayoutFor } from "@/lib/layouts/tasks";
 
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
 const TASK_DEFAULTS = { filters: EMPTY_TASK_FILTERS, ...NO_PART_VIEW };
@@ -139,23 +139,25 @@ export function useProjectTaskView({
   const layouts = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
 
   // What an export of the tasks shows: the table's columns, and the task
-  // page's parts in its order. The shipped ones are the app's, so the export
-  // is told them.
+  // page's parts in its order, as the project's default type lays it out. The
+  // shipped ones are the app's, so the export is told them.
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(useProject(projectId).data?.initiative_id);
+  const types = useProjectTaskTypes(projectId).data;
+  const defaultType = types?.find((type) => type.is_default) ?? types?.[0];
   const exportFields = useMemo(() => {
     const table = layouts.find((each) => each.kind === "table");
     const fields = new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field]));
     return {
       columns: columnsOf((table?.definition ?? {}) as ListLayoutDefinitionInput, fields),
       detail: pageParts(
-        TASK_LAYOUT.tree(
-          detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null,
+        taskLayoutFor(defaultType?.layout_preset).tree(
+          detailLayoutOf(layoutsQuery.data, "task", defaultType?.id) as StoredRegions | null,
           shippedPluginParts(plugins)
         )
       ),
     };
-  }, [layouts, plugins, i18n.language, layoutsQuery.data]);
+  }, [layouts, plugins, i18n.language, layoutsQuery.data, defaultType]);
 
   const view = useListView(spec, (kept) => layoutShown(search, layouts, kept)?.kind ?? "table");
   const kind = view.part as ListLayoutReadKind;

@@ -91,6 +91,11 @@ export {
   resetCounter as resetTaskCounter,
   TASK_GROUPINGS,
 } from "./task.factory";
+export {
+  buildDefaultTaskTypes,
+  buildTaskType,
+  resetCounter as resetTaskTypeCounter,
+} from "./taskType.factory";
 export { buildSavedLayoutSet, buildToolLayoutSet } from "./toolLayout.factory";
 export {
   buildOwnedDecoration,
@@ -121,6 +126,7 @@ import { resetRecentCounter } from "./recent.factory";
 import { resetCounter as resetSearchCounter } from "./search.factory";
 import { resetCounter as resetTagCounter } from "./tag.factory";
 import { resetCounter as resetTaskCounter } from "./task.factory";
+import { resetCounter as resetTaskTypeCounter } from "./taskType.factory";
 import { resetCounter as resetUserCounter } from "./user.factory";
 import { resetCounter as resetWikiCounter } from "./wiki.factory";
 
@@ -134,6 +140,7 @@ export function resetFactories(): void {
   resetInitiativeCounter();
   resetProjectCounter();
   resetTaskCounter();
+  resetTaskTypeCounter();
   resetTagCounter();
   resetFileCounter();
   resetCommentCounter();

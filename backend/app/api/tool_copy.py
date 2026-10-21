@@ -59,6 +59,7 @@ from app.services.tenant import content_references, relationships
 from app.services.tenant.relationships import Endpoint
 from app.services.tenant import tags as tags_service
 from app.services.tenant import task_creation
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant import task_statuses as task_statuses_service
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant import wikis as wikis_service
@@ -308,7 +309,18 @@ async def _project_contents(
     status_mapping = await task_statuses_service.clone_statuses(
         session, source_project_id=source.id, target_project_id=copy.id
     )
-    statuses = await task_statuses_service.ensure_default_statuses(session, copy.id)
+    type_mapping = await task_types_service.clone_types(
+        session, source_project_id=source.id, target_project_id=copy.id
+    )
+    # A copy has what its source has; these only repair a source found with
+    # none, where no one's language is in question.
+    locale = task_statuses_service.REPAIR_LOCALE
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, copy.id, locale=locale
+    )
+    types = await task_types_service.ensure_default_types(
+        session, copy.id, locale=locale
+    )
     # A plug-in's copy has the shipped layouts: they are the initiative's own
     # drawing of its tools, which plug-ins do not read.
     if not isinstance(actor, InstallContext):
@@ -317,6 +329,7 @@ async def _project_contents(
             tool_layouts_service.Target(Tool.project, source.id, source.initiative_id),
             tool_layouts_service.Target(Tool.project, copy.id, copy.initiative_id),
             status_mapping=status_mapping,
+            type_mapping=type_mapping,
         )
     return await task_creation.copy_project_tasks(
         session,
@@ -324,6 +337,8 @@ async def _project_contents(
         copy,
         status_mapping=status_mapping,
         fallback_status_ids={status.category: status.id for status in statuses},
+        type_mapping=type_mapping,
+        fallback_type_id=next(t.id for t in types if t.is_default),
     )
 
 

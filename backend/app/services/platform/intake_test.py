@@ -407,7 +407,9 @@ async def test_a_case_whose_task_was_moved_away_is_not_this_projects_case(
 
     await set_rls_context(session, SystemGuild(bound["guild"].id))
     elsewhere = await create_project(session, bound["initiative"], bound["user"])
-    await task_statuses_service.ensure_default_statuses(session, elsewhere.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, elsewhere.id, locale="en"
+    )
     task = (await session.exec(select(Task).where(Task.id == first.task_id))).one()
     task.project_id = elsewhere.id
     task.task_status_id = (

@@ -14,6 +14,7 @@ import { useReadCounter } from "@/api/generated/counters/counters";
 import {
   type PropertyDefinitionRead,
   type PropertySummary,
+  type TaskTypeRead,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
 import { PropertyFilter } from "@/components/properties/PropertyFilter";
@@ -42,6 +43,7 @@ import { POST_DETAIL } from "@/lib/layouts/postLayout";
 import { CALENDAR_PRESETS, TASK_PRESETS } from "@/lib/layouts/presets";
 import { QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
 import { TASK_DETAIL } from "@/lib/layouts/taskLayout";
+import { taskLayoutFor } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -51,6 +53,10 @@ import type { LayoutProject } from "./LayoutSettingsPanel";
 /** A kind of detail, as the editor lays it out. */
 export type EditableDetail = {
   spec: DetailLayoutSpec;
+  /** For a page laid out per type of item, which type's, and its name, which
+   *  `words.name` takes as `{{name}}`. */
+  taskTypeId?: number;
+  typeName?: string;
   /** What the editor says about it, as keys in `projects`, each naming its
    *  namespace where it is another: its name, what it is, that it is as
    *  shipped, what its title and its fields are, and where its own parts'
@@ -132,22 +138,50 @@ const ItemPreview = <I extends { id: number; properties: PropertySummary[] }, C,
   return none ? <p className="text-muted-foreground text-sm">{t(empty)}</p> : null;
 };
 
-/** The task's detail drawn with the project's first task. */
-const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNode }) => {
+/** A task type's page drawn with the project's first task of that type, or
+ *  its first task, shown as that type, where none is. */
+const TaskPreview = ({
+  project,
+  type,
+  tree,
+}: {
+  project: LayoutProject;
+  type: TaskTypeRead;
+  tree: LayoutNode;
+}) => {
   const { t } = useTranslation("layouts");
   const { user } = useAuth();
   const scopePrompt = useScopePrompt();
-  const params = useMemo(
+  const ofTypeParams = useMemo(
+    () => ({
+      ...buildTaskListParams(
+        { ...EMPTY_TASK_FILTERS, type_ids: [type.id] },
+        { projectId: project.id }
+      ),
+      page_size: 1,
+    }),
+    [project.id, type.id]
+  );
+  const anyParams = useMemo(
     () => ({ ...buildTaskListParams(EMPTY_TASK_FILTERS, { projectId: project.id }), page_size: 1 }),
     [project.id]
   );
-  const listed = useTasks(params);
+  const ofType = useTasks(ofTypeParams);
+  const any = useTasks(anyParams, {
+    enabled: ofType.isSuccess && ofType.data.items.length === 0,
+  });
+  const listed = ofType.data?.items.length ? ofType : any;
   const first = listed.data?.items[0]?.id ?? null;
+  const read = useTask(first).data;
+  const item = useMemo(
+    () => (read ? { ...read, task_type_id: type.id, task_type: type } : undefined),
+    [read, type]
+  );
   return (
     <ItemPreview
       detail={TASK_DETAIL}
       tree={tree}
-      item={useTask(first).data}
+      item={item}
       none={listed.isSuccess && first === null}
       empty="noTasks"
       context={() => ({
@@ -156,6 +190,7 @@ const TaskPreview = ({ project, tree }: { project: LayoutProject; tree: LayoutNo
         // cannot change the task.
         readOnlyMessage: t("noticePreview"),
         statuses: project.statuses,
+        types: project.types,
         initiativeId: project.initiativeId,
         currentUserId: user?.id,
         askScope: scopePrompt.ask,
@@ -321,20 +356,24 @@ const PostPreview = ({ initiativeId, tree }: { initiativeId: number; tree: Layou
   );
 };
 
-/** A project's task detail. */
-export const taskDetail = (project: LayoutProject): EditableDetail => ({
-  spec: TASK_DETAIL.spec,
-  words: {
-    name: "layouts:taskLayout",
-    help: "layouts:detailHelp",
-    shipped: "layouts:shipped",
-    titleHelp: "layouts:detailTitleHelp",
-    hiddenHelp: "layouts:hiddenHelp",
-    parts: "layouts:",
-  },
-  fields: TASK_DETAIL.fields,
-  preview: (tree) => <TaskPreview project={project} tree={tree} />,
-});
+/** A project's task pages, one per task type, in the types' order, each
+ *  drawn as its type's shape until it is changed. */
+export const taskDetails = (project: LayoutProject): EditableDetail[] =>
+  project.types.map((type) => ({
+    spec: taskLayoutFor(type.layout_preset),
+    taskTypeId: type.id,
+    typeName: type.name,
+    words: {
+      name: "layouts:typedTaskLayout",
+      help: "layouts:detailHelp",
+      shipped: "layouts:shipped",
+      titleHelp: "layouts:detailTitleHelp",
+      hiddenHelp: "layouts:hiddenHelp",
+      parts: "layouts:",
+    },
+    fields: TASK_DETAIL.fields,
+    preview: (tree) => <TaskPreview project={project} type={type} tree={tree} />,
+  }));
 
 /** The initiative calendar's event detail. */
 export const eventDetail = (initiativeId: number): EditableDetail => ({
@@ -399,6 +438,7 @@ export const taskPresets = (project: LayoutProject) =>
           kind: "project",
           memberScope: { type: "canOpen", tool: Tool.project, id: project.id },
           statuses: project.statuses,
+          types: project.types,
           initiativeId: project.initiativeId,
         }}
         value={value}

@@ -320,6 +320,10 @@ _RELATIONS: tuple[Relation, ...] = (
         hops=(Hop(dataset="task_statuses", left="task_status_id", right="id"),),
     ),
     Relation(
+        name="type",
+        hops=(Hop(dataset="task_types", left="task_type_id", right="id"),),
+    ),
+    Relation(
         name="project",
         hops=(Hop(dataset="projects", left="project_id", right="id"),),
     ),

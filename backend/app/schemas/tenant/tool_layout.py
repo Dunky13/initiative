@@ -113,6 +113,8 @@ class TaskFilterSpec(_Strict):
 
     status_ids: List[int] = Field(default_factory=list, max_length=MAX_STATUS_IDS)
     status_categories: List[TaskStatusCategory] = Field(default_factory=list)
+    #: The project's task types, by id.
+    type_ids: List[int] = Field(default_factory=list, max_length=MAX_STATUS_IDS)
     priorities: List[TaskPriority] = Field(default_factory=list)
     #: Only a list that holds several communities' tasks narrows by them.
     community_ids: List[int] = Field(default_factory=list, max_length=MAX_COMMUNITY_IDS)
@@ -174,6 +176,8 @@ class TaskFieldId(str, Enum):
     rather than a ``Literal`` so the generated client names the set."""
 
     title = "title"
+    #: Which of the project's task types it is: its icon, or its icon and name.
+    type = "type"
     description = "description"
     assignees = "assignees"
     startDate = "startDate"
@@ -305,6 +309,7 @@ GroupingField = Annotated[str, AfterValidator(_grouping_field)]
 # The built-in fields each place draws, named for the generated client.
 _COLUMNS = {
     "title",
+    "type",
     "assignees",
     "startDate",
     "dueDate",
@@ -314,6 +319,7 @@ _COLUMNS = {
 }
 _PAGE = {
     "title",
+    "type",
     "description",
     "assignees",
     "checklist",
@@ -636,6 +642,9 @@ class ListLayoutWrite(_Strict):
 
 class DetailLayoutWrite(_Strict):
     kind: DetailLayoutKind
+    #: The type of task a project's task page is for; required there, and
+    #: nowhere else.
+    task_type_id: Optional[int] = Field(default=None, gt=0)
     definition: DetailLayoutDefinition
 
 
@@ -673,6 +682,10 @@ class DetailLayoutRead(SanitizedBaseModel):
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     kind: DetailLayoutKind
+    #: The type of task a project's task page is for, and its name; None for
+    #: every other detail.
+    task_type_id: Optional[int] = None
+    task_type_name: Optional[str] = None
     definition: DetailLayoutDefinition
     #: When it was last changed; None as shipped.
     updated_at: Optional[datetime] = None

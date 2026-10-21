@@ -23,6 +23,7 @@ from app.schemas.tenant.evidence import EvidenceRead
 from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.initiative import InitiativeSummary
 from app.schemas.tenant.task_status import TaskStatusRead
+from app.schemas.tenant.task_type import TaskTypeRead
 from app.schemas.tenant.tag import TagSummary
 from app.schemas.tenant.property import (
     PropertiesOnCreate,
@@ -136,6 +137,8 @@ class TaskCreate(TaskBase, PropertiesOnCreate):
     tz: Optional[str] = Field(default=None, max_length=64)
     assignee_ids: List[PersonId] = Field(default_factory=list)
     task_status_id: Optional[int] = None
+    #: One of the project's task types; its default when not given.
+    task_type_id: Optional[int] = None
     tag_ids: List[int] = Field(default_factory=list, max_length=100)
     checklist: List[ChecklistItemInput] = Field(default_factory=list)
 
@@ -158,6 +161,9 @@ class TaskUpdate(PropertiesOnUpdate):
     #: ``DESCRIPTION_CHANGED``.
     description_base: Optional[RichMentionStr] = None
     task_status_id: Optional[int] = None
+    #: Another of the project's task types. Nothing the task holds is lost:
+    #: what the new type's page does not show is kept, not cleared.
+    task_type_id: Optional[int] = None
     #: Move the task to its project's column of this category (the nearest
     #: one before it where the project has none), for a caller that knows
     #: "done" but not which column that is. Ignored with ``task_status_id``,
@@ -230,6 +236,9 @@ class TaskRead(TaskBase):
     project_id: int
     task_status_id: int
     task_status: TaskStatusRead
+    #: Which of its project's task types the task is.
+    task_type_id: int
+    task_type: TaskTypeRead
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -281,6 +290,9 @@ class TaskListRead(TaskBase):
     project_id: int
     task_status_id: int
     task_status: TaskStatusRead
+    #: Which of its project's task types the task is.
+    task_type_id: int
+    task_type: TaskTypeRead
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None

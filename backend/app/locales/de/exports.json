@@ -49,6 +49,7 @@
     "tag_ids": "Tags",
     "assignee_ids": "Zuständige",
     "task_status_id": "Status",
+    "task_type_id": "Typ",
     "priority": "Priorität",
     "date_group": "Zeitraum",
     "project_id": "Projekt",

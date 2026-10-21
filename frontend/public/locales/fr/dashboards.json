@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Catégorie de statut",
     "task_status_id": "Statut",
+    "task_type_id": "Type",
     "priority": "Priorité",
     "assignee_ids": "Responsable",
     "tag_ids": "Étiquette",
@@ -198,6 +199,7 @@
     "value": "Valeur",
     "empty": "Aucun filtre — affiche tout dans l'initiative.",
     "chooseValue": "Choisir…",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relative",
     "absolute": "À une date",
     "relativeDays": "Jours à partir d'aujourd'hui",

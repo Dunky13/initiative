@@ -1,0 +1,17 @@
+{
+  "taskTypes": {
+    "defaults": {
+      "task": "Task",
+      "bug": "Bug",
+      "idea": "Idea",
+      "milestone": "Milestone"
+    }
+  },
+  "taskStatuses": {
+    "defaults": {
+      "todo": "To Do",
+      "inProgress": "In Progress",
+      "done": "Done"
+    }
+  }
+}

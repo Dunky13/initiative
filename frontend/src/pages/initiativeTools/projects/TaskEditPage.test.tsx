@@ -20,6 +20,7 @@ import {
   buildPropertyDefinition,
   buildPropertySummary,
   buildTask,
+  buildTaskType,
   buildToolLayoutSet,
   buildUser,
   initiativeCan,
@@ -183,6 +184,8 @@ const renderTaskPage = ({
 const LAYOUT: DetailLayoutRead[] = [
   {
     kind: "task",
+    task_type_id: 1,
+    task_type_name: "Task",
     updated_at: "2026-10-01T12:00:00.000Z",
     definition: {
       main: [
@@ -828,6 +831,72 @@ describe("TaskEditPage", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("draws a task with its type's page, and redraws it when the type changes", async () => {
+    const types = [
+      buildTaskType({ id: 1, name: "Task", is_default: true }),
+      buildTaskType({ id: 2, name: "Bug", icon: "bug", layout_preset: "fix" }),
+    ];
+    server.use(
+      communityHttp.get("/projects/:id/task-types/", () => HttpResponse.json(types)),
+      communityHttp.get("/layouts/", () =>
+        HttpResponse.json(
+          buildToolLayoutSet({
+            layouts: [
+              {
+                kind: "task",
+                task_type_id: 2,
+                task_type_name: "Bug",
+                updated_at: "2026-10-01T12:00:00.000Z",
+                definition: {
+                  main: [
+                    {
+                      type: "section",
+                      props: { title: "Steps" },
+                      children: [{ type: "field", props: { field: "description" } }],
+                    },
+                  ],
+                  side: [{ type: "field", props: { field: "type" } }],
+                },
+              },
+            ],
+          })
+        )
+      )
+    );
+    const { task } = renderTaskPage();
+    const sent: Record<string, unknown>[] = [];
+    server.use(
+      communityHttp.patch("/tasks/:taskId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        sent.push(body);
+        const type = types.find((each) => each.id === body.task_type_id);
+        if (type) Object.assign(task, { task_type_id: type.id, task_type: type });
+        return HttpResponse.json(task);
+      })
+    );
+
+    // A Task is drawn as the shipped page.
+    await fieldNamed(/^type$/i);
+    expect(screen.queryByRole("button", { name: "Steps" })).not.toBeInTheDocument();
+
+    await choose(/^type$/i, /bug/i);
+
+    await waitFor(() => expect(sent).toEqual([expect.objectContaining({ task_type_id: 2 })]));
+    expect(await screen.findByRole("button", { name: "Steps" })).toBeInTheDocument();
+  });
+
+  it("shows no type in a project with only one", async () => {
+    server.use(
+      communityHttp.get("/projects/:id/task-types/", () =>
+        HttpResponse.json([buildTaskType({ id: 1, name: "Task", is_default: true })])
+      )
+    );
+    renderTaskPage();
+
+    await fieldNamed(/^priority$/i);
+    expect(screen.queryByRole("group", { name: /^type$/i })).not.toBeInTheDocument();
+  });
+
   it("draws a property the layout places on its own, saving it there", async () => {
     server.use(
       communityHttp.get("/property-definitions/", () =>
@@ -841,6 +910,8 @@ describe("TaskEditPage", () => {
             layouts: [
               {
                 kind: "task",
+                task_type_id: 1,
+                task_type_name: "Task",
                 updated_at: "2026-10-01T12:00:00.000Z",
                 definition: {
                   side: [{ type: "field", props: { field: "property:9" } }, { type: "properties" }],
@@ -903,6 +974,8 @@ describe("TaskEditPage", () => {
             layouts: [
               {
                 kind: "task",
+                task_type_id: 1,
+                task_type_name: "Task",
                 updated_at: "2026-10-01T12:00:00.000Z",
                 definition: { side: [{ type: "field", props: { field: "property:9" } }] },
               },

@@ -34,12 +34,22 @@ import { MAX_PRESETS } from "@/lib/layouts/presets";
 import { TASK_COLUMNS } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 
-import { calendarPresets, eventDetail, taskDetail, taskPresets } from "./details";
+import { calendarPresets, eventDetail, taskDetails, taskPresets } from "./details";
 import { LayoutEditor } from "./LayoutEditor";
 
 const STATUSES = buildDefaultTaskStatuses(1);
-const PROJECT = { id: 1, initiativeId: 1, statuses: STATUSES };
-const PROJECT_DETAILS = [taskDetail(PROJECT)];
+const TASK_TYPE = {
+  id: 1,
+  project_id: 1,
+  name: "Task",
+  position: 0,
+  is_default: true,
+  color: "#94A3B8",
+  icon: "square-check",
+  layout_preset: "plain",
+};
+const PROJECT = { id: 1, initiativeId: 1, statuses: STATUSES, types: [TASK_TYPE] };
+const PROJECT_DETAILS = taskDetails(PROJECT);
 const CALENDAR_DETAILS = [eventDetail(1)];
 const PROJECT_PRESETS = taskPresets(PROJECT);
 const CALENDAR_PRESETS = calendarPresets(1);
@@ -131,8 +141,9 @@ beforeEach(() => {
       sent.push({ save: body });
       return HttpResponse.json(buildSavedLayoutSet(buildToolLayoutSet(), body));
     }),
-    communityHttp.delete("/layouts/:kind", ({ params }) => {
-      sent.push({ reset: String(params.kind) });
+    communityHttp.delete("/layouts/:kind", ({ params, request }) => {
+      const typed = new URL(request.url).searchParams.get("task_type_id");
+      sent.push({ reset: typed ? `${String(params.kind)}:${typed}` : String(params.kind) });
       return HttpResponse.json(buildToolLayoutSet());
     }),
     communityHttp.put("/layouts/default", async ({ request }) => {
@@ -602,11 +613,10 @@ describe("LayoutEditor", () => {
 
       await waitFor(() => expect(sent).toHaveLength(1));
       const card = saved("board")?.card;
-      expect(
-        (
-          (card as LayoutNode | undefined)?.children?.[0] as LayoutNode | undefined
-        )?.children?.slice(0, 2)
-      ).toEqual([
+      // Into the row the title shares with its type's icon.
+      const first = (card as LayoutNode | undefined)?.children?.[0] as LayoutNode | undefined;
+      expect((first?.children?.[0] as LayoutNode | undefined)?.children).toEqual([
+        { type: "field", props: { field: "type" } },
         { type: "field", props: { field: "priority" } },
         { type: "field", props: { field: "title" } },
       ]);
@@ -615,7 +625,7 @@ describe("LayoutEditor", () => {
 
   describe("the task's detail", () => {
     it("hides a field taken off it, and stores the layout whole", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
       expect(await within(await canvas()).findByDisplayValue("Draw the map")).toBeInTheDocument();
 
       await user.click(within(await outline()).getByRole("button", { name: /^hide tags$/i }));
@@ -638,7 +648,7 @@ describe("LayoutEditor", () => {
           );
         })
       );
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -661,7 +671,7 @@ describe("LayoutEditor", () => {
     });
 
     it("places a property on its own", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -682,7 +692,7 @@ describe("LayoutEditor", () => {
     });
 
     it("adds accordions where asked for, each named by typing over its title", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -716,12 +726,14 @@ describe("LayoutEditor", () => {
 
     it("goes back to the shipped layout", async () => {
       const { user } = editor(
-        "task",
+        "task:1",
         vi.fn(),
         buildToolLayoutSet({
           layouts: [
             {
               kind: "task",
+              task_type_id: 1,
+              task_type_name: "Task",
               definition: { main: [{ type: "comments" }] },
               updated_at: "2026-10-01T12:00:00.000Z",
             },
@@ -732,7 +744,7 @@ describe("LayoutEditor", () => {
       await user.click(await screen.findByRole("button", { name: /use the shipped layout/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-      await waitFor(() => expect(sent).toEqual([{ reset: "task" }]));
+      await waitFor(() => expect(sent).toEqual([{ reset: "task:1" }]));
     });
   });
 

@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.email_i18n import translate
 from app.models.tenant.project import Project
 from app.models.tenant.task import TaskStatus, TaskStatusCategory
 from app.schemas.tenant.task_status import InitiativeTaskStatusRead
@@ -27,11 +28,11 @@ def defaults_for_category(category: TaskStatusCategory) -> tuple[str, str]:
 
 
 def _seeded(
-    name: str, category: TaskStatusCategory, position: int, *, is_default: bool = False
+    key: str, category: TaskStatusCategory, position: int, *, is_default: bool = False
 ) -> dict:
     color, icon = CATEGORY_DEFAULTS[category]
     return {
-        "name": name,
+        "key": key,
         "category": category,
         "position": position,
         "is_default": is_default,
@@ -45,11 +46,24 @@ def _seeded(
 # it in a status; Backlog left because most people read it as To Do anyway. The
 # ``backlog`` category stays available for projects that already use it, and for
 # anyone who wants to add the column back.
+#: Each is named from the ``projects`` catalogue
+#: (``taskStatuses.defaults.<key>``) in the language of whoever makes the project.
 DEFAULT_TASK_STATUSES: Sequence[dict] = (
-    _seeded("To Do", TaskStatusCategory.todo, 0, is_default=True),
-    _seeded("In Progress", TaskStatusCategory.in_progress, 1),
-    _seeded("Done", TaskStatusCategory.done, 2),
+    _seeded("todo", TaskStatusCategory.todo, 0, is_default=True),
+    _seeded("inProgress", TaskStatusCategory.in_progress, 1),
+    _seeded("done", TaskStatusCategory.done, 2),
 )
+
+#: The language a project is given its statuses in when it is found without
+#: any rather than made: a repair, where nobody's language is known.
+REPAIR_LOCALE = "en"
+
+
+def default_name(key: str, locale: str) -> str:
+    """One of the starting statuses' names, in ``locale`` (English for a
+    language the app does not speak)."""
+    return translate(f"taskStatuses.defaults.{key}", locale, namespace="projects")
+
 
 # Where an unmarked project's default lands when no status carries the flag.
 # Backlog leads because only a project seeded before this change has one, and
@@ -109,15 +123,20 @@ async def list_statuses(session: AsyncSession, project_id: int) -> Sequence[Task
 
 
 async def ensure_default_statuses(
-    session: AsyncSession, project_id: int
+    session: AsyncSession, project_id: int, *, locale: str
 ) -> list[TaskStatus]:
+    """The project's statuses, giving it the three it starts with if it has
+    none, named in ``locale``: the language of whoever is making the project."""
     existing = await list_statuses(session, project_id)
     if existing:
         return _sorted(existing)
 
     created: list[TaskStatus] = []
     for payload in DEFAULT_TASK_STATUSES:
-        status = TaskStatus(project_id=project_id, **payload)
+        fields = {k: v for k, v in payload.items() if k != "key"}
+        status = TaskStatus(
+            project_id=project_id, name=default_name(payload["key"], locale), **fields
+        )
         session.add(status)
         created.append(status)
     await session.flush()
@@ -125,7 +144,7 @@ async def ensure_default_statuses(
 
 
 async def get_default_status(session: AsyncSession, project_id: int) -> TaskStatus:
-    statuses = await ensure_default_statuses(session, project_id)
+    statuses = await ensure_default_statuses(session, project_id, locale=REPAIR_LOCALE)
     for status in statuses:
         if status.is_default:
             return status

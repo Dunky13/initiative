@@ -49,6 +49,7 @@
     "tag_ids": "Etiquetas",
     "assignee_ids": "Asignados",
     "task_status_id": "Estado",
+    "task_type_id": "Tipo",
     "priority": "Prioridad",
     "date_group": "Periodo",
     "project_id": "Proyecto",

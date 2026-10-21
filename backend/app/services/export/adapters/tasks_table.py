@@ -83,6 +83,7 @@ TASK_EXPORT_FIELDS: dict[
     str, Optional[tuple[str, Callable[[TaskListRead, str], Any]]]
 ] = {
     TaskFieldId.title: ("title", lambda t, loc: t.title),
+    TaskFieldId.type: ("task_type_id", lambda t, loc: t.task_type.name),
     # The excerpt the list shows; its mentions are named where it is written.
     TaskFieldId.description: ("description", lambda t, loc: t.description_excerpt),
     TaskFieldId.assignees: (

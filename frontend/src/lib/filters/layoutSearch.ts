@@ -16,9 +16,13 @@ const KINDS: readonly string[] = [...LISTS, ...DETAILS];
 export const parseListLayout = (raw: unknown): ListLayoutReadKind | undefined =>
   typeof raw === "string" && LISTS.includes(raw) ? (raw as ListLayoutReadKind) : undefined;
 
-/** Coerce the layout editor's `?layout=`, which may also name a detail. */
+/** A project's task page for one task type: `task:<type id>`. */
+const TYPED_DETAIL = /^task:[1-9][0-9]{0,9}$/;
+
+/** Coerce the layout editor's `?layout=`, which may also name a detail, or one
+ *  task type's page (`task:12`). */
 export const parseLayoutKind = (raw: unknown): string | undefined =>
-  typeof raw === "string" && KINDS.includes(raw) ? raw : undefined;
+  typeof raw === "string" && (KINDS.includes(raw) || TYPED_DETAIL.test(raw)) ? raw : undefined;
 
 /** What a preset's slug is written in, as the server allows. */
 const SLUG_CHARS = new Set("abcdefghijklmnopqrstuvwxyz0123456789-");

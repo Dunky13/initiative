@@ -256,7 +256,9 @@ async def test_a_status_from_another_project_is_refused(client, session, owner):
     ).one()
     elsewhere = await create_project(session, initiative, guild_owner)
 
-    await task_statuses_service.ensure_default_statuses(session, elsewhere.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, elsewhere.id, locale="en"
+    )
     await session.commit()
     foreign = (
         await session.exec(

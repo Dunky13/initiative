@@ -25,6 +25,7 @@ import {
   type TaskListRead,
   type TaskPriority,
   type TaskStatusRead,
+  type TaskTypeRead,
   type TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { priorityVariant } from "@/components/projects/projectTasksConfig";
@@ -32,6 +33,7 @@ import { TaskAssigneeList } from "@/components/projects/TaskAssigneeList";
 import { extractUser, PropertyValueCell } from "@/components/properties/PropertyValueCell";
 import { TagBadge } from "@/components/tags/TagBadge";
 import { TaskStatusOption } from "@/components/tasks/TaskStatusOption";
+import { TaskTypeOption } from "@/components/tasks/TaskTypeOption";
 import { Badge } from "@/components/ui/badge";
 import { dateTimeFormat } from "@/lib/intl";
 import type { FieldDef } from "@/lib/layouts/fields";
@@ -206,6 +208,8 @@ const builtinMove = (id: string): TaskGrouping["move"] => {
       return (_from, to) => ({ status: Number(to) });
     case "priority":
       return (_from, to) => ({ patch: { priority: to as TaskPriority } });
+    case "task_type_id":
+      return (_from, to) => ({ patch: { task_type_id: Number(to) } });
     case "assignee_ids":
       return (from, to) => {
         const { add, remove } = swap(from, to);
@@ -276,6 +280,7 @@ export const offeredGroupings = ({
     ...tasks.map((task) => task.task_status),
     ...statuses,
   ]);
+  const types = byId<TaskTypeRead>(tasks.map((task) => task.task_type));
   const people = byId(tasks.flatMap((task) => task.assignees));
   const tags = byId(tasks.flatMap((task) => task.tags ?? []));
 
@@ -345,6 +350,14 @@ export const offeredGroupings = ({
           const status = statusesById.get(key);
           return status ? (
             <TaskStatusOption status={status} className="font-medium text-base" />
+          ) : (
+            named(key)
+          );
+        }
+        case "task_type": {
+          const type = types.get(key);
+          return type ? (
+            <TaskTypeOption type={type} className="font-medium text-base" />
           ) : (
             named(key)
           );

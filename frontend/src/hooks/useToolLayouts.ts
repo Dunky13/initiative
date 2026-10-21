@@ -112,9 +112,13 @@ export const detailLayouts = (set: Pick<ToolLayoutSetRead, "layouts"> | undefine
 /** One detail's layout as changed, or null where it is drawn as shipped. */
 export const detailLayoutOf = (
   set: ToolLayoutSetRead | undefined,
-  kind: DetailLayoutRead["kind"]
+  kind: DetailLayoutRead["kind"],
+  /** For a detail laid out per type (a project's task page), which type's. */
+  taskTypeId?: number | null
 ): DetailLayoutDefinitionInput | null => {
-  const layout = detailLayouts(set).find((each) => each.kind === kind);
+  const layout = detailLayouts(set).find(
+    (each) => each.kind === kind && (each.task_type_id ?? null) === (taskTypeId ?? null)
+  );
   return layout?.updated_at ? (layout.definition as DetailLayoutDefinitionInput) : null;
 };
 
@@ -122,7 +126,11 @@ export const detailLayoutOf = (
  *  the list it opens on. */
 export type LayoutChange =
   | { save: ListLayoutWrite | DetailLayoutWrite }
-  | { reset: ListLayoutReadKind | DetailLayoutRead["kind"] }
+  | {
+      reset: ListLayoutReadKind | DetailLayoutRead["kind"];
+      /** For a detail laid out per type: which type's page. */
+      taskTypeId?: number;
+    }
   | { opensOn: ListLayoutReadKind };
 
 /** Make `changes`, one request each, in order, writing each answer to the
@@ -143,7 +151,10 @@ export const useSaveLayouts = (
             "save" in change
               ? await putLayout(communityId, change.save, target)
               : "reset" in change
-                ? await resetLayout(communityId, change.reset, target)
+                ? await resetLayout(communityId, change.reset, {
+                    ...target,
+                    ...(change.taskTypeId ? { task_type_id: change.taskTypeId } : {}),
+                  })
                 : await putDefaultLayout(communityId, { kind: change.opensOn }, target);
           queryClient.setQueryData(getGetLayoutsQueryKey(communityId, target), set);
         }

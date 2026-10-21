@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional, Sequence
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -23,10 +23,17 @@ from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
-from app.core.messages import ToolLayoutMessages
-from app.core.tools import DETAIL_LAYOUTS, LAYOUT_DEFAULT, LIST_LAYOUTS, Tool
+from app.core.messages import TaskTypeMessages, ToolLayoutMessages
+from app.core.tools import (
+    DETAIL_LAYOUTS,
+    LAYOUT_DEFAULT,
+    LIST_LAYOUTS,
+    TYPED_DETAILS,
+    Tool,
+)
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.session import require_guild_context
+from app.models.tenant.task import TaskType
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import (
     ASSIGNEE_ME,
@@ -158,10 +165,42 @@ async def rows_by_instance(
     return found
 
 
-def read_set(tool: Tool, rows: list[ToolLayout]) -> list[ToolLayoutRead]:
+async def item_types(session: AsyncSession, target: Target) -> list[TaskType]:
+    """The types of item the target lays out one page each for: a project's
+    task types, in order. None for a target that has one page per kind."""
+    if target.tool not in TYPED_DETAILS or target.tool_id is None:
+        return []
+    from app.services.tenant.task_types import list_types
+
+    return await list_types(session, target.tool_id)
+
+
+async def item_types_by_instance(
+    session: AsyncSession, tool: Tool, tool_ids: list[int]
+) -> dict[int, list[TaskType]]:
+    """:func:`item_types` for several instances of one tool, in one read."""
+    if tool not in TYPED_DETAILS or not tool_ids:
+        return {}
+    rows = await session.exec(
+        select(TaskType)
+        .where(col(TaskType.project_id).in_(tool_ids))
+        .order_by(col(TaskType.position), col(TaskType.id))
+    )
+    found: dict[int, list[TaskType]] = {}
+    for row in rows.all():
+        found.setdefault(row.project_id, []).append(row)
+    return found
+
+
+def read_set(
+    tool: Tool, rows: list[ToolLayout], types: Sequence[TaskType] = ()
+) -> list[ToolLayoutRead]:
     """Every layout the tool draws, its lists then its details, each as stored
-    or as shipped. The target opens on its default list, or on the first."""
-    stored = {row.kind: row for row in rows}
+    or as shipped. The target opens on its default list, or on the first. A
+    detail laid out per type (:data:`TYPED_DETAILS`) is one per type, in the
+    types' order."""
+    stored = {row.kind: row for row in rows if row.task_type_id is None}
+    typed = {row.task_type_id: row for row in rows if row.task_type_id is not None}
     lists = LIST_LAYOUTS.get(tool, ())
     chosen = stored.get(LAYOUT_DEFAULT)
     default = chosen.definition.get("kind") if chosen is not None else None
@@ -185,14 +224,29 @@ def read_set(tool: Tool, rows: list[ToolLayout]) -> list[ToolLayoutRead]:
         )
         for kind in lists
     ]
-    layouts.extend(
-        DetailLayoutRead(
-            kind=kind,
-            definition=DetailLayoutDefinition.model_validate(definition(kind)),
-            updated_at=when(kind),
-        )
-        for kind in DETAIL_LAYOUTS.get(tool, ())
-    )
+    for kind in DETAIL_LAYOUTS.get(tool, ()):
+        if TYPED_DETAILS.get(tool) != kind:
+            layouts.append(
+                DetailLayoutRead(
+                    kind=kind,
+                    definition=DetailLayoutDefinition.model_validate(definition(kind)),
+                    updated_at=when(kind),
+                )
+            )
+            continue
+        for task_type in types:
+            row = typed.get(task_type.id)
+            layouts.append(
+                DetailLayoutRead(
+                    kind=kind,
+                    task_type_id=task_type.id,
+                    task_type_name=task_type.name,
+                    definition=DetailLayoutDefinition.model_validate(
+                        row.definition if row is not None else {}
+                    ),
+                    updated_at=row.updated_at if row is not None else None,
+                )
+            )
     return layouts
 
 
@@ -245,6 +299,11 @@ def _require(kind: str, kinds: tuple[str, ...]) -> None:
         raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
 
 
+def _typed(target: Target, kind: str) -> bool:
+    """Whether the target lays out ``kind`` once per type of item."""
+    return TYPED_DETAILS.get(target.tool) == kind
+
+
 def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
     """A layout's definition as stored, or a 400 naming what is wrong with it.
     What it leaves out is left out, so it is drawn as shipped."""
@@ -252,6 +311,8 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
     stored = definition.model_dump(mode="json", exclude_unset=True)
     if isinstance(write, DetailLayoutWrite):
         _require(write.kind, DETAIL_LAYOUTS.get(target.tool, ()))
+        if _typed(target, write.kind) != (write.task_type_id is not None):
+            raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
         assert isinstance(definition, DetailLayoutDefinition)
         roots = [
             part
@@ -288,6 +349,8 @@ GROUPED_LISTS = ("table", "board")
 _GROUPED_DATASET = "tasks"
 #: A board's columns are its statuses already, so its bands never are.
 _BOARD_COLUMNS = "task_status_id"
+#: A task's type, as the field registry names it.
+_TYPE_FIELD = "task_type_id"
 
 
 def _check_groupings(kind: str, definition: ListLayoutDefinition) -> None:
@@ -349,13 +412,34 @@ async def _locked_rows(session: AsyncSession, target: Target) -> list[ToolLayout
     return await list_rows(session, target)
 
 
-async def _keep(
-    session: AsyncSession, target: Target, kind: str, definition: dict[str, Any]
+async def _require_type(
+    session: AsyncSession, target: Target, task_type_id: Optional[int]
 ) -> None:
-    """Store ``definition`` as the target's ``kind``, marking when it changed.
-    The target's other rows are not touched."""
+    """A 404 unless a type named is one of the target's own."""
+    if task_type_id is None:
+        return
+    if task_type_id not in {t.id for t in await item_types(session, target)}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=TaskTypeMessages.NOT_FOUND,
+        )
+
+
+async def _keep(
+    session: AsyncSession,
+    target: Target,
+    kind: str,
+    definition: dict[str, Any],
+    task_type_id: Optional[int] = None,
+) -> None:
+    """Store ``definition`` as the target's ``kind`` (for one type of item,
+    when it is laid out per type), marking when it changed. The target's other
+    rows are not touched."""
     rows = await _locked_rows(session, target)
-    row = next((row for row in rows if row.kind == kind), None)
+    row = next(
+        (row for row in rows if row.kind == kind and row.task_type_id == task_type_id),
+        None,
+    )
     if row is None:
         session.add(
             ToolLayout(
@@ -363,6 +447,7 @@ async def _keep(
                 tool=target.tool.value,
                 tool_id=target.tool_id,
                 kind=kind,
+                task_type_id=task_type_id,
                 definition=definition,
             )
         )
@@ -375,7 +460,10 @@ async def _keep(
 
 async def save(session: AsyncSession, target: Target, write: ToolLayoutWrite) -> None:
     """Change one of the target's layouts."""
-    await _keep(session, target, write.kind, check(target, write))
+    definition = check(target, write)
+    task_type_id = getattr(write, "task_type_id", None)
+    await _require_type(session, target, task_type_id)
+    await _keep(session, target, write.kind, definition, task_type_id)
 
 
 async def save_default(session: AsyncSession, target: Target, kind: str) -> None:
@@ -384,13 +472,22 @@ async def save_default(session: AsyncSession, target: Target, kind: str) -> None
     await _keep(session, target, LAYOUT_DEFAULT, {"kind": kind})
 
 
-async def reset(session: AsyncSession, target: Target, kind: str) -> None:
-    """Draw one of the target's layouts as shipped again."""
+async def reset(
+    session: AsyncSession,
+    target: Target,
+    kind: str,
+    task_type_id: Optional[int] = None,
+) -> None:
+    """Draw one of the target's layouts as shipped again: for one type of
+    item, when it is laid out per type."""
     _require(
         kind, LIST_LAYOUTS.get(target.tool, ()) + DETAIL_LAYOUTS.get(target.tool, ())
     )
+    if _typed(target, kind) != (task_type_id is not None):
+        raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
+    await _require_type(session, target, task_type_id)
     for row in await _locked_rows(session, target):
-        if row.kind == kind:
+        if row.kind == kind and row.task_type_id == task_type_id:
             await session.delete(row)
     await session.flush()
 
@@ -418,6 +515,8 @@ class Remap:
 
     statuses: IdMap
     properties: Optional[IdMap] = None
+    #: The instance's task types, as its statuses are; None keeps them.
+    types: Optional[IdMap] = None
     community: bool = True
     people: frozenset[int] = frozenset()
 
@@ -465,6 +564,12 @@ def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, A
         spec = dict(spec)
         if "status_ids" in spec:
             spec["status_ids"] = statuses(spec["status_ids"])
+        if "type_ids" in spec and remap.types is not None:
+            spec["type_ids"] = [
+                mapped
+                for old in spec["type_ids"]
+                if isinstance(old, int) and (mapped := remap.types(old)) is not None
+            ]
         if "properties" in spec:
             spec["properties"] = [
                 {
@@ -489,11 +594,14 @@ def remapped_definition(definition: dict[str, Any], remap: Remap) -> dict[str, A
 
     def hidden(grouping: dict[str, Any]) -> list[str]:
         keys = grouping.get("hidden", [])
-        if grouping.get("field") == _BOARD_COLUMNS:
+        rows = {_BOARD_COLUMNS: remap.statuses, _TYPE_FIELD: remap.types}.get(
+            grouping.get("field")
+        )
+        if rows is not None:
             return [
                 str(mapped)
                 for key in keys
-                if key.isdigit() and (mapped := remap.statuses(int(key))) is not None
+                if key.isdigit() and (mapped := rows(int(key))) is not None
             ]
         if not remap.community and (
             grouping.get("field") in _COMMUNITY_GROUPINGS
@@ -554,15 +662,24 @@ async def copy_layouts(
     copy: Target,
     *,
     status_mapping: dict[int, int],
+    type_mapping: dict[int, int],
 ) -> None:
-    """Give ``copy`` what ``source`` stored, its presets' statuses its own."""
+    """Give ``copy`` what ``source`` stored, its presets' statuses and its
+    pages' types its own."""
     for row in await list_rows(session, source):
+        if row.task_type_id is not None and row.task_type_id not in type_mapping:
+            continue
         session.add(
             ToolLayout(
                 initiative_id=copy.initiative_id,
                 tool=copy.tool.value,
                 tool_id=copy.tool_id,
                 kind=row.kind,
+                task_type_id=(
+                    type_mapping[row.task_type_id]
+                    if row.task_type_id is not None
+                    else None
+                ),
                 definition=remapped_definition(
                     row.definition,
                     Remap(
@@ -572,6 +689,7 @@ async def copy_layouts(
                             if copy.initiative_id == source.initiative_id
                             else lambda _id: None
                         ),
+                        types=type_mapping.get,
                     ),
                 ),
             )
@@ -579,14 +697,33 @@ async def copy_layouts(
     await session.flush()
 
 
+@dataclass(frozen=True)
+class Restored:
+    """A layout an import brings: its kind, its definition with the ids the
+    instance has, and the type of item it lays out when it is one of a
+    kind's per type (a page whose type is not there is ``None``)."""
+
+    kind: str
+    definition: dict[str, Any]
+    task_type_id: Optional[int] = None
+
+
 async def restore_layouts(
-    session: AsyncSession, target: Target, layouts: Iterable[tuple[str, dict[str, Any]]]
+    session: AsyncSession, target: Target, layouts: Iterable[Restored]
 ) -> None:
     """Give a new instance the layouts an import brings, each held to what a
-    write of it would be. One that is not, or that names a kind its tool does
-    not draw, is drawn as shipped."""
+    write of it would be. One that is not, that names a kind its tool does
+    not draw, or that is one of a kind's per type without its type, is drawn
+    as shipped."""
     lists = LIST_LAYOUTS.get(target.tool, ())
-    for kind, definition in layouts:
+    # Two pages for one type (two of the file's types are one here) keep the
+    # first.
+    restored: set[tuple[str, Optional[int]]] = set()
+    for layout in layouts:
+        kind, definition = layout.kind, layout.definition
+        task_type_id = layout.task_type_id if _typed(target, kind) else None
+        if (kind, task_type_id) in restored:
+            continue
         try:
             if kind == LAYOUT_DEFAULT:
                 stored = ToolLayoutDefaultWrite.model_validate(definition).model_dump()
@@ -595,16 +732,28 @@ async def restore_layouts(
                 write = ListLayoutWrite if kind in lists else DetailLayoutWrite
                 stored = check(
                     target,
-                    write.model_validate({"kind": kind, "definition": definition}),
+                    write.model_validate(
+                        {
+                            "kind": kind,
+                            "definition": definition,
+                            **(
+                                {"task_type_id": task_type_id}
+                                if write is DetailLayoutWrite
+                                else {}
+                            ),
+                        }
+                    ),
                 )
         except (HTTPException, CodedError, ValidationError):
             continue
+        restored.add((kind, task_type_id))
         session.add(
             ToolLayout(
                 initiative_id=target.initiative_id,
                 tool=target.tool.value,
                 tool_id=target.tool_id,
                 kind=kind,
+                task_type_id=task_type_id,
                 definition=stored,
             )
         )
@@ -761,8 +910,10 @@ def _rewrite(
     """Store ``definition`` on ``row``, unless it is not a layout it could hold."""
     target = Target(Tool(row.tool), row.tool_id, row.initiative_id)
     try:
+        typed = {"task_type_id": row.task_type_id} if row.task_type_id else {}
         check(
-            target, write.model_validate({"kind": row.kind, "definition": definition})
+            target,
+            write.model_validate({"kind": row.kind, **typed, "definition": definition}),
         )
     except (HTTPException, CodedError, ValidationError):
         return

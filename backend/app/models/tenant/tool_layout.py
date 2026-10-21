@@ -12,6 +12,9 @@ A row is stored when what it holds is changed, and only then, so its
 ``updated_at`` is its own; what is not stored is drawn as shipped
 (``app.services.tenant.tool_layouts``).
 
+A project's task page is one per task type (``task_type_id``,
+``app.core.tools.TYPED_DETAILS``), and goes with its type.
+
 ``definition`` holds the validated tree (``app.schemas.tenant.tool_layout``).
 There is no foreign key to the instance: the purge removes an instance's
 layouts explicitly, as it does its property values. The initiative is a
@@ -39,13 +42,17 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
 
-from app.core.tools import LAYOUT_KINDS, LAYOUT_TOOLS, LAYOUTS_SHARED
+from app.core.tools import LAYOUT_KINDS, LAYOUT_TOOLS, LAYOUTS_SHARED, TYPED_DETAILS
 from app.db.registry_checks import FROM_REGISTRY
 from app.models.tenant._mixins import CreatedByMixin
 
 _TOOL_VALUES = ", ".join(f"'{tool.value}'" for tool in LAYOUT_TOOLS)
 _SHARED_VALUES = ", ".join(f"'{tool.value}'" for tool in LAYOUTS_SHARED)
 _KIND_VALUES = ", ".join(f"'{kind}'" for kind in LAYOUT_KINDS)
+_TYPED = " OR ".join(
+    f"(tool = '{tool.value}' AND kind = '{kind}')"
+    for tool, kind in TYPED_DETAILS.items()
+)
 
 #: The columns a row's target is named by.
 _TARGET = ("initiative_id", "tool", "tool_id")
@@ -70,10 +77,17 @@ class ToolLayout(CreatedByMixin, table=True):
             name="ck_tool_layouts_kind",
             info={FROM_REGISTRY: True},
         ),
+        # A detail laid out per type names its type, and nothing else does.
+        CheckConstraint(
+            f"({_TYPED}) = (task_type_id IS NOT NULL)",
+            name="ck_tool_layouts_typed",
+            info={FROM_REGISTRY: True},
+        ),
         Index(
             "uq_tool_layouts_kind",
             *_TARGET,
             "kind",
+            "task_type_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
         ),
@@ -91,6 +105,14 @@ class ToolLayout(CreatedByMixin, table=True):
     tool: str = Field(sa_column=Column(String(32), nullable=False))
     tool_id: Optional[int] = Field(default=None, sa_column=Column(Integer))
     kind: str = Field(sa_column=Column(String(32), nullable=False))
+    #: The type of task a project's task page is for; None for every other
+    #: layout. Goes with its type.
+    task_type_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            Integer, ForeignKey("task_types.id", ondelete="CASCADE"), index=True
+        ),
+    )
     definition: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

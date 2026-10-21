@@ -24,7 +24,9 @@ async def _statuses(
     session: AsyncSession, project: Project
 ) -> dict[TaskStatusCategory, TaskStatus]:
     """``{category: status}`` for the project's seeded default statuses."""
-    await task_statuses_service.ensure_default_statuses(session, project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     statuses = await task_statuses_service.list_statuses(session, project.id)
     await session.commit()
     return {s.category: s for s in statuses}

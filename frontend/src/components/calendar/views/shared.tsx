@@ -4,12 +4,28 @@ import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { UnreadDot } from "@/components/notifications/UnreadDot";
+import { TaskTypeMark } from "@/components/tasks/TaskTypeOption";
 import { resolveLocalDateTime } from "@/lib/localDateTime";
 import { toast } from "@/lib/mascotToast";
 import { formatHourLabel, formatCompactTime as formatTime } from "@/lib/timeFormat";
 import { cn } from "@/lib/utils";
 
 import type { CalendarEntry, CalendarEntryKind } from "../CalendarView";
+
+/** A task entry's type, by its icon, before its title. On an entry drawn in
+ *  its own colour (`onColor`), the icon takes the text's. */
+export const EntryType = ({
+  entry,
+  onColor = false,
+  className,
+}: {
+  entry: CalendarEntry;
+  onColor?: boolean;
+  className?: string;
+}) =>
+  entry.taskType ? (
+    <TaskTypeMark type={entry.taskType} tinted={!onColor} className={className} />
+  ) : null;
 
 /** The props every view takes from the calendar around it. */
 export type CalendarViewBaseProps = {
@@ -450,8 +466,11 @@ export function DayColumn({
               boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
             }}
           >
-            <div className={cn("flex flex-col", compact ? "px-1.5 py-0.5" : "px-2 py-1")}>
-              <span className="truncate font-medium">{block.entry.title}</span>
+            <div className={cn("flex min-w-0 flex-col", compact ? "px-1.5 py-0.5" : "px-2 py-1")}>
+              <span className="flex min-w-0 items-center gap-1">
+                <EntryType entry={block.entry} />
+                <span className="truncate font-medium">{block.entry.title}</span>
+              </span>
               {!compact || height >= 32 ? (
                 <span className="text-3xs text-muted-foreground">{rangeLabel}</span>
               ) : null}

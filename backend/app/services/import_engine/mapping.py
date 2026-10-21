@@ -248,8 +248,11 @@ def build_envelope(
     app_version: str,
     source_url: str | None = None,
     property_definitions: list[dict[str, Any]] | None = None,
+    task_types: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """The project envelope itself — the same shape a project export writes."""
+    """The project envelope itself — the same shape a project export writes.
+    Without ``task_types`` the project gets the ones a new project starts
+    with."""
     return {
         "type": "initiative-project",
         "schema_version": 1,
@@ -265,6 +268,7 @@ def build_envelope(
             for tag_name in collect_tag_names(tasks)
         ],
         "task_statuses": statuses,
+        **({"task_types": task_types} if task_types else {}),
         "property_definitions": property_definitions or [],
         "tasks": tasks,
         "layouts": [],

@@ -2,6 +2,7 @@ import { HttpResponse, http } from "msw";
 
 import {
   buildDefaultTaskStatuses,
+  buildDefaultTaskTypes,
   buildTask,
   buildTaskListResponse,
   TASK_GROUPINGS,
@@ -39,5 +40,9 @@ export const taskHandlers = [
 
   communityHttp.get("/projects/:id/task-statuses/", () => {
     return HttpResponse.json(buildDefaultTaskStatuses());
+  }),
+
+  communityHttp.get("/projects/:id/task-types/", ({ params }) => {
+    return HttpResponse.json(buildDefaultTaskTypes(Number(params.id)));
   }),
 ];

@@ -70,6 +70,23 @@ describe("LayoutTree", () => {
     expect(screen.getByText(/priority: medium/i)).toBeInTheDocument();
   });
 
+  it("spaces a saved row as one that leaves its gap out, which the server sends as null", () => {
+    const row = (props: Record<string, unknown>): LayoutNode => ({
+      type: "stack",
+      props: { direction: "row", ...props },
+      children: [field("priority")],
+    });
+    const gapOf = (node: LayoutNode) => {
+      const { container, unmount } = draw(node, buildTask({ priority: "medium" }));
+      const classes = (container.firstElementChild as HTMLElement).className;
+      unmount();
+      return classes;
+    };
+
+    expect(gapOf(row({ gap: null, wrap: null, align: null, tone: null }))).toBe(gapOf(row({})));
+    expect(gapOf(row({ gap: null }))).toContain("gap-1");
+  });
+
   it("skips a field with nothing in it", () => {
     const node: LayoutNode = {
       type: "stack",
@@ -168,14 +185,7 @@ describe("renderNode", () => {
       .filter((entry) => entry.order !== undefined)
       .sort((a, b) => Number(a.order) - Number(b.order))
       .map(({ part }) => part.querySelector("p")?.textContent);
-    expect(stacked).toEqual([
-      "description",
-      "status",
-      "checklist",
-      "case",
-      "relations",
-      "comments",
-    ]);
+    expect(stacked).toEqual(["description", "type", "checklist", "case", "relations", "comments"]);
   });
 });
 

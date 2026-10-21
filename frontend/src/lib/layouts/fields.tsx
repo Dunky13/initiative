@@ -11,6 +11,7 @@ import type {
   TaskAssigneeSummary,
   TaskListRead,
   TaskPriority,
+  TaskTypeRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { UnreadDot } from "@/components/notifications/UnreadDot";
 import { priorityVariant } from "@/components/projects/projectTasksConfig";
@@ -22,6 +23,7 @@ import { TagBadge } from "@/components/tags";
 import { TagBadgeList } from "@/components/tags/TagBadge";
 import { TaskChecklistProgress } from "@/components/tasks/TaskChecklistProgress";
 import { DateCell } from "@/components/tasks/TaskDateCell";
+import { TaskTypeMark, TaskTypeOption } from "@/components/tasks/TaskTypeOption";
 import { Badge } from "@/components/ui/badge";
 import { MentionText } from "@/components/user/MentionText";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
@@ -51,6 +53,7 @@ export type FieldKind =
   | "priority"
   | "count"
   | "tags"
+  | "taskType"
   | "property"
   | "plugin";
 
@@ -70,6 +73,9 @@ export type FieldDef = {
   /** What the field holds for an item. Nothing (null, "", []) draws nothing on
    *  a card; a cell says so. */
   value: (item: LayoutItem) => unknown;
+  /** A title's: the item's type, drawn by its name in a cell, or null where
+   *  there is none to tell apart. */
+  typeOf?: (item: LayoutItem) => TaskTypeRead | null;
   /** A title cannot be hidden: a card with no title is not a card. */
   hideable: boolean;
   /** A plug-in field's install and declaration, and the install as the
@@ -139,11 +145,13 @@ export const isEmptyValue = (value: unknown): boolean =>
 const TitleCell = ({
   title,
   task,
+  type,
   unread,
   env,
 }: {
   title: string;
   task: LayoutItem;
+  type: TaskTypeRead | null;
   unread: boolean;
   env: LayoutEnv;
 }) => {
@@ -162,14 +170,17 @@ const TitleCell = ({
   return (
     <div className="flex items-center gap-2">
       <div className="flex w-full min-w-60 flex-col items-start text-left">
-        <Link
-          to={env.taskHref(task)}
-          draggable={false}
-          className="flex items-center gap-2 rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          {title}
-          {unread ? <UnreadDot /> : null}
-        </Link>
+        <div className="flex items-center gap-1.5">
+          {type ? <TaskTypeMark type={type} /> : null}
+          <Link
+            to={env.taskHref(task)}
+            draggable={false}
+            className="flex items-center gap-2 rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {title}
+            {unread ? <UnreadDot /> : null}
+          </Link>
+        </div>
         {recurrence ? (
           <p className="text-muted-foreground text-xs">{truncateText(recurrence, 100)}</p>
         ) : null}
@@ -183,10 +194,18 @@ const TitleCell = ({
 
 // Only the title opens the task: the rest of the card is the card, and a real
 // link means middle-click and "open in new tab" work.
-const TitleField = ({ value, item, variant, env }: FieldRendererProps) => {
+const TitleField = ({ value, item, field, variant, env }: FieldRendererProps) => {
   const unread = useUnreadTree().hasSubject(item.community_id, "task", item.id);
   if (variant === "cell") {
-    return <TitleCell title={value as string} task={item} unread={unread} env={env} />;
+    return (
+      <TitleCell
+        title={value as string}
+        task={item}
+        type={field.typeOf?.(item) ?? null}
+        unread={unread}
+        env={env}
+      />
+    );
   }
   const Actions = variant === "card" ? env.itemActions : undefined;
   const link = (
@@ -313,6 +332,20 @@ const TagsField = ({ value, item, variant, env }: FieldRendererProps) => {
   return tags.map((tag) => <TagBadge key={tag.id} tag={tag} size="sm" to={tagHref(tag)} />);
 };
 
+// A card shows a type by its icon alone, beside the title and named on hover;
+// a cell names it.
+const TaskTypeField = ({ value, variant }: FieldRendererProps) => {
+  const type = value as TaskTypeRead | null;
+  if (!type) {
+    return variant === "cell" ? (
+      <span className="text-muted-foreground text-sm">&mdash;</span>
+    ) : null;
+  }
+  if (variant === "cell") return <TaskTypeOption type={type} className="text-sm" />;
+  // One line of the title tall, so the icon sits on the first line's middle.
+  return <TaskTypeMark type={type} className="h-lh" iconClassName="h-4 w-4" />;
+};
+
 const PropertyField = ({ value, variant }: FieldRendererProps) => (
   <PropertyValueCell
     summary={(value as PropertySummary | null) ?? undefined}
@@ -332,6 +365,7 @@ export const FIELD_RENDERERS: Record<FieldKind, ComponentType<FieldRendererProps
   priority: memo(PriorityField),
   count: memo(CountField),
   tags: memo(TagsField),
+  taskType: memo(TaskTypeField),
   property: memo(PropertyField),
   plugin: memo(PluginField),
 };

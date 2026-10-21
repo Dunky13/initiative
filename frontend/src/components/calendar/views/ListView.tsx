@@ -16,7 +16,7 @@ import { resolveUploadUrl } from "@/lib/uploadUrl";
 import { cn } from "@/lib/utils";
 
 import type { CalendarEntry } from "../CalendarView";
-import { type CalendarViewBaseProps, dateKey, kindLabelKey, parseEntry } from "./shared";
+import { type CalendarViewBaseProps, dateKey, EntryType, kindLabelKey, parseEntry } from "./shared";
 
 // Multi-day entries expand so each spanned day gets its own row.
 type ListRow = { entry: CalendarEntry; displayDate: Date; isSpanDay: boolean };
@@ -147,6 +147,7 @@ export function ListView({
                     {t(`common:${kindLabelKey(entry.kind)}`)}
                   </span>
                 )}
+                <EntryType entry={entry} className="mr-1.5 align-middle" />
                 <span className="font-medium">{entry.title}</span>
                 {entry.unread ? <UnreadDot className="ml-2 inline-block align-middle" /> : null}
                 {entry.description && (

@@ -273,7 +273,10 @@ PURGING = Guc("app.purging", Kind.BOOL)
 #: while this is set. The ancestry guards do not read it: nothing about a column
 #: can put a task under a different project or initiative.
 #:
-#: Raised by the status-column routes with ``app.db.session.raise_flag``, inside
+#: Retiring a task type moves its tasks to another type the same way.
+#:
+#: Raised by the status-column and task-type routes with
+#: ``app.db.session.raise_flag``, inside
 #: the transaction that moves the tasks and after every check that should still
 #: be able to refuse. It lasts one transaction.
 RESTRUCTURING = Guc("app.restructuring", Kind.BOOL)

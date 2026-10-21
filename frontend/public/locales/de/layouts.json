@@ -93,6 +93,7 @@
     "actions": "Was sonst mit der Aufgabe möglich ist: verschieben, duplizieren, archivieren, löschen und Plug-in-Aktionen."
   },
   "taskLayout": "Aufgabendetail",
+  "typedTaskLayout": "Seite „{{name}}“",
   "detailHelp": "Wie das Detail jeder Aufgabe in diesem Projekt aufgebaut ist. Was es weglässt, ist ausgeblendet.",
   "useShipped": "Ausgeliefertes Layout verwenden",
   "shipped": "Das ist das Layout, wie es ausgeliefert wird. Eine Änderung macht es zum eigenen Layout des Projekts.",
@@ -156,6 +157,7 @@
       "date_group": "Zeitraum",
       "priority": "Priorität",
       "task_status_id": "Status",
+      "task_type_id": "Typ",
       "assignee_ids": "Zuständige",
       "created_by": "Erstellt von",
       "tag_ids": "Tags",

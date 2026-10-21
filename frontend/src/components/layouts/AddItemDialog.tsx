@@ -110,7 +110,11 @@ const Adding = <I extends Item, C, P, R extends { id: number }>({
     values: new Map<number, unknown>(),
     holding: new Set<string>(),
   });
-  const layout = detailLayoutOf(useToolLayouts(layouts(item)).data, detail.spec.kind);
+  const layout = detailLayoutOf(
+    useToolLayouts(layouts(item)).data,
+    detail.spec.kind,
+    detail.typed?.typeOf(item)
+  );
   const home = detail.home(item, context);
   const target = home.links.target;
   const setLinksOn = useSetItemLinks(home.canOpen.tool, home.canOpen.id);

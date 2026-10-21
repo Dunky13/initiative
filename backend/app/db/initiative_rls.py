@@ -1503,6 +1503,7 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # One hop -> projects
     "tasks": via("projects", "project_id"),
     "task_statuses": via("projects", "project_id"),
+    "task_types": via("projects", "project_id"),
     # One hop -> files
     "file_versions": via("files", "file_id"),
     # One hop -> queues
@@ -2086,6 +2087,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     "guild_plugins": Emit(guild_wide=True, resource_type="plugins"),
     # -- Facets of their parent ---------------------------------------------
     "task_statuses": Emit(reports_as=reports_as("projects", "project_id", "statuses")),
+    "task_types": Emit(reports_as=reports_as("projects", "project_id", "types")),
     # A property definition is read in its initiative's list, not at an
     # address of its own, so a change to one reports as that initiative.
     "property_definitions": Emit(

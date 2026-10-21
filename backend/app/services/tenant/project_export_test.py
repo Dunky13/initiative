@@ -35,6 +35,8 @@ from app.services.tenant.project_grants import get_project_hydrated
 from app.services.tenant import task_statuses as task_statuses_service
 from app.services.tenant import ownership as ownership_service
 from app.services.tenant import tags as tags_service
+from app.services.tenant import task_types as task_types_service
+from app.services.tenant.task_types import get_default_type
 from app.testing import (
     assign_tag,
     checklist_items,
@@ -74,7 +76,9 @@ async def _seed_populated_project(session: AsyncSession):
     )
 
     # Statuses
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     todo_status = next(s for s in statuses if s.category == TaskStatusCategory.todo)
 
     # Project-level tag
@@ -97,6 +101,7 @@ async def _seed_populated_project(session: AsyncSession):
     task = Task(
         project_id=project.id,
         task_status_id=todo_status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title="Fix the thing",
         description="Important",
         position=1024.0,
@@ -108,6 +113,12 @@ async def _seed_populated_project(session: AsyncSession):
             "title": "Fix it once",
             "tag_ids": [tag.id],
             "assignee_ids": [assignee.id],
+            # Kept back from a this-only change of type: the project's own row.
+            "task_type_id": next(
+                t.id
+                for t in await task_types_service.list_types(session, project.id)
+                if t.name == "Bug"
+            ),
         },
         checklist=[
             *checklist_items("step 1"),
@@ -174,6 +185,7 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
         "title": "Fix it once",
         "tags": [{"name": "blocker", "color": "#FF0000"}],
         "assignee_handles": [handle_of(assignee)],
+        "type_name": "Bug",
     }
 
     # Target initiative in the same guild — assignee is a member of both
@@ -232,6 +244,11 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
         "title": "Fix it once",
         "tag_ids": [tag.id for tag in new_task.tags],
         "assignee_ids": [assignee.id],
+        "task_type_id": next(
+            t.id
+            for t in await task_types_service.list_types(session, new_task.project_id)
+            if t.name == "Bug"
+        ),
     }
     assert {i["text"] for i in new_task.checklist} == {"step 1", "step 2"}
     assert [handle_of(u) for u in new_task.assignees] == [handle_of(assignee)]
@@ -256,10 +273,18 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     owner, assignee, guild, source_initiative, project = await _seed_populated_project(
         session
     )
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     todo, done = (
         next(s for s in statuses if s.category == category)
         for category in (TaskStatusCategory.todo, TaskStatusCategory.done)
+    )
+    # Not the default: a page and a filter name the type they were made for.
+    bug = next(
+        t
+        for t in await task_types_service.list_types(session, project.id)
+        if t.name == "Bug"
     )
     severity = (
         await session.exec(
@@ -311,6 +336,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
                     "slug": "mine",
                     "filters": {
                         "status_ids": [todo.id],
+                        "type_ids": [bug.id],
                         "assignees": ["me", str(assignee.id)],
                         "tag_ids": [tag.id],
                         "properties": [
@@ -328,6 +354,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
                 {"field": f"property:{severity.id}", "hidden": ["low"]},
                 {"field": "assignee_ids", "hidden": [str(assignee.id)]},
                 {"field": f"property:{lead.id}", "hidden": [str(assignee.id)]},
+                {"field": "task_type_id", "hidden": [str(bug.id)]},
             ],
             "group_by": f"property:{severity.id}",
         },
@@ -345,6 +372,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
                 tool="project",
                 tool_id=project.id,
                 kind=kind,
+                task_type_id=bug.id if kind == "task" else None,
                 definition=definition,
             )
         )
@@ -359,6 +387,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     exported = {layout.kind: layout.definition for layout in envelope.layouts}
     place = {p.name: n for n, p in enumerate(envelope.property_definitions, start=1)}
     todo_place = 1 + [s.name for s in envelope.task_statuses].index(todo.name)
+    bug_place = 1 + [t.name for t in envelope.task_types].index("Bug")
     assert set(place) == {"Severity", "Stage", "Lead"}
     assert exported["board"]["card"]["children"] == [
         title,
@@ -366,6 +395,7 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     ]
     assert exported["board"]["presets"][0]["filters"] == {
         "status_ids": [todo_place],
+        "type_ids": [bug_place],
         "assignees": ["me"],
         "tag_ids": [],
         "properties": [],
@@ -375,7 +405,12 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     assert exported["table"]["groupings"][2:] == [
         {"field": "assignee_ids", "hidden": []},
         {"field": f"property:{place['Lead']}", "hidden": []},
+        {"field": "task_type_id", "hidden": [str(bug_place)]},
     ]
+    # A task page names its type as a filter does.
+    assert [
+        layout.task_type for layout in envelope.layouts if layout.kind == "task"
+    ] == [bug_place]
     assert exported["task"]["side"] == [
         {"type": "field", "props": {"field": f"property:{place['Severity']}"}}
     ]
@@ -398,11 +433,17 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     rows = await session.exec(
         select(ToolLayout).where(ToolLayout.tool_id == result.entity_id)
     )
-    imported = {row.kind: row.definition for row in rows.all()}
+    imported_rows = rows.all()
+    imported = {row.kind: row.definition for row in imported_rows}
+    new_bug = next(
+        t.id
+        for t in await task_types_service.list_types(session, result.entity_id)
+        if t.name == "Bug"
+    )
     new_statuses = {
         s.name: s.id
         for s in await task_statuses_service.ensure_default_statuses(
-            session, result.entity_id
+            session, result.entity_id, locale="en"
         )
     }
     new_properties = {
@@ -425,6 +466,14 @@ async def test_a_project_brings_its_layouts(session: AsyncSession):
     ]
     assert imported["board"]["presets"][0]["filters"]["status_ids"] == [
         new_statuses[todo.name]
+    ]
+    assert imported["board"]["presets"][0]["filters"]["type_ids"] == [new_bug]
+    assert imported["table"]["groupings"][-1] == {
+        "field": "task_type_id",
+        "hidden": [str(new_bug)],
+    }
+    assert [row.task_type_id for row in imported_rows if row.kind == "task"] == [
+        new_bug
     ]
     assert imported["board"]["limits"] == [
         {"status_id": new_statuses[todo.name], "limit": 3}
@@ -465,6 +514,66 @@ async def test_an_envelope_holds_one_layout_of_each_kind_as_read(
     assert layout.definition == {"limits": [{"status_id": 1, "limit": 2}]}
     with pytest.raises(ValidationError):
         ProjectExportEnvelope.model_validate({**body, "layouts": [board, board]})
+
+
+async def test_an_envelope_holds_a_task_page_for_each_type(session: AsyncSession):
+    owner, _assignee, guild, _initiative, project = await _seed_populated_project(
+        session
+    )
+    body = (
+        await export_service.build_project_export(
+            session, await get_project_hydrated(session, project.id)
+        )
+    ).model_dump(mode="json")
+    page = {"main": [{"type": "comments"}]}
+    bug_place = 1 + [t["name"] for t in body["task_types"]].index("Bug")
+
+    # One page per type, and one with no type at all.
+    layouts = ProjectExportEnvelope.model_validate(
+        {
+            **body,
+            "layouts": [
+                {"kind": "task", "definition": page},
+                {"kind": "task", "task_type": bug_place, "definition": page},
+            ],
+        }
+    ).layouts
+    assert [layout.task_type for layout in layouts] == [None, bug_place]
+    for refused in (
+        [{"kind": "board", "task_type": bug_place, "definition": {}}],
+        [{"kind": "task", "task_type": bug_place, "definition": page}] * 2,
+    ):
+        with pytest.raises(ValidationError):
+            ProjectExportEnvelope.model_validate({**body, "layouts": refused})
+
+    # A page that names no type is the default type's, as a marketplace
+    # project's are; one naming a type the file does not list is left out.
+    envelope = ProjectExportEnvelope.model_validate(
+        {
+            **body,
+            "layouts": [
+                {"kind": "task", "definition": page},
+                {"kind": "task", "task_type": 99, "definition": page},
+            ],
+        }
+    )
+    target = await create_initiative(session, guild, owner, name="Target")
+    await route_as(session, user_id=owner.id, guild_id=guild.id)
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target, importer=owner
+    )
+    await session.commit()
+
+    await route_session_to_guild(session, guild.id)
+    rows = (
+        await session.exec(
+            select(ToolLayout).where(ToolLayout.tool_id == result.entity_id)
+        )
+    ).all()
+    default = await get_default_type(session, result.entity_id)
+    assert [(row.kind, row.task_type_id, row.definition) for row in rows] == [
+        ("task", default.id, page)
+    ]
 
 
 async def test_property_type_collision_renames(session: AsyncSession):
@@ -742,3 +851,114 @@ async def test_legacy_envelope_keeps_carried_dates_and_consumed_count(session):
     )
     assert dates is not None
     assert dates[1] == datetime(2026, 10, 14, 9, tzinfo=timezone.utc)
+
+
+async def test_task_types_survive_the_round_trip(session: AsyncSession):
+    """A project's types come back as they were, and each task as its type."""
+    from app.models.tenant.task import TaskType
+
+    owner, _assignee, guild, _initiative, project = await _seed_populated_project(
+        session
+    )
+    types = await task_types_service.list_types(session, project.id)
+    types[2].name = "Notion"
+    types[2].is_default = True
+    types[0].is_default = False
+    session.add_all(types)
+    session.add(
+        TaskType(
+            project_id=project.id,
+            name="Chore",
+            position=4,
+            icon="repeat",
+            color="#22C55E",
+            layout_preset="repeat",
+        )
+    )
+    await session.commit()
+    chore = (await task_types_service.list_types(session, project.id))[-1]
+    task = (
+        await session.exec(select(Task).where(Task.project_id == project.id))
+    ).first()
+    assert task is not None
+    assert chore.id is not None
+    task.task_type_id = chore.id
+    session.add(task)
+    await session.commit()
+
+    hydrated = await get_project_hydrated(session, project.id)
+    assert hydrated is not None
+    envelope = await export_service.build_project_export(session, hydrated)
+    assert [t.name for t in envelope.task_types] == [
+        "Task",
+        "Bug",
+        "Notion",
+        "Milestone",
+        "Chore",
+    ]
+    target = await create_initiative(session, guild, owner, name="Target Initiative")
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target, importer=owner
+    )
+
+    restored = await task_types_service.list_types(session, result.entity_id)
+    assert [
+        (t.name, t.is_default, t.icon, t.color, t.layout_preset) for t in restored
+    ] == [
+        ("Task", False, "square-check", "#94A3B8", "plain"),
+        ("Bug", False, "bug", "#F87171", "fix"),
+        ("Notion", True, "lightbulb", "#FBBF24", "discussion"),
+        ("Milestone", False, "flag", "#A78BFA", "dates"),
+        ("Chore", False, "repeat", "#22C55E", "repeat"),
+    ]
+    copied = (
+        await session.exec(select(Task).where(Task.project_id == result.entity_id))
+    ).first()
+    assert copied is not None
+    assert copied.task_type_id == restored[-1].id
+
+
+async def test_an_envelope_without_types_gets_the_starting_ones_in_the_importers_language(
+    session: AsyncSession,
+):
+    owner, _assignee, guild, _initiative, _project = await _seed_populated_project(
+        session
+    )
+    owner.locale = "es"
+    session.add(owner)
+    await session.commit()
+    envelope = ProjectExportEnvelope.model_validate(
+        {
+            "app_version": "0.0.0-test",
+            "exported_at": "2026-07-15T00:00:00+00:00",
+            "project": {"name": "Antes de los tipos"},
+            "tags": [],
+            "property_definitions": [],
+            "task_statuses": [{"name": "To Do", "category": "todo"}],
+            "layouts": [],
+            "tasks": [
+                {
+                    "title": "Algo",
+                    "status_name": "To Do",
+                    "type_name": "Bug",
+                    "tags": [],
+                    "assignee_handles": [],
+                    "checklist": [],
+                    "properties": [],
+                }
+            ],
+        }
+    )
+    target = await create_initiative(session, guild, owner, name="Target Initiative")
+
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target, importer=owner
+    )
+
+    restored = await task_types_service.list_types(session, result.entity_id)
+    assert [t.name for t in restored] == ["Tarea", "Error", "Idea", "Hito"]
+    task = (
+        await session.exec(select(Task).where(Task.project_id == result.entity_id))
+    ).one()
+    # A type the project does not have is its default.
+    assert task.task_type_id == restored[0].id

@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Statuskategorie",
     "task_status_id": "Status",
+    "task_type_id": "Typ",
     "priority": "Priorität",
     "assignee_ids": "Zuständig",
     "tag_ids": "Tag",
@@ -198,6 +199,7 @@
     "value": "Wert",
     "empty": "Keine Filter — zeigt alles in der Initiative.",
     "chooseValue": "Auswählen …",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relativ",
     "absolute": "An einem Datum",
     "relativeDays": "Tage ab heute",

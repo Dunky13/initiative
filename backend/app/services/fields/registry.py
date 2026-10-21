@@ -31,6 +31,7 @@ from app.services.fields import properties as property_datasets
 from app.services.fields import task_assignees as task_assignees_dataset
 from app.services.fields import tools as tool_datasets
 from app.services.fields import task_statuses as task_statuses_dataset
+from app.services.fields import task_types as task_types_dataset
 from app.services.fields import tasks as tasks_dataset
 from app.schemas.query import FilterOp
 from app.services.fields.spec import Dataset, FieldContext, FieldSpec, SortContext
@@ -44,6 +45,7 @@ _BUILDERS: dict[str, Callable[[], Dataset]] = {
     "counter_groups": tool_datasets.build_counter_groups,
     "counters": tool_datasets.build_counters,
     "task_statuses": task_statuses_dataset.build,
+    "task_types": task_types_dataset.build,
     "task_assignees": task_assignees_dataset.build,
     "members": members_dataset.build,
     "property_definitions": property_datasets.build_property_definitions,

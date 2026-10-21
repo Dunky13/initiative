@@ -74,6 +74,7 @@ from app.services.tenant import task_description as task_description_service
 from app.services.tenant import task_queries
 from app.services.tenant import task_series
 from app.services.tenant import task_statuses as task_statuses_service
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant.soft_delete import trash
 from app.services.tenant.task_completion import sync_completed_at
 
@@ -325,6 +326,7 @@ async def create_task(
         exclude={
             "assignee_ids",
             "task_status_id",
+            "task_type_id",
             "tag_ids",
             "properties",
             "checklist",
@@ -344,6 +346,7 @@ async def create_task(
         session,
         project=project,
         task_status_id=task_in.task_status_id,
+        task_type_id=task_in.task_type_id,
         **task_data,
         created_by=guild_context.user_id,
         checklist=checklist_service.normalize(task_in.checklist),
@@ -639,6 +642,11 @@ async def update_task(
     previous_status_category = task.task_status.category if task.task_status else None
     new_status_id = update_data.pop("task_status_id", None)
     status_category = update_data.pop("status_category", None)
+    new_type_id = update_data.pop("task_type_id", None)
+    if new_type_id is not None and new_type_id != task.task_type_id:
+        task.task_type_id = await task_creation_service.resolve_type(
+            session, project_id=task.project_id, task_type_id=new_type_id
+        )
 
     if (
         new_status_id is None
@@ -861,6 +869,9 @@ async def move_task(
     now = datetime.now(timezone.utc)
     source_project = task.project
     task.project_id = target_project.id
+    task.task_type_id = await task_types_service.type_for_move(
+        session, task.task_type_id, target_project.id
+    )
     task.task_status_id = default_status.id  # ty: ignore[invalid-assignment] — persisted row, id is set
     task.task_status = default_status
     task.position = 0

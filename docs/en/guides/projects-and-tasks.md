@@ -68,6 +68,23 @@ You can rename them, add your own, and give each one an icon and colour, from **
 
 Delete a status you don't want and its tasks move somewhere sensible — you pick where, or let them fall to the project's default. The only one you can't delete is the last one standing.
 
+### Task types
+
+A task can be one of several kinds of thing, and each kind gets its own page. Every project starts with four, named in the language of whoever made the project:
+
+| Type | For | Its page leads with |
+|---|---|---|
+| **Task** | Something to get done. The default. | The usual: description, checklist, everything. |
+| **Bug** | Something broken. The leaky tap, the crashing spreadsheet, the hall door that only opens if you lift it. | How urgent it is, and what it's holding up. |
+| **Idea** | Something worth talking about before anyone commits to it. | The description and the conversation. No dates, no checklist, no pressure. |
+| **Milestone** | A date everything else is aiming at. | When it is, and what's still in the way. |
+
+Pick the type when you add a task, or change it later from the **Type** field on the task. Changing it keeps everything the task holds: a date the new page doesn't show is tucked away, not deleted, and comes back if you change your mind.
+
+Add, rename, reorder and recolour types from **Project settings → Task types**. A band might add **Gig** and **Song**; a household, **Chore** and **Bill**. Deleting a type moves its tasks to another one you pick, so nothing goes missing. The project's last type stays.
+
+Board cards show each task's type as its icon. Lists filter and group by type, too. And if you trim a project down to one type, types vanish from view entirely, because a label every task shares tells you nothing.
+
 ### Checklists
 
 Break a big task into steps. As you tick them off, the task shows its progress — "3/5 items" — which is more motivating on a bad Tuesday than it has any right to be.
@@ -200,7 +217,7 @@ Each of the project's three lists has a layout, and so does a task:
 | **Table** | Which columns, in what order. |
 | **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
 | **Calendar** | Only its presets. A calendar is a calendar. |
-| **Task detail** | Where everything sits when a task is open, and in **Create task**. |
+| **Task pages** | Where everything sits when a task is open, and in **Create task**. One per [task type](#task-types), each starting from a shape that suits it. |
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
@@ -214,11 +231,12 @@ Change any of it from **Project settings → Layouts → Edit layouts**. That's 
 - **Access** — who can see or edit it. See [Sharing](../sharing/sharing-projects-and-files.md).
 - **Layouts** — how its lists and tasks are laid out, and which list it opens on. See [Layouts](#layouts).
 - **Task statuses** — your workflow.
+- **Task types** — the kinds of task the project holds, and a shortcut to each one's page. See [Task types](#task-types).
 - **Advanced** — save as a template, [duplicate](tools.md#duplicating) it here or into another initiative, export, archive, delete.
 
 ### Moving a task to another project
 
-You can move a task from its menu. One thing that catches people out: because every project can have its own statuses, a moved task restarts at the new project's default status.
+You can move a task from its menu. One thing that catches people out: because every project can have its own statuses, a moved task restarts at the new project's default status. Its type comes along if the new project has one with the same name, and becomes that project's default type if not.
 
 Nothing's broken and you haven't lost anything. Set the new status and carry on.
 
