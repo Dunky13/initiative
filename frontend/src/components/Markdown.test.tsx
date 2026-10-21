@@ -1,7 +1,9 @@
+import { Capacitor } from "@capacitor/core";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { apiClient } from "@/api/client";
 import { ThemeContext } from "@/hooks/useTheme";
 
 import { Markdown } from "./Markdown";
@@ -140,5 +142,24 @@ describe("Markdown", () => {
       "src",
       "/release-images/gantt.dark.webp"
     );
+  });
+
+  it("draws a release's screenshot from the server it came from in the native app", () => {
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    vi.spyOn(apiClient.defaults, "baseURL", "get").mockReturnValue(
+      "https://example.com/initiative/api/v1"
+    );
+    render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content="![The Gantt view](frontend/public/release-images/gantt.webp)"
+      />
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "https://example.com/initiative/release-images/gantt.webp"
+    );
+    vi.restoreAllMocks();
   });
 });
