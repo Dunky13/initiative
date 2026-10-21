@@ -7009,6 +7009,21 @@ export interface LegalIndexRead {
 }
 
 /**
+ * A task of another project at the far end of one of those edges, as a
+ * Gantt draws it beside the project's own.
+ */
+export interface LinkedTaskRead {
+  id: number;
+  title: string;
+  start_date: string | null;
+  due_date: string | null;
+  project_id: number;
+  project_name: string;
+  initiative_id: number;
+  done: boolean;
+}
+
+/**
  * How a list draws its items, and the presets and groupings it offers.
  * What it leaves out is drawn as shipped: a board with no ``card`` draws the
  * shipped card, a table with no ``columns`` the shipped columns, a list with
@@ -10497,13 +10512,22 @@ export interface TaskCreate {
 }
 
 /**
- * One edge between two tasks of a project, as it is stored: the source
+ * One edge from or to a task of a project, as it is stored: the source
  * depends on, is part of, or is related to the target.
  */
 export interface TaskEdgeRead {
+  id: number;
   source_id: number;
   target_id: number;
   relationship_type: RelationshipType;
+}
+
+/**
+ * A project's task edges, and the other projects' tasks they reach.
+ */
+export interface TaskEdgesRead {
+  edges: TaskEdgeRead[];
+  others: LinkedTaskRead[];
 }
 
 export interface TaskListResponse {
