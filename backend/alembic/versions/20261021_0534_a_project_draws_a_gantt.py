@@ -103,7 +103,8 @@ def _insert(kind: str, definition: str, which: str) -> None:
         sa.text(
             f"INSERT INTO {LAYOUTS} (initiative_id, tool, tool_id, kind, definition,"
             " created_at, updated_at)"
-            " SELECT p.initiative_id, 'project', p.id, :kind,"
+            # Cast: ``:kind`` is also compared below, where it reads as text.
+            " SELECT p.initiative_id, 'project', p.id, CAST(:kind AS varchar),"
             " CAST(:definition AS jsonb), now(), now() FROM projects p"
             f" WHERE ({which}) AND NOT EXISTS (SELECT 1 FROM {LAYOUTS} l"
             f" WHERE {_OWN})"
