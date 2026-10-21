@@ -151,6 +151,18 @@ layout.
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId, subschema #2` from the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `anyOf` list
 - PUT /api/v1/c/{community_id}/layouts/ the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `type` changed from `any` to `string`
 
+### A project draws a Gantt
+
+A project's lists are `table`, `board` and `gantt`; `calendar` is the Calendar
+tool's alone. Migration `20261021_0534` turns every stored project calendar
+layout, and a project that opened on one, into its Gantt.
+
+- GET /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/layouts/default added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- GET /api/v1/c/{community_id}/layouts/initiative added the new `gantt` enum value to the `items/layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- DELETE /api/v1/c/{community_id}/layouts/{kind} added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+
 ### Members bring no AI key
 
 A connection's key is its owner's, and members configure nothing: the member
