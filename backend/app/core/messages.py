@@ -376,6 +376,8 @@ class ToolLayoutMessages:
     TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
     # More of one plug-in's parts on an item than it may place there.
     TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
+    # A change that would hide every one of a target's lists.
+    ONE_LIST_SHOWN = "TOOL_LAYOUTS_ONE_LIST_SHOWN"
 
 
 class ProjectMessages:
