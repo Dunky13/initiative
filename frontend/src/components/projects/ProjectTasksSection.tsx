@@ -591,17 +591,21 @@ export const ProjectTasksSection = ({
   const scopePrompt = useScopePrompt();
   const { mutateAsync: writeTaskDates } = rescheduleTaskDates;
   const rescheduleTask = useCallback(
-    async (task: TaskListRead, dates: Pick<TaskUpdate, "start_date" | "due_date">) => {
+    async (
+      task: Pick<TaskListRead, "id" | "recurrence">,
+      dates: Pick<TaskUpdate, "start_date" | "due_date">
+    ) => {
       const scope = task.recurrence
         ? await scopePrompt.ask("edit", { tool: "tasks", scopes: ["this", "following"] })
         : undefined;
-      if (scope === null) return;
-      await writeTaskDates({
+      if (scope === null) return false;
+      return writeTaskDates({
         taskId: task.id,
         data: { ...dates, ...(scope ? { scope } : {}) },
-      }).catch(
+      }).then(
+        () => true,
         // The mutation says what went wrong; the bar goes back.
-        () => undefined
+        () => false
       );
     },
     [writeTaskDates, scopePrompt.ask]

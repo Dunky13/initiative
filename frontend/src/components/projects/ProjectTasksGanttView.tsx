@@ -27,6 +27,7 @@ import {
   type TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { useListTaskEdges } from "@/api/generated/relationships/relationships";
+import { readTask } from "@/api/generated/tasks/tasks";
 import { TaskTypeMark } from "@/components/tasks/TaskTypeOption";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -131,7 +132,7 @@ type LinkMenu =
   | { kind: "arrow"; edge: TaskEdgeRead; x: number; y: number };
 
 /** A move that left tasks waiting on the moved one: whether to move them too. */
-type Chain = { title: string; tasks: TaskListRead[]; days: number };
+type Chain = { title: string; ids: number[]; days: number };
 
 type ProjectTasksGanttViewProps = {
   initiativeId: number;
@@ -147,7 +148,7 @@ type ProjectTasksGanttViewProps = {
   viewGroupings?: LayoutGrouping[] | null;
   taskHref: (taskId: number) => string;
   /** Writes a task's new dates; left out, the bars stay where they are. */
-  onReschedule?: (task: TaskListRead, dates: Dates) => Promise<unknown>;
+  onReschedule?: (task: Pick<TaskListRead, "id" | "recurrence">, dates: Dates) => Promise<boolean>;
   /** Drawn in the layout editor: nothing opens or moves. */
   editing?: boolean;
 };
@@ -251,11 +252,12 @@ export const ProjectTasksGanttView = ({
   const range = useMemo(
     () =>
       ganttWindow(
-        shown.flatMap((task) => spanOf(task) ?? []),
+        // Other projects' linked tasks are drawn on the same axis.
+        [...shown, ...(links?.others ?? [])].flatMap((task) => spanOf(task) ?? []),
         scale,
         now
       ),
-    [shown, scale, now]
+    [shown, links, scale, now]
   );
   const width = Math.round(((range.end - range.start) / DAY) * pxPerDay);
   const x = useCallback(
@@ -320,11 +322,13 @@ export const ProjectTasksGanttView = ({
   };
   const canMove = Boolean(onReschedule) && !editing;
 
-  const write = async (task: TaskListRead, dates: Dates) => {
-    if (!onReschedule) return;
+  /** Save `dates`, drawn where they were dropped until it answers: whether
+   *  they were saved. */
+  const write = async (task: Pick<TaskListRead, "id" | "recurrence">, dates: Dates) => {
+    if (!onReschedule) return false;
     setPending((all) => new Map(all).set(task.id, dates));
     try {
-      await onReschedule(task, dates);
+      return await onReschedule(task, dates);
     } finally {
       setPending((all) => {
         const next = new Map(all);
@@ -337,20 +341,29 @@ export const ProjectTasksGanttView = ({
   // Moving a task later offers to move what waits on it, through the chain,
   // by as many days.
   const [chain, setChain] = useState<Chain | null>(null);
-  const commit = (task: TaskListRead, dates: Dates, later: number) => {
-    void write(task, dates);
-    if (later <= 0 || !edges) return;
-    const byId = new Map(tasks.map((each) => [each.id, each]));
-    const waiting = waitingOn(task.id, edges, new Set(byId.keys())).flatMap((id) => {
-      const each = byId.get(id);
-      return each && spanOf(each) ? [each] : [];
-    });
-    if (waiting.length > 0) setChain({ title: task.title, tasks: waiting, days: later });
+  const commit = async (task: TaskListRead, dates: Dates, later: number) => {
+    // Only once its own move is saved: one asked about and kept back, or
+    // refused, leaves what waits on it where it is.
+    if (!(await write(task, dates)) || later <= 0 || !edges) return;
+    // Through every task of the project, the ones a filter hides among them.
+    const others = new Set((links?.others ?? []).map((each) => each.id));
+    const project = new Set(
+      [...tasks.map((each) => each.id), ...edges.flatMap((e) => [e.source_id, e.target_id])].filter(
+        (id) => !others.has(id)
+      )
+    );
+    const ids = waitingOn(task.id, edges, project);
+    if (ids.length > 0) setChain({ title: task.title, ids, days: later });
   };
-  const moveChain = async ({ tasks: waiting, days }: Chain) => {
+  const moveChain = async ({ ids, days }: Chain) => {
     setChain(null);
-    // One after another, so a repeating one's question is asked on its own.
-    for (const each of waiting) await write(each, draggedDates(each, "move", days));
+    const byId = new Map(tasks.map((each) => [each.id, each]));
+    // One after another, so a repeating one's question is asked on its own; a
+    // task the filters hide is read first.
+    for (const id of ids) {
+      const each = byId.get(id) ?? (await readTask(communityId, id).catch(() => null));
+      if (each && spanOf(each)) await write(each, draggedDates(each, "move", days));
+    }
   };
 
   const dayAt = (event: ReactPointerEvent<HTMLElement>) => {
@@ -403,7 +416,7 @@ export const ProjectTasksGanttView = ({
     const days = span ? heldDays(span, current.hold, current.days) : 0;
     if (days !== 0) {
       const dates = draggedDates(current.task, current.hold, days);
-      commit(current.task, dates, current.hold === "start" ? 0 : days);
+      void commit(current.task, dates, current.hold === "start" ? 0 : days);
     }
   };
 
@@ -812,28 +825,6 @@ export const ProjectTasksGanttView = ({
                       markerEnd={`url(#${markerId}-${arrow.late})`}
                       className={arrow.late ? "stroke-destructive" : "stroke-muted-foreground"}
                     />
-                    {canMove ? (
-                      // A wider, unseen line over it, which a click takes the link back
-                      // from; the keyboard does so from the task's Connections.
-                      // biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut beside the task page's own control
-                      <path
-                        d={arrow.path}
-                        fill="none"
-                        strokeWidth={10}
-                        className="cursor-pointer stroke-transparent"
-                        style={{ pointerEvents: "stroke" }}
-                        data-testid="gantt-arrow"
-                        onClick={(event) => {
-                          const rect = body.current?.getBoundingClientRect();
-                          setMenu({
-                            kind: "arrow",
-                            edge: arrow.edge,
-                            x: event.clientX - (rect?.left ?? 0) - LABEL_WIDTH,
-                            y: event.clientY - (rect?.top ?? 0),
-                          });
-                        }}
-                      />
-                    ) : null}
                   </g>
                 ))}
                 {linking ? (
@@ -1046,6 +1037,40 @@ export const ProjectTasksGanttView = ({
                 </div>
               );
             })}
+            {canMove && arrows.length > 0 ? (
+              // Over the rows, so a click on an arrow reaches it: an unseen,
+              // wider line on each, which takes its link back. The keyboard
+              // does so from the task's Connections.
+              <svg
+                className="pointer-events-none absolute inset-y-0 z-[5] overflow-visible"
+                style={{ left: LABEL_WIDTH }}
+                width={width}
+                height={rows.length * ROW_HEIGHT}
+                aria-hidden
+              >
+                {arrows.map((arrow) => (
+                  // biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut beside the task page's own control
+                  <path
+                    key={arrow.edge.id}
+                    d={arrow.path}
+                    fill="none"
+                    strokeWidth={8}
+                    className="cursor-pointer stroke-transparent"
+                    style={{ pointerEvents: "stroke" }}
+                    data-testid="gantt-arrow"
+                    onClick={(event) => {
+                      const rect = body.current?.getBoundingClientRect();
+                      setMenu({
+                        kind: "arrow",
+                        edge: arrow.edge,
+                        x: event.clientX - (rect?.left ?? 0) - LABEL_WIDTH,
+                        y: event.clientY - (rect?.top ?? 0),
+                      });
+                    }}
+                  />
+                ))}
+              </svg>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1058,7 +1083,7 @@ export const ProjectTasksGanttView = ({
         description={
           chain
             ? t("tasks.ganttChain", {
-                count: chain.tasks.length,
+                count: chain.ids.length,
                 title: chain.title,
                 days: chain.days,
               })

@@ -25,7 +25,7 @@ const waits = (source_id: number, target_id: number, id = source_id * 1000 + tar
 const mount = (
   tasks: ReturnType<typeof buildTask>[],
   edges: TaskEdgeRead[] = [],
-  onReschedule = vi.fn(async () => undefined),
+  onReschedule = vi.fn(async (_task: unknown, _dates: unknown) => true),
   others: LinkedTaskRead[] = []
 ) => {
   server.use(communityHttp.get("/relationships/tasks", () => HttpResponse.json({ edges, others })));
@@ -242,7 +242,7 @@ describe("ProjectTasksGanttView", () => {
     await waitFor(() => expect(removed).toHaveBeenCalledWith(7));
   });
 
-  it("moves what waits on a task by as many days, when asked to", async () => {
+  it("moves what waits on a task by as many days, filtered out or not, when asked to", async () => {
     const first = buildTask({
       title: "First",
       start_date: at("2026-03-02"),
@@ -258,8 +258,10 @@ describe("ProjectTasksGanttView", () => {
       start_date: at("2026-03-09"),
       due_date: at("2026-03-10"),
     });
+    // The task in the middle of the chain is one the filters hide.
+    server.use(communityHttp.get("/tasks/:id", () => HttpResponse.json(after)));
     const { onReschedule } = mount(
-      [first, after, last],
+      [first, last],
       [waits(after.id, first.id), waits(last.id, after.id)]
     );
     const bar = await screen.findByTitle(/^First ·/);
@@ -282,6 +284,28 @@ describe("ProjectTasksGanttView", () => {
       [after.id, at("2026-03-08")],
       [last.id, at("2026-03-11")],
     ]);
+  });
+
+  it("offers nothing to move when the task's own move is not saved", async () => {
+    const first = buildTask({
+      title: "First",
+      start_date: at("2026-03-02"),
+      due_date: at("2026-03-04"),
+    });
+    const after = buildTask({
+      title: "After",
+      start_date: at("2026-03-06"),
+      due_date: at("2026-03-07"),
+    });
+    const refused = vi.fn(async (_task: unknown, _dates: unknown) => false);
+    mount([first, after], [waits(after.id, first.id)], refused);
+    const bar = await screen.findByTitle(/^First ·/);
+
+    fireEvent.pointerDown(bar, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(bar, { clientX: 100 + 2 * PX_PER_DAY.week });
+    fireEvent.pointerUp(bar);
+    await waitFor(() => expect(refused).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/wait on “First”/)).not.toBeInTheDocument();
   });
 
   it("picks out the critical path, and draws other projects' linked tasks apart", async () => {
