@@ -418,7 +418,9 @@ async def query_my_calendar_events(
     target_guilds = await member_guild_ids(
         session, current_user.id, restrict_to=guild_ids
     )
-    events = await gather_across_guilds(session, current_user.id, target_guilds, _fetch)
+    events = await gather_across_guilds(
+        session, {current_user.id: target_guilds}, _fetch
+    )
     # Merge-sort across guilds (per-schema SQL can't order across schemas).
     events.sort(key=lambda e: (e.start_at, e.community_id, e.id))
     return events

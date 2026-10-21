@@ -350,7 +350,9 @@ async def list_across_guilds(
         items = await tool_list.serialize(tool_list, request, rows)
         return [(placement[(guild_id, item.id)], item) for item in items]
 
-    loaded = await gather_across_guilds(session, current_user.id, sorted(wanted), _load)
+    loaded = await gather_across_guilds(
+        session, {current_user.id: sorted(wanted)}, _load
+    )
     loaded.sort(key=lambda pair: pair[0])
     return [item for _, item in loaded], total_count
 
@@ -458,7 +460,7 @@ async def get_my_tool_counts(
     target_guilds = await member_guild_ids(
         session, current_user.id, restrict_to=guild_ids
     )
-    await gather_across_guilds(session, current_user.id, target_guilds, _count)
+    await gather_across_guilds(session, {current_user.id: target_guilds}, _count)
     return MyToolCountsResponse(counts={tool.value: n for tool, n in totals.items()})
 
 

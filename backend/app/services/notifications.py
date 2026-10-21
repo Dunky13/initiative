@@ -48,6 +48,7 @@ from app.db.session import (
     SystemSessionLocal,
     guild_context,
     install_context,
+    require_guild_context,
     routed_guild_id,
     set_rls_context,
 )
@@ -958,8 +959,7 @@ async def clear_digest_queue_across_guilds(
     # the user belongs to, including auth-policy-gated ones.
     await cross_guild.gather_across_guilds(
         session,
-        user_id,
-        guild_ids,
+        {user_id: guild_ids},
         _clear,
         on_behalf=True,
         writes=True,
@@ -1132,10 +1132,11 @@ def digest_scan(spec: DigestSpec, *, now: datetime) -> Scan:
 
 
 async def _waiting_stamps(
-    model: Any, user_id: int, routed: AsyncSession, _guild_id: int
-) -> list[datetime]:
-    """When the person's oldest and newest unsent items in the routed
-    community came."""
+    model: Any, routed: AsyncSession, _guild_id: int
+) -> list[tuple[int, datetime]]:
+    """When the reader's oldest and newest unsent items in the routed
+    community came, beside who they are."""
+    user_id = require_guild_context(routed).user_id
     row = (
         await routed.exec(
             select(func.min(model.created_at), func.max(model.created_at)).where(
@@ -1143,7 +1144,7 @@ async def _waiting_stamps(
             )
         )
     ).one()
-    return [stamp for stamp in row if stamp is not None]
+    return [(user_id, stamp) for stamp in row if stamp is not None]
 
 
 async def _send_digests(
@@ -1170,63 +1171,77 @@ async def _send_digests(
         quiet_period=spec.quiet_period,
         max_window=spec.max_window,
     )
-    for user_id, held in pending.items():
-        if not wants_digest(all_prefs.get(user_id), spec.category):
-            continue
-        stamps = [stamp for pair in held.values() for stamp in pair]
-        guild_ids: list[int] = []
-        ready = settled(stamps)
-        if ready:
-            # Every community they still belong to, not only those this pass
-            # visited: items elsewhere join the same digest, and one still
-            # arriving there holds it back.
-            guild_ids = await member_guild_ids(session, user_id)
-            stamps += await gather_across_guilds(
-                session,
-                user_id,
-                [guild_id for guild_id in guild_ids if guild_id not in held],
-                partial(_waiting_stamps, model, user_id),
-                on_behalf=True,
+    held = {
+        user_id: by_guild
+        for user_id, by_guild in pending.items()
+        if wants_digest(all_prefs.get(user_id), spec.category)
+    }
+    stamps = {
+        user_id: [stamp for pair in by_guild.values() for stamp in pair]
+        for user_id, by_guild in held.items()
+    }
+    # Every community they still belong to, not only those this pass visited:
+    # items elsewhere join the same digest, and one still arriving there holds
+    # it back.
+    members = {
+        user_id: await member_guild_ids(session, user_id)
+        for user_id in held
+        if settled(stamps[user_id])
+    }
+    for user_id, stamp in await gather_across_guilds(
+        session,
+        {
+            user_id: [
+                guild_id for guild_id in guild_ids if guild_id not in held[user_id]
+            ]
+            for user_id, guild_ids in members.items()
+        },
+        partial(_waiting_stamps, model),
+        on_behalf=True,
+    ):
+        stamps[user_id].append(stamp)
+    ready = {
+        user_id: guild_ids
+        for user_id, guild_ids in members.items()
+        if settled(stamps[user_id])
+    }
+    for user_id, by_guild in held.items():
+        if user_id not in ready:
+            due = min(
+                max(stamps[user_id]) + spec.quiet_period,
+                min(stamps[user_id]) + spec.max_window,
             )
-            ready = settled(stamps)
-        if not ready:
-            due = min(max(stamps) + spec.quiet_period, min(stamps) + spec.max_window)
-            for guild_id in held:
+            for guild_id in by_guild:
                 later[guild_id] = min(later.get(guild_id, due), due)
-            continue
 
-        # Defaults bind the loop variables now rather than by reference (B023).
-        async def _take(routed: AsyncSession, gid: int, *, _uid=user_id) -> list[dict]:
-            taken = (
-                sa_update(model)
-                .where(model.user_id == _uid, model.processed_at.is_(None))
-                .values(processed_at=now)
-            )
-            # A community set to say less is filtered here, where the guild is
-            # known — a digest spans guilds, so this cannot be decided once for
-            # the whole batch. Its items are taken all the same, so they stop
-            # counting as waiting rather than sitting until the GC drops them.
-            if not wants_digest(all_prefs.get(_uid), spec.category, guild_id=gid):
-                await routed.exec(taken)
-                return []
-            items = sorted(
-                (await routed.exec(taken.returning(model))).scalars(),
-                key=lambda item: item.created_at,
-            )
-            return [spec.row(item, gid) for item in items]
-
-        # Digests act on membership (no live session exists here) — the
-        # system sentinel clears the guild auth-policy gate.
-        batch = await gather_across_guilds(
-            session,
-            user_id,
-            guild_ids,
-            _take,
-            on_behalf=True,
-            writes=True,
+    async def _take(routed: AsyncSession, gid: int) -> list[tuple[int, dict]]:
+        user_id = require_guild_context(routed).user_id
+        taken = (
+            sa_update(model)
+            .where(model.user_id == user_id, model.processed_at.is_(None))
+            .values(processed_at=now)
         )
-        if not batch:
-            continue
+        # A community set to say less is filtered here, where the guild is
+        # known — a digest spans guilds, so this cannot be decided once for
+        # the whole batch. Its items are taken all the same, so they stop
+        # counting as waiting rather than sitting until the GC drops them.
+        if not wants_digest(all_prefs.get(user_id), spec.category, guild_id=gid):
+            await routed.exec(taken)
+            return []
+        items = sorted(
+            (await routed.exec(taken.returning(model))).scalars(),
+            key=lambda item: item.created_at,
+        )
+        return [(user_id, spec.row(item, gid)) for item in items]
+
+    # Digests act on membership (no live session exists here) — the
+    # system sentinel clears the guild auth-policy gate.
+    batches: dict[int, list[dict]] = {}
+    for user_id, row in await gather_across_guilds(
+        session, ready, _take, on_behalf=True, writes=True
+    ):
+        batches.setdefault(user_id, []).append(row)
+    for user_id, batch in batches.items():
         # Send: re-load the user, fresh, in a shared-table context.
         session.expunge_all()
         await set_rls_context(session, Platform(user_id=user_id))
@@ -1904,14 +1919,16 @@ def next_overdue(after: datetime | None = None) -> Any:
     return statement
 
 
-async def _overdue_tasks_for_user(
-    session: AsyncSession, user_id: int, guild_id: int
-) -> list[dict]:
-    """Overdue tasks assigned to the user *in the currently routed guild schema*.
+async def _overdue_tasks_for_reader(
+    session: AsyncSession, guild_id: int
+) -> list[tuple[int, dict]]:
+    """Overdue tasks assigned to the reader the session is routed as, *in the
+    routed guild schema*, each beside who they are.
 
-    Run once per guild via ``gather_across_guilds`` (the session is routed into
-    each of the user's guilds in turn), so it only ever sees one guild's rows.
+    Run once per guild and reader via ``gather_across_guilds``, so it only ever
+    sees one guild's rows, as that reader.
     """
+    user_id = require_guild_context(session).user_id
     stmt = (
         _overdue_assignments(Task, Project.name, Project.id)
         .where(TaskAssignee.user_id == user_id)
@@ -1919,20 +1936,25 @@ async def _overdue_tasks_for_user(
     )
     result = await session.exec(stmt)
     rows = result.all()
-    tasks: list[dict] = []
+    tasks: list[tuple[int, dict]] = []
     for row in rows:
         task, project_name, project_id = row
         target_path = _task_target_path(task.id, project_id)
         tasks.append(
-            {
-                "title": task.title,
-                "project_name": project_name,
-                "due_date": task.due_date.strftime("%Y-%m-%d %H:%M UTC")
-                if task.due_date
-                else "N/A",
-                "link": _build_smart_link(target_path=target_path, guild_id=guild_id),
-                "community_id": guild_id,
-            }
+            (
+                user_id,
+                {
+                    "title": task.title,
+                    "project_name": project_name,
+                    "due_date": task.due_date.strftime("%Y-%m-%d %H:%M UTC")
+                    if task.due_date
+                    else "N/A",
+                    "link": _build_smart_link(
+                        target_path=target_path, guild_id=guild_id
+                    ),
+                    "community_id": guild_id,
+                },
+            )
         )
     return tasks
 
@@ -2053,6 +2075,8 @@ async def _send_overdue(
         )
         for u in users
     ]
+    # Who is due now, and when each one is next due after that.
+    due: dict[int, tuple[datetime, datetime]] = {}
     for user_id, user_tz, schedule, last_at in candidates:
         tz = resolve_zone(user_tz)
         now_local = now.astimezone(tz)
@@ -2077,24 +2101,20 @@ async def _send_overdue(
         if not today or (last_at and last_at.astimezone(tz).date() == now_local.date()):
             _next(user_id, following)
             continue
-        # User-scoped: visit each of the user's guild schemas with their own
-        # membership context (no all-guild access) and collect their overdue
-        # tasks. Every community they belong to, not only those this pass
-        # visited: today's digest is claimed once, so it has to hold them all.
-        guild_ids = await member_guild_ids(session, user_id)
-        tasks = await gather_across_guilds(
-            session,
-            user_id,
-            guild_ids,
-            # _uid default-binds user_id so the closure doesn't capture the loop
-            # variable by reference (B023).
-            lambda routed, gid, _uid=user_id: _overdue_tasks_for_user(
-                routed, _uid, gid
-            ),
-            on_behalf=True,
-        )
-        if not tasks:
-            continue
+        due[user_id] = (target_local, following)
+    # Each one's overdue tasks, read in each of their guild schemas as them.
+    # Every community they belong to, not only those this pass visited: today's
+    # digest is claimed once, so it has to hold them all.
+    overdue_tasks: dict[int, list[dict]] = {}
+    for user_id, task in await gather_across_guilds(
+        session,
+        {user_id: await member_guild_ids(session, user_id) for user_id in due},
+        _overdue_tasks_for_reader,
+        on_behalf=True,
+    ):
+        overdue_tasks.setdefault(user_id, []).append(task)
+    for user_id, tasks in overdue_tasks.items():
+        target_local, following = due[user_id]
         # Re-load the user, fresh, to send + stamp it. The
         # email/stamp touch only shared tables, so the user-only context is fine.
         session.expunge_all()
@@ -2543,7 +2563,8 @@ async def reminder_scan(*, now: datetime) -> Scan:
             upcoming.append(now + timedelta(days=1))
         return min(upcoming, default=None)
 
-    async def _dispatch(session: AsyncSession, guild_id: int, user_id: int) -> list:
+    async def _dispatch(session: AsyncSession, guild_id: int) -> list:
+        user_id = require_guild_context(session).user_id
         events = (
             (
                 await session.exec(
@@ -2644,20 +2665,15 @@ async def reminder_scan(*, now: datetime) -> Scan:
 
     async def _finish() -> None:
         async with cohorts.system_session(None) as session:
-            for user_id, guild_ids in due_in.items():
-                # Through the seam, as the account whose reminders these are:
-                # what the sweep may see of a community is what that account
-                # may see.
-                await gather_across_guilds(
-                    session,
-                    user_id,
-                    await member_guild_ids(
-                        session, user_id, restrict_to=sorted(guild_ids)
-                    ),
-                    lambda routed, gid, _uid=user_id: _dispatch(routed, gid, _uid),
-                    on_behalf=True,
-                    writes=True,
-                )
+            # Through the seam, as each account whose reminders these are: what
+            # the sweep may see of a community is what that account may see.
+            await gather_across_guilds(
+                session,
+                {user_id: sorted(guild_ids) for user_id, guild_ids in due_in.items()},
+                _dispatch,
+                on_behalf=True,
+                writes=True,
+            )
 
     return Scan(Scope.LIVE, _visit, _finish)
 

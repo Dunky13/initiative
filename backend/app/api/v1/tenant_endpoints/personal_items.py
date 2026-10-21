@@ -296,7 +296,9 @@ async def list_my_personal_items(
         del guild_id
         return await _community_items(guild_session, current_user.id, mark, limit)
 
-    items = await gather_across_guilds(session, current_user.id, member_guilds, _fetch)
+    items = await gather_across_guilds(
+        session, {current_user.id: member_guilds}, _fetch
+    )
     field = "viewed_at" if mark is ListedMark.view else "bookmarked_at"
     items.sort(key=lambda item: getattr(item, field), reverse=True)
     return items[:limit] if limit is not None else items

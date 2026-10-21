@@ -74,4 +74,4 @@ async def list_my_ai(
             for c in view.connections
         ]
 
-    return await gather_across_guilds(session, current_user.id, target_guilds, _fetch)
+    return await gather_across_guilds(session, {current_user.id: target_guilds}, _fetch)

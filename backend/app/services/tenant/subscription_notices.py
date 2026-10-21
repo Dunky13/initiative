@@ -47,7 +47,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db.request_context import SystemGuild
-from app.db.session import set_rls_context
+from app.db.session import require_guild_context, set_rls_context
 from app.models.platform.notification import NotificationType
 from app.models.platform.user import User
 from app.models.tenant.guild_plugin import GuildPlugin
@@ -158,15 +158,16 @@ async def _concerned(
 
 async def _tell(
     batch: list[int],
-    concerns: dict[Ref, Subscriber],
+    concerned: dict[int, dict[Ref, Subscriber]],
     actors: dict[int, User],
     installs: dict[int, notifications.PluginAuthor],
-    reader_id: int,
     routed: AsyncSession,
     _guild_id: int,
 ) -> list[None]:
-    """Tell one subscriber, on a session routed as them, what the batch did
-    that they can see."""
+    """Tell the subscriber the session is routed as what the batch did that
+    they can see."""
+    reader_id = require_guild_context(routed).user_id
+    concerns = concerned[reader_id]
     statement, params = activity_feed.batch_query(batch, reader_id=reader_id)
     rows = (await routed.exec(statement, params=params)).mappings().all()  # type: ignore[call-overload]
     for row in rows:
@@ -244,15 +245,13 @@ async def tell_subscribers(session: AsyncSession, guild_id: int) -> None:
                 )
             ).all()
         }
-        for reader_id, concerns in sorted(concerned.items()):
-            await gather_across_guilds(
-                session,
-                reader_id,
-                [guild_id],
-                partial(_tell, batch, concerns, actors, installs, reader_id),
-                on_behalf=True,
-                writes=True,
-            )
+        await gather_across_guilds(
+            session,
+            {reader_id: [guild_id] for reader_id in sorted(concerned)},
+            partial(_tell, batch, concerned, actors, installs),
+            on_behalf=True,
+            writes=True,
+        )
         await set_rls_context(session, SystemGuild(guild_id))
         progress = (await session.exec(select(SubscriptionProgress))).one()
     # Everything below the oldest transaction still running has ended, so it
