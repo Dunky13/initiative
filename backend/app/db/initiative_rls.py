@@ -1644,6 +1644,10 @@ DAC_WRITE_COMMANDS: dict[str, frozenset[str]] = {
     # the reaction, so it answers at the same level. It shares
     # ``reactions_path``; this is the other half of that sharing.
     "reaction_digest_items": _RESPONDING,
+    # An assignee's queued line about a task is queued by whoever assigned
+    # them, who writes to the project; taking or clearing it is the assignee's
+    # own business, done as them.
+    "task_assignment_digest_items": frozenset({"INSERT"}),
 }
 
 #: The default: a command that writes asks at write level.

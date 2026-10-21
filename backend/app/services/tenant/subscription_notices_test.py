@@ -156,6 +156,44 @@ async def test_subscribers_hear_of_what_others_change(
     assert all(n.read_at for n in await _lines(session, b_id, ASSIGNED))
 
 
+async def test_somebody_named_outside_the_initiative_hears_nothing(
+    client, session: AsyncSession, acting_user
+):
+    """An assignee who is not in the task's initiative is told nothing of it;
+    one who can open it is."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    inside = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
+    )
+    await create_resource_grant(
+        session, a.project, user=inside.user, level=ResourceAccessLevel.read
+    )
+    outside = await acting_user(guild_role=CommunityRole.member, guild=a.guild)
+    task_id = cast(
+        int,
+        (
+            await create_task(
+                session, a.project, title="Hall", assignees=[inside.user, outside.user]
+            )
+        ).id,
+    )
+    guild_id = cast(int, a.guild.id)
+    await _tell(guild_id)  # what the factories wrote names nobody
+
+    edited = await client.patch(
+        a.g(f"/tasks/{task_id}"), headers=a.headers, json={"title": "Book"}
+    )
+    assert edited.status_code == 200, edited.text
+    await _tell(guild_id)
+    assert len(await _lines(session, cast(int, inside.user.id), ASSIGNED)) == 1
+    assert await _lines(session, cast(int, outside.user.id), ASSIGNED) == []
+
+
 async def test_an_attendee_hears_of_an_event_moving_unless_they_declined(
     client, session: AsyncSession, acting_user
 ):
