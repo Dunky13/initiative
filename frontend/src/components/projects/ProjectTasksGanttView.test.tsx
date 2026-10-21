@@ -1,7 +1,8 @@
 /**
  * A project's tasks on a time axis. What a drag writes, what a drag across an
- * empty track gives a task with no dates, and which dependencies are drawn
- * late.
+ * empty track gives a task with no dates, which dependencies are drawn late,
+ * the link a drag from one bar to another row makes, what the keyboard moves,
+ * and that only the rows in view are drawn.
  */
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -114,5 +115,90 @@ describe("ProjectTasksGanttView", () => {
       path.classList.contains("stroke-destructive")
     );
     expect(late).toEqual([false, true]);
+  });
+
+  it("makes the task a link is dragged onto wait on the one it starts from", async () => {
+    const first = buildTask({
+      title: "First",
+      start_date: at("2026-03-02"),
+      due_date: at("2026-03-04"),
+    });
+    const next = buildTask({
+      title: "Next",
+      start_date: at("2026-03-05"),
+      due_date: at("2026-03-06"),
+    });
+    const sent = vi.fn();
+    server.use(
+      communityHttp.post("/relationships/", async ({ request }) => {
+        sent(await request.json());
+        return HttpResponse.json({}, { status: 201 });
+      })
+    );
+    mount([first, next]);
+    await screen.findByTitle(/^First ·/);
+    const [fromFirst] = screen.getAllByTestId("gantt-link");
+
+    fireEvent.pointerDown(fromFirst, { button: 0, clientX: 0, clientY: 16 });
+    // Onto the second row, which is a row's height down.
+    fireEvent.pointerMove(fromFirst, { clientX: 40, clientY: 48 });
+    fireEvent.pointerUp(fromFirst, { clientX: 40, clientY: 48 });
+
+    await waitFor(() =>
+      expect(sent).toHaveBeenCalledWith({
+        source: { type: "task", id: next.id },
+        relationship_type: "depends_on",
+        target: { type: "task", id: first.id },
+      })
+    );
+  });
+
+  it("moves between rows with the arrows, and a task's dates with Alt", async () => {
+    const first = buildTask({
+      title: "First",
+      start_date: at("2026-03-02"),
+      due_date: at("2026-03-04"),
+    });
+    const second = buildTask({
+      title: "Second",
+      start_date: at("2026-03-02"),
+      due_date: at("2026-03-04"),
+    });
+    const { onReschedule } = mount([first, second]);
+    const rows = await screen.findAllByRole("row");
+    expect(rows.map((row) => row.tabIndex)).toEqual([0, -1]);
+
+    rows[0].focus();
+    fireEvent.keyDown(rows[0], { key: "ArrowDown" });
+    await waitFor(() => expect(screen.getAllByRole("row")[1]).toHaveFocus());
+
+    // Two presses are one move of two days, saved once they stop.
+    const focused = screen.getAllByRole("row")[1];
+    fireEvent.keyDown(focused, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(focused, { key: "ArrowRight", altKey: true });
+    await waitFor(() => expect(onReschedule).toHaveBeenCalledTimes(1));
+    const [moved, dates] = onReschedule.mock.calls[0] as unknown as [
+      typeof second,
+      { start_date: string; due_date: string },
+    ];
+    expect(moved.id).toBe(second.id);
+    expect(dates).toEqual({ start_date: at("2026-03-04"), due_date: at("2026-03-06") });
+
+    // With Shift as well, only the due date.
+    fireEvent.keyDown(focused, { key: "ArrowLeft", altKey: true, shiftKey: true });
+    await waitFor(() => expect(onReschedule).toHaveBeenCalledTimes(2));
+    expect((onReschedule.mock.calls[1] as unknown as [unknown, unknown])[1]).toEqual({
+      due_date: at("2026-03-03"),
+    });
+  });
+
+  it("draws only the rows in view", async () => {
+    const tasks = Array.from({ length: 300 }, (_, index) =>
+      buildTask({ title: `Task ${index}`, start_date: null, due_date: null })
+    );
+    mount(tasks);
+    await screen.findByText("Task 0");
+    expect(screen.getAllByRole("row").length).toBeLessThan(50);
+    expect(screen.getByRole("treegrid")).toHaveAttribute("aria-rowcount", "300");
   });
 });

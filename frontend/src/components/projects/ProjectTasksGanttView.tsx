@@ -2,8 +2,10 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { GroupingState } from "@tanstack/react-table";
 import { ChevronRight } from "lucide-react";
 import {
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -12,12 +14,14 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  LayoutGrouping,
-  ListTasksParams,
-  TaskListRead,
-  TaskStatusRead,
-  TaskUpdate,
+import {
+  type LayoutGrouping,
+  type ListTasksParams,
+  RelationshipType,
+  SearchEntityType,
+  type TaskListRead,
+  type TaskStatusRead,
+  type TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { useListTaskEdges } from "@/api/generated/relationships/relationships";
 import { TaskTypeMark } from "@/components/tasks/TaskTypeOption";
@@ -27,6 +31,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useProjectTaskTypes } from "@/hooks/useProjects";
 import { useProperties } from "@/hooks/useProperties";
+import { useRelate } from "@/hooks/useRelationships";
 import { useTaskGroupings } from "@/hooks/useTaskGroupings";
 import {
   DAY,
@@ -68,6 +73,10 @@ const INDENT = 14;
 const DRAG_SLOP = 4;
 /** Where the arrow from a blocker turns before it reaches what waits on it. */
 const ELBOW = 8;
+/** Rows drawn past each edge of the view, so a quick scroll shows no gap. */
+const OVERSCAN = 10;
+/** How long a run of arrow-key moves waits before it is saved, as one write. */
+const KEY_SETTLE_MS = 600;
 
 type Dates = Pick<TaskUpdate, "start_date" | "due_date">;
 
@@ -82,6 +91,10 @@ type Drag = {
   moved: boolean;
   from?: number;
 };
+
+/** A link being drawn from a task's bar to another task's row: where it
+ *  starts and where the pointer is, on the chart. */
+type Linking = { task: TaskListRead; x1: number; y1: number; x2: number; y2: number };
 
 type ProjectTasksGanttViewProps = {
   initiativeId: number;
@@ -107,9 +120,14 @@ type ProjectTasksGanttViewProps = {
  * A task with one date is a marker on that day, and a task with none has an
  * empty track, which a drag across gives dates. A bar is dragged to move it
  * and by an end to change that date; a task depending on another is joined to
- * it by an arrow, red where it starts before the other ends; and a task's
- * parts are listed under it, folded with it, the span they cover drawn over
- * its row. Grouped, each group is a band with its heading.
+ * it by an arrow, red where it starts before the other ends, and one is drawn
+ * from the dot at a bar's end to the row of the task that waits on it; and a
+ * task's parts are listed under it, folded with it, the span they cover drawn
+ * over its row. Grouped, each group is a band with its heading.
+ *
+ * The rows are a tree grid: the arrow keys move between them and fold them,
+ * Enter opens a task, and Alt with an arrow moves it a day (with Shift, its
+ * due date). Only the rows in view are drawn.
  */
 export const ProjectTasksGanttView = ({
   initiativeId,
@@ -215,6 +233,7 @@ export const ProjectTasksGanttView = ({
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
+  const settle = useRef<number | undefined>(undefined);
   const moveDrag = (next: Drag | null) => {
     dragRef.current = next;
     setDrag(next);
@@ -264,6 +283,7 @@ export const ProjectTasksGanttView = ({
 
   const release = () => {
     const current = dragRef.current;
+    window.clearTimeout(settle.current);
     moveDrag(null);
     if (!current) return;
     if (current.from !== undefined) {
@@ -296,6 +316,169 @@ export const ProjectTasksGanttView = ({
     };
   };
 
+  const toggleFold = (key: string) =>
+    setFolded((all) => {
+      const next = new Set(all);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  // Which rows are in view, from where the chart is scrolled to: only those,
+  // and the one in the tab order, are drawn.
+  const [view, setView] = useState({ top: 0, height: 0 });
+  const measure = useCallback(() => {
+    const element = scroller.current;
+    if (element) setView({ top: element.scrollTop, height: element.clientHeight });
+  }, []);
+  useLayoutEffect(() => {
+    measure();
+    const element = scroller.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [measure]);
+  const first = Math.max(0, Math.floor((view.top - HEADER_HEIGHT) / ROW_HEIGHT) - OVERSCAN);
+  const last = Math.min(rows.length, Math.ceil((view.top + view.height) / ROW_HEIGHT) + OVERSCAN);
+
+  // One row is in the tab order, and the arrow keys move it.
+  const body = useRef<HTMLDivElement>(null);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const focused = Math.min(focusedIndex, Math.max(0, rows.length - 1));
+  const keyed = useRef(false);
+  const focusRow = (index: number) => {
+    const next = Math.max(0, Math.min(index, rows.length - 1));
+    const element = scroller.current;
+    if (element) {
+      const top = next * ROW_HEIGHT;
+      const room = element.clientHeight - HEADER_HEIGHT - ROW_HEIGHT;
+      if (top < element.scrollTop) element.scrollTop = top;
+      else if (top > element.scrollTop + room) element.scrollTop = top - room;
+    }
+    keyed.current = true;
+    setFocusedIndex(next);
+  };
+  useEffect(() => {
+    if (!keyed.current) return;
+    keyed.current = false;
+    body.current?.querySelector<HTMLElement>(`[data-row="${focused}"]`)?.focus();
+  }, [focused]);
+  useEffect(() => () => window.clearTimeout(settle.current), []);
+
+  /** Alt and an arrow: the row's task a day along, saved once the presses
+   *  stop. A task with no dates starts on today. */
+  const nudge = (row: Extract<GanttRow, { type: "task" }>, hold: DragHold, step: number) => {
+    const current = dragRef.current;
+    if (current && (current.key !== row.key || current.hold !== hold)) release();
+    const base = dragRef.current ?? {
+      key: row.key,
+      task: row.task,
+      hold,
+      originX: 0,
+      days: 0,
+      moved: true,
+      from: spanOf(row.task) ? undefined : floorToUnit(now, "day"),
+    };
+    moveDrag({ ...base, days: base.days + step });
+    window.clearTimeout(settle.current);
+    settle.current = window.setTimeout(release, KEY_SETTLE_MS);
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const row = rows[focused];
+    if (!row) return;
+    const sideways = event.key === "ArrowLeft" || event.key === "ArrowRight";
+    if (event.altKey && sideways) {
+      if (row.type !== "task" || !canMove) return;
+      const hold = event.shiftKey && spanOf(row.task)?.kind === "bar" ? "end" : "move";
+      nudge(row, hold, event.key === "ArrowRight" ? 1 : -1);
+      event.preventDefault();
+      return;
+    }
+    switch (event.key) {
+      case "ArrowDown":
+        focusRow(focused + 1);
+        break;
+      case "ArrowUp":
+        focusRow(focused - 1);
+        break;
+      case "Home":
+        focusRow(0);
+        break;
+      case "End":
+        focusRow(rows.length - 1);
+        break;
+      case "ArrowRight":
+        // Open a folded task, then step into its parts.
+        if (row.type !== "task" || !row.hasParts) return;
+        if (row.open) focusRow(focused + 1);
+        else toggleFold(row.key);
+        break;
+      case "ArrowLeft": {
+        if (row.type !== "task") return;
+        if (row.hasParts && row.open) {
+          toggleFold(row.key);
+          break;
+        }
+        // Otherwise up to the task it is part of.
+        let whole = focused - 1;
+        while (whole >= 0) {
+          const above = rows[whole];
+          if (above.type === "task" && above.depth < row.depth) break;
+          whole--;
+        }
+        if (row.depth === 0 || whole < 0) return;
+        focusRow(whole);
+        break;
+      }
+      case "Enter":
+        if (row.type !== "task" || editing) return;
+        void navigate({ to: taskHref(row.task.id) });
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
+
+  // A link drawn from the dot at a task's end to another task's row: the task
+  // dropped on waits on the one it was drawn from.
+  const relate = useRelate();
+  const [linking, setLinking] = useState<Linking | null>(null);
+  const onChart = (event: ReactPointerEvent<HTMLElement>) => {
+    const rect = body.current?.getBoundingClientRect();
+    return {
+      x: event.clientX - (rect?.left ?? 0) - LABEL_WIDTH,
+      y: event.clientY - (rect?.top ?? 0),
+    };
+  };
+  const startLink = (event: ReactPointerEvent<HTMLElement>, task: TaskListRead, index: number) => {
+    const span = spanOf(task);
+    if (event.button !== 0 || !canMove || !span) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const x1 = x(span.end);
+    const y1 = index * ROW_HEIGHT + ROW_HEIGHT / 2;
+    setLinking({ task, x1, y1, x2: x1, y2: y1 });
+  };
+  const followLink = (event: ReactPointerEvent<HTMLElement>) => {
+    const { x: x2, y: y2 } = onChart(event);
+    setLinking((current) => current && { ...current, x2, y2 });
+  };
+  const endLink = (event: ReactPointerEvent<HTMLElement>) => {
+    const from = linking;
+    setLinking(null);
+    if (!from) return;
+    const target = rows[Math.floor(onChart(event).y / ROW_HEIGHT)];
+    if (target?.type !== "task" || target.task.id === from.task.id) return;
+    relate.mutate({
+      source: { type: SearchEntityType.task, id: target.task.id },
+      relationship_type: RelationshipType.depends_on,
+      target: { type: SearchEntityType.task, id: from.task.id },
+    });
+  };
+  const linkingOver = linking ? Math.floor(linking.y2 / ROW_HEIGHT) : -1;
+
   // A dependency's arrow runs from the end of what blocks to the start of
   // what waits, between the first rows each is drawn in.
   const arrows = useMemo(() => {
@@ -310,6 +493,8 @@ export const ProjectTasksGanttView = ({
       const waits = at.get(edge.source_id);
       const blocks = at.get(edge.target_id);
       if (!waits || !blocks) return [];
+      if (Math.max(waits.index, blocks.index) < first) return [];
+      if (Math.min(waits.index, blocks.index) >= last) return [];
       const x1 = x(blocks.span.end);
       const y1 = blocks.index * ROW_HEIGHT + ROW_HEIGHT / 2;
       const x2 = x(waits.span.start);
@@ -326,7 +511,7 @@ export const ProjectTasksGanttView = ({
         },
       ];
     });
-  }, [rows, edges, x]);
+  }, [rows, edges, x, first, last]);
 
   const tickLabel = (tick: AxisTick) =>
     dateTimeFormat(locale, scale === "month" ? { month: "short" } : { day: "numeric" }).format(
@@ -339,13 +524,6 @@ export const ProjectTasksGanttView = ({
     ).format(new Date(at));
   const dayLabel = (at: number) =>
     dateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(at));
-
-  const toggleFold = (key: string) =>
-    setFolded((all) => {
-      const next = new Set(all);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
 
   const todayX = x(floorToUnit(now, "day"));
   const markerId = useId();
@@ -383,6 +561,7 @@ export const ProjectTasksGanttView = ({
 
       <div
         ref={scroller}
+        onScroll={measure}
         className="scrollbar-thin max-h-[75vh] overflow-auto rounded-md border text-sm"
         data-testid="gantt"
       >
@@ -418,7 +597,19 @@ export const ProjectTasksGanttView = ({
             </div>
           </div>
 
-          <div className="relative">
+          <p id={`${markerId}-keys`} className="sr-only">
+            {t(canMove ? "tasks.ganttKeysMove" : "tasks.ganttKeys")}
+          </p>
+          <div
+            ref={body}
+            className="relative"
+            style={{ height: Math.max(rows.length, 1) * ROW_HEIGHT }}
+            role="treegrid"
+            aria-label={t("tasks.viewGantt")}
+            aria-describedby={`${markerId}-keys`}
+            aria-rowcount={rows.length}
+            onKeyDown={onKeyDown}
+          >
             {/* Behind the bars: weekends, gridlines, today and the arrows. */}
             <div
               className="pointer-events-none absolute inset-y-0"
@@ -474,6 +665,16 @@ export const ProjectTasksGanttView = ({
                     className={arrow.late ? "stroke-destructive" : "stroke-muted-foreground"}
                   />
                 ))}
+                {linking ? (
+                  <path
+                    d={`M${linking.x1},${linking.y1} L${linking.x2},${linking.y2}`}
+                    fill="none"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    markerEnd={`url(#${markerId}-false)`}
+                    className="stroke-primary"
+                  />
+                ) : null}
               </svg>
             </div>
 
@@ -485,34 +686,71 @@ export const ProjectTasksGanttView = ({
                 {t("tasks.ganttEmpty")}
               </p>
             ) : null}
-            {rows.map((row) =>
-              row.type === "group" ? (
-                <div
-                  key={`group:${row.key}`}
-                  className="flex border-b bg-muted/30"
-                  style={{ height: ROW_HEIGHT }}
-                >
+            {drawnIndexes(first, last, focused).map((index) => {
+              const row = rows[index];
+              if (!row) return null;
+              const rowProps = {
+                "data-row": index,
+                onFocus: () => setFocusedIndex(index),
+                "aria-rowindex": index + 1,
+                className: cn(
+                  "group/row absolute inset-x-0 flex border-b outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  linkingOver === index && "bg-accent"
+                ),
+                style: { top: index * ROW_HEIGHT, height: ROW_HEIGHT },
+              } as const;
+              if (row.type === "group") {
+                return (
+                  // biome-ignore lint/a11y/useSemanticElements: virtualized absolute layout doesn't fit a <table>; ARIA grid roles convey semantics
                   <div
-                    className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r bg-muted px-3"
-                    style={{ width: LABEL_WIDTH }}
+                    key={`group:${row.key}`}
+                    role="row"
+                    tabIndex={index === focused ? 0 : -1}
+                    {...rowProps}
+                    aria-level={1}
                   >
-                    <span className="min-w-0 truncate">{active?.grouping.header(row.key)}</span>
-                    <span className="text-muted-foreground text-xs tabular-nums">{row.count}</span>
+                    {/* biome-ignore lint/a11y/useSemanticElements: virtualized absolute layout doesn't fit a <table>; ARIA grid roles convey semantics */}
+                    <div
+                      role="gridcell"
+                      tabIndex={-1}
+                      className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r bg-muted px-3"
+                      style={{ width: LABEL_WIDTH }}
+                    >
+                      <span className="min-w-0 truncate">{active?.grouping.header(row.key)}</span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {row.count}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ) : (
+                );
+              }
+              const span = spanOf(row.task);
+              return (
+                // biome-ignore lint/a11y/useSemanticElements: virtualized absolute layout doesn't fit a <table>; ARIA grid roles convey semantics
                 <div
                   key={row.key}
-                  className="group/row flex border-border/50 border-b"
-                  style={{ height: ROW_HEIGHT }}
+                  role="row"
+                  tabIndex={index === focused ? 0 : -1}
+                  {...rowProps}
+                  aria-level={row.depth + (active ? 2 : 1)}
+                  aria-expanded={row.hasParts ? row.open : undefined}
+                  aria-label={
+                    span
+                      ? `${row.task.title}, ${dayLabel(span.start)} – ${dayLabel(addUnits(span.end, "day", -1))}`
+                      : row.task.title
+                  }
                 >
+                  {/* biome-ignore lint/a11y/useSemanticElements: virtualized absolute layout doesn't fit a <table>; ARIA grid roles convey semantics */}
                   <div
+                    role="gridcell"
+                    tabIndex={-1}
                     className="sticky left-0 z-10 flex shrink-0 items-center gap-1.5 border-r bg-background pr-2 group-hover/row:bg-muted"
                     style={{ width: LABEL_WIDTH, paddingLeft: 8 + row.depth * INDENT }}
                   >
                     {row.hasParts ? (
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => toggleFold(row.key)}
                         className="-m-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                         aria-expanded={row.open}
@@ -539,6 +777,7 @@ export const ProjectTasksGanttView = ({
                     ) : (
                       <Link
                         to={taskHref(row.task.id)}
+                        tabIndex={-1}
                         className={cn(
                           "min-w-0 truncate hover:underline",
                           row.task.task_status.category === "done" &&
@@ -557,21 +796,35 @@ export const ProjectTasksGanttView = ({
                     canMove={canMove}
                     dragging={drag?.key === row.key}
                     scheduleHint={t("tasks.ganttSchedule")}
+                    linkHint={t("tasks.ganttLink")}
                     dayLabel={dayLabel}
                     onPress={(event, hold) => press(event, row.key, row.task, hold)}
                     onSchedule={(event) => press(event, row.key, row.task, "move", dayAt(event))}
                     onFollow={follow}
                     onRelease={release}
                     onCancel={() => moveDrag(null)}
+                    onLinkStart={(event) => startLink(event, row.task, index)}
+                    onLinkMove={followLink}
+                    onLinkEnd={endLink}
+                    onLinkCancel={() => setLinking(null)}
                   />
                 </div>
-              )
-            )}
+              );
+            })}
           </div>
         </div>
       </div>
     </div>
   );
+};
+
+/** The rows from `first` up to `last`, and `focused` wherever it is, so the
+ *  row in the tab order is always there to take focus. */
+const drawnIndexes = (first: number, last: number, focused: number) => {
+  const indexes: number[] = [];
+  for (let index = first; index < last; index++) indexes.push(index);
+  if (focused < first || focused >= last) indexes.push(focused);
+  return indexes;
 };
 
 type TrackProps = {
@@ -582,12 +835,17 @@ type TrackProps = {
   canMove: boolean;
   dragging: boolean;
   scheduleHint: string;
+  linkHint: string;
   dayLabel: (at: number) => string;
   onPress: (event: ReactPointerEvent<HTMLElement>, hold: DragHold) => void;
   onSchedule: (event: ReactPointerEvent<HTMLElement>) => void;
   onFollow: (event: ReactPointerEvent<HTMLElement>) => void;
   onRelease: () => void;
   onCancel: () => void;
+  onLinkStart: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLinkMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLinkEnd: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLinkCancel: () => void;
 };
 
 /** One task's stretch of the axis: its bar or marker, what its parts cover,
@@ -600,12 +858,17 @@ const TaskTrack = ({
   canMove,
   dragging,
   scheduleHint,
+  linkHint,
   dayLabel,
   onPress,
   onSchedule,
   onFollow,
   onRelease,
   onCancel,
+  onLinkStart,
+  onLinkMove,
+  onLinkEnd,
+  onLinkCancel,
 }: TrackProps) => {
   const done = row.task.task_status.category === "done";
   const pointer = {
@@ -621,7 +884,10 @@ const TaskTrack = ({
   const undated = spanOf(row.task) === null;
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: virtualized absolute layout doesn't fit a <table>; ARIA grid roles convey semantics
     <div
+      role="gridcell"
+      tabIndex={-1}
       className={cn("relative", undated && canMove && "cursor-crosshair touch-pan-y")}
       style={{ width }}
       title={undated && canMove && !dragging ? scheduleHint : undefined}
@@ -680,6 +946,19 @@ const TaskTrack = ({
             </>
           ) : null}
         </div>
+      ) : null}
+      {span && canMove && !dragging ? (
+        // Drawn from here to another task's row, that task waits on this one.
+        <span
+          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 cursor-crosshair touch-none rounded-full border-2 border-primary bg-background opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100"
+          style={{ left: x(span.end) + 3 }}
+          title={linkHint}
+          data-testid="gantt-link"
+          onPointerDown={onLinkStart}
+          onPointerMove={onLinkMove}
+          onPointerUp={onLinkEnd}
+          onPointerCancel={onLinkCancel}
+        />
       ) : null}
     </div>
   );
