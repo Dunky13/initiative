@@ -295,7 +295,7 @@ LAYOUT_TOOLS: tuple[Tool, ...] = LAYOUTS_PER_INSTANCE + LAYOUTS_SHARED
 # (``DETAIL_LAYOUTS``: a project's task, the calendar's event). A tool with none here yet stores
 # none. The list a target opens on is one more row (``LAYOUT_DEFAULT``).
 LIST_LAYOUTS: dict[Tool, tuple[str, ...]] = {
-    Tool.project: ("table", "board", "calendar"),
+    Tool.project: ("table", "board", "gantt"),
     Tool.calendar: ("calendar",),
 }
 DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {

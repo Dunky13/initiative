@@ -124,6 +124,17 @@ class RelationshipRead(SanitizedBaseModel):
     created_at: datetime
 
 
+class TaskEdgeRead(SanitizedBaseModel):
+    """One edge between two tasks of a project, as it is stored: the source
+    depends on, is part of, or is related to the target."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    source_id: int
+    target_id: int
+    relationship_type: RelationshipType
+
+
 class NeighbourhoodNode(SanitizedBaseModel):
     """One thing in a neighbourhood, and how many hops out it was found."""
 
