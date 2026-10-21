@@ -68,7 +68,7 @@ async def generate_checklist(
     prompt = _build_checklist_prompt(
         task, initiative_name, project_name, locale=user.locale or "en"
     )
-    content = await _generate(session, user, guild_id, prompt, _SHORT_JOB)
+    content = await _generate(session, guild_id, prompt, _SHORT_JOB)
     return _parse_checklist_response(content)
 
 
@@ -85,7 +85,7 @@ async def generate_description(
     prompt = _build_description_prompt(
         task, initiative_name, project_name, locale=user.locale or "en"
     )
-    content = await _generate(session, user, guild_id, prompt, _SHORT_JOB)
+    content = await _generate(session, guild_id, prompt, _SHORT_JOB)
     return _truncate_output(content.strip(), _MAX_DESCRIPTION_LENGTH)
 
 
@@ -105,7 +105,7 @@ async def generate_file_summary(
     prompt = _build_summary_prompt(
         file_name, markdown_content, locale=user.locale or "en"
     )
-    content = await _generate(session, user, guild_id, prompt, _SUMMARY_JOB)
+    content = await _generate(session, guild_id, prompt, _SUMMARY_JOB)
     return _truncate_output(content.strip(), _MAX_SUMMARY_LENGTH)
 
 
@@ -420,7 +420,6 @@ _ADAPTERS: dict[AIProvider, _ProviderAdapter] = {
 
 async def _generate(
     session: AsyncSession,
-    user: User,
     guild_id: int | None,
     prompt: tuple[str, str],
     job: _Job,
@@ -431,7 +430,7 @@ async def _generate(
     ``allow_private`` is server-computed by :func:`resolve_ai_settings` (true
     only for an operator Ollama connection), never from request input.
     """
-    resolved = await resolve_ai_settings(session, user, guild_id, with_key=True)
+    resolved = await resolve_ai_settings(session, guild_id, with_key=True)
 
     if not resolved.enabled:
         raise AIGenerationError(AIMessages.NOT_ENABLED)

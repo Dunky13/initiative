@@ -52,12 +52,10 @@ from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
 from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.reaction_digest import ReactionDigestItem
-from app.models.tenant.ai_member_key import GuildAIMemberKey
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.platform.sign_in_lock import SignInLock
     from app.schemas.platform.user import OperatorUserRead, UserRead, UserSummary
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.models.platform.api_key import UserApiKey
 from app.models.platform.account_change_hold import AccountChangeHold
 from app.models.platform.user_token import UserToken
@@ -244,14 +242,6 @@ async def _erase_in_guild(
     # (event, person), of no use to anyone once the person is gone.
     await guild_session.exec(
         delete(EventReminderDispatch).where(EventReminderDispatch.user_id == user_id)
-    )
-    # AI credentials (member API keys) + connection preference for this
-    # guild — held in custody for them, so erasure removes them.
-    await guild_session.exec(
-        delete(GuildAIMemberKey).where(GuildAIMemberKey.user_id == user_id)
-    )
-    await guild_session.exec(
-        delete(GuildAIMemberPref).where(GuildAIMemberPref.user_id == user_id)
     )
     await guild_session.exec(
         delete(TaskAssignmentDigestItem).where(

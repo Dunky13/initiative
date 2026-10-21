@@ -6,7 +6,6 @@
       "account": "Konto",
       "interface": "Präferenzen",
       "notifications": "Benachrichtigungen",
-      "ai": "KI",
       "security": "Sicherheit",
       "trash": "Papierkorb",
       "privacy": "Privatsphäre"
@@ -210,7 +209,7 @@
   },
   "communityAI": {
     "title": "Community-KI",
-    "adminOnly": "Nur Community-Admins können KI-Verbindungen verwalten. Um deinen eigenen Schlüssel festzulegen, öffne „KI“ in deinen Profileinstellungen.",
+    "adminOnly": "Nur Community-Admins können KI-Verbindungen verwalten.",
     "connectionsTitle": "Community-Verbindungen",
     "connectionsDescription": "Definiere die KI-Verbindungen, die Mitglieder dieser Community verwenden können.",
     "disabledDescription": "KI-Funktionen sind für die Plattform deaktiviert.",
@@ -1764,31 +1763,7 @@
     "defaultDescription": "Mitglieder verwenden diese Verbindung, sofern sie keine andere wählen.",
     "save": "Verbindung speichern",
     "saving": "Wird gespeichert…",
-    "cancel": "Abbrechen",
-    "allowMemberKeysLabel": "Mitgliedern erlauben, ihren eigenen API-Schlüssel zu verwenden",
-    "allowMemberKeysDescription": "Mitglieder können dieser Verbindung einen persönlichen API-Schlüssel hinzufügen."
-  },
-  "memberAI": {
-    "description": "Sieh alle KI-Verbindungen, die dir in deinen Communitys zur Verfügung stehen. Füge dort, wo es erlaubt ist, deinen eigenen API-Schlüssel hinzu und wähle die Verbindung, die du verwendest.",
-    "noneAvailable": "Dir sind noch keine KI-Verbindungen verfügbar.",
-    "sharedKeyCommunity": "Verwendet einen gemeinsamen Schlüssel, den die Community-Administration festgelegt hat.",
-    "sharedKeyPlatform": "Verwendet einen gemeinsamen Schlüssel, den die Person festgelegt hat, die diesen Server betreibt.",
-    "selected": "In Verwendung",
-    "requiresKey": "Benötigt deinen Schlüssel",
-    "keySet": "Dein Schlüssel ist gesetzt",
-    "addKey": "Schlüssel hinzufügen",
-    "replaceKey": "Schlüssel ersetzen",
-    "removeKey": "Schlüssel entfernen",
-    "keyPlaceholder": "Deinen API-Schlüssel eingeben",
-    "saveKey": "Schlüssel speichern",
-    "keySaved": "API-Schlüssel gespeichert",
-    "keyRemoved": "API-Schlüssel entfernt",
-    "keyError": "API-Schlüssel konnte nicht gespeichert werden",
-    "keyRemoveError": "API-Schlüssel konnte nicht entfernt werden",
-    "prefSaved": "Einstellung aktualisiert",
-    "prefError": "Einstellung konnte nicht aktualisiert werden",
-    "test": "Testen",
-    "testSuccess": "Verbindung erfolgreich"
+    "cancel": "Abbrechen"
   },
   "community": {
     "title": "Community-Verzeichnis",

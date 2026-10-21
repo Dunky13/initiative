@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
 
+### Removed
+
+- **Personal AI keys.** Members no longer add their own API key to a community's AI connection or choose between connections: everyone uses the default connection that the community or the server operator sets up, and the **AI** page in profile settings is gone. Keys members had added are deleted. A connection that relied on them has no key until its owner adds one.
+
 ## [0.76.0] - 2026-10-20
 
 ### Added

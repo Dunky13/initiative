@@ -303,15 +303,10 @@ EXEMPT: dict[str, str] = {
     # Credentials. An archive is a file that leaves the deployment.
     "guild_ai_connections": "credentials",
     "guild_ai_connection_keys": "credentials",
-    "guild_ai_member_keys": "credentials",
-    "ai_member_key_secrets": "credentials",
     "guild_plugin_secrets": "credentials",
     "guild_plugin_user_connections": "credentials",
     "plugin_connection_secrets": "credentials",
     "plugin_member_consents": "credentials",
-    # Per-member personal preference, not community property — it belongs to
-    # the member, and follows them rather than the guild.
-    "guild_ai_member_prefs": "personal",
     # Operational ledgers about the app's own work. Restoring them would
     # describe a history that did not happen in the instance reading them.
     "export_jobs": "operational",

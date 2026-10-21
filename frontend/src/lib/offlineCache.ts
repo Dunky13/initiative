@@ -120,7 +120,6 @@ const PERSIST_DENYLIST = [
   // The account's own settings, credentials and addresses.
   "/api/v1/me/api-keys",
   "/api/v1/me/emails",
-  "/api/v1/me/ai",
   "/api/v1/me/notification-preferences",
   "/api/v1/me/reports",
   // Messages keep their own store, with its own rules about what stays on a

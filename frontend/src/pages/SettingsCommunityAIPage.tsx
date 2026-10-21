@@ -6,13 +6,12 @@ import {
 } from "@/components/settings/AIConnectionManager";
 import { FormSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useAIEnabled } from "@/hooks/useAIEnabled";
 import {
   useCommunityConnections,
   useCreateCommunityConnection,
   useDeleteCommunityConnection,
   useFetchCommunityConnectionModels,
-  useMemberAI,
   useTestCommunityConnection,
   useUpdateCommunityConnection,
 } from "@/hooks/useAISettings";
@@ -20,21 +19,19 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { getProvidersForScope } from "@/lib/ai-providers";
 
 /**
- * Community-ADMIN AI surface: manage the community's own AI connections (destinations)
- * when the platform is in `community` mode. A member's personal key lives under
- * their profile settings ("My AI keys"), not here.
+ * The seat's AI surface: manage the community's own AI connections when the
+ * platform is in `community` mode.
  */
 export const SettingsCommunityAIPage = () => {
   const { t } = useTranslation("settings");
   const { activeCommunity, activeCommunityReadOnly } = useCommunities();
-  const communityId = useActiveCommunityId();
   // The seat, not admin-or-above: connecting a provider says what leaves
   // the community. The tab is gated the same way; this is the direct-URL half.
   const holdsTheSeat = Boolean(activeCommunity?.can.seat) && !activeCommunityReadOnly;
 
-  // The member view is the readable-by-anyone source of the global AI mode.
-  const modeQuery = useMemberAI(communityId, { enabled: holdsTheSeat });
-  const mode = modeQuery.data?.mode;
+  // The resolved settings name the global AI mode, and every member reads them.
+  const modeQuery = useAIEnabled();
+  const mode = modeQuery.data?.source;
   const canManageConnections = mode === "community";
 
   const connectionsQuery = useCommunityConnections({

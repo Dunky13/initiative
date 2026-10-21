@@ -28,7 +28,7 @@ Whoever runs the server decides who's in charge of AI, under **Settings → Plat
 | **Platform-managed** | The server's owner sets up the AI every community uses. |
 | **Community-managed** | Each community's [superadmin](../guides/communities.md#why-superadmin-is-separate) sets up its own, under **Community settings → Integrations**. |
 
-Never both. What they set up are **connections**: a provider, a model, and where the key comes from.
+Never both. What they set up are **connections**: a provider, a model and a key.
 
 | Provider | Notes |
 |---|---|
@@ -37,19 +37,11 @@ Never both. What they set up are **connections**: a provider, a model, and where
 | **Custom (OpenAI-compatible)** | Anything that speaks the OpenAI API, at an address the connection gives. |
 | **Ollama (Local)** | Models running on a machine of the server owner's. Only they can set one up. |
 
-Each connection gets its key one of two ways, decided by **Let members use their own API key**. Off, everybody uses one shared key that whoever made the connection supplied. On, there's no shared key and each person brings their own.
+With more than one connection, everybody uses the one marked as the default.
 
 ## Your part
 
-**My Settings → AI** lists every connection open to you, grouped by community. The tab only appears when there's something there for you to use or set up.
-
-- **Pick one** for each community. It's marked **In use**. Pick nothing and you get whichever is marked the default.
-- **Add your key** where a connection says **Needs your key**. It belongs to that connection in that community, and nowhere else. Other admins can't reach it; the community's superadmin can see that you added one, and remove it.
-- **Test** checks the one you picked actually answers.
-
-![Personal AI settings](../images/account/ai-settings.png)
-
-The address and the model belong to the connection, so your key only ever goes where the connection sends it. A connection marked as using a shared key needs nothing from you at all, which is either a relief or an irritation depending entirely on your day.
+Nothing. There's no key to find, no form to fill in and no setting to get wrong. If the **Generate** buttons are there, somebody has already done the setting up, and the bill is theirs too.
 
 ## The privacy bit, which is genuinely worth reading
 

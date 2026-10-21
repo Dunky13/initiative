@@ -34,7 +34,6 @@ export interface AIConnectionCreate {
   api_key?: string | null;
   enabled?: boolean;
   is_default?: boolean;
-  allow_member_keys?: boolean;
 }
 
 /**
@@ -62,7 +61,6 @@ export interface AIConnectionResponse {
   has_api_key: boolean;
   enabled: boolean;
   is_default: boolean;
-  allow_member_keys: boolean;
 }
 
 export interface AIConnectionTestResponse {
@@ -79,7 +77,6 @@ export interface AIConnectionUpdate {
   api_key?: string | null;
   enabled?: boolean | null;
   is_default?: boolean | null;
-  allow_member_keys?: boolean | null;
 }
 
 export interface AIModelsResponse {
@@ -2982,16 +2979,6 @@ export interface CommunityLocationOutput {
   country: string | null;
   latitude: number | null;
   longitude: number | null;
-}
-
-/**
- * That a member gave one of the community's AI connections a key, as the
- * seat sees it. Never the key.
- */
-export interface CommunityMemberAIKey {
-  user_id: number;
-  connection_id: number;
-  updated_at: string;
 }
 
 export type CommunityRole = (typeof CommunityRole)[keyof typeof CommunityRole];
@@ -7291,42 +7278,6 @@ export interface MarketplaceSharedListingRead {
 }
 
 /**
- * A connection available to a member in the active mode. No key material —
- * only whether the member has attached their own key, and whether it's
- * selected. ``requires_member_key`` is true when the connection has no shared
- * key of its own (the member must supply one).
- */
-export interface MemberAIConnectionView {
-  scope: ConnectionScope;
-  id: number;
-  label: string;
-  provider: AIProvider;
-  model: string | null;
-  has_member_key: boolean;
-  requires_member_key: boolean;
-  allow_member_keys: boolean;
-  is_selected: boolean;
-}
-
-export interface MemberAIKeyUpdate {
-  scope: ConnectionScope;
-  connection_id: number;
-  api_key: string;
-}
-
-export interface MemberAIPrefUpdate {
-  scope: ConnectionScope;
-  connection_id: number;
-  enabled?: boolean;
-}
-
-export interface MemberAIView {
-  mode: AIConfigMode;
-  enabled: boolean;
-  connections: MemberAIConnectionView[];
-}
-
-/**
  * Whether one member's personal API keys reach this community.
  */
 export interface MemberApiAccessUpdate {
@@ -7496,28 +7447,6 @@ export interface ModerationReportList {
  */
 export interface ModerationRestore {
   note?: string | null;
-}
-
-/**
- * One connection available to the member in one guild — a flat row for the
- * cross-guild personal "My AI" view (``GET /me/ai``). Every connection the
- * member can use is listed, including shared-key ones they can't attach to
- * (``allow_member_keys=false``), so they can see what they have access to.
- * Writes stay guild-scoped, addressed by ``guild_id`` + ``scope`` +
- * ``connection_id`` (mirrors the My Tasks / My Trash pattern).
- */
-export interface MyAIConnectionRow {
-  community_id: number;
-  community_name: string;
-  scope: ConnectionScope;
-  connection_id: number;
-  label: string;
-  provider: AIProvider;
-  model: string | null;
-  allow_member_keys: boolean;
-  has_member_key: boolean;
-  requires_member_key: boolean;
-  is_selected: boolean;
 }
 
 export type MyToolCountsResponseCounts = { [key: string]: number };

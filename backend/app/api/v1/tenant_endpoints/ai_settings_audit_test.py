@@ -39,13 +39,12 @@ async def _set_mode(client, actor, mode: str) -> None:
 
 
 def _shared_key(label: str) -> dict:
-    """A connection whose key is the operator's, not each member's."""
+    """A connection with the operator's key."""
     return {
         "label": label,
         "provider": "openai",
         "model": "gpt-4o",
         "api_key": API_KEY,
-        "allow_member_keys": False,
     }
 
 
@@ -132,11 +131,7 @@ async def test_an_operator_connection_is_recorded_through_its_life(
     assert {"label", "provider", "model", "enabled"} <= set(born["detail"]["changed"])
     # The label, the provider and the model name it; only the switches carry a
     # value.
-    assert set(born["detail"]["values"]) == {
-        "enabled",
-        "is_default",
-        "allow_member_keys",
-    }
+    assert set(born["detail"]["values"]) == {"enabled", "is_default"}
 
     moved = _of(envelopes, AuditEventType.AI_CONNECTION_UPDATED)[0]
     assert moved["detail"]["changed"] == ["enabled"]
@@ -155,7 +150,7 @@ async def test_no_record_of_a_connection_carries_its_key(client, acting_user, ca
     rotated = await client.put(
         f"{PLATFORM_CONNS}/{created.json()['id']}",
         headers=owner.headers,
-        json={"api_key": API_KEY, "allow_member_keys": False},
+        json={"api_key": API_KEY},
     )
     assert rotated.status_code == 200, rotated.text
 

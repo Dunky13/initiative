@@ -2,18 +2,17 @@
 
 AI config ownership is a single global **mode** (``platform`` or ``guild``,
 never both). The mode's owner defines *connections* — the destination
-(provider, base_url, model) plus an optional shared key. Guild members attach
-their own key and pick a connection; they never set a destination, so a member
-can never point an inherited key at a host they chose.
+(provider, base_url, model) plus its key. Members configure nothing: they use
+the connection the owner chose.
 
 Resolution (member M generating in guild G):
 1. mode (cached, loaded on the system engine — the request path never queries
    ``platform_ai_connections`` under a guild role).
-2. connection: member pref (guild-local) -> owner default -> first enabled.
-3. key: member key for that connection (guild-local) -> the connection's own key.
-   A guild connection's own key is in ``guild_ai_connection_keys``, which the
-   seat and the system engine read, so generation reads it on the system engine
-   (:func:`_load_guild_key`); everything else reads ``has_api_key``.
+2. connection: the owner's default, else the first enabled.
+3. key: the connection's own. A guild connection's key is in
+   ``guild_ai_connection_keys``, which the seat and the system engine read, so
+   generation reads it on the system engine (:func:`_load_guild_key`);
+   everything else reads ``has_api_key``.
 4. destination always comes from the connection (owner-set). ``allow_private``
    is server-computed as (provider == ollama and the connection is a platform
    connection) — never from request input.
@@ -23,12 +22,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -39,11 +36,7 @@ from app.core.encryption import SALT_AI_API_KEY, decrypt_field, encrypt_field
 from app.core.messages import AIMessages
 from app.db import session as db_session
 from app.models.platform.ai_connection import PlatformAIConnection
-from app.models.platform.user import User
 from app.models.tenant.ai_connection import GuildAIConnection, GuildAIConnectionKey
-from app.models.tenant.ai_member_key import GuildAIMemberKey
-from app.models.tenant.ai_member_key_secret import AIMemberKeySecret
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.services.platform.app_settings import get_app_settings
 from app.schemas.ai_settings import (
     AIConfigMode,
@@ -53,19 +46,13 @@ from app.schemas.ai_settings import (
     AIConnectionUpdate,
     AIModelsResponse,
     AIProvider,
-    CommunityMemberAIKey,
     ConnectionScope,
-    MemberAIConnectionView,
-    MemberAIKeyUpdate,
-    MemberAIPrefUpdate,
-    MemberAIView,
     PlatformAIModeResponse,
     PlatformAIModeUpdate,
     ResolvedAISettings,
     ResolvedAISettingsResponse,
 )
 from app.services import audit as audit_service
-from app.services.guild_sweeps import Scope, each_guild
 from app.services.safe_http import request_public_target
 from app.services.webhook_target_url import (
     WebhookTargetUrlError,
@@ -85,7 +72,6 @@ AUDITED_CONNECTION_FIELDS: tuple[str, ...] = (
     "model",
     "enabled",
     "is_default",
-    "allow_member_keys",
 )
 
 
@@ -120,7 +106,6 @@ class _ConnRow:
     has_key: bool
     enabled: bool
     is_default: bool
-    allow_member_keys: bool
 
 
 @dataclass(frozen=True)
@@ -145,7 +130,7 @@ async def _load_platform_connections() -> tuple[_ConnRow, ...]:
             await conn.execute(
                 text(
                     "SELECT id, label, provider, base_url, model, "
-                    "api_key_encrypted, enabled, is_default, allow_member_keys "
+                    "api_key_encrypted, enabled, is_default "
                     "FROM public.platform_ai_connections ORDER BY id"
                 )
             )
@@ -162,7 +147,6 @@ async def _load_platform_connections() -> tuple[_ConnRow, ...]:
             has_key=r[5] is not None,
             enabled=bool(r[6]),
             is_default=bool(r[7]),
-            allow_member_keys=bool(r[8]),
         )
         for r in conn_rows
     )
@@ -207,31 +191,6 @@ async def _bump_ai_config_version(session: AsyncSession) -> None:
     session.add(settings)
 
 
-async def _purge_platform_connection_member_data(connection_id: int) -> None:
-    """Delete every member key and pref that referenced a now-deleted platform
-    connection, in every community whose schema exists. A community that fails
-    is rolled back and logged; the rows are inert once the connection is gone."""
-
-    async def purge(session: AsyncSession, _guild_id: int) -> None:
-        await session.exec(
-            delete(GuildAIMemberKey).where(
-                GuildAIMemberKey.connection_scope == "platform",
-                GuildAIMemberKey.connection_id == connection_id,
-            )
-        )
-        await session.exec(
-            delete(GuildAIMemberPref).where(
-                GuildAIMemberPref.connection_scope == "platform",
-                GuildAIMemberPref.connection_id == connection_id,
-            )
-        )
-
-    await each_guild(
-        [(Scope.PROVISIONED, purge)],
-        name="purge-platform-ai-connection",
-    )
-
-
 def _conn_from_guild(row: GuildAIConnection) -> _ConnRow:
     return _ConnRow(
         scope="community",
@@ -244,7 +203,6 @@ def _conn_from_guild(row: GuildAIConnection) -> _ConnRow:
         has_key=row.has_api_key,
         enabled=row.enabled,
         is_default=row.is_default,
-        allow_member_keys=row.allow_member_keys,
     )
 
 
@@ -307,13 +265,6 @@ def _allow_private_for(provider: AIProvider, scope: str) -> bool:
     return provider == AIProvider.ollama and scope == "platform"
 
 
-def _kept_key(allow_member_keys: bool, ciphertext: str | None) -> str | None:
-    """A connection's key is EITHER shared (admin-set) OR member-supplied, never
-    both. The ``allow_member_keys`` toggle is the switch: when it's on, members
-    bring their own key, so any shared key is cleared."""
-    return None if allow_member_keys else ciphertext
-
-
 # ---------------------------------------------------------------------------
 # Base URL validation for a stored connection
 # ---------------------------------------------------------------------------
@@ -339,12 +290,11 @@ async def _validate_connection_base_url(
 # ---------------------------------------------------------------------------
 async def resolve_ai_settings(
     session: AsyncSession,
-    user: User,
     guild_id: int | None = None,
     *,
     with_key: bool = False,
 ) -> ResolvedAISettings:
-    """Compute the AI settings for ``user`` generating in guild ``guild_id``.
+    """Compute the AI settings for generating in guild ``guild_id``.
 
     The key itself is read and decrypted only ``with_key``, for a request that
     goes to the provider; otherwise ``has_api_key`` says whether there is one.
@@ -370,71 +320,25 @@ async def resolve_ai_settings(
     if not conns:
         return ResolvedAISettings(enabled=False, source=cfg.mode)
 
-    by_key = {(c.scope, c.id): c for c in conns}
-
-    # Member preference (guild-local, own-row RLS).
-    pref = (
-        await session.exec(
-            select(GuildAIMemberPref).where(GuildAIMemberPref.user_id == user.id)
-        )
-    ).one_or_none()
-
-    chosen: _ConnRow | None = None
-    if pref and pref.connection_scope and pref.connection_id is not None:
-        chosen = by_key.get((pref.connection_scope, pref.connection_id))
-    if chosen is None:
-        chosen = next((c for c in conns if c.is_default), None) or conns[0]
-
+    chosen = next((c for c in conns if c.is_default), None) or conns[0]
     provider = _provider_or_none(chosen.provider)
     assert provider is not None  # filtered above
-    allow_private = _allow_private_for(provider, chosen.scope)
 
-    if pref is not None and pref.enabled is False:
-        # Member explicitly turned AI off.
-        return ResolvedAISettings(
-            enabled=False,
-            provider=provider,
-            base_url=chosen.base_url,
-            model=chosen.model,
-            allow_private=allow_private,
-            scope=ConnectionScope(chosen.scope),
-            connection_id=chosen.id,
-            source=cfg.mode,
-        )
-
-    # Member key for the chosen connection (in its own table, which only the
-    # member reaches), else the connection's own shared key. Per-connection: a
-    # connection that disallows member keys always uses its own shared key.
-    member_ciphertext: str | None = None
-    if chosen.allow_member_keys:
-        member_ciphertext = (
-            await session.exec(
-                select(AIMemberKeySecret.api_key_encrypted)
-                .join(GuildAIMemberKey, GuildAIMemberKey.id == AIMemberKeySecret.key_id)
-                .where(
-                    GuildAIMemberKey.user_id == user.id,
-                    GuildAIMemberKey.connection_scope == chosen.scope,
-                    GuildAIMemberKey.connection_id == chosen.id,
-                )
-            )
-        ).first()
-    has_key = member_ciphertext is not None or chosen.has_key
     api_key: str | None = None
-    if with_key and has_key:
-        ciphertext = member_ciphertext or chosen.api_key_encrypted
-        if ciphertext is None:
-            ciphertext = await _load_guild_key(guild_id, chosen.id)
+    if with_key and chosen.has_key:
+        ciphertext = chosen.api_key_encrypted or await _load_guild_key(
+            guild_id, chosen.id
+        )
         api_key = decrypt_field(ciphertext, SALT_AI_API_KEY) if ciphertext else None
 
-    usable = provider == AIProvider.ollama or has_key
     return ResolvedAISettings(
-        enabled=usable,
+        enabled=provider == AIProvider.ollama or chosen.has_key,
         provider=provider,
         api_key=api_key,
-        has_api_key=has_key,
+        has_api_key=chosen.has_key,
         base_url=chosen.base_url,
         model=chosen.model,
-        allow_private=allow_private,
+        allow_private=_allow_private_for(provider, chosen.scope),
         scope=ConnectionScope(chosen.scope),
         connection_id=chosen.id,
         source=cfg.mode,
@@ -443,11 +347,10 @@ async def resolve_ai_settings(
 
 async def get_resolved_ai_settings_response(
     session: AsyncSession,
-    user: User,
     guild_id: int | None = None,
 ) -> ResolvedAISettingsResponse:
     """Resolved settings for the frontend (no API key)."""
-    resolved = await resolve_ai_settings(session, user, guild_id)
+    resolved = await resolve_ai_settings(session, guild_id)
     return ResolvedAISettingsResponse(
         enabled=resolved.enabled,
         provider=resolved.provider,
@@ -503,7 +406,6 @@ def _platform_conn_response(row: PlatformAIConnection) -> AIConnectionResponse:
         has_api_key=bool(row.api_key_encrypted),
         enabled=row.enabled,
         is_default=row.is_default,
-        allow_member_keys=row.allow_member_keys,
     )
 
 
@@ -538,9 +440,7 @@ async def create_platform_connection(
         ),
         enabled=payload.enabled,
         is_default=payload.is_default,
-        allow_member_keys=payload.allow_member_keys,
     )
-    row.api_key_encrypted = _kept_key(row.allow_member_keys, row.api_key_encrypted)
     if payload.is_default:
         await _clear_platform_default(session)
     session.add(row)
@@ -612,13 +512,10 @@ async def update_platform_connection(
         )
     if "enabled" in data and payload.enabled is not None:
         row.enabled = payload.enabled
-    if "allow_member_keys" in data and payload.allow_member_keys is not None:
-        row.allow_member_keys = payload.allow_member_keys
     if "is_default" in data and payload.is_default is not None:
         if payload.is_default:
             await _clear_platform_default(session)
         row.is_default = payload.is_default
-    row.api_key_encrypted = _kept_key(row.allow_member_keys, row.api_key_encrypted)
     session.add(row)
     await _bump_ai_config_version(session)
     secret_changed = row.api_key_encrypted != key_before
@@ -661,10 +558,6 @@ async def delete_platform_connection(
         detail={"scope": ConnectionScope.platform.value},
     )
     await session.commit()
-    # Members attach their own key to a platform connection per guild, so the
-    # member rows live in every guild schema — purge them so a deleted connection
-    # leaves no orphaned member secrets behind.
-    await _purge_platform_connection_member_data(connection_id)
     invalidate_platform_ai_cache()
 
 
@@ -682,7 +575,6 @@ def _guild_conn_response(row: GuildAIConnection) -> AIConnectionResponse:
         has_api_key=row.has_api_key,
         enabled=row.enabled,
         is_default=row.is_default,
-        allow_member_keys=row.allow_member_keys,
     )
 
 
@@ -725,13 +617,11 @@ async def create_guild_connection(
         model=_normalize_optional_string(payload.model),
         enabled=payload.enabled,
         is_default=payload.is_default,
-        allow_member_keys=payload.allow_member_keys,
     )
-    key = _kept_key(
-        row.allow_member_keys,
+    key = (
         encrypt_field(payload.api_key.strip(), SALT_AI_API_KEY)
         if payload.api_key and payload.api_key.strip()
-        else None,
+        else None
     )
     if payload.is_default:
         await _clear_guild_default(session)
@@ -796,13 +686,10 @@ async def update_guild_connection(
         key = encrypt_field(normalized, SALT_AI_API_KEY) if normalized else None
     if "enabled" in data and payload.enabled is not None:
         row.enabled = payload.enabled
-    if "allow_member_keys" in data and payload.allow_member_keys is not None:
-        row.allow_member_keys = payload.allow_member_keys
     if "is_default" in data and payload.is_default is not None:
         if payload.is_default:
             await _clear_guild_default(session)
         row.is_default = payload.is_default
-    key = _kept_key(row.allow_member_keys, key)
     session.add(row)
     secret_changed = key != key_before
     if secret_changed:
@@ -846,255 +733,7 @@ async def delete_guild_connection(
         target_id=connection_id,
         detail={"scope": ConnectionScope.community.value},
     )
-    # Connection administration includes removing every member reference. The
-    # member keys admit the seat for the community's own connections, and the
-    # prefs' own-row policy admits the community's administrator, both of
-    # which the seat holder running this already is in the request's standing.
-    # A key goes with its row (ON DELETE CASCADE).
-    await session.exec(
-        delete(GuildAIMemberKey).where(
-            GuildAIMemberKey.connection_scope == ConnectionScope.community.value,
-            GuildAIMemberKey.connection_id == connection_id,
-        )
-    )
-    await session.exec(
-        delete(GuildAIMemberPref).where(
-            GuildAIMemberPref.connection_scope == ConnectionScope.community.value,
-            GuildAIMemberPref.connection_id == connection_id,
-        )
-    )
     await session.commit()
-
-
-# ---------------------------------------------------------------------------
-# Member surface (attach a key + pick a connection)
-# ---------------------------------------------------------------------------
-async def _active_connections(
-    session: AsyncSession, cfg: _PlatformConfig
-) -> list[_ConnRow]:
-    if cfg.mode == "platform":
-        return [c for c in cfg.connections if c.enabled]
-    if cfg.mode == "community":
-        rows = (
-            await session.exec(
-                select(GuildAIConnection).where(GuildAIConnection.enabled.is_(True))
-            )
-        ).all()
-        return [_conn_from_guild(r) for r in rows]
-    return []
-
-
-async def get_member_ai_view(
-    session: AsyncSession, user: User, guild_id: int
-) -> MemberAIView:
-    cfg = await get_platform_ai_config(session)
-    mode = (
-        AIConfigMode(cfg.mode)
-        if cfg.mode in ("platform", "community")
-        else AIConfigMode.disabled
-    )
-    if mode == AIConfigMode.disabled:
-        return MemberAIView(mode=mode, enabled=False)
-
-    conns = [
-        c
-        for c in await _active_connections(session, cfg)
-        if _provider_or_none(c.provider) is not None
-    ]
-
-    # Member's keys + pref (guild-local; only the member reaches a key).
-    member_keys = {
-        (k.connection_scope, k.connection_id)
-        for k in (
-            await session.exec(
-                select(GuildAIMemberKey).where(GuildAIMemberKey.user_id == user.id)
-            )
-        ).all()
-    }
-    pref = (
-        await session.exec(
-            select(GuildAIMemberPref).where(GuildAIMemberPref.user_id == user.id)
-        )
-    ).one_or_none()
-    selected = (
-        (pref.connection_scope, pref.connection_id)
-        if pref and pref.connection_scope and pref.connection_id is not None
-        else None
-    )
-
-    views = [
-        MemberAIConnectionView(
-            scope=ConnectionScope(c.scope),
-            id=c.id,
-            label=c.label,
-            provider=AIProvider(c.provider),
-            model=c.model,
-            has_member_key=(c.scope, c.id) in member_keys,
-            # A member must supply a key only when the connection has no shared
-            # key of its own AND allows member keys.
-            requires_member_key=not c.has_key and c.allow_member_keys,
-            allow_member_keys=c.allow_member_keys,
-            is_selected=selected == (c.scope, c.id),
-        )
-        for c in conns
-    ]
-
-    resolved = await resolve_ai_settings(session, user, guild_id)
-    return MemberAIView(mode=mode, enabled=resolved.enabled, connections=views)
-
-
-async def _require_active_connection(
-    session: AsyncSession, scope: ConnectionScope, connection_id: int
-) -> _ConnRow:
-    """The (scope, id) a member references MUST be an enabled connection in the
-    active mode — a member can't attach a key to an arbitrary id."""
-    cfg = await get_platform_ai_config(session)
-    if cfg.mode != scope.value:
-        raise HTTPException(status_code=400, detail=AIMessages.CONNECTION_NOT_FOUND)
-    for c in await _active_connections(session, cfg):
-        if c.id == connection_id and c.scope == scope.value:
-            return c
-    raise HTTPException(status_code=404, detail=AIMessages.CONNECTION_NOT_FOUND)
-
-
-async def set_member_key(
-    session: AsyncSession, user: User, guild_id: int, payload: MemberAIKeyUpdate
-) -> MemberAIView:
-    conn = await _require_active_connection(
-        session, payload.scope, payload.connection_id
-    )
-    if not conn.allow_member_keys:
-        raise HTTPException(status_code=403, detail=AIMessages.MEMBER_KEYS_DISABLED)
-    normalized = payload.api_key.strip()
-    if not normalized:
-        raise HTTPException(status_code=400, detail=AIMessages.INVALID_API_KEY)
-    existing = (
-        await session.exec(
-            select(GuildAIMemberKey).where(
-                GuildAIMemberKey.user_id == user.id,
-                GuildAIMemberKey.connection_scope == payload.scope.value,
-                GuildAIMemberKey.connection_id == payload.connection_id,
-            )
-        )
-    ).one_or_none()
-    if existing is None:
-        existing = GuildAIMemberKey(
-            user_id=user.id,  # type: ignore[arg-type]
-            connection_scope=payload.scope.value,
-            connection_id=payload.connection_id,
-        )
-    existing.updated_at = datetime.now(timezone.utc)
-    session.add(existing)
-    await session.flush()
-    ciphertext = encrypt_field(normalized, SALT_AI_API_KEY)
-    await session.exec(
-        pg_insert(AIMemberKeySecret)
-        .values(key_id=existing.id, api_key_encrypted=ciphertext)
-        .on_conflict_do_update(
-            index_elements=[AIMemberKeySecret.key_id],
-            set_={"api_key_encrypted": ciphertext},
-        )
-    )
-    await session.commit()
-    return await get_member_ai_view(session, user, guild_id)
-
-
-async def delete_member_key(
-    session: AsyncSession,
-    user: User,
-    guild_id: int,
-    scope: ConnectionScope,
-    connection_id: int,
-) -> MemberAIView:
-    existing = (
-        await session.exec(
-            select(GuildAIMemberKey).where(
-                GuildAIMemberKey.user_id == user.id,
-                GuildAIMemberKey.connection_scope == scope.value,
-                GuildAIMemberKey.connection_id == connection_id,
-            )
-        )
-    ).one_or_none()
-    if existing:
-        await session.delete(existing)
-        await session.commit()
-    return await get_member_ai_view(session, user, guild_id)
-
-
-async def list_community_member_keys(
-    session: AsyncSession,
-) -> list[CommunityMemberAIKey]:
-    """Who gave which of the community's own AI connections a key. A key for a
-    platform connection is the member's and the platform's, and not listed."""
-    rows = await session.exec(
-        select(GuildAIMemberKey)
-        .where(GuildAIMemberKey.connection_scope == ConnectionScope.community.value)
-        .order_by(GuildAIMemberKey.connection_id, GuildAIMemberKey.user_id)
-    )
-    return [
-        CommunityMemberAIKey(
-            user_id=row.user_id,
-            connection_id=row.connection_id,
-            updated_at=row.updated_at,
-        )
-        for row in rows.all()
-    ]
-
-
-async def revoke_community_member_key(
-    session: AsyncSession, user_id: int, connection_id: int, *, actor_user_id: int
-) -> None:
-    """Take back the key ``user_id`` gave one of the community's connections.
-    The key goes with the row that says they gave it."""
-    row = (
-        await session.exec(
-            select(GuildAIMemberKey).where(
-                GuildAIMemberKey.user_id == user_id,
-                GuildAIMemberKey.connection_scope == ConnectionScope.community.value,
-                GuildAIMemberKey.connection_id == connection_id,
-            )
-        )
-    ).one_or_none()
-    if row is None:
-        raise HTTPException(status_code=404, detail=AIMessages.MEMBER_KEY_NOT_FOUND)
-    await session.delete(row)
-    await audit_service.record(
-        session,
-        event_type=AuditEventType.AI_MEMBER_KEY_REVOKED,
-        actor_user_id=actor_user_id,
-        guild_id=routed_guild_id(session),
-        target_type="ai_connection",
-        target_id=connection_id,
-        detail={"user_id": user_id},
-    )
-    await session.commit()
-
-
-async def set_member_pref(
-    session: AsyncSession, user: User, guild_id: int, payload: MemberAIPrefUpdate
-) -> MemberAIView:
-    await _require_active_connection(session, payload.scope, payload.connection_id)
-    pref = (
-        await session.exec(
-            select(GuildAIMemberPref).where(GuildAIMemberPref.user_id == user.id)
-        )
-    ).one_or_none()
-    if pref:
-        pref.connection_scope = payload.scope.value
-        pref.connection_id = payload.connection_id
-        pref.enabled = payload.enabled
-        session.add(pref)
-    else:
-        session.add(
-            GuildAIMemberPref(
-                user_id=user.id,  # type: ignore[arg-type]
-                connection_scope=payload.scope.value,
-                connection_id=payload.connection_id,
-                enabled=payload.enabled,
-            )
-        )
-    await session.commit()
-    return await get_member_ai_view(session, user, guild_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1323,7 +962,6 @@ async def test_platform_connection(
         has_key=row.api_key_encrypted is not None,
         enabled=row.enabled,
         is_default=row.is_default,
-        allow_member_keys=row.allow_member_keys,
     )
     key = (
         decrypt_field(conn.api_key_encrypted, SALT_AI_API_KEY)
@@ -1373,27 +1011,3 @@ async def fetch_guild_connection_models(
     key = await _guild_key(session, connection_id)
     models, error = await _list_models(provider, key, row.base_url, allow_private=False)
     return AIModelsResponse(models=models, error=error)
-
-
-async def test_member_connection(
-    session: AsyncSession, user: User, guild_id: int
-) -> AIConnectionTestResponse:
-    """Test the member's currently-resolved connection using their effective
-    key (member key if attached, else the connection's shared key)."""
-    resolved = await resolve_ai_settings(session, user, guild_id, with_key=True)
-    if resolved.provider is None or resolved.scope is None:
-        raise HTTPException(status_code=404, detail=AIMessages.CONNECTION_NOT_FOUND)
-    conn = _ConnRow(
-        scope=resolved.scope.value,
-        id=resolved.connection_id or 0,
-        label="",
-        provider=resolved.provider.value,
-        base_url=resolved.base_url,
-        model=resolved.model,
-        api_key_encrypted=None,
-        has_key=resolved.has_api_key,
-        enabled=True,
-        is_default=False,
-        allow_member_keys=True,
-    )
-    return await _probe(conn, resolved.api_key)

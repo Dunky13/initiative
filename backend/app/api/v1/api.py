@@ -41,7 +41,6 @@ from app.api.v1.tenant_endpoints import (
     imports,
     initiatives,
     marketplace as guild_marketplace,
-    me_ai,
     me_tools,
     galleries,
     me_trash,
@@ -413,7 +412,6 @@ me_router.include_router(me_tools.me_router, tags=["my-tools"])
 me_router.include_router(personal_items.me_router, tags=["personal-items"])
 me_router.include_router(calendar_entries.me_router, tags=["calendar-entries"])
 me_router.include_router(me_trash.me_router, tags=["trash"])
-me_router.include_router(me_ai.me_router, tags=["ai-settings"])
 me_router.include_router(notification_prefs.me_router, tags=["notifications"])
 me_router.include_router(contacts.me_router, tags=["contacts"])
 me_router.include_router(
