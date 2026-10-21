@@ -40,6 +40,7 @@ from app.models.tenant.task import (
     TaskType,
 )
 from app.schemas.recurrence import validate_task_recurrence
+from app.schemas.tenant.task import ChecklistItemInput
 from app.services import notifications as notifications_service
 from app.services.tenant import relationships
 from app.services.tenant import named_people
@@ -137,19 +138,20 @@ def start_from_type(
     sent: set[str],
 ) -> list[str]:
     """Fill ``fields`` (a new task's columns) with what its type starts a task
-    with, where whoever made it left each empty, and return the checklist lines
-    it starts with. A repeat starts only on a task with a date to count from,
-    and only one the task can have."""
+    with, for each one whoever made it did not send (``sent`` names those it
+    did; one sent empty stays empty), and return the checklist lines it starts
+    with. A repeat starts only on a task with a date to count from, and only
+    one the task can have."""
     starting = task_types_service.starting_values_of(task_type)
     if starting is None:
         return []
-    if starting.description and not fields.get("description"):
+    if starting.description and "description" not in sent:
         fields["description"] = starting.description
     if starting.priority is not None and "priority" not in sent:
         fields["priority"] = starting.priority
     if (
         starting.recurrence
-        and not fields.get("recurrence")
+        and "recurrence" not in sent
         and (fields.get("due_date") or fields.get("start_date"))
     ):
         strategy = (
@@ -171,6 +173,13 @@ def start_from_type(
             if strategy is not None:
                 fields["recurrence_strategy"] = strategy
     return list(starting.checklist)
+
+
+def starting_checklist(lines: list[str]) -> list[dict[str, Any]]:
+    """The stored checklist :func:`start_from_type`'s lines start a task with."""
+    return checklist_service.normalize(
+        [ChecklistItemInput(text=line) for line in lines]
+    )
 
 
 async def create_task_row(

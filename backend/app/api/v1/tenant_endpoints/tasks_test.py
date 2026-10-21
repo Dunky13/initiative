@@ -2747,6 +2747,18 @@ async def test_a_new_task_starts_with_what_its_type_starts_one_with(
     # No date to count a repeat from.
     assert given["recurrence"] is None
 
+    # Sent empty is sent: a cleared outline, list or repeat stays cleared.
+    cleared = await make(
+        title="Hedge",
+        description=None,
+        checklist=[],
+        recurrence=None,
+        due_date="2026-11-02T09:00:00Z",
+    )
+    assert cleared["description"] in (None, "")
+    assert cleared["checklist"] == []
+    assert cleared["recurrence"] is None
+
     # A type that starts nothing leaves a task as it was given.
     plain = await client.post(
         a.g("/tasks/"),

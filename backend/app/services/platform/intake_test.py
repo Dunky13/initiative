@@ -124,17 +124,32 @@ async def test_a_case_is_the_type_its_binding_names(session, bound):
     ).one()
     binding.task_type_id = bug.id
     session.add(binding)
+    bug.starting_values = {"description": "What happened?", "priority": "high"}
+    bug.starting_values["checklist"] = ["Reproduce"]
+    session.add(bug)
     await session.commit()
 
+    # It starts as a Bug starts a task, under the body it came with.
     outcome = await intake_service.open_case(IntakeStream.support, title="Broken")
     assert outcome is not None
     await set_rls_context(session, SystemGuild(bound["guild"].id))
     filed = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
     assert filed.task_type_id == bug.id
+    assert (filed.description, filed.priority) == ("What happened?", "high")
+    assert [item["text"] for item in filed.checklist] == ["Reproduce"]
+    outcome = await intake_service.open_case(
+        IntakeStream.support, title="Crash", body="It crashed on save."
+    )
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    told = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert told.description == "It crashed on save."
+    filed = (await session.exec(select(Task).where(Task.id == filed.id))).one()
 
-    # Its type goes, its task moved off it first; the binding lets go of it.
-    filed.task_type_id = task_type.id
-    session.add(filed)
+    # Its type goes, its tasks moved off it first; the binding lets go of it.
+    for each in (filed, told):
+        each.task_type_id = task_type.id
+        session.add(each)
     await session.flush()
     await session.delete(
         (await session.exec(select(TaskType).where(TaskType.id == bug.id))).one()

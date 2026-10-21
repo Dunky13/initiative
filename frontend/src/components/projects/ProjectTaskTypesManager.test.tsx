@@ -255,6 +255,31 @@ describe("ProjectTaskTypesManager", () => {
     expect(updates[0].body).toEqual({ starting_values: null });
   });
 
+  it("keeps an hourly repeat, which waits for a task with a due date", async () => {
+    const updates = capture("patch", "/projects/:projectId/task-types/:typeId", () =>
+      HttpResponse.json(buildTaskType({ id: 2, name: "Bug" }))
+    );
+    const types = buildTypes();
+    types[1] = {
+      ...types[1],
+      starting_values: { recurrence: "RRULE:FREQ=HOURLY", recurrence_strategy: "rolling" },
+    };
+    renderManager({ types });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /what a new bug starts with/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0].body).toEqual({
+      starting_values: expect.objectContaining({
+        recurrence: "RRULE:FREQ=HOURLY",
+        recurrence_strategy: "rolling",
+      }),
+    });
+  });
+
   it("copies types from another project, leaving out the names it has", async () => {
     const garden = buildProject({ id: 7, name: "Garden", initiative_id: INITIATIVE_ID });
     const copies = capture("post", "/projects/:projectId/task-types/copy", () =>

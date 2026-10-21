@@ -239,7 +239,6 @@ export const TaskTypeStartsWithDialog = ({
               strategy={draft.repeat.strategy}
               limit={null}
               onTaskChange={(repeat) => setDraft({ ...draft, repeat })}
-              hasDueDate={false}
             />
             <p className="text-muted-foreground text-xs">{t("taskTypes.startsWith.repeatHint")}</p>
           </div>
