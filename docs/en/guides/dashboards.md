@@ -97,14 +97,16 @@ Links live in SQL as `relationships`. Each end is a kind and an id, so a join na
 
 ```sql
 SELECT t.title, t.start_date, t.due_date,
-       coalesce(p.title || ' #' || p.id, t.title || ' #' || t.id) AS parent
+       coalesce(p.title || ' #' || p.id, t.title || ' #' || t.id) AS parent,
+       s.category = 'done' AS done
 FROM tasks t
+JOIN task_statuses s ON s.id = t.task_status_id
 LEFT JOIN relationships r ON r.source_id = t.id
   AND r.source_type = 'task' AND r.relationship_type = 'part_of'
 LEFT JOIN tasks p ON p.id = r.target_id AND r.target_type = 'task'
 ```
 
-Give a Gantt `parent` as its **Group**, and each parent's bar folds up with its subtasks. The `#` and id keep two parents both called "Launch" from sharing a group. A link only shows to somebody who can see both of the things it joins, and one that's been unlinked isn't there at all.
+Give a Gantt `parent` as its **Group**, and each parent's bar folds up with its subtasks. The `#` and id keep two parents both called "Launch" from sharing a group. `done` goes to **Done**, which is how the Gantt knows what's finished: each parent fills up as its subtasks get done, and anything past its end and not done turns red. Without a **Done** column it counts the work and leaves the bars unfilled, because a date passing says nothing about whether anybody finished. A link only shows to somebody who can see both of the things it joins, and one that's been unlinked isn't there at all.
 
 ### Boards
 

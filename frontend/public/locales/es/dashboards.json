@@ -257,7 +257,8 @@
     "column": "Columna",
     "date": "Fecha",
     "total": "Total",
-    "series": "Dividir por"
+    "series": "Dividir por",
+    "done": "Terminado"
   },
   "builder": {
     "dataset": "Mostrar datos de",

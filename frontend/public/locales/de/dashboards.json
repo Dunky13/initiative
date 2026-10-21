@@ -257,7 +257,8 @@
     "column": "Spalte",
     "date": "Datum",
     "total": "Gesamt",
-    "series": "Aufteilen nach"
+    "series": "Aufteilen nach",
+    "done": "Erledigt"
   },
   "builder": {
     "dataset": "Daten aus",

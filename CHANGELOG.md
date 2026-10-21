@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A dashboard Gantt's progress counts finished work.** It counted anything past its end date as done. Give the tile a column saying whether work is finished as **Done**, and each group fills up as its work gets done, with unfinished work past its end in red. Without one, the Gantt counts the work and leaves the bars unfilled.
 - **Passkeys saved in Bitwarden work in the Android app.** Bitwarden refused the app with "Passkeys not supported for this app", while Samsung Pass and Google Password Manager worked. **Server operators:** Bitwarden checks your server through Google, so this needs a server Google can reach.
 - **Signing in with an email code works in the phone and desktop apps** on servers that ask for a captcha. The captcha couldn't load in the apps, so no code was ever sent. The apps now show it from the server itself, and nothing needs changing in the captcha provider's settings.
 - **Task exports come out the way you see the list.** A PDF, spreadsheet or Markdown export of a grouped table is grouped the same way, with a task under each of its tags and without the groups the layout leaves out (#2911).

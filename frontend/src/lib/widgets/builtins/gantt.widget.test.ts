@@ -89,8 +89,39 @@ describe("lanes", () => {
   it("puts a total row above everything", async () => {
     const scene = await draw(work, { rollup: "on" });
     expect(scene.lanes[0].label).toBe("Everything");
-    // Two of the three have already ended.
-    expect(scene.lanes[0].caption).toBe("1/3");
+    // With no done column, an end that has passed says nothing about whether
+    // the work is finished, so the row counts and claims no progress.
+    expect(scene.lanes[0].caption).toBe("3");
+    expect(scene.lanes[0].spans[0].progress).toBeUndefined();
+  });
+});
+
+describe("a done column", () => {
+  const tracked: TabularData = {
+    source: "rows",
+    columns: [...work.columns, { name: "done", type: "boolean" }],
+    rows: [
+      [...work.rows[0], true],
+      [...work.rows[1], false],
+      // Its end has not come, but it is finished.
+      [...work.rows[2], true],
+    ],
+  };
+  const withDone = { ...SLOTS, done: [4] };
+
+  it("counts what is finished, not what has ended", async () => {
+    const scene = await draw(tracked, {}, withDone);
+    expect(scene.lanes[0].caption).toBe("2/3");
+    expect(scene.lanes[0].spans[0].progress).toBeCloseTo(2 / 3);
+    expect(laneNamed(scene.lanes, "Data").spans[0].tone).toBe("positive");
+  });
+
+  it("marks work past its end and not finished as late", async () => {
+    const late: TabularData = { ...tracked, rows: [[...work.rows[0], false]] };
+    const scene = await draw(late, { rollup: "off" }, withDone);
+    const platform = laneNamed(scene.lanes, "Platform");
+    expect(platform.tone).toBe("negative");
+    expect(platform.children?.[0].spans[0].tone).toBe("negative");
   });
 });
 
