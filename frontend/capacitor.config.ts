@@ -8,8 +8,7 @@ const config: CapacitorConfig = {
   server: {
     // Use HTTP scheme to avoid mixed content issues with self-hosted HTTP servers (LOCAL development and LAN testing)
     // androidScheme: "http",
-    // The address the app's own pages are served at, on the project's domain.
-    hostname: "native.initiativetasks.com",
+    hostname: "studio.beyonders.initiative",
     iosScheme: "https",
   },
   // Nothing from the bridge or the web view's console goes to the device log;

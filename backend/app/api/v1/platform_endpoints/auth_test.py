@@ -62,7 +62,7 @@ from app.testing.oidc import (
     mint_id_token,
 )
 
-APP_ORIGIN = {"Origin": "https://native.initiativetasks.com"}
+APP_ORIGIN = {"Origin": "https://studio.beyonders.initiative"}
 
 
 async def test_bootstrap_status_no_users(client: AsyncClient):

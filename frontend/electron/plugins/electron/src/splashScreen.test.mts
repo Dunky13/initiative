@@ -45,7 +45,7 @@ const window = (theme: "light" | "dark") => {
     isDestroyed: () => false,
     contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
     webContents: {
-      getURL: () => "capacitor://native.initiativetasks.com/",
+      getURL: () => "capacitor://studio.beyonders.initiative/",
       executeJavaScript: async () => theme === "dark",
     },
   });
