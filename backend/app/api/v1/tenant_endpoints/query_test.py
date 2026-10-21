@@ -11,16 +11,20 @@ from pathlib import Path
 
 
 from app.core.messages import QueryMessages
+from app.core.relationships import RelationshipType
+from app.core.search import SearchEntityType
 from app.db.session import routed_context
 from app.models.platform.guild import CommunityRole
 from app.services.fields.spec import FieldType
 from app.services.marketplace import builtin
+from app.services.tenant import relationships as relationships_service
 from app.services.tenant.dashboard_definition import WIDGET_SPECS
 from app.models.tenant.file import FileType
 from app.testing import (
     create_file,
     create_initiative_member,
     create_project,
+    create_relationship,
     create_task,
 )
 
@@ -740,6 +744,46 @@ async def test_the_trash_is_still_reachable_where_it_is_managed(
         a.g(f"/tasks/{task_id}"), params={"include_deleted": "true"}, headers=a.headers
     )
     assert found.status_code == 200, found.text
+
+
+async def test_a_subtask_reads_its_parent_through_its_link(
+    client, acting_user, session
+):
+    """A link names each end by kind and id, so a statement joins both: what
+    a timeline groups its bars by. A link somebody took back is no link."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    parent = await create_task(session, a.project, title="parent")
+    for title in ("child", "unlinked"):
+        child = await create_task(session, a.project, title=title)
+        edge = await create_relationship(
+            session,
+            a.guild,
+            source=(SearchEntityType.task, child.id),
+            target=(SearchEntityType.task, parent.id),
+            relationship_type=RelationshipType.part_of,
+        )
+    await relationships_service.remove(session, edge, removed_by=a.user.id)
+    await session.commit()
+
+    response = await client.post(
+        a.g("/query"),
+        json={
+            "sql": (
+                "SELECT t.title, p.title AS parent FROM tasks t"
+                " LEFT JOIN relationships r ON r.source_id = t.id"
+                " AND r.source_type = 'task' AND r.relationship_type = 'part_of'"
+                " LEFT JOIN tasks p ON p.id = r.target_id AND r.target_type = 'task'"
+                " ORDER BY t.title"
+            )
+        },
+        headers=a.headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [
+        ["child", "parent"],
+        ["parent", None],
+        ["unlinked", None],
+    ]
 
 
 class TestEveryShippedDashboardReportsOnLiveWork:

@@ -153,15 +153,20 @@ def _trash_read_policy(table: str) -> list[str]:
 # should be the same for everybody reading it, and a deleted row is not part of
 # that for anyone. RESTRICTIVE and keyed on the query flag, so it applies to the
 # statements a reader writes and to nothing else.
-_QUERY_TRASH_PREDICATE = f"deleted_at IS NULL OR {gucs.QUERY.once} IS NOT TRUE"
+_QUERY_TRASH_PREDICATE = "{column} IS NULL OR " + f"{gucs.QUERY.once} IS NOT TRUE"
+
+#: Tables whose rows are tombstoned rather than trashed, by the column that says
+#: so. A removed link is kept as a record that somebody took it back, and is no
+#: more a link to a reader's statement than a trashed row is a row.
+_QUERY_TOMBSTONES: dict[str, str] = {"relationships": "removed_at"}
 
 
-def _query_trash_policy(table: str) -> list[str]:
+def _query_trash_policy(table: str, column: str = "deleted_at") -> list[str]:
     """Keep a trashed row out of what a reader's own statement returns."""
     return [
         f"DROP POLICY IF EXISTS query_excludes_trash ON {table};",
         f"CREATE POLICY query_excludes_trash ON {table} AS RESTRICTIVE FOR SELECT",
-        f"  USING ({_QUERY_TRASH_PREDICATE});",
+        f"  USING ({_QUERY_TRASH_PREDICATE.format(column=column)});",
     ]
 
 
@@ -402,6 +407,8 @@ def _table_block(table: str, path: InitiativePath) -> str:
     if table in SOFT_DELETE_TABLES:
         lines.extend(_trash_read_policy(table))
         lines.extend(_query_trash_policy(table))
+    if table in _QUERY_TOMBSTONES:
+        lines.extend(_query_trash_policy(table, _QUERY_TOMBSTONES[table]))
     if table in _PURGE_GUARD_TABLES:
         # Admin-only hard delete (purge), AND-combined with the PERMISSIVE delete
         # policy above. RESTRICTIVE, so a write-member who clears the permissive
