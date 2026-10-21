@@ -6948,6 +6948,7 @@ export interface LegalDocumentRead {
   version?: string | null;
   effective_date?: string | null;
   sha256?: string | null;
+  url?: string | null;
 }
 
 export interface LegalIndexRead {

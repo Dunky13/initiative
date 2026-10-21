@@ -35,14 +35,20 @@ class LegalDocumentRead(BaseModel):
     #: against. Null when the portal did not say.
     version: Optional[str] = None
     effective_date: Optional[date] = None
-    #: Digest of the exact bytes ``/legal/{slug}`` serves.
+    #: Digest of the exact bytes ``/legal/{slug}`` serves. Null for a
+    #: document hosted elsewhere.
     sha256: Optional[str] = None
+    #: Where the document lives when the portal doesn't serve it (the
+    #: customer's own contract, say): linked, and ``/legal/{slug}`` answers
+    #: 404 for it.
+    url: Optional[str] = None
 
 
 class LegalIndexRead(BaseModel):
     documents: list[LegalDocumentRead]
-    #: The slugs an account must accept to exist on this deployment. The SPA
-    #: reads it to know which two the signup notice names.
+    #: The slugs an account must accept to exist on this deployment, as the
+    #: portal marks them. Empty when it requires none: then the signup form
+    #: carries no notice and nothing is recorded.
     required: list[str]
 
 
@@ -71,10 +77,11 @@ async def read_legal_index() -> LegalIndexRead:
                 version=document.version,
                 effective_date=document.effective_date,
                 sha256=document.sha256,
+                url=document.url,
             )
             for document in documents
         ],
-        required=list(legal_service.REQUIRED_DOCUMENTS),
+        required=[document.slug for document in documents if document.required],
     )
 
 

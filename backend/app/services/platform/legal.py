@@ -11,9 +11,17 @@ has to be readable from the signup form there too; the server needs the index
 anyway, to record *which* revision was accepted; and signing up must not
 depend on a browser reaching a second origin.
 
-Nothing here can fail a registration. A portal that cannot be reached leaves
-the version and digest unrecorded — the acceptance still happened, and the
-portal's own history of the document says what it said on the day.
+Which documents an account must accept is the portal's to say: each index
+entry carries ``required``. A deployment may require none at all (an
+enterprise whose terms sit in its own contract, or in an employment one), and
+then signup asks for nothing and records nothing. A document may also live
+elsewhere (``url``, the customer's own contract): it is linked, never fetched
+through here, and carries no digest.
+
+Nothing here can fail a registration, and nothing here invents a required
+document. A portal that cannot be reached, and was never read, requires
+nothing for now: the signup records no acceptance, and the account is asked
+once the index can be read again.
 """
 
 from __future__ import annotations
@@ -35,12 +43,6 @@ from app.models.platform.user import User
 
 logger = logging.getLogger(__name__)
 
-#: The consents an account cannot exist here without. Stated in the app rather
-#: than read off the portal's manifest on purpose: what registration will not
-#: proceed without is this service's rule, so a file changing on another
-#: service can neither add a third consent nor drop one of these two.
-REQUIRED_DOCUMENTS: tuple[str, ...] = ("terms", "privacy")
-
 INDEX_PATH = "/api/v1/legal"
 
 #: Short: every one of these calls sits in front of somebody waiting to read
@@ -50,6 +52,10 @@ _TIMEOUT = httpx.Timeout(4.0, connect=2.0)
 #: How long an index is trusted before it is asked for again. Revisions are
 #: rare; the cost of being a few minutes behind is a version string.
 _INDEX_TTL_SECONDS = 300
+
+#: How long a portal never read is left alone after a failed read, so every
+#: account read in an outage doesn't wait on it.
+_FAILURE_BACKOFF_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,10 @@ class LegalDocument:
     version: str | None
     effective_date: str | None
     sha256: str | None
+    #: Whether an account must accept it to exist here.
+    required: bool = False
+    #: Where it lives when the portal doesn't serve it: linked, never fetched.
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,8 @@ _index_lock = asyncio.Lock()
 #: (fetched_at, documents). Kept past its TTL so an outage degrades to a stale
 #: answer rather than to none at all.
 _index_cache: tuple[float, tuple[LegalDocument, ...]] | None = None
+#: When a read last failed with nothing cached to answer from.
+_index_failed_at: float | None = None
 
 
 def legal_documents_enabled() -> bool:
@@ -99,8 +111,8 @@ def _parse_index(payload: object) -> tuple[LegalDocument, ...]:
     if not isinstance(payload, dict):
         raise LegalPortalUnavailable("legal index is not an object")
     raw = payload.get("documents")
-    if not isinstance(raw, list) or not raw:
-        raise LegalPortalUnavailable("legal index names no documents")
+    if not isinstance(raw, list):
+        raise LegalPortalUnavailable("legal index has no documents list")
     documents: list[LegalDocument] = []
     for entry in raw:
         if not isinstance(entry, dict):
@@ -108,6 +120,12 @@ def _parse_index(payload: object) -> tuple[LegalDocument, ...]:
         slug = entry.get("slug")
         title = entry.get("title")
         if not isinstance(slug, str) or not isinstance(title, str):
+            continue
+        url = entry.get("url")
+        if url is not None and not (
+            isinstance(url, str) and url.startswith("https://")
+        ):
+            # Linked from the signup form: only an https address will do.
             continue
         documents.append(
             LegalDocument(
@@ -122,10 +140,10 @@ def _parse_index(payload: object) -> tuple[LegalDocument, ...]:
                 sha256=entry.get("sha256")
                 if isinstance(entry.get("sha256"), str)
                 else None,
+                required=entry.get("required") is True,
+                url=url,
             )
         )
-    if not documents:
-        raise LegalPortalUnavailable("legal index names no usable documents")
     return tuple(documents)
 
 
@@ -136,7 +154,7 @@ async def get_index(*, force: bool = False) -> tuple[LegalDocument, ...]:
     to fall back on — a portal that goes down after one good read keeps
     answering from that read.
     """
-    global _index_cache
+    global _index_cache, _index_failed_at
     if not legal_documents_enabled():
         raise LegalPortalUnavailable("no billing portal is configured")
 
@@ -157,6 +175,14 @@ async def get_index(*, force: bool = False) -> tuple[LegalDocument, ...]:
             and time.monotonic() - cached[0] < _INDEX_TTL_SECONDS
         ):
             return cached[1]
+        failed = _index_failed_at
+        if (
+            not force
+            and cached is None
+            and failed is not None
+            and time.monotonic() - failed < _FAILURE_BACKOFF_SECONDS
+        ):
+            raise LegalPortalUnavailable("the portal's index was unreadable just now")
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 response = await client.get(
@@ -172,8 +198,10 @@ async def get_index(*, force: bool = False) -> tuple[LegalDocument, ...]:
                 )
                 return cached[1]
             logger.warning("legal: portal index unreadable (%s)", exc)
+            _index_failed_at = time.monotonic()
             raise LegalPortalUnavailable(str(exc)) from exc
         _index_cache = (time.monotonic(), documents)
+        _index_failed_at = None
         return documents
 
 
@@ -196,6 +224,14 @@ async def get_document(
     if not legal_documents_enabled():
         raise LegalPortalUnavailable("no billing portal is configured")
     if not slug or not set(slug) <= _SLUG_CHARACTERS:
+        raise KeyError(slug)
+    try:
+        indexed = {document.slug: document for document in await get_index()}
+    except LegalPortalUnavailable:
+        indexed = {}
+    if slug in indexed and indexed[slug].url is not None:
+        # Hosted elsewhere: the reader follows its link, and the portal has
+        # no text for it.
         raise KeyError(slug)
     headers = {"Accept": "text/markdown, text/plain"}
     if if_none_match:
@@ -225,21 +261,20 @@ async def get_document(
     )
 
 
-async def _required_documents() -> dict[str, LegalDocument | None]:
-    """The required slugs paired with what the portal says about each.
+async def required_documents() -> tuple[LegalDocument, ...]:
+    """The documents an account must accept, as the portal's index says.
 
-    A slug the portal does not list, and an unreachable portal, both come back
-    as ``None``: the acceptance is recorded either way, without a version.
+    None when the portal requires none, and none when it can't be read and was
+    never read: a required document is never invented here.
     """
     try:
-        indexed = {document.slug: document for document in await get_index()}
+        return tuple(document for document in await get_index() if document.required)
     except LegalPortalUnavailable:
-        indexed = {}
-    return {slug: indexed.get(slug) for slug in REQUIRED_DOCUMENTS}
+        return ()
 
 
 async def record_acceptance(session: AsyncSession, *, user_id: int) -> None:
-    """Write this account's acceptance of every required document.
+    """Write this account's acceptance of every required document, if any.
 
     Staged, never committed — the caller owns the transaction. Callers that
     may run twice for one account should check :func:`acceptance_outstanding`
@@ -249,13 +284,13 @@ async def record_acceptance(session: AsyncSession, *, user_id: int) -> None:
     if not legal_documents_enabled():
         return
     now = datetime.now(timezone.utc)
-    for slug, document in (await _required_documents()).items():
+    for document in await required_documents():
         session.add(
             LegalAcceptance(
                 user_id=user_id,
-                document=slug,
-                version=document.version if document else None,
-                document_sha256=document.sha256 if document else None,
+                document=document.slug,
+                version=document.version,
+                document_sha256=document.sha256,
                 accepted_at=now,
             )
         )
@@ -265,8 +300,9 @@ async def acceptance_outstanding(session: AsyncSession, *, user: User) -> bool:
     """Whether this account still owes an acceptance before it may carry on.
 
     Asked of every read of the caller's own account, so it short-circuits on
-    the deployment switch for every self-hoster and costs one indexed count
-    everywhere else.
+    the deployment switch for every self-hoster, and on a deployment that
+    requires nothing; elsewhere it costs the cached index and one indexed
+    count.
 
     The question is "has this account ever accepted each required document",
     not "…the current revision of each": publishing a new revision must not
@@ -275,18 +311,22 @@ async def acceptance_outstanding(session: AsyncSession, *, user: User) -> bool:
     """
     if not legal_documents_enabled():
         return False
+    required = [document.slug for document in await required_documents()]
+    if not required:
+        return False
     accepted = (
         await session.exec(
             select(func.count(func.distinct(LegalAcceptance.document))).where(
                 LegalAcceptance.user_id == user.id,
-                LegalAcceptance.document.in_(REQUIRED_DOCUMENTS),  # type: ignore[attr-defined]
+                LegalAcceptance.document.in_(required),  # type: ignore[attr-defined]
             )
         )
     ).one()
-    return accepted < len(REQUIRED_DOCUMENTS)
+    return accepted < len(required)
 
 
 def reset_index_cache() -> None:
     """Forget the cached index. For tests."""
-    global _index_cache
+    global _index_cache, _index_failed_at
     _index_cache = None
+    _index_failed_at = None

@@ -513,8 +513,9 @@ async def _register_account(
                 actor_user_id=user.id,
             )
         # The form said, above the button they just pressed, that creating an
-        # account agrees to this deployment's terms and privacy policy. On a
-        # deployment that has none — every self-hosted one — this does nothing.
+        # account agrees to the documents this deployment requires. On one
+        # that requires none (every self-hosted one, and an enterprise whose
+        # terms sit in its own contract) this records nothing.
         await legal_service.record_acceptance(session, user_id=user.id)
         # Staged beside the account, before either branch below commits it, so
         # a registration that fails leaves no record of one.

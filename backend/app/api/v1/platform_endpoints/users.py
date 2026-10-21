@@ -1262,7 +1262,7 @@ async def accept_legal_documents(
     session: UserSessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UserRead:
-    """Agree to this deployment's terms and privacy policy.
+    """Agree to the documents this deployment requires.
 
     For an account that never met the signup form — one an identity provider
     provisioned on first sign-in. The form's own notice is the agreement for

@@ -30,6 +30,7 @@ INDEX = (
         version="2.1",
         effective_date="2026-09-01",
         sha256="a" * 64,
+        required=True,
     ),
     legal_service.LegalDocument(
         slug="privacy",
@@ -37,6 +38,7 @@ INDEX = (
         version="1.4",
         effective_date="2026-09-01",
         sha256="b" * 64,
+        required=True,
     ),
 )
 

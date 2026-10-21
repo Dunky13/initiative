@@ -1,11 +1,10 @@
 {
-  "signupNotice": "En créant un compte, vous acceptez les <termsLink>{{terms}}</termsLink> et la <privacyLink>{{privacy}}</privacyLink> de {{appName}}.",
-  "termsTitle": "Conditions d'utilisation",
-  "privacyTitle": "Politique de confidentialité",
+  "signupNotice": "En créant un compte, vous acceptez ces documents de {{appName}} :",
   "documentFallbackTitle": "Document juridique",
   "effective": "En vigueur depuis le {{date}}",
   "version": "Version {{version}}",
   "unavailable": "Ce document ne peut pas être affiché pour le moment. Réessayez dans un instant.",
+  "readWhereKept": "Le lire là où il est conservé",
   "backToSignIn": "Retour à la connexion",
   "acceptError": "Nous n'avons pas pu enregistrer votre accord. Réessayez.",
   "accept": {

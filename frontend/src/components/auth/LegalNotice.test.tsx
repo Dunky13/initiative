@@ -3,7 +3,8 @@
  *
  * Two things carry the weight. It must not appear on a deployment that has no
  * terms — a self-hoster being told they agree to somebody else's would be
- * plainly wrong — and where it does appear it has to name both documents and
+ * plainly wrong — and where it does appear it has to name every required
+ * document and
  * let them be read, because pressing the button is the agreement and an
  * agreement you cannot read first is not one.
  */
@@ -21,13 +22,13 @@ vi.mock("@/hooks/useLegalDocuments", async (importOriginal) => ({
 
 import { LegalNotice } from "@/components/auth/LegalNotice";
 
-const hosted = (documents: { slug: string; title: string }[] = []) => {
-  useLegalIndex.mockReturnValue({
-    enabled: true,
-    documents,
-    required: ["terms", "privacy"],
-    isLoading: false,
-  });
+type Doc = { slug: string; title: string; url?: string | null };
+
+const TERMS: Doc = { slug: "terms", title: "Terms of Service" };
+const PRIVACY: Doc = { slug: "privacy", title: "Privacy Policy" };
+
+const hosted = (requiredDocuments: Doc[], documents: Doc[] = requiredDocuments) => {
+  useLegalIndex.mockReturnValue({ enabled: true, documents, requiredDocuments, isLoading: false });
 };
 
 describe("LegalNotice", () => {
@@ -35,7 +36,7 @@ describe("LegalNotice", () => {
     useLegalIndex.mockReturnValue({
       enabled: false,
       documents: [],
-      required: ["terms", "privacy"],
+      requiredDocuments: [],
       isLoading: false,
     });
 
@@ -44,11 +45,8 @@ describe("LegalNotice", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("names both documents and links each one", () => {
-    hosted([
-      { slug: "terms", title: "Terms of Service" },
-      { slug: "privacy", title: "Privacy Policy" },
-    ]);
+  it("names each required document and links each one", () => {
+    hosted([TERMS, PRIVACY]);
 
     renderWithProviders(<LegalNotice />);
 
@@ -60,29 +58,37 @@ describe("LegalNotice", () => {
     // what somebody has already typed.
     expect(terms).toHaveAttribute("target", "_blank");
     expect(privacy).toHaveAttribute("target", "_blank");
+    expect(screen.getByText(/by creating an account you agree/i)).toBeInTheDocument();
   });
 
-  it("reads correctly before the index has loaded", () => {
-    // The titles arrive a moment after the form does. The notice ships with
-    // the two names so it appears with the button rather than after it.
-    hosted([]);
+  it("names only what the portal marks required", () => {
+    hosted([TERMS], [TERMS, PRIVACY, { slug: "sla", title: "Service Levels" }]);
 
     renderWithProviders(<LegalNotice />);
 
     expect(screen.getByRole("link", { name: "Terms of Service" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeInTheDocument();
-    expect(screen.getByText(/by creating an account you agree/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Privacy Policy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Service Levels" })).not.toBeInTheDocument();
   });
 
-  it("uses the titles the portal publishes once it has them", () => {
-    hosted([
-      { slug: "terms", title: "Customer Agreement" },
-      { slug: "privacy", title: "Privacy Notice" },
-    ]);
+  it("says nothing where the deployment requires nothing", () => {
+    // An enterprise whose terms sit in its own contract, or in an employment
+    // one: signup asks for nothing.
+    hosted([], [PRIVACY]);
+
+    const { container } = renderWithProviders(<LegalNotice />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("links a document kept elsewhere where it is kept", () => {
+    hosted([{ slug: "contract", title: "Master Agreement", url: "https://legal.example/msa" }]);
 
     renderWithProviders(<LegalNotice />);
 
-    expect(screen.getByRole("link", { name: "Customer Agreement" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Terms of Service" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Master Agreement" })).toHaveAttribute(
+      "href",
+      "https://legal.example/msa"
+    );
   });
 });
