@@ -58,14 +58,12 @@ _WRITER_GRANTS = (
     "GRANT EXECUTE ON FUNCTION public.billing_managed() TO {r}",
 )
 
+#: The writer's read policies, declared in SHARED_TABLE_REGISTRY and applied
+#: at boot. Named here only so a downgrade drops them before the role.
 _WRITER_POLICIES = (
-    ("guilds", "billing_log_read", "true"),
-    ("guild_memberships", "billing_log_read", "true"),
-    (
-        "identity_refs",
-        "billing_log_read_refs",
-        "purpose = 'billing' AND entity_type = 'guild'",
-    ),
+    ("guilds", "billing_log_read"),
+    ("guild_memberships", "billing_log_read"),
+    ("identity_refs", "billing_log_read_refs"),
 )
 
 
@@ -146,13 +144,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.guilds WHERE id = p_guild) THEN
         RETURN;
     END IF;
-    PERFORM public.billing_change_row(
-        p_guild, 'community.members',
-        jsonb_build_object(
-            'members', (SELECT count(*) FROM public.guild_memberships
-                         WHERE guild_id = p_guild AND guest_until IS NULL),
-            'guests', (SELECT count(*) FROM public.guild_memberships
-                        WHERE guild_id = p_guild AND guest_until > now())));
+    -- No counts here: two joins in flight each see only their own row, and
+    -- the log is ordered by transaction, not by commit. The counts are read
+    -- when the change is served (billing_changes.page), committed.
+    PERFORM public.billing_change_row(p_guild, 'community.members', NULL);
 END $fn$;
 """
 
@@ -362,12 +357,8 @@ def upgrade() -> None:
     op.execute(f"GRANT USAGE ON SCHEMA public TO {writer}")
     for grant in _WRITER_GRANTS:
         op.execute(grant.format(r=writer))
-    for table, policy, using in _WRITER_POLICIES:
-        op.execute(f"DROP POLICY IF EXISTS {policy} ON public.{table}")
-        op.execute(
-            f"CREATE POLICY {policy} ON public.{table} "
-            f"AS PERMISSIVE FOR SELECT TO {writer} USING ({using})"
-        )
+    # Its read policies are the registry's (SHARED_TABLE_REGISTRY), applied
+    # at boot by ensure_public_rls.
 
     for body in (_CHANGE_ROW, _GUILDS, _MEMBERS_OF, _MEMBERSHIPS, _INSTALLS, _USAGE):
         op.execute(body)
@@ -392,7 +383,7 @@ def downgrade() -> None:
         op.execute(f"DROP TRIGGER IF EXISTS {name} ON public.{table}")
     for signature in reversed(_FUNCTIONS):
         op.execute(f"DROP FUNCTION IF EXISTS public.{signature}")
-    for table, policy, _using in _WRITER_POLICIES:
+    for table, policy in _WRITER_POLICIES:
         op.execute(f"DROP POLICY IF EXISTS {policy} ON public.{table}")
     for grant in _WRITER_GRANTS:
         op.execute(

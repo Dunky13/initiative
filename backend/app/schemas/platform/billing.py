@@ -48,7 +48,9 @@ CommunityRef = Annotated[
 
 
 class BillingBatch(SanitizedBaseModel):
-    """A batch's outer shape: its items are validated one at a time."""
+    """A batch's outer shape: a list and its size. Each item is validated in
+    its own turn, so one malformed item is answered as such and its
+    neighbours still apply."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -56,7 +58,7 @@ class BillingBatch(SanitizedBaseModel):
 class CommunitySyncRequest(BillingBatch):
     """Body of ``communities/sync``."""
 
-    communities: list[dict[str, Any]] = Field(min_length=1, max_length=BATCH_MAX)
+    communities: list[Any] = Field(min_length=1, max_length=BATCH_MAX)
 
 
 class CommunityFields(SanitizedBaseModel):
@@ -99,7 +101,7 @@ class StatementsRequest(BillingBatch):
     """Body of ``statements``: signed entitlement statements, each the
     current one for its (community, listing)."""
 
-    statements: list[str] = Field(min_length=1, max_length=BATCH_MAX)
+    statements: list[Any] = Field(min_length=1, max_length=BATCH_MAX)
 
 
 class CommunitiesReadRequest(BillingBatch):
@@ -111,7 +113,7 @@ class CommunitiesReadRequest(BillingBatch):
 class NoticesRequest(BillingBatch):
     """Body of ``notices``."""
 
-    notices: list[dict[str, Any]] = Field(min_length=1, max_length=BATCH_MAX)
+    notices: list[Any] = Field(min_length=1, max_length=BATCH_MAX)
 
 
 class BillingCommunityNoticeKind(str, Enum):

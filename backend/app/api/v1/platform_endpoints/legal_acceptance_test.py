@@ -69,6 +69,7 @@ async def test_registering_on_a_hosted_deployment_records_the_agreement(
             "email": "legal-signup@example.com",
             "username": "legalsignup",
             "password": "securepassword123",
+            "accepted_documents": ["terms", "privacy"],
         },
     )
 
@@ -78,6 +79,28 @@ async def test_registering_on_a_hosted_deployment_records_the_agreement(
         ("terms", "2.1"),
         ("privacy", "1.4"),
     ]
+
+
+async def test_only_the_documents_the_form_showed_are_recorded(
+    client: AsyncClient, session: AsyncSession, hosted
+):
+    """A form whose index was still loading, or couldn't be read, showed
+    nothing: what it didn't show is asked for after sign-in, not assumed."""
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "legal-partial@example.com",
+            "username": "legalpartial",
+            "password": "securepassword123",
+            "accepted_documents": ["terms"],
+        },
+    )
+
+    assert response.status_code == 201
+    rows = await _rows(session, response.json()["id"])
+    assert [r.document for r in rows] == ["terms"]
+    user = await session.get(User, response.json()["id"])
+    assert await legal_service.acceptance_outstanding(session, user=user) is True
 
 
 async def test_registering_on_a_self_hosted_deployment_records_nothing(
@@ -109,6 +132,7 @@ async def test_an_account_that_signed_up_is_never_asked_again(
             "email": "legal-noask@example.com",
             "username": "legalnoask",
             "password": "securepassword123",
+            "accepted_documents": ["terms", "privacy"],
         },
     )
     user = await session.get(User, created.json()["id"])

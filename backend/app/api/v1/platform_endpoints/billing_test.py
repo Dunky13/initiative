@@ -216,6 +216,7 @@ async def test_each_item_stands_alone(client: AsyncClient, session: AsyncSession
         "communities/sync",
         {
             "communities": [
+                None,
                 {"community_ref": "gbil_nobody", "version": 1, "fields": _fields()},
                 {
                     "community_ref": ref,
@@ -229,6 +230,7 @@ async def test_each_item_stands_alone(client: AsyncClient, session: AsyncSession
     )
     assert response.status_code == 200, response.text
     assert response.json()["results"] == [
+        {"community_ref": None, "error": "BILLING_INVALID_PAYLOAD"},
         {"community_ref": "gbil_nobody", "error": "BILLING_COMMUNITY_NOT_FOUND"},
         {"community_ref": ref, "error": "BILLING_INVALID_PAYLOAD"},
         {"community_ref": ref, "error": "BILLING_INVALID_PAYLOAD"},

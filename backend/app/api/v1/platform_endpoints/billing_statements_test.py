@@ -323,12 +323,32 @@ async def test_a_malformed_statement_is_refused(
     assert await _held(session, guild.id) is None
 
 
+async def test_a_malformed_item_leaves_its_neighbours_applied(
+    client: AsyncClient, session: AsyncSession, shipped_root
+):
+    guild = await create_guild(session)
+    await create_listing_with_terms(
+        session, uid=PAID_UID, public_id=PAID_ID, access="entitled"
+    )
+    good = await _statement(guild.id, version=1, values={})
+
+    response = await billing_boundary.post(
+        client, "statements", {"statements": [1, good["statement"]]}
+    )
+    await _drained()
+
+    assert response.status_code == 200
+    first, second = response.json()["results"]
+    assert first["error"] == BillingMessages.INVALID_STATEMENT
+    assert second["version"] == 1
+    assert await _held(session, guild.id) is not None
+
+
 @pytest.mark.parametrize(
     "body",
     [
         pytest.param({}, id="no-statements"),
         pytest.param({"statements": []}, id="none-sent"),
-        pytest.param({"statements": [1]}, id="statement-number"),
         pytest.param({"statements": ["x"], "version": 2}, id="extra-field"),
     ],
 )

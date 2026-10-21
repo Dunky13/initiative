@@ -8,6 +8,7 @@ import { StepField } from "@/components/start/stepParts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppConfig } from "@/hooks/useAppConfig";
+import { useLegalIndex } from "@/hooks/useLegalDocuments";
 import { browserOffersPasskeys } from "@/lib/passkeys";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 
@@ -60,6 +61,8 @@ export const AccountStep = ({
   const keysOffered = passkeyLoginEnabled && browserOffersPasskeys();
   const formDoor = passwordLoginEnabled || keysOffered;
   const incomplete = !email.trim() || (captcha !== null && !captchaToken) || blocked;
+  // Its notice is still being read: wait, so it's there to agree to.
+  const legalPending = useLegalIndex().pending && formDoor;
 
   const attempt = async (run: () => Promise<void>) => {
     try {
@@ -114,7 +117,7 @@ export const AccountStep = ({
       {/* Immediately above the buttons: pressing one is the agreement. */}
       {formDoor ? <LegalNotice /> : null}
       {passwordLoginEnabled ? (
-        <Button type="submit" className="w-full" disabled={busy || incomplete}>
+        <Button type="submit" className="w-full" disabled={busy || incomplete || legalPending}>
           {busy ? t("register.submitting") : t("register.submit")}
         </Button>
       ) : null}
@@ -124,7 +127,7 @@ export const AccountStep = ({
           className="w-full"
           variant={passwordLoginEnabled ? "outline" : "default"}
           onClick={() => void attempt(() => onPasskey(captchaToken))}
-          disabled={busy || incomplete}
+          disabled={busy || incomplete || legalPending}
         >
           {busy ? t("register.submitting") : t("register.submitPasskey")}
         </Button>

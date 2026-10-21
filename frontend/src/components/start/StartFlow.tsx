@@ -54,6 +54,7 @@ import {
   useSeedFirstHome,
   useSeedStarter,
 } from "@/hooks/useFinishPendingStart";
+import { useLegalIndex } from "@/hooks/useLegalDocuments";
 import { useServer } from "@/hooks/useServer";
 import { useWizard } from "@/hooks/useWizard";
 import { EMPTY_PLACE, nearOfPlace } from "@/lib/directoryNear";
@@ -403,6 +404,8 @@ const StartSteps = ({
 
   // The signed number the name check showed, so the account gets it.
   const [handleOffer, setHandleOffer] = useState<string | null>(null);
+  // The documents the form's notice showed, which the registration records.
+  const legal = useLegalIndex();
   const signUpDetails = (captchaToken = "") => {
     const final = withDefaults(answers);
     return {
@@ -413,6 +416,7 @@ const StartSteps = ({
       community: newCommunity(final),
       birthdate: age.birthdate || undefined,
       username_offer: handleOffer ?? undefined,
+      accepted_documents: legal.shownSlugs,
     };
   };
 

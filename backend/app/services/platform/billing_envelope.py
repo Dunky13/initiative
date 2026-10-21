@@ -66,6 +66,7 @@ class EnvelopeRefused(ValueError):
 class Verified:
     issuer: str
     jti: str
+    #: The last moment the envelope is accepted (``exp`` plus the leeway).
     expires_at: datetime
 
 
@@ -149,5 +150,9 @@ def verify(
     return Verified(
         issuer=str(claims["iss"]),
         jti=jti,
-        expires_at=datetime.fromtimestamp(int(claims["exp"]), tz=timezone.utc),
+        # The last moment it's accepted, leeway included: its jti is kept
+        # until then, so it can't be presented again in the leeway.
+        expires_at=datetime.fromtimestamp(
+            int(claims["exp"]) + LEEWAY_SECONDS, tz=timezone.utc
+        ),
     )

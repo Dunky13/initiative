@@ -82,7 +82,7 @@ async def _verified[M: BaseModel](request: Request, model: type[M]) -> M:
         ) from exc
 
 
-def _refs(items: list[dict[str, Any]]) -> list[str]:
+def _refs(items: list[Any]) -> list[str]:
     return list(
         dict.fromkeys(
             str(item["community_ref"])
@@ -160,6 +160,8 @@ async def statements(request: Request) -> dict:
     results: list[dict[str, Any]] = []
     for jws in payload.statements:
         try:
+            if not isinstance(jws, str):
+                raise ValueError("a statement is a compact JWS")
             claims = read_entitlement_statement(jws, keys)
         except ValueError:
             results.append(

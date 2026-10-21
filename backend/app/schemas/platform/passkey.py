@@ -112,6 +112,10 @@ class PasskeySignUpStart(SanitizedBaseModel):
     username_offer: Optional[str] = Field(default=None, max_length=1024)
     # Answers the directory's age question at sign-up; the date is not kept.
     birthdate: Optional[date] = None
+    # The documents the form showed above its button, by slug: what pressing
+    # it agreed to. Only these are recorded; any other required one is asked
+    # for after sign-in.
+    accepted_documents: list[str] = Field(default_factory=list, max_length=32)
 
 
 class PasskeySignUpFinish(PasskeySignUpStart):

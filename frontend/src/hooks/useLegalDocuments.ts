@@ -49,13 +49,20 @@ export const useLegalIndex = () => {
 
   const documents = query.data?.documents ?? [];
   const required = query.data?.required ?? [];
+  const requiredDocuments = documents.filter((document) => required.includes(document.slug));
   return {
     /** Whether this deployment names a portal for its documents at all. */
     enabled,
     documents,
     /** What must be accepted, as the portal says: none while the index is
-     *  loading or unreachable, as the server records none then. */
-    requiredDocuments: documents.filter((document) => required.includes(document.slug)),
+     *  loading or unreachable. */
+    requiredDocuments,
+    /** What a signup form showed above its button, by slug: sent with the
+     *  registration, which records only these. A required document it didn't
+     *  show is asked for after sign-in. */
+    shownSlugs: requiredDocuments.map((document) => document.slug),
+    /** Still asking: a signup form waits, so its notice is there to read. */
+    pending: enabled && query.isLoading,
     isLoading: query.isLoading,
   };
 };

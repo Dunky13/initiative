@@ -181,16 +181,18 @@ _BILLING_UNTOUCHABLE_STATUS_VALUES: frozenset[str] = frozenset(
 )
 
 
-async def _select_tier_row(session: AsyncSession, guild_id: int):
+async def _select_tier_row(session: AsyncSession, guild_id: int, *, lock: bool = False):
     """Read the billing-visible slice of one guild. Explicit columns only —
-    the role's grants are column-scoped, so an ORM ``SELECT *`` would fail."""
-    return (
-        await session.exec(
-            select(*_GUILD_TIER_COLUMNS)
-            .join(GuildAdministration, GuildAdministration.guild_id == Guild.id)
-            .where(Guild.id == guild_id)
-        )
-    ).one_or_none()
+    the role's grants are column-scoped, so an ORM ``SELECT *`` would fail.
+    ``lock`` holds its administration row to the end of the transaction."""
+    query = (
+        select(*_GUILD_TIER_COLUMNS)
+        .join(GuildAdministration, GuildAdministration.guild_id == Guild.id)
+        .where(Guild.id == guild_id)
+    )
+    if lock:
+        query = query.with_for_update(of=GuildAdministration)
+    return (await session.exec(query)).one_or_none()
 
 
 async def _claim_event(
@@ -273,7 +275,9 @@ async def apply_community_sync(
     of ``suspended`` or ``deleted``; it's recorded, and a suspension that
     lifts returns the community to it.
     """
-    row = await _select_tier_row(session, guild_id)
+    # Locked, so two syncs for one community take turns: each reads the
+    # version the other wrote, and an older one never lands after a newer.
+    row = await _select_tier_row(session, guild_id, lock=True)
     if row is None:
         raise CodedError(BillingMessages.COMMUNITY_NOT_FOUND, 404)
     if version <= row.billing_version:

@@ -129,7 +129,7 @@ async def change_rows(session, guild_id: int, *, kinds=None) -> list[tuple[str, 
             params={"g": guild_id},
         )
     ).all()
-    return [(r[0], dict(r[1])) for r in rows if kinds is None or r[0] in kinds]
+    return [(r[0], dict(r[1] or {})) for r in rows if kinds is None or r[0] in kinds]
 
 
 async def change_kinds(session, guild_id: int, *, kinds=LIFECYCLE_KINDS) -> list[str]:

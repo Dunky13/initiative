@@ -13,6 +13,7 @@ Pinned properties:
 
 from __future__ import annotations
 
+import base64
 import json
 
 import httpx
@@ -24,7 +25,11 @@ from app.services.platform import billing_envelope as envelope
 from app.services.platform import billing_ping
 from app.services.platform.identity_refs import existing_ref
 from app.testing import create_guild
-from app.testing.billing_boundary import OTHER_PUBLIC_PEM, configure_outbound
+from app.testing.billing_boundary import (
+    OTHER_PRIVATE_PEM,
+    OTHER_PUBLIC_PEM,
+    configure_outbound,
+)
 
 
 @pytest.fixture
@@ -45,6 +50,33 @@ def _verify(request: httpx.Request, *, audience: str) -> envelope.Verified:
         path=request.url.path,
         body=request.content,
     )
+
+
+def test_an_envelope_is_kept_spent_until_its_leeway_ends():
+    """Its jti is kept until ``expires_at``, so that is the last moment it's
+    accepted, leeway included: never ``exp`` itself."""
+    token = envelope.sign(
+        OTHER_PRIVATE_PEM,
+        None,
+        issuer=envelope.INITIATIVE,
+        audience=envelope.TO_BILLING,
+        method="POST",
+        path="/ping",
+        body=b"",
+    )
+    seen = envelope.verify(
+        token,
+        keys=load_verification_keys(OTHER_PUBLIC_PEM),
+        issuer=envelope.INITIATIVE,
+        audience=envelope.TO_BILLING,
+        method="POST",
+        path="/ping",
+        body=b"",
+    )
+    exp = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "==").decode())[
+        "exp"
+    ]
+    assert seen.expires_at.timestamp() == exp + envelope.LEEWAY_SECONDS
 
 
 def test_disabled_by_default():

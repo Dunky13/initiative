@@ -99,17 +99,28 @@ async def test_a_communitys_lifecycle_is_served_in_order_by_reference(
     assert len({c["id"] for c in mine}) == len(mine)
 
 
-async def test_members_and_guests_are_totals(session: AsyncSession):
+async def test_members_and_guests_are_totals_counted_as_served(session: AsyncSession):
+    """Counted when the page is read, so every change for the community says
+    what it holds now: two joins in flight can't each report only their own."""
     guild = await create_guild(session)
     guild_id = guild.id
+    ref = await billing_ref(IdentityEntity.guild, guild_id)
     async with billing_manages_plans(session):
         member = await create_user(session)
         await create_guild_membership(session, user=member, guild=guild)
         await create_guest(session, guild=guild)
-        rows = await change_rows(session, guild_id, kinds=("community.members",))
+        await session.commit()
+        written = await change_rows(session, guild_id, kinds=("community.members",))
+        served, _ = await served_changes()
 
-    assert rows[0] == ("community.members", {"members": 1, "guests": 0})
-    assert rows[-1][1]["guests"] == 1
+    assert len(written) >= 2 and all(data == {} for _kind, data in written)
+    counts = [
+        (c["members"], c["guests"])
+        for c in served
+        if c["kind"] == "community.members" and c["community_ref"] == ref
+    ]
+    assert len(counts) == len(written)
+    assert set(counts) == {(1, 1)}
 
 
 async def test_a_purge_is_served_under_the_reference_it_had(session: AsyncSession):

@@ -5296,6 +5296,8 @@ export interface EmailOtpRegister {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 /**
@@ -8204,6 +8206,8 @@ export interface PasskeySignUpFinish {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
   credential: PasskeySignUpFinishCredential;
   /**
    * @minLength 1
@@ -8242,6 +8246,8 @@ export interface PasskeySignUpStart {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 export type PasskeyStepUpFinishCredential = { [key: string]: unknown };
@@ -10877,6 +10883,8 @@ export interface UserCreate {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 /**

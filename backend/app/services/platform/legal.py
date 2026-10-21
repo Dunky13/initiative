@@ -27,6 +27,7 @@ once the index can be read again.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Collection
 import logging
 import time
 from dataclasses import dataclass
@@ -273,8 +274,12 @@ async def required_documents() -> tuple[LegalDocument, ...]:
         return ()
 
 
-async def record_acceptance(session: AsyncSession, *, user_id: int) -> None:
-    """Write this account's acceptance of every required document, if any.
+async def record_acceptance(
+    session: AsyncSession, *, user_id: int, shown: Collection[str] | None = None
+) -> None:
+    """Write this account's acceptance of every required document, if any;
+    with ``shown``, only of the required ones it names (the documents a form
+    showed the person, by slug), so nothing unseen is recorded as agreed.
 
     Staged, never committed — the caller owns the transaction. Callers that
     may run twice for one account should check :func:`acceptance_outstanding`
@@ -285,6 +290,8 @@ async def record_acceptance(session: AsyncSession, *, user_id: int) -> None:
         return
     now = datetime.now(timezone.utc)
     for document in await required_documents():
+        if shown is not None and document.slug not in shown:
+            continue
         session.add(
             LegalAcceptance(
                 user_id=user_id,

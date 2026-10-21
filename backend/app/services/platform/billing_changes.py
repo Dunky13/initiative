@@ -10,7 +10,8 @@ definer function ``public.billing_change_row`` (migration ``20261021_0532``):
   none), ``community.deleted``, ``community.restored``,
   ``community.suspended``, ``community.unsuspended`` and ``community.purged``;
 * by the triggers on ``guild_memberships``: ``community.members`` with
-  ``members`` and ``guests``, totals, once per community a statement touches;
+  ``members`` and ``guests``, totals, once per community a statement touches,
+  counted when the change is served (:func:`page`) rather than written;
 * by the triggers on ``plugin_installs``: ``plugin.installed`` and
   ``plugin.uninstalled`` with ``listing_uid`` (an erase follows an uninstall,
   so it's told by the uninstall);
@@ -120,6 +121,33 @@ async def page(
                 )
             ).all()
         }
+        # The counts are read now, committed, never as the change was written:
+        # a join in flight beside another sees only its own row, and the log
+        # is ordered by transaction rather than by commit. The newest change
+        # billing reads for a community so carries what it holds as served.
+        counted = list({r.guild_id for r in rows if r.kind == "community.members"})
+        members = (
+            {
+                r[0]: {"members": int(r[1]), "guests": int(r[2])}
+                for r in (
+                    await session.exec(
+                        text(
+                            """
+                        SELECT guild_id,
+                               count(*) FILTER (WHERE guest_until IS NULL),
+                               count(*) FILTER (WHERE guest_until > now())
+                          FROM public.guild_memberships
+                         WHERE guild_id = ANY(:ids)
+                         GROUP BY guild_id
+                        """
+                        ),
+                        params={"ids": counted},
+                    )
+                ).all()
+            }
+            if counted
+            else {}
+        )
         created = [r.guild_id for r in rows if r.kind == "community.created"]
         owners = (
             {
@@ -143,13 +171,16 @@ async def page(
         )
     if not rows:
         return [], after
-    changes = await _served(rows, alive, owners)
+    changes = await _served(rows, alive, owners, members)
     last = rows[-1]
     return changes, _encode(int(last.xid), int(last.id))
 
 
 async def _served(
-    rows: list[Any], alive: set[int], owners: dict[int, int]
+    rows: list[Any],
+    alive: set[int],
+    owners: dict[int, int],
+    members: dict[int, dict[str, int]],
 ) -> list[dict[str, Any]]:
     from app.models.platform.identity_ref import IdentityEntity
     from app.services.marketplace.plugin_entitlements import listing_terms
@@ -159,7 +190,9 @@ async def _served(
     terms: dict[str, bool] = {}
     out: list[dict[str, Any]] = []
     for row in rows:
-        data = dict(row.data or {})
+        data: dict[str, Any] = dict(row.data or {})
+        if row.kind == "community.members":
+            data = dict(members.get(row.guild_id, {"members": 0, "guests": 0}))
         if row.kind in _PLUGIN_KINDS:
             uid = str(data.get("listing_uid") or "")
             if uid not in terms:
