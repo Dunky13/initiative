@@ -18,6 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, FrozenSet
 
+from app.models.platform.access_grant import AccessGrantPurpose, AccessLevel
 from app.models.platform.user import UserRole, UserStatus
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -217,6 +218,21 @@ def roles_with_capability(capability: Capability) -> FrozenSet[UserRole]:
     return frozenset(
         role for role, caps in ROLE_CAPABILITIES.items() if capability in caps
     )
+
+
+def may_hold_grant(role: UserRole | str, purpose: str, level: str) -> bool:
+    """Whether someone at ``role`` may hold a grant of ``purpose`` at
+    ``level``: when asking for it, when it is approved, and each time it is
+    used. A ``moderate`` content grant is for those who moderate. Every other
+    grant is for those who may ask for any (``access.request_any``) or break
+    glass (``data.bypass``)."""
+    held = capabilities_for(UserRole(role))
+    if (
+        purpose == AccessGrantPurpose.content.value
+        and level == AccessLevel.moderate.value
+    ):
+        return Capability.CONTENT_MODERATE in held
+    return bool(held & {Capability.ACCESS_REQUEST_ANY, Capability.DATA_BYPASS})
 
 
 def standing_capabilities(role: UserRole, status: UserStatus) -> FrozenSet[Capability]:

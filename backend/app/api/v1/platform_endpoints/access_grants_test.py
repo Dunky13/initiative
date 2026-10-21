@@ -361,7 +361,7 @@ async def test_grantee_sees_guild_content(
     assert viewed.status_code == 200, viewed.text
 
 
-@pytest.mark.parametrize("tier", ["moderator", "operator"])
+@pytest.mark.parametrize("tier", ["support", "operator"])
 async def test_a_scoped_read_write_grant_cannot_author_tools(
     client: AsyncClient, session: AsyncSession, acting_user, tier
 ):
