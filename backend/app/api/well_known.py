@@ -28,15 +28,26 @@ router = APIRouter(prefix="/.well-known", include_in_schema=False)
 _CACHE = {"Cache-Control": "public, max-age=3600"}
 
 
+_ANDROID_RELATIONS = [
+    "delegate_permission/common.get_login_creds",
+    "delegate_permission/common.handle_all_urls",
+]
+
+
 @router.get("/assetlinks.json")
 async def android_asset_links() -> JSONResponse:
-    """The Android apps that may sign in to this deployment with a passkey."""
+    """The Android apps that may sign in to this deployment with a passkey.
+
+    ``get_login_creds`` is the relation Google's Credential Manager reads;
+    ``handle_all_urls`` is the one Bitwarden reads instead. Naming it opens no
+    links in the app, which verifies no https host of its own.
+    """
     if passkey_service.site_refusal() is not None:
         raise HTTPException(status_code=404)
     return JSONResponse(
         [
             {
-                "relation": ["delegate_permission/common.get_login_creds"],
+                "relation": _ANDROID_RELATIONS,
                 "target": {
                     "namespace": "android_app",
                     "package_name": package,
