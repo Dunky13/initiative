@@ -906,5 +906,42 @@ def test_without_a_task_type_the_commonest_is_the_default():
     ]
 
 
+def test_more_issue_types_than_a_project_holds_keep_the_commonest_and_every_name():
+    from app.core.task_types import MAX_TASK_TYPES
+
+    rare = [f"Kind {n}" for n in range(MAX_TASK_TYPES)]
+    envelope = _envelope(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Bug"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Bug"}),
+            *(
+                _issue(f"ACME-{n + 3}", name, issuetype={"name": name})
+                for n, name in enumerate(rare)
+            ),
+        ]
+    )
+
+    names = [t["name"] for t in envelope["task_types"]]
+    assert len(names) == MAX_TASK_TYPES
+    assert names[0] == "Bug"
+    # Every issue still says what it was, the left-out kinds included.
+    [kept] = [d for d in envelope["property_definitions"] if d["name"] == "Issue type"]
+    assert [o["value"] for o in kept["options"]] == ["Bug", *rare]
+    values = {
+        task["title"]: next(
+            v["value_text"]
+            for v in task["properties"]
+            if v["property_name"] == "Issue type"
+        )
+        for task in envelope["tasks"]
+    }
+    assert values[rare[-1]] == rare[-1]
+
+
+def test_issue_types_that_all_fit_need_no_property():
+    envelope = _envelope(issues=[_issue("ACME-1", "One", issuetype={"name": "Bug"})])
+    assert "Issue type" not in {d["name"] for d in envelope["property_definitions"]}
+
+
 def test_issues_naming_no_type_leave_the_starting_types():
     assert "task_types" not in _envelope()

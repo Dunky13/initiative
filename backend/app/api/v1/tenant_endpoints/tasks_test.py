@@ -1933,6 +1933,51 @@ async def test_a_task_changes_alone_or_with_its_series(
     assert await live() == {}
 
 
+async def test_a_task_changes_type_alone_or_with_its_series(
+    client: AsyncClient, session: AsyncSession, recurring_task_env
+):
+    """A type changed on just this task stays on it, and the next task is the
+    series' type; changed on all, every task of the series is the new type."""
+    from app.services.tenant.task_types import list_types
+    from app.testing.factories import create_task
+
+    a, todo, done = await recurring_task_env()
+    task_type, bug, idea = (await list_types(session, a.project.id))[:3]
+    first = await create_task(
+        session,
+        a.project,
+        title="Water plants",
+        task_status_id=todo.id,
+        due_date=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=DAILY",
+    )
+    await session.commit()
+
+    async def patch(task_id: int, **body):
+        response = await client.patch(
+            a.g(f"/tasks/{task_id}"), headers=a.headers, json=body
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def types() -> dict[int, int]:
+        conditions = json.dumps(
+            [{"field": "project_id", "op": "eq", "value": a.project.id}]
+        )
+        listing = await client.get(
+            a.g(f"/tasks/?conditions={conditions}"), headers=a.headers
+        )
+        return {task["id"]: task["task_type_id"] for task in listing.json()["items"]}
+
+    await patch(first.id, task_type_id=bug.id, scope="this")
+    await patch(first.id, task_status_id=done.id)
+    (second_id,) = set(await types()) - {first.id}
+    assert await types() == {first.id: bug.id, second_id: task_type.id}
+
+    await patch(second_id, task_type_id=idea.id, scope="all")
+    assert set((await types()).values()) == {idea.id}
+
+
 async def test_filter_tasks_by_date_window_group(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

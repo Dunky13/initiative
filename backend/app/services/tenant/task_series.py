@@ -43,6 +43,7 @@ from app.models.tenant.task import (
     Task,
     TaskPriority,
     TaskStatusCategory,
+    TaskType,
 )
 from app.schemas.recurrence import OccurrenceScope
 from app.services.tenant import properties as properties_service
@@ -62,10 +63,13 @@ CARRIED = (
     "due_date",
     "assignee_ids",
     "tag_ids",
+    "task_type_id",
 )
 #: What an edit of every task reaches. Dates, status, checklist and the repeat
 #: are each task's own.
-SHARED = frozenset({"title", "description", "priority", "assignee_ids", "tag_ids"})
+SHARED = frozenset(
+    {"title", "description", "priority", "assignee_ids", "tag_ids", "task_type_id"}
+)
 _DATES = frozenset({"start_date", "due_date"})
 _TAGS = tags_service.TAG_LINKS["task"]
 
@@ -99,6 +103,7 @@ async def values_of(session: AsyncSession, task: Task) -> dict[str, Any]:
         "due_date": _stored("due_date", task.due_date),
         "assignee_ids": _stored("assignee_ids", [a.id for a in task.assignees]),
         "tag_ids": _stored("tag_ids", tag_ids),
+        "task_type_id": task.task_type_id,
     }
 
 
@@ -118,7 +123,14 @@ def edited(
     longer needs remembering. Any other edit carries its changes forward."""
     after = {
         field: _stored(field, getattr(task, field))
-        for field in ("title", "description", "priority", "start_date", "due_date")
+        for field in (
+            "title",
+            "description",
+            "priority",
+            "start_date",
+            "due_date",
+            "task_type_id",
+        )
     }
     after["assignee_ids"] = (
         before["assignee_ids"]
@@ -548,7 +560,7 @@ async def _next_task(
             created_by=task.created_by,
         )
     following.task_status = default_status
-    for field in ("title", "description", "priority"):
+    for field in ("title", "description", "priority", "task_type_id"):
         if field in values:
             setattr(following, field, values[field])
     sync_completed_at(following, default_status.category, now=now)
@@ -614,8 +626,18 @@ async def apply_to_others(
     fields = fields & SHARED
     if not fields:
         return
+    # A type is its project's: a task of the series that was moved to another
+    # project keeps its own.
+    shared_type = (
+        await session.get(TaskType, after["task_type_id"])
+        if "task_type_id" in fields
+        else None
+    )
+    type_project = shared_type.project_id if shared_type is not None else None
     for member in members:
         for field in fields - {"assignee_ids", "tag_ids"}:
+            if field == "task_type_id" and member.project_id != type_project:
+                continue
             setattr(member, field, _loaded(field, after[field]))
         if "assignee_ids" in fields:
             await set_task_assignees(
