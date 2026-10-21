@@ -212,9 +212,7 @@ async def _ask_about_task(
     connection to send it to."""
 
     async def ask(target: ai_provider.Target) -> tuple[Shape, TaskContext]:
-        context = await task_context(
-            session, task, user=user, guild_id=guild_id, budget=_TASK_BUDGET
-        )
+        context = await task_context(session, task, budget=_TASK_BUDGET)
         prompt = (
             f"{instructions}{_locale_instruction(user.locale or 'en')}",
             f"<context>{context.data}</context>",

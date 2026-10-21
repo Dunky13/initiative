@@ -15,20 +15,24 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
+from sqlalchemy import func, tuple_
+from sqlalchemy.orm import selectinload
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.identity_boundary import STORED_MENTION
 from app.core.search import SearchEntityType
 from app.core.user_display import display_name
-from app.models.platform.user import User
 from app.models.platform.user_profile_view import MemberProfile
+from app.models.tenant.comment import Comment, in_thread
+from app.models.tenant.property import PropertyType
 from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
+from app.schemas.tenant.property import PropertySummary
 from app.schemas.tenant.task import TaskRead
 from app.services import compact
-from app.services.tenant import comments as comments_service
 from app.services.tenant import relationships as relationships_service
 from app.services.tenant import task_queries
 
@@ -45,12 +49,10 @@ _TASK_FIELDS: dict[str, Any] = {
     "due_date": True,
     "task_status": {"name", "category"},
     "task_type": {"name"},
-    "assignees": {"__all__": {"username", "display_name"}},
     "checklist": {"__all__": {"text", "done"}},
     "tags": {"__all__": {"name"}},
-    "properties": {"__all__": {"name", "value"}},
 }
-#: A property's value is the member's own, passed through as it is.
+#: A field's value is the member's own, passed through as it is.
 _FREE_FORM = frozenset({"value"})
 
 
@@ -66,32 +68,41 @@ class TaskContext:
 
 
 async def task_context(
-    session: AsyncSession,
-    task: Task,
-    *,
-    user: User,
-    guild_id: int,
-    budget: int,
+    session: AsyncSession, task: Task, *, budget: int
 ) -> TaskContext:
-    """``task`` as ``user`` reads it, within about ``budget`` tokens."""
+    """``task`` as the reader ``session`` is routed for reads it, within about
+    ``budget`` tokens."""
     loaded = await task_queries.load_task(session, task.id)  # type: ignore[arg-type]
     read = TaskRead.model_validate(loaded)
+    told = read.model_dump(mode="json", include=_TASK_FIELDS)
+    told["assignees"] = [display_name(person) for person in read.assignees]
+    told["properties"] = [
+        {"name": field.name, "value": _shown(field)} for field in read.properties
+    ]
     parts: dict[str, Any] = {
-        "task": read.model_dump(mode="json", include=_TASK_FIELDS),
+        "task": told,
         "project": {"name": task.project.name, "description": task.project.description},
         "linked_tasks": await _open_linked_tasks(session, task.id),  # type: ignore[arg-type]
     }
     room = budget * _CHARS_PER_TOKEN - len(_dumps(compact.trim(parts, _FREE_FORM)))
-    comments, finished = await _recent_comments(
-        session, task, user=user, guild_id=guild_id, room=room
-    )
+    comments, total = await _recent_comments(session, task.id, room=room)  # type: ignore[arg-type]
     parts["comments"] = comments
     data = await _named(session, _dumps(compact.trim(parts, _FREE_FORM)))
-    return TaskContext(
-        data=data,
-        comments_read=len(comments),
-        comments_total=len(comments) if finished else read.comment_count,
-    )
+    return TaskContext(data=data, comments_read=len(comments), comments_total=total)
+
+
+def _shown(field: PropertySummary) -> Any:
+    """A field's value as the task's page shows it: an option by its label,
+    a person by their name."""
+    value = field.model_dump(mode="json", include={"value"}).get("value")
+    if field.options and value is not None:
+        labels = {option.value: option.label for option in field.options}
+        if isinstance(value, list):
+            return [labels.get(item, item) for item in value]
+        return labels.get(value, value)
+    if field.type is PropertyType.user_reference and isinstance(value, dict):
+        return display_name(SimpleNamespace(**value))
+    return value
 
 
 def _dumps(value: Any) -> str:
@@ -136,45 +147,49 @@ async def _open_linked_tasks(session: AsyncSession, task_id: int) -> list[str]:
 
 
 async def _recent_comments(
-    session: AsyncSession, task: Task, *, user: User, guild_id: int, room: int
-) -> tuple[list[dict[str, Any]], bool]:
-    """The newest comments that fit in ``room`` characters, oldest first, and
-    whether that is all of them."""
-    taken: list[tuple[datetime, int, dict[str, Any]]] = []
-    cursor: str | None = None
+    session: AsyncSession, task_id: int, *, room: int
+) -> tuple[list[dict[str, Any]], int]:
+    """The newest of the task's comments that fit in ``room`` characters,
+    oldest first, and how many there are in all.
+
+    Read newest first across the whole thread, replies included, so a reply
+    written today under an old conversation goes in before older comments.
+    """
+    live = (
+        col(Comment.task_id) == task_id,
+        in_thread(),
+        col(Comment.deleted_at).is_(None),
+        col(Comment.removed_at).is_(None),
+    )
+    taken: list[dict[str, Any]] = []
+    after: tuple[datetime, int | None] | None = None
     while True:
-        page = await comments_service.list_comments(
-            session,
-            user=user,
-            guild_id=guild_id,
-            targets={"task_id": task.id},
-            limit=_COMMENT_PAGE,
-            cursor=cursor,
+        statement = (
+            select(Comment)
+            .where(*live)
+            .order_by(col(Comment.created_at).desc(), col(Comment.id).desc())
+            .limit(_COMMENT_PAGE)
+            .options(selectinload(Comment.author))  # type: ignore[arg-type]
         )
-        for comment in reversed(page.comments):
-            read = comments_service.serialize_comment(comment, viewer_id=user.id)
-            if read.removed is not None:
-                continue
+        if after is not None:
+            statement = statement.where(tuple_(Comment.created_at, Comment.id) < after)
+        page = (await session.exec(statement)).all()
+        for comment in page:
             row = compact.trim(
                 {
-                    "by": read.imported_author_name or display_name(read.author),
-                    "at": read.created_at.isoformat(timespec="minutes"),
-                    "text": read.content,
+                    "by": comment.imported_author_name or display_name(comment.author),
+                    "at": comment.created_at.isoformat(timespec="minutes"),
+                    "text": comment.content,
                 }
             )
             room -= len(_dumps(row)) + 1
             if room < 0:
-                return _oldest_first(taken), False
-            taken.append((read.created_at, read.id, row))
-        if page.next_cursor is None:
-            return _oldest_first(taken), True
-        cursor = page.next_cursor
-
-
-def _oldest_first(
-    taken: list[tuple[datetime, int, dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    return [row for *_, row in sorted(taken, key=lambda t: (t[0], t[1]))]
+                total = (await session.exec(select(func.count()).where(*live))).one()
+                return taken[::-1], total
+            taken.append(row)
+        if len(page) < _COMMENT_PAGE:
+            return taken[::-1], len(taken)
+        after = (page[-1].created_at, page[-1].id)
 
 
 async def _named(session: AsyncSession, data: str) -> str:

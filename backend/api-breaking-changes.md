@@ -97,6 +97,24 @@ matter and can be deleted.
 - PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `openrouter` enum value to the `provider` response property for the response status `200`
 - PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `together` enum value to the `provider` response property for the response status `200`
 - PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `xai` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/auth/register added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `201`
+- GET /api/v1/me added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/age-confirmation added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- PUT /api/v1/me/avatar added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/me/legal-acceptance added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/me/username added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/operator/users added the new `access.request_any` enum value to the `items/items/capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/age-block added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/api-keys added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/platform-role added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/profile/{field} added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/reactivate added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/restore added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sessions added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- DELETE /api/v1/operator/users/{user_id}/sign-in-lock added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- POST /api/v1/operator/users/{user_id}/suspension added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
+- PATCH /api/v1/operator/users/{user_id}/username added the new `access.request_any` enum value to the `capabilities/items/` response property for the response status `200`
 
 ### A task's type is a field
 
