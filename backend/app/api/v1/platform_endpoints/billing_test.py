@@ -1200,7 +1200,7 @@ async def test_a_batch_naming_only_purged_guilds_redeems_nothing(
     no name, so its jti stays unredeemed, like the single read's 404."""
     guild = await create_guild(session, name="Gone Since")
     ref = await billing_guild_ref(guild.id)
-    await session.execute(delete(Guild).where(Guild.id == guild.id))
+    await session.exec(delete(Guild).where(Guild.id == guild.id))
     await session.commit()
     body = json.dumps({"community_refs": [ref]}).encode()
     headers = _signed_headers("/api/v1/billing/community-names", body)

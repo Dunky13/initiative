@@ -17,7 +17,10 @@ async def test_asset_links_name_the_apps_this_image_vouches_for(client, monkeypa
     assert resp.headers["cache-control"] == "public, max-age=3600"
     assert resp.json() == [
         {
-            "relation": ["delegate_permission/common.get_login_creds"],
+            "relation": [
+                "delegate_permission/common.get_login_creds",
+                "delegate_permission/common.handle_all_urls",
+            ],
             "target": {
                 "namespace": "android_app",
                 "package_name": native_apps.ANDROID_PACKAGE,
