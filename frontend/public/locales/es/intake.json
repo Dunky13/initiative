@@ -56,6 +56,8 @@
     "repointNote": "Dirigir un canal a otro proyecto empieza de cero allí. Lo que siga abierto se queda en el proyecto donde se está trabajando.",
     "landingStatusLabel": "Los casos nuevos empiezan en",
     "landingStatusDefault": "El estado por defecto del proyecto",
+    "caseTypeLabel": "Los casos nuevos son de tipo",
+    "caseTypeDefault": "El tipo por defecto del proyecto",
     "enabledLabel": "Recibiendo casos nuevos",
     "lastCase": "Último caso abierto el {{when}}.",
     "noCasesYet": "Aún no hay casos.",

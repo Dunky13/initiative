@@ -1,11 +1,14 @@
 import { Ban, MessageSquare } from "lucide-react";
 
-import type { PropertyDefinitionRead } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  DetailLayoutDefinitionInput,
+  PropertyDefinitionRead,
+} from "@/api/generated/initiativeAPI.schemas";
 import { namePropertyColumns } from "@/components/properties/propertyColumns";
 import { isEmptyPropertyValue } from "@/components/properties/propertyHelpers";
 import { iconForPropertyType } from "@/components/properties/propertyTypeIcons";
 
-import { at, detailLayoutSpec, type Region } from "./detailLayout";
+import { at, detailLayoutSpec, type Region, storedLayout } from "./detailLayout";
 import { type FieldDef, propertyFieldId } from "./fields";
 import type { LayoutNode } from "./tree";
 
@@ -359,3 +362,24 @@ const SHAPE_SPECS = new Map(
  *  one for a shape this build does not know. */
 export const taskLayoutFor = (shape: string | null | undefined) =>
   SHAPE_SPECS.get(shape ?? "plain") ?? TASK_LAYOUT;
+
+/**
+ * A type's page as its shape draws it, with these properties placed at the
+ * end of the side's first section, as stored: what a ready-made type's fields
+ * are given when it is added.
+ */
+export const taskPageWithFields = (
+  shape: string | null | undefined,
+  propertyIds: readonly number[]
+): DetailLayoutDefinitionInput => {
+  const stored = storedLayout(taskLayoutFor(shape).root(null));
+  const fields = propertyIds.map((id) => field(propertyFieldId(id)));
+  const side = [...((stored.side ?? []) as LayoutNode[])];
+  const index = side.findIndex((node) => node.type === "section");
+  if (index === -1) {
+    side.push(section(...fields));
+  } else {
+    side[index] = { ...side[index], children: [...(side[index].children ?? []), ...fields] };
+  }
+  return { ...stored, side } as DetailLayoutDefinitionInput;
+};

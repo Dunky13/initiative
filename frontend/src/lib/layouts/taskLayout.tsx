@@ -209,20 +209,46 @@ const StatusEditor = ({ task }: { task: TaskRead }) => {
   );
 };
 
+/** What a new task of `type` starts with where it is drawn: its description
+ *  outline and its priority. (Its checklist lines and repeat are added by the
+ *  server when it is made.) */
+const startsWith = (type: TaskTypeRead) => ({
+  description: type.starting_values?.description ?? null,
+  priority: type.starting_values?.priority ?? "medium",
+});
+
+/** What a task being added takes from `type` in place of what it took from
+ *  `was`: each of the fields above the person has left as it started. */
+const startedFrom = (task: TaskRead, was: TaskTypeRead, type: TaskTypeRead) => {
+  const before = startsWith(was);
+  const after = startsWith(type);
+  return {
+    ...((task.description ?? "") === (before.description ?? "")
+      ? { description: after.description }
+      : {}),
+    ...(task.priority === before.priority ? { priority: after.priority } : {}),
+  };
+};
+
 /** Which of the project's types the task is. Changing it redraws the page as
  *  the new type lays it out; nothing the task holds is lost, only what the new
- *  page leaves out is not shown. */
+ *  page leaves out is not shown. While the task is being added, what it starts
+ *  with follows the type, until the person changes it. */
 const TypeEditor = ({ item: task, label }: EditorProps) => {
   const { readOnly, types, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
+  const adding = useContext(ItemDraftContext) !== null;
   if (types.length < 2) return null;
   const options = types.some((type) => type.id === task.task_type_id)
     ? types
     : [...types, task.task_type];
-  const edit = (type: TaskTypeRead): TaskEdit => ({
-    patch: { task_type_id: type.id },
-    shows: { task_type_id: type.id, task_type: type },
-  });
+  const edit = (type: TaskTypeRead): TaskEdit => {
+    const started = adding ? startedFrom(task, task.task_type, type) : {};
+    return {
+      patch: { task_type_id: type.id, ...started },
+      shows: { task_type_id: type.id, task_type: type, ...started },
+    };
+  };
   return (
     <FieldFrame label={label} htmlFor="task-type" save={save}>
       <Select
@@ -637,8 +663,7 @@ export const blankTask = (
   id: 0,
   project_id: projectId,
   title: "",
-  description: null,
-  priority: "medium",
+  ...startsWith(type),
   start_date: null,
   due_date: null,
   recurrence: null,

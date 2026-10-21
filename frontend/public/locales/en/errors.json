@@ -591,6 +591,7 @@
   "INTAKE_COMMUNITY_NOT_ACTIVE": "That community is not active, so work cannot be routed to it",
   "INTAKE_NO_OPERATIONS_COMMUNITY": "Choose the community that receives operations work first",
   "INTAKE_STATUS_NOT_IN_PROJECT": "That status belongs to a different project",
+  "INTAKE_TYPE_NOT_IN_PROJECT": "That type belongs to a different project",
   "INTAKE_PROJECT_NOT_LIVE": "That project is archived or in the trash, so nothing can land in it",
   "INTAKE_INITIATIVE_SHARED": "Security and moderation each need an initiative of their own. Pick an initiative no other stream uses.",
   "INTAKE_UNKNOWN_STREAM": "Unknown intake stream",

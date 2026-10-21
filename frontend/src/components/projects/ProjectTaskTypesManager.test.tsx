@@ -7,11 +7,11 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildTaskType } from "@/__tests__/factories";
+import { buildProject, buildTaskType } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
-import type { TaskTypeRead } from "@/api/generated/initiativeAPI.schemas";
+import type { TaskTypeGalleryGroup, TaskTypeRead } from "@/api/generated/initiativeAPI.schemas";
 
 vi.mock("@/lib/mascotToast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -31,7 +31,47 @@ const buildTypes = (): TaskTypeRead[] => [
 ];
 
 /** Records the body of every request one route of the types API receives. */
-const capture = (method: "post" | "patch" | "delete", path: string, answer: () => Response) => {
+/** Two of the ready-made types: one that brings a field, and one that does not. */
+const GALLERY: TaskTypeGalleryGroup[] = [
+  {
+    key: "planning",
+    name: "Planning",
+    entries: [
+      {
+        key: "event",
+        name: "Event",
+        hint: "A date and a place",
+        icon: "calendar-days",
+        color: "#60A5FA",
+        layout_preset: "dates",
+        fields: [{ name: "Location", type: "text" }],
+        starting_values: null,
+      },
+    ],
+  },
+  {
+    key: "home",
+    name: "Around the house",
+    entries: [
+      {
+        key: "chore",
+        name: "Chore",
+        hint: "Every week",
+        icon: "repeat",
+        color: "#34D399",
+        layout_preset: "repeat",
+        fields: [],
+        starting_values: { recurrence: "RRULE:FREQ=WEEKLY" },
+      },
+    ],
+  },
+];
+
+const capture = (
+  method: "post" | "patch" | "delete" | "put",
+  path: string,
+  answer: () => Response
+) => {
   const bodies: Array<{ typeId?: string; body: unknown }> = [];
   server.use(
     communityHttp[method](path, async ({ params, request }) => {
@@ -52,7 +92,10 @@ const renderManager = ({
   types?: TaskTypeRead[];
   canManage?: boolean;
 } = {}) => {
-  server.use(communityHttp.get("/projects/:projectId/task-types/", () => HttpResponse.json(types)));
+  server.use(
+    communityHttp.get("/projects/:projectId/task-types/", () => HttpResponse.json(types)),
+    communityHttp.get("/projects/:projectId/task-types/gallery", () => HttpResponse.json(GALLERY))
+  );
   const Page = () => (
     <ProjectTaskTypesManager
       projectId={PROJECT_ID}
@@ -103,16 +146,150 @@ describe("ProjectTaskTypesManager", () => {
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByLabelText(/^name$/i), "Chore");
 
-    // It starts from the project's default until the reader picks another.
-    const startFrom = within(dialog).getByRole("combobox", { name: /start from/i });
-    expect(startFrom).toHaveTextContent("Task");
-    await user.click(startFrom);
+    await user.click(within(dialog).getByRole("combobox", { name: /start from/i }));
     await user.click(await screen.findByRole("option", { name: "Bug" }));
 
     await user.click(within(dialog).getByRole("button", { name: /^add$/i }));
 
     await waitFor(() => expect(creates).toHaveLength(1));
     expect(creates[0].body).toEqual({ name: "Chore", start_from_type_id: 2 });
+  });
+
+  it("adds a ready-made type, and places its fields on its page", async () => {
+    const creates = capture("post", "/projects/:projectId/task-types/", () =>
+      HttpResponse.json({
+        ...buildTaskType({ id: 9, name: "Gig", layout_preset: "dates" }),
+        field_ids: [7],
+      })
+    );
+    const pages = capture("put", "/layouts/", () =>
+      HttpResponse.json({ layouts: [], can_configure: true })
+    );
+    renderManager();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /add type/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(await within(dialog).findByRole("button", { name: /event/i }));
+    // Its name is a suggestion.
+    const name = within(dialog).getByLabelText(/^name$/i);
+    expect(name).toHaveValue("Event");
+    await user.clear(name);
+    await user.type(name, "Gig");
+    await user.click(within(dialog).getByRole("button", { name: /^add$/i }));
+
+    await waitFor(() => expect(creates).toHaveLength(1));
+    expect(creates[0].body).toEqual({ name: "Gig", gallery_key: "event" });
+    await waitFor(() => expect(pages).toHaveLength(1));
+    const page = pages[0].body as {
+      kind: string;
+      task_type_id: number;
+      definition: { side: { children?: { props?: { field?: string } }[] }[] };
+    };
+    expect([page.kind, page.task_type_id]).toEqual(["task", 9]);
+    expect(page.definition.side[0].children?.at(-1)?.props?.field).toBe("property:7");
+  });
+
+  it("adds a blank type, with no page of its own", async () => {
+    const creates = capture("post", "/projects/:projectId/task-types/", () =>
+      HttpResponse.json({ ...buildTaskType({ id: 9, name: "Errand" }), field_ids: [] })
+    );
+    const pages = capture("put", "/layouts/", () => HttpResponse.json({ layouts: [] }));
+    renderManager();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /add type/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/^name$/i), "Errand");
+    await user.click(within(dialog).getByRole("button", { name: /^add$/i }));
+
+    await waitFor(() => expect(creates).toHaveLength(1));
+    expect(creates[0].body).toEqual({ name: "Errand" });
+    expect(pages).toHaveLength(0);
+  });
+
+  it("says what a new task of a type starts with", async () => {
+    const updates = capture("patch", "/projects/:projectId/task-types/:typeId", () =>
+      HttpResponse.json(buildTaskType({ id: 2, name: "Bug" }))
+    );
+    renderManager();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /what a new bug starts with/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/^description$/i), "Steps to see it");
+    await user.click(within(dialog).getByRole("button", { name: /add a line/i }));
+    await user.type(within(dialog).getByLabelText(/checklist line 1/i), "Screenshot");
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0]).toEqual({
+      typeId: "2",
+      body: {
+        starting_values: {
+          description: "Steps to see it",
+          checklist: ["Screenshot"],
+          priority: null,
+          recurrence: null,
+          recurrence_strategy: null,
+        },
+      },
+    });
+  });
+
+  it("clears what a type starts with once nothing is left", async () => {
+    const updates = capture("patch", "/projects/:projectId/task-types/:typeId", () =>
+      HttpResponse.json(buildTaskType({ id: 2, name: "Bug" }))
+    );
+    const types = buildTypes();
+    types[1] = { ...types[1], starting_values: { description: "Outline" } };
+    renderManager({ types });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /what a new bug starts with/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText(/^description$/i));
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0].body).toEqual({ starting_values: null });
+  });
+
+  it("copies types from another project, leaving out the names it has", async () => {
+    const garden = buildProject({ id: 7, name: "Garden", initiative_id: INITIATIVE_ID });
+    const copies = capture("post", "/projects/:projectId/task-types/copy", () =>
+      HttpResponse.json([buildTaskType({ id: 21, name: "Chore" })])
+    );
+    renderManager();
+    server.use(
+      communityHttp.get("/projects/", () =>
+        HttpResponse.json({ items: [garden], total_count: 1, has_next: false })
+      ),
+      communityHttp.get("/projects/:projectId/task-types/", ({ params }) =>
+        HttpResponse.json(
+          params.projectId === "7"
+            ? [
+                buildTaskType({ id: 11, project_id: 7, name: "task", position: 0 }),
+                buildTaskType({ id: 12, project_id: 7, name: "Chore", position: 1 }),
+              ]
+            : buildTypes()
+        )
+      )
+    );
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /copy from a project/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("combobox", { name: /project/i }));
+    await user.click(await screen.findByRole("option", { name: "Garden" }));
+
+    // Task is here already, whatever its case; Chore is chosen.
+    expect(await within(dialog).findByRole("checkbox", { name: /chore/i })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: /task/i })).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", { name: /copy 1 type/i }));
+
+    await waitFor(() => expect(copies).toHaveLength(1));
+    expect(copies[0].body).toEqual({ source_project_id: 7, type_ids: [12] });
   });
 
   it("refuses a name the project already has, whatever its case", async () => {

@@ -56,6 +56,8 @@
     "repointNote": "Pointing a stream at a different project starts fresh there. Anything still open stays in the project the work on it is in.",
     "landingStatusLabel": "New cases start in",
     "landingStatusDefault": "The project's default",
+    "caseTypeLabel": "New cases are",
+    "caseTypeDefault": "The project's default type",
     "enabledLabel": "Receiving new cases",
     "lastCase": "Last case opened {{when}}.",
     "noCasesYet": "No cases yet.",

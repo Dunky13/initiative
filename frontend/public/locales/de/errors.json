@@ -591,6 +591,7 @@
   "INTAKE_COMMUNITY_NOT_ACTIVE": "Diese Community ist nicht aktiv, daher können keine Vorgänge dorthin geleitet werden",
   "INTAKE_NO_OPERATIONS_COMMUNITY": "Wähle zuerst die Community aus, die Betriebsvorgänge erhält",
   "INTAKE_STATUS_NOT_IN_PROJECT": "Dieser Status gehört zu einem anderen Projekt",
+  "INTAKE_TYPE_NOT_IN_PROJECT": "Dieser Typ gehört zu einem anderen Projekt",
   "INTAKE_PROJECT_NOT_LIVE": "Dieses Projekt ist archiviert oder im Papierkorb, es kann also nichts darin landen",
   "INTAKE_INITIATIVE_SHARED": "Sicherheit und Moderation brauchen jeweils eine eigene Initiative. Wähle eine Initiative, die kein anderer Kanal nutzt.",
   "INTAKE_UNKNOWN_STREAM": "Unbekannter Eingangskanal",

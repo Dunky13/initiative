@@ -79,6 +79,10 @@ vi.mock("@/hooks/useIntakeSettings", () => ({
                 { id: 31, name: "Triage" },
                 { id: 32, name: "Confirmed" },
               ],
+              task_types: [
+                { id: 41, name: "Task" },
+                { id: 42, name: "Bug" },
+              ],
             },
           ],
         },
@@ -176,6 +180,35 @@ describe("SettingsIntakePage", () => {
 
     expect(screen.getByText("Receiving")).toBeInTheDocument();
     expect(screen.getByText(/Last case opened/)).toBeInTheDocument();
+  });
+
+  it("files a stream's cases as the type chosen, or the project's default", async () => {
+    state.operationsCommunityId = 3;
+    state.bindings = [
+      {
+        ...unbound("security"),
+        binding_id: 1,
+        project_id: 21,
+        project_name: "Security",
+        initiative_id: 7,
+        initiative_name: "Trust and Safety",
+        enabled: true,
+      },
+      ...STREAMS.slice(1).map(unbound),
+    ];
+    renderPage();
+    const user = userEvent.setup();
+    const card = screen.getByRole("region", { name: "Security" });
+    const picker = within(card).getByRole("combobox", { name: "New cases are" });
+
+    expect(picker).toHaveTextContent("The project's default type");
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: "Bug" }));
+
+    expect(upsertMutate).toHaveBeenCalledWith({
+      stream: "security",
+      body: expect.objectContaining({ project_id: 21, task_type_id: 42 }),
+    });
   });
 
   it("tells a non-owner this is not theirs to configure", () => {

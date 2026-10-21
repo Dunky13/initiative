@@ -47,6 +47,7 @@ const TASK_TYPE = {
   color: "#94A3B8",
   icon: "square-check",
   layout_preset: "plain",
+  starting_values: null,
 };
 const PROJECT = { id: 1, initiativeId: 1, statuses: STATUSES, types: [TASK_TYPE] };
 const PROJECT_DETAILS = taskDetails(PROJECT);
