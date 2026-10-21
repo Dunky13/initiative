@@ -616,9 +616,12 @@ describe("ProjectTasksSection ticking tasks off", () => {
     replies = [];
     vi.mocked(fireTaskCompletionFeedback).mockClear();
     // The table is virtualized, and jsdom gives every element a zero height,
-    // which windows it down to no rows at all.
+    // which windows it down to no rows at all. The virtualizer sizes its
+    // scroll element by its client box and each row by its offset box.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   });
 
   it("ticks the box and celebrates before the server answers", async () => {
@@ -704,9 +707,12 @@ describe("ProjectTasksSection ticking tasks off", () => {
 describe("ProjectTasksSection table", () => {
   beforeEach(() => {
     // The table is virtualized, and jsdom gives every element a zero height,
-    // which windows it down to no rows at all.
+    // which windows it down to no rows at all. The virtualizer sizes its
+    // scroll element by its client box and each row by its offset box.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   });
 
   it("draws a row from the task's fields, as the board's card does", async () => {
