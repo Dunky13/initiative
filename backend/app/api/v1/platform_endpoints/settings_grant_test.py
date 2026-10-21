@@ -401,6 +401,55 @@ async def test_a_combined_conflict_sends_no_external_notification(
     send.assert_not_awaited()
 
 
+async def test_a_grant_counts_only_while_its_holder_may_hold_it(
+    client: AsyncClient, session: AsyncSession
+):
+    """A settings grant answers to its holder's rung as it stands now: demoted
+    to moderator, they keep a Moderate grant's reach and nothing else."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.platform.access_grant import AccessGrant
+
+    owner = await create_user(session, role=UserRole.owner)
+    support = await create_user(session, role=UserRole.support)
+    guild = await create_guild(session, creator=owner)
+    await _request_and_approve(
+        client, requester=support, approver=owner, guild=guild, rung="superadmin"
+    )
+    headers = get_auth_headers(support)
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 200, entry.text
+    assert entry.json()["role"] == "superadmin"
+
+    support.role = UserRole.moderator
+    session.add(support)
+    await session.commit()
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 403, entry.text
+
+    now = datetime.now(timezone.utc)
+    session.add(
+        AccessGrant(
+            user_id=support.id,
+            guild_id=guild.id,
+            access_level="moderate",
+            status="approved",
+            reason="a held comment",
+            requested_duration_minutes=60,
+            requested_by_id=support.id,
+            approved_by_id=owner.id,
+            decided_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+    )
+    await session.commit()
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 403, entry.text
+    assert entry.json()["detail"] == "COMMUNITY_ADMIN_REQUIRED"
+    content = await client.get(f"/api/v1/c/{guild.id}/initiatives/", headers=headers)
+    assert content.status_code == 200, content.text
+
+
 # --- What each rung actually reaches -----------------------------------------
 
 

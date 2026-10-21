@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, in place of a window with the release notes. Once you're on the new version, a message says so, and **What's new** shows what changed.
+- **Platform moderators sit just above member, and moderate only.** The ladder runs member → moderator → support → operator → owner. A moderator finds accounts and communities, renames an account or clears its picture and profile, suspends an account, and asks for a **Moderate** grant on a community, and nothing else: no settings, billing, read or read-write grants, no account recovery, no billing console. Support holds everything a moderator does plus account recovery (sign-in lock, two-factor, sessions, password, API keys, reactivate, restore), which moderators held before. **Server operators:** anybody you want doing account recovery needs the support role.
 - **An AI connection names its model.** Save a connection, then pick a model from its provider's list; a connection without one is not used until somebody picks one. Connections that relied on a built-in default model need one picked. Changing a connection's provider or address clears its key unless you enter it again.
 
 ### Removed

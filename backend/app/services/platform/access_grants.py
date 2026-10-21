@@ -27,6 +27,7 @@ from app.core.capabilities import (
     ROLE_MAX_GRANT_MINUTES,
     Capability,
     capabilities_for,
+    may_hold_grant,
     roles_with_capability,
 )
 from app.core.login_methods import LoginMethod
@@ -226,18 +227,6 @@ async def _tell(
     await notice_outbox.enqueue(session, rows)
 
 
-def _may_hold(role: str, purpose: str, level: str) -> bool:
-    """Whether someone at ``role`` may hold a grant at ``level``. A
-    ``moderate`` content grant reads what the platform holds, so it is for
-    those who moderate, asked for and approved like any grant."""
-    if (
-        purpose == AccessGrantPurpose.content.value
-        and level == AccessLevel.moderate.value
-    ):
-        return Capability.CONTENT_MODERATE in capabilities_for(role)
-    return True
-
-
 async def request_grants(
     session: AsyncSession,
     *,
@@ -271,9 +260,12 @@ async def request_grants(
 
     # Validate the complete request before creating any row.
     for purpose, level in asks:
-        if not _may_hold(requester.role, purpose, level):
+        if not may_hold_grant(requester.role, purpose, level):
             raise AccessGrantError(
-                AccessGrantMessages.MODERATE_NOT_HELD, status.HTTP_403_FORBIDDEN
+                AccessGrantMessages.MODERATE_NOT_HELD
+                if level == AccessLevel.moderate.value
+                else AccessGrantMessages.ONLY_MODERATE,
+                status.HTTP_403_FORBIDDEN,
             )
         existing = await session.exec(
             select(AccessGrant).where(
@@ -562,7 +554,7 @@ async def approve(
         grantee is None
         or grantee.status != UserStatus.active
         or Capability.ACCESS_REQUEST not in capabilities_for(grantee.role)
-        or not _may_hold(grantee.role, grant.purpose, grant.access_level)
+        or not may_hold_grant(grantee.role, grant.purpose, grant.access_level)
     ):
         raise AccessGrantError(
             AccessGrantMessages.GRANTEE_INELIGIBLE, status.HTTP_409_CONFLICT
@@ -674,10 +666,13 @@ async def get_live_grants(
 
     Used when resolving guild session context so a grantee can act in a guild
     they aren't a member of, for the grant's window only. Keyed by purpose so a
-    grant issued for one authority is never spent as another.
+    grant issued for one authority is never spent as another. A grant counts
+    only while its holder's rung may still hold it, as the standing statement
+    reads it.
     """
     result = await session.exec(
-        select(AccessGrant)
+        select(AccessGrant, User.role)
+        .join(User, User.id == AccessGrant.user_id)
         .where(
             AccessGrant.user_id == user_id,
             AccessGrant.guild_id == guild_id,
@@ -687,7 +682,11 @@ async def get_live_grants(
         # request time; the latest-expiring wins just in case.
         .order_by(AccessGrant.expires_at)
     )
-    return {AccessGrantPurpose(grant.purpose): grant for grant in result.all()}
+    return {
+        AccessGrantPurpose(grant.purpose): grant
+        for grant, role in result.all()
+        if may_hold_grant(role, grant.purpose, grant.access_level)
+    }
 
 
 async def get_live_grant(
