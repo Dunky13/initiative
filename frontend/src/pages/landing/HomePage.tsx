@@ -266,7 +266,7 @@ const Hero = () => {
             aria-label={t("hero.titleAria")}
           >
             <span className="block text-4xl">{t("hero.titleLine1")}</span>
-            <span className="relative inline-block text-amber-400">
+            <span className="relative block w-fit text-amber-400 sm:text-[2.5rem]">
               {t("hero.titleLine2")}
               <span
                 className="absolute bottom-0 left-0 h-1.5 rounded-full bg-amber-400/35"
