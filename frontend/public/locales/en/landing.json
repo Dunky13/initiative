@@ -11,9 +11,9 @@
     "skip": "Skip to content"
   },
   "hero": {
-    "titleLine1": "Out of the group chat.",
-    "titleLine2": "Into one place.",
-    "titleAria": "Out of the group chat. Into one place.",
+    "titleLine1": "Your group has a lot going on.",
+    "titleLine2": "Now it has a home.",
+    "titleAria": "Your group has a lot going on. Now it has a home.",
     "subtitle": "Your group's projects, tasks, files and plans, in one place. Instead of across a group chat, two spreadsheets, an email thread from March, and the head of whoever's been doing this the longest.",
     "freeTitle": "Free to sign up",
     "freeBody": "Your account and your first community are free, and every paid plan starts with a 14-day free trial.",
@@ -391,7 +391,7 @@
     "error": "Couldn't load what's new. Give it a minute and try again."
   },
   "meta": {
-    "homeTitle": "Initiative: out of the group chat, into one place",
+    "homeTitle": "Initiative: your group has a lot going on, and now it has a home",
     "homeDescription": "Your group's projects, tasks, files, events and conversations in one place, on the web, Android, iPhone and your computer.",
     "downloadTitle": "Download Initiative",
     "downloadDescription": "Get Initiative on Android, iPhone, iPad or your computer, or keep using it in the browser.",

@@ -11,9 +11,9 @@
     "skip": "Saltar al contenido"
   },
   "hero": {
-    "titleLine1": "Fuera del chat de grupo.",
-    "titleLine2": "Todo en un solo sitio.",
-    "titleAria": "Fuera del chat de grupo. Todo en un solo sitio.",
+    "titleLine1": "Tu grupo tiene mucho entre manos.",
+    "titleLine2": "Ahora tiene un hogar.",
+    "titleAria": "Tu grupo tiene mucho entre manos. Ahora tiene un hogar.",
     "subtitle": "Los proyectos, tareas, archivos y planes de tu grupo, en un solo sitio. En vez de repartidos entre un chat de grupo, dos hojas de cálculo, un hilo de correos de marzo y la cabeza de quien lleva más tiempo haciendo esto.",
     "freeTitle": "Registrarse es gratis",
     "freeBody": "Tu cuenta y tu primera comunidad son gratis, y cada plan de pago empieza con 14 días de prueba gratis.",
@@ -391,7 +391,7 @@
     "error": "No se han podido cargar las novedades. Espera un momento y vuelve a intentarlo."
   },
   "meta": {
-    "homeTitle": "Initiative: fuera del chat de grupo, todo en un solo sitio",
+    "homeTitle": "Initiative: tu grupo tiene mucho entre manos, y ahora tiene un hogar",
     "homeDescription": "Los proyectos, tareas, archivos, eventos y conversaciones de tu grupo en un solo sitio, en la web, Android, iPhone y tu ordenador.",
     "downloadTitle": "Descarga Initiative",
     "downloadDescription": "Instala Initiative en Android, iPhone, iPad o tu ordenador, o sigue usándolo en el navegador.",
