@@ -213,7 +213,12 @@
     "connectionsTitle": "Community-Verbindungen",
     "connectionsDescription": "Definiere die KI-Verbindungen, die Mitglieder dieser Community verwenden können.",
     "disabledDescription": "KI-Funktionen sind für die Plattform deaktiviert.",
-    "managedByPlatform": "KI-Verbindungen werden auf Plattformebene verwaltet. Mitglieder legen ihren eigenen Schlüssel in ihren Profileinstellungen fest."
+    "managedByPlatform": "KI-Verbindungen werden auf Plattformebene verwaltet. Mitglieder legen ihren eigenen Schlüssel in ihren Profileinstellungen fest.",
+    "switchTitle": "KI in dieser Community",
+    "switchLabel": "KI-Funktionen erlauben",
+    "switchHelp": "Ausgeschaltet wird nichts aus dieser Community an einen KI-Anbieter gesendet, egal welche Verbindung der Server oder die Community einrichtet.",
+    "switchSaved": "KI-Einstellung gespeichert",
+    "switchError": "Die KI-Einstellung konnte nicht gespeichert werden."
   },
   "platformAI": {
     "title": "Plattform-KI",
@@ -1767,7 +1772,16 @@
     "defaultDescription": "Mitglieder verwenden diese Verbindung, sofern sie keine andere wählen.",
     "save": "Verbindung speichern",
     "saving": "Wird gespeichert…",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "communitiesLabel": "Communities",
+    "communitiesPlaceholder": "Einer Community zuweisen…",
+    "communitiesSearch": "Communities suchen…",
+    "communitiesEmpty": "Keine Community mit diesem Namen",
+    "communitiesHelpNone": "Sie bedient jede Community, der keine andere Verbindung zugewiesen ist.",
+    "communitiesHelpGiven": "Sie bedient nur diese Communities. Eine hier zugewiesene Community verlässt jede andere Verbindung, der sie zugewiesen war.",
+    "removeCommunity": "{{name}} entfernen",
+    "servesOnly": "Nur für {{communities}}",
+    "failingSince": "Fehlerhaft seit {{since}}: {{error}}"
   },
   "community": {
     "title": "Community-Verzeichnis",

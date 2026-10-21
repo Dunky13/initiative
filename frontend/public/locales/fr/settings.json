@@ -213,7 +213,12 @@
     "connectionsTitle": "Connexions de la communauté",
     "connectionsDescription": "Définissez les connexions d'IA que les membres de cette communauté peuvent utiliser.",
     "disabledDescription": "Les fonctionnalités d'IA sont désactivées pour la plateforme.",
-    "managedByPlatform": "Les connexions d'IA sont gérées au niveau de la plateforme. Les membres définissent leur propre clé dans les paramètres de leur profil."
+    "managedByPlatform": "Les connexions d'IA sont gérées au niveau de la plateforme. Les membres définissent leur propre clé dans les paramètres de leur profil.",
+    "switchTitle": "L'IA dans cette communauté",
+    "switchLabel": "Autoriser les fonctions d'IA",
+    "switchHelp": "Désactivée, rien de cette communauté n'est envoyé à un fournisseur d'IA, quelle que soit la connexion configurée par le serveur ou la communauté.",
+    "switchSaved": "Paramètre d'IA enregistré",
+    "switchError": "Impossible d'enregistrer le paramètre d'IA."
   },
   "platformAI": {
     "title": "IA de la plateforme",
@@ -1767,7 +1772,16 @@
     "defaultDescription": "Les membres utilisent cette connexion à moins d'en choisir une autre.",
     "save": "Enregistrer la connexion",
     "saving": "Enregistrement…",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "communitiesLabel": "Communautés",
+    "communitiesPlaceholder": "L'attribuer à une communauté…",
+    "communitiesSearch": "Rechercher des communautés…",
+    "communitiesEmpty": "Aucune communauté de ce nom",
+    "communitiesHelpNone": "Elle sert toutes les communautés auxquelles aucune autre connexion n'est attribuée.",
+    "communitiesHelpGiven": "Elle ne sert que ces communautés. Une communauté attribuée ici quitte toute autre connexion à laquelle elle était attribuée.",
+    "removeCommunity": "Retirer {{name}}",
+    "servesOnly": "Seulement pour {{communities}}",
+    "failingSince": "En échec depuis {{since}} : {{error}}"
   },
   "community": {
     "title": "Annuaire des communautés",

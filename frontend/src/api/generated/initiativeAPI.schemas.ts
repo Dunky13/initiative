@@ -18,6 +18,14 @@ export const AIConfigMode = {
 } as const;
 
 /**
+ * A community an operator's connection serves.
+ */
+export interface AIConnectionCommunity {
+  id: number;
+  name: string;
+}
+
+/**
  * Where a connection sends its requests. ``ollama`` and ``custom`` are
  * servers somebody runs, at the address the connection gives; the rest are
  * hosted services at their own (``app.services.ai_provider.PRESETS``).
@@ -45,6 +53,7 @@ export interface AIConnectionCreate {
   api_key?: string | null;
   enabled?: boolean;
   is_default?: boolean;
+  community_ids?: number[];
 }
 
 /**
@@ -72,6 +81,9 @@ export interface AIConnectionResponse {
   has_api_key: boolean;
   enabled: boolean;
   is_default: boolean;
+  communities: AIConnectionCommunity[];
+  last_error: string | null;
+  last_error_at: string | null;
 }
 
 export interface AIConnectionTestResponse {
@@ -88,6 +100,7 @@ export interface AIConnectionUpdate {
   api_key?: string | null;
   enabled?: boolean | null;
   is_default?: boolean | null;
+  community_ids?: number[] | null;
 }
 
 export interface AIModelsResponse {
@@ -2539,6 +2552,8 @@ export interface CommunityAuthSettingsRead {
   redacted_by_platform: boolean;
   allow_engagement_ranking: boolean;
   engagement_ranking_allowed_by_platform: boolean;
+  allow_ai: boolean;
+  ai_offered_by_platform: boolean;
   guest_max_days: number | null;
   guest_max_days_by_platform: number;
 }
@@ -2560,6 +2575,7 @@ export interface CommunityAuthSettingsUpdate {
   allow_email_notifications?: boolean | null;
   redact_notification_content?: boolean | null;
   allow_engagement_ranking?: boolean | null;
+  allow_ai?: boolean | null;
   guest_max_days?: number | null;
 }
 

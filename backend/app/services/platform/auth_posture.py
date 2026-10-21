@@ -899,6 +899,7 @@ COMMUNITY_RULES: dict[str, Rule] = {
             loose=True,
             entitlement=_RESTRICTIONS,
         ),
+        Rule("allow_ai", area="ai", loose=True, entitlement=_RESTRICTIONS),
         # The longest a guest may stay. It bounds the guests made or extended
         # after it changes, and no others.
         Rule("guest_max_days", area="guests", entitlement=_RESTRICTIONS),

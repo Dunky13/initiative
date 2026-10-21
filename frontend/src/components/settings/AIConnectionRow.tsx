@@ -5,6 +5,8 @@ import type { AIConnectionResponse } from "@/api/generated/initiativeAPI.schemas
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
+import { messageForCode } from "@/lib/errorMessage";
+import { dateTimeFormat, listFormat } from "@/lib/intl";
 
 interface AIConnectionRowProps {
   connection: AIConnectionResponse;
@@ -23,7 +25,12 @@ export const AIConnectionRow = ({
   onEdit,
   onDelete,
 }: AIConnectionRowProps) => {
-  const { t } = useTranslation("settings");
+  const { t, i18n } = useTranslation("settings");
+  const failedSince = connection.last_error_at
+    ? dateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(connection.last_error_at)
+      )
+    : null;
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3">
@@ -46,6 +53,23 @@ export const AIConnectionRow = ({
           {connection.has_api_key ? t("aiConnections.keySet") : t("aiConnections.noKey")}
           {connection.base_url ? ` · ${connection.base_url}` : ""}
         </p>
+        {connection.communities.length > 0 && (
+          <p className="text-muted-foreground text-xs">
+            {t("aiConnections.servesOnly", {
+              communities: listFormat(i18n.language, { type: "conjunction" }).format(
+                connection.communities.map((community) => community.name)
+              ),
+            })}
+          </p>
+        )}
+        {connection.last_error && (
+          <p className="text-destructive text-xs">
+            {t("aiConnections.failingSince", {
+              error: messageForCode(connection.last_error, "settings:ai.testError"),
+              since: failedSince,
+            })}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onTest} disabled={testDisabled}>

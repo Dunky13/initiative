@@ -9,6 +9,7 @@ Proves the security properties end-to-end:
 
 import pytest
 
+from app.core.messages import AIMessages
 from app.models.platform.guild import CommunityRole
 from app.services import ai_settings as ai_settings_service
 
@@ -221,3 +222,138 @@ async def test_connecting_a_provider_is_the_seat_s(client, acting_user):
         json={"label": "no", "provider": "openai", "model": "gpt-4o", "api_key": "k"},
     )
     assert created.status_code == 403, created.text
+
+
+async def test_a_connection_given_to_a_community_serves_only_it(
+    client, acting_user, reading_as
+):
+    """A division runs on the key given to it; the rest share the connections
+    given to nobody. Giving a community to another connection takes it from
+    the first, and a division whose own connection is off has no AI rather
+    than the shared key."""
+    owner = await acting_user()
+    await _set_mode(client, owner, "platform")
+    a = await acting_user(guild_role=CommunityRole.member, initiative=True)
+    b = await acting_user(guild_role=CommunityRole.member, initiative=True)
+
+    async def connection(label: str, key: str, communities: list[int]) -> dict:
+        r = await client.post(
+            PLATFORM_CONNS,
+            headers=owner.headers,
+            json={
+                "label": label,
+                "provider": "openai",
+                "model": "gpt-5-mini",
+                "api_key": key,
+                "is_default": not communities,
+                "community_ids": communities,
+            },
+        )
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    division = await connection("Division", "sk-division", [a.guild.id])
+    await connection("Everyone", "sk-shared", [])
+    assert division["communities"] == [{"id": a.guild.id, "name": a.guild.name}]
+
+    async def key_for(actor) -> str | None:
+        asking = await reading_as(actor.user.id, actor.guild.id)
+        resolved = await ai_settings_service.resolve_ai_settings(
+            asking, actor.guild.id, with_key=True
+        )
+        return resolved.api_key
+
+    assert await key_for(a) == "sk-division"
+    assert await key_for(b) == "sk-shared"
+
+    await connection("Reorganised", "sk-reorganised", [a.guild.id])
+    listed = {
+        c["label"]: c
+        for c in (await client.get(PLATFORM_CONNS, headers=owner.headers)).json()
+    }
+    assert listed["Division"]["communities"] == []
+    assert await key_for(a) == "sk-reorganised"
+
+    off = await client.put(
+        f"{PLATFORM_CONNS}/{listed['Reorganised']['id']}",
+        headers=owner.headers,
+        json={"enabled": False},
+    )
+    assert off.status_code == 200, off.text
+    assert await key_for(a) is None
+    assert await key_for(b) == "sk-shared"
+
+
+async def test_a_community_can_switch_ai_off(client, acting_user):
+    owner = await acting_user()
+    await _set_mode(client, owner, "platform")
+    await client.post(
+        PLATFORM_CONNS,
+        headers=owner.headers,
+        json={
+            "label": "Shared",
+            "provider": "openai",
+            "model": "gpt-5-mini",
+            "api_key": "sk-shared",
+            "is_default": True,
+        },
+    )
+    seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
+    settings_path = f"/api/v1/communities/{seat.guild.id}/auth-settings"
+
+    off = await client.patch(
+        settings_path, headers=seat.headers, json={"allow_ai": False}
+    )
+    assert off.status_code == 200, off.text
+    assert (off.json()["allow_ai"], off.json()["ai_offered_by_platform"]) == (
+        False,
+        True,
+    )
+    resolved = await client.get(seat.g("/settings/ai/resolved"), headers=seat.headers)
+    assert resolved.json()["enabled"] is False
+
+    await client.patch(settings_path, headers=seat.headers, json={"allow_ai": True})
+    resolved = await client.get(seat.g("/settings/ai/resolved"), headers=seat.headers)
+    assert resolved.json()["enabled"] is True
+
+
+async def test_a_connection_shows_how_its_last_request_went(
+    client, acting_user, monkeypatch
+):
+    from app.services import ai_provider
+    from app.services.ai_provider import AIRequestError
+
+    owner = await acting_user()
+    await _set_mode(client, owner, "community")
+    seat = await acting_user(guild_role=CommunityRole.superadmin, initiative=True)
+    created = await client.post(
+        seat.g("/settings/ai/connections"),
+        headers=seat.headers,
+        json={"label": "Team", "provider": "openai", "model": "m", "api_key": "k"},
+    )
+    conn_id = created.json()["id"]
+    assert created.json()["last_error"] is None
+
+    async def refused(target):
+        raise AIRequestError(AIMessages.OUT_OF_CREDIT)
+
+    async def answered(target):
+        return ["m"]
+
+    async def test_and_list(answer) -> dict:
+        monkeypatch.setattr(ai_provider, "list_models", answer)
+        await client.post(
+            seat.g(f"/settings/ai/connections/{conn_id}/test"), headers=seat.headers
+        )
+        listed = await client.get(
+            seat.g("/settings/ai/connections"), headers=seat.headers
+        )
+        return listed.json()[0]
+
+    failing = await test_and_list(refused)
+    assert failing["last_error"] == AIMessages.OUT_OF_CREDIT
+    assert failing["last_error_at"] is not None
+    assert (await test_and_list(refused))["last_error_at"] == failing["last_error_at"]
+
+    recovered = await test_and_list(answered)
+    assert (recovered["last_error"], recovered["last_error_at"]) == (None, None)

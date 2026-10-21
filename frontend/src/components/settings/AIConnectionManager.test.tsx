@@ -25,6 +25,9 @@ const connection = (overrides: Partial<AIConnectionResponse> = {}): AIConnection
   has_api_key: true,
   enabled: true,
   is_default: true,
+  communities: [],
+  last_error: null,
+  last_error_at: null,
   ...overrides,
 });
 
@@ -75,5 +78,25 @@ describe("AIConnectionManager", () => {
 
     expect(screen.queryByText("Needs a model")).not.toBeInTheDocument();
     expect(screen.getByText(/claude-haiku-5-5/)).toBeInTheDocument();
+    expect(screen.queryByText(/Failing since/)).not.toBeInTheDocument();
+  });
+
+  it("says who a connection serves and how its last request went", () => {
+    render([
+      connection({
+        model: "claude-haiku-5-5",
+        communities: [
+          { id: 4, name: "Legal" },
+          { id: 5, name: "Design" },
+        ],
+        last_error: "AI_OUT_OF_CREDIT",
+        last_error_at: "2026-10-21T14:02:00Z",
+      }),
+    ]);
+
+    expect(screen.getByText("Only for Legal and Design")).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Failing since .+: The AI provider's account is out of credit/)
+    ).toBeInTheDocument();
   });
 });

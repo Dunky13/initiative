@@ -36,8 +36,27 @@ from app.services.webhook_target_url import (
 logger = logging.getLogger(__name__)
 
 _PROVIDER_FAULTS = frozenset(
-    {AIMessages.PROVIDER_UNAVAILABLE, AIMessages.PROVIDER_ERROR}
+    {
+        AIMessages.PROVIDER_UNAVAILABLE,
+        AIMessages.PROVIDER_ERROR,
+        AIMessages.OUT_OF_CREDIT,
+        AIMessages.SPEND_LIMIT_REACHED,
+        AIMessages.RATE_LIMITED,
+    }
 )
+
+#: The codes that say how a provider answered a connection's request: what a
+#: connection's owner reads as its health.
+PROVIDER_CODES = _PROVIDER_FAULTS | {
+    AIMessages.INVALID_API_KEY,
+    AIMessages.INVALID_BASE_URL,
+    AIMessages.MODEL_NOT_FOUND,
+}
+
+#: How Anthropic begins the message for a spend limit an account set on itself
+#: or a workspace (platform.claude.com/docs/en/api/rate-limits). It shares a
+#: 400 with a malformed request, so the documented text is what tells it apart.
+_SPEND_LIMIT_PREFIX = "You have reached your specified"
 
 
 class AIRequestError(CodedError):
@@ -218,6 +237,18 @@ def _failure_code(exc: BaseException, provider: AIProvider, *, sent_key: bool) -
     )
     if isinstance(exc, (anthropic.AuthenticationError, openai.AuthenticationError)):
         return AIMessages.INVALID_API_KEY if sent_key else AIMessages.PROVIDER_ERROR
+    error = _error_body(exc)
+    # Anthropic answers 402 for billing; OpenAI names an exhausted balance.
+    if status == 402 or error.get("code") == "credit_balance_exhausted":
+        return AIMessages.OUT_OF_CREDIT
+    details = error.get("details")
+    if (
+        isinstance(details, dict)
+        and details.get("error_code") == "enforced_spend_limit_reached"
+    ) or str(error.get("message", "")).startswith(_SPEND_LIMIT_PREFIX):
+        return AIMessages.SPEND_LIMIT_REACHED
+    if isinstance(exc, (anthropic.RateLimitError, openai.RateLimitError)):
+        return AIMessages.RATE_LIMITED
     if isinstance(exc, (anthropic.NotFoundError, openai.NotFoundError)):
         return AIMessages.MODEL_NOT_FOUND
     if isinstance(exc, (anthropic.APIConnectionError, openai.APIConnectionError)):
@@ -225,15 +256,20 @@ def _failure_code(exc: BaseException, provider: AIProvider, *, sent_key: bool) -
     return AIMessages.PROVIDER_ERROR
 
 
-def _error_kind(exc: BaseException) -> str:
-    """The kind of error a provider named (its ``type`` or ``code``), if any."""
+def _error_body(exc: BaseException) -> dict:
+    """The error object a provider answered with, if any."""
     body = getattr(exc, "body", None)
     error = body.get("error", body) if isinstance(body, dict) else None
-    if isinstance(error, dict):
-        for key in ("type", "code", "status"):
-            kind = error.get(key)
-            if isinstance(kind, (str, int)) and str(kind):
-                return str(kind)[:64]
+    return error if isinstance(error, dict) else {}
+
+
+def _error_kind(exc: BaseException) -> str:
+    """The kind of error a provider named (its ``type`` or ``code``), if any."""
+    error = _error_body(exc)
+    for key in ("type", "code", "status"):
+        kind = error.get(key)
+        if isinstance(kind, (str, int)) and str(kind):
+            return str(kind)[:64]
     return ""
 
 

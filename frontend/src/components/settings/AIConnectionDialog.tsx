@@ -27,6 +27,7 @@ import { SuggestCombobox } from "@/components/ui/suggest-combobox";
 import { Switch } from "@/components/ui/switch";
 import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
 
+import { AIConnectionCommunitiesField } from "./AIConnectionCommunitiesField";
 import type { ConnectionMutations } from "./aiConnection.types";
 import { useAIConnectionForm } from "./useAIConnectionForm";
 
@@ -66,6 +67,7 @@ export const AIConnectionDialog = ({
     submit,
   } = useAIConnectionForm({
     open,
+    scope,
     connection,
     mutations,
     onClose: () => onOpenChange(false),
@@ -178,6 +180,13 @@ export const AIConnectionDialog = ({
                 </p>
               )}
             </div>
+          )}
+
+          {scope === "platform" && (
+            <AIConnectionCommunitiesField
+              communities={form.communities}
+              onChange={(communities) => setField("communities", communities)}
+            />
           )}
 
           <div className="flex items-center justify-between rounded-md border px-4 py-3">
