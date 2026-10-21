@@ -11,6 +11,10 @@ matter and can be deleted.
 
 ### New values in a response's enums
 
+- GET /api/v1/c/{community_id}/marketplace/listings added the new `term_full` enum value to the `items/items/unavailable/anyOf[subschema #1: ListingUnavailable]/reason` response property for the response status `200`
+- GET /api/v1/c/{community_id}/marketplace/listings/by-uid/{uid} added the new `term_full` enum value to the `unavailable/anyOf[subschema #1: ListingUnavailable]/reason` response property for the response status `200`
+- GET /api/v1/c/{community_id}/marketplace/listings/{public_id} added the new `term_full` enum value to the `unavailable/anyOf[subschema #1: ListingUnavailable]/reason` response property for the response status `200`
+- GET /api/v1/marketplace/local/mine added the new `term_full` enum value to the `items/unavailable/anyOf[subschema #1: ListingUnavailable]/reason` response property for the response status `200`
 - GET /api/v1/notifications/ added the new `community_pause_reminder` enum value to the `notifications/items/type` response property for the response status `200`
 - GET /api/v1/notifications/{notification_id}/alert added the new `community_pause_reminder` enum value to the `notification/type` response property for the response status `200`
 - POST /api/v1/notifications/{notification_id}/read added the new `community_pause_reminder` enum value to the `type` response property for the response status `200`

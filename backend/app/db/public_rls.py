@@ -1165,7 +1165,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     using=billing_scoped("guild_id"),
                 ),
                 # The change log's writer counts a community's members and
-                # guests whoever's transaction changed them (20261020_0531).
+                # guests whoever's transaction changed them (20261021_0532).
                 Policy("billing_log_read", SELECT, ("app_billing_log",), using=OPEN),
                 Policy("dm_reader_read", SELECT, ("app_dm_reader",), using=OPEN),
                 Policy(
@@ -1310,7 +1310,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
         rls=TableRls(
             policies=(
                 # The change log's writer asks whether a community is still
-                # there (20261020_0531).
+                # there (20261021_0532).
                 Policy("billing_log_read", SELECT, ("app_billing_log",), using=OPEN),
                 Policy(
                     "billing_guild_select",
@@ -1416,7 +1416,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
         rls=TableRls(
             policies=(
                 # The change log's writer reads the reference billing knows a
-                # community by, while it still has one (20261020_0531).
+                # community by, while it still has one (20261021_0532).
                 Policy(
                     "billing_log_read_refs",
                     SELECT,
@@ -2444,7 +2444,7 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
     # function public.billing_change_row, from the triggers on guilds,
     # guild_memberships, plugin_installs and plugin_usage, and from the system
     # engine's storage report: no role holds INSERT, so a row means the fact
-    # happened (20261020_0531).
+    # happened (20261021_0532).
     "billing_changes": SharedTable(
         rls=NO_RLS,
         grants=Grants(

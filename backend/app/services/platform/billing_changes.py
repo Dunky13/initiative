@@ -2,7 +2,7 @@
 
 What billing needs to know about each community is written to
 ``public.billing_changes`` by the transaction that changed it, through the
-definer function ``public.billing_change_row`` (migration ``20261020_0531``):
+definer function ``public.billing_change_row`` (migration ``20261021_0532``):
 
 * by the triggers on ``guilds``: ``community.created`` (with its owner as
   ``owner_user_ref``: the first superadmin, who is the person a community is

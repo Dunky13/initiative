@@ -22,8 +22,8 @@
 - The system engine burns envelope ``jti`` values, so ``app_admin`` may
   insert into ``billing_jti_blocklist``.
 
-Revision ID: 20261020_0531
-Revises: 20261020_0530
+Revision ID: 20261021_0532
+Revises: 20261020_0531
 Create Date: 2026-10-20
 """
 
@@ -33,8 +33,8 @@ from sqlalchemy.dialects import postgresql
 
 from app.core.config import settings
 
-revision = "20261020_0531"
-down_revision = "20261020_0530"
+revision = "20261021_0532"
+down_revision = "20261020_0531"
 branch_labels = None
 depends_on = None
 
