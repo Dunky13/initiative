@@ -1,95 +1,60 @@
 import type { AIProvider } from "@/api/generated/initiativeAPI.schemas";
 
-export const OPENAI_MODELS = [
-  "gpt-4o",
-  "gpt-4o-mini",
-  "gpt-4-turbo",
-  "gpt-4",
-  "gpt-4-turbo-preview",
-  "gpt-3.5-turbo",
-  "o1",
-  "o1-mini",
-  "o1-preview",
-];
-
-export const ANTHROPIC_MODELS = [
-  "claude-sonnet-4-20250514",
-  "claude-3-5-sonnet-20241022",
-  "claude-3-5-haiku-20241022",
-  "claude-3-opus-20240229",
-  "claude-3-sonnet-20240229",
-  "claude-3-haiku-20240307",
-];
-
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
+/**
+ * How each provider is set up. Mirrors the backend's presets
+ * (`app/services/ai_provider.py`): a hosted service has its own address, and a
+ * server somebody runs is reached at the address the connection gives. Models
+ * always come from the provider's own list.
+ */
 export interface ProviderConfig {
   label: string;
-  requiresApiKey: boolean;
+  /** Whether the connection takes an API key. */
+  hasApiKey: boolean;
+  /** Whether the connection gives the address. */
   requiresBaseUrl: boolean;
-  hasModelDropdown: boolean;
-  defaultModels: string[];
   defaultBaseUrl?: string;
-  modelPlaceholder?: string;
 }
 
+const hosted = (label: string): ProviderConfig => ({
+  label,
+  hasApiKey: true,
+  requiresBaseUrl: false,
+});
+
 export const PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig> = {
-  openai: {
-    label: "OpenAI",
-    requiresApiKey: true,
-    requiresBaseUrl: false,
-    hasModelDropdown: true,
-    defaultModels: OPENAI_MODELS,
-  },
-  anthropic: {
-    label: "Anthropic",
-    requiresApiKey: true,
-    requiresBaseUrl: false,
-    hasModelDropdown: true,
-    defaultModels: ANTHROPIC_MODELS,
-  },
+  openai: hosted("OpenAI"),
+  anthropic: hosted("Anthropic"),
+  gemini: hosted("Google Gemini"),
+  deepseek: hosted("DeepSeek"),
+  groq: hosted("Groq"),
+  xai: hosted("xAI"),
+  together: hosted("Together AI"),
+  openrouter: hosted("OpenRouter"),
   ollama: {
-    label: "Ollama (Local)",
-    requiresApiKey: false,
+    label: "Ollama",
+    hasApiKey: false,
     requiresBaseUrl: true,
-    hasModelDropdown: false,
-    defaultModels: [],
     defaultBaseUrl: DEFAULT_OLLAMA_URL,
-    modelPlaceholder: "llama2",
   },
   custom: {
-    label: "Custom (OpenAI-compatible)",
-    requiresApiKey: true,
+    label: "OpenAI-compatible server",
+    hasApiKey: true,
     requiresBaseUrl: true,
-    hasModelDropdown: false,
-    defaultModels: [],
-    modelPlaceholder: "model-name",
   },
 };
 
-export const getModelsForProvider = (
-  provider: AIProvider | "",
-  dynamicModels?: string[]
-): string[] => {
-  if (dynamicModels && dynamicModels.length > 0) {
-    return dynamicModels;
-  }
-  if (!provider) {
-    return [];
-  }
-  return PROVIDER_CONFIGS[provider]?.defaultModels ?? [];
-};
-
-// Connections are defined either by the platform operator or by a community admin.
-// Members never define a connection (they only attach a personal key), so there
-// is no "user" scope here.
+// Connections are defined either by the platform operator or by a community.
+// Members never define one, so there is no "user" scope here.
 export type AISettingsScope = "platform" | "community";
 
+const ALL_PROVIDERS = Object.keys(PROVIDER_CONFIGS) as AIProvider[];
+
 const PROVIDERS_BY_SCOPE: Record<AISettingsScope, AIProvider[]> = {
-  platform: ["openai", "anthropic", "ollama", "custom"],
-  // Ollama can only be configured at the platform level (it needs a private
-  // base URL), so community admins choose from the remaining providers.
-  community: ["openai", "anthropic", "custom"],
+  platform: ALL_PROVIDERS,
+  // Ollama runs beside the server, at an address only the operator may give.
+  community: ALL_PROVIDERS.filter((provider) => provider !== "ollama"),
 };
 
 export const getProvidersForScope = (scope: AISettingsScope): AIProvider[] =>

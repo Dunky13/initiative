@@ -40,11 +40,13 @@ from app.core.relationships import (
     ENDPOINT_KINDS,
     Provenance,
     RelationshipType,
+    node_id,
 )
 from app.core.search import SearchEntityType
 from app.db import reference_targets
 from app.models.platform.user import User
 from app.models.tenant.relationship import EntityRelationship
+from app.models.tenant.task import Task
 from app.schemas.tenant.relationship import (
     EndpointRef,
     NeighbourhoodEdge,
@@ -53,6 +55,7 @@ from app.schemas.tenant.relationship import (
     RelatedEnd,
     RelationshipCreate,
     RelationshipRead,
+    TaskEdgeRead,
 )
 from app.services.tenant import relationships as relationships_service
 from app.services.tenant.relationships import Endpoint
@@ -210,6 +213,37 @@ async def list_relationships(
         rendered
         for rendered in (_render(row, anchor=anchor, titles=titles) for row in rows)
         if rendered is not None
+    ]
+
+
+@router.get("/tasks", response_model=List[TaskEdgeRead])
+async def list_task_edges(
+    session: RLSSessionDep,
+    guild_context: GuildContextDep,
+    project_id: int = Query(description="The project whose tasks' edges to list"),
+) -> List[TaskEdgeRead]:
+    """Every live edge between two of a project's tasks the reader can open,
+    in one read: what a Gantt draws its arrows and nesting from."""
+    task_ids = (
+        await session.exec(select(Task.id).where(Task.project_id == project_id))
+    ).all()
+    nodes = [node_id(SearchEntityType.task, task_id) for task_id in task_ids]
+    if not nodes:
+        return []
+    rows = await session.exec(
+        select(
+            EntityRelationship.source_id,
+            EntityRelationship.target_id,
+            EntityRelationship.relationship_type,
+        ).where(
+            EntityRelationship.source_node.in_(nodes),  # type: ignore[union-attr]
+            EntityRelationship.target_node.in_(nodes),  # type: ignore[union-attr]
+            EntityRelationship.removed_at.is_(None),  # type: ignore[union-attr]
+        )
+    )
+    return [
+        TaskEdgeRead(source_id=source, target_id=target, relationship_type=kind)
+        for source, target, kind in rows.all()
     ]
 
 

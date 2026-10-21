@@ -1192,6 +1192,8 @@ async def _auth_settings_response(
         redacted_by_platform=platform.redact,
         allow_engagement_ranking=guild.allow_engagement_ranking,
         engagement_ranking_allowed_by_platform=settings_row.engagement_ranking_enabled,
+        allow_ai=guild.allow_ai,
+        ai_offered_by_platform=settings_row.ai_config_mode != "disabled",
         guest_max_days=guild.guest_max_days,
         guest_max_days_by_platform=settings_row.max_guest_days,
     )

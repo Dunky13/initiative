@@ -2,13 +2,15 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  AIConnectionCommunity,
   AIConnectionCreate,
   AIConnectionResponse,
   AIConnectionUpdate,
   AIProvider,
+  ConnectionScope,
 } from "@/api/generated/initiativeAPI.schemas";
 import { useServerForm } from "@/hooks/useServerForm";
-import { getModelsForProvider, PROVIDER_CONFIGS } from "@/lib/ai-providers";
+import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 
@@ -22,7 +24,7 @@ export interface AIConnectionFormState {
   apiKey: string;
   enabled: boolean;
   isDefault: boolean;
-  allowMemberKeys: boolean;
+  communities: AIConnectionCommunity[];
 }
 
 const emptyForm: AIConnectionFormState = {
@@ -33,7 +35,7 @@ const emptyForm: AIConnectionFormState = {
   apiKey: "",
   enabled: true,
   isDefault: false,
-  allowMemberKeys: true,
+  communities: [],
 };
 
 const toFormState = (connection: AIConnectionResponse): AIConnectionFormState => ({
@@ -44,14 +46,17 @@ const toFormState = (connection: AIConnectionResponse): AIConnectionFormState =>
   apiKey: "",
   enabled: connection.enabled,
   isDefault: connection.is_default,
-  allowMemberKeys: connection.allow_member_keys,
+  communities: connection.communities,
 });
 
 interface UseAIConnectionFormArgs {
   open: boolean;
+  scope: ConnectionScope;
   connection: AIConnectionResponse | null;
   mutations: ConnectionMutations;
   onClose: () => void;
+  /** A connection made without a model, to pick one for next. */
+  onNeedsModel: (connection: AIConnectionResponse) => void;
 }
 
 /**
@@ -60,9 +65,11 @@ interface UseAIConnectionFormArgs {
  */
 export const useAIConnectionForm = ({
   open,
+  scope,
   connection,
   mutations,
   onClose,
+  onNeedsModel,
 }: UseAIConnectionFormArgs) => {
   const { t } = useTranslation("settings");
   const isEdit = connection !== null;
@@ -85,11 +92,9 @@ export const useAIConnectionForm = ({
   ) => serverForm.set({ [key]: value } as Partial<AIConnectionFormState>);
 
   const providerConfig = form.provider ? PROVIDER_CONFIGS[form.provider] : null;
-  // A connection's key is EITHER shared (admin-set) OR member-supplied. When
-  // members bring their own key, there is no shared-key field.
-  const showApiKeyField = (providerConfig?.requiresApiKey ?? false) && !form.allowMemberKeys;
+  const showApiKeyField = providerConfig?.hasApiKey ?? false;
   const showBaseUrlField = providerConfig?.requiresBaseUrl ?? false;
-  const modelOptions = getModelsForProvider(form.provider, availableModels);
+  const canSave = Boolean(form.provider && form.label);
 
   const changeProvider = (value: string) => {
     if (!value) return;
@@ -102,8 +107,7 @@ export const useAIConnectionForm = ({
   };
 
   const fetchModels = () => {
-    // Models come from a live connection, so only existing (edit) rows can
-    // populate the dropdown; new connections use the provider defaults.
+    // Models come from a saved connection's provider.
     if (!isEdit || !connection || mutations.fetchModels.isPending) return;
     mutations.fetchModels.mutate(connection.id, {
       onSuccess: (data) => {
@@ -114,7 +118,7 @@ export const useAIConnectionForm = ({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.provider) return;
+    if (!form.provider || !canSave) return;
     const baseUrl = showBaseUrlField ? form.baseUrl || null : null;
 
     if (isEdit && connection) {
@@ -125,16 +129,18 @@ export const useAIConnectionForm = ({
         model: form.model || null,
         enabled: form.enabled,
         is_default: form.isDefault,
-        allow_member_keys: form.allowMemberKeys,
       };
-      // XOR: never send a shared key when members bring their own.
-      if (form.apiKey && !form.allowMemberKeys) payload.api_key = form.apiKey;
+      if (form.apiKey) payload.api_key = form.apiKey;
+      if (scope === "platform") payload.community_ids = form.communities.map((c) => c.id);
       mutations.update.mutate(
         { connectionId: connection.id, data: payload },
         {
-          onSuccess: () => {
+          onSuccess: (updated) => {
             toast.success(t("aiConnections.updated"));
-            onClose();
+            // Saved details are what the provider's list is read with; the
+            // dialog stays on the model until one is picked.
+            if (updated.model) onClose();
+            else onNeedsModel(updated);
           },
           onError: (error) =>
             toast.error(getErrorMessage(error, "settings:aiConnections.saveError")),
@@ -148,16 +154,17 @@ export const useAIConnectionForm = ({
       provider: form.provider,
       base_url: baseUrl,
       model: form.model || null,
-      // XOR: a shared key only when members don't bring their own.
-      api_key: form.allowMemberKeys ? null : form.apiKey || null,
+      api_key: form.apiKey || null,
       enabled: form.enabled,
       is_default: form.isDefault,
-      allow_member_keys: form.allowMemberKeys,
+      community_ids: scope === "platform" ? form.communities.map((c) => c.id) : [],
     };
     mutations.create.mutate(payload, {
-      onSuccess: () => {
+      onSuccess: (created) => {
         toast.success(t("aiConnections.created"));
-        onClose();
+        // A saved connection can read its provider's list of models.
+        if (created.model) onClose();
+        else onNeedsModel(created);
       },
       onError: (error) => toast.error(getErrorMessage(error, "settings:aiConnections.saveError")),
     });
@@ -172,7 +179,8 @@ export const useAIConnectionForm = ({
     providerConfig,
     showApiKeyField,
     showBaseUrlField,
-    modelOptions,
+    modelOptions: availableModels,
+    canSave,
     isFetchingModels: mutations.fetchModels.isPending,
     isPending,
     changeProvider,

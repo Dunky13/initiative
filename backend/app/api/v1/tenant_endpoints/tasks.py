@@ -1215,7 +1215,7 @@ async def _record_ai_request(
     Committed before the request goes out, since the disclosure does not wait
     on the reply. A configuration that sends nothing records nothing.
     """
-    resolved = await resolve_ai_settings(session, user, guild_id)
+    resolved = await resolve_ai_settings(session, guild_id)
     if not resolved.enabled or resolved.provider is None:
         return
     await audit_service.record(

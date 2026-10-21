@@ -409,14 +409,14 @@ const plugins = (): Spec => ({
   communityNamed: ["community-plugin", "community-plugin-members"],
 });
 
-// ── AI Settings (platform config is personal; community/member/resolved are community) ──
+// ── AI Settings (platform config is personal; community/resolved are community) ──
 
 const allAISettings = (): Spec => ({
   personalPrefix: ["/api/v1/settings/ai"],
   communityPrefix: ["/api/v1/settings/ai"],
 });
 
-/** The platform owner's global mode + `allow_member_keys`. */
+/** The platform owner's global mode. */
 const platformAIMode = (): Spec => ({ personalExact: ["/api/v1/settings/ai/platform/mode"] });
 
 /** The operator-defined connections list. */
@@ -429,14 +429,7 @@ const communityAIConnections = (): Spec => ({
   communityExact: ["/api/v1/settings/ai/connections"],
 });
 
-/** The member's own view: selected connection, per-connection key state, on/off. */
-const memberAI = (): Spec => ({ communityExact: ["/api/v1/settings/ai/me"] });
-
 const resolvedAISettings = (): Spec => ({ communityExact: ["/api/v1/settings/ai/resolved"] });
-
-// The cross-community personal aggregate powering the "My AI" page (a flat `/me/ai`
-// list across every community the user belongs to) — personal, never community-scoped.
-const myAI = (): Spec => ({ personalExact: ["/api/v1/me/ai"] });
 
 // ── Users / Operator (personal / platform) ──────────────────────────────────────
 
@@ -721,8 +714,6 @@ export const q = {
   initiativeMembers,
   initiativeRoles,
   latestVersion,
-  memberAI,
-  myAI,
   notifications,
   operatorUsers,
   platformAIConnections,

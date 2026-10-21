@@ -35,7 +35,7 @@ Some of the choices below look severe until you know where they came from.
 
 We treat privacy as an architecture problem rather than a policy one. A policy lasts exactly as long as whoever owns the company next; a system with no path to your content doesn't depend on anybody's good intentions. Hence no standing access to a community's data for anybody running the platform, cross-community access only through a time-bound grant that leaves a record, and direct messages encrypted so thoroughly that no key to them exists outside the two devices talking.
 
-The practical upshot: **we can't feed your work to a model, because there's no pipe to put it in.** The AI features that do exist are ones you point at your own content deliberately, with a key supplied by you, your community, or whoever runs your server, and they send only what you asked. See [AI features](../account/ai-features.md).
+The practical upshot: **we can't feed your work to a model, because there's no pipe to put it in.** The AI features that do exist are ones you point at your own content deliberately, with a key supplied by your community or whoever runs your server, and they send only what you asked. See [AI features](../account/ai-features.md).
 
 The longer version of why is on the [home page](../index.md#why-we-built-this).
 

@@ -349,10 +349,9 @@ async def test_rotate_reencrypts_the_plugin_platform_key_and_vendor_values(
 
 async def test_rotate_visits_per_guild_schema_settings(engine, monkeypatch):
     """The guild AI key columns are guild-scoped, so they live in guild_<id>
-    schemas — the sweep re-keys them there. This covers both a guild-level table
-    (guild_ai_connection_keys) and the own-row-RLS member-key table
-    (guild_ai_member_keys), and every value of an install's plug-in secrets map,
-    by connection then field (guild_plugin_secrets). Guild data is re-keyed
+    schemas — the sweep re-keys them there. This covers a guild-level table
+    (guild_ai_connection_keys) and every value of an install's plug-in secrets
+    map, by connection then field (guild_plugin_secrets). Guild data is re-keyed
     ONLY through its guild schema, never an unrouted public pathway."""
     gid = None
     plugin_secrets = {
@@ -384,18 +383,6 @@ async def test_rotate_visits_per_guild_schema_settings(engine, monkeypatch):
             )
             await conn.execute(
                 text(
-                    f'WITH k AS (INSERT INTO "{schema}".guild_ai_member_keys '  # noqa: S608
-                    "(user_id, connection_scope, connection_id, created_at, updated_at) "
-                    "VALUES (1, 'community', 1, now(), now()) RETURNING id) "
-                    f'INSERT INTO "{schema}".ai_member_key_secrets '
-                    "(key_id, api_key_encrypted) SELECT id, :a FROM k"
-                ),
-                {
-                    "a": encrypt_field("member-ai", SALT_AI_API_KEY, secret_key=OLD),
-                },
-            )
-            await conn.execute(
-                text(
                     f'INSERT INTO "{schema}".guild_plugin_secrets '  # noqa: S608
                     "(install_id, secrets) VALUES (1, CAST(:s AS jsonb))"
                 ),
@@ -423,14 +410,10 @@ async def test_rotate_visits_per_guild_schema_settings(engine, monkeypatch):
                     f'SELECT api_key_encrypted FROM "{schema}".guild_ai_connection_keys'  # noqa: S608
                 ),
             )
-            member_ct = await conn.scalar(
-                text(f'SELECT api_key_encrypted FROM "{schema}".ai_member_key_secrets'),
-            )
             sealed = await conn.scalar(
                 text(f'SELECT secrets FROM "{schema}".guild_plugin_secrets'),  # noqa: S608
             )
         assert decrypt_field(conn_ct, SALT_AI_API_KEY, secret_key=NEW) == "guild-ai"
-        assert decrypt_field(member_ct, SALT_AI_API_KEY, secret_key=NEW) == "member-ai"
         assert {
             connection: {
                 field: decrypt_field(value, SALT_PLUGIN_CONFIG, secret_key=NEW)

@@ -55,6 +55,48 @@ matter and can be deleted.
 - POST /api/v1/operator/users/{user_id}/suspension added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
 - PATCH /api/v1/operator/users/{user_id}/username added the new `billing.control` enum value to the `capabilities/items/` response property for the response status `200`
 - PATCH /api/v1/operator/users/{user_id}/username added the new `billing.directory` enum value to the `capabilities/items/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `deepseek` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `gemini` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `groq` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `openrouter` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `together` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/connections added the new `xai` enum value to the `items/provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `gemini` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `groq` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `together` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/c/{community_id}/settings/ai/connections added the new `xai` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `gemini` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `groq` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `together` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} added the new `xai` enum value to the `provider` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `deepseek` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `gemini` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `groq` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `openrouter` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `together` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/c/{community_id}/settings/ai/resolved added the new `xai` enum value to the `provider/anyOf[subschema #1: AIProvider]/` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `deepseek` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `gemini` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `groq` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `openrouter` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `together` enum value to the `items/provider` response property for the response status `200`
+- GET /api/v1/settings/ai/platform/connections added the new `xai` enum value to the `items/provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `gemini` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `groq` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `together` enum value to the `provider` response property for the response status `200`
+- POST /api/v1/settings/ai/platform/connections added the new `xai` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `deepseek` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `gemini` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `groq` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `openrouter` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `together` enum value to the `provider` response property for the response status `200`
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} added the new `xai` enum value to the `provider` response property for the response status `200`
 
 ### A task's type is a field
 
@@ -150,3 +192,37 @@ layout.
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId` from the `oneOf[subschema #1: ListLayoutWrite]/definition/group_by` request property `anyOf` list
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId, subschema #2` from the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `anyOf` list
 - PUT /api/v1/c/{community_id}/layouts/ the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `type` changed from `any` to `string`
+
+### A project draws a Gantt
+
+A project's lists are `table`, `board`, `gantt` and `calendar`, each shown or
+hidden (`hidden` on its layout), as shipped the board alone. Migration
+`20261021_0534` keeps every existing project showing what it showed.
+
+- GET /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- PUT /api/v1/c/{community_id}/layouts/default added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- GET /api/v1/c/{community_id}/layouts/initiative added the new `gantt` enum value to the `items/layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+- DELETE /api/v1/c/{community_id}/layouts/{kind} added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
+
+### Members bring no AI key
+
+A connection's key is its owner's, and members configure nothing: the member
+key, preference and test routes, the seat's list and revoke of member keys,
+and `GET /me/ai` are gone, and a connection no longer carries
+`allow_member_keys`.
+
+- GET /api/v1/c/{community_id}/settings/ai/connections removed the required property `items/allow_member_keys` from the response with the `200` status
+- POST /api/v1/c/{community_id}/settings/ai/connections removed the required property `allow_member_keys` from the response with the `200` status
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} removed the required property `allow_member_keys` from the response with the `200` status
+- GET /api/v1/c/{community_id}/settings/ai/me api path removed without deprecation
+- PUT /api/v1/c/{community_id}/settings/ai/me/key api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/settings/ai/me/key/{scope}/{connection_id} api path removed without deprecation
+- PUT /api/v1/c/{community_id}/settings/ai/me/pref api path removed without deprecation
+- POST /api/v1/c/{community_id}/settings/ai/me/test api path removed without deprecation
+- GET /api/v1/c/{community_id}/settings/ai/members/keys api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/settings/ai/members/{user_id}/keys/{connection_id} api path removed without deprecation
+- GET /api/v1/me/ai api path removed without deprecation
+- GET /api/v1/settings/ai/platform/connections removed the required property `items/allow_member_keys` from the response with the `200` status
+- POST /api/v1/settings/ai/platform/connections removed the required property `allow_member_keys` from the response with the `200` status
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} removed the required property `allow_member_keys` from the response with the `200` status

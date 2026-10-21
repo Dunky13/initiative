@@ -131,6 +131,7 @@ CASES: dict[tuple[str, str], Case] = {
     ("community", "allow_email_notifications"): Case(True, False, GUILD_SETTINGS),
     ("community", "redact_notification_content"): Case(False, True, GUILD_SETTINGS),
     ("community", "allow_engagement_ranking"): Case(True, False, GUILD_SETTINGS),
+    ("community", "allow_ai"): Case(True, False, GUILD_SETTINGS),
     # Its writer is not a guest, so is not asked to meet it.
     ("community", "guest_auth_policy"): Case(
         SignInRequirement(),

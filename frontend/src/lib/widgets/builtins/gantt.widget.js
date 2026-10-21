@@ -222,6 +222,11 @@ function render(data, config, context) {
   };
   const byStart = (a, b) => laneStart(a) - laneStart(b);
 
+  /** What a bracket reads out: how much of it is finished where a column
+   *  says, and only how much there is where none does. */
+  const tally = (done, total) => (hasDone ? done + "/" + total : String(total));
+  const filled = (done, total) => (hasDone ? share(done, total) : undefined);
+
   /** A bracket over a set of lanes: it reaches across everything beneath it,
    *  and its fill is how much of that is finished. */
   const summaryLane = (label, children, done, total, tone) => {
@@ -229,7 +234,7 @@ function render(data, config, context) {
     if (!extent) return null;
     return {
       label: label,
-      caption: done + "/" + total,
+      caption: tally(done, total),
       tone: tone,
       collapsed: startFolded,
       children: children,
@@ -239,7 +244,7 @@ function render(data, config, context) {
           label: label,
           start: extent.start,
           end: extent.end,
-          progress: share(done, total),
+          progress: filled(done, total),
           tone: tone,
         },
       ],
@@ -247,7 +252,7 @@ function render(data, config, context) {
   };
 
   const groupTone = (done, total, late) => {
-    if (total > 0 && done >= total) return "positive";
+    if (hasDone && total > 0 && done >= total) return "positive";
     return late ? "negative" : "accent";
   };
 
@@ -257,6 +262,8 @@ function render(data, config, context) {
   const startAt = (slots.start || [])[0];
   const endAt = (slots.end || [])[0];
   const groupAt = (slots.group || [])[0];
+  const doneAt = (slots.done || [])[0];
+  const hasDone = doneAt !== undefined;
 
   const at = (row, index) => (index !== undefined ? row[index] : null);
   const moment = (row, index) => {
@@ -268,12 +275,15 @@ function render(data, config, context) {
     return value === null || value === undefined ? null : String(value);
   };
 
-  /** Work whose end has passed reads as behind; there is no completion column
-   *  in the general case, so nothing claims one. */
   const isPast = (row) => {
     const end = moment(row, endAt);
     return end !== null && end < today;
   };
+  /** Finished, where the author mapped a column that says so. Nothing else
+   *  does: an end date passing says when work was due, not that it was done. */
+  const isDone = (row) => at(row, doneAt) === true;
+  /** Past its end and not finished, which only a done column can tell. */
+  const isLate = (row) => hasDone && !isDone(row) && isPast(row);
 
   /** One row as its own lane. Returns null for a row with no start — it has
    *  nowhere to sit on an axis, and a zero-width bar at an arbitrary point
@@ -282,7 +292,8 @@ function render(data, config, context) {
     const start = moment(row, startAt);
     const end = moment(row, endAt);
     const label = text(row, labelAt) || say("untitled");
-    const tone = isPast(row) ? "muted" : "accent";
+    const finished = hasDone ? isDone(row) : isPast(row);
+    const tone = finished ? "muted" : isLate(row) ? "negative" : "accent";
 
     // An end with no start is a dated instant, not a stretch of work.
     if (start === null) {
@@ -324,7 +335,7 @@ function render(data, config, context) {
     return [
       {
         label: label,
-        caption: done + "/" + total,
+        caption: tally(done, total),
         tone: "muted",
         spans: [
           {
@@ -332,8 +343,8 @@ function render(data, config, context) {
             label: label,
             start: extent.start,
             end: extent.end,
-            progress: share(done, total),
-            tone: done >= total && total > 0 ? "positive" : "accent",
+            progress: filled(done, total),
+            tone: hasDone && done >= total && total > 0 ? "positive" : "accent",
           },
         ],
       },
@@ -389,6 +400,6 @@ function render(data, config, context) {
   if (!rows.length) return empty(say("noRows"));
   if (startAt === undefined && endAt === undefined) return empty(say("needDates"));
 
-  const lanes = grouped(rows, rowLane, groupKeys, isPast, () => false);
-  return timeline(withRollup(say("everything"), lanes, rows.filter(isPast).length, rows.length));
+  const lanes = grouped(rows, rowLane, groupKeys, isDone, isLate);
+  return timeline(withRollup(say("everything"), lanes, rows.filter(isDone).length, rows.length));
 }

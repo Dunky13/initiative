@@ -146,7 +146,7 @@ Edit or delete a repeating task and Initiative asks which ones you mean:
 | **Tasks after this point** | This one and every one after it. |
 | **All tasks in the series** | Every one, finished ones included. It reaches the title, description, priority, assignees and tags. Dates stay each task's own. |
 
-Dragging a repeating task on a calendar asks too, minus the last option.
+Dragging a repeating task on a calendar or the [Gantt](#gantt) asks too, minus the last option.
 
 **Skip this occurrence**, in the task's menu, moves it on to its next date without finishing it. That's the week the bins weren't collected because of the bank holiday. Deleting just this task does the same, so the series carries on — unless it was the last one, in which case it's simply deleted.
 
@@ -160,9 +160,9 @@ Pick your preferred celebration in **My Settings → Preferences**, or set it to
 
 There's optional sound and vibration too, for anyone who wants the full experience. No judgement. Some weeks you need the coins.
 
-## Three ways to look at a board
+## Four ways to look at a project
 
-The same tasks, three ways of looking at them. The switcher sits at the top of any project board.
+The same tasks, four ways of looking at them: a table, a board, a Gantt and a calendar. A new project shows just its board, which is plenty for most things. Switch the others on in **Edit layouts**, under [Layouts](#layouts), and the switcher at the top of the project offers them. Switch off the ones nobody uses, as long as one stays on.
 
 Switching changes nothing about the tasks themselves — only what's on your screen — so there's no wrong choice here and nothing whatsoever you can break by trying one.
 
@@ -198,11 +198,30 @@ What a card shows is up to the project's [layout](#layouts). Take off what this 
 
 ![A project in Kanban view](../images/projects/view-kanban.png)
 
+### Gantt
+
+Each task is a bar from its start date to its due date, on a timeline you scroll sideways. A task with one date is a diamond on that day. A task with no dates gets an empty row, waiting patiently.
+
+**Best for:** planning, seeing what has to finish before what, and noticing the Thursday onto which you have cheerfully scheduled six deadlines.
+
+- **Drag a bar** to move the task, or drag one end to change just that date.
+- **Drag across an empty row** to give a task its dates.
+- **Arrows** run from a task to the ones [blocked by](mentions-and-links.md#connections) it. An arrow turns red when a task starts before the thing it's waiting on is done, which is your cue to have a word with somebody.
+- **Drag from the dot** at the end of a bar onto another task's row, and that task waits on this one. The arrow turns up straight away.
+- A task's **parts** (the tasks that are **Part of** it) sit under it and fold away with it. The thin line over its row shows how far they stretch.
+- **Day**, **Week** and **Month** set how much fits on screen. **Today** brings you back.
+- **Group** it like the board, and each group gets a band of its own.
+- **No mouse?** The rows take the arrow keys: up and down to move, right and left to open and fold a task's parts, **Enter** to open one, and **Alt** with left or right to move it a day. Add **Shift** and only its due date moves.
+
+The initiative's [calendar](calendar.md) shows the same dated tasks by month, week or day, beside everybody's events.
+
+![A project in Gantt view, grouped by assignee](../images/projects/view-gantt.png)
+
 ### Calendar
 
-Your tasks laid out by their start and due dates.
+Your tasks laid out by their start and due dates, by month, week or day. A task with no dates doesn't appear, which is the point and also the catch.
 
-**Best for:** seeing *when* everything lands, and noticing the Thursday onto which you have cheerfully scheduled six deadlines.
+**Best for:** a project whose work all happens on dates. Drag a task to another day to move it.
 
 ### So which one?
 
@@ -210,7 +229,8 @@ No wrong answer. A rhythm that works for most people:
 
 - **Board** day to day, for nudging things along.
 - **Table** when you're tidying up, sorting, or editing a lot at once.
-- **Calendar** when you're planning ahead, or working out how bad next week is going to be.
+- **Gantt** when you're planning ahead, or working out how bad next week is going to be.
+- **Calendar** when every task has a date and the question is only ever "when".
 
 Your choice is yours alone, and it follows you to any device, along with your filters, sort, grouping and columns. Until you pick, the project opens on whichever one its layouts say.
 
@@ -228,18 +248,21 @@ Your choice is yours alone, and it follows you to any device, along with your fi
 
 ## Layouts
 
-Each of the project's three lists has a layout, and so does a task:
+Each of the project's four lists has a layout, and so does a task:
 
 | Layout | What it decides |
 |---|---|
 | **Table** | Which columns, in what order. |
 | **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
+| **Gantt** | Only its presets and groupings. Bars are bars. |
 | **Calendar** | Only its presets. A calendar is a calendar. |
 | **Task pages** | Where everything sits when a task is open, and in **Create task**. One per [task type](#task-types), each starting from a shape that suits it. |
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
-The table and board layouts also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
+Each list can be **shown in the layout menu** or not. A new project shows its board alone; at least one list always stays shown, and the project opens on one of those.
+
+The table, board and Gantt also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 
 Change any of it from **Project settings → Layouts → Edit layouts**. That's for the project's owner, its initiative's managers and community admins; everybody else sees the result. See [Layouts](layouts.md) for the editor.
 

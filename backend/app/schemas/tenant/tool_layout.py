@@ -508,7 +508,7 @@ DetailStackPart.model_rebuild()
 
 #: Every way a layout can list a tool's items; which of them a tool draws is
 #: ``app.core.tools.LIST_LAYOUTS``.
-ListLayoutKind = Literal["table", "board", "calendar"]
+ListLayoutKind = Literal["table", "board", "gantt", "calendar"]
 #: Every kind of thing a detail layout shows one of; which a tool holds is
 #: ``app.core.tools.DETAIL_LAYOUTS``.
 DetailLayoutKind = Literal[
@@ -592,6 +592,8 @@ class ListLayoutDefinition(_Strict):
     limits: Optional[List[ColumnLimit]] = Field(
         default=None, max_length=MAX_LIMITED_COLUMNS
     )
+    #: Left out of the list's menu; none keeps what its tool ships.
+    hidden: Optional[bool] = None
 
     @model_validator(mode="after")
     def _offers_what_it_starts_on(self) -> "ListLayoutDefinition":
@@ -671,6 +673,8 @@ class ListLayoutRead(SanitizedBaseModel):
     kind: ListLayoutKind
     #: Whether the target opens on it.
     is_default: bool
+    #: Whether its menu leaves it out.
+    hidden: bool = False
     definition: ListLayoutDefinition
     #: When it was last changed; None as shipped.
     updated_at: Optional[datetime] = None

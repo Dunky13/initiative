@@ -2,15 +2,14 @@
 
 The single source of truth for ``ai_config_mode == "platform"``: the
 operator configures one or more AI providers here (public table), and every
-guild uses them. Guild members attach their own keys per-guild
-(``guild_ai_member_keys``) referencing these by ``(scope="platform", id)``.
-Read on the request path via an in-process cache, not per-request DB reads.
+guild uses them. Read on the request path via an in-process cache, not per-request DB reads.
 """
 
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Field, SQLModel
 from pydantic import ConfigDict
 
@@ -35,10 +34,11 @@ class AIConnectionColumns(SQLModel):
     is_default: bool = Field(
         default=False, nullable=False, sa_column_kwargs={"server_default": "false"}
     )
-    # Whether members may attach their own key to this connection. When false,
-    # this connection uses its own shared key only (members can't override).
-    allow_member_keys: bool = Field(
-        default=True, nullable=False, sa_column_kwargs={"server_default": "true"}
+    # How its last request went: the message code it failed with, and since
+    # when, until a request succeeds. What its owner reads in settings.
+    last_error: Optional[str] = Field(default=None, sa_type=String(64), nullable=True)
+    last_error_at: Optional[datetime] = Field(
+        default=None, sa_type=DateTime(timezone=True), nullable=True
     )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -62,4 +62,10 @@ class PlatformAIConnection(AIConnectionColumns, table=True):
         sa_type=String(2000),
         nullable=True,
         sa_column_kwargs={"info": {FERNET_SALT: SALT_AI_API_KEY}},
+    )
+    # The communities it serves, and only them; empty, it serves every
+    # community no other connection is given to.
+    community_ids: list[int] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Integer), nullable=False, server_default="{}"),
     )

@@ -132,7 +132,7 @@
     },
     "tasks": {
       "title": "Mis tareas",
-      "description": "Tus tareas de todas las comunidades, como tabla o calendario.",
+      "description": "Tus tareas de todas las comunidades, como tabla.",
       "empty": "Todavía no tienes nada asignado. Cuando alguien te dé una tarea, o añadas una tuya, aparecerá aquí.",
       "chooseList": "Elegir una lista",
       "add": "Añadir",

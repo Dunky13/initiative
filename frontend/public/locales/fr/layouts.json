@@ -19,7 +19,6 @@
   "stay": "Continuer",
   "compact": "Les dispositions se modifient sur un écran plus large. Ouvrez cette page sur une tablette ou un ordinateur.",
   "canvas": "Aperçu",
-  "calendarNote": "Un calendrier n’a ni carte ni colonnes à disposer. Le fait que le projet s’ouvre dessus se règle à droite.",
   "outline": "Plan",
   "card": "Carte",
   "row": "Ligne",
@@ -99,11 +98,14 @@
   "shipped": "C'est la disposition d'origine. La modifier en fait celle du projet.",
   "detailTitleHelp": "Le détail de chaque tâche affiche son titre.",
   "opensFirst": "S'ouvre en premier",
+  "shownInMenu": "Afficher dans le menu des dispositions",
+  "hiddenList": "{{name}} (masqué)",
   "asShipped": "D'origine",
   "saveError": "Impossible d'enregistrer les dispositions",
   "listHelp": {
     "table": "Comment les tâches du projet sont listées en tableau : quelles colonnes, dans quel ordre.",
     "board": "Comment chaque tâche apparaît sur le tableau Kanban : ce que contient sa carte.",
+    "gantt": "Les tâches du projet sur une frise chronologique, selon leurs dates, reliées à ce dont chacune dépend.",
     "calendar": "Les tâches du projet sur un calendrier, selon leurs dates."
   },
   "noEvents": "Cette initiative n'a aucun événement cette année. Ajoutez-en un pour voir son détail ici.",
@@ -284,5 +286,6 @@
       "comments": "Ce qu'on en dit."
     },
     "noItems": "Écrivez une annonce dans cette initiative pour voir sa mise en page ici."
-  }
+  },
+  "calendarNote": "Un calendrier n’a ni carte ni colonnes à disposer. Son affichage, et le fait que le projet s’ouvre dessus, se règlent à droite."
 }

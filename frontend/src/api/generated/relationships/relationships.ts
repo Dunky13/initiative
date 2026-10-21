@@ -24,10 +24,12 @@ import type {
   GetRelationsNeighbourhoodParams,
   HTTPValidationError,
   ListRelationshipsParams,
+  ListTaskEdgesParams,
   NeighbourhoodRead,
   RelationshipCreate,
   RelationshipRead,
   ReplaceRelationshipSliceParams,
+  TaskEdgeRead,
 } from "../initiativeAPI.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -381,6 +383,135 @@ export const useReplaceRelationshipSlice = <
 > => {
   return useMutation(getReplaceRelationshipSliceMutationOptions(options), queryClient);
 };
+/**
+ * Every live edge between two of a project's tasks the reader can open,
+ * in one read: what a Gantt draws its arrows and nesting from.
+ * @summary List Task Edges
+ */
+export const listTaskEdges = (
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<TaskEdgeRead[]>(
+    { url: `/api/v1/c/${communityId}/relationships/tasks`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getListTaskEdgesQueryKey = (communityId: number, params?: ListTaskEdgesParams) => {
+  return [`/api/v1/c/${communityId}/relationships/tasks`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTaskEdgesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTaskEdges>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTaskEdgesQueryKey(communityId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaskEdges>>> = ({ signal }) =>
+    listTaskEdges(communityId, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: communityId !== null && communityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListTaskEdgesQueryResult = NonNullable<Awaited<ReturnType<typeof listTaskEdges>>>;
+export type ListTaskEdgesQueryError = ErrorType<HTTPValidationError>;
+
+export function useListTaskEdges<
+  TData = Awaited<ReturnType<typeof listTaskEdges>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskEdges>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskEdges>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTaskEdges<
+  TData = Awaited<ReturnType<typeof listTaskEdges>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTaskEdges>>,
+          TError,
+          Awaited<ReturnType<typeof listTaskEdges>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListTaskEdges<
+  TData = Awaited<ReturnType<typeof listTaskEdges>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List Task Edges
+ */
+
+export function useListTaskEdges<
+  TData = Awaited<ReturnType<typeof listTaskEdges>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  communityId: number,
+  params: ListTaskEdgesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listTaskEdges>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListTaskEdgesQueryOptions(communityId, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 /**
  * Everything within some hops of one thing, in one request.
  *

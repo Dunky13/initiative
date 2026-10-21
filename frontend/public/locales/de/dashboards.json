@@ -257,7 +257,8 @@
     "column": "Spalte",
     "date": "Datum",
     "total": "Gesamt",
-    "series": "Aufteilen nach"
+    "series": "Aufteilen nach",
+    "done": "Erledigt"
   },
   "builder": {
     "dataset": "Daten aus",
@@ -307,7 +308,8 @@
     "counter_groups": "Zählergruppen",
     "task_statuses": "Aufgabenstatus",
     "property_values": "Eigenschaftswerte",
-    "property_definitions": "Eigenschaften"
+    "property_definitions": "Eigenschaften",
+    "relationships": "Verknüpfungen"
   },
   "viewMode": {
     "label": "Dashboard ausführen als",

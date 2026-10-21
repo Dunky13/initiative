@@ -19,7 +19,6 @@
   "stay": "Keep editing",
   "compact": "Layouts are edited on a wider screen. Open this page on a tablet or a computer.",
   "canvas": "Preview",
-  "calendarNote": "A calendar has no card or columns to lay out. Whether the project opens on it is set on the right.",
   "outline": "Outline",
   "card": "Card",
   "row": "Row",
@@ -99,11 +98,14 @@
   "shipped": "This is the layout as shipped. Changing it makes it the project's own.",
   "detailTitleHelp": "Every task's detail shows its title.",
   "opensFirst": "Opens first",
+  "shownInMenu": "Shown in the layout menu",
+  "hiddenList": "{{name}} (hidden)",
   "asShipped": "As shipped",
   "saveError": "Couldn't save the layouts",
   "listHelp": {
     "table": "How the project's tasks are listed as a table: which columns, in what order.",
     "board": "How each task shows on the board: what its card holds.",
+    "gantt": "The project's tasks on a timeline, by their dates, joined to what each depends on.",
     "calendar": "The project's tasks on a calendar, by their dates."
   },
   "noEvents": "This initiative has no events this year. Add one to see its detail here.",
@@ -284,5 +286,6 @@
       "comments": "What's said about it."
     },
     "noItems": "Write a notice in this initiative to see its layout here."
-  }
+  },
+  "calendarNote": "A calendar has no card or columns to lay out. Whether it shows, and whether the project opens on it, is set on the right."
 }

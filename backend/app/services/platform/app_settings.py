@@ -329,6 +329,18 @@ async def ensure_settings_row(session: AsyncSession) -> AppSetting:
     return settings_row
 
 
+async def locked_settings(session: AsyncSession) -> AppSetting:
+    """The settings row, held for the rest of this transaction."""
+    await ensure_settings_row(session)
+    return (
+        await session.exec(
+            select(AppSetting)
+            .where(AppSetting.id == GLOBAL_SETTINGS_ID)
+            .with_for_update()
+        )
+    ).one()
+
+
 async def seed_app_settings(session: AsyncSession) -> AppSetting:
     """Create the settings singleton, once, at boot.
 

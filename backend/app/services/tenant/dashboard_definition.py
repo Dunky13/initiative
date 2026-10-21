@@ -137,6 +137,7 @@ _TARGET_OPTIONS = {"target": _free("number"), "target_date": _free("date")}
 LABEL_TYPES = frozenset({FieldType.text, FieldType.enum, FieldType.reference})
 NUMBER_TYPES = frozenset({FieldType.number})
 DATE_TYPES = frozenset({FieldType.date})
+BOOLEAN_TYPES = frozenset({FieldType.boolean})
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,8 @@ WIDGET_SPECS: dict[str, WidgetSpec] = {
             Slot("start", DATE_TYPES),
             Slot("end", DATE_TYPES),
             Slot("group", LABEL_TYPES, required=False),
+            # Whether the work is finished. Without it, nothing says how much is.
+            Slot("done", BOOLEAN_TYPES, required=False),
         ),
         options={
             "scale": _option("day", "week", "month", "quarter", "year", default="week"),

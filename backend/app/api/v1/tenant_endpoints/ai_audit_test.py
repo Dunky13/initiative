@@ -35,7 +35,7 @@ def _wire_ai(monkeypatch, module) -> None:
         source="platform",
     )
 
-    async def _resolve(session, user, guild_id=None):
+    async def _resolve(session, guild_id=None):
         return resolved
 
     monkeypatch.setattr(module, "resolve_ai_settings", _resolve)

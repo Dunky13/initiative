@@ -19,7 +19,8 @@ const sameLayout = (
   (("task_type_id" in a ? a.task_type_id : null) ?? null) === (b.task_type_id ?? null);
 
 /** A target's layouts as the server reads them until it changes any, each as
- *  shipped: a project's table (which it opens on), board and calendar, then
+ *  shipped: a project's table, board (which alone it shows, and opens on),
+ *  Gantt and calendar, then
  *  the page of its task type 1, "Task"; or, with `tool: "calendar"`, the
  *  initiative calendar's calendar and its event's detail. `layouts` replaces
  *  those of the same kind (and type), and another type's page is added. */
@@ -31,11 +32,14 @@ export function buildToolLayoutSet(
 ): ToolLayoutSetRead {
   const { layouts = [], tool = "project", ...rest } = overrides;
   const lists: ListLayoutReadKind[] =
-    tool === "project" ? ["table", "board", "calendar"] : ["calendar"];
+    tool === "project" ? ["table", "board", "gantt", "calendar"] : ["calendar"];
+  // A project shows its board alone, and opens on it.
+  const hidden = (kind: ListLayoutReadKind) => tool === "project" && kind !== "board";
   const shipped: (ListLayoutRead | DetailLayoutRead)[] = [
-    ...lists.map((kind, index) => ({
+    ...lists.map((kind) => ({
       kind,
-      is_default: index === 0,
+      is_default: !hidden(kind),
+      hidden: hidden(kind),
       definition: {},
       updated_at: null,
     })),

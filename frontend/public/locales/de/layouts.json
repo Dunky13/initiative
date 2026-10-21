@@ -19,7 +19,6 @@
   "stay": "Weiter bearbeiten",
   "compact": "Layouts werden auf einem breiteren Bildschirm bearbeitet. Öffne diese Seite auf einem Tablet oder Computer.",
   "canvas": "Vorschau",
-  "calendarNote": "Ein Kalender hat keine Karte und keine Spalten zum Anordnen. Ob das Projekt damit öffnet, stellst du rechts ein.",
   "outline": "Gliederung",
   "card": "Karte",
   "row": "Zeile",
@@ -99,11 +98,14 @@
   "shipped": "Das ist das Layout, wie es ausgeliefert wird. Eine Änderung macht es zum eigenen Layout des Projekts.",
   "detailTitleHelp": "Das Detail jeder Aufgabe zeigt ihren Titel.",
   "opensFirst": "Wird zuerst geöffnet",
+  "shownInMenu": "Im Layout-Menü anzeigen",
+  "hiddenList": "{{name}} (ausgeblendet)",
   "asShipped": "Wie ausgeliefert",
   "saveError": "Layouts konnten nicht gespeichert werden",
   "listHelp": {
     "table": "Wie die Aufgaben des Projekts als Tabelle aufgelistet werden: welche Spalten, in welcher Reihenfolge.",
     "board": "Wie jede Aufgabe auf dem Board erscheint: was ihre Karte zeigt.",
+    "gantt": "Die Aufgaben des Projekts auf einer Zeitleiste, nach ihren Daten, verbunden mit dem, wovon jede abhängt.",
     "calendar": "Die Aufgaben des Projekts in einem Kalender, nach ihren Daten."
   },
   "noEvents": "Diese Initiative hat dieses Jahr keine Termine. Füge einen hinzu, um sein Detail hier zu sehen.",
@@ -284,5 +286,6 @@
       "comments": "Was darüber gesagt wird."
     },
     "noItems": "Schreibe eine Mitteilung in dieser Initiative, um hier ihr Layout zu sehen."
-  }
+  },
+  "calendarNote": "Ein Kalender hat keine Karte und keine Spalten zum Anordnen. Ob er angezeigt wird und ob das Projekt damit öffnet, stellst du rechts ein."
 }

@@ -296,6 +296,7 @@ describe("CalendarsView presets", () => {
               {
                 kind: "calendar",
                 is_default: true,
+                hidden: false,
                 definition: { presets } as never,
                 updated_at: "2026-10-01T12:00:00.000Z",
               },

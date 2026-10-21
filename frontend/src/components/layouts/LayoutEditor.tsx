@@ -13,7 +13,7 @@ import type {
   ListLayoutReadKind,
   ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
+import { listLayoutLooks, PROJECT_HIDDEN_LISTS } from "@/components/projects/projectTasksConfig";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -98,6 +98,8 @@ export type LayoutEdits = {
   select: (selection: Selection) => void;
   /** The project opens on the open list. */
   makeDefault: () => void;
+  /** Show the open list in the target's menu, or leave it out. */
+  showList: (shown: boolean) => void;
   /** `to` is where the part is once moved. */
   movePart: (from: NodePath, to: NodePath) => void;
   removePart: (path: NodePath) => void;
@@ -148,7 +150,7 @@ const draftOf = (set: ToolLayoutSetRead, details: EditableDetail[]): Draft => {
         detailLayoutOf(set, detail.spec.kind, detail.taskTypeId),
       ])
     ),
-    opensOn: lists.find((layout) => layout.is_default)?.kind ?? "table",
+    opensOn: lists.find((layout) => layout.is_default)?.kind ?? "board",
   };
 };
 
@@ -309,6 +311,19 @@ export const LayoutEditor = ({
   const columns = current ? columnsOf(current.definition, fields) : [];
   const selection = stillThere(selected, tree, columns) ? selected : LAYOUT_SELECTED;
 
+  // Which lists the target's menu offers, as the draft has them: each its own
+  // layout, or else its tool, does not hide. A project shows one at least.
+  const hiddenOf = (kind: ListLayoutReadKind, lists: Draft["lists"] = draft.lists) =>
+    lists[kind]?.hidden ?? (project ? PROJECT_HIDDEN_LISTS.includes(kind) : false);
+  const shownKinds = kinds.filter((kind) => !hiddenOf(kind));
+  /** `lists`, with the list it opens on moved to the first shown where the one
+   *  it was on is not. */
+  const withLists = (lists: Draft["lists"]): Draft => {
+    const shown = kinds.filter((kind) => !hiddenOf(kind, lists));
+    const opensOn = shown.includes(draft.opensOn) ? draft.opensOn : (shown[0] ?? draft.opensOn);
+    return { ...draft, lists, opensOn };
+  };
+
   const changeDraft = (next: Draft, then?: Selection) => {
     if (saving) return;
     dispatch({ type: "change", present: next });
@@ -339,6 +354,12 @@ export const LayoutEditor = ({
     makeDefault: () => {
       if (current) changeDraft({ ...draft, opensOn: current.kind });
     },
+    showList: (shown) => {
+      if (!current) return;
+      changeDraft(
+        withLists({ ...draft.lists, [current.kind]: { ...current.definition, hidden: !shown } })
+      );
+    },
     movePart: (from, to) => {
       changeTree(
         moveNode(tree, from, to),
@@ -366,10 +387,7 @@ export const LayoutEditor = ({
     },
     resetLayout: () =>
       current
-        ? changeDraft(
-            { ...draft, lists: { ...draft.lists, [current.kind]: null } },
-            LAYOUT_SELECTED
-          )
+        ? changeDraft(withLists({ ...draft.lists, [current.kind]: null }), LAYOUT_SELECTED)
         : changeDetail(null, LAYOUT_SELECTED),
     moveColumn: (from, to) => {
       if (!current) return;
@@ -417,7 +435,7 @@ export const LayoutEditor = ({
   // Wherever a field can be placed, a new one can be made: a property of the
   // initiative's, placed where Add was opened.
   const choices =
-    current?.kind === "calendar" || (!current && !detail)
+    current?.kind === "calendar" || current?.kind === "gantt" || (!current && !detail)
       ? listed
       : { ...listed, newField: initiativeId };
   const addersAt = (place?: Place): Adders =>
@@ -577,7 +595,9 @@ export const LayoutEditor = ({
           <SelectContent>
             {kinds.map((kind) => (
               <SelectItem key={kind} value={kind}>
-                {translate(listLayoutLooks[kind].labelKey)}
+                {hiddenOf(kind)
+                  ? t("layouts:hiddenList", { name: translate(listLayoutLooks[kind].labelKey) })
+                  : translate(listLayoutLooks[kind].labelKey)}
               </SelectItem>
             ))}
             {kinds.length > 0 ? <SelectSeparator /> : null}
@@ -682,6 +702,10 @@ export const LayoutEditor = ({
               presets={presets}
               help={`layouts:listHelp.${current.kind}`}
               opensFirst={draft.opensOn === current.kind}
+              shown={{
+                value: !hiddenOf(current.kind),
+                canHide: shownKinds.some((kind) => kind !== current.kind),
+              }}
               stored={draft.lists[current.kind] != null}
               fields={fields}
               statuses={project?.statuses}

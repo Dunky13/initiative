@@ -2,10 +2,10 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Initiative plug-in API",
-    "version": "8.0.0",
+    "version": "8.1.0",
     "x-initiative-source": {
-      "version": "0.75.3",
-      "commit": "c086f914fe4649bd171d8efe5db7bbaa03a8f777"
+      "version": "0.76.0",
+      "commit": "4aa7e82158a2d07a8b19690e6c7a99c7159600ac"
     }
   },
   "servers": [
@@ -2812,6 +2812,145 @@
         ]
       }
     },
+    "/projects/{project_id}/task-types/": {
+      "get": {
+        "tags": [
+          "task-types",
+          "task-types"
+        ],
+        "summary": "List Task Types",
+        "operationId": "list_task_types",
+        "security": [
+          {
+            "PluginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskTypeRead"
+                  },
+                  "title": "Response List Task Types"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-plugin-scope": "projects:read",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "session_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Token"
+            }
+          }
+        ]
+      }
+    },
+    "/projects/{project_id}/task-types/gallery": {
+      "get": {
+        "tags": [
+          "task-types",
+          "task-types"
+        ],
+        "summary": "List Task Type Gallery",
+        "description": "The ready-made types the project can add, grouped by what they are for,\nin the reader's language.",
+        "operationId": "list_task_type_gallery",
+        "security": [
+          {
+            "PluginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskTypeGalleryGroup"
+                  },
+                  "title": "Response List Task Type Gallery"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-plugin-scope": "projects:read",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "session_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Token"
+            }
+          }
+        ]
+      }
+    },
     "/tasks/": {
       "get": {
         "tags": [
@@ -3003,6 +3142,140 @@
         },
         "x-plugin-scope": "projects:write",
         "parameters": [
+          {
+            "name": "session_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Token"
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/groups": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Task Groups",
+        "description": "The groups of the task list these filters answer with, in the order the\nlist shows them, and the groups each task is in.",
+        "operationId": "list_task_groups",
+        "security": [
+          {
+            "PluginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-plugin-scope": "projects:read",
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "The field the list is grouped by, as the field catalog's ``groupings`` name it, or ``property:<id>``",
+              "title": "Group By"
+            },
+            "description": "The field the list is grouped by, as the field catalog's ``groupings`` name it, or ``property:<id>``"
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DateBucket"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "For a date: the bucket of the calendar it groups by",
+              "title": "Bucket"
+            },
+            "description": "For a date: the bucket of the calendar it groups by"
+          },
+          {
+            "name": "conditions",
+            "in": "query",
+            "required": false,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/FilterCondition"
+                      },
+                      {
+                        "$ref": "#/components/schemas/FilterGroup"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz"
+            }
+          },
           {
             "name": "session_token",
             "in": "cookie",
@@ -13530,6 +13803,18 @@
         ],
         "title": "CounterViewMode"
       },
+      "DateBucket": {
+        "type": "string",
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ],
+        "title": "DateBucket",
+        "description": "What a date is grouped by: the calendar's day, week, month, quarter or\nyear it falls in. A week starts on Monday, as Postgres counts one."
+      },
       "FileCreate": {
         "properties": {
           "properties": {
@@ -15227,6 +15512,59 @@
         "type": "object",
         "title": "GalleryUpdate"
       },
+      "GroupRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "GroupRead",
+        "description": "One group of a grouped list."
+      },
+      "GroupsResponse": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/GroupRead"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "rows": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groups",
+          "rows"
+        ],
+        "title": "GroupsResponse",
+        "description": "A list's groups by one field, and the groups each row is in."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -15678,7 +16016,7 @@
           "value"
         ],
         "title": "PluginValueSummary",
-        "description": "One value an installed plug-in shows on an item: a key its pinned\nversion declares as a field there."
+        "description": "One value an installed plug-in shows on an item: a key its pinned\nversion declares as a field there. A list field's value is an array of its\nelements, newest first, each with its ``ref``."
       },
       "PollOptionRead": {
         "properties": {
@@ -16745,6 +17083,13 @@
             },
             "type": "array",
             "title": "Task Statuses"
+          },
+          "task_types": {
+            "items": {
+              "$ref": "#/components/schemas/TaskTypeRead"
+            },
+            "type": "array",
+            "title": "Task Types"
           }
         },
         "type": "object",
@@ -16773,7 +17118,8 @@
           "owner_plugin",
           "initiative",
           "task_summary",
-          "task_statuses"
+          "task_statuses",
+          "task_types"
         ],
         "title": "ProjectRead"
       },
@@ -18169,6 +18515,15 @@
         "title": "ReactionGroup",
         "description": "One emoji on one target, and who chose it."
       },
+      "RecurrenceStrategy": {
+        "type": "string",
+        "enum": [
+          "fixed",
+          "rolling"
+        ],
+        "title": "RecurrenceStrategy",
+        "description": "How a repeating task's next date is counted."
+      },
       "RemovalReason": {
         "type": "string",
         "enum": [
@@ -18586,13 +18941,21 @@
             "title": "Recurrence"
           },
           "recurrence_strategy": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "rolling"
-            ],
-            "title": "Recurrence Strategy",
+            "$ref": "#/components/schemas/RecurrenceStrategy",
             "default": "fixed"
+          },
+          "recurrence_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 24,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Limit"
           },
           "description": {
             "anyOf": [
@@ -18641,6 +19004,17 @@
               }
             ],
             "title": "Task Status Id"
+          },
+          "task_type_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type Id"
           },
           "tag_ids": {
             "items": {
@@ -18711,13 +19085,21 @@
             "title": "Recurrence"
           },
           "recurrence_strategy": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "rolling"
-            ],
-            "title": "Recurrence Strategy",
+            "$ref": "#/components/schemas/RecurrenceStrategy",
             "default": "fixed"
+          },
+          "recurrence_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 24,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Limit"
           },
           "description_excerpt": {
             "anyOf": [
@@ -18751,6 +19133,13 @@
           },
           "task_status": {
             "$ref": "#/components/schemas/TaskStatusRead"
+          },
+          "task_type_id": {
+            "type": "integer",
+            "title": "Task Type Id"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskTypeRead"
           },
           "created_at": {
             "type": "string",
@@ -18818,6 +19207,24 @@
           "recurrence_shift": {
             "type": "integer",
             "title": "Recurrence Shift",
+            "default": 0
+          },
+          "recurrence_anchor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Anchor"
+          },
+          "recurrence_anchor_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Recurrence Anchor Count",
             "default": 0
           },
           "recurrence_until": {
@@ -18952,12 +19359,15 @@
           "due_date",
           "recurrence",
           "recurrence_strategy",
+          "recurrence_limit",
           "description_excerpt",
           "has_description",
           "id",
           "project_id",
           "task_status_id",
           "task_status",
+          "task_type_id",
+          "task_type",
           "created_at",
           "updated_at",
           "completed_at",
@@ -18967,6 +19377,8 @@
           "assignees",
           "recurrence_occurrence_count",
           "recurrence_shift",
+          "recurrence_anchor",
+          "recurrence_anchor_count",
           "recurrence_until",
           "comment_count",
           "blocked_by_open_count",
@@ -19185,13 +19597,21 @@
             "title": "Recurrence"
           },
           "recurrence_strategy": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "rolling"
-            ],
-            "title": "Recurrence Strategy",
+            "$ref": "#/components/schemas/RecurrenceStrategy",
             "default": "fixed"
+          },
+          "recurrence_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 24,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Limit"
           },
           "description": {
             "anyOf": [
@@ -19220,6 +19640,13 @@
           },
           "task_status": {
             "$ref": "#/components/schemas/TaskStatusRead"
+          },
+          "task_type_id": {
+            "type": "integer",
+            "title": "Task Type Id"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskTypeRead"
           },
           "created_at": {
             "type": "string",
@@ -19297,6 +19724,24 @@
           "recurrence_shift": {
             "type": "integer",
             "title": "Recurrence Shift",
+            "default": 0
+          },
+          "recurrence_anchor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence Anchor"
+          },
+          "recurrence_anchor_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Recurrence Anchor Count",
             "default": 0
           },
           "recurrence_until": {
@@ -19398,11 +19843,14 @@
           "due_date",
           "recurrence",
           "recurrence_strategy",
+          "recurrence_limit",
           "description",
           "id",
           "project_id",
           "task_status_id",
           "task_status",
+          "task_type_id",
+          "task_type",
           "created_at",
           "updated_at",
           "completed_at",
@@ -19413,6 +19861,8 @@
           "assignees",
           "recurrence_occurrence_count",
           "recurrence_shift",
+          "recurrence_anchor",
+          "recurrence_anchor_count",
           "recurrence_until",
           "series_id",
           "series_size",
@@ -19493,6 +19943,232 @@
         ],
         "title": "TaskStatusRead"
       },
+      "TaskTypeGalleryEntry": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "color": {
+            "type": "string",
+            "title": "Color"
+          },
+          "layout_preset": {
+            "type": "string",
+            "title": "Layout Preset"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/TaskTypeGalleryField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "starting_values": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskTypeStartingValues"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "hint",
+          "icon",
+          "color",
+          "layout_preset",
+          "fields"
+        ],
+        "title": "TaskTypeGalleryEntry",
+        "description": "One ready-made type, in the reader's language."
+      },
+      "TaskTypeGalleryField": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "TaskTypeGalleryField"
+      },
+      "TaskTypeGalleryGroup": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TaskTypeGalleryEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "entries"
+        ],
+        "title": "TaskTypeGalleryGroup"
+      },
+      "TaskTypeRead": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "integer",
+            "title": "Project Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "color": {
+            "type": "string",
+            "title": "Color"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "layout_preset": {
+            "type": "string",
+            "title": "Layout Preset"
+          },
+          "starting_values": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskTypeStartingValues"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "position",
+          "is_default",
+          "color",
+          "icon",
+          "layout_preset",
+          "starting_values"
+        ],
+        "title": "TaskTypeRead",
+        "description": "One kind of task in a project, and the shape its page is drawn as until\nthe page is changed."
+      },
+      "TaskTypeStartingValues": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "x-mentions": "markdown",
+                "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "checklist": {
+            "items": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1,
+              "x-mentions": "markdown",
+              "description": "A person is mentioned as `@[](<reference>)`, by your reference for them, with no name: read who they are from the members search (`members:read`). Write a mention the same way. A stored file comes without its path: `![alt]()`, `[name]()`."
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Checklist"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskPriority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000,
+                "description": "RFC 5545 recurrence lines: one RRULE, and optional EXDATE and RDATE lines in UTC. The rule's days are as picked in the request's tz, or UTC days without one. POST /recurrence/preview lists its next starts."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
+          },
+          "recurrence_strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecurrenceStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "TaskTypeStartingValues",
+        "description": "What a new task of a type starts with, field by field, where whoever\nmakes it leaves that field empty. A repeat starts only on a task with a\ndate to count from."
+      },
       "TaskUpdate": {
         "properties": {
           "properties": {
@@ -19556,6 +20232,17 @@
               }
             ],
             "title": "Task Status Id"
+          },
+          "task_type_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type Id"
           },
           "status_category": {
             "anyOf": [
@@ -19676,17 +20363,25 @@
           "recurrence_strategy": {
             "anyOf": [
               {
-                "type": "string",
-                "enum": [
-                  "fixed",
-                  "rolling"
-                ]
+                "$ref": "#/components/schemas/RecurrenceStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrence_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 24,
+                "minimum": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Recurrence Strategy"
+            "title": "Recurrence Limit"
           },
           "tag_ids": {
             "anyOf": [

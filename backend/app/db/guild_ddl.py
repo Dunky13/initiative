@@ -153,15 +153,20 @@ def _trash_read_policy(table: str) -> list[str]:
 # should be the same for everybody reading it, and a deleted row is not part of
 # that for anyone. RESTRICTIVE and keyed on the query flag, so it applies to the
 # statements a reader writes and to nothing else.
-_QUERY_TRASH_PREDICATE = f"deleted_at IS NULL OR {gucs.QUERY.once} IS NOT TRUE"
+_QUERY_TRASH_PREDICATE = "{column} IS NULL OR " + f"{gucs.QUERY.once} IS NOT TRUE"
+
+#: Tables whose rows are tombstoned rather than trashed, by the column that says
+#: so. A removed link is kept as a record that somebody took it back, and is no
+#: more a link to a reader's statement than a trashed row is a row.
+_QUERY_TOMBSTONES: dict[str, str] = {"relationships": "removed_at"}
 
 
-def _query_trash_policy(table: str) -> list[str]:
+def _query_trash_policy(table: str, column: str = "deleted_at") -> list[str]:
     """Keep a trashed row out of what a reader's own statement returns."""
     return [
         f"DROP POLICY IF EXISTS query_excludes_trash ON {table};",
         f"CREATE POLICY query_excludes_trash ON {table} AS RESTRICTIVE FOR SELECT",
-        f"  USING ({_QUERY_TRASH_PREDICATE});",
+        f"  USING ({_QUERY_TRASH_PREDICATE.format(column=column)});",
     ]
 
 
@@ -402,6 +407,8 @@ def _table_block(table: str, path: InitiativePath) -> str:
     if table in SOFT_DELETE_TABLES:
         lines.extend(_trash_read_policy(table))
         lines.extend(_query_trash_policy(table))
+    if table in _QUERY_TOMBSTONES:
+        lines.extend(_query_trash_policy(table, _QUERY_TOMBSTONES[table]))
     if table in _PURGE_GUARD_TABLES:
         # Admin-only hard delete (purge), AND-combined with the PERMISSIVE delete
         # policy above. RESTRICTIVE, so a write-member who clears the permissive
@@ -617,12 +624,10 @@ def _authored_block() -> str:
 
 _MEMBER_CREDENTIAL_SECTION = """\
 -- ===========================================================================
--- A member's credentials (app.db.tenancy.MEMBER_CREDENTIAL_TABLES): that they
--- gave an AI connection a key, their connection to a plug-in's vendor. Read and
--- written by the member, the community's seat (a lent seat writing beside a
--- read_write grant) and the system engine; not by a plain admin or a settings
--- rung. A key for a platform AI connection is the member's and the platform's
--- alone, so the seat reaches only the community's own.
+-- A member's credentials (app.db.tenancy.MEMBER_CREDENTIAL_TABLES): their
+-- connection to a plug-in's vendor. Read and written by the member, the
+-- community's seat (a lent seat writing beside a read_write grant) and the
+-- system engine; not by a plain admin or a settings rung.
 --
 -- What they hold (app.db.tenancy.MEMBER_SECRET_TABLES) is the member's and the
 -- system engine's alone: member_secret_* admit the member the credential row
@@ -634,13 +639,10 @@ _MEMBER_CREDENTIAL_SECTION = """\
 -- ==========================================================================="""
 
 
-def _member_credential_block(table: str, owner: str, seat_rows: str | None) -> str:
-    def seat(leg: str) -> str:
-        return f"({leg} AND {seat_rows})" if seat_rows else leg
-
+def _member_credential_block(table: str, owner: str) -> str:
     mine = f"{owner} = {gucs.USER_ID.once} OR {IN_POLICY.system}"
-    read = f"({mine} OR {seat(POLICY_SEAT)})"
-    write = f"({mine} OR {seat(_SEAT_WRITES)})"
+    read = f"({mine} OR {POLICY_SEAT})"
+    write = f"({mine} OR {_SEAT_WRITES})"
     return "\n".join(
         [
             f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
@@ -1477,8 +1479,8 @@ def render_guild_rls_ddl() -> str:
     out += "\n\n" + _PRIVATE_ROW_SECTION + "\n\n" + "\n\n".join(private)
     out += "\n\n" + _AUTHORED_SECTION + "\n" + _authored_block()
     credentials = [
-        _member_credential_block(t, owner, seat_rows)
-        for t, (owner, seat_rows) in sorted(MEMBER_CREDENTIAL_TABLES.items())
+        _member_credential_block(t, owner)
+        for t, owner in sorted(MEMBER_CREDENTIAL_TABLES.items())
     ]
     credentials += [
         _member_secret_block(t, parent, column)

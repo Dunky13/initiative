@@ -17,11 +17,31 @@ export const AIConfigMode = {
   community: "community",
 } as const;
 
+/**
+ * A community an operator's connection serves. No name when the
+ * community no longer exists.
+ */
+export interface AIConnectionCommunity {
+  id: number;
+  name: string | null;
+}
+
+/**
+ * Where a connection sends its requests. ``ollama`` and ``custom`` are
+ * servers somebody runs, at the address the connection gives; the rest are
+ * hosted services at their own (``app.services.ai_provider.PRESETS``).
+ */
 export type AIProvider = (typeof AIProvider)[keyof typeof AIProvider];
 
 export const AIProvider = {
   openai: "openai",
   anthropic: "anthropic",
+  gemini: "gemini",
+  deepseek: "deepseek",
+  groq: "groq",
+  xai: "xai",
+  together: "together",
+  openrouter: "openrouter",
   ollama: "ollama",
   custom: "custom",
 } as const;
@@ -34,7 +54,7 @@ export interface AIConnectionCreate {
   api_key?: string | null;
   enabled?: boolean;
   is_default?: boolean;
-  allow_member_keys?: boolean;
+  community_ids?: number[];
 }
 
 /**
@@ -62,7 +82,9 @@ export interface AIConnectionResponse {
   has_api_key: boolean;
   enabled: boolean;
   is_default: boolean;
-  allow_member_keys: boolean;
+  communities: AIConnectionCommunity[];
+  last_error: string | null;
+  last_error_at: string | null;
 }
 
 export interface AIConnectionTestResponse {
@@ -79,7 +101,7 @@ export interface AIConnectionUpdate {
   api_key?: string | null;
   enabled?: boolean | null;
   is_default?: boolean | null;
-  allow_member_keys?: boolean | null;
+  community_ids?: number[] | null;
 }
 
 export interface AIModelsResponse {
@@ -2532,6 +2554,8 @@ export interface CommunityAuthSettingsRead {
   redacted_by_platform: boolean;
   allow_engagement_ranking: boolean;
   engagement_ranking_allowed_by_platform: boolean;
+  allow_ai: boolean;
+  ai_offered_by_platform: boolean;
   guest_max_days: number | null;
   guest_max_days_by_platform: number;
 }
@@ -2553,6 +2577,7 @@ export interface CommunityAuthSettingsUpdate {
   allow_email_notifications?: boolean | null;
   redact_notification_content?: boolean | null;
   allow_engagement_ranking?: boolean | null;
+  allow_ai?: boolean | null;
   guest_max_days?: number | null;
 }
 
@@ -2983,16 +3008,6 @@ export interface CommunityLocationOutput {
   country: string | null;
   latitude: number | null;
   longitude: number | null;
-}
-
-/**
- * That a member gave one of the community's AI connections a key, as the
- * seat sees it. Never the key.
- */
-export interface CommunityMemberAIKey {
-  user_id: number;
-  connection_id: number;
-  updated_at: string;
 }
 
 export type CommunityRole = (typeof CommunityRole)[keyof typeof CommunityRole];
@@ -4486,6 +4501,7 @@ export const DatasetName = {
   members: "members",
   property_definitions: "property_definitions",
   property_values: "property_values",
+  relationships: "relationships",
   files: "files",
   file_versions: "file_versions",
   queues: "queues",
@@ -6656,6 +6672,7 @@ export type ListLayoutReadKind = (typeof ListLayoutReadKind)[keyof typeof ListLa
 export const ListLayoutReadKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -6784,6 +6801,7 @@ export interface ListLayoutDefinitionOutput {
   groupings?: LayoutGrouping[] | null;
   group_by?: string | null;
   limits?: ColumnLimit[] | null;
+  hidden?: boolean | null;
 }
 
 /**
@@ -6792,6 +6810,7 @@ export interface ListLayoutDefinitionOutput {
 export interface ListLayoutRead {
   kind: ListLayoutReadKind;
   is_default: boolean;
+  hidden: boolean;
   definition: ListLayoutDefinitionOutput;
   updated_at: string | null;
 }
@@ -7004,6 +7023,7 @@ export interface ListLayoutDefinitionInput {
   groupings?: LayoutGrouping[] | null;
   group_by?: string | null;
   limits?: ColumnLimit[] | null;
+  hidden?: boolean | null;
 }
 
 export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof ListLayoutWriteKind];
@@ -7011,6 +7031,7 @@ export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof List
 export const ListLayoutWriteKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -7292,42 +7313,6 @@ export interface MarketplaceSharedListingRead {
 }
 
 /**
- * A connection available to a member in the active mode. No key material —
- * only whether the member has attached their own key, and whether it's
- * selected. ``requires_member_key`` is true when the connection has no shared
- * key of its own (the member must supply one).
- */
-export interface MemberAIConnectionView {
-  scope: ConnectionScope;
-  id: number;
-  label: string;
-  provider: AIProvider;
-  model: string | null;
-  has_member_key: boolean;
-  requires_member_key: boolean;
-  allow_member_keys: boolean;
-  is_selected: boolean;
-}
-
-export interface MemberAIKeyUpdate {
-  scope: ConnectionScope;
-  connection_id: number;
-  api_key: string;
-}
-
-export interface MemberAIPrefUpdate {
-  scope: ConnectionScope;
-  connection_id: number;
-  enabled?: boolean;
-}
-
-export interface MemberAIView {
-  mode: AIConfigMode;
-  enabled: boolean;
-  connections: MemberAIConnectionView[];
-}
-
-/**
  * Whether one member's personal API keys reach this community.
  */
 export interface MemberApiAccessUpdate {
@@ -7497,28 +7482,6 @@ export interface ModerationReportList {
  */
 export interface ModerationRestore {
   note?: string | null;
-}
-
-/**
- * One connection available to the member in one guild — a flat row for the
- * cross-guild personal "My AI" view (``GET /me/ai``). Every connection the
- * member can use is listed, including shared-key ones they can't attach to
- * (``allow_member_keys=false``), so they can see what they have access to.
- * Writes stay guild-scoped, addressed by ``guild_id`` + ``scope`` +
- * ``connection_id`` (mirrors the My Tasks / My Trash pattern).
- */
-export interface MyAIConnectionRow {
-  community_id: number;
-  community_name: string;
-  scope: ConnectionScope;
-  connection_id: number;
-  label: string;
-  provider: AIProvider;
-  model: string | null;
-  allow_member_keys: boolean;
-  has_member_key: boolean;
-  requires_member_key: boolean;
-  is_selected: boolean;
 }
 
 export type MyToolCountsResponseCounts = { [key: string]: number };
@@ -10534,6 +10497,16 @@ export interface TaskCreate {
   checklist?: ChecklistItemInput[];
 }
 
+/**
+ * One edge between two tasks of a project, as it is stored: the source
+ * depends on, is part of, or is related to the target.
+ */
+export interface TaskEdgeRead {
+  source_id: number;
+  target_id: number;
+  relationship_type: RelationshipType;
+}
+
 export interface TaskListResponse {
   total_count: number;
   page: number;
@@ -10862,6 +10835,7 @@ export type ToolLayoutDefaultWriteKind =
 export const ToolLayoutDefaultWriteKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -13366,6 +13340,13 @@ export type ReplaceRelationshipSliceParams = {
   entity: string;
   relationship_type: RelationshipType;
   other_type: SearchEntityType;
+};
+
+export type ListTaskEdgesParams = {
+  /**
+   * The project whose tasks' edges to list
+   */
+  project_id: number;
 };
 
 export type GetRelationsNeighbourhoodParams = {

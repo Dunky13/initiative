@@ -46,7 +46,6 @@ import { Route as ServerRequiredAuthenticatedMyTicketsIndexRouteImport } from '.
 import { Route as ServerRequiredAuthenticatedMyTicketsTaskIdRouteImport } from './routes/_serverRequired/_authenticated/my-tickets.$taskId'
 import { Route as ServerRequiredAuthenticatedProfileIndexRouteImport } from './routes/_serverRequired/_authenticated/profile/index'
 import { Route as ServerRequiredAuthenticatedProfileAccountRouteImport } from './routes/_serverRequired/_authenticated/profile/account'
-import { Route as ServerRequiredAuthenticatedProfileAiRouteImport } from './routes/_serverRequired/_authenticated/profile/ai'
 import { Route as ServerRequiredAuthenticatedProfileDangerRouteImport } from './routes/_serverRequired/_authenticated/profile/danger'
 import { Route as ServerRequiredAuthenticatedProfileInterfaceRouteImport } from './routes/_serverRequired/_authenticated/profile/interface'
 import { Route as ServerRequiredAuthenticatedProfileNotificationsRouteImport } from './routes/_serverRequired/_authenticated/profile/notifications'
@@ -397,12 +396,6 @@ const ServerRequiredAuthenticatedProfileAccountRoute =
   ServerRequiredAuthenticatedProfileAccountRouteImport.update({
     id: '/account',
     path: '/account',
-    getParentRoute: () => ServerRequiredAuthenticatedProfileRoute,
-  } as any)
-const ServerRequiredAuthenticatedProfileAiRoute =
-  ServerRequiredAuthenticatedProfileAiRouteImport.update({
-    id: '/ai',
-    path: '/ai',
     getParentRoute: () => ServerRequiredAuthenticatedProfileRoute,
   } as any)
 const ServerRequiredAuthenticatedProfileDangerRoute =
@@ -1556,7 +1549,6 @@ export interface FileRoutesByFullPath {
   '/c/$communityId': typeof ServerRequiredAuthenticatedCCommunityIdRouteWithChildren
   '/my-tickets/$taskId': typeof ServerRequiredAuthenticatedMyTicketsTaskIdRoute
   '/profile/account': typeof ServerRequiredAuthenticatedProfileAccountRoute
-  '/profile/ai': typeof ServerRequiredAuthenticatedProfileAiRoute
   '/profile/danger': typeof ServerRequiredAuthenticatedProfileDangerRoute
   '/profile/interface': typeof ServerRequiredAuthenticatedProfileInterfaceRoute
   '/profile/notifications': typeof ServerRequiredAuthenticatedProfileNotificationsRoute
@@ -1733,7 +1725,6 @@ export interface FileRoutesByTo {
   '/whats-new': typeof ServerRequiredWhatsNewIndexRoute
   '/my-tickets/$taskId': typeof ServerRequiredAuthenticatedMyTicketsTaskIdRoute
   '/profile/account': typeof ServerRequiredAuthenticatedProfileAccountRoute
-  '/profile/ai': typeof ServerRequiredAuthenticatedProfileAiRoute
   '/profile/danger': typeof ServerRequiredAuthenticatedProfileDangerRoute
   '/profile/interface': typeof ServerRequiredAuthenticatedProfileInterfaceRoute
   '/profile/notifications': typeof ServerRequiredAuthenticatedProfileNotificationsRoute
@@ -1900,7 +1891,6 @@ export interface FileRoutesById {
   '/_serverRequired/_authenticated/c/$communityId': typeof ServerRequiredAuthenticatedCCommunityIdRouteWithChildren
   '/_serverRequired/_authenticated/my-tickets/$taskId': typeof ServerRequiredAuthenticatedMyTicketsTaskIdRoute
   '/_serverRequired/_authenticated/profile/account': typeof ServerRequiredAuthenticatedProfileAccountRoute
-  '/_serverRequired/_authenticated/profile/ai': typeof ServerRequiredAuthenticatedProfileAiRoute
   '/_serverRequired/_authenticated/profile/danger': typeof ServerRequiredAuthenticatedProfileDangerRoute
   '/_serverRequired/_authenticated/profile/interface': typeof ServerRequiredAuthenticatedProfileInterfaceRoute
   '/_serverRequired/_authenticated/profile/notifications': typeof ServerRequiredAuthenticatedProfileNotificationsRoute
@@ -2081,7 +2071,6 @@ export interface FileRouteTypes {
     | '/c/$communityId'
     | '/my-tickets/$taskId'
     | '/profile/account'
-    | '/profile/ai'
     | '/profile/danger'
     | '/profile/interface'
     | '/profile/notifications'
@@ -2258,7 +2247,6 @@ export interface FileRouteTypes {
     | '/whats-new'
     | '/my-tickets/$taskId'
     | '/profile/account'
-    | '/profile/ai'
     | '/profile/danger'
     | '/profile/interface'
     | '/profile/notifications'
@@ -2424,7 +2412,6 @@ export interface FileRouteTypes {
     | '/_serverRequired/_authenticated/c/$communityId'
     | '/_serverRequired/_authenticated/my-tickets/$taskId'
     | '/_serverRequired/_authenticated/profile/account'
-    | '/_serverRequired/_authenticated/profile/ai'
     | '/_serverRequired/_authenticated/profile/danger'
     | '/_serverRequired/_authenticated/profile/interface'
     | '/_serverRequired/_authenticated/profile/notifications'
@@ -2834,13 +2821,6 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/profile/account'
       preLoaderRoute: typeof ServerRequiredAuthenticatedProfileAccountRouteImport
-      parentRoute: typeof ServerRequiredAuthenticatedProfileRoute
-    }
-    '/_serverRequired/_authenticated/profile/ai': {
-      id: '/_serverRequired/_authenticated/profile/ai'
-      path: '/ai'
-      fullPath: '/profile/ai'
-      preLoaderRoute: typeof ServerRequiredAuthenticatedProfileAiRouteImport
       parentRoute: typeof ServerRequiredAuthenticatedProfileRoute
     }
     '/_serverRequired/_authenticated/profile/danger': {
@@ -3835,7 +3815,6 @@ declare module '@tanstack/react-router' {
 
 interface ServerRequiredAuthenticatedProfileRouteChildren {
   ServerRequiredAuthenticatedProfileAccountRoute: typeof ServerRequiredAuthenticatedProfileAccountRoute
-  ServerRequiredAuthenticatedProfileAiRoute: typeof ServerRequiredAuthenticatedProfileAiRoute
   ServerRequiredAuthenticatedProfileDangerRoute: typeof ServerRequiredAuthenticatedProfileDangerRoute
   ServerRequiredAuthenticatedProfileInterfaceRoute: typeof ServerRequiredAuthenticatedProfileInterfaceRoute
   ServerRequiredAuthenticatedProfileNotificationsRoute: typeof ServerRequiredAuthenticatedProfileNotificationsRoute
@@ -3849,8 +3828,6 @@ const ServerRequiredAuthenticatedProfileRouteChildren: ServerRequiredAuthenticat
   {
     ServerRequiredAuthenticatedProfileAccountRoute:
       ServerRequiredAuthenticatedProfileAccountRoute,
-    ServerRequiredAuthenticatedProfileAiRoute:
-      ServerRequiredAuthenticatedProfileAiRoute,
     ServerRequiredAuthenticatedProfileDangerRoute:
       ServerRequiredAuthenticatedProfileDangerRoute,
     ServerRequiredAuthenticatedProfileInterfaceRoute:

@@ -1,8 +1,9 @@
 """Central egress helper for outbound HTTP to caller-influenced URLs.
 
-Webhook delivery and the custom AI provider both send requests to URLs a
-guild member can set. Both go through :func:`request_public_target` so
-the target policy (see :mod:`app.services.webhook_target_url`) is enforced
+Webhook delivery and the AI providers send requests to URLs a community or
+the operator can set. They go through :func:`request_public_target`, or
+through :class:`PinnedTransport` for a client that builds its own requests,
+so the target policy (see :mod:`app.services.webhook_target_url`) is enforced
 in one place and the request connects to the address that was validated.
 
 The host is resolved once; the request is aimed at the resulting address
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -104,13 +106,15 @@ def _pin_request(
     ip: str,
     hostname: str,
     *,
-    headers: dict[str, str] | None,
-    content: bytes | None,
-    json: Any,
+    headers: Mapping[str, str] | None,
+    content: bytes | None = None,
+    json: Any = None,
+    stream: httpx.AsyncByteStream | None = None,
+    extensions: Mapping[str, Any] | None = None,
 ) -> httpx.Request:
     """Build a request aimed at ``ip`` while keeping ``hostname`` for TLS
     SNI, certificate verification, and the ``Host`` header."""
-    merged = dict(headers or {})
+    merged = {k: v for k, v in (headers or {}).items() if k.lower() != "host"}
     merged["Host"] = _authority(original)
     return httpx.Request(
         method,
@@ -118,8 +122,116 @@ def _pin_request(
         headers=merged,
         content=content,
         json=json,
-        extensions={"sni_hostname": hostname},
+        stream=stream,
+        extensions={**(extensions or {}), "sni_hostname": hostname},
     )
+
+
+class _BoundedStream(httpx.AsyncByteStream):
+    """A response body that stops at ``max_bytes``."""
+
+    def __init__(self, inner: Any, max_bytes: int, status_code: int) -> None:
+        self._inner = inner
+        self._max_bytes = max_bytes
+        self._status_code = status_code
+
+    async def __aiter__(self):
+        read = 0
+        async for chunk in self._inner:
+            read += len(chunk)
+            if read > self._max_bytes:
+                raise ResponseTooLargeError(
+                    self._max_bytes, status_code=self._status_code
+                )
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
+class PinnedTransport(httpx.AsyncBaseTransport):
+    """A transport that sends every request to a validated address of its
+    host, as :func:`request_public_target` does, for a client that builds
+    its own requests (an SDK's). A redirect it follows is a new request,
+    validated the same way.
+
+    It sends nothing about the server beyond the request itself: an SDK's
+    ``x-stainless-*`` headers, which name the platform and its versions, are
+    dropped. ``max_bytes`` bounds a response body: an uncompressed one is
+    asked for, a compressed one is refused, and reading stops past the bound
+    with :class:`ResponseTooLargeError`."""
+
+    def __init__(
+        self,
+        *,
+        allow_private: bool = False,
+        max_bytes: int | None = None,
+        inner: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._allow_private = allow_private
+        self._max_bytes = max_bytes
+        self._inner = inner or httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        original = request.url
+        target = await resolve_validated_target_async(
+            str(original), allow_private=self._allow_private
+        )
+        headers = {
+            name: value
+            for name, value in request.headers.items()
+            if not name.lower().startswith("x-stainless")
+        }
+        if self._max_bytes is not None:
+            headers["accept-encoding"] = "identity"
+        last_exc: httpx.ConnectError | None = None
+        for address in target.addresses:
+            pinned = _pin_request(
+                request.method,
+                original,
+                str(address),
+                target.hostname,
+                headers=headers,
+                stream=request.stream,  # type: ignore[arg-type]
+                extensions=request.extensions,
+            )
+            began = time.perf_counter()
+            try:
+                response = await self._inner.handle_async_request(pinned)
+            except httpx.ConnectError as exc:
+                _log_sent(request.method, original, began, failure=exc)
+                last_exc = exc
+                continue
+            except httpx.HTTPError as exc:
+                _log_sent(request.method, original, began, failure=exc)
+                raise
+            _log_sent(request.method, original, began, status=response.status_code)
+            return await self._bounded(response)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"no validated address to connect to for {original!r}")
+
+    async def _bounded(self, response: httpx.Response) -> httpx.Response:
+        if self._max_bytes is None:
+            return response
+        encoding = response.headers.get("content-encoding", "identity").lower()
+        if encoding not in ("", "identity"):
+            # Its decoded size is not known until it is decoded.
+            await response.aclose()
+            raise ResponseTooLargeError(
+                self._max_bytes, status_code=response.status_code
+            )
+        return httpx.Response(
+            response.status_code,
+            headers=response.headers,
+            stream=_BoundedStream(
+                response.stream, self._max_bytes, response.status_code
+            ),
+            extensions=response.extensions,
+        )
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 async def request_public_target(

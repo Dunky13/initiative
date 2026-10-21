@@ -1,18 +1,20 @@
-"""Tests for AI generation egress hardening.
+"""AI work on a task or a file, on the connection the community resolves to.
 
-Ollama + custom generation both route through the pinned ``request_public_target``
-egress; ``allow_private`` is server-computed from the resolved connection (true
-only for an operator Ollama connection) and never from request input.
+The request path itself (each shape, the pinned egress, the errors) is
+``ai_provider_test``; this covers what generation asks for and what it makes
+of the answer.
 """
 
 import json
+from unittest.mock import patch
 
 import httpx
 import pytest
 
 from app.core.messages import AIMessages
 from app.schemas.ai_settings import AIProvider, ConnectionScope, ResolvedAISettings
-from app.services import ai_generation
+from app.services import ai_generation, ai_provider, safe_http
+from app.services.ai_provider import AIRequestError
 
 
 class _Task:
@@ -25,167 +27,97 @@ class _User:
     locale = "en"
 
 
-def _resolved(
-    provider: AIProvider, base_url: str | None, *, allow_private: bool
-) -> ResolvedAISettings:
-    return ResolvedAISettings(
-        enabled=True,
-        provider=provider,
-        api_key=None if provider == AIProvider.ollama else "test-key",
-        base_url=base_url,
-        model="test-model",
-        allow_private=allow_private,
-        scope=ConnectionScope.platform if allow_private else ConnectionScope.community,
-        source="platform" if allow_private else "community",
+def _resolving_to(monkeypatch, **overrides) -> list[tuple]:
+    """Resolve to one connection, and keep what is written of its health."""
+    resolved = ResolvedAISettings(
+        **{
+            "enabled": True,
+            "provider": AIProvider.groq,
+            "api_key": "test-key",
+            "model": "m",
+            "scope": ConnectionScope.community,
+            "connection_id": 3,
+            "source": "community",
+            **overrides,
+        }
     )
+    health: list[tuple] = []
+
+    async def resolve(*args, **kwargs):
+        return resolved
+
+    async def record_health(*args):
+        health.append(args)
+
+    monkeypatch.setattr(ai_generation, "resolve_ai_settings", resolve)
+    monkeypatch.setattr(ai_generation, "record_health", record_health)
+    return health
 
 
-class _Resp:
-    status_code = 200
+async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
+    sent: list[dict] = []
+    answer = {"items": [" Book the hall ", "", "x" * 300]}
 
-    def json(self):
-        return {"message": {"content": "generated text"}}
-
-
-async def test_custom_private_base_url_rejected(monkeypatch):
-    """A custom connection is always public (allow_private=False), so the pinned
-    egress refuses a private target — no member/guild path reaches a private
-    host."""
-
-    async def fake_resolve(*args, **kwargs):
-        return _resolved(AIProvider.custom, "http://10.0.0.1", allow_private=False)
-
-    monkeypatch.setattr(ai_generation, "resolve_ai_settings", fake_resolve)
-
-    with pytest.raises(ai_generation.AIGenerationError) as exc:
-        await ai_generation.generate_description(None, _User(), 1, _Task())
-    assert str(exc.value) == AIMessages.INVALID_BASE_URL
-
-
-async def test_ollama_private_permitted_and_pinned(monkeypatch):
-    """An operator Ollama connection (allow_private=True) reaches a private host,
-    and the request goes through the pinned egress with allow_private threaded
-    through."""
-    captured: dict = {}
-
-    async def fake_request(method, url, **kwargs):
-        captured["method"] = method
-        captured["url"] = url
-        captured["allow_private"] = kwargs.get("allow_private")
-        return _Resp()
-
-    async def fake_resolve(*args, **kwargs):
-        return _resolved(
-            AIProvider.ollama, "http://169.254.169.254:11434", allow_private=True
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "c1",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "m",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": json.dumps(answer)},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
         )
 
-    monkeypatch.setattr(ai_generation, "resolve_ai_settings", fake_resolve)
-    monkeypatch.setattr(ai_generation, "request_public_target", fake_request)
+    monkeypatch.setattr(
+        ai_provider,
+        "PinnedTransport",
+        lambda *, allow_private, max_bytes: safe_http.PinnedTransport(
+            allow_private=allow_private,
+            max_bytes=max_bytes,
+            inner=httpx.MockTransport(handler),
+        ),
+    )
+    health = _resolving_to(monkeypatch)
 
-    out = await ai_generation.generate_description(None, _User(), 1, _Task())
-    assert out == "generated text"
-    assert captured["allow_private"] is True
-    assert captured["method"] == "POST"
-    assert captured["url"].endswith("/api/chat")
+    with patch(
+        "app.services.webhook_target_url.socket.getaddrinfo",
+        return_value=[(2, 0, 0, "", ("93.184.216.34", 0))],
+    ):
+        steps = await ai_generation.generate_checklist(None, _User(), 1, _Task())
 
-
-async def test_ollama_generation_does_not_allow_private_for_guild_scope(monkeypatch):
-    """A guild-scoped Ollama connection (allow_private=False) cannot reach a
-    private host — the pinned egress refuses it."""
-
-    async def fake_resolve(*args, **kwargs):
-        return _resolved(
-            AIProvider.ollama, "http://10.1.2.3:11434", allow_private=False
-        )
-
-    monkeypatch.setattr(ai_generation, "resolve_ai_settings", fake_resolve)
-
-    with pytest.raises(ai_generation.AIGenerationError) as exc:
-        await ai_generation.generate_description(None, _User(), 1, _Task())
-    assert str(exc.value) == AIMessages.INVALID_BASE_URL
-
-
-_CHOICES = {"choices": [{"message": {"content": " generated text "}}]}
+    assert steps[0] == "Book the hall"
+    assert len(steps) == 2 and steps[1].endswith("...")
+    system = sent[0]["messages"][0]["content"]
+    assert '{"items":' in system
+    # The connection answered, so it is well.
+    assert health == [(ConnectionScope.community, 3, 1, None)]
 
 
 @pytest.mark.parametrize(
-    ("provider", "base_url", "url", "auth", "fields", "reply", "rejected"),
+    ("overrides", "code"),
     [
-        (
-            AIProvider.openai,
-            None,
-            "https://api.openai.com/v1/chat/completions",
-            {"authorization": "Bearer test-key"},
-            {"temperature": 0.7, "max_tokens": 500},
-            _CHOICES,
-            AIMessages.INVALID_API_KEY,
-        ),
-        (
-            AIProvider.anthropic,
-            None,
-            "https://api.anthropic.com/v1/messages",
-            {"x-api-key": "test-key", "anthropic-version": "2023-06-01"},
-            {"max_tokens": 500},
-            {"content": [{"text": " generated text "}]},
-            AIMessages.INVALID_API_KEY,
-        ),
-        (
-            AIProvider.ollama,
-            "https://93.184.216.34:11434/",
-            "https://93.184.216.34:11434/api/chat",
-            {},
-            {"stream": False},
-            {"message": {"content": " generated text "}},
-            AIMessages.PROVIDER_ERROR,
-        ),
-        (
-            AIProvider.custom,
-            "https://93.184.216.34/v1",
-            "https://93.184.216.34/v1/chat/completions",
-            {"authorization": "Bearer test-key"},
-            {"temperature": 0.7, "max_tokens": 500},
-            _CHOICES,
-            AIMessages.INVALID_API_KEY,
-        ),
+        ({"enabled": False, "provider": None}, AIMessages.NOT_ENABLED),
+        ({"enabled": False, "api_key": None}, AIMessages.NOT_CONFIGURED),
     ],
 )
-async def test_every_provider_through_one_request_path(
-    monkeypatch, provider, base_url, url, auth, fields, reply, rejected
-):
-    """Each provider's request carries its own endpoint, credentials and body
-    shape, its reply is read from where that provider puts the text, and a
-    rejected request reads as a bad key where one was sent, else as the
-    provider's error."""
-    sent: list[httpx.Request] = []
-    status = 200
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return httpx.Response(status, json=reply if status == 200 else {})
-
-    real_client = httpx.AsyncClient
-
-    class _Client(real_client):
-        def __init__(self, **kwargs):
-            super().__init__(**{**kwargs, "transport": httpx.MockTransport(handler)})
-
-    async def fake_resolve(*args, **kwargs):
-        return _resolved(provider, base_url, allow_private=False)
-
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
-    monkeypatch.setattr(ai_generation, "resolve_ai_settings", fake_resolve)
-
-    out = await ai_generation.generate_description(None, _User(), 1, _Task())
-    assert out == "generated text"
-    request = sent[0]
-    sent_to = f"{request.url.scheme}://{request.headers['host']}{request.url.path}"
-    assert sent_to == url
-    assert {k: request.headers.get(k) for k in auth} == auth
-    body = json.loads(request.content)
-    assert body["model"] == "test-model"
-    assert {k: body[k] for k in fields} == fields
-
-    status = 401
-    with pytest.raises(ai_generation.AIGenerationError) as exc:
+async def test_a_connection_that_cannot_answer_says_why(monkeypatch, overrides, code):
+    _resolving_to(monkeypatch, **overrides)
+    with pytest.raises(AIRequestError) as refused:
         await ai_generation.generate_description(None, _User(), 1, _Task())
-    assert str(exc.value) == rejected
+    assert refused.value.code == code
+
+
+async def test_an_empty_file_is_not_sent(monkeypatch):
+    _resolving_to(monkeypatch)
+    with pytest.raises(AIRequestError) as refused:
+        await ai_generation.generate_file_summary(None, _User(), 1, None, "Notes")
+    assert refused.value.code == AIMessages.DOCUMENT_EMPTY

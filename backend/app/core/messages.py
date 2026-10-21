@@ -376,6 +376,8 @@ class ToolLayoutMessages:
     TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
     # More of one plug-in's parts on an item than it may place there.
     TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
+    # A change that would hide every one of a target's lists.
+    ONE_LIST_SHOWN = "TOOL_LAYOUTS_ONE_LIST_SHOWN"
 
 
 class ProjectMessages:
@@ -1677,8 +1679,6 @@ class WebhookSubscriptionMessages:
 class AIMessages:
     INVALID_BASE_URL = "AI_INVALID_BASE_URL"
     CONNECTION_NOT_FOUND = "AI_CONNECTION_NOT_FOUND"
-    MEMBER_KEYS_DISABLED = "AI_MEMBER_KEYS_DISABLED"
-    MEMBER_KEY_NOT_FOUND = "AI_MEMBER_KEY_NOT_FOUND"
     INVALID_API_KEY = "AI_INVALID_API_KEY"
     NOT_ENABLED = "AI_NOT_ENABLED"
     #: No provider is chosen, or the chosen one needs a key and has none.
@@ -1690,6 +1690,16 @@ class AIMessages:
     DOCUMENT_EMPTY = "AI_DOCUMENT_EMPTY"
     #: The connection names a model its provider does not list.
     MODEL_NOT_FOUND = "AI_MODEL_NOT_FOUND"
+    #: The connection names no model yet.
+    MODEL_REQUIRED = "AI_MODEL_REQUIRED"
+    #: The community already has as many AI requests open as it may.
+    BUSY = "AI_BUSY"
+    #: The provider account has run out of credit or has a payment problem.
+    OUT_OF_CREDIT = "AI_OUT_OF_CREDIT"
+    #: A spend limit set on the provider account stopped the request.
+    SPEND_LIMIT_REACHED = "AI_SPEND_LIMIT_REACHED"
+    #: The provider kept refusing for too many requests.
+    RATE_LIMITED = "AI_RATE_LIMITED"
 
 
 class NativeMessages:

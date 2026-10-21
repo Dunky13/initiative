@@ -9,8 +9,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
 from app.models.platform.user import UserRole
-from app.models.tenant.ai_member_key import GuildAIMemberKey
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.services.platform import access_grants as access_grants_service
 from app.testing.factories import (
     create_auth_provider,
@@ -21,7 +19,6 @@ from app.testing.factories import (
     create_user,
     get_auth_headers,
 )
-from app.testing.schema_harness import route_session_to_guild
 
 
 async def _request_and_approve(client, *, requester, approver, guild, rung):
@@ -134,18 +131,14 @@ async def test_a_settings_only_superadmin_grant_reaches_ai_configuration(
     assert response.status_code == 200, response.text
 
 
-async def test_settings_grantee_deletion_purges_every_members_reference(
+async def test_settings_grantee_deletes_a_connection(
     client: AsyncClient, session: AsyncSession
 ):
     owner = await create_user(session, role=UserRole.owner)
-    member = await create_user(session)
     support = await create_user(session, role=UserRole.support)
     guild = await create_guild(session, creator=owner)
     await create_guild_membership(
         session, user=owner, guild=guild, role=CommunityRole.superadmin
-    )
-    await create_guild_membership(
-        session, user=member, guild=guild, role=CommunityRole.member
     )
     mode = await client.put(
         "/api/v1/settings/ai/platform/mode",
@@ -162,28 +155,6 @@ async def test_settings_grantee_deletion_purges_every_members_reference(
     assert created.status_code == 200, created.text
     connection_id = created.json()["id"]
 
-    member_headers = get_auth_headers(member)
-    key = await client.put(
-        f"/api/v1/c/{guild.id}/settings/ai/me/key",
-        headers=member_headers,
-        json={
-            "scope": "community",
-            "connection_id": connection_id,
-            "api_key": "sk-member",
-        },
-    )
-    assert key.status_code == 200, key.text
-    pref = await client.put(
-        f"/api/v1/c/{guild.id}/settings/ai/me/pref",
-        headers=member_headers,
-        json={
-            "scope": "community",
-            "connection_id": connection_id,
-            "enabled": True,
-        },
-    )
-    assert pref.status_code == 200, pref.text
-
     await _request_pair_and_approve(
         client,
         session,
@@ -199,23 +170,11 @@ async def test_settings_grantee_deletion_purges_every_members_reference(
     )
     assert deleted.status_code == 204, deleted.text
 
-    await route_session_to_guild(session, guild.id)
-    keys = (
-        await session.exec(
-            select(GuildAIMemberKey).where(
-                GuildAIMemberKey.connection_id == connection_id
-            )
-        )
-    ).all()
-    prefs = (
-        await session.exec(
-            select(GuildAIMemberPref).where(
-                GuildAIMemberPref.connection_id == connection_id
-            )
-        )
-    ).all()
-    assert keys == []
-    assert prefs == []
+    listed = await client.get(
+        f"/api/v1/c/{guild.id}/settings/ai/connections",
+        headers=get_auth_headers(owner),
+    )
+    assert listed.json() == []
 
 
 async def test_the_superadmin_grantee_reads_the_auth_controls(

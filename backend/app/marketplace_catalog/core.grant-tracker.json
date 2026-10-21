@@ -18,7 +18,7 @@
     "project": {
       "name": "Grant tracker",
       "icon": "💰",
-      "description": "One card per application. The due date is the deadline, so the calendar view shows what is coming.",
+      "description": "One card per application. The due date is the deadline, so the initiative's calendar shows what is coming.",
       "is_template": false,
       "start_date": null,
       "end_date": null,
@@ -429,7 +429,7 @@
     "project": {
       "name": "Grant tracker",
       "icon": "💰",
-      "description": "One card per application. The due date is the deadline, so the calendar view shows what is coming.",
+      "description": "One card per application. The due date is the deadline, so the initiative's calendar shows what is coming.",
       "is_template": false,
       "start_date": null,
       "end_date": null,

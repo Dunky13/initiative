@@ -7,7 +7,7 @@ the ones ``guild_template`` alone still carried, so the rules described a
 Postgres that would clear the column or take the row, and no Postgres ever did.
 ``app.models.tenant.cross_schema_refs_test`` now holds the line at declaring
 one; this is the other half, and the half that is load-bearing: an account with
-a row in each of those twelve tables, erased, and an assertion per table about
+a row in each of those tables, erased, and an assertion per table about
 what is actually left.
 
 Three outcomes appear below, and the distinction is the point:
@@ -43,8 +43,6 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
-from app.models.tenant.ai_member_key import GuildAIMemberKey
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.models.tenant.comment import Comment
 from app.models.tenant.event_reminder_dispatch import EventReminderDispatch
 from app.models.tenant.personal_item import PersonalItem
@@ -94,7 +92,7 @@ def _service_definition() -> dict:
 
 
 async def _seed(session: AsyncSession) -> SimpleNamespace:
-    """One member, and one row naming them in each of the twelve tables."""
+    """One member, and one row naming them in each of the tables."""
     keeper = await create_user(session, email=f"keeper-{secrets.token_hex(4)}@e.test")
     victim = await create_user(session, email=f"leaver-{secrets.token_hex(4)}@e.test")
     guild = await create_guild(session, creator=keeper)
@@ -119,18 +117,6 @@ async def _seed(session: AsyncSession) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     await route_session_to_guild(session, guild.id)
     rows = {
-        # Held in custody for them: an API key and the preference beside it.
-        "ai_key": GuildAIMemberKey(
-            user_id=victim.id,
-            connection_scope="community",
-            connection_id=1,
-        ),
-        "ai_pref": GuildAIMemberPref(
-            user_id=victim.id,
-            connection_scope="community",
-            connection_id=1,
-            enabled=True,
-        ),
         # A receipt that a reminder for this event reached this person.
         "dispatch": EventReminderDispatch(
             event_id=event.id,
@@ -246,19 +232,6 @@ async def _reread(session: AsyncSession, guild_id: int, model, row_id: int):
 
 
 # --- the row goes ------------------------------------------------------------
-
-
-async def test_the_key_held_for_them_goes(session: AsyncSession, role_session):
-    """An encrypted API key is held in custody, so erasure must not leave it."""
-    s = await _seed(session)
-    await user_service.hard_delete_user(await role_session("app_admin"), s.victim_id)
-    assert await _reread(session, s.guild_id, GuildAIMemberKey, s.ai_key) is None
-
-
-async def test_the_preference_beside_it_goes(session: AsyncSession, role_session):
-    s = await _seed(session)
-    await user_service.hard_delete_user(await role_session("app_admin"), s.victim_id)
-    assert await _reread(session, s.guild_id, GuildAIMemberPref, s.ai_pref) is None
 
 
 async def test_what_they_kept_goes(session: AsyncSession, role_session):
