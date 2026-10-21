@@ -254,6 +254,14 @@ async def test_a_private_address_is_reached_only_when_allowed(monkeypatch):
     assert await ai_provider.complete_text(allowed, JOB, PROMPT, guild_id=None) == "ok"
     assert fake.sent[0][0].url.host == "10.0.0.5"
 
+    # The operator's Ollama with no address is the one beside the server.
+    local = _target(AIProvider.ollama, api_key=None, allow_private=True)
+    with _resolves_to("127.0.0.1"):
+        await ai_provider.complete_text(local, JOB, PROMPT, guild_id=None)
+    request = fake.sent[1][0]
+    assert request.headers["host"] == "localhost:11434"
+    assert request.url.path == "/v1/chat/completions"
+
 
 def test_only_the_operators_own_servers_reach_private_addresses():
     for provider in (AIProvider.ollama, AIProvider.custom):
@@ -328,13 +336,11 @@ async def test_an_answer_that_does_not_fit_is_asked_for_once_more(monkeypatch):
 
 
 async def test_models_are_listed_by_name(monkeypatch, caplog):
+    catalog = ["zeta", "alpha"]
     fake = _Provider(
         monkeypatch,
         reply=lambda body: {
-            "data": [
-                {"id": "zeta", "object": "model"},
-                {"id": "alpha", "object": "model"},
-            ],
+            "data": [{"id": name, "object": "model"} for name in catalog],
             "object": "list",
         },
     )
@@ -343,6 +349,12 @@ async def test_models_are_listed_by_name(monkeypatch, caplog):
             "alpha",
             "zeta",
         ]
+
+    # A catalog past the cap is read only as far as the cap.
+    catalog = [f"m-{i}" for i in range(ai_provider.MODEL_LIST_CAP + 5)]
+    with _resolves_to(PUBLIC_IP):
+        listed = await ai_provider.list_models(_target(AIProvider.groq))
+    assert len(listed) == ai_provider.MODEL_LIST_CAP
 
     fake.status = 404
     fake.error = {

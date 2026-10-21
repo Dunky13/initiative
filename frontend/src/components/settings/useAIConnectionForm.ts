@@ -87,9 +87,7 @@ export const useAIConnectionForm = ({
   const providerConfig = form.provider ? PROVIDER_CONFIGS[form.provider] : null;
   const showApiKeyField = providerConfig?.hasApiKey ?? false;
   const showBaseUrlField = providerConfig?.requiresBaseUrl ?? false;
-  // A connection is saved once to reach its provider's list; after that it
-  // needs a model to be used.
-  const canSave = Boolean(form.provider && form.label && (!isEdit || form.model));
+  const canSave = Boolean(form.provider && form.label);
 
   const changeProvider = (value: string) => {
     if (!value) return;
@@ -129,9 +127,12 @@ export const useAIConnectionForm = ({
       mutations.update.mutate(
         { connectionId: connection.id, data: payload },
         {
-          onSuccess: () => {
+          onSuccess: (updated) => {
             toast.success(t("aiConnections.updated"));
-            onClose();
+            // Saved details are what the provider's list is read with; the
+            // dialog stays on the model until one is picked.
+            if (updated.model) onClose();
+            else onNeedsModel(updated);
           },
           onError: (error) =>
             toast.error(getErrorMessage(error, "settings:aiConnections.saveError")),
@@ -152,6 +153,7 @@ export const useAIConnectionForm = ({
     mutations.create.mutate(payload, {
       onSuccess: (created) => {
         toast.success(t("aiConnections.created"));
+        // A saved connection can read its provider's list of models.
         if (created.model) onClose();
         else onNeedsModel(created);
       },

@@ -1,7 +1,8 @@
 /**
  * A connection is used once it names a model, and the model comes from its
- * provider's list, which only a saved connection can reach. So a connection
- * without one says so, and editing it asks for one before it saves.
+ * provider's list, which is read with the saved details. So a connection
+ * without one says so, its details save on their own (a mistyped key is
+ * corrected before its list can be read), and the dialog stays on the model.
  */
 
 import { screen } from "@testing-library/react";
@@ -38,7 +39,7 @@ const mutations = () =>
     fetchModels: mutation(),
   }) as unknown as ConnectionMutations;
 
-const render = (connections: AIConnectionResponse[]) =>
+const render = (connections: AIConnectionResponse[], given = mutations()) =>
   renderWithProviders(
     <AIConnectionManager
       scope="community"
@@ -46,21 +47,27 @@ const render = (connections: AIConnectionResponse[]) =>
       isLoading={false}
       isError={false}
       providers={["anthropic", "openai"]}
-      mutations={mutations()}
+      mutations={given}
     />
   );
 
 describe("AIConnectionManager", () => {
-  it("asks for a model before a connection without one is saved", async () => {
-    render([connection()]);
+  it("saves a connection's details and stays on the model until one is picked", async () => {
+    const given = mutations();
+    vi.mocked(given.update.mutate).mockImplementation((_variables, options) =>
+      options?.onSuccess?.(connection(), _variables, undefined, undefined as never)
+    );
+    render([connection()], given);
 
     expect(screen.getByText("Needs a model")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
-
     expect(
       await screen.findByText("Pick a model to finish setting up this connection.")
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save connection" }));
+    expect(given.update.mutate).toHaveBeenCalledOnce();
+    expect(screen.getByRole("dialog", { name: "Edit connection" })).toBeInTheDocument();
   });
 
   it("leaves a connection with a model alone", () => {

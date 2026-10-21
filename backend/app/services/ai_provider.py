@@ -60,6 +60,8 @@ class Preset:
     shape: Shape
     #: The provider's own address. Without one, the connection gives it.
     base_url: str | None = None
+    #: Where a connection that gives no address is sent.
+    default_base_url: str | None = None
     needs_key: bool = True
     #: A server somebody runs. The operator's may be at a private address.
     self_hosted: bool = False
@@ -76,7 +78,12 @@ PRESETS: dict[AIProvider, Preset] = {
     AIProvider.xai: Preset(Shape.chat, "https://api.x.ai/v1"),
     AIProvider.together: Preset(Shape.chat, "https://api.together.ai/v1"),
     AIProvider.openrouter: Preset(Shape.chat, "https://openrouter.ai/api/v1"),
-    AIProvider.ollama: Preset(Shape.chat, needs_key=False, self_hosted=True),
+    AIProvider.ollama: Preset(
+        Shape.chat,
+        default_base_url="http://localhost:11434",
+        needs_key=False,
+        self_hosted=True,
+    ),
     AIProvider.custom: Preset(Shape.chat, needs_key=False, self_hosted=True),
 }
 
@@ -107,6 +114,7 @@ def _endpoint(provider: AIProvider, base_url: str | None) -> str:
     preset = PRESETS[provider]
     if preset.base_url is not None:
         return preset.base_url
+    base_url = base_url or preset.default_base_url
     if not base_url:
         raise AIRequestError(AIMessages.INVALID_BASE_URL)
     url = base_url.rstrip("/")
@@ -379,16 +387,23 @@ async def list_models(target: Target) -> list[str]:
     _check(target)
     timeout = 10.0
     try:
+        ids: list[str] = []
         if PRESETS[target.provider].shape is Shape.anthropic:
             async with _anthropic_client(target, timeout) as client:
-                ids = [m.id async for m in client.models.list(limit=MODEL_LIST_CAP)]
+                async for model in client.models.list(limit=MODEL_LIST_CAP):
+                    ids.append(model.id)
+                    if len(ids) == MODEL_LIST_CAP:
+                        break
         else:
             async with _openai_client(target, timeout) as client:
-                ids = [m.id async for m in client.models.list()]
+                async for model in client.models.list():
+                    ids.append(model.id)
+                    if len(ids) == MODEL_LIST_CAP:
+                        break
     except AIRequestError:
         raise
     except Exception as exc:
         raise AIRequestError(
             _failure_code(exc, target.provider, sent_key=bool(target.api_key))
         ) from exc
-    return sorted(ids)[:MODEL_LIST_CAP]
+    return sorted(ids)
