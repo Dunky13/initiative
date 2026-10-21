@@ -198,6 +198,27 @@ git log --oneline --grep="bump version" -n 1
 - ❌ Do NOT add changelog entries for minor refactoring or internal changes
 - ❌ Do NOT put new changes under an already-released version number
 
+#### Screenshots
+
+A change people will want to see can carry a picture, shown under its bullet
+in the version dialog and on **What's new**, in light or dark to match the app.
+
+1. Add a shot in `frontend/e2e/shots/<name>.shot.ts`: walk to the screen, then
+   `await shoot(page, "<name>")` (or `shoot(page, "<name>", locator)` for one
+   part of it). `gantt.shot.ts` is the example; `barovia.ts` walks to the
+   seed's best-filled project.
+2. With the dev environment running on its seed data, run
+   `cd frontend && pnpm screenshots` (or `pnpm screenshots e2e/shots/<name>.shot.ts`).
+   It signs in as `admin1@example.com` and writes
+   `frontend/public/release-images/<name>.webp` and `<name>.dark.webp`.
+3. Look them over, then put the picture under its bullet, by its repository path
+   so GitHub draws it too:
+   `![What it shows](frontend/public/release-images/<name>.webp)`.
+
+Name a picture for what it shows, not the release; a name already used would
+replace a released picture. `releaseImages.test.ts` fails when a picture the
+changelog names is missing either theme or its alt text.
+
 ### Announcements
 
 The changelog is the record; an **announcement** is the interruption. It is a
@@ -492,6 +513,9 @@ cd frontend && pnpm test:run
 # The browser journeys (frontend/e2e/*.journey.ts) against a fresh install:
 # start docker-compose.example.yml with the image to check, then
 cd frontend && pnpm exec playwright install chromium && JOURNEYS_URL=http://localhost:8173 pnpm test:journeys
+
+# The release screenshots (frontend/e2e/shots), of the running dev environment
+cd frontend && pnpm screenshots
 
 # Run frontend tests in watch mode
 cd frontend && pnpm test

@@ -62,8 +62,8 @@ frontend/orval.config.js
 frontend/orval.config.d.ts
 frontend/playwright.config.js
 frontend/playwright.config.d.ts
-frontend/e2e/*.js
-frontend/e2e/*.d.ts
+frontend/e2e/**/*.js
+frontend/e2e/**/*.d.ts
 frontend/openapi.json
 
 # Firebase (keep template, ignore actual config)
@@ -89,4 +89,6 @@ backend/.testmondata*
 
 # Browser journeys (frontend/e2e): reports and failure traces
 frontend/playwright-report/
+# The session the release screenshots sign in with (frontend/e2e/shots)
+frontend/e2e/.auth/
 frontend/test-results/
