@@ -31,6 +31,7 @@ import { useTaskGroupings } from "@/hooks/useTaskGroupings";
 import {
   DAY,
   type DragHold,
+  draggedAcross,
   draggedDates,
   GANTT_SCALES,
   type GanttRow,
@@ -51,6 +52,7 @@ import { taskFields } from "@/lib/layouts/tasks";
 import { cn } from "@/lib/utils";
 import {
   type AxisTick,
+  addUnits,
   axisTicks,
   floorToUnit,
   majorSegments,
@@ -193,14 +195,23 @@ export const ProjectTasksGanttView = ({
   const major = useMemo(() => majorSegments(range, scale), [range, scale]);
   const weekends = useMemo(() => (scale === "month" ? [] : weekendBands(range)), [range, scale]);
 
-  // Opens on today, a third of the way in.
+  // Opens on today, a third of the way in, and again on another scale. When
+  // the window widens (tasks load, a filter changes) the dates in view stay.
   const scroller = useRef<HTMLDivElement>(null);
   const scrollToToday = useCallback(() => {
     const element = scroller.current;
     if (element) element.scrollLeft = Math.max(0, x(now) - (element.clientWidth - LABEL_WIDTH) / 3);
   }, [x, now]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: once per scale, not on every move of the window
-  useLayoutEffect(scrollToToday, [scale]);
+  const drawn = useRef<{ scale: GanttScale; start: number } | null>(null);
+  useLayoutEffect(() => {
+    const before = drawn.current;
+    drawn.current = { scale, start: range.start };
+    const element = scroller.current;
+    if (!before || before.scale !== scale) scrollToToday();
+    else if (element && before.start !== range.start) {
+      element.scrollLeft += x(before.start);
+    }
+  }, [scale, range.start, x, scrollToToday]);
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -258,7 +269,7 @@ export const ProjectTasksGanttView = ({
     if (current.from !== undefined) {
       // A click on an empty track is not a choice of dates; a drag across it is.
       if (current.moved) {
-        void write(current.task, scheduledDates(current.from, current.from + current.days * DAY));
+        void write(current.task, scheduledDates(current.from, current.days));
       }
       return;
     }
@@ -275,16 +286,13 @@ export const ProjectTasksGanttView = ({
   const spanIn = (key: string, task: TaskListRead): GanttSpan | null => {
     const span = spanOf(task);
     if (!drag || drag.key !== key) return span;
-    if (drag.from !== undefined) {
-      const to = drag.from + drag.days * DAY;
-      return { start: Math.min(drag.from, to), end: Math.max(drag.from, to) + DAY, kind: "bar" };
-    }
+    if (drag.from !== undefined) return { ...draggedAcross(drag.from, drag.days), kind: "bar" };
     if (!span) return null;
-    const days = heldDays(span, drag.hold, drag.days) * DAY;
+    const days = heldDays(span, drag.hold, drag.days);
     return {
       ...span,
-      start: drag.hold === "end" ? span.start : span.start + days,
-      end: drag.hold === "start" ? span.end : span.end + days,
+      start: drag.hold === "end" ? span.start : addUnits(span.start, "day", days),
+      end: drag.hold === "start" ? span.end : addUnits(span.end, "day", days),
     };
   };
 
@@ -614,7 +622,7 @@ const TaskTrack = ({
 
   return (
     <div
-      className={cn("relative", undated && canMove && "cursor-crosshair")}
+      className={cn("relative", undated && canMove && "cursor-crosshair touch-pan-y")}
       style={{ width }}
       title={undated && canMove && !dragging ? scheduleHint : undefined}
       onPointerDown={undated && canMove ? onSchedule : undefined}
@@ -636,7 +644,7 @@ const TaskTrack = ({
           className={cn(
             "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px]",
             done ? "bg-muted-foreground/60" : "bg-primary",
-            canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+            canMove ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer"
           )}
           style={{ left: x(span.start) + (x(span.end) - x(span.start)) / 2 }}
           title={tooltip}
@@ -650,7 +658,7 @@ const TaskTrack = ({
             "absolute top-1/2 h-4 -translate-y-1/2 rounded",
             done ? "bg-muted-foreground/40" : "bg-primary/80",
             dragging && "ring-2 ring-ring",
-            canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+            canMove ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer"
           )}
           style={{ left: x(span.start), width: Math.max(4, x(span.end) - x(span.start)) }}
           title={tooltip}
@@ -660,12 +668,12 @@ const TaskTrack = ({
           {canMove ? (
             <>
               <span
-                className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize"
+                className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize touch-none"
                 onPointerDown={(event) => onPress(event, "start")}
                 {...pointer}
               />
               <span
-                className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize"
+                className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize touch-none"
                 onPointerDown={(event) => onPress(event, "end")}
                 {...pointer}
               />

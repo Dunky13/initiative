@@ -188,9 +188,19 @@ export const draggedDates = (
   return dates;
 };
 
-/** The dates a task with none gets from a drag across `from` to `to` (each a
- *  day's start): it starts on the first and is due on the last. */
-export const scheduledDates = (from: number, to: number) => ({
-  start_date: new Date(Math.min(from, to)).toISOString(),
-  due_date: new Date(Math.max(from, to)).toISOString(),
-});
+/** The days a drag across an empty track covers, from the day it began on
+ *  (a day's start) and `days` along, counted in calendar days. */
+export const draggedAcross = (from: number, days: number): Pick<GanttSpan, "start" | "end"> => {
+  const to = addUnits(from, "day", days);
+  return { start: Math.min(from, to), end: addUnits(Math.max(from, to), "day", 1) };
+};
+
+/** The dates a task with none gets from such a drag: it starts on the first
+ *  day and is due on the last. */
+export const scheduledDates = (from: number, days: number) => {
+  const { start, end } = draggedAcross(from, days);
+  return {
+    start_date: new Date(start).toISOString(),
+    due_date: new Date(addUnits(end, "day", -1)).toISOString(),
+  };
+};

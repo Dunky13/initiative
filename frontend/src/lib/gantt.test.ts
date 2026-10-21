@@ -94,10 +94,14 @@ describe("gantt", () => {
     expect(heldDays(span, "move", -5)).toBe(-5);
   });
 
-  it("schedules a task across the days dragged, either way", () => {
-    expect(scheduledDates(day("2026-03-05"), day("2026-03-02"))).toEqual({
+  it("schedules a task across the days dragged, either way, in calendar days", () => {
+    expect(scheduledDates(day("2026-03-05"), -3)).toEqual({
       start_date: new Date(day("2026-03-02")).toISOString(),
       due_date: new Date(day("2026-03-05")).toISOString(),
     });
+    // Across a clock change, the last day is still its own day.
+    expect(scheduledDates(day("2026-10-31"), 2).due_date).toBe(
+      new Date(day("2026-11-02")).toISOString()
+    );
   });
 });
