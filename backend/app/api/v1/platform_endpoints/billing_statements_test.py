@@ -1,41 +1,38 @@
-"""The statement verb on the billing boundary: ``POST /billing/plugin-entitlement``.
+"""The statements verb on the billing boundary: ``POST /billing/statements``.
 
+* only a statement signed by billing's statement key is taken, never one
+  signed by its boundary key;
 * only a listing whose package names terms for it takes a statement, and only
   under the shipped root;
 * a higher version replaces the one held, and an equal or lower one changes
-  nothing;
+  nothing; the answer is the version held;
 * a statement that lands is kept and handed, exactly as sent, to the
   installed plug-in as its ``entitlement`` hook, and one for a plug-in not
   installed waits for it;
 * a statement without the statement header, the issuer's ``iss`` or every
-  claim with its type is refused (422 ``INVALID_STATEMENT``) with nothing
-  consumed.
+  claim with its type is refused (``INVALID_STATEMENT``), and each statement
+  in a batch is answered on its own.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac as hmac_lib
+import base64
+
 import json
-import secrets
-import time
-from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core import config as config_module
 from app.core.messages import BillingMessages
 from app.db import post_commit
 from app.models.platform.plugin_entitlement import PluginEntitlement
 from app.services import sweep_timers
 from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.tenant import plugin_connection_flows as flows
+from app.testing import billing_boundary
 from app.testing import (
     billing_guild_ref,
     create_guild,
@@ -50,29 +47,10 @@ from app.testing import (
 PAID_UID = "PAYDAPP0000001"
 PAID_ID = "tests.paid"
 
-_keypair = ed25519.Ed25519PrivateKey.generate()
-_PRIVATE_PEM = _keypair.private_bytes(
-    serialization.Encoding.PEM,
-    serialization.PrivateFormat.PKCS8,
-    serialization.NoEncryption(),
-).decode()
-_PUBLIC_PEM = (
-    _keypair.public_key()
-    .public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    .decode()
-)
-_HMAC_SECRET = "test-billing-hmac-secret"
-
 
 @pytest.fixture(autouse=True)
 def _configure_billing(monkeypatch):
-    monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", _PUBLIC_PEM)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", _HMAC_SECRET)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET_PREVIOUS", None)
-    # The outbound side stays off: these tests are about the inbound verb.
-    monkeypatch.setattr(config_module.settings, "BILLING_SERVICE_URL", None)
+    billing_boundary.configure(monkeypatch)
 
 
 @pytest.fixture
@@ -96,38 +74,27 @@ def hooks(monkeypatch) -> list[tuple[str, int, dict]]:
     return delivered
 
 
-def _token() -> str:
-    now = datetime.now(timezone.utc)
-    return jwt.encode(
-        {
-            "jti": secrets.token_hex(8),
-            "sub": "initiative-billing",
-            "aud": "initiative:billing",
-            "iss": "initiative-billing",
-            "iat": int(now.timestamp()),
-            "exp": now + timedelta(seconds=300),
-        },
-        _PRIVATE_PEM,
-        algorithm="EdDSA",
+class _Answer:
+    """One statement's answer in a batch, shaped like the response it was."""
+
+    def __init__(self, response):
+        self.status_code = response.status_code
+        self.text = response.text
+        self._body = response.json()
+
+    def json(self) -> dict:
+        if "results" not in self._body:
+            return self._body
+        (result,) = self._body["results"]
+        return {k: v for k, v in result.items() if k != "community_ref"}
+
+
+async def _send(client: AsyncClient, payload: dict) -> _Answer:
+    response = await billing_boundary.post(
+        client, "statements", {"statements": [payload["statement"]]}
     )
-
-
-async def _send(client: AsyncClient, payload: dict):
-    path = "/api/v1/billing/plugin-entitlement"
-    body = json.dumps(payload).encode()
-    ts = str(int(time.time()))
-    message = "\n".join(["POST", path, ts, hashlib.sha256(body).hexdigest()])
-    headers = {
-        "Authorization": f"Bearer {_token()}",
-        "X-Billing-Timestamp": ts,
-        "X-Billing-Signature": hmac_lib.new(
-            _HMAC_SECRET.encode(), message.encode(), hashlib.sha256
-        ).hexdigest(),
-        "Content-Type": "application/json",
-    }
-    response = await client.post(path, content=body, headers=headers)
     await _drained()
-    return response
+    return _Answer(response)
 
 
 async def _drained() -> None:
@@ -193,8 +160,11 @@ async def test_a_listing_without_terms_takes_no_statement(
         client, await _statement(guild.id, version=1, values={"active": True})
     )
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == BillingMessages.LISTING_HAS_NO_TERMS
+    assert response.status_code == 200
+    assert response.json() == {
+        "listing_uid": PAID_UID,
+        "error": BillingMessages.LISTING_HAS_NO_TERMS,
+    }
     assert await _held(session, guild.id) is None
 
 
@@ -211,7 +181,7 @@ async def test_terms_under_another_root_take_no_statement(
         client, await _statement(guild.id, version=1, values={"active": True})
     )
 
-    assert response.status_code == 409
+    assert response.json()["error"] == BillingMessages.LISTING_HAS_NO_TERMS
     assert await _held(session, guild.id) is None
 
 
@@ -227,7 +197,7 @@ async def test_versions_only_move_forward(
         client, await _statement(guild.id, version=2, values={"plan": "pro"})
     )
     assert first.status_code == 200, first.text
-    assert first.json() == {"listing_uid": PAID_UID, "version": 2, "applied": True}
+    assert first.json() == {"listing_uid": PAID_UID, "version": 2}
 
     older = await _send(
         client, await _statement(guild.id, version=1, values={"plan": "basic"})
@@ -237,18 +207,14 @@ async def test_versions_only_move_forward(
     )
     for response in (older, same):
         assert response.status_code == 200
-        assert response.json() == {
-            "listing_uid": PAID_UID,
-            "version": 2,
-            "applied": False,
-        }
+        assert response.json() == {"listing_uid": PAID_UID, "version": 2}
     held = await _held(session, guild.id)
     assert held is not None and (held.version, held.values) == (2, {"plan": "pro"})
 
     newer = await _send(
         client, await _statement(guild.id, version=3, values={"plan": "team"})
     )
-    assert newer.json()["applied"] is True
+    assert newer.json()["version"] == 3
     held = await _held(session, guild.id)
     assert held is not None and (held.version, held.values) == (3, {"plan": "team"})
 
@@ -313,7 +279,10 @@ async def test_an_unknown_community_consumes_nothing(
         },
     )
 
-    assert response.status_code == 404
+    assert response.json() == {
+        "listing_uid": PAID_UID,
+        "error": BillingMessages.COMMUNITY_NOT_FOUND,
+    }
 
 
 @pytest.mark.parametrize(
@@ -349,17 +318,18 @@ async def test_a_malformed_statement_is_refused(
 
     response = await _send(client, await _statement(guild.id, **claims))
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == BillingMessages.INVALID_STATEMENT
+    assert response.status_code == 200
+    assert response.json() == {"error": BillingMessages.INVALID_STATEMENT}
     assert await _held(session, guild.id) is None
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        pytest.param({}, id="no-statement"),
-        pytest.param({"statement": 1}, id="statement-number"),
-        pytest.param({"statement": "x", "version": 2}, id="extra-field"),
+        pytest.param({}, id="no-statements"),
+        pytest.param({"statements": []}, id="none-sent"),
+        pytest.param({"statements": [1]}, id="statement-number"),
+        pytest.param({"statements": ["x"], "version": 2}, id="extra-field"),
     ],
 )
 async def test_a_malformed_body_is_refused(
@@ -370,7 +340,7 @@ async def test_a_malformed_body_is_refused(
         session, uid=PAID_UID, public_id=PAID_ID, access="entitled"
     )
 
-    response = await _send(client, body)
+    response = await billing_boundary.post(client, "statements", body)
 
     assert response.status_code == 422
     assert response.json()["detail"] == BillingMessages.INVALID_PAYLOAD
@@ -395,8 +365,7 @@ async def test_a_statement_that_is_not_a_jws_is_refused(
 
     response = await _send(client, {"statement": statement})
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == BillingMessages.INVALID_STATEMENT
+    assert response.json() == {"error": BillingMessages.INVALID_STATEMENT}
 
 
 async def test_a_statement_with_a_cut_signature_is_refused(
@@ -410,5 +379,29 @@ async def test_a_statement_with_a_cut_signature_is_refused(
 
     response = await _send(client, {"statement": statement[:-8]})
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == BillingMessages.INVALID_STATEMENT
+    assert response.json() == {"error": BillingMessages.INVALID_STATEMENT}
+
+
+async def test_a_statement_signed_by_the_boundary_key_is_refused(
+    client: AsyncClient, session: AsyncSession, shipped_root
+):
+    """The boundary key signs requests, never entitlements: a statement it
+    signed is refused however well formed, so that key alone can't grant a
+    plug-in anything."""
+    guild = await create_guild(session)
+    await create_listing_with_terms(
+        session, uid=PAID_UID, public_id=PAID_ID, access="entitled"
+    )
+    good = await _jws(guild.id, version=1, values={"active": True})
+    header, claims, _signature = good.split(".")
+    forged = jwt.encode(
+        json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4))),
+        billing_boundary.PRIVATE_PEM,
+        algorithm="EdDSA",
+        headers={"typ": "initiative-entitlement+jwt", "kid": "test-statement-key"},
+    )
+
+    response = await _send(client, {"statement": forged})
+
+    assert response.json() == {"error": BillingMessages.INVALID_STATEMENT}
+    assert await _held(session, guild.id) is None

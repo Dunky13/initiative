@@ -2718,7 +2718,6 @@ export interface CommunityClaimRulesResponse {
 export interface CommunityCreate {
   name: string;
   description?: string | null;
-  plan?: string | null;
   owner_user_id?: number | null;
 }
 
@@ -5240,7 +5239,6 @@ export const EmailCadence = {
 export interface NewCommunity {
   name: string;
   description?: string | null;
-  plan?: string | null;
 }
 
 /**

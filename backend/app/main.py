@@ -153,11 +153,10 @@ async def lifespan(app: FastAPI):
         )
     if settings.BILLING_URL and not billing_support_handoff_enabled():
         # The Guilds tab shows its billing button whenever a portal URL is set;
-        # without the signing pair every click fails closed (503).
+        # without the handoff key every click fails closed (503).
         logger.warning(
-            "BILLING_URL is set but BILLING_SUPPORT_HANDOFF_SECRET / "
-            "BILLING_SUPPORT_HANDOFF_KID are not; the operator billing handoff "
-            "will fail closed until both are configured."
+            "BILLING_URL is set but HANDOFF_SIGNING_PRIVATE_KEY_PEM is not; every "
+            "handoff into billing will fail closed until it is configured."
         )
     async with SystemSessionLocal() as session:
         # Prime the process-wide storage config snapshot from the DB so the
@@ -192,6 +191,7 @@ async def lifespan(app: FastAPI):
     from app.db import timers
     from app.services import sweep_timers
     from app.services.platform import (
+        billing_changes,
         email_outbox,
         notice_outbox,
         notify_bus,
@@ -212,6 +212,8 @@ async def lifespan(app: FastAPI):
     notify_bus.register(timers.WAKE_CHANNEL, sweep_timers.hint)
     notify_bus.register(notice_outbox.CHANNEL, notice_outbox.hint)
     notify_bus.register(email_outbox.CHANNEL, email_outbox.hint)
+    # A committed change row: billing is pinged to read its change log.
+    notify_bus.register(billing_changes.CHANNEL, billing_changes.hint)
     await notify_bus.start()
 
     # Write collaborative bodies that have changed on an interval, so what a

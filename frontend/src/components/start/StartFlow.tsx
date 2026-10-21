@@ -326,7 +326,6 @@ const StartSteps = ({
       madeCommunity.current = await createCommunity({
         name: final.communityName.trim(),
         description: final.description.trim() || undefined,
-        plan: pickedPlan,
       });
       commit("finishing");
     } catch (err) {
@@ -390,7 +389,7 @@ const StartSteps = ({
       }
       if (planTab.current) {
         toast.info(t("communities:billingSetup.opening", { community: community.name }));
-        void openPortal(community.id, "upgrade", planTab.current);
+        void openPortal(community.id, "upgrade", planTab.current, pickedPlan);
         planTab.current = null;
       } else if (wantsPlan) {
         setPlanByButton(true);
@@ -417,7 +416,7 @@ const StartSteps = ({
       username: final.username.trim().toLowerCase(),
       timezone: final.timezone,
       captcha_token: captcha ? captchaToken : undefined,
-      community: newCommunity(final, pickedPlan),
+      community: newCommunity(final),
       birthdate: age.birthdate || undefined,
       username_offer: handleOffer ?? undefined,
     };
@@ -710,7 +709,9 @@ const StartSteps = ({
           <PeopleStep
             communityId={made.id}
             origin={getServerOrigin() ?? window.location.origin}
-            planButton={planByButton ? () => void openPortal(made.id, "upgrade") : undefined}
+            planButton={
+              planByButton ? () => void openPortal(made.id, "upgrade", null, pickedPlan) : undefined
+            }
             onDone={() => void leave(() => landOn(made.id, null))}
             doneLabel={t("start.people.goToCommunity", { community: made.name })}
           />

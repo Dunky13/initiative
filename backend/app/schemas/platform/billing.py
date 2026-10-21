@@ -1,8 +1,14 @@
-"""Payloads for the billing service endpoints.
+"""Payloads for the billing service's verbs (``POST /api/v1/billing/*``).
 
-Parsed manually from the verified request body (see
-``app.services.platform.billing``) rather than by FastAPI's body machinery;
-excluded from the OpenAPI schema.
+Every verb takes a batch of up to :data:`BATCH_MAX` items and answers each on
+its own, so one bad item never refuses the rest. The outer body is parsed
+first; each item is validated by itself, and one that doesn't validate is
+answered with an error beside the others. Parsed from the verified request
+body (see ``app.services.platform.billing_envelope``) rather than by FastAPI's
+body machinery, and excluded from the OpenAPI schema.
+
+The reference implementation of these shapes is billing's simulator,
+``billing/devtools/initiative_v2.py`` in initiative-billing.
 """
 
 from __future__ import annotations
@@ -14,98 +20,99 @@ from datetime import date
 from enum import Enum
 from typing import Annotated, Any, Optional
 
+import jwt
 from pydantic import (
     ConfigDict,
     Field,
-    PrivateAttr,
     StringConstraints,
     ValidationError,
     field_validator,
-    model_validator,
 )
 
 from app.core.messages import BillingMessages
-from app.models.platform.billing import BillingSource
+from app.core.security import PUBLIC_KEY_JWT_ALGORITHM
 from app.models.platform.identity_ref import REF_MAX_LENGTH
 from app.models.platform.marketplace import UID_LENGTH
 from app.models.platform.guild import BILLING_SETTABLE_STATUSES, CommunityStatus
-from app.schemas.base import RawTextStr, SanitizedBaseModel
+from app.schemas.base import SanitizedBaseModel
+
+#: The most items one call carries.
+BATCH_MAX = 500
+#: The highest version billing may send: a JSON number every client reads
+#: exactly.
+MAX_VERSION = 2**53 - 1
+
+CommunityRef = Annotated[
+    str, StringConstraints(min_length=1, max_length=REF_MAX_LENGTH)
+]
 
 
-_ACTOR_REQUIRED_SOURCES = frozenset(
-    {BillingSource.support_manual, BillingSource.operator_manual}
-)
+class BillingBatch(SanitizedBaseModel):
+    """A batch's outer shape: its items are validated one at a time."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
-class BillingCommunityTierApply(SanitizedBaseModel):
-    """Body of ``POST /billing/community-tier``.
+class CommunitySyncRequest(BillingBatch):
+    """Body of ``communities/sync``."""
 
-    Tier *definitions* live in the billing service's own database; what
-    crosses this boundary is only the display label (``tier_name``) and the
-    **computed** caps initiative already owns (``max_storage_bytes`` /
-    ``max_users`` / ``max_guests``), plus the lifecycle ``status``.
-
-    The writable fields use omit-to-skip sentinel semantics (the service
-    inspects ``model_fields_set``): omit a field to leave it untouched, send
-    ``null`` to reset it to unlimited (or, for ``tier_name``, to no paid
-    tier). ``event_id`` is the idempotency key claimed in
-    ``billing_event_log`` before any write — a retried delivery with the
-    same id is a safe no-op.
-    """
-
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-    event_id: str = Field(min_length=1, max_length=128)
-    source: BillingSource
-    # Acting human for manual ops (support grant id / staff id); NULL for
-    # automated webhook-driven writes.
-    actor: Optional[str] = Field(default=None, max_length=128)
-
-    tier_name: Optional[str] = Field(default=None, max_length=64)
-    max_storage_bytes: Optional[int] = Field(default=None, ge=0)
-    max_users: Optional[int] = Field(default=None, ge=1)
-    max_guests: Optional[int] = Field(default=None, ge=0)
-    status: Optional[CommunityStatus] = None
-    feature_keys: Optional[list[str]] = Field(default=None, max_length=64)
-    plan_is_free: Optional[bool] = None
-
-    @model_validator(mode="after")
-    def _support_source_is_storage_only(self) -> "BillingCommunityTierApply":
-        """support_manual may only change the storage cap, and must name an
-        actor; other fields require paddle_webhook or platinum_invoice.
-        (The cannot-lower rule for the storage cap needs the current DB value
-        and lives in the service — see ``apply_guild_tier``.)"""
-        if self.source in _ACTOR_REQUIRED_SOURCES and not self.actor:
-            raise ValueError(BillingMessages.ACTOR_REQUIRED)
-        if self.source is BillingSource.support_manual:
-            forbidden = {"tier_name", "max_users", "max_guests", "status"}
-            if forbidden & self.model_fields_set:
-                raise ValueError(BillingMessages.SUPPORT_SOURCE_RESTRICTED)
-        # Suspension is the platform operator's, and deletion is deletion's.
-        if self.status is not None and self.status not in BILLING_SETTABLE_STATUSES:
-            raise ValueError(BillingMessages.STATUS_NOT_SETTABLE)
-        return self
+    communities: list[dict[str, Any]] = Field(min_length=1, max_length=BATCH_MAX)
 
 
-class BillingCommunityTierRead(SanitizedBaseModel):
-    """State of the billing-writable surface after (or instead of) a write.
+class CommunityFields(SanitizedBaseModel):
+    """What billing holds a community to, whole, at one version. Every field
+    is sent every time: billing sends its desired state, never a patch, so a
+    capability or a cap that drops off a plan is withdrawn by the same write.
 
-    ``applied`` is False when the event id had already been claimed — the
-    values shown are the current state, untouched by the replayed delivery.
+    ``None`` is unlimited for a cap and no paid plan for ``tier_name``."""
 
-    The guild is echoed by the reference the caller sent, which is the only
-    name for it the two services share.
-    """
+    model_config = ConfigDict(extra="forbid")
 
-    community_ref: str
-    tier_name: Optional[str] = None
-    max_storage_bytes: Optional[int] = None
-    max_users: Optional[int] = None
-    max_guests: Optional[int] = None
+    tier_name: Optional[str] = Field(max_length=64)
+    max_storage_bytes: Optional[int] = Field(ge=0)
+    max_users: Optional[int] = Field(ge=1)
+    max_guests: Optional[int] = Field(ge=0)
+    feature_keys: list[str] = Field(max_length=64)
+    plan_is_free: bool
     status: CommunityStatus
-    feature_keys: list[str] = Field(default_factory=list)
-    plan_is_free: Optional[bool] = None
-    member_count: int
-    applied: bool
+
+    @field_validator("status")
+    @classmethod
+    def _billing_sets_it(cls, value: CommunityStatus) -> CommunityStatus:
+        # Suspension is the platform operator's, and deletion is deletion's.
+        if value not in BILLING_SETTABLE_STATUSES:
+            raise ValueError(BillingMessages.STATUS_NOT_SETTABLE)
+        return value
+
+
+class CommunitySyncItem(SanitizedBaseModel):
+    """One community's state at ``version``. Taken only when ``version`` is
+    newer than the one held; answered with the version held either way."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    community_ref: CommunityRef
+    version: int = Field(ge=1, le=MAX_VERSION, strict=True)
+    fields: CommunityFields
+
+
+class StatementsRequest(BillingBatch):
+    """Body of ``statements``: signed entitlement statements, each the
+    current one for its (community, listing)."""
+
+    statements: list[str] = Field(min_length=1, max_length=BATCH_MAX)
+
+
+class CommunitiesReadRequest(BillingBatch):
+    """Body of ``communities/read``."""
+
+    community_refs: list[CommunityRef] = Field(min_length=1, max_length=BATCH_MAX)
+
+
+class NoticesRequest(BillingBatch):
+    """Body of ``notices``."""
+
+    notices: list[dict[str, Any]] = Field(min_length=1, max_length=BATCH_MAX)
 
 
 class BillingCommunityNoticeKind(str, Enum):
@@ -119,131 +126,33 @@ class BillingCommunityNoticeKind(str, Enum):
     pause_reminder = "pause_reminder"
 
 
-#: The sources that send a community notice. Only Paddle's, for now: a trial
-#: and a pause are Paddle's, and billing times its notices off the dates Paddle
-#: reports.
-_NOTICE_SOURCES = frozenset({BillingSource.paddle_webhook})
+class NoticeItem(SanitizedBaseModel):
+    """One notice for a community's seat. No free text crosses.
 
+    ``key`` is billing's idempotency key for the notice, so a retried delivery
+    tells nobody twice. ``recipient_user_ref`` is the billing reference of the
+    person billing holds as the community's owner, or None; either way the
+    community's current superadmins hear it when that person is not a member
+    any more. A field this deployment doesn't know is ignored: the words are
+    ours, so nothing billing adds can reach anybody."""
 
-class BillingCommunityNotice(SanitizedBaseModel):
-    """Body of ``POST /billing/community-notice``.
+    model_config = ConfigDict(extra="ignore")
 
-    Billing asks for one of a fixed set of notices to reach a community's seat;
-    no free text crosses. ``recipient_user_ref`` is the billing reference of the
-    person billing holds as the community's owner — the one a portal handoff
-    signs — or None, and either way the community's current superadmins are who
-    hears it when that person is not a member any more. ``event_id`` is claimed
-    in ``billing_event_log`` like a tier write's, so a retried delivery tells
-    nobody twice.
-    """
-
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-    event_id: str = Field(min_length=1, max_length=128)
-    source: BillingSource
+    key: str = Field(min_length=1, max_length=128)
+    community_ref: CommunityRef
     kind: BillingCommunityNoticeKind
-    recipient_user_ref: Optional[str] = Field(default=None, max_length=REF_MAX_LENGTH)
     #: The day the notice is about: the trial's end, or the day a paused
     #: community goes on hold.
     day: date
-
-    @model_validator(mode="after")
-    def _source_sends_notices(self) -> "BillingCommunityNotice":
-        if self.source not in _NOTICE_SOURCES:
-            raise ValueError(BillingMessages.NOTICE_SOURCE_NOT_ALLOWED)
-        return self
+    recipient_user_ref: Optional[str] = Field(default=None, max_length=REF_MAX_LENGTH)
 
 
-class BillingCommunityNoticeRead(SanitizedBaseModel):
-    """Whether this delivery told anybody.
+class ChangesRequest(BillingBatch):
+    """Body of ``changes``: the log after ``after`` (an opaque cursor this
+    deployment handed out, or None for the start)."""
 
-    False for a replayed event id (the first delivery did the telling), for a
-    community that is deleted or suspended, and for one with nobody to tell.
-    """
-
-    delivered: bool
-
-
-class BillingUsageRequest(SanitizedBaseModel):
-    """Body of ``POST /billing/usage`` — the usage read.
-
-    The guild rides the signed body (not a query string) so the envelope's
-    HMAC covers it, like every other verb on this boundary.
-    """
-
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-
-
-class BillingUsageRead(SanitizedBaseModel):
-    """Current stored bytes, member count and guest count for one guild — the
-    figures ``enforce_storage_quota`` and the ``max_users`` and ``max_guests``
-    checks read. Billing needs the counts so a purchase is never cut below the
-    people already in the community. Read-only; the app never pushes usage
-    anywhere."""
-
-    community_ref: str
-    usage_bytes: int
-    member_count: int
-    guest_count: int
-
-
-class BillingCommunityNameRequest(SanitizedBaseModel):
-    """Body of ``POST /billing/community-name``.
-
-    The guild rides the signed body rather than a query string, so the
-    envelope's HMAC covers it — like every other verb on this boundary.
-    """
-
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-
-
-class BillingCommunityNameRead(SanitizedBaseModel):
-    """What a guild calls itself, so a person is shown that and not a reference.
-
-    A reference is what the two services key on and is unreadable by design;
-    somebody looking at a page about their own community should see its name.
-    Nothing else about the guild travels with it.
-    """
-
-    community_ref: str
-    name: str
-
-
-#: The most guilds one ``POST /billing/community-names`` may ask about.
-COMMUNITY_NAMES_MAX = 200
-
-
-class BillingCommunityNamesRequest(SanitizedBaseModel):
-    """Body of ``POST /billing/community-names``: the batch of
-    ``/community-name``, for a page that names many guilds at once."""
-
-    community_refs: list[
-        Annotated[str, StringConstraints(min_length=1, max_length=REF_MAX_LENGTH)]
-    ] = Field(min_length=1, max_length=COMMUNITY_NAMES_MAX)
-
-
-class BillingCommunityNamesRead(SanitizedBaseModel):
-    """What each guild asked about calls itself. One that is gone, or that the
-    reference does not name, is left out rather than refused: a page naming
-    many should name the rest."""
-
-    names: list[BillingCommunityNameRead]
-
-
-class BillingCommunityStatusRequest(SanitizedBaseModel):
-    """Body of ``POST /billing/community-status``.
-
-    The guild rides the signed body rather than a query string, so the
-    envelope's HMAC covers it — like every other verb on this boundary.
-    """
-
-    community_ref: str = Field(min_length=1, max_length=REF_MAX_LENGTH)
-
-
-class BillingCommunityStatusRead(SanitizedBaseModel):
-    """Where one guild is in its lifecycle, ``deleted`` included."""
-
-    community_ref: str
-    status: CommunityStatus
+    after: Optional[str] = Field(default=None, max_length=64)
+    limit: int = Field(default=BATCH_MAX, ge=1, le=BATCH_MAX)
 
 
 class BillingPortalHandoffResponse(SanitizedBaseModel):
@@ -277,7 +186,7 @@ class EntitlementStatementClaims(SanitizedBaseModel):
     plug-in, and ``version`` rises with every change.
 
     Claims this deployment does not read (``iat``, ``kid`` in the header) are
-    left to the plug-in, which verifies the whole statement.
+    left to the plug-in, which verifies the whole statement again.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -322,16 +231,25 @@ def _json_object(segment: str) -> dict[str, Any]:
     return decoded
 
 
-def read_entitlement_statement(statement: str) -> EntitlementStatementClaims:
-    """The claims of a compact-JWS entitlement statement, read without checking
-    its signature, which is the plug-in's to verify.
+def read_entitlement_statement(
+    statement: str, keys: tuple[Any, ...]
+) -> EntitlementStatementClaims:
+    """The claims of a compact-JWS entitlement statement signed by one of
+    ``keys`` (the statement key, never the boundary key).
 
-    Raises ``ValueError`` unless the header is exactly
+    Raises ``ValueError`` unless the statement is at most
+    :data:`MAX_ENTITLEMENT_STATEMENT_BYTES`, the header is exactly
     :data:`ENTITLEMENT_STATEMENT_ALG` with :data:`ENTITLEMENT_STATEMENT_TYPE`,
-    the signature segment is the length of an Ed25519 signature, and the claims
-    hold everything :class:`EntitlementStatementClaims` names.
+    the signature segment is the length of an Ed25519 signature and verifies
+    under one of ``keys``, and the claims hold everything
+    :class:`EntitlementStatementClaims` names.
     """
     try:
+        if (
+            not isinstance(statement, str)
+            or len(statement) > MAX_ENTITLEMENT_STATEMENT_BYTES
+        ):
+            raise ValueError("not a statement")
         parts = statement.split(".")
         if len(parts) != 3:
             raise ValueError("not a compact JWS")
@@ -344,43 +262,22 @@ def read_entitlement_statement(statement: str) -> EntitlementStatementClaims:
             raise ValueError("not an entitlement statement header")
         if len(_b64url(signature_segment)) != _ED25519_SIGNATURE_BYTES:
             raise ValueError("not an Ed25519 signature")
+        if not any(_signed_by(statement, key) for key in keys):
+            raise ValueError("not signed by the statement key")
         return EntitlementStatementClaims.model_validate(_json_object(claims_segment))
     except (ValueError, binascii.Error, UnicodeDecodeError, ValidationError) as exc:
         raise ValueError(BillingMessages.INVALID_STATEMENT) from exc
 
 
-class BillingPluginEntitlementApply(SanitizedBaseModel):
-    """Body of ``POST /billing/plugin-entitlement``: one signed statement.
-
-    ``statement`` is a compact JWS the issuer signed; everything the verb acts
-    on comes from its claims (:attr:`claims`), and the statement itself is kept
-    and handed to the plug-in exactly as sent. A version no higher than the
-    one held changes nothing, so a replay, a retry or a full re-send is
-    harmless.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    statement: RawTextStr = Field(
-        min_length=1, max_length=MAX_ENTITLEMENT_STATEMENT_BYTES, strict=True
-    )
-    _claims: Optional[EntitlementStatementClaims] = PrivateAttr(default=None)
-
-    @model_validator(mode="after")
-    def _read_claims(self) -> "BillingPluginEntitlementApply":
-        self._claims = read_entitlement_statement(self.statement)
-        return self
-
-    @property
-    def claims(self) -> EntitlementStatementClaims:
-        assert self._claims is not None  # set by the validator
-        return self._claims
-
-
-class BillingPluginEntitlementRead(SanitizedBaseModel):
-    """What the deployment holds after the verb: the stored version, and
-    whether this statement replaced it."""
-
-    listing_uid: str
-    version: int
-    applied: bool
+def _signed_by(statement: str, key: Any) -> bool:
+    try:
+        jwt.decode(
+            statement,
+            key,
+            algorithms=[PUBLIC_KEY_JWT_ALGORITHM],
+            issuer=ENTITLEMENT_STATEMENT_ISSUER,
+            options={"verify_aud": False, "require": ["iss"]},
+        )
+    except jwt.PyJWTError:
+        return False
+    return True

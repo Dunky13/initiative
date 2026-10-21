@@ -123,9 +123,7 @@ describe("SettingsUsersPage seat cap", () => {
 
     await waitFor(() => expect(mintHandoff).toHaveBeenCalledWith(community.id));
     await waitFor(() =>
-      expect(tab.location.href).toBe(
-        "https://billing.example.com/upgrade?community=42&lang=en#handoff=TOK"
-      )
+      expect(tab.location.href).toBe("https://billing.example.com/upgrade?lang=en#handoff=TOK")
     );
     openSpy.mockRestore();
   });

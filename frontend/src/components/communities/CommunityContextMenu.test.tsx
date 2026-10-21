@@ -103,9 +103,7 @@ describe("CommunityContextMenu invite action", () => {
     expect(mintInvite).not.toHaveBeenCalled();
     await waitFor(() => expect(mintHandoff).toHaveBeenCalledWith(community.id));
     await waitFor(() =>
-      expect(tab.location.href).toBe(
-        "https://billing.example.com/upgrade?community=42&lang=en#handoff=TOK"
-      )
+      expect(tab.location.href).toBe("https://billing.example.com/upgrade?lang=en#handoff=TOK")
     );
     openSpy.mockRestore();
   });
@@ -128,9 +126,7 @@ describe("CommunityContextMenu billing action", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Manage billing" }));
 
     await waitFor(() =>
-      expect(tab.location.href).toBe(
-        "https://billing.example.com/manage?community=42&lang=en#handoff=TOK"
-      )
+      expect(tab.location.href).toBe("https://billing.example.com/manage?lang=en#handoff=TOK")
     );
     openSpy.mockRestore();
   });

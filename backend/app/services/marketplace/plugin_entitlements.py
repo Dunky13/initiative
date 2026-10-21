@@ -52,7 +52,6 @@ from app.models.tenant.plugin_hook_delivery import PluginHookDelivery
 from app.services.marketplace import registration_lookup
 from app.services.marketplace.catalog import REGISTRY_SOURCE
 from app.services.marketplace.package_terms import ListingTerms
-from app.services.platform import billing_ping
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +64,7 @@ __all__ = [
     "StoredStatement",
     "UsageOutcome",
     "after_install",
-    "after_uninstall",
     "deliver_entitlement",
-    "erased",
     "entitlement_satisfied",
     "listing_terms",
     "read_statement",
@@ -236,15 +233,16 @@ async def gated_listings(
     }
 
 
-def action_url(guild_id: int, listing_uid: str) -> Optional[str]:
+def action_url(listing_uid: str) -> Optional[str]:
     """Where a community acts on its entitlement for a listing: the
-    deployment's billing portal, on the community's manage page with the
-    listing's purchase open, or ``None`` with no portal. The client opens it
-    with a portal handoff, as it opens every portal page."""
+    deployment's billing portal, on the manage page with the listing's
+    purchase open, or ``None`` with no portal. The client opens it with a
+    portal handoff, which is what names the community: no id of ours is in
+    the address."""
     base = (settings.BILLING_URL or "").strip().rstrip("/")
     if not base:
         return None
-    return f"{base}/manage?community={int(guild_id)}&app={quote(listing_uid, safe='')}"
+    return f"{base}/manage?app={quote(listing_uid, safe='')}"
 
 
 async def store_statement(
@@ -353,13 +351,6 @@ async def record_usage(
             await session.rollback()
             return UsageOutcome(quantity=held_quantity, decreased=True)
         await session.commit()
-    billing_ping.notify_usage_reported(
-        guild_id,
-        listing_uid=listing_uid,
-        meter=meter,
-        period=period,
-        quantity=quantity,
-    )
     return UsageOutcome(quantity=quantity)
 
 
@@ -472,38 +463,11 @@ async def deliver_entitlement(guild_id: int, listing_uid: str) -> bool:
 async def _installed(guild_id: int, listing_uid: str) -> None:
     if await listing_terms(listing_uid) is None:
         return
-    billing_ping.notify_plugin_install(
-        guild_id, listing_uid=listing_uid, event="installed"
-    )
     await deliver_entitlement(guild_id, listing_uid)
 
 
-async def _uninstalled(guild_id: int, listing_uid: str) -> None:
-    if await listing_terms(listing_uid) is None:
-        return
-    billing_ping.notify_plugin_install(
-        guild_id, listing_uid=listing_uid, event="uninstalled"
-    )
-
-
-async def erased(guild_id: int, listing_uid: str) -> None:
-    """The community erased the plug-in's data and the plug-in answered: tell
-    the issuer, for a listing with terms. Called by the community-hook worker
-    once the ``erase`` hook is settled."""
-    if await listing_terms(listing_uid) is None:
-        return
-    billing_ping.notify_plugin_install(
-        guild_id, listing_uid=listing_uid, event="erased"
-    )
-
-
 def after_install(session: AsyncSession, guild_id: int, listing_uid: str) -> None:
-    """Once ``session`` commits an install of ``listing_uid``: tell the issuer,
-    and hand the plug-in the statement already held for the community."""
+    """Once ``session`` commits an install of ``listing_uid``: hand the
+    plug-in the statement already held for the community. The issuer learns
+    of the install from the change log (``app.services.platform.billing_changes``)."""
     post_commit.after_commit(session, lambda: _installed(guild_id, listing_uid))
-
-
-def after_uninstall(session: AsyncSession, guild_id: int, listing_uid: str) -> None:
-    """Once ``session`` commits the removal of an install: tell the issuer.
-    The statement is kept for a later install."""
-    post_commit.after_commit(session, lambda: _uninstalled(guild_id, listing_uid))

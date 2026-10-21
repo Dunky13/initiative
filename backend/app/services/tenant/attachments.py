@@ -20,6 +20,7 @@ from app.core.messages import AttachmentMessages
 from app.core.image_headers import read_image_header
 from app.db.advisory_locks import LockNamespace, advisory_lock
 from app.db.query import ids_in
+from app.services.platform import billing_changes
 from app.services.storage import get_guild_storage
 
 logger = logging.getLogger(__name__)
@@ -336,7 +337,10 @@ async def _drop_upload_rows(session, filenames: Set[str]) -> Set[str]:
         .where(Upload.held_at.is_(None))  # type: ignore[union-attr]
         .returning(Upload.filename)
     )
-    return set(result.scalars().all())
+    dropped = set(result.scalars().all())
+    if dropped:
+        billing_changes.storage_moved(session)
+    return dropped
 
 
 async def release_uploads(
@@ -561,6 +565,8 @@ async def copy_uploads(
             )
         )
         copies[by_name[source.filename]] = f"{UPLOADS_URL_PREFIX}{guild_id}/{name}"
+    if copies:
+        billing_changes.storage_moved(session, guild_id)
     return copies
 
 
@@ -783,7 +789,10 @@ async def purge_initiative_uploads(session, initiative_ids: Iterable[int]) -> Se
         .where(Upload.held_at.is_(None))  # type: ignore[union-attr]
         .returning(Upload.filename)
     )
-    return set(result.scalars().all())
+    dropped = set(result.scalars().all())
+    if dropped:
+        billing_changes.storage_moved(session)
+    return dropped
 
 
 def detect_mime_type(content: bytes, filename: str | None = None) -> str | None:
@@ -922,6 +931,8 @@ async def store_upload(
             claimed_at=None if initiative_id is None else datetime.now(timezone.utc),
         )
     )
+    # What billing is told the community stores, once this commits.
+    billing_changes.storage_moved(session, guild_id)
     return f"{UPLOADS_URL_PREFIX}{guild_id}/{filename}"
 
 

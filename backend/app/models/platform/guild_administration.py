@@ -116,6 +116,13 @@ class GuildAdministration(SQLModel, table=True):
     billing_status: Optional[str] = Field(
         default=None, sa_column=Column(String(16), nullable=True)
     )
+    #: The version of billing's state this guild holds: a write at a version
+    #: no newer than this is answered with it and changes nothing. 0 until
+    #: billing first writes.
+    billing_version: int = Field(
+        default=0,
+        sa_column=Column(BigInteger, nullable=False, server_default="0"),
+    )
 
     guild: Optional["Guild"] = Relationship(
         back_populates="administration",

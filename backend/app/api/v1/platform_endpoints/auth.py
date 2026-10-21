@@ -569,10 +569,8 @@ async def _register_account(
                     detail=AuthMessages.UNABLE_TO_CREATE_USER,
                 )
             guild_id = guild.id
-            # The account was made with a guild of its own; claim it for them.
-            await guilds_service.welcome_new_guild(
-                guild_id, owner_user_id=user_id, plan=details.community.plan
-            )
+            # The account was made with a guild of its own; welcome them to it.
+            await guilds_service.welcome_new_guild(guild_id, owner_user_id=user_id)
     except IntegrityError as exc:  # pragma: no cover
         await session.rollback()
         logger.exception("Failed to register user due to integrity error")

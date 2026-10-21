@@ -64,17 +64,21 @@ export const useBillingPortal = () => {
     [hasBilling]
   );
 
+  // No id of ours is in the address: the handoff in its fragment is what
+  // names the community to the portal.
   const pageUrl = useCallback(
-    (communityId: number, page: BillingPortalPage): string | null =>
+    (page: BillingPortalPage, plan?: string): string | null =>
       billing
-        ? `${billing.url}/${page}?community=${communityId}&lang=${encodeURIComponent(lang)}`
+        ? `${billing.url}/${page}?lang=${encodeURIComponent(lang)}${
+            plan ? `&plan=${encodeURIComponent(plan)}` : ""
+          }`
         : null,
     [billing, lang]
   );
 
   const portalUrl = useCallback(
     async (communityId: number, page: BillingPortalPage): Promise<string | null> => {
-      const base = pageUrl(communityId, page);
+      const base = pageUrl(page);
       if (!base) return null;
       const { handoff_token } = await createCommunityBillingHandoff(communityId);
       return `${base}#handoff=${encodeURIComponent(handoff_token)}`;
@@ -113,9 +117,16 @@ export const useBillingPortal = () => {
     [canSell, reserveTab]
   );
 
+  /** `plan` is a catalog tier the portal's page opens on, such as the one
+   *  picked while starting a community. */
   const openPortal = useCallback(
-    async (communityId: number, page: BillingPortalPage, reserved?: Window | null) => {
-      const base = pageUrl(communityId, page);
+    async (
+      communityId: number,
+      page: BillingPortalPage,
+      reserved?: Window | null,
+      plan?: string
+    ) => {
+      const base = pageUrl(page, plan);
       if (!base) return;
       await openAddress(communityId, base, reserved);
     },

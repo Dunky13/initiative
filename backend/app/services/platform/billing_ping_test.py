@@ -1,162 +1,54 @@
-"""The membership ping to billing.
+"""Initiative's requests to billing: the ping, and the reads.
 
 Pinned properties:
 
-* FOSS gating — with billing unconfigured (the self-host default) the code
-  path is a strict no-op: no task, no outbound call;
-* one ping per membership change, dispatched by the membership services;
-* the payload carries the guild id and a fresh event id ONLY — no member
-  data, no PII, no member count;
-* the signature binds method/path/timestamp/body exactly like the inbound
-  envelope, keyed by the shared HMAC secret;
-* a failing billing service never surfaces into the join/leave path.
+* FOSS gating — with billing unconfigured (the self-host default) nothing is
+  sent;
+* the ping carries nothing: an empty body, signed in the v2 envelope with
+  Initiative's handoff key under ``initiative-billing:boundary``;
+* a read carries only the community's reference, signed the same way under
+  ``initiative-billing:reads``, and its answer is taken only when it holds;
+* a failing billing service never surfaces into the caller.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 
 import httpx
 import pytest
 
-from app.core import config as config_module
-from app.db import post_commit
+from app.core.security import load_verification_keys
 from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
+from app.services.platform import billing_envelope as envelope
 from app.services.platform import billing_ping
-from app.services.platform import guilds as guilds_service
 from app.services.platform.identity_refs import existing_ref
-from app.testing import create_guild, create_user, route_session_to_guild
-
-
-_SECRET = "ping-test-secret"
+from app.testing import create_guild
+from app.testing.billing_boundary import OTHER_PUBLIC_PEM, configure_outbound
 
 
 @pytest.fixture
 def billing_configured(monkeypatch):
-    monkeypatch.setattr(
-        config_module.settings, "BILLING_SERVICE_URL", "https://billing.internal"
+    configure_outbound(monkeypatch, "https://billing.internal")
+
+
+def _verify(request: httpx.Request, *, audience: str) -> envelope.Verified:
+    """The request's envelope, verified as billing verifies it."""
+    scheme, _, token = request.headers["Authorization"].partition(" ")
+    assert scheme == "Bearer"
+    return envelope.verify(
+        token,
+        keys=load_verification_keys(OTHER_PUBLIC_PEM),
+        issuer=envelope.INITIATIVE,
+        audience=audience,
+        method=request.method,
+        path=request.url.path,
+        body=request.content,
     )
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", _SECRET)
-
-
-@pytest.fixture
-def sent_pings(monkeypatch):
-    """Capture dispatched pings without any network."""
-    calls: list[int] = []
-
-    async def _capture(guild_id: int) -> None:
-        calls.append(guild_id)
-
-    monkeypatch.setattr(billing_ping, "_send_membership_ping", _capture)
-    return calls
 
 
 def test_disabled_by_default():
     assert billing_ping.billing_ping_enabled() is False
-
-
-async def test_unconfigured_is_a_strict_noop(sent_pings):
-    billing_ping.notify_membership_changed(123)
-    await post_commit.settle_all()
-    assert sent_pings == []
-
-
-async def test_configured_dispatches_one_ping(billing_configured, sent_pings):
-    billing_ping.notify_membership_changed(123)
-    await post_commit.settle_all()
-    assert sent_pings == [123]
-
-
-def test_payload_has_no_pii_and_verifiable_signature(billing_configured):
-    url, body, headers = billing_ping.build_membership_ping("gbil_test42")
-    assert url == "https://billing.internal/api/v1/pings/membership"
-
-    payload = json.loads(body)
-    # The guild's reference + an event id ONLY: no emails, names, user ids or
-    # member counts, and no row id of ours either.
-    assert set(payload) == {"community_ref", "event_id"}
-    assert payload["community_ref"] == "gbil_test42"
-    assert payload["event_id"]
-
-    message = "\n".join(
-        [
-            "POST",
-            "/api/v1/pings/membership",
-            headers["X-Billing-Timestamp"],
-            hashlib.sha256(body).hexdigest(),
-        ]
-    ).encode()
-    expected = hmac.new(_SECRET.encode(), message, hashlib.sha256).hexdigest()
-    assert headers["X-Billing-Signature"] == expected
-
-
-def test_event_ids_are_unique_per_ping(billing_configured):
-    ids = {
-        json.loads(billing_ping.build_membership_ping("gbil_test1")[1])["event_id"]
-        for _ in range(5)
-    }
-    assert len(ids) == 5
-
-
-async def test_send_failure_never_raises(billing_configured, monkeypatch):
-    class _DownClient:
-        def __init__(self, *a, **k): ...
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, *a, **k):
-            raise httpx.ConnectError("billing is down")
-
-    monkeypatch.setattr(billing_ping.httpx, "AsyncClient", _DownClient)
-    # Must not raise — a dead billing service cannot fail a join.
-    await billing_ping._send_membership_ping(7)
-
-
-async def test_membership_insert_fires_exactly_one_ping(
-    session, billing_configured, sent_pings
-):
-    guild = await create_guild(session)
-    user = await create_user(session, email="ping-join@example.com")
-
-    await guilds_service.ensure_membership(session, guild_id=guild.id, user_id=user.id)
-    await post_commit.settle_all()
-    assert sent_pings == [guild.id]
-
-    # Re-join / role refresh is not a membership change: no second ping.
-    await guilds_service.ensure_membership(session, guild_id=guild.id, user_id=user.id)
-    await post_commit.settle_all()
-    assert sent_pings == [guild.id]
-
-    # Removal also cleans the guild's initiative memberships (tenant schema),
-    # so the session must be routed to the guild first.
-    await route_session_to_guild(session, guild.id)
-    await guilds_service.remove_user_from_guild(
-        session, guild_id=guild.id, user_id=user.id, actor_user_id=user.id
-    )
-    await post_commit.settle_all()
-    assert sent_pings == [guild.id, guild.id]
-    await session.rollback()
-
-
-async def test_noop_removal_does_not_ping(session, billing_configured, sent_pings):
-    """Removing a user who isn't a member deletes nothing, so — like a
-    re-join — it must not nudge billing."""
-    guild = await create_guild(session)
-    stranger = await create_user(session, email="ping-stranger@example.com")
-
-    await route_session_to_guild(session, guild.id)
-    await guilds_service.remove_user_from_guild(
-        session, guild_id=guild.id, user_id=stranger.id, actor_user_id=stranger.id
-    )
-    await post_commit.settle_all()
-    assert sent_pings == []
-    await session.rollback()
 
 
 _REAL_ASYNC_CLIENT = httpx.AsyncClient
@@ -252,12 +144,7 @@ async def test_plan_summary_sends_only_the_ref_signed(
     assert str(request.url) == "https://billing.internal/api/v1/plan-summary"
     body = request.content
     assert json.loads(body) == {"community_ref": "gbil_known"}
-    ts = request.headers["X-Billing-Timestamp"]
-    message = "\n".join(
-        ["POST", "/api/v1/plan-summary", ts, hashlib.sha256(body).hexdigest()]
-    ).encode()
-    expected = hmac.new(_SECRET.encode(), message, hashlib.sha256).hexdigest()
-    assert request.headers["X-Billing-Signature"] == expected
+    _verify(request, audience=envelope.TO_BILLING_READS)
 
 
 async def test_plan_summary_ignores_fields_it_does_not_know(
@@ -315,36 +202,27 @@ async def test_plan_summary_unreachable_is_none(
     assert await billing_ping.guild_plan_summary(7) is None
 
 
-async def test_a_lifecycle_ping_names_only_a_guild_billing_already_knows(
-    session, billing_configured, monkeypatch
-):
-    """Never mints a reference."""
-    posted: list[bytes] = []
-
-    class _Client:
-        def __init__(self, *a, **k): ...
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, *, content, headers):
-            assert url == "https://billing.internal/api/v1/pings/lifecycle"
-            posted.append(content)
-
-    monkeypatch.setattr(billing_ping.httpx, "AsyncClient", _Client)
-    unknown = await create_guild(session)
-    await billing_ping._send_lifecycle_ping(unknown.id)
-    assert posted == []
-
-    known = await create_guild(session)
-    ref = await billing_ping.billing_ref(IdentityEntity.guild, known.id)
-    await billing_ping._send_lifecycle_ping(known.id)
-    assert [json.loads(body)["community_ref"] for body in posted] == [ref]
+async def test_the_ping_is_empty_and_signed(billing_configured, monkeypatch):
+    seen = _answering(monkeypatch, lambda r: httpx.Response(200, json={"ok": True}))
+    await billing_ping.nudge()
+    (request,) = seen
+    assert str(request.url) == "https://billing.internal/api/v1/pings"
+    assert request.content == b"{}"
+    _verify(request, audience=envelope.TO_BILLING)
+    # A read's audience doesn't open the ping's door, nor the other way round.
+    with pytest.raises(envelope.EnvelopeRefused):
+        _verify(request, audience=envelope.TO_BILLING_READS)
 
 
-def test_each_ping_goes_to_its_own_path(billing_configured):
-    assert billing_ping.build_membership_ping("gbil_x")[0].endswith("/pings/membership")
-    assert billing_ping.build_lifecycle_ping("gbil_x")[0].endswith("/pings/lifecycle")
+async def test_the_ping_is_a_noop_unconfigured(monkeypatch):
+    seen = _answering(monkeypatch, lambda r: httpx.Response(200))
+    await billing_ping.nudge()
+    assert seen == []
+
+
+async def test_a_failing_ping_never_raises(billing_configured, monkeypatch):
+    def _down(request):
+        raise httpx.ConnectError("down")
+
+    _answering(monkeypatch, _down)
+    await billing_ping.nudge()

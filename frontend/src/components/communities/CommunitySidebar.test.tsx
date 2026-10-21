@@ -236,9 +236,7 @@ describe("CommunitySidebar community creation", () => {
 
     await waitFor(() => expect(mintMock).toHaveBeenCalledWith(42));
     await waitFor(() =>
-      expect(tab.location.href).toBe(
-        "https://billing.example.com/upgrade?community=42&lang=en#handoff=TOK"
-      )
+      expect(tab.location.href).toBe("https://billing.example.com/upgrade?lang=en#handoff=TOK")
     );
     openSpy.mockRestore();
   });

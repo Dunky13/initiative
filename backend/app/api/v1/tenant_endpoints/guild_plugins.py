@@ -898,7 +898,7 @@ async def read_uninstall_notice(
     notice = await billing_ping.plugin_uninstall_notice(
         guild_context.guild_id, listing_uid=listing_uid, locale=locale
     )
-    fallback = plugin_entitlements.action_url(guild_context.guild_id, listing_uid)
+    fallback = plugin_entitlements.action_url(listing_uid)
     if notice is None:
         return CommunityPluginUninstallNotice(managed=True, action_url=fallback)
     return CommunityPluginUninstallNotice(

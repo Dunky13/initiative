@@ -1033,42 +1033,33 @@ class Settings(BaseSettings):
     # the membership ping is a no-op, and guild caps/status are governed
     # solely by what the operator sets (PATCH /settings/communities/{id}).
     #
-    # Inbound calls from the billing service (initiative-billing). Requests
-    # carry an EdDSA service JWT (verified against this Ed25519 public key) plus an
-    # HMAC-SHA256 over METHOD\nPATH\nTIMESTAMP\nsha256(body) keyed by the
-    # shared secret. Both must be configured or the /billing endpoints
-    # refuse every request.
+    # Billing's requests to Initiative carry a signed envelope: a compact
+    # EdDSA JWS that binds the method, the path and the body's hash, lives 60
+    # seconds and is used once (``app.services.platform.billing_envelope``).
+    # It's verified against this Ed25519 public key. Unset, the /billing
+    # endpoints refuse every request.
     #
-    # The public key accepts more than one key, as concatenated PEM blocks, so
-    # billing can rotate its signing key without downtime: append the new key,
-    # let billing start signing with it, then drop the old block. A token is
-    # accepted if any block verifies it. The HMAC has a second accepted value
-    # for the same staged rotation protocol.
+    # The key accepts more than one, as concatenated PEM blocks, so billing
+    # can rotate its key without downtime: append the new key, let billing
+    # start signing with it, then drop the old block.
     BILLING_PUBLIC_KEY_PEM: str | None = None
-    BILLING_HMAC_SECRET: str | None = None
-    # Second accepted HMAC value during a staged rotation. It may hold the next
-    # value before the cutover or the old value afterwards; clear it only once
-    # every billing instance signs with BILLING_HMAC_SECRET.
-    BILLING_HMAC_SECRET_PREVIOUS: str | None = None
-    # Outbound base URL of the billing service, for the fire-and-forget
-    # membership-change ping (guild id + event id only — no member data).
-    # The ping is dispatched only when this AND BILLING_HMAC_SECRET are set.
+    # The key billing signs entitlement statements with: a different key from
+    # the one above, so a request signed with the boundary key can't carry a
+    # forged statement. Concatenated PEM blocks, as above. Required with
+    # BILLING_PUBLIC_KEY_PEM.
+    BILLING_STATEMENT_PUBLIC_KEY_PEM: str | None = None
+    # Outbound base URL of the billing service: the ping that says the change
+    # log moved, and the signed reads (plan summary, payment issue, uninstall
+    # notice). Both are signed with HANDOFF_SIGNING_PRIVATE_KEY_PEM; with
+    # either unset, nothing is sent.
     BILLING_SERVICE_URL: str | None = None
     # Public base URL of an external billing portal, surfaced to the SPA via
     # /config. Unset (the default) ⇒ the SPA shows NO tier label, upgrade, or
     # manage-billing UI; the usage panel still shows caps/usage (operator-set
     # numbers). Set ⇒ the link-out buttons appear: the OSS core defers to an
-    # external service.
+    # external service. Every handoff into it, the support and operator
+    # consoles' included, is signed with HANDOFF_SIGNING_PRIVATE_KEY_PEM.
     BILLING_URL: str | None = None
-    # Signing material for the operator handoff into the billing portal's
-    # support console, shared with that service. Unset (the default) ⇒ the
-    # Guilds tab renders no billing button and the mint endpoint 503s. The
-    # key id selects which of the receiver's keys to verify against, so the
-    # pair can be rotated without downtime.
-    BILLING_SUPPORT_HANDOFF_SECRET: str | None = None
-    BILLING_SUPPORT_HANDOFF_KID: str | None = None
-    BILLING_OPERATOR_HANDOFF_SECRET: str | None = None
-    BILLING_OPERATOR_HANDOFF_KID: str | None = None
 
     # --- Marketplace registry --------------------------------------------
     # The registry is a TUF repository of listings on a static host, verified

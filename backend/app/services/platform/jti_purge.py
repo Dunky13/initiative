@@ -1,4 +1,5 @@
-"""One periodic worker that prunes every one-shot replay-guard table.
+"""One periodic worker that prunes every one-shot replay-guard table, and
+the billing change log past its retention.
 
 The guards — the billing service JWT blocklist and the client assertions spent
 at the plug-in token endpoint — are the same maintenance concern: shared ``public``
@@ -28,6 +29,7 @@ from app.core.security import plugin_platform_signing_enabled
 from app.db.jti_blocklist import purge_expired_jtis
 from app.models.platform.plugin_assertion_jti import PluginAssertionJti
 from app.models.platform.billing import BillingJti
+from app.services.platform import billing_changes
 from app.services.platform.billing import billing_inbound_enabled
 
 logger = logging.getLogger(__name__)
@@ -74,3 +76,13 @@ async def process_jti_blocklist_purges() -> None:
                 logger.info(
                     "jti-purge: removed %s expired %s rows", purged, entry.label
                 )
+        if billing_inbound_enabled():
+            # The billing change log's retention rides the same pass.
+            try:
+                pruned = await billing_changes.prune(session)
+            except Exception:
+                logger.exception("jti-purge: billing change log prune failed")
+                await session.rollback()
+            else:
+                if pruned:
+                    logger.info("jti-purge: removed %s old billing changes", pruned)

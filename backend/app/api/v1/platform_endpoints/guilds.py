@@ -692,11 +692,9 @@ async def create_community(
             current_user.id,
             owner.id,
         )
-    # Committed and seeded. Claimed for the owner — who holds the admin
-    # membership — rather than the caller.
-    await guilds_service.welcome_new_guild(
-        guild.id, owner_user_id=owner.id, plan=guild_in.plan
-    )
+    # Committed and seeded. The owner — who holds the admin membership — is
+    # welcomed, rather than the caller.
+    await guilds_service.welcome_new_guild(guild.id, owner_user_id=owner.id)
 
     # The owner's membership — the caller's own in the ordinary case. When the
     # guild was created for another account the caller holds none, so the
@@ -1069,6 +1067,9 @@ async def create_community_billing_handoff(
         user_ref, guild_ref = await billing_refs(
             user_id=current_user.id, guild_id=guild_id
         )
+        name = (
+            await seat_session.exec(select(Guild.name).where(Guild.id == guild_id))
+        ).one_or_none()
         token, expires_in_seconds = create_billing_portal_handoff_token(
             # The portal's own vocabulary, which is not this enum: it knows
             # "the person who may act for this guild", and only the seat
@@ -1076,6 +1077,7 @@ async def create_community_billing_handoff(
             guild_role=CommunityRole.admin.value,
             user_ref=user_ref,
             guild_ref=guild_ref,
+            guild_name=name,
         )
     except HandoffSigningNotConfiguredError as exc:
         raise HTTPException(
@@ -1388,7 +1390,6 @@ async def delete_community(
     # plug-ins keep their names for it until the purge, and billing is told to
     # go and read what happened to it.
     background_tasks.add_task(post_commit.settle, session)
-    billing_ping.notify_lifecycle_changed(guild_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

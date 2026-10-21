@@ -243,7 +243,9 @@ def billed(monkeypatch):
     from app.core import config as config_module
 
     monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", "a-key")
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", "a-secret")
+    monkeypatch.setattr(
+        config_module.settings, "BILLING_STATEMENT_PUBLIC_KEY_PEM", "a-statement-key"
+    )
 
 
 async def test_a_second_free_community_is_refused_before_it_is_made(

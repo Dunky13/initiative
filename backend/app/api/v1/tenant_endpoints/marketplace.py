@@ -98,7 +98,7 @@ def _unavailable(guild_id: int, uid: str, gated: set[str]) -> ListingUnavailable
         return None
     return ListingUnavailable(
         reason=ListingUnavailableReason.entitlement_required,
-        action_url=plugin_entitlements.action_url(guild_id, uid),
+        action_url=plugin_entitlements.action_url(uid),
     )
 
 

@@ -6,6 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.config import settings
 from app.models.platform.guild import CommunityRole
 from app.services.platform import billing_ping
+from app.testing.billing_boundary import configure_outbound
 from app.testing.factories import (
     create_guild,
     create_guild_membership,
@@ -150,8 +151,7 @@ async def test_billing_down_or_malformed_is_unavailable_end_to_end(
         return "gbil_known"
 
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example")
-    monkeypatch.setattr(settings, "BILLING_SERVICE_URL", "https://billing.internal")
-    monkeypatch.setattr(settings, "BILLING_HMAC_SECRET", "secret")
+    configure_outbound(monkeypatch, "https://billing.internal")
     monkeypatch.setattr(billing_ping, "existing_ref", _known_ref)
     monkeypatch.setattr(billing_ping.httpx, "AsyncClient", _client)
     guild, seat, _, _ = await _guild_with_seat(session)

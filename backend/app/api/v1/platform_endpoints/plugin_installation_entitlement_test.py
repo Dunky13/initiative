@@ -5,38 +5,31 @@
   ``NO_ENTITLEMENT``;
 * ``PUT /installation/usage/{meter}/{period}`` keeps a period's total for a
   meter the listing's terms name, refuses any other meter (403), a total lower
-  than the one held (409) and a malformed report (422), and passes each total
-  it keeps on to billing as a ``usage`` ping.
+  than the one held (409) and a malformed report (422), and writes each total
+  it keeps that moved to billing's change log as ``plugin.usage``.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
-
-import httpx
 import pytest
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core import config as config_module
 from app.core.messages import PluginChannelMessages
 from app.db import post_commit
 from app.models.platform.plugin_entitlement import PluginUsage
 from app.services.marketplace import plugin_entitlements, tuf_registry
-from app.services.platform import billing_ping
 from app.testing import (
     billing_guild_ref,
     create_listing_with_terms,
     entitlement_statement,
 )
+from app.testing.billing_boundary import change_rows
+from app.testing.billing_managed import billing_manages_plans
 from app.testing.plugin_clients import CLIENT, install_headers, install_plugin
 
 BASE = "/api/v1/plugin-platform/installation"
-BILLING = "https://billing.test"
-SECRET = "outbound-billing-secret"
 #: The install's listing, as the catalog spells a uid.
 LISTING = "TKNCMETER00001"
 
@@ -46,29 +39,11 @@ def shipped_root(monkeypatch):
     monkeypatch.setattr(tuf_registry, "configured_root_is_builtin", lambda: True)
 
 
-@pytest.fixture
-def billing_sent(monkeypatch) -> list[tuple[str, dict, dict]]:
-    """Every request this deployment sends billing, as (url, body, headers)."""
-    sent: list[tuple[str, dict, dict]] = []
-    monkeypatch.setattr(config_module.settings, "BILLING_SERVICE_URL", BILLING)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", SECRET)
-
-    class Client:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_exc):
-            return False
-
-        async def post(self, url, *, content, headers):
-            sent.append((url, json.loads(content), dict(headers)))
-            return httpx.Response(200, json={})
-
-    monkeypatch.setattr(billing_ping.httpx, "AsyncClient", Client)
-    return sent
+async def _usage_changes(session, guild_id: int) -> list[dict]:
+    return [
+        data
+        for _kind, data in await change_rows(session, guild_id, kinds=("plugin.usage",))
+    ]
 
 
 async def _installed(session, acting_user, role_session):
@@ -151,46 +126,26 @@ async def test_a_total_is_kept_and_passed_on_to_billing(
     acting_user,
     role_session,
     shipped_root,
-    billing_sent,
 ):
     installed = await _metered(session, acting_user, role_session)
+    guild_id = installed.guild.id
 
-    response = await _report(client, installed, quantity=12)
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {"meter": "runs", "period": "2026-10", "quantity": 12}
-    rows = (await session.exec(select(PluginUsage))).all()
-    assert [
-        (r.guild_id, r.listing_uid, r.meter, r.period, r.quantity) for r in rows
-    ] == [(installed.guild.id, LISTING, "runs", "2026-10", 12)]
-    [(url, body, headers)] = billing_sent
-    assert url == f"{BILLING}{billing_ping.USAGE_PING_PATH}"
-    assert url == "https://billing.test/api/v1/pings/usage"
-    event_id = body.pop("event_id")
-    assert isinstance(event_id, str) and event_id
-    assert body == {
-        "community_ref": await billing_guild_ref(installed.guild.id),
-        "listing_uid": LISTING,
-        "meter": "runs",
-        "period": "2026-10",
-        "quantity": 12,
-    }
-    signed = json.dumps({**body, "event_id": event_id}, separators=(",", ":"))
-    assert (
-        headers["X-Billing-Signature"]
-        == hmac.new(
-            SECRET.encode(),
-            "\n".join(
-                [
-                    "POST",
-                    "/api/v1/pings/usage",
-                    headers["X-Billing-Timestamp"],
-                    hashlib.sha256(signed.encode()).hexdigest(),
-                ]
-            ).encode(),
-            hashlib.sha256,
-        ).hexdigest()
-    )
+    async with billing_manages_plans(session):
+        response = await _report(client, installed, quantity=12)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"meter": "runs", "period": "2026-10", "quantity": 12}
+        rows = (await session.exec(select(PluginUsage))).all()
+        assert [
+            (r.guild_id, r.listing_uid, r.meter, r.period, r.quantity) for r in rows
+        ] == [(guild_id, LISTING, "runs", "2026-10", 12)]
+        assert await _usage_changes(session, guild_id) == [
+            {
+                "listing_uid": LISTING,
+                "meter": "runs",
+                "period": "2026-10",
+                "quantity": 12,
+            }
+        ]
 
 
 async def test_the_same_total_again_is_accepted_and_a_lower_one_is_not(
@@ -199,20 +154,25 @@ async def test_the_same_total_again_is_accepted_and_a_lower_one_is_not(
     acting_user,
     role_session,
     shipped_root,
-    billing_sent,
 ):
     installed = await _metered(session, acting_user, role_session)
-    await _report(client, installed, quantity=12)
+    guild_id = installed.guild.id
 
-    again = await _report(client, installed, quantity=12)
-    lower = await _report(client, installed, quantity=11)
-    another_month = await _report(client, installed, period="2026-11", quantity=1)
+    async with billing_manages_plans(session):
+        await _report(client, installed, quantity=12)
+        again = await _report(client, installed, quantity=12)
+        lower = await _report(client, installed, quantity=11)
+        another_month = await _report(client, installed, period="2026-11", quantity=1)
 
-    assert again.status_code == 200
-    assert lower.status_code == 409
-    assert lower.json()["detail"] == PluginChannelMessages.USAGE_TOTAL_DECREASED
-    assert another_month.status_code == 200
-    assert [body["quantity"] for _, body, _ in billing_sent] == [12, 12, 1]
+        assert again.status_code == 200
+        assert lower.status_code == 409
+        assert lower.json()["detail"] == PluginChannelMessages.USAGE_TOTAL_DECREASED
+        assert another_month.status_code == 200
+        # A total that didn't move tells billing nothing new.
+        assert [c["quantity"] for c in await _usage_changes(session, guild_id)] == [
+            12,
+            1,
+        ]
 
 
 async def test_a_meter_the_terms_do_not_name_is_refused(
@@ -221,15 +181,15 @@ async def test_a_meter_the_terms_do_not_name_is_refused(
     acting_user,
     role_session,
     shipped_root,
-    billing_sent,
 ):
     installed = await _metered(session, acting_user, role_session)
+    guild_id = installed.guild.id
 
-    response = await _report(client, installed, meter="seats")
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == PluginChannelMessages.METER_NOT_ALLOWED
-    assert billing_sent == []
+    async with billing_manages_plans(session):
+        response = await _report(client, installed, meter="seats")
+        assert response.status_code == 403
+        assert response.json()["detail"] == PluginChannelMessages.METER_NOT_ALLOWED
+        assert await _usage_changes(session, guild_id) == []
 
 
 async def test_every_meter_is_refused_without_terms(
