@@ -372,6 +372,7 @@
     "discard": "Discard",
     "undo": "Undo",
     "moved": "Moved to {{status}}",
+    "typeChanged": "Changed to {{type}}",
     "cleared": "{{field}} cleared"
   },
   "descriptionField": {

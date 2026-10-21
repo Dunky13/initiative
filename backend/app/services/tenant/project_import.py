@@ -23,6 +23,9 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Any, Optional
+
+from pydantic import ValidationError
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -50,6 +53,7 @@ from app.schemas.tenant.project_export import (
     ProjectExportTask,
 )
 from app.schemas.tenant.task import mint_checklist_item_id
+from app.schemas.tenant.task_type import TaskTypeStartingValues
 from app.services.import_engine.context import ImportContext
 from app.services.import_engine.contract import (
     EnvelopeImportResult,
@@ -316,6 +320,18 @@ async def import_project(
 # ---------------------------------------------------------------------------
 
 
+def _starting_values(raw: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """A type's starting values as the column holds them, held to what a write
+    of them would be; ones that are not start nothing."""
+    if not raw:
+        return None
+    try:
+        values = TaskTypeStartingValues.model_validate(raw)
+    except ValidationError:
+        return None
+    return task_types_service.stored_starting_values(values)
+
+
 async def _restore_types(
     session: AsyncSession,
     project_id: int,
@@ -350,6 +366,7 @@ async def _restore_types(
                     if entry.layout_preset in LAYOUT_SHAPES
                     else "plain"
                 ),
+                starting_values=_starting_values(entry.starting_values),
             )
         )
     task_types_service.resequence(rows)

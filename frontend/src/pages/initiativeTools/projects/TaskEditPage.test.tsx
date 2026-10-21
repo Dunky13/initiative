@@ -883,6 +883,9 @@ describe("TaskEditPage", () => {
 
     await waitFor(() => expect(sent).toEqual([expect.objectContaining({ task_type_id: 2 })]));
     expect(await screen.findByRole("button", { name: "Steps" })).toBeInTheDocument();
+    // Undo says what it takes back.
+    await waitFor(() => expect(toasts.success).toHaveBeenCalled());
+    expect(toasts.success.mock.calls[0][0]).toBe("Changed to Bug");
   });
 
   it("shows no type in a project with only one", async () => {

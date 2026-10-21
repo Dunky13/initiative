@@ -6,6 +6,9 @@
  * Laid out as the status manager is: a table of drafts saved together, drag to
  * reorder, and a dialog asking where a deleted type's tasks go. A type's page
  * is changed in the project's layout editor, which "Edit page" opens on it.
+ * A type is added from the ready-made ones, blank, or from one the project has;
+ * types are copied from another project; and each says what a new task of it
+ * starts with.
  */
 
 import {
@@ -25,16 +28,24 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
-import { GripVertical, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Copy, GripVertical, ListPlus, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  type TaskTypeCreated,
   type TaskTypeRead,
+  type TaskTypeStartingValues,
   type TaskTypeUpdate,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
+import { TaskTypeAddDialog } from "@/components/projects/TaskTypeAddDialog";
+import { TaskTypeCopyDialog } from "@/components/projects/TaskTypeCopyDialog";
+import {
+  startsWithSomething,
+  TaskTypeStartsWithDialog,
+} from "@/components/projects/TaskTypeStartsWithDialog";
 import { TaskTypeOption } from "@/components/tasks/TaskTypeOption";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -67,8 +78,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  useCopyTaskTypes,
   useCreateTaskType,
   useDeleteTaskType,
+  usePlaceTaskTypeFields,
   useProjectTaskTypes,
   useReorderTaskTypes,
   useUpdateTaskType,
@@ -130,8 +143,8 @@ export const ProjectTaskTypesManager = ({
   const [orderedTypes, setOrderedTypes] = useState<TaskTypeRead[]>([]);
   const [drafts, setDrafts] = useState<Record<number, TypeDraft>>({});
   const [addOpen, setAddOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [startFromId, setStartFromId] = useState<string>("");
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [startsWithTarget, setStartsWithTarget] = useState<TaskTypeRead | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TaskTypeRead | null>(null);
   const [fallbackId, setFallbackId] = useState<string>("");
 
@@ -185,11 +198,21 @@ export const ProjectTaskTypesManager = ({
     savedRef.current = Object.fromEntries(sorted.map((type) => [type.id, type]));
   }, [typesQuery.data, reorderTypes.isPending]);
 
+  const placeTypeFields = usePlaceTaskTypeFields(projectId);
+  /** A ready-made type's fields, placed on its page. The type stands whether
+   *  or not this does. */
+  const placeFields = (created: TaskTypeCreated) =>
+    placeTypeFields(created).catch(() =>
+      toast.warning(t("taskTypes.gallery.fieldsNotPlaced", { name: created.name }))
+    );
+
   const createType = useCreateTaskType(projectId, {
-    onSuccess: () => {
-      setNewName("");
+    onSuccess: (created) => {
       setAddOpen(false);
       toast.success(t("taskTypes.created"));
+      if (created.field_ids.length > 0) {
+        void placeFields(created);
+      }
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "projects:taskTypes.createError"));
@@ -212,6 +235,26 @@ export const ProjectTaskTypesManager = ({
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "projects:taskTypes.deleteError"));
+    },
+  });
+
+  const saveStartsWith = useUpdateTaskType(projectId, {
+    onSuccess: () => {
+      setStartsWithTarget(null);
+      toast.success(t("taskTypes.startsWith.saved"));
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "projects:taskTypes.updateError"));
+    },
+  });
+
+  const copyTypes = useCopyTaskTypes(projectId, {
+    onSuccess: (copied) => {
+      setCopyOpen(false);
+      toast.success(t("taskTypes.copy.copied", { count: copied.length }));
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "projects:taskTypes.copy.error"));
     },
   });
 
@@ -322,29 +365,11 @@ export const ProjectTaskTypesManager = ({
     updateType.mutate({ typeId, data: { is_default: true } });
   };
 
-  const openAdd = () => {
-    setNewName("");
-    setStartFromId(defaultType ? String(defaultType.id) : "");
-    setAddOpen(true);
-  };
-
-  // Names are unique within a project, whatever their case; the server says
-  // so too, but the dialog can say it before the reader presses Add.
-  const trimmedNewName = newName.trim();
-  const nameTaken = types.some(
-    (type) => type.name.toLocaleLowerCase() === trimmedNewName.toLocaleLowerCase()
-  );
-
-  const handleAddSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!trimmedNewName || nameTaken) {
-      return;
-    }
-    const startFrom = Number(startFromId);
-    createType.mutate({
-      name: trimmedNewName,
-      // The new type takes the look and page of the one it starts from.
-      start_from_type_id: startFromId && Number.isFinite(startFrom) ? startFrom : null,
+  const handleStartsWith = (values: TaskTypeStartingValues | null) => {
+    if (!startsWithTarget) return;
+    saveStartsWith.mutate({
+      typeId: startsWithTarget.id,
+      data: { starting_values: values },
     });
   };
 
@@ -397,7 +422,16 @@ export const ProjectTaskTypesManager = ({
                     <Save className="h-4 w-4" />
                     {t("taskTypes.saveChanges")}
                   </Button>
-                  <Button size="sm" onClick={openAdd} disabled={atLimit}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCopyOpen(true)}
+                    disabled={atLimit}
+                  >
+                    <Copy className="h-4 w-4" />
+                    {t("taskTypes.copy.open")}
+                  </Button>
+                  <Button size="sm" onClick={() => setAddOpen(true)} disabled={atLimit}>
                     <Plus className="h-4 w-4" />
                     {t("taskTypes.addType")}
                   </Button>
@@ -442,6 +476,7 @@ export const ProjectTaskTypesManager = ({
                         }
                         onFieldChange={handleFieldChange}
                         onSetDefault={handleDefaultChange}
+                        onStartsWith={() => setStartsWithTarget(type)}
                         onDelete={() => openDelete(type)}
                         t={t}
                       />
@@ -469,59 +504,33 @@ export const ProjectTaskTypesManager = ({
         </div>
       </CardContent>
 
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="bg-card">
-          <form onSubmit={handleAddSubmit} className="space-y-4">
-            <DialogHeader>
-              <DialogTitle>{t("taskTypes.addTitle")}</DialogTitle>
-              <DialogDescription>{t("taskTypes.addDescription")}</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="new-task-type-name">{t("taskTypes.nameLabel")}</Label>
-              <Input
-                id="new-task-type-name"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder={t("taskTypes.namePlaceholder")}
-                maxLength={100}
-                aria-invalid={nameTaken || undefined}
-                aria-describedby={nameTaken ? "new-task-type-name-error" : undefined}
-                autoFocus
-              />
-              {nameTaken ? (
-                <p id="new-task-type-name-error" className="text-destructive text-sm">
-                  {t("errors:TASK_TYPE_NAME_TAKEN")}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-task-type-start-from">{t("taskTypes.startFromLabel")}</Label>
-              <Select value={startFromId} onValueChange={setStartFromId}>
-                <SelectTrigger id="new-task-type-start-from">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {types.map((type) => (
-                    <SelectItem key={type.id} value={String(type.id)}>
-                      <TaskTypeOption type={type} />
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">{t("taskTypes.startFromHint")}</p>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
-                {t("common:cancel")}
-              </Button>
-              <Button type="submit" disabled={!trimmedNewName || nameTaken || createType.isPending}>
-                {createType.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {t("taskTypes.add")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <TaskTypeAddDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        projectId={projectId}
+        types={types}
+        saving={createType.isPending}
+        onAdd={(data) => createType.mutate(data)}
+      />
+
+      <TaskTypeCopyDialog
+        open={copyOpen}
+        onOpenChange={setCopyOpen}
+        projectId={projectId}
+        types={types}
+        room={Math.max(0, MAX_TASK_TYPES - types.length)}
+        saving={copyTypes.isPending}
+        onCopy={(sourceProjectId, typeIds) =>
+          copyTypes.mutate({ source_project_id: sourceProjectId, type_ids: typeIds })
+        }
+      />
+
+      <TaskTypeStartsWithDialog
+        type={startsWithTarget}
+        saving={saveStartsWith.isPending}
+        onOpenChange={(open) => !open && setStartsWithTarget(null)}
+        onSave={handleStartsWith}
+      />
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="bg-card">
@@ -578,6 +587,7 @@ interface SortableTypeRowProps {
   editPage: { to: string; layout: string } | null;
   onFieldChange: (typeId: number, field: DraftField, value: string) => void;
   onSetDefault: (typeId: number) => void;
+  onStartsWith: () => void;
   onDelete: () => void;
   t: TFunction<"projects">;
 }
@@ -590,6 +600,7 @@ const SortableTypeRow = ({
   editPage,
   onFieldChange,
   onSetDefault,
+  onStartsWith,
   onDelete,
   t,
 }: SortableTypeRowProps) => {
@@ -657,6 +668,27 @@ const SortableTypeRow = ({
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="relative"
+            onClick={onStartsWith}
+            disabled={disabled}
+            aria-label={t("taskTypes.startsWith.openFor", { name: type.name })}
+            title={
+              startsWithSomething(type.starting_values)
+                ? t("taskTypes.startsWith.hasValues")
+                : undefined
+            }
+          >
+            <ListPlus className="h-4 w-4" />
+            {startsWithSomething(type.starting_values) ? (
+              <span
+                aria-hidden="true"
+                className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary"
+              />
+            ) : null}
+          </Button>
           {editPage ? (
             <Button asChild variant="ghost" size="sm">
               <Link

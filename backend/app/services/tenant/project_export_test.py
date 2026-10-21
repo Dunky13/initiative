@@ -873,6 +873,10 @@ async def test_task_types_survive_the_round_trip(session: AsyncSession):
             icon="repeat",
             color="#22C55E",
             layout_preset="repeat",
+            starting_values={
+                "recurrence": "RRULE:FREQ=WEEKLY",
+                "checklist": ["Bins out"],
+            },
         )
     )
     await session.commit()
@@ -911,6 +915,12 @@ async def test_task_types_survive_the_round_trip(session: AsyncSession):
         ("Milestone", False, "flag", "#A78BFA", "dates"),
         ("Chore", False, "repeat", "#22C55E", "repeat"),
     ]
+    # What each starts a task with comes too: Chore's, and Bug's outline.
+    assert restored[-1].starting_values == {
+        "recurrence": "RRULE:FREQ=WEEKLY",
+        "checklist": ["Bins out"],
+    }
+    assert restored[1].starting_values == types[1].starting_values
     copied = (
         await session.exec(select(Task).where(Task.project_id == result.entity_id))
     ).first()

@@ -337,10 +337,12 @@ const StreamCard = ({ binding, initiatives, settled }: StreamCardProps) => {
       ),
     [initiatives]
   );
-  const statuses = useMemo(
-    () => projects.find((project) => project.id === binding.project_id)?.statuses ?? [],
+  const bound = useMemo(
+    () => projects.find((project) => project.id === binding.project_id),
     [projects, binding.project_id]
   );
+  const statuses = bound?.statuses ?? [];
+  const types = bound?.task_types ?? [];
 
   const busy = !settled || importBlueprint.isPending || upsert.isPending || remove.isPending;
 
@@ -351,6 +353,7 @@ const StreamCard = ({ binding, initiatives, settled }: StreamCardProps) => {
       body: {
         project_id: binding.project_id as number,
         default_status_id: binding.default_status_id ?? null,
+        task_type_id: binding.task_type_id ?? null,
         awaiting_filer_status_id: binding.awaiting_filer_status_id ?? null,
         active_status_id: binding.active_status_id ?? null,
         enabled: binding.enabled,
@@ -500,6 +503,38 @@ const StreamCard = ({ binding, initiatives, settled }: StreamCardProps) => {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* A project with one type has nothing to choose. */}
+            {types.length > 1 || binding.task_type_id ? (
+              <div className="space-y-2">
+                <Label htmlFor={`type-${stream}`}>{t("stream.caseTypeLabel")}</Label>
+                <Select
+                  value={statusOption(binding.task_type_id)}
+                  disabled={busy}
+                  onValueChange={(value) => save({ task_type_id: statusValue(value) })}
+                >
+                  <SelectTrigger id={`type-${stream}`} className="max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>{t("stream.caseTypeDefault")}</SelectItem>
+                    {/* One the project no longer offers names itself, or the
+                        control would render blank. */}
+                    {binding.task_type_id &&
+                    !types.some((type) => type.id === binding.task_type_id) ? (
+                      <SelectItem value={String(binding.task_type_id)} disabled>
+                        {binding.task_type_name ?? ""}
+                      </SelectItem>
+                    ) : null}
+                    {types.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             {binding.conversation && binding.conversation !== Conversation.none ? (
               <div className="space-y-3">

@@ -372,6 +372,7 @@
     "discard": "Verwerfen",
     "undo": "Rückgängig",
     "moved": "Verschoben nach {{status}}",
+    "typeChanged": "Geändert zu {{type}}",
     "cleared": "{{field}}: Wert entfernt"
   },
   "descriptionField": {

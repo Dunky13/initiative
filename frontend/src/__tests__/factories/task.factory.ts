@@ -52,6 +52,7 @@ export function buildTask(overrides: Partial<TaskListRead> = {}): TaskListRead {
     color: "#64748B",
     icon: "square-check",
     layout_preset: "plain",
+    starting_values: null,
   };
 
   return {

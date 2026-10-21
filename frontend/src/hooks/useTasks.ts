@@ -297,7 +297,9 @@ export const useTaskSaveOptions = (
         : undo,
     undoMessage: (edit) => {
       const moved = edit.shows.task_status;
-      return moved ? t("fieldSave.moved", { status: moved.name }) : undefined;
+      if (moved) return t("fieldSave.moved", { status: moved.name });
+      const type = edit.shows.task_type;
+      return type ? t("fieldSave.typeChanged", { type: type.name }) : undefined;
     },
     // The move shows as made now, so the completion feedback goes with it.
     sending: (edit) => {

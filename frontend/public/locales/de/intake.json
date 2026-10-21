@@ -56,6 +56,8 @@
     "repointNote": "Einen Kanal auf ein anderes Projekt zu richten beginnt dort von vorn. Alles noch Offene bleibt in dem Projekt, in dem daran gearbeitet wird.",
     "landingStatusLabel": "Neue Vorgänge starten in",
     "landingStatusDefault": "Standard des Projekts",
+    "caseTypeLabel": "Neue Vorgänge sind vom Typ",
+    "caseTypeDefault": "Standardtyp des Projekts",
     "enabledLabel": "Empfängt neue Vorgänge",
     "lastCase": "Letzter Vorgang {{when}} geöffnet.",
     "noCasesYet": "Noch keine Vorgänge.",

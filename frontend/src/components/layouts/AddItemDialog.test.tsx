@@ -4,11 +4,18 @@ import { HttpResponse } from "msw";
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import { buildProjectTaskStatus, buildTaskType } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
-import type { QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  QueueItemRead,
+  TaskRead,
+  TaskTypeRead,
+  TaskUpdate,
+} from "@/api/generated/initiativeAPI.schemas";
 import { blankQueueItem, QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
+import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 
 import { AddItemDialog, type Written } from "./AddItemDialog";
 
@@ -111,5 +118,131 @@ describe("adding an item", () => {
 
     await user.type(position, "7");
     expect(add).toBeEnabled();
+  });
+});
+
+/** A project's Create Task, where the task starts as Bug. */
+const AddingTask = ({
+  types,
+  create,
+}: {
+  types: TaskTypeRead[];
+  create: (written: Written<TaskRead, TaskUpdate>) => Promise<{ id: number }>;
+}) => {
+  const leaving = useRef(false);
+  const status = buildProjectTaskStatus();
+  return (
+    <AddItemDialog
+      open
+      onOpenChange={() => {}}
+      detail={TASK_DETAIL}
+      blank={blankTask(1, status, types[0])}
+      context={{
+        readOnly: false,
+        readOnlyMessage: null,
+        statuses: [status],
+        types,
+        initiativeId: 1,
+        askScope: async () => null,
+        actions: null,
+        leaving,
+      }}
+      layouts={() => null}
+      title="Create task"
+      ready={() => true}
+      create={create}
+      onAdded={() => {}}
+    />
+  );
+};
+
+describe("adding a task", () => {
+  const bug = () =>
+    buildTaskType({
+      name: "Bug",
+      starting_values: {
+        description: "What happened?",
+        checklist: [],
+        priority: "high",
+        recurrence: null,
+        recurrence_strategy: null,
+      },
+    });
+
+  const pickType = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole("combobox", { name: "Type" }));
+    await user.click(await screen.findByRole("option", { name }));
+  };
+
+  it("starts with what its type starts with, and follows the type until it is changed", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => (
+      <AddingTask types={[bug(), buildTaskType({ name: "Feature" })]} create={create} />
+    ));
+    const user = userEvent.setup();
+
+    // Written, it opens on its preview; the box behind it holds the text.
+    await screen.findByRole("combobox", { name: "Type" });
+    const description = document.getElementById("task-description");
+    expect(description).toHaveValue("What happened?");
+    await pickType(user, "Feature");
+    expect(description).toHaveValue("");
+    await pickType(user, "Bug");
+    expect(description).toHaveValue("What happened?");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item: expect.objectContaining({ description: "What happened?", priority: "high" }),
+        })
+      )
+    );
+  });
+
+  it("keeps a description the person wrote when the type changes", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => (
+      <AddingTask types={[buildTaskType({ name: "Feature" }), bug()]} create={create} />
+    ));
+    const user = userEvent.setup();
+
+    const description = await screen.findByRole("textbox", { name: "Description" });
+    await user.type(description, "Mine");
+    await pickType(user, "Bug");
+
+    expect(description).toHaveValue("Mine");
+  });
+
+  it("keeps a priority the person picked when the type changes", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    const [feature, chore] = [
+      buildTaskType({ name: "Feature" }),
+      buildTaskType({
+        name: "Chore",
+        starting_values: {
+          description: null,
+          checklist: [],
+          priority: "low",
+          recurrence: null,
+          recurrence_strategy: null,
+        },
+      }),
+    ];
+    renderPage(() => <AddingTask types={[feature, chore]} create={create} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("combobox", { name: "Priority" }));
+    await user.click(await screen.findByRole("option", { name: /Urgent/ }));
+    await pickType(user, "Chore");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item: expect.objectContaining({ task_type_id: chore.id, priority: "urgent" }),
+        })
+      )
+    );
   });
 });

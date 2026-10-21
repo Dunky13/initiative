@@ -71,8 +71,11 @@ export const AddItemDialog = <I extends Item, C, P, R extends { id: number }>({
   const changed = useRef(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Its own container, so the detail's columns follow the dialog's
+          width rather than the screen's, as they follow the page area's on
+          the item's own page. */}
       <DialogContent
-        className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl"
+        className="@container w-full rounded-2xl border bg-card shadow-2xl sm:max-w-5xl"
         onInteractOutside={(event) => {
           if (changed.current) event.preventDefault();
         }}

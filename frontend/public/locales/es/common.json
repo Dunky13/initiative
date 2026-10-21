@@ -372,6 +372,7 @@
     "discard": "Descartar",
     "undo": "Deshacer",
     "moved": "Movido a {{status}}",
+    "typeChanged": "Cambiado a {{type}}",
     "cleared": "{{field}}: valor borrado"
   },
   "descriptionField": {

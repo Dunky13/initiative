@@ -157,6 +157,12 @@ class TaskType(CreatedByMixin, table=True):
         default="plain",
         sa_column=Column(String(length=32), nullable=False, server_default="plain"),
     )
+    # What a new task of the type starts with where its creator left the field
+    # empty: a description outline, checklist lines, a priority, a repeat
+    # (``app.schemas.tenant.task_type.TaskTypeStartingValues``).
+    starting_values: Optional[dict] = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
 
     project: Optional["Project"] = Relationship(back_populates="task_types")
 

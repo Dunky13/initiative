@@ -326,6 +326,7 @@ async def build_project_export(
                 color=t.color,
                 icon=t.icon,
                 layout_preset=t.layout_preset,
+                starting_values=t.starting_values,
             )
             for t in project_types
         ],

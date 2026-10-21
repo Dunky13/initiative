@@ -4,7 +4,10 @@ Creates ``task_types`` (one project's kinds of task), gives every project the
 four it starts with — named in the language of whoever made the project — and
 points every task at its project's first, Task. A project's task page becomes
 one per type: ``tool_layouts.task_type_id`` names it, and a page a project had
-already changed goes to its Task type.
+already changed goes to its Task type. A type can say what a new task of it
+starts with (``task_types.starting_values``): Bug starts with an outline of a
+report. An intake stream can say which type its cases are
+(``intake_bindings.task_type_id``).
 
 Order is create -> fill -> constrain. Row security, its policies and the grants
 for the new table are not written here: provisioning renders those from the
@@ -20,8 +23,11 @@ Revises: 20261020_0530
 
 from __future__ import annotations
 
+import json
+
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.db.guild_migrations import run_for_each_guild_schema
 
@@ -56,15 +62,46 @@ _NAMES: dict[str, dict[str, str]] = {
     "fr": {"task": "Tâche", "bug": "Bug", "idea": "Idée", "milestone": "Jalon"},
 }
 
+#: What a Bug starts with in each of those languages: an outline of a report.
+_BUG_OUTLINES: dict[str, str] = {
+    "en": (
+        "**What happened**\n\n\n**What should have happened**\n\n\n"
+        "**How to make it happen again**\n\n"
+    ),
+    "de": (
+        "**Was ist passiert?**\n\n\n**Was hätte passieren sollen?**\n\n\n"
+        "**Wie lässt es sich wiederholen?**\n\n"
+    ),
+    "es": (
+        "**Qué pasó**\n\n\n**Qué debería haber pasado**\n\n\n**Cómo reproducirlo**\n\n"
+    ),
+    "fr": (
+        "**Ce qui s’est passé**\n\n\n**Ce qui aurait dû se passer**\n\n\n"
+        "**Comment le reproduire**\n\n"
+    ),
+}
+
 #: The shapes a type could take as of this revision.
 _SHAPES = ("plain", "fix", "discussion", "dates", "repeat", "checklist")
 
 
-def _names(locale: str | None) -> dict[str, str]:
-    """The four names in a locale, English for one the app does not speak.
+def _language(locale: str | None) -> str:
+    """The language of a locale the app speaks, English for one it does not.
     ``de-AT`` reads as ``de``."""
     language = (locale or "en").split("-")[0].split("_")[0].lower()
-    return _NAMES.get(language, _NAMES["en"])
+    return language if language in _NAMES else "en"
+
+
+def _names(locale: str | None) -> dict[str, str]:
+    """The four names in a locale."""
+    return _NAMES[_language(locale)]
+
+
+def _starting_values(key: str, locale: str | None) -> str | None:
+    """What a new task of the type starts with, as stored; Bug's outline."""
+    if key != "bug":
+        return None
+    return json.dumps({"description": _BUG_OUTLINES[_language(locale)]})
 
 
 def _creator_locales(bind: sa.Connection) -> dict[int, str]:
@@ -98,6 +135,7 @@ def _create_table() -> None:
             server_default="plain",
             nullable=False,
         ),
+        sa.Column("starting_values", JSONB(), nullable=True),
         sa.CheckConstraint(
             f"layout_preset IN ({shapes})", name="ck_task_types_layout_preset"
         ),
@@ -133,6 +171,7 @@ def _seed_types(bind: sa.Connection, locales: dict[int, str]) -> None:
             "color": color,
             "icon": icon,
             "layout_preset": shape,
+            "starting_values": _starting_values(key, locales.get(created_by)),
             "created_by": created_by,
         }
         for project_id, created_by in projects
@@ -142,9 +181,10 @@ def _seed_types(bind: sa.Connection, locales: dict[int, str]) -> None:
         bind.execute(
             sa.text(
                 "INSERT INTO task_types (project_id, name, position, is_default,"
-                " color, icon, layout_preset, created_by)"
+                " color, icon, layout_preset, starting_values, created_by)"
                 " VALUES (:project_id, :name, :position, :is_default, :color,"
-                " :icon, :layout_preset, :created_by)"
+                " :icon, :layout_preset, CAST(:starting_values AS jsonb),"
+                " :created_by)"
             ),
             rows,
         )
@@ -223,11 +263,28 @@ def _type_layouts() -> None:
     )
 
 
+def _type_intake() -> None:
+    # Every binding lands its cases as the project's default until somebody
+    # picks a type, so nothing is written.
+    op.add_column(
+        "intake_bindings", sa.Column("task_type_id", sa.Integer(), nullable=True)
+    )
+    op.create_foreign_key(
+        "intake_bindings_task_type_id_fkey",
+        "intake_bindings",
+        "task_types",
+        ["task_type_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+
+
 def _apply_upgrade(bind: sa.Connection, locales: dict[int, str]) -> None:
     _create_table()
     _seed_types(bind, locales)
     _type_tasks()
     _type_layouts()
+    _type_intake()
 
 
 def upgrade() -> None:
@@ -237,6 +294,13 @@ def upgrade() -> None:
 
 
 def _apply_downgrade() -> None:
+    # Conditional: a database that ran this revision before it gave intake a
+    # type has no such column to take back.
+    op.execute(
+        "ALTER TABLE intake_bindings"
+        " DROP CONSTRAINT IF EXISTS intake_bindings_task_type_id_fkey,"
+        " DROP COLUMN IF EXISTS task_type_id"
+    )
     # The task page goes back to being one per project: its Task type's.
     op.execute("ALTER TABLE tool_layouts NO FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE tool_layouts DISABLE TRIGGER USER")

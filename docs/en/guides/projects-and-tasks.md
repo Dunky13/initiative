@@ -81,7 +81,25 @@ A task can be one of several kinds of thing, and each kind gets its own page. Ev
 
 Pick the type when you add a task, or change it later from the **Type** field on the task. Changing it keeps everything the task holds: a date the new page doesn't show is tucked away, not deleted, and comes back if you change your mind.
 
-Add, rename, reorder and recolour types from **Project settings → Task types**. A band might add **Gig** and **Song**; a household, **Chore** and **Bill**. Deleting a type moves its tasks to another one you pick, so nothing goes missing. The project's last type stays.
+Add, rename, reorder and recolour types from **Project settings → Task types**. **Add type** opens a shelf of ready-made ones, grouped by what they're for:
+
+| | |
+|---|---|
+| **Planning** | Milestone, Event, Appointment |
+| **Around the house** | Chore, Errand, Bill |
+| **Groups and volunteers** | Volunteer shift, Purchase, Question, Idea, Request |
+| **Making things** | Bug, Feature, Art, Playtest note |
+| **Learning** | Assignment, Reading |
+
+Each is a suggestion, name included: pick **Event** and call it **Gig**. Some bring fields of their own, like a Purchase's **Cost** and **Link** or an Event's **Location**. They're added to the initiative (or reused if it already has one by that name) and placed on the type's page. You can also start blank, or from one of the project's own types, which copies its look and its page.
+
+A band might add **Gig** and **Song**; a household, **Chore** and **Bill**. Deleting a type moves its tasks to another one you pick, so nothing goes missing. The project's last type stays.
+
+**What a new task starts with.** A type can fill in a new task's empty fields: a description outline, checklist lines, a priority, a repeat. A Bug starts with "what happened / what should have happened / how to make it happen again", a Chore repeats weekly and a Bill monthly. Change any of it from **Starts with…** on the type. When you make a task, the outline and priority are already filled in, and they change with the type you pick until you change them yourself. Anything you type yourself wins, and a repeat only starts on a task with a date to count from.
+
+**Same types, several projects?** **Copy from another project** brings over the types you pick, with their pages and what they start with. One whose name the project already has is skipped. Project templates bring their types along anyway.
+
+**A field just for one type.** While editing a type's page in **Edit layouts**, **Add a new field** makes the field and places it in one go.
 
 Board cards show each task's type as its icon. Lists filter and group by type, too. And if you trim a project down to one type, types vanish from view entirely, because a label every task shares tells you nothing.
 

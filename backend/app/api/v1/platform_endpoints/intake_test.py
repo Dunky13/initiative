@@ -279,6 +279,61 @@ async def test_a_status_from_another_project_is_refused(client, session, owner):
     assert response.json()["detail"] == "INTAKE_STATUS_NOT_IN_PROJECT"
 
 
+async def test_a_binding_names_one_of_its_projects_types(client, session, owner):
+    await client.put(
+        "/api/v1/settings/intake/community",
+        json={"community_id": owner["guild_id"]},
+        headers=owner["actor"].headers,
+    )
+    created = await client.post(
+        "/api/v1/settings/intake/support/blueprint",
+        json={"initiative_id": owner["initiative_id"]},
+        headers=owner["actor"].headers,
+    )
+    project_id = created.json()["project_id"]
+    await route_session_to_guild(session, owner["guild_id"])
+    from app.services.tenant import task_types as task_types_service
+
+    initiative = (
+        await session.exec(
+            select(Initiative).where(Initiative.id == owner["initiative_id"])
+        )
+    ).one()
+    guild_owner = (
+        await session.exec(select(User).where(User.id == owner["guild_owner_id"]))
+    ).one()
+    elsewhere = await create_project(session, initiative, guild_owner)
+    foreign = (
+        await task_types_service.ensure_default_types(
+            session, elsewhere.id, locale="en"
+        )
+    )[1]
+    bug = (
+        await task_types_service.ensure_default_types(session, project_id, locale="en")
+    )[1]
+    await session.commit()
+    await set_rls_context(session, Unattributed())
+
+    refused = await client.put(
+        "/api/v1/settings/intake/support",
+        json={"project_id": project_id, "task_type_id": foreign.id},
+        headers=owner["actor"].headers,
+    )
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "INTAKE_TYPE_NOT_IN_PROJECT"
+
+    bound = await client.put(
+        "/api/v1/settings/intake/support",
+        json={"project_id": project_id, "task_type_id": bug.id},
+        headers=owner["actor"].headers,
+    )
+    assert bound.status_code == 200, bound.text
+    assert (bound.json()["task_type_id"], bound.json()["task_type_name"]) == (
+        bug.id,
+        bug.name,
+    )
+
+
 async def test_the_pointer_is_cleared_when_the_guild_goes(client, session, owner):
     """``ON DELETE SET NULL``: nothing is left naming a guild that is gone."""
     await client.put(
@@ -443,6 +498,13 @@ async def test_options_offer_the_operations_guilds_projects(client, owner):
         "Waiting on requester",
         "Requester replied",
         "Resolved",
+    ]
+    # And its types, for the type a case is.
+    assert [t["name"] for t in project["task_types"]] == [
+        "Task",
+        "Bug",
+        "Idea",
+        "Milestone",
     ]
 
 

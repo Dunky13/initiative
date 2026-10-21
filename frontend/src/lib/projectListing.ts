@@ -201,6 +201,8 @@ export const projectListingBoard = (
       color: type.color ?? "#94A3B8",
       icon: type.icon ?? "square-check",
       layout_preset: type.layout_preset ?? "plain",
+      // A preview starts no tasks.
+      starting_values: null,
     }));
   const defaultType = taskTypes.find((type) => type.is_default) ?? taskTypes[0];
   const typeOf = (name: string | null | undefined) =>

@@ -7,7 +7,7 @@ import type { TranslateFn } from "@/types/i18n";
 
 import { pageParts } from "./detailLayout";
 import { groupables } from "./grouping";
-import { TASK_LAYOUT, taskFields, taskLayoutFor } from "./tasks";
+import { TASK_LAYOUT, taskFields, taskLayoutFor, taskPageWithFields } from "./tasks";
 
 const SHAPES = ["plain", "fix", "discussion", "dates", "repeat", "checklist"];
 
@@ -76,5 +76,22 @@ describe("the layout editor's ?layout=", () => {
     expect(parseLayoutKind("task:0")).toBeUndefined();
     expect(parseLayoutKind("task:x")).toBeUndefined();
     expect(parseLayoutKind("event:3")).toBeUndefined();
+  });
+});
+
+describe("a ready-made type's page", () => {
+  it("is its shape's, with its fields at the end of the side's first section", () => {
+    const page = taskPageWithFields("dates", [7, 9]);
+    const [first, ...rest] = page.side ?? [];
+    const placed = (first as { children?: { props?: { field?: string } }[] }).children ?? [];
+    expect(placed.slice(-2).map((node) => node.props?.field)).toEqual(["property:7", "property:9"]);
+    // The shape's own lead comes first, and nothing else moves.
+    expect(placed[1]?.props?.field ?? (placed[1] as { type?: string }).type).toBe("dates");
+    expect(rest).toEqual(taskPageWithFields("dates", []).side?.slice(1));
+    expect(page.main).toEqual(taskPageWithFields("dates", []).main);
+  });
+
+  it("stores no one-column order, as a stored page never does", () => {
+    expect(JSON.stringify(taskPageWithFields("plain", [1]))).not.toContain('"order"');
   });
 });

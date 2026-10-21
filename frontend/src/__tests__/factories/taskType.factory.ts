@@ -17,6 +17,7 @@ export function buildTaskType(overrides: Partial<TaskTypeRead> = {}): TaskTypeRe
     color: "#64748B",
     icon: "square-check",
     layout_preset: "plain",
+    starting_values: null,
     ...overrides,
   };
 }

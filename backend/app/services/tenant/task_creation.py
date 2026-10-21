@@ -31,7 +31,16 @@ from app.core.search import SearchEntityType
 from app.core.tools import Tool
 from app.db.session import require_actor_context
 from app.models.tenant.project import Project
-from app.models.tenant.task import Task, TaskAssignee, TaskStatus, TaskStatusCategory
+from app.models.tenant.task import (
+    RecurrenceStrategy,
+    Task,
+    TaskAssignee,
+    TaskStatus,
+    TaskStatusCategory,
+    TaskType,
+)
+from app.schemas.recurrence import validate_task_recurrence
+from app.schemas.tenant.task import ChecklistItemInput
 from app.services import notifications as notifications_service
 from app.services.tenant import relationships
 from app.services.tenant import named_people
@@ -89,27 +98,88 @@ async def resolve_start_status(
     return await task_statuses_service.get_default_status(session, project_id)
 
 
+async def resolve_type_row(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    task_type_id: Optional[int] = None,
+) -> TaskType:
+    """The type a task is: the one named, which must be this project's, or
+    the project's default."""
+    if task_type_id is None:
+        return await task_types_service.get_default_type(session, project_id)
+    found = await task_types_service.get_project_type(session, task_type_id, project_id)
+    if found is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=TaskMessages.TYPE_NOT_FOUND,
+        )
+    return found
+
+
 async def resolve_type(
     session: AsyncSession,
     *,
     project_id: int,
     task_type_id: Optional[int] = None,
 ) -> int:
-    """The type a task is: the one named, which must be this project's, or
-    the project's default."""
-    if task_type_id is None:
-        default = await task_types_service.get_default_type(session, project_id)
-        assert default.id is not None
-        return default.id
+    """:func:`resolve_type_row`'s id."""
+    found = await resolve_type_row(
+        session, project_id=project_id, task_type_id=task_type_id
+    )
+    assert found.id is not None
+    return found.id
+
+
+def start_from_type(
+    task_type: TaskType,
+    fields: dict[str, Any],
+    *,
+    sent: set[str],
+) -> list[str]:
+    """Fill ``fields`` (a new task's columns) with what its type starts a task
+    with, for each one whoever made it did not send (``sent`` names those it
+    did; one sent empty stays empty), and return the checklist lines it starts
+    with. A repeat starts only on a task with a date to count from, and only
+    one the task can have."""
+    starting = task_types_service.starting_values_of(task_type)
+    if starting is None:
+        return []
+    if starting.description and "description" not in sent:
+        fields["description"] = starting.description
+    if starting.priority is not None and "priority" not in sent:
+        fields["priority"] = starting.priority
     if (
-        await task_types_service.get_project_type(session, task_type_id, project_id)
-        is None
+        starting.recurrence
+        and "recurrence" not in sent
+        and (fields.get("due_date") or fields.get("start_date"))
     ):
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=TaskMessages.TYPE_NOT_FOUND,
+        strategy = (
+            fields.get("recurrence_strategy")
+            if "recurrence_strategy" in sent or starting.recurrence_strategy is None
+            else starting.recurrence_strategy
         )
-    return task_type_id
+        try:
+            validate_task_recurrence(
+                rule=starting.recurrence,
+                strategy=strategy or RecurrenceStrategy.fixed,
+                limit=fields.get("recurrence_limit"),
+                due=fields.get("due_date"),
+            )
+        except ValueError:
+            pass
+        else:
+            fields["recurrence"] = starting.recurrence
+            if strategy is not None:
+                fields["recurrence_strategy"] = strategy
+    return list(starting.checklist)
+
+
+def starting_checklist(lines: list[str]) -> list[dict[str, Any]]:
+    """The stored checklist :func:`start_from_type`'s lines start a task with."""
+    return checklist_service.normalize(
+        [ChecklistItemInput(text=line) for line in lines]
+    )
 
 
 async def create_task_row(

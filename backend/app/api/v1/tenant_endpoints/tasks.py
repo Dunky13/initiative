@@ -333,6 +333,18 @@ async def create_task(
             "tz",
         }
     )
+    # What the task's type starts a task with, where it was left empty.
+    task_type = await task_creation_service.resolve_type_row(
+        session, project_id=project.id, task_type_id=task_in.task_type_id
+    )
+    starting_lines = task_creation_service.start_from_type(
+        task_type, task_data, sent=task_in.model_fields_set
+    )
+    checklist = (
+        checklist_service.normalize(task_in.checklist)
+        if "checklist" in task_in.model_fields_set
+        else task_creation_service.starting_checklist(starting_lines)
+    )
     if task_data.get("recurrence"):
         task_data["recurrence"], task_data["recurrence_shift"] = recurrence.stored(
             task_data["recurrence"],
@@ -346,10 +358,10 @@ async def create_task(
         session,
         project=project,
         task_status_id=task_in.task_status_id,
-        task_type_id=task_in.task_type_id,
+        task_type_id=task_type.id,
         **task_data,
         created_by=guild_context.user_id,
-        checklist=checklist_service.normalize(task_in.checklist),
+        checklist=checklist,
     )
     await column_limits.refuse_full_columns(session, guild_context, project.id, [task])
     await task_creation_service.set_task_assignees(
