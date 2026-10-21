@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The front page shows people working together.** A new section draws three people on the same plan at once: live cursors, a comment landing in the margin, and a task handed to a second person. The headline now reads "Your group has a lot going on. It's time to take the Initiative."
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
 
+### Changed
+
+- **The phone and desktop apps need an update** to reach a server running this release. Once updated, the app counts as a new device for direct messages: messages from before the update can't be read in it, though they still can on your other devices.
+
 ### Fixed
 
 - **Task exports come out the way you see the list.** A PDF, spreadsheet or Markdown export of a grouped table is grouped the same way, with a task under each of its tags and without the groups the layout leaves out (#2911).

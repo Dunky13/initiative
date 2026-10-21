@@ -405,7 +405,7 @@ async def test_the_app_is_sent_to_a_browser_for_this(
         json={"current_password": PASSWORD},
         headers={
             **get_auth_headers(user),
-            "Origin": "https://studio.beyonders.initiative",
+            "Origin": "https://native.initiativetasks.com",
         },
     )
     assert response.status_code == 403

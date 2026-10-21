@@ -21,7 +21,7 @@ const policy = [
 export default defineConfig({
   // The phone app's origin, which every server already accepts.
   scheme: "capacitor",
-  hostname: "studio.beyonders.initiative",
+  hostname: "native.initiativetasks.com",
   // Where sign-in in the system browser hands back to the app.
   deepLinks: { scheme: "initiative" },
   csp: { policy },
