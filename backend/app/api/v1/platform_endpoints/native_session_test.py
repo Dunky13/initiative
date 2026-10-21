@@ -22,7 +22,7 @@ from app.testing import create_user
 
 
 PASSWORD = "testpassword123"
-APP_ORIGIN = {"Origin": "https://native.initiativetasks.com"}
+APP_ORIGIN = {"Origin": "https://studio.beyonders.initiative"}
 
 
 async def _sign_in_native(

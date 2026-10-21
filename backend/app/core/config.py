@@ -37,8 +37,8 @@ PLUGIN_SERVER_URL = f"{API_V1_STR}/c/0"
 # Origins used by the Capacitor native apps (iOS, Android and the desktop app).
 # Must always be allowed regardless of CORS_ALLOWED_ORIGINS setting.
 CAPACITOR_NATIVE_ORIGINS = [
-    "https://native.initiativetasks.com",  # Capacitor custom hostname (Android + iOS with iosScheme=https)
-    "capacitor://native.initiativetasks.com",  # Capacitor default iOS scheme with custom hostname; the desktop app
+    "https://studio.beyonders.initiative",  # Capacitor custom hostname (Android + iOS with iosScheme=https)
+    "capacitor://studio.beyonders.initiative",  # Capacitor default iOS scheme with custom hostname; the desktop app
     "capacitor://localhost",  # Capacitor fallback (no custom hostname)
 ]
 

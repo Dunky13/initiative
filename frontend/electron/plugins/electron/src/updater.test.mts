@@ -39,7 +39,7 @@ const platform = () => {
 /** The app's window, whose page the switch reloads. */
 const page = () => {
   const contents = Object.assign(new EventEmitter(), {
-    getURL: () => "capacitor://native.initiativetasks.com/",
+    getURL: () => "capacitor://studio.beyonders.initiative/",
   });
   paths.windows = [{ webContents: contents }];
   return contents;
