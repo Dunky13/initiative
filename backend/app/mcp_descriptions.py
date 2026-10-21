@@ -129,6 +129,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "`sorting`; follow `has_next` for more pages. Archived tasks are left "
         "out unless `include_archived`."
     ),
+    "list_task_groups": (
+        "The groups the tasks `conditions` match fall into, grouped by one "
+        "field (`group_by`, or `property:<id>` for a custom property), in the "
+        "order a grouped list shows them, and the groups each task id is in. "
+        "A date groups by `bucket`."
+    ),
     "list_my_tasks": (
         "Tasks assigned to the caller across every community they belong to, or "
         "with `created` the ones they created. Left without `conditions`, only "
