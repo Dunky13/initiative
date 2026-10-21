@@ -8,8 +8,8 @@
   "long_description": "Each candidate is a card that moves from Applied through Screening, Interviewing and Offer to Hired, or to Not moving forward, which is kinder than a column called Rejected.\n\nCards record the role, where the candidate came from, how they would work and when the interview is. Give each card a checklist of your steps, such as phone screen, interviews, references, offer letter and start date, so every candidate gets the same process.\n\nAssign each card to whoever owes the candidate an answer next. That is usually the whole problem.",
   "avatar_url": "/marketplace/core-hiring-pipeline.svg",
   "images": [],
-  "version": "1.0.0",
-  "release_notes": "The first version.",
+  "version": "1.1.0",
+  "release_notes": "Opens on the board. Each card shows the role and interview date, and a candidate's page keeps their details together.",
   "definition": {
     "type": "initiative-project",
     "schema_version": 1,
@@ -149,7 +149,287 @@
         "options": null
       }
     ],
-    "tasks": []
+    "tasks": [],
+    "layouts": [
+      {
+        "kind": "board",
+        "definition": {
+          "card": {
+            "type": "card",
+            "children": [
+              {
+                "type": "stack",
+                "props": {
+                  "align": "start"
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "title"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "description"
+                    }
+                  },
+                  {
+                    "type": "stack",
+                    "props": {
+                      "tone": "muted"
+                    },
+                    "children": [
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "property:1"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "property:4"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "assignees"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "startDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "dueDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "recurrence"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "checklist"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "stack",
+                "props": {
+                  "direction": "row",
+                  "gap": "sm",
+                  "wrap": true
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "priority"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "comments"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "blockers"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "tags"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "groupings": [
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:2"
+            },
+            {
+              "field": "property:3"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "table",
+        "definition": {
+          "columns": [
+            "title",
+            "property:1",
+            "property:2",
+            "property:3",
+            "property:4",
+            "property:5",
+            "assignees",
+            "dueDate",
+            "priority",
+            "comments"
+          ],
+          "groupings": [
+            {
+              "field": "task_status_id"
+            },
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:2"
+            },
+            {
+              "field": "property:3"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "task",
+        "definition": {
+          "side": [
+            {
+              "type": "section",
+              "props": {
+                "title": "Candidate"
+              },
+              "children": [
+                {
+                  "type": "status"
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:1"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:2"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:3"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:4"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:5"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "children": [
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "priority"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "assignees"
+                  }
+                },
+                {
+                  "type": "dates"
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "recurrence"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "tags"
+                  }
+                },
+                {
+                  "type": "properties"
+                }
+              ]
+            },
+            {
+              "type": "relations"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "default",
+        "definition": {
+          "kind": "board"
+        }
+      }
+    ]
   },
   "example": {
     "type": "initiative-project",
@@ -672,6 +952,286 @@
             "value_text": "2000-01-03"
           }
         ]
+      }
+    ],
+    "layouts": [
+      {
+        "kind": "board",
+        "definition": {
+          "card": {
+            "type": "card",
+            "children": [
+              {
+                "type": "stack",
+                "props": {
+                  "align": "start"
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "title"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "description"
+                    }
+                  },
+                  {
+                    "type": "stack",
+                    "props": {
+                      "tone": "muted"
+                    },
+                    "children": [
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "property:1"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "property:4"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "assignees"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "startDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "dueDate"
+                        }
+                      },
+                      {
+                        "type": "field",
+                        "props": {
+                          "field": "recurrence"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "checklist"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "stack",
+                "props": {
+                  "direction": "row",
+                  "gap": "sm",
+                  "wrap": true
+                },
+                "children": [
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "priority"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "comments"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "blockers"
+                    }
+                  },
+                  {
+                    "type": "field",
+                    "props": {
+                      "field": "tags"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "groupings": [
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:2"
+            },
+            {
+              "field": "property:3"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "table",
+        "definition": {
+          "columns": [
+            "title",
+            "property:1",
+            "property:2",
+            "property:3",
+            "property:4",
+            "property:5",
+            "assignees",
+            "dueDate",
+            "priority",
+            "comments"
+          ],
+          "groupings": [
+            {
+              "field": "task_status_id"
+            },
+            {
+              "field": "date_group"
+            },
+            {
+              "field": "priority"
+            },
+            {
+              "field": "assignee_ids"
+            },
+            {
+              "field": "created_by"
+            },
+            {
+              "field": "tag_ids"
+            },
+            {
+              "field": "project_id"
+            },
+            {
+              "field": "property:2"
+            },
+            {
+              "field": "property:3"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "task",
+        "definition": {
+          "side": [
+            {
+              "type": "section",
+              "props": {
+                "title": "Candidate"
+              },
+              "children": [
+                {
+                  "type": "status"
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:1"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:2"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:3"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:4"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "property:5"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "children": [
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "priority"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "assignees"
+                  }
+                },
+                {
+                  "type": "dates"
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "recurrence"
+                  }
+                },
+                {
+                  "type": "field",
+                  "props": {
+                    "field": "tags"
+                  }
+                },
+                {
+                  "type": "properties"
+                }
+              ]
+            },
+            {
+              "type": "relations"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "default",
+        "definition": {
+          "kind": "board"
+        }
       }
     ]
   }

@@ -236,6 +236,8 @@ Next time, start *from* it and skip the fiddling. Its checklists arrive exactly 
 
 **Export a project** to a portable file — an offline copy, a move somewhere else, or a backup of one specific project. It imports back in later. It's in **Project settings → Advanced**, next to deleting it, and it belongs to the same people: whoever owns the project, and anyone who can see everything in its initiative.
 
+The file carries the project's [layouts](layouts.md) as well, so it imports back in looking the way you left it. Plug-ins belong to a community, so they stay behind; wherever the file lands, the plug-ins placed in that initiative show up on it as they would on any project. A preset that picks out particular people or tags arrives without them.
+
 The task list has an **Export** of its own: the tasks you've filtered to, or the ones you've selected, as a PDF, a spreadsheet or Markdown. It comes out the way you're looking at it, in your sort and your grouping, minus any groups the layout leaves out. Grouped by tag, a task with two tags turns up under both, same as on screen. The columns are the table's, properties included, and the detailed PDF follows the task page from top to bottom, so rearranging the layout rearranges the printout.
 
 !!! note "People are named by handle"

@@ -23,6 +23,8 @@ You can ignore this page entirely. Every layout ships ready to use, and plenty o
 
 A detail layout is also how the add dialog is laid out, for tasks, events, queue items and counters. The form you fill in looks like the thing you get.
 
+A project's layouts go wherever the project goes: into a [duplicate](tools.md#duplicating), into an [export](projects-and-tasks.md#exporting-a-project), and out of the marketplace, where a ready-made project arrives laid out the way whoever made it set it up.
+
 ## Who can change them
 
 - **A project, queue, counter group or gallery:** whoever owns it, anyone with full access in the initiative, a manager who can edit it, and community admins.

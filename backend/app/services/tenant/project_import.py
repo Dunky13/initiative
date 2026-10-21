@@ -13,7 +13,9 @@ See plan & ``project_export.py`` for the format. The algorithm:
    of mutating the target's existing one.
 7. Insert each task; resolve status / tag / assignee / property refs
    via the maps; insert property values.
-8. Return the counts as an :class:`EnvelopeImportResult`, like every
+8. Store its layouts, their statuses and properties the new ones, and show
+   the plug-ins placed in the initiative on them.
+9. Return the counts as an :class:`EnvelopeImportResult`, like every
    importer's apply.
 """
 
@@ -31,6 +33,7 @@ from app.core.search import SearchEntityType
 from app.models.tenant.comment import Comment
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.project import Project
+from app.models.tenant.property import PropertyType
 
 from app.models.tenant.task import (
     Task,
@@ -67,7 +70,9 @@ from app.services.import_engine.people import (
     quoted_account,
     bring_in_named,
 )
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import task_completion
+from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant.task_statuses import defaults_for_category
 from app.services.import_engine.common import (
     load_initiative_member_handles,
@@ -138,6 +143,8 @@ async def import_project(
     # 2. Task statuses → name → id map
     status_name_to_id: dict[str, int] = {}
     status_id_to_category: dict[int, TaskStatusCategory] = {}
+    # Each status by its place in the envelope, which is how a layout names it.
+    status_by_place: dict[int, int] = {}
     default_status_id: int | None = None
     for s in envelope.task_statuses:
         default_color, default_icon = defaults_for_category(s.category)
@@ -154,6 +161,7 @@ async def import_project(
         await session.flush()
         status_name_to_id[s.name] = status_row.id  # ty: ignore[invalid-assignment] — persisted row, id is set
         status_id_to_category[status_row.id] = s.category  # ty: ignore[invalid-assignment] — persisted row, id is set
+        status_by_place[len(status_by_place) + 1] = status_row.id  # ty: ignore[invalid-assignment] — persisted row, id is set
         if s.is_default and default_status_id is None:
             default_status_id = status_row.id
     if default_status_id is None:
@@ -210,6 +218,38 @@ async def import_project(
         comment_count += comments_made
 
     await session.flush()
+    # 6. Its layouts, naming the statuses and properties it now has, with the
+    # plug-ins placed here shown on them as they are on every saved layout.
+    if envelope.layouts:
+        property_by_place = {
+            place: props.bound_id(declared.name, declared.type)
+            for place, declared in enumerate(envelope.property_definitions, start=1)
+        }
+        remap = tool_layouts_service.Remap(
+            statuses=status_by_place.get,
+            properties=property_by_place.get,
+            community=False,
+            people=frozenset(
+                place
+                for place, declared in enumerate(envelope.property_definitions, start=1)
+                if declared.type == PropertyType.user_reference
+            ),
+        )
+        target = tool_layouts_service.Target(
+            Tool.project, project.id, target_initiative.id
+        )
+        await tool_layouts_service.restore_layouts(
+            session,
+            target,
+            (
+                (
+                    layout.kind,
+                    tool_layouts_service.remapped_definition(layout.definition, remap),
+                )
+                for layout in envelope.layouts
+            ),
+        )
+        await guild_plugins_service.show_placed_on(session, target)
     # One pass lets in everyone the project now names, assignees and person
     # values alike.
     named_handles.update(props.named)

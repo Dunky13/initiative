@@ -276,6 +276,12 @@ class PropertyRestore:
             if declared.name not in self._excluded:
                 await self._definition(declared.name, declared.type, declared=declared)
 
+    def bound_id(self, name: str, prop_type: PropertyType) -> int | None:
+        """The target definition an envelope property became, or None for one
+        left out."""
+        found = self._resolved.get((name, prop_type))
+        return found.id if found is not None else None
+
     async def _definition(
         self,
         name: str,

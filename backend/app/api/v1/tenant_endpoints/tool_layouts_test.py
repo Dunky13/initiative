@@ -643,8 +643,12 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
         "limits": [{"status_id": 1, "limit": 3}, {"status_id": 2, "limit": 4}],
     }
 
-    copied = tool_layouts_service.copied_definition(
-        definition, {1: 11}, same_initiative=same_initiative
+    copied = tool_layouts_service.remapped_definition(
+        definition,
+        tool_layouts_service.Remap(
+            statuses={1: 11}.get,
+            properties=None if same_initiative else lambda _id: None,
+        ),
     )
 
     # Statuses are the copy's own, and one it lacks is dropped; properties
