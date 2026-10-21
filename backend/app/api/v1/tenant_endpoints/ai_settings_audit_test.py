@@ -131,7 +131,7 @@ async def test_an_operator_connection_is_recorded_through_its_life(
     assert {"label", "provider", "model", "enabled"} <= set(born["detail"]["changed"])
     # The label, the provider and the model name it; only the switches carry a
     # value.
-    assert set(born["detail"]["values"]) == {"enabled", "is_default"}
+    assert set(born["detail"]["values"]) == {"enabled", "is_default", "community_ids"}
 
     moved = _of(envelopes, AuditEventType.AI_CONNECTION_UPDATED)[0]
     assert moved["detail"]["changed"] == ["enabled"]

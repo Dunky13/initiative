@@ -4,6 +4,7 @@ import {
   AIConnectionManager,
   type ConnectionMutations,
 } from "@/components/settings/AIConnectionManager";
+import { CommunityAISwitchSection } from "@/components/settings/CommunityAISwitchSection";
 import { FormSkeleton, SkeletonRegion } from "@/components/skeletons/PageSkeletons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAIEnabled } from "@/hooks/useAIEnabled";
@@ -19,8 +20,8 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { getProvidersForScope } from "@/lib/ai-providers";
 
 /**
- * The seat's AI surface: manage the community's own AI connections when the
- * platform is in `community` mode.
+ * The seat's AI surface: whether AI may be used here at all, and the
+ * community's own AI connections when the platform is in `community` mode.
  */
 export const SettingsCommunityAIPage = () => {
   const { t } = useTranslation("settings");
@@ -73,33 +74,41 @@ export const SettingsCommunityAIPage = () => {
     );
   }
 
+  const aiSwitch = activeCommunity && <CommunityAISwitchSection communityId={activeCommunity.id} />;
+
   if (mode === "platform") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("communityAI.title")}</CardTitle>
-          <CardDescription>{t("communityAI.managedByPlatform")}</CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="space-y-6">
+        {aiSwitch}
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("communityAI.title")}</CardTitle>
+            <CardDescription>{t("communityAI.managedByPlatform")}</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("communityAI.connectionsTitle")}</CardTitle>
-        <CardDescription>{t("communityAI.connectionsDescription")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <AIConnectionManager
-          scope="community"
-          connections={connectionsQuery.data ?? []}
-          isLoading={connectionsQuery.isLoading}
-          isError={connectionsQuery.isError}
-          providers={getProvidersForScope("community")}
-          mutations={mutations}
-        />
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      {aiSwitch}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("communityAI.connectionsTitle")}</CardTitle>
+          <CardDescription>{t("communityAI.connectionsDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AIConnectionManager
+            scope="community"
+            connections={connectionsQuery.data ?? []}
+            isLoading={connectionsQuery.isLoading}
+            isError={connectionsQuery.isError}
+            providers={getProvidersForScope("community")}
+            mutations={mutations}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 };

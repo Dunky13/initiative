@@ -8,7 +8,8 @@ guild uses them. Read on the request path via an in-process cache, not per-reque
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Field, SQLModel
 from pydantic import ConfigDict
 
@@ -33,6 +34,12 @@ class AIConnectionColumns(SQLModel):
     is_default: bool = Field(
         default=False, nullable=False, sa_column_kwargs={"server_default": "false"}
     )
+    # How its last request went: the message code it failed with, and since
+    # when, until a request succeeds. What its owner reads in settings.
+    last_error: Optional[str] = Field(default=None, sa_type=String(64), nullable=True)
+    last_error_at: Optional[datetime] = Field(
+        default=None, sa_type=DateTime(timezone=True), nullable=True
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_type=DateTime(timezone=True),
@@ -55,4 +62,10 @@ class PlatformAIConnection(AIConnectionColumns, table=True):
         sa_type=String(2000),
         nullable=True,
         sa_column_kwargs={"info": {FERNET_SALT: SALT_AI_API_KEY}},
+    )
+    # The communities it serves, and only them; empty, it serves every
+    # community no other connection is given to.
+    community_ids: list[int] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Integer), nullable=False, server_default="{}"),
     )

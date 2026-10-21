@@ -43,6 +43,8 @@ const baseSettings = (): CommunityAuthSettingsRead => ({
   redacted_by_platform: false,
   allow_engagement_ranking: true,
   engagement_ranking_allowed_by_platform: true,
+  allow_ai: true,
+  ai_offered_by_platform: true,
   guest_max_days: null,
   guest_max_days_by_platform: 90,
 });

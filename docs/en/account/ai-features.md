@@ -40,7 +40,13 @@ The model comes from the provider's own list, so save the connection once and pi
 
 Only the server's owner can point a connection at a machine on a private network, and only for Ollama or an OpenAI-compatible server.
 
-With more than one connection, everybody uses the one marked as the default.
+With more than one connection, everybody uses the one marked as the default. On a platform-managed server, the owner can also give a connection to particular communities. Those communities use it, on its own key, and nobody else does, which suits a company where each department pays from its own account.
+
+A connection's settings say when its requests are failing, and since when: out of credit, a spending limit reached, a key the provider refused. Whoever looks after it hears from settings before anyone has to ask.
+
+### Switching it off for one community
+
+A community's superadmin can turn AI off for that community alone, under **AI in this community** on the same settings page. Off, nothing from that community goes to any provider, whatever the server offers. The legal team's notes stay the legal team's.
 
 ## Your part
 

@@ -7,6 +7,8 @@ the one request path in ``ai_provider``.
 from __future__ import annotations
 
 import html
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -16,7 +18,7 @@ from app.models.tenant.task import Task
 from app.models.platform.user import User
 from app.services import ai_provider
 from app.services.ai_provider import AIRequestError, Job
-from app.services.ai_settings import resolve_ai_settings
+from app.services.ai_settings import record_health, resolve_ai_settings
 from app.services.export.lexical import editor_markdown
 
 # Maximum output lengths to prevent excessive LLM responses
@@ -27,6 +29,9 @@ _MAX_SUMMARY_LENGTH = 5000
 _CHECKLIST_JOB = Job(purpose="checklist", max_tokens=8000, timeout=120.0)
 _DESCRIPTION_JOB = Job(purpose="description", max_tokens=8000, timeout=120.0)
 _SUMMARY_JOB = Job(purpose="summary", max_tokens=16000, timeout=180.0)
+
+
+Answer = TypeVar("Answer")
 
 
 class _Checklist(BaseModel):
@@ -48,12 +53,12 @@ async def generate_checklist(
     prompt = _build_checklist_prompt(
         task, initiative_name, project_name, locale=user.locale or "en"
     )
-    checklist = await ai_provider.complete_json(
-        await _target(session, guild_id),
-        _CHECKLIST_JOB,
-        prompt,
-        _Checklist,
-        guild_id=guild_id,
+    checklist = await _ask(
+        session,
+        guild_id,
+        lambda target: ai_provider.complete_json(
+            target, _CHECKLIST_JOB, prompt, _Checklist, guild_id=guild_id
+        ),
     )
     return [
         _truncate_output(step.strip(), _MAX_CHECKLIST_ITEM_LENGTH)
@@ -75,8 +80,12 @@ async def generate_description(
     prompt = _build_description_prompt(
         task, initiative_name, project_name, locale=user.locale or "en"
     )
-    content = await ai_provider.complete_text(
-        await _target(session, guild_id), _DESCRIPTION_JOB, prompt, guild_id=guild_id
+    content = await _ask(
+        session,
+        guild_id,
+        lambda target: ai_provider.complete_text(
+            target, _DESCRIPTION_JOB, prompt, guild_id=guild_id
+        ),
     )
     return _truncate_output(content, _MAX_DESCRIPTION_LENGTH)
 
@@ -97,8 +106,12 @@ async def generate_file_summary(
     prompt = _build_summary_prompt(
         file_name, markdown_content, locale=user.locale or "en"
     )
-    content = await ai_provider.complete_text(
-        await _target(session, guild_id), _SUMMARY_JOB, prompt, guild_id=guild_id
+    content = await _ask(
+        session,
+        guild_id,
+        lambda target: ai_provider.complete_text(
+            target, _SUMMARY_JOB, prompt, guild_id=guild_id
+        ),
     )
     return _truncate_output(content, _MAX_SUMMARY_LENGTH)
 
@@ -251,17 +264,33 @@ def _build_description_prompt(
     return system_prompt, user_content
 
 
-async def _target(session: AsyncSession, guild_id: int | None) -> ai_provider.Target:
-    """The connection a request in ``guild_id`` goes through, with its key."""
+async def _ask(
+    session: AsyncSession,
+    guild_id: int | None,
+    ask: Callable[[ai_provider.Target], Awaitable[Answer]],
+) -> Answer:
+    """``ask`` the connection a request in ``guild_id`` goes through, with its
+    key, and write down on the connection how the provider answered."""
     resolved = await resolve_ai_settings(session, guild_id, with_key=True)
     if not resolved.enabled or resolved.provider is None:
         raise AIRequestError(
             AIMessages.NOT_CONFIGURED if resolved.provider else AIMessages.NOT_ENABLED
         )
-    return ai_provider.Target(
+    assert resolved.scope is not None and resolved.connection_id is not None
+    target = ai_provider.Target(
         provider=resolved.provider,
         model=resolved.model,
         api_key=resolved.api_key,
         base_url=resolved.base_url,
         allow_private=resolved.allow_private,
     )
+    try:
+        answer = await ask(target)
+    except AIRequestError as exc:
+        if exc.code in ai_provider.PROVIDER_CODES:
+            await record_health(
+                resolved.scope, resolved.connection_id, guild_id, exc.code
+            )
+        raise
+    await record_health(resolved.scope, resolved.connection_id, guild_id, None)
+    return answer

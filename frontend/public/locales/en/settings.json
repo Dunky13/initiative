@@ -213,7 +213,12 @@
     "connectionsTitle": "Community connections",
     "connectionsDescription": "Define the AI connections members of this community can use.",
     "disabledDescription": "AI features are turned off for the platform.",
-    "managedByPlatform": "AI connections are managed at the platform level. Members set their own key in their profile settings."
+    "managedByPlatform": "AI connections are managed at the platform level. Members set their own key in their profile settings.",
+    "switchTitle": "AI in this community",
+    "switchLabel": "Allow AI features",
+    "switchHelp": "Off, nothing in this community is sent to an AI provider, whichever connection the server or the community sets up.",
+    "switchSaved": "AI setting saved",
+    "switchError": "Couldn't save the AI setting."
   },
   "platformAI": {
     "title": "Platform AI",
@@ -1767,7 +1772,17 @@
     "defaultDescription": "Members use this connection unless they pick another.",
     "save": "Save connection",
     "saving": "Saving…",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "communitiesLabel": "Communities",
+    "communitiesPlaceholder": "Give it to a community…",
+    "communitiesSearch": "Search communities…",
+    "communitiesEmpty": "No community by that name",
+    "communitiesHelpNone": "It serves every community no other connection is given to.",
+    "communitiesHelpGiven": "It serves only these communities. A community given here leaves any other connection it was given to.",
+    "removeCommunity": "Remove {{name}}",
+    "goneCommunity": "Deleted community #{{id}}",
+    "servesOnly": "Only for {{communities}}",
+    "failingSince": "Failing since {{since}}: {{error}}"
   },
   "community": {
     "title": "Community directory",

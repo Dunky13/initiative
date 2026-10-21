@@ -1691,6 +1691,12 @@ class AIMessages:
     MODEL_REQUIRED = "AI_MODEL_REQUIRED"
     #: The community already has as many AI requests open as it may.
     BUSY = "AI_BUSY"
+    #: The provider account has run out of credit or has a payment problem.
+    OUT_OF_CREDIT = "AI_OUT_OF_CREDIT"
+    #: A spend limit set on the provider account stopped the request.
+    SPEND_LIMIT_REACHED = "AI_SPEND_LIMIT_REACHED"
+    #: The provider kept refusing for too many requests.
+    RATE_LIMITED = "AI_RATE_LIMITED"
 
 
 class NativeMessages:

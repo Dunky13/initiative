@@ -27,7 +27,8 @@ class _User:
     locale = "en"
 
 
-def _resolving_to(monkeypatch, **overrides) -> None:
+def _resolving_to(monkeypatch, **overrides) -> list[tuple]:
+    """Resolve to one connection, and keep what is written of its health."""
     resolved = ResolvedAISettings(
         **{
             "enabled": True,
@@ -35,15 +36,22 @@ def _resolving_to(monkeypatch, **overrides) -> None:
             "api_key": "test-key",
             "model": "m",
             "scope": ConnectionScope.community,
+            "connection_id": 3,
             "source": "community",
             **overrides,
         }
     )
+    health: list[tuple] = []
 
     async def resolve(*args, **kwargs):
         return resolved
 
+    async def record_health(*args):
+        health.append(args)
+
     monkeypatch.setattr(ai_generation, "resolve_ai_settings", resolve)
+    monkeypatch.setattr(ai_generation, "record_health", record_health)
+    return health
 
 
 async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
@@ -78,7 +86,7 @@ async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
             inner=httpx.MockTransport(handler),
         ),
     )
-    _resolving_to(monkeypatch)
+    health = _resolving_to(monkeypatch)
 
     with patch(
         "app.services.webhook_target_url.socket.getaddrinfo",
@@ -90,6 +98,8 @@ async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
     assert len(steps) == 2 and steps[1].endswith("...")
     system = sent[0]["messages"][0]["content"]
     assert '{"items":' in system
+    # The connection answered, so it is well.
+    assert health == [(ConnectionScope.community, 3, 1, None)]
 
 
 @pytest.mark.parametrize(

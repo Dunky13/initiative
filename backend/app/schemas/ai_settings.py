@@ -5,6 +5,7 @@ both — like the auth posture). The mode's owner defines *connections* (the
 destination: provider, base_url, model, and its key). Members configure nothing.
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -49,6 +50,16 @@ class ConnectionScope(str, Enum):
 
 
 # --- Connections (owner-controlled destination) ------------------------------
+class AIConnectionCommunity(SanitizedBaseModel):
+    """A community an operator's connection serves. No name when the
+    community no longer exists."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    id: int
+    name: Optional[str] = None
+
+
 class AIConnectionResponse(SanitizedBaseModel):
     """A connection as seen by its owning admin. Never carries the key itself —
     only whether one is set."""
@@ -64,6 +75,13 @@ class AIConnectionResponse(SanitizedBaseModel):
     has_api_key: bool = False
     enabled: bool = True
     is_default: bool = False
+    #: An operator's connection given to these communities serves only them;
+    #: with none, it serves every community no other connection is given to.
+    communities: list[AIConnectionCommunity] = []
+    #: The message code its last request failed with, and since when; none
+    #: once one succeeds.
+    last_error: Optional[str] = None
+    last_error_at: Optional[datetime] = None
 
 
 class AIConnectionCreate(SanitizedBaseModel):
@@ -74,6 +92,9 @@ class AIConnectionCreate(SanitizedBaseModel):
     api_key: Optional[RawTextStr] = None
     enabled: bool = True
     is_default: bool = False
+    #: An operator's connection only. Giving it a community takes that
+    #: community from any other connection it was given to.
+    community_ids: list[int] = []
 
 
 class AIConnectionUpdate(SanitizedBaseModel):
@@ -84,6 +105,7 @@ class AIConnectionUpdate(SanitizedBaseModel):
     api_key: Optional[RawTextStr] = None
     enabled: Optional[bool] = None
     is_default: Optional[bool] = None
+    community_ids: Optional[list[int]] = None
 
 
 # --- Platform mode (operator-set, on app_settings) ---------------------------

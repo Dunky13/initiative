@@ -207,17 +207,15 @@ Each task is a bar from its start date to its due date, on a timeline you scroll
 - **Drag a bar** to move the task, or drag one end to change just that date.
 - **Drag across an empty row** to give a task its dates.
 - **Arrows** run from a task to the ones [blocked by](mentions-and-links.md#connections) it. An arrow turns red when a task starts before the thing it's waiting on is done, which is your cue to have a word with somebody.
+- **Drag from the dot** at the end of a bar onto another task's row, and that task waits on this one. The arrow turns up straight away.
 - A task's **parts** (the tasks that are **Part of** it) sit under it and fold away with it. The thin line over its row shows how far they stretch.
 - **Day**, **Week** and **Month** set how much fits on screen. **Today** brings you back.
 - **Group** it like the board, and each group gets a band of its own.
+- **No mouse?** The rows take the arrow keys: up and down to move, right and left to open and fold a task's parts, **Enter** to open one, and **Alt** with left or right to move it a day. Add **Shift** and only its due date moves.
 
 The initiative's [calendar](calendar.md) shows the same dated tasks by month, week or day, beside everybody's events.
 
-!!! screenshot "A project in Gantt view"
-    **Show:** a project grouped by assignee in Week scale, one task folded open over its parts, two dependency arrows (one red), and an undated task's empty row.
-
-    Save as `en/images/projects/view-gantt.png`, then replace this box with:
-    `![A project in Gantt view](../images/projects/view-gantt.png)`. Retake `view-switcher.png` while you're there: it still shows Calendar in the switcher.
+![A project in Gantt view, grouped by assignee](../images/projects/view-gantt.png)
 
 ### Calendar
 

@@ -21,24 +21,29 @@ Resolution (member M generating in guild G):
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException
-from sqlalchemy import text
-from sqlmodel import delete, select
+from sqlalchemy import func, text, update
+from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.db import cohorts
 from app.db.session import routed_guild_id, set_rls_context
 from app.core.audit_events import AuditEventType
 from app.core.encryption import SALT_AI_API_KEY, decrypt_field, encrypt_field
-from app.core.messages import AIMessages
+from app.core.messages import AIMessages, GuildMessages
 from app.db import session as db_session
+from app.core.guild_auth_options import CommunityAuthOption
 from app.models.platform.ai_connection import PlatformAIConnection
+from app.models.platform.guild import CommunityStatus, Guild
 from app.models.tenant.ai_connection import GuildAIConnection, GuildAIConnectionKey
-from app.services.platform.app_settings import get_app_settings
+from app.services.platform.app_settings import get_app_settings, locked_settings
+from app.services.platform import guild_entitlements
 from app.schemas.ai_settings import (
     AIConfigMode,
+    AIConnectionCommunity,
     AIConnectionCreate,
     AIConnectionResponse,
     AIConnectionTestResponse,
@@ -73,6 +78,8 @@ AUDITED_CONNECTION_FIELDS: tuple[str, ...] = (
     "enabled",
     "is_default",
 )
+#: An operator's connection also names the communities it serves.
+AUDITED_PLATFORM_FIELDS = (*AUDITED_CONNECTION_FIELDS, "community_ids")
 
 
 def _normalize_optional_string(value: str | None) -> str | None:
@@ -114,6 +121,8 @@ class _ConnRow:
     has_key: bool
     enabled: bool
     is_default: bool
+    # An operator's connection given to communities serves only them.
+    community_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -138,7 +147,7 @@ async def _load_platform_connections() -> tuple[_ConnRow, ...]:
             await conn.execute(
                 text(
                     "SELECT id, label, provider, base_url, model, "
-                    "api_key_encrypted, enabled, is_default "
+                    "api_key_encrypted, enabled, is_default, community_ids "
                     "FROM public.platform_ai_connections ORDER BY id"
                 )
             )
@@ -155,6 +164,7 @@ async def _load_platform_connections() -> tuple[_ConnRow, ...]:
             has_key=r[5] is not None,
             enabled=bool(r[6]),
             is_default=bool(r[7]),
+            community_ids=tuple(r[8] or ()),
         )
         for r in conn_rows
     )
@@ -288,6 +298,37 @@ async def _validate_connection_base_url(
 
 
 # ---------------------------------------------------------------------------
+# Health: how a connection's last request went
+# ---------------------------------------------------------------------------
+async def record_health(
+    scope: ConnectionScope, connection_id: int, guild_id: int | None, code: str | None
+) -> None:
+    """Write that a request on this connection failed with ``code``, or
+    succeeded (``None``). A failure keeps the time it began until a request
+    succeeds; a write that changes nothing writes nothing. On the system
+    engine: the member whose request it was does not write connections."""
+    model = (
+        PlatformAIConnection if scope is ConnectionScope.platform else GuildAIConnection
+    )
+    stmt = (
+        update(model)
+        .where(
+            col(model.id) == connection_id,
+            col(model.last_error).is_distinct_from(code),
+        )
+        .values(last_error=code, last_error_at=None if code is None else func.now())
+    )
+    if scope is ConnectionScope.platform:
+        async with db_session.system_engine.begin() as conn:
+            await conn.execute(stmt)
+        return
+    assert guild_id is not None
+    async with cohorts.system_session(guild_id) as system, system.begin():
+        await set_rls_context(system, SystemGuild(guild_id))
+        await system.exec(stmt)
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 async def resolve_ai_settings(
@@ -308,9 +349,31 @@ async def resolve_ai_settings(
     if cfg.mode not in ("platform", "community"):
         return ResolvedAISettings(enabled=False, source="disabled")
 
+    # The community's own answer, while it holds the option that sets it.
+    switch = (
+        await session.exec(
+            select(
+                Guild.allow_ai,
+                guild_entitlements.holds_option(
+                    Guild.id, CommunityAuthOption.restrictions
+                ),
+            ).where(Guild.id == guild_id)
+        )
+    ).first()
+    if switch is not None and not switch[0] and switch[1]:
+        return ResolvedAISettings(enabled=False, source=cfg.mode)
+
     # Connections available in the active mode.
     if cfg.mode == "platform":
-        conns = [c for c in cfg.connections if c.enabled]
+        # A connection given to this community is its own, and the only one
+        # it uses, even while it cannot answer: its spend is its own account's.
+        # The rest share the connections given to nobody.
+        given = [c for c in cfg.connections if guild_id in c.community_ids]
+        conns = [
+            c
+            for c in given or [c for c in cfg.connections if not c.community_ids]
+            if c.enabled
+        ]
     else:
         rows = (
             await session.exec(
@@ -398,7 +461,9 @@ async def update_platform_ai_mode(
     return PlatformAIModeResponse(mode=payload.mode)
 
 
-def _platform_conn_response(row: PlatformAIConnection) -> AIConnectionResponse:
+def _platform_conn_response(
+    row: PlatformAIConnection, names: dict[int, str]
+) -> AIConnectionResponse:
     return AIConnectionResponse(
         id=row.id,  # type: ignore[arg-type]
         scope=ConnectionScope.platform,
@@ -409,7 +474,72 @@ def _platform_conn_response(row: PlatformAIConnection) -> AIConnectionResponse:
         has_api_key=bool(row.api_key_encrypted),
         enabled=row.enabled,
         is_default=row.is_default,
+        communities=sorted(
+            (
+                AIConnectionCommunity(id=gid, name=names.get(gid))
+                for gid in row.community_ids
+            ),
+            key=lambda community: (community.name or "").casefold(),
+        ),
+        last_error=row.last_error,
+        last_error_at=row.last_error_at,
     )
+
+
+async def _community_names(
+    session: AsyncSession, ids: Iterable[int], *, live: bool = False
+) -> dict[int, str]:
+    """The communities among ``ids`` that still exist, by name; with ``live``,
+    only those not deleted."""
+    wanted = set(ids)
+    if not wanted:
+        return {}
+    statement = select(Guild.id, Guild.name).where(col(Guild.id).in_(wanted))
+    if live:
+        statement = statement.where(Guild.status != CommunityStatus.deleted)
+    rows = await session.exec(statement)
+    return {gid: name for gid, name in rows.all()}  # type: ignore[misc]
+
+
+async def _platform_responses(
+    session: AsyncSession, rows: Sequence[PlatformAIConnection]
+) -> list[AIConnectionResponse]:
+    names = await _community_names(
+        session, (gid for row in rows for gid in row.community_ids)
+    )
+    return [_platform_conn_response(row, names) for row in rows]
+
+
+async def _give_communities(
+    session: AsyncSession, row: PlatformAIConnection, community_ids: list[int]
+) -> None:
+    """Give ``row`` these communities, and take them from any other
+    connection they were given to: a community has one connection of its own.
+
+    A community added must be live; one it already had stays until removed,
+    deleted or not. Changes are made one at a time, under the settings row.
+    """
+    await locked_settings(session)
+    wanted = set(community_ids)
+    added = wanted - set(row.community_ids)
+    if added - set(await _community_names(session, added, live=True)):
+        raise HTTPException(status_code=404, detail=GuildMessages.COMMUNITY_NOT_FOUND)
+    row.community_ids = sorted(wanted)
+    others = (
+        (
+            await session.exec(
+                select(PlatformAIConnection).where(
+                    PlatformAIConnection.id != row.id,
+                    col(PlatformAIConnection.community_ids).overlap(sorted(wanted)),
+                )
+            )
+        ).all()
+        if wanted
+        else []
+    )
+    for other in others:
+        other.community_ids = [g for g in other.community_ids if g not in wanted]
+        session.add(other)
 
 
 async def list_platform_connections(
@@ -420,7 +550,7 @@ async def list_platform_connections(
             select(PlatformAIConnection).order_by(PlatformAIConnection.id)
         )
     ).all()
-    return [_platform_conn_response(r) for r in rows]
+    return await _platform_responses(session, rows)
 
 
 async def create_platform_connection(
@@ -447,8 +577,9 @@ async def create_platform_connection(
     if payload.is_default:
         await _clear_platform_default(session)
     session.add(row)
-    await _bump_ai_config_version(session)
     await session.flush()
+    await _give_communities(session, row, payload.community_ids)
+    await _bump_ai_config_version(session)
     await audit_service.record(
         session,
         event_type=AuditEventType.AI_CONNECTION_CREATED,
@@ -458,7 +589,7 @@ async def create_platform_connection(
         detail={
             "scope": ConnectionScope.platform.value,
             **audit_service.changed_fields(
-                {}, audit_service.snapshot(row, AUDITED_CONNECTION_FIELDS)
+                {}, audit_service.snapshot(row, AUDITED_PLATFORM_FIELDS)
             ),
             "secret_changed": bool(row.api_key_encrypted),
         },
@@ -466,7 +597,7 @@ async def create_platform_connection(
     await session.commit()
     await session.refresh(row)
     invalidate_platform_ai_cache()
-    return _platform_conn_response(row)
+    return (await _platform_responses(session, [row]))[0]
 
 
 async def _clear_platform_default(session: AsyncSession) -> None:
@@ -493,7 +624,7 @@ async def update_platform_connection(
     if row is None:
         raise HTTPException(status_code=404, detail=AIMessages.CONNECTION_NOT_FOUND)
     data = payload.model_dump(exclude_unset=True)
-    before = audit_service.snapshot(row, AUDITED_CONNECTION_FIELDS)
+    before = audit_service.snapshot(row, AUDITED_PLATFORM_FIELDS)
     key_before = row.api_key_encrypted
     destination = (row.provider, row.base_url)
     provider = payload.provider or AIProvider(row.provider)
@@ -523,11 +654,13 @@ async def update_platform_connection(
         if payload.is_default:
             await _clear_platform_default(session)
         row.is_default = payload.is_default
+    if payload.community_ids is not None:
+        await _give_communities(session, row, payload.community_ids)
     session.add(row)
     await _bump_ai_config_version(session)
     secret_changed = row.api_key_encrypted != key_before
     changed = audit_service.changed_fields(
-        before, audit_service.snapshot(row, AUDITED_CONNECTION_FIELDS)
+        before, audit_service.snapshot(row, AUDITED_PLATFORM_FIELDS)
     )
     if changed["changed"] or secret_changed:
         await audit_service.record(
@@ -545,7 +678,7 @@ async def update_platform_connection(
     await session.commit()
     await session.refresh(row)
     invalidate_platform_ai_cache()
-    return _platform_conn_response(row)
+    return (await _platform_responses(session, [row]))[0]
 
 
 async def delete_platform_connection(
@@ -582,6 +715,8 @@ def _guild_conn_response(row: GuildAIConnection) -> AIConnectionResponse:
         has_api_key=row.has_api_key,
         enabled=row.enabled,
         is_default=row.is_default,
+        last_error=row.last_error,
+        last_error_at=row.last_error_at,
     )
 
 
@@ -796,6 +931,20 @@ async def _probe(conn: _ConnRow, api_key: str | None) -> AIConnectionTestRespons
     return AIConnectionTestResponse(success=True, available_models=models or None)
 
 
+async def _record_probe(
+    scope: ConnectionScope,
+    connection_id: int,
+    guild_id: int | None,
+    result: AIConnectionTestResponse,
+) -> None:
+    """A test is a request too: what the provider answered is the
+    connection's health. A test that never asked the provider says nothing."""
+    if result.success:
+        await record_health(scope, connection_id, guild_id, None)
+    elif result.message in ai_provider.PROVIDER_CODES:
+        await record_health(scope, connection_id, guild_id, result.message)
+
+
 def _platform_conn(row: PlatformAIConnection) -> _ConnRow:
     return _ConnRow(
         scope="platform",
@@ -825,7 +974,9 @@ async def test_platform_connection(
     row = await session.get(PlatformAIConnection, connection_id)
     if row is None:
         raise HTTPException(status_code=404, detail=AIMessages.CONNECTION_NOT_FOUND)
-    return await _probe(_platform_conn(row), _platform_key(row))
+    result = await _probe(_platform_conn(row), _platform_key(row))
+    await _record_probe(ConnectionScope.platform, connection_id, None, result)
+    return result
 
 
 async def fetch_platform_connection_models(
@@ -843,7 +994,13 @@ async def test_guild_connection(
     row = await session.get(GuildAIConnection, connection_id)
     if row is None:
         raise HTTPException(status_code=404, detail=AIMessages.CONNECTION_NOT_FOUND)
-    return await _probe(_conn_from_guild(row), await _guild_key(session, connection_id))
+    result = await _probe(
+        _conn_from_guild(row), await _guild_key(session, connection_id)
+    )
+    await _record_probe(
+        ConnectionScope.community, connection_id, routed_guild_id(session), result
+    )
+    return result
 
 
 async def fetch_guild_connection_models(
