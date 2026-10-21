@@ -591,14 +591,6 @@ class TestErasing:
         community = await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        told: list[tuple[int, str]] = []
-
-        async def erased(guild_id: int, listing_uid: str) -> None:
-            told.append((guild_id, listing_uid))
-
-        from app.services.marketplace import plugin_entitlements
-
-        monkeypatch.setattr(plugin_entitlements, "erased", erased)
         plugins = _answering(monkeypatch, hooked=[502, 204])
 
         await _deliver(guild.id, hook="erase")
@@ -610,7 +602,6 @@ class TestErasing:
             session, ref=member, guild_id=guild.id
         )
         assert plugins.calls[0][2]["community_ref"] == community
-        assert told == []
 
         await _come_due(session, guild.id)
         await _visit(guild.id)
@@ -621,7 +612,6 @@ class TestErasing:
         assert not await community_hooks.erase_pending(
             guild_id=guild.id, public_id=PUBLIC_ID
         )
-        assert told == [(guild.id, LISTING_UID)]
         assert emitted(capfd, AuditEventType.PLUGIN_ERASE_ABANDONED) == []
 
     async def test_an_erase_is_finished_and_its_names_dropped_together(
@@ -895,30 +885,22 @@ class TestPurging:
         assert await _purge(session, when) == 1
         assert await _standing(session, guild_id) is None
 
-    async def test_an_answered_purge_erase_tells_the_issuer_while_the_row_stands(
+    async def test_an_answered_purge_erase_lets_the_purge_finish(
         self, session, monkeypatch
     ):
-        from app.services.marketplace import plugin_entitlements
-
+        # Billing learns of the purge from the change log (community.purged),
+        # not from the erase: the erase only has to be answered.
         _user, guild, _install = await _setup(session)
         guild_id = guild.id
         await plugin_refs.ensure_plugin_guild_ref(
             guild_id=guild_id, public_id=PUBLIC_ID
         )
-        told: list[tuple[int, str, bool]] = []
-
-        async def erased(guild_id: int, listing_uid: str) -> None:
-            standing = await _standing(session, guild_id)
-            told.append((guild_id, listing_uid, standing is not None))
-
-        monkeypatch.setattr(plugin_entitlements, "erased", erased)
         _answering(monkeypatch, hooked=[204])
         when = await _deleted(session, guild_id)
 
-        await _purge(session, when)
+        assert await _purge(session, when) == 0
         await _visit(guild_id)
 
-        assert told == [(guild_id, LISTING_UID, True)]
         assert await _purge(session, when) == 1
 
     async def test_a_community_being_purged_names_nobody_new_and_stays_gone(

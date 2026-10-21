@@ -16,7 +16,6 @@ Pinned:
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
@@ -36,48 +35,8 @@ from app.testing import (
     create_guild_membership,
     create_user,
 )
-from app.testing.billing_boundary import change_kinds, change_rows
+from app.testing.billing_boundary import change_kinds, change_rows, served_changes
 from app.testing.billing_managed import billing_manages_plans
-
-
-async def _all(after: str | None = None) -> tuple[list[dict], str | None]:
-    """Every change served after ``after``, once the cluster's transactions
-    older than now have ended: the log is served only up to the oldest one
-    still running, in any database, and the suite's other workers run theirs
-    beside this one."""
-    deadline = asyncio.get_running_loop().time() + 15
-    async with engine_for_wait() as conn:
-        now = (
-            await conn.execute(text("SELECT pg_current_xact_id()::text"))
-        ).scalar_one()
-        await conn.rollback()
-        while True:
-            passed = (
-                await conn.execute(
-                    text(
-                        "SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint"
-                        " > CAST(:now AS bigint)"
-                    ),
-                    {"now": int(now)},
-                )
-            ).scalar_one()
-            await conn.rollback()
-            if passed or asyncio.get_running_loop().time() > deadline:
-                break
-            await asyncio.sleep(0.05)
-    out: list[dict] = []
-    cursor = after
-    while True:
-        page, cursor = await billing_changes.page(cursor, 2)
-        out += page
-        if not page:
-            return out, cursor
-
-
-def engine_for_wait():
-    from app.db import session as db_session
-
-    return db_session.SystemSessionLocal.kw["bind"].connect()
 
 
 async def _set_status(session: AsyncSession, guild_id: int, status: CommunityStatus):
@@ -115,7 +74,7 @@ async def test_a_communitys_lifecycle_is_served_in_order_by_reference(
         session.add(renamed)
         await session.commit()
 
-        served, _cursor = await _all()
+        served, _cursor = await served_changes()
 
     ref = await billing_ref(IdentityEntity.guild, guild_id)
     mine = [c for c in served if c["community_ref"] == ref]
@@ -162,7 +121,7 @@ async def test_a_purge_is_served_under_the_reference_it_had(session: AsyncSessio
             text("DELETE FROM public.guilds WHERE id = :g"), params={"g": guild_id}
         )
         await session.commit()
-        served, _ = await _all()
+        served, _ = await served_changes()
 
     assert [
         (c["kind"], c["community_ref"])
@@ -189,7 +148,7 @@ async def test_a_community_billing_never_knew_is_not_served_once_gone(
             "community.created",
             "community.purged",
         ]
-        served, _ = await _all()
+        served, _ = await served_changes()
 
     assert [c for c in served if c["kind"].startswith("community.")] == []
 
@@ -227,12 +186,12 @@ async def test_a_late_commit_is_never_skipped(session: AsyncSession, engine):
             served, cursor = await billing_changes.page(None, 500)
             assert [c["kind"] for c in served if c["kind"].startswith("test.")] == []
             await early_txn.commit()
-        served, cursor = await _all(cursor)
+        served, cursor = await served_changes(cursor)
         assert [c["kind"] for c in served if c["kind"].startswith("test.")] == [
             "test.early",
             "test.late",
         ]
-        assert await _all(cursor) == ([], cursor)
+        assert await served_changes(cursor) == ([], cursor)
 
 
 async def test_an_aborted_transaction_holds_nothing_up(session: AsyncSession, engine):
@@ -246,7 +205,7 @@ async def test_an_aborted_transaction_holds_nothing_up(session: AsyncSession, en
             await txn.rollback()
         async with engine.connect() as later, later.begin():
             await _write(later, guild_id, "test.later")
-        served, _ = await _all()
+        served, _ = await served_changes()
 
     assert [c["kind"] for c in served if c["kind"].startswith("test.")] == [
         "test.later"

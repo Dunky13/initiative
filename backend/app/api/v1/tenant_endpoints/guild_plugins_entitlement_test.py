@@ -27,7 +27,7 @@ from app.models.platform.guild import CommunityRole
 from app.services import sweep_timers
 from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.platform import billing_ping
-from app.services.platform import billing_changes
+from app.testing.billing_boundary import served_changes
 from app.testing.billing_boundary import configure_outbound
 from app.testing.billing_managed import billing_manages_plans
 from app.services.tenant import plugin_connection_flows as flows
@@ -322,7 +322,7 @@ class TestInstallChanges:
             await _settle()
             await sweep_timers.process_due_timers()
             assert removed.status_code == 204, removed.text
-            served, _cursor = await billing_changes.page(None, 500)
+            served, _cursor = await served_changes()
 
         assert [
             (c["kind"], c["community_ref"], c["listing_uid"])
@@ -356,7 +356,7 @@ class TestInstallChanges:
             )
             await _settle()
             await sweep_timers.process_due_timers()
-            served, _cursor = await billing_changes.page(None, 500)
+            served, _cursor = await served_changes()
 
         assert installed.status_code == 201, installed.text
         assert [c for c in served if c["kind"].startswith("plugin.")] == []

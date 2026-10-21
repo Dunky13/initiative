@@ -8,6 +8,7 @@ any claim overridden, for the refusal tests.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -17,8 +18,10 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from httpx import AsyncClient
+from sqlalchemy import text
 
 from app.core import config as config_module
+from app.services.platform import billing_changes
 from app.services.platform import billing_envelope as envelope
 from app.testing.factories import STATEMENT_PUBLIC_PEM
 
@@ -149,3 +152,43 @@ def use_handoff_key(monkeypatch) -> str:
     monkeypatch.setattr(settings, "HANDOFF_SIGNING_PRIVATE_KEY_PEM", OTHER_PRIVATE_PEM)
     monkeypatch.setattr(settings, "HANDOFF_SIGNING_KEY_ID", "test-handoff-key")
     return OTHER_PUBLIC_PEM
+
+
+async def served_changes(after: str | None = None) -> tuple[list[dict], str | None]:
+    """Every change served after ``after``, once the cluster's transactions
+    older than now have ended: the log is served only up to the oldest one
+    still running, in any database, and the suite's other workers run theirs
+    beside this one."""
+    deadline = asyncio.get_running_loop().time() + 15
+    async with _wait_connection() as conn:
+        now = (
+            await conn.execute(text("SELECT pg_current_xact_id()::text"))
+        ).scalar_one()
+        await conn.rollback()
+        while True:
+            passed = (
+                await conn.execute(
+                    text(
+                        "SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint"
+                        " > CAST(:now AS bigint)"
+                    ),
+                    {"now": int(now)},
+                )
+            ).scalar_one()
+            await conn.rollback()
+            if passed or asyncio.get_running_loop().time() > deadline:
+                break
+            await asyncio.sleep(0.05)
+    out: list[dict] = []
+    cursor = after
+    while True:
+        page, cursor = await billing_changes.page(cursor, 2)
+        out += page
+        if not page:
+            return out, cursor
+
+
+def _wait_connection():
+    from app.db import session as db_session
+
+    return db_session.SystemSessionLocal.kw["bind"].connect()
