@@ -303,6 +303,7 @@ SHARED_ROLES = frozenset(
     {
         "app_guild_base",
         "app_guild_base_ro",
+        "app_billing_log",
         "app_dm_reader",
         "app_profile_reader",
         "app_superadmin",
@@ -1163,6 +1164,9 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
                     ("initiative_billing",),
                     using=billing_scoped("guild_id"),
                 ),
+                # The change log's writer counts a community's members and
+                # guests whoever's transaction changed them (20261021_0532).
+                Policy("billing_log_read", SELECT, ("app_billing_log",), using=OPEN),
                 Policy("dm_reader_read", SELECT, ("app_dm_reader",), using=OPEN),
                 Policy(
                     "guild_membership_projection_read",
@@ -1305,6 +1309,9 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
     "guilds": SharedTable(
         rls=TableRls(
             policies=(
+                # The change log's writer asks whether a community is still
+                # there (20261021_0532).
+                Policy("billing_log_read", SELECT, ("app_billing_log",), using=OPEN),
                 Policy(
                     "billing_guild_select",
                     SELECT,
@@ -1408,6 +1415,14 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
     "identity_refs": SharedTable(
         rls=TableRls(
             policies=(
+                # The change log's writer reads the reference billing knows a
+                # community by, while it still has one (20261021_0532).
+                Policy(
+                    "billing_log_read_refs",
+                    SELECT,
+                    ("app_billing_log",),
+                    using="purpose = 'billing' AND entity_type = 'guild'",
+                ),
                 Policy(
                     "identity_refs_client_sector",
                     SELECT,
@@ -2416,12 +2431,24 @@ SHARED_TABLE_REGISTRY: dict[str, SharedTable] = {
             app_admin=None,
         ),
     ),
-    # One-shot billing service-JWT redemption.
+    # One-shot redemption of billing's request envelopes.
     "billing_jti_blocklist": SharedTable(
         rls=NO_RLS,
         grants=Grants(
-            # Read, and pruned by the janitor once expired; written only under
-            # initiative_billing (see billing_event_log).
+            # Burned on the system engine as each envelope verifies, and pruned
+            # by the janitor once expired.
+            app_admin=frozenset({SELECT, INSERT, DELETE}),
+        ),
+    ),
+    # The change log billing reads by cursor. Written only by the definer
+    # function public.billing_change_row, from the triggers on guilds,
+    # guild_memberships, plugin_installs and plugin_usage, and from the system
+    # engine's storage report: no role holds INSERT, so a row means the fact
+    # happened (20261021_0532).
+    "billing_changes": SharedTable(
+        rls=NO_RLS,
+        grants=Grants(
+            # Served to billing and pruned after 30 days, on the system engine.
             app_admin=frozenset({SELECT, DELETE}),
         ),
     ),

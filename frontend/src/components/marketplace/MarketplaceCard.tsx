@@ -73,7 +73,11 @@ export function MarketplaceCard({ listing, installedCount = 0 }: MarketplaceCard
               ) : (
                 listing.unavailable && (
                   <Badge variant="outline" className="text-xs">
-                    {t("card.unavailable")}
+                    {/* A full term is asked for, not waited on: the listing's
+                        page carries the request. */}
+                    {listing.unavailable.reason === "term_full"
+                      ? t("card.request")
+                      : t("card.unavailable")}
                   </Badge>
                 )
               )}

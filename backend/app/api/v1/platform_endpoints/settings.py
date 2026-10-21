@@ -125,7 +125,6 @@ from app.services.platform import push_config, push_relay
 from app.services import captcha as captcha_service
 from app.services.captcha_config import ResolvedCaptchaConfig
 from app.services.platform import billing as billing_service
-from app.services.platform import billing_ping
 from app.services.platform.retention import COMMUNITY_DELETION
 from app.services.platform import guilds as guilds_service
 from app.services.platform import case_activity, grant_cases
@@ -1234,9 +1233,6 @@ async def update_platform_community_storage(
         )
     await session.commit()
     if status_after is not None:
-        # Billing reads the new status for itself: a suspended community's
-        # subscription is paused, and one that comes back is resumed.
-        billing_ping.notify_lifecycle_changed(guild_id)
         if status_after == CommunityStatus.on_hold.value:
             await guilds_service.announce_on_hold(session, guild_id)
             guild = await guilds_service.get_guild(session, guild_id=guild_id)
@@ -1339,7 +1335,6 @@ async def set_platform_community_suspension(
         },
     )
     await session.commit()
-    billing_ping.notify_lifecycle_changed(guild_id)
     if grant is not None:
         await grant_cases.note(
             grant.case_task_id,
@@ -1517,7 +1512,6 @@ async def restore_platform_community(
         "guild %s restored as %s by user %s", guild_id, guild.status, operator.id
     )
     await session.commit()
-    billing_ping.notify_lifecycle_changed(guild_id)
     administration = await guilds_service.get_administration(session, guild_id=guild_id)
     return _guild_storage_read(
         guild,

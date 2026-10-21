@@ -9,7 +9,6 @@
   "creating": "Creating…",
   "createCommunitySubmit": "Create community",
   "unableToCreateCommunity": "Unable to create community",
-  "freeCommunityHeldInApp": "You already have a free community. Another one can't be set up in the app.",
   "switchTo": "Switch to {{name}}",
   "communitiesHeading": "Communities",
   "expandCommunities": "Expand community list",

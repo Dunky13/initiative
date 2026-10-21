@@ -379,6 +379,7 @@ async def register_with_code(
             community=payload.community,
             birthdate=payload.birthdate,
             username_offer=payload.username_offer,
+            accepted_documents=tuple(payload.accepted_documents),
         ),
         invite_code=payload.invite_code,
         hashed_password=None,

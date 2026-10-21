@@ -67,7 +67,10 @@
       "member": "Membres"
     },
     "entitlementRequired": "Ce plug-in doit être activé pour votre communauté avant de pouvoir être ajouté.",
-    "entitlementAction": "Voir les options"
+    "entitlementAction": "Voir les options",
+    "termFull": "L'offre de ce déploiement n'a plus de place libre pour {{name}}.",
+    "termFullRequest": "Demander",
+    "termFullAskAdmins": "Demandez aux administrateurs de votre communauté d'en faire la demande."
   },
   "connections": {
     "none": "Ce plug-in ne demande aucune configuration.",

@@ -27,8 +27,8 @@ def _configure(monkeypatch, *, billing: bool, plugin_platform: bool) -> None:
     )
     monkeypatch.setattr(
         config_module.settings,
-        "BILLING_HMAC_SECRET",
-        "secret" if billing else None,
+        "BILLING_STATEMENT_PUBLIC_KEY_PEM",
+        "pk" if billing else None,
     )
     monkeypatch.setattr(
         config_module.settings,

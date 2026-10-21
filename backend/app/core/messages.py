@@ -210,7 +210,6 @@ class GuildMessages:
     #: receive them.
     SUPPORT_INTAKE_NOT_CONFIGURED = "SUPPORT_INTAKE_NOT_CONFIGURED"
     COMMUNITY_CREATION_DISABLED = "COMMUNITY_CREATION_DISABLED"
-    FREE_COMMUNITY_ALREADY_HELD = "FREE_COMMUNITY_ALREADY_HELD"
     COMMUNITY_CREATION_LIMIT_REACHED = "COMMUNITY_CREATION_LIMIT_REACHED"
     #: A demo visitor's account holds its copy and creates no community.
     COMMUNITY_CREATION_DEMO_ACCOUNT = "COMMUNITY_CREATION_DEMO_ACCOUNT"
@@ -1718,21 +1717,15 @@ class BillingMessages:
     #: rather than a caller fault, so it answers alongside NOT_CONFIGURED.
     KEY_UNREADABLE = "BILLING_KEY_UNREADABLE"
     MISSING_SIGNATURE = "BILLING_MISSING_SIGNATURE"
-    STALE_TIMESTAMP = "BILLING_STALE_TIMESTAMP"
-    INVALID_SIGNATURE = "BILLING_INVALID_SIGNATURE"
+    #: The envelope didn't verify. The detail is ``BILLING_`` and the
+    #: envelope's own code (``BOUNDARY_EXPIRED``, ``BOUNDARY_WRONG_BODY``...).
     INVALID_TOKEN = "BILLING_INVALID_TOKEN"
     REPLAYED_TOKEN = "BILLING_REPLAYED_TOKEN"
     INVALID_PAYLOAD = "BILLING_INVALID_PAYLOAD"
     COMMUNITY_NOT_FOUND = "BILLING_COMMUNITY_NOT_FOUND"
-    SUPPORT_SOURCE_RESTRICTED = "BILLING_SUPPORT_SOURCE_RESTRICTED"
-    SUPPORT_CANNOT_LOWER = "BILLING_SUPPORT_CANNOT_LOWER"
-    OPERATOR_CANNOT_LOWER_CEILING = "BILLING_OPERATOR_CANNOT_LOWER_CEILING"
-    ACTOR_REQUIRED = "BILLING_ACTOR_REQUIRED"
     STATUS_NOT_SETTABLE = "BILLING_STATUS_NOT_SETTABLE"
-    #: A community notice from a source that does not send one.
-    NOTICE_SOURCE_NOT_ALLOWED = "BILLING_NOTICE_SOURCE_NOT_ALLOWED"
     #: The notice could not be written down. Nothing was recorded, so the same
-    #: event id may be sent again.
+    #: key may be sent again.
     NOTICE_NOT_DELIVERED = "BILLING_NOTICE_NOT_DELIVERED"
     PORTAL_NOT_CONFIGURED = "BILLING_PORTAL_NOT_CONFIGURED"
     PORTAL_SIGNING_NOT_CONFIGURED = "BILLING_PORTAL_SIGNING_NOT_CONFIGURED"
@@ -1742,8 +1735,12 @@ class BillingMessages:
     LISTING_HAS_NO_TERMS = "BILLING_LISTING_HAS_NO_TERMS"
     #: An entitlement statement that is not a compact JWS with the statement
     #: header (``alg`` EdDSA, ``typ`` initiative-entitlement+jwt), the issuer's
-    #: ``iss``, and every claim present with its type.
+    #: ``iss``, every claim present with its type, and a signature by the
+    #: statement key.
     INVALID_STATEMENT = "BILLING_INVALID_STATEMENT"
+    #: A batch item refused because it couldn't be applied; the rest of the
+    #: batch is answered on its own.
+    ITEM_FAILED = "BILLING_ITEM_FAILED"
 
 
 class DirectMessageMessages:

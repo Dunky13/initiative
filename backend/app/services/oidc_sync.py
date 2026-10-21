@@ -15,7 +15,6 @@ from app.services.auth import guild_provider_connections as guild_connections
 from app.services.guild_sweeps import Scope, each_guild
 from app.services.platform import provider_placement
 from app.services.platform import account_stream
-from app.services.platform import billing_ping
 from app.services.platform import guilds as guilds_service
 from app.models.tenant.initiative import (
     Initiative,
@@ -378,9 +377,6 @@ async def sync_oidc_assignments(
             account_stream.queue_account_signal(session, user_id, "membership")
             if role not in GUILD_ADMIN_ROLES:
                 newly_admitted_guilds.add(guild_id)
-            # Event-driven seats (billing plan D5); no-op unless billing is
-            # configured. Once per changed guild, not per member row.
-            billing_ping.notify_membership_changed(guild_id)
     await session.flush()
 
     # Guilds to visit for guild-scoped work: those the claims map to, plus every

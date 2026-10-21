@@ -31,7 +31,6 @@
   "COMMUNITY_PERMISSION_REQUIRED": "Se requiere permiso de la comunidad",
   "COMMUNITY_ADMIN_REQUIRED": "Se requiere rol de administrador de la comunidad",
   "COMMUNITY_CREATION_DISABLED": "La creación de comunidades está deshabilitada",
-  "FREE_COMMUNITY_ALREADY_HELD": "Ya tienes una comunidad gratuita. Otra necesita un plan: elige uno y la creamos.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "Ya has creado todas las comunidades que puedes en 24 horas. Vuelve a intentarlo más tarde.",
   "COMMUNITY_CREATION_DEMO_ACCOUNT": "Las cuentas de demostración no pueden crear comunidades",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Solo el personal de la plataforma puede crear una comunidad para otra persona",

@@ -27,7 +27,9 @@ def _billing_sets_plans(monkeypatch) -> None:
 
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
     monkeypatch.setattr(settings, "BILLING_PUBLIC_KEY_PEM", "test-public-key")
-    monkeypatch.setattr(settings, "BILLING_HMAC_SECRET", "test-hmac-secret")
+    monkeypatch.setattr(
+        settings, "BILLING_STATEMENT_PUBLIC_KEY_PEM", "test-statement-key"
+    )
 
 
 async def _record(session: AsyncSession, guild_id: int, status: str) -> None:
@@ -159,19 +161,17 @@ async def test_the_app_says_whether_billing_sets_plans(
 
 
 async def test_the_billing_grant_takes_the_second_factor(
-    client: AsyncClient, session: AsyncSession, acting_user, monkeypatch
+    client: AsyncClient,
+    session: AsyncSession,
+    acting_user,
+    monkeypatch,
+    handoff_signing_key,
 ):
     """Issued once, after the account's own factor; reused without it while it
     lasts."""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(
-        settings,
-        "BILLING_SUPPORT_HANDOFF_SECRET",
-        "test-billing-support-handoff-secret-0123456789",
-    )
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_KID", "k1")
     operator = await acting_user("operator")
     secret, _codes = await _enrol_factor(client, session, operator)
     guild_id = (await create_guild(session)).id

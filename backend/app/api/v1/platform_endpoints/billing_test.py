@@ -1,160 +1,99 @@
-"""Integration tests for the billing write boundary.
+"""The billing boundary's envelope, and the sync and read verbs.
 
-Exercises the security properties of ``POST /api/v1/billing/*``:
+Pinned:
 
-* the double envelope — HMAC over METHOD/PATH/TIMESTAMP/sha256(body) inside
-  a replay window, plus an EdDSA service JWT with one-shot jti — with
-  negative tests for every layer (unconfigured, missing headers, stale or
-  altered signatures, wrong key/aud/iss, reused jti);
-* exactly-once application via the ``billing_event_log`` claim (a retried
-  event id is a no-op; a 404'd attempt does NOT consume its event id);
-* omit-vs-null sentinel semantics on the writable fields;
-* the support_manual source restriction (storage cap only, actor required);
-* the audit row recorded for every applied write.
+* the v2 envelope — a compact EdDSA JWS binding method, path and body hash,
+  ``typ`` pinned, at most 60 seconds, used once — with a refusal test for
+  every claim, the key bundle's rotation, and the self-host default (503);
+* ``communities/sync``: a community takes billing's whole state at a version
+  only when it's newer, and is answered with the version it holds; each item
+  stands alone; a capability package replaces rather than merges; the pushed
+  storage cap is the one uploads are held to; a suspension is never lifted;
+  a hold tells the seat once;
+* ``communities/read``: status, usage, members, guests, name, the version
+  held and each statement's version, and nothing for a community that isn't
+  there.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac as hmac_lib
-import json
-import secrets
 import time
-from datetime import datetime, timedelta, timezone
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from httpx import AsyncClient
-from sqlmodel import delete, select
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import config as config_module
-from app.db.jti_blocklist import purge_expired_jtis
-from app.db import session as db_session
-from app.models.platform.billing import BillingEventLog, BillingJti
-from app.models.platform.guild import Guild
-from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
-from app.services.platform.identity_refs import ensure_ref
+from app.models.platform.billing import BillingJti
+from app.models.platform.guild import CommunityRole, CommunityStatus
+from app.models.platform.guild_administration import GuildAdministration
+from app.services.marketplace import plugin_entitlements
 from app.services.tenant.attachments import (
     StorageQuotaExceededError,
     enforce_storage_quota,
 )
-from app.testing.schema_harness import route_session_to_guild
 from app.testing import (
+    billing_boundary,
     billing_guild_ref,
-    guild_administration,
-    create_guild,
     create_guest,
+    create_guild,
     create_guild_membership,
     create_upload,
     create_user,
     drain_notices,
+    guild_administration,
 )
-from app.core.audit_events import AuditEventType
-from app.testing.audit import emitted
+from app.testing.schema_harness import route_session_to_guild
 
-
-_keypair = ed25519.Ed25519PrivateKey.generate()
-_PRIVATE_PEM = _keypair.private_bytes(
-    serialization.Encoding.PEM,
-    serialization.PrivateFormat.PKCS8,
-    serialization.NoEncryption(),
-).decode()
-_PUBLIC_PEM = (
-    _keypair.public_key()
-    .public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    .decode()
-)
-_OTHER_KEYPAIR = ed25519.Ed25519PrivateKey.generate()
-_OTHER_PRIVATE_PEM = _OTHER_KEYPAIR.private_bytes(
-    serialization.Encoding.PEM,
-    serialization.PrivateFormat.PKCS8,
-    serialization.NoEncryption(),
-).decode()
-_OTHER_PUBLIC_PEM = (
-    _OTHER_KEYPAIR.public_key()
-    .public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    .decode()
-)
-
-_HMAC_SECRET = "test-billing-hmac-secret"
-_PREVIOUS_HMAC_SECRET = "previous-test-billing-hmac-secret"
+LISTING = "PAYDAPP0000001"
 
 
 @pytest.fixture(autouse=True)
 def _configure_billing(monkeypatch):
-    monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", _PUBLIC_PEM)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", _HMAC_SECRET)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET_PREVIOUS", None)
+    billing_boundary.configure(monkeypatch)
 
 
-def _mint_token(
-    *,
-    jti: str | None = None,
-    aud: str = "initiative:billing",
-    iss: str = "initiative-billing",
-    private_pem: str = _PRIVATE_PEM,
-    expires_in: int = 300,
-    algorithm: str = "EdDSA",
-) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {
-        "jti": jti or secrets.token_hex(8),
-        "sub": "initiative-billing",
-        "aud": aud,
-        "iss": iss,
-        "iat": int(now.timestamp()),
-        "exp": now + timedelta(seconds=expires_in),
-    }
-    return jwt.encode(payload, private_pem, algorithm=algorithm)
-
-
-def _signed_headers(
-    path: str,
-    body: bytes,
-    *,
-    token: str | None = None,
-    secret: str = _HMAC_SECRET,
-    timestamp: str | None = None,
-    method: str = "POST",
-) -> dict[str, str]:
-    ts = timestamp if timestamp is not None else str(int(time.time()))
-    message = "\n".join([method, path, ts, hashlib.sha256(body).hexdigest()]).encode()
-    signature = hmac_lib.new(secret.encode(), message, hashlib.sha256).hexdigest()
+def _fields(**over) -> dict:
     return {
-        "Authorization": f"Bearer {token or _mint_token()}",
-        "X-Billing-Timestamp": ts,
-        "X-Billing-Signature": signature,
-        "Content-Type": "application/json",
+        "tier_name": "Gold",
+        "max_storage_bytes": 10 * 1024**3,
+        "max_users": 50,
+        "max_guests": 5,
+        "feature_keys": [],
+        "status": "active",
+        **over,
     }
 
 
-async def _post(client: AsyncClient, endpoint: str, payload: dict, **overrides):
-    path = f"/api/v1/billing/{endpoint}"
-    body = json.dumps(payload).encode()
-    headers = _signed_headers(path, body, **overrides)
-    return await client.post(path, content=body, headers=headers)
+async def _sync(client: AsyncClient, *items: tuple[int, int, dict]):
+    """Sync (guild id, version, fields) items; the response."""
+    return await billing_boundary.post(
+        client,
+        "communities/sync",
+        {
+            "communities": [
+                {
+                    "community_ref": await billing_guild_ref(guild_id),
+                    "version": version,
+                    "fields": fields,
+                }
+                for guild_id, version, fields in items
+            ]
+        },
+    )
 
 
-async def _tier_payload(guild_id: int, **fields) -> dict:
-    """A write the way billing sends one: the guild named by its reference."""
-    return {
-        "community_ref": await billing_guild_ref(guild_id),
-        "event_id": fields.pop("event_id", f"evt-{secrets.token_hex(6)}"),
-        "source": fields.pop("source", "paddle_webhook"),
-        **fields,
-    }
+async def _administration(session: AsyncSession, guild_id: int) -> GuildAdministration:
+    session.expire_all()
+    return (
+        await session.exec(
+            select(GuildAdministration).where(GuildAdministration.guild_id == guild_id)
+        )
+    ).one()
 
 
-# --- Envelope verification ---------------------------------------------------
+# --- the envelope --------------------------------------------------------------
 
 
 async def test_unconfigured_boundary_refuses_everything(
@@ -162,1150 +101,215 @@ async def test_unconfigured_boundary_refuses_everything(
 ):
     monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", None)
     guild = await create_guild(session)
-    response = await _post(client, "community-tier", await _tier_payload(guild.id))
+    response = await _sync(client, (guild.id, 1, _fields()))
     # 503, not 403: billing absent is the self-host default, not a caller
     # fault (see billing_foss_test.py for the full unconfigured surface).
     assert response.status_code == 503
     assert response.json()["detail"] == "BILLING_NOT_CONFIGURED"
 
 
-async def test_missing_envelope_headers_rejected(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session)
-    body = json.dumps(await _tier_payload(guild.id)).encode()
-    response = await client.post(
-        "/api/v1/billing/community-tier",
-        content=body,
-        headers={"Content-Type": "application/json"},
-    )
+async def test_an_unsigned_request_is_refused(client: AsyncClient):
+    response = await client.post("/api/v1/billing/changes", json={})
     assert response.status_code == 403
     assert response.json()["detail"] == "BILLING_MISSING_SIGNATURE"
 
 
-async def test_stale_timestamp_rejected(client: AsyncClient, session: AsyncSession):
-    guild = await create_guild(session)
-    stale = str(int(time.time()) - 3600)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), timestamp=stale
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_STALE_TIMESTAMP"
+@pytest.mark.parametrize(
+    ("claims", "detail"),
+    [
+        (
+            {"private_pem": billing_boundary.OTHER_PRIVATE_PEM},
+            "BILLING_BOUNDARY_INVALID",
+        ),
+        ({"typ": "JWT"}, "BILLING_BOUNDARY_WRONG_TYPE"),
+        ({"aud": "initiative:billing"}, "BILLING_BOUNDARY_INVALID"),
+        ({"iss": "initiative"}, "BILLING_BOUNDARY_INVALID"),
+        ({"htp": "/api/v1/billing/communities/read"}, "BILLING_BOUNDARY_WRONG_REQUEST"),
+        ({"htm": "GET"}, "BILLING_BOUNDARY_WRONG_REQUEST"),
+        ({"bsh": "not-the-body"}, "BILLING_BOUNDARY_WRONG_BODY"),
+        ({"exp": int(time.time()) + 3600}, "BILLING_BOUNDARY_LIFETIME"),
+        (
+            {"iat": int(time.time()) - 600, "exp": int(time.time()) - 540},
+            "BILLING_BOUNDARY_EXPIRED",
+        ),
+        ({"jti": None}, "BILLING_BOUNDARY_INVALID"),
+        ({"jti": "j" * 65}, "BILLING_BOUNDARY_INVALID"),
+    ],
+)
+async def test_every_claim_is_held(client: AsyncClient, claims, detail):
+    response = await billing_boundary.post(client, "changes", {}, **claims)
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == detail
 
 
-async def test_wrong_hmac_secret_rejected(client: AsyncClient, session: AsyncSession):
-    guild = await create_guild(session)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), secret="wrong-secret"
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_SIGNATURE"
+async def test_a_jti_is_used_once(client: AsyncClient, session: AsyncSession):
+    first = await billing_boundary.post(client, "changes", {}, jti="once")
+    again = await billing_boundary.post(client, "changes", {}, jti="once")
+    assert first.status_code == 200, first.text
+    assert again.status_code == 403
+    assert again.json()["detail"] == "BILLING_REPLAYED_TOKEN"
+    assert (
+        await session.exec(select(BillingJti.jti).where(BillingJti.jti == "once"))
+    ).all() == ["once"]
 
 
-async def test_previous_hmac_secret_is_accepted_during_rotation(
-    client: AsyncClient, session: AsyncSession, monkeypatch
-):
+async def test_both_keys_verify_while_billing_rotates(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(
         config_module.settings,
-        "BILLING_HMAC_SECRET_PREVIOUS",
-        _PREVIOUS_HMAC_SECRET,
+        "BILLING_PUBLIC_KEY_PEM",
+        billing_boundary.PUBLIC_PEM + billing_boundary.OTHER_PUBLIC_PEM,
     )
-    guild = await create_guild(session)
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, storage_cap_bytes=4096),
-        secret=_PREVIOUS_HMAC_SECRET,
+    for pem in (billing_boundary.PRIVATE_PEM, billing_boundary.OTHER_PRIVATE_PEM):
+        response = await billing_boundary.post(client, "changes", {}, private_pem=pem)
+        assert response.status_code == 200, response.text
+
+
+async def test_an_unreadable_key_answers_503_not_403(client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", "garbage")
+    response = await billing_boundary.post(client, "changes", {})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "BILLING_NOT_CONFIGURED"
+
+
+async def test_a_malformed_batch_is_refused_after_verification(client: AsyncClient):
+    response = await billing_boundary.post(
+        client, "communities/sync", {"communities": []}
     )
-    assert response.status_code == 200
+    assert response.status_code == 422
+    assert response.json()["detail"] == "BILLING_INVALID_PAYLOAD"
 
 
-async def test_tampered_body_rejected(client: AsyncClient, session: AsyncSession):
-    """A signature minted for one body must not authorize a different one."""
-    guild = await create_guild(session)
-    path = "/api/v1/billing/community-tier"
-    signed_body = json.dumps(await _tier_payload(guild.id, tier_name="silver")).encode()
-    headers = _signed_headers(path, signed_body)
-    tampered = json.dumps(await _tier_payload(guild.id, tier_name="platinum")).encode()
-    response = await client.post(path, content=tampered, headers=headers)
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_SIGNATURE"
+# --- communities/sync ----------------------------------------------------------
 
 
-async def test_wrong_jwt_key_rejected(client: AsyncClient, session: AsyncSession):
-    guild = await create_guild(session)
-    token = _mint_token(private_pem=_OTHER_PRIVATE_PEM)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
-
-
-@pytest.mark.parametrize(
-    "claim_overrides",
-    [{"aud": "initiative:someone-else"}, {"iss": "someone-else"}],
-)
-async def test_wrong_audience_or_issuer_rejected(
-    client: AsyncClient, session: AsyncSession, claim_overrides: dict
-):
-    guild = await create_guild(session)
-    token = _mint_token(**claim_overrides)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
-
-
-async def test_jti_is_one_shot(client: AsyncClient, session: AsyncSession, capfd):
-    """The same service JWT must not authorize two calls, even with distinct
-    event ids and fresh signatures — and the second is written down."""
-    guild = await create_guild(session)
-    token = _mint_token(jti="billing-replay-001")
-
-    emitted(capfd)
-    first = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert first.status_code == 200, first.text
-
-    second = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert second.status_code == 403
-    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
-    (line,) = emitted(capfd, AuditEventType.SECURITY_REPLAY_REJECTED)
-    assert line["detail"]["channel"] == "billing"
-
-
-async def test_oversized_jti_rejected(client: AsyncClient, session: AsyncSession):
-    """A jti longer than the blocklist column must be refused at
-    verification, not surface as a database error at redemption."""
-    guild = await create_guild(session)
-    token = _mint_token(jti="x" * 65)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
-
-
-async def test_purged_jti_still_unreplayable(
+async def test_a_newer_version_lands_and_an_older_one_changes_nothing(
     client: AsyncClient, session: AsyncSession
 ):
-    """The janitor prunes a redeemed jti only after its JWT ``exp`` — at
-    which point the JWT layer rejects any replay of that token anyway, so
-    purging never re-opens a replay window."""
     guild = await create_guild(session)
-    jti = "billing-purged-jti"
-    token = _mint_token(jti=jti, expires_in=-30)  # exp already in the past
+    guild_id = guild.id
+    ref = await billing_guild_ref(guild_id)
 
-    # Simulate the long-ago redemption whose row the janitor prunes.
-    now = datetime.now(timezone.utc)
-    session.add(
-        BillingJti(
-            jti=jti,
-            redeemed_at=now - timedelta(minutes=10),
-            expires_at=now - timedelta(seconds=30),
-        )
+    first = await _sync(client, (guild_id, 5, _fields(tier_name="Gold")))
+    assert first.status_code == 200, first.text
+    assert first.json() == {"results": [{"community_ref": ref, "version": 5}]}
+    older = await _sync(client, (guild_id, 4, _fields(tier_name="Silver")))
+    same = await _sync(client, (guild_id, 5, _fields(tier_name="Silver")))
+    assert older.json() == same.json() == first.json()
+
+    administration = await _administration(session, guild_id)
+    assert (administration.tier_name, administration.billing_version) == ("Gold", 5)
+    assert (administration.max_users, administration.max_guests) == (50, 5)
+
+    newer = await _sync(
+        client, (guild_id, 9, _fields(tier_name="Silver", max_users=None))
     )
-    await session.commit()
-
-    assert await purge_expired_jtis(session, BillingJti) >= 1
-    remaining = (
-        await session.exec(select(BillingJti).where(BillingJti.jti == jti))
-    ).one_or_none()
-    assert remaining is None
-
-    # Fresh HMAC, purged blocklist row — the token's own exp still refuses it.
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id), token=token
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
+    assert newer.json()["results"] == [{"community_ref": ref, "version": 9}]
+    administration = await _administration(session, guild_id)
+    assert (administration.tier_name, administration.max_users) == ("Silver", None)
 
 
-# --- community-tier ----------------------------------------------------------------
-
-
-async def test_apply_guild_tier_happy_path(client: AsyncClient, session: AsyncSession):
+async def test_each_item_stands_alone(client: AsyncClient, session: AsyncSession):
     guild = await create_guild(session)
-    response = await _post(
+    ref = await billing_guild_ref(guild.id)
+    response = await billing_boundary.post(
         client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            event_id="evt-happy-1",
-            tier_name="gold",
-            max_storage_bytes=50 * 1024**3,
-            max_users=25,
-            max_guests=0,
-        ),
+        "communities/sync",
+        {
+            "communities": [
+                None,
+                {"community_ref": "gbil_nobody", "version": 1, "fields": _fields()},
+                {
+                    "community_ref": ref,
+                    "version": 1,
+                    "fields": _fields(status="suspended"),
+                },
+                {"community_ref": ref, "version": 1, "fields": {"tier_name": "x"}},
+                {"community_ref": ref, "version": 2, "fields": _fields()},
+            ]
+        },
     )
     assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["applied"] is True
-    assert data["tier_name"] == "gold"
-    assert data["max_storage_bytes"] == 50 * 1024**3
-    assert data["max_users"] == 25
-    assert data["max_guests"] == 0
-    assert data["status"] == "active"
-    assert data["member_count"] == 0  # the factory creates no membership rows
-
-    administration = await guild_administration(session, guild)
-    await session.refresh(administration)
-    assert administration.tier_name == "gold"
-    assert administration.max_storage_bytes == 50 * 1024**3
-    assert administration.max_users == 25
-    assert administration.max_guests == 0
-
-    event = (
-        await session.exec(
-            select(BillingEventLog).where(BillingEventLog.event_id == "evt-happy-1")
-        )
-    ).one()
-    assert event.guild_id == guild.id
-    assert event.op == "guild_tier"
-    assert event.source == "paddle_webhook"
-    assert event.actor is None
+    assert response.json()["results"] == [
+        {"community_ref": None, "error": "BILLING_INVALID_PAYLOAD"},
+        {"community_ref": "gbil_nobody", "error": "BILLING_COMMUNITY_NOT_FOUND"},
+        {"community_ref": ref, "error": "BILLING_INVALID_PAYLOAD"},
+        {"community_ref": ref, "error": "BILLING_INVALID_PAYLOAD"},
+        {"community_ref": ref, "version": 2},
+    ]
 
 
-async def test_a_capability_package_sets_the_switches_and_withdraws_them(
+async def test_a_capability_package_replaces_rather_than_merges(
     client: AsyncClient, session: AsyncSession
 ):
-    """The package is what a plan includes, and it replaces rather than merges.
-
-    Nothing about a tier crosses this boundary — the names say *what this guild
-    may do*, and the app turns each one into the entitlement it already
-    enforces. Sending the whole list every time is what makes a downgrade a
-    single write: a capability missing from the package is withdrawn by the
-    same write that renamed the tier, in the same transaction.
-    """
+    """A downgrade is one write: a capability missing from the package is
+    withdrawn by the same write that renamed the tier. A name this build
+    can't enforce is ignored, not a reason to drop the caps beside it."""
     guild = await create_guild(session)
     administration = await guild_administration(session, guild)
+    guild_id = guild.id
 
-    granted = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            event_id="evt-package-1",
-            tier_name="gold",
-            feature_keys=[
-                "banner_image",
-                "help_requests",
-                "community_sign_in",
-                "security_standards",
-            ],
-        ),
-    )
-    assert granted.status_code == 200, granted.text
+    every = ["banner_image", "help_requests", "community_sign_in", "security_standards"]
+    await _sync(client, (guild_id, 1, _fields(feature_keys=every)))
     await session.refresh(administration)
     assert administration.banner_image_enabled is True
     assert administration.support_enabled is True
     assert sorted(administration.auth_options) == ["providers", "restrictions"]
-    assert sorted(granted.json()["feature_keys"]) == [
-        "banner_image",
-        "community_sign_in",
-        "help_requests",
-        "security_standards",
-    ]
 
-    # A downgrade: one write, and everything the smaller plan does not include
-    # is gone. The banner survives because Copper still buys it.
-    withdrawn = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            event_id="evt-package-2",
-            tier_name="copper",
-            feature_keys=["banner_image"],
-        ),
+    await _sync(
+        client, (guild_id, 2, _fields(feature_keys=["banner_image", "teleportation"]))
     )
-    assert withdrawn.status_code == 200, withdrawn.text
     await session.refresh(administration)
     assert administration.banner_image_enabled is True
     assert administration.support_enabled is False
     assert list(administration.auth_options) == []
-    assert withdrawn.json()["feature_keys"] == ["banner_image"]
-
-
-async def test_a_package_naming_something_this_build_cannot_enforce_is_ignored(
-    client: AsyncClient, session: AsyncSession
-):
-    """Billing may price a capability before an app can enforce it, and a name
-    this build has never heard of is not a reason to drop the caps travelling
-    beside it."""
-    guild = await create_guild(session)
-    administration = await guild_administration(session, guild)
-
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            event_id="evt-package-unknown",
-            max_storage_bytes=7 * 1024**3,
-            feature_keys=["banner_image", "teleportation"],
-        ),
-    )
-    assert response.status_code == 200, response.text
-    await session.refresh(administration)
-    assert administration.max_storage_bytes == 7 * 1024**3
-    assert administration.banner_image_enabled is True
-    # Reported back as what the guild actually holds, which cannot include a
-    # capability with nothing behind it.
-    assert response.json()["feature_keys"] == ["banner_image"]
-
-
-async def test_an_operator_may_lift_a_member_ceiling_and_never_impose_one(
-    client: AsyncClient, session: AsyncSession
-):
-    """The one field this app takes from an operator and not from support, and
-    the direction it takes it in.
-
-    A plan change sets whatever the plan says — a downgrade legitimately
-    tightens — but a human at the billing end typing a number may only move a
-    limit out of the way. Otherwise the lever that exists to *help* a community
-    that outgrew its plan is the same lever that silently stops one admitting
-    anybody.
-    """
-    guild = await create_guild(session)
-    administration = await guild_administration(session, guild)
-    administration.max_users = 250
-    session.add(administration)
-    await session.commit()
-
-    lifted = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="operator_manual",
-            actor="staff:7",
-            event_id="evt-ceiling-up",
-            max_users=5_000,
-        ),
-    )
-    assert lifted.status_code == 200, lifted.text
-    assert lifted.json()["max_users"] == 5_000
-
-    lowered = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="operator_manual",
-            actor="staff:7",
-            event_id="evt-ceiling-down",
-            max_users=100,
-        ),
-    )
-    assert lowered.status_code == 422
-    assert lowered.json()["detail"] == "BILLING_OPERATOR_CANNOT_LOWER_CEILING"
-
-    # Capping a guild that has no ceiling is the same move, and refused the
-    # same way: NULL is unlimited, which is the highest value there is.
-    administration.max_users = None
-    session.add(administration)
-    await session.commit()
-    capped = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="operator_manual",
-            actor="staff:7",
-            event_id="evt-ceiling-cap",
-            max_users=10,
-        ),
-    )
-    assert capped.status_code == 422
-
-    # A plan change is not a human typing a number, and still moves it down.
-    downgraded = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, event_id="evt-ceiling-plan", max_users=250),
-    )
-    assert downgraded.status_code == 200, downgraded.text
-    assert downgraded.json()["max_users"] == 250
-
-
-async def test_replayed_event_id_is_noop(client: AsyncClient, session: AsyncSession):
-    """Same event id, fresh token: claimed once, second delivery changes
-    nothing even though it carries different values."""
-    guild = await create_guild(session)
-    first = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, event_id="evt-dup", tier_name="gold"),
-    )
-    assert first.status_code == 200 and first.json()["applied"] is True
-
-    second = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, event_id="evt-dup", tier_name="platinum"),
-    )
-    assert second.status_code == 200
-    data = second.json()
-    assert data["applied"] is False
-    assert data["tier_name"] == "gold"  # untouched by the replay
-
-    administration = await guild_administration(session, guild)
-    await session.refresh(administration)
-    assert administration.tier_name == "gold"
-
-
-async def test_sentinel_semantics_omit_vs_null(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session)
-    setup = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id, tier_name="gold", max_storage_bytes=1024, max_users=10
-        ),
-    )
-    assert setup.status_code == 200
-
-    # Omitted fields stay; null resets to unlimited.
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, max_storage_bytes=None),
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["tier_name"] == "gold"  # omitted -> untouched
-    assert data["max_users"] == 10  # omitted -> untouched
-    assert data["max_storage_bytes"] is None  # null -> unlimited
 
 
 async def test_the_pushed_ceiling_is_the_one_uploads_are_held_to(
     client: AsyncClient, session: AsyncSession
 ):
-    """The storage cap is the whole entitlement mechanism: whatever billing
-    pushes is what uploads are refused against, and a cleared cap is a real
-    "unlimited" rather than a large number. Tier names never enter it, which is
-    why selling more storage needs no feature flag on this side.
-    """
     guild = await create_guild(session)
+    guild_id = guild.id
     uploader = await create_user(session, email="ceiling@example.com")
-    await route_session_to_guild(session, guild.id)
+    await route_session_to_guild(session, guild_id)
     await create_upload(session, guild, uploader, size_bytes=900)
 
     # Cleared: no ceiling to hit.
-    assert (
-        await _post(
-            client,
-            "community-tier",
-            await _tier_payload(guild.id, max_storage_bytes=None),
-        )
-    ).status_code == 200
-    await route_session_to_guild(session, guild.id)
-    await enforce_storage_quota(session, guild_id=guild.id, incoming_bytes=200)
+    await _sync(client, (guild_id, 1, _fields(max_storage_bytes=None)))
+    await route_session_to_guild(session, guild_id)
+    await enforce_storage_quota(session, guild_id=guild_id, incoming_bytes=200)
 
-    # Same upload, against a cap billing pushed after it.
-    assert (
-        await _post(
-            client,
-            "community-tier",
-            await _tier_payload(guild.id, max_storage_bytes=1000),
-        )
-    ).status_code == 200
-    await route_session_to_guild(session, guild.id)
+    await _sync(client, (guild_id, 2, _fields(max_storage_bytes=1000)))
+    await route_session_to_guild(session, guild_id)
     with pytest.raises(StorageQuotaExceededError):
-        await enforce_storage_quota(session, guild_id=guild.id, incoming_bytes=200)
+        await enforce_storage_quota(session, guild_id=guild_id, incoming_bytes=200)
 
 
-async def test_status_change_stamps_status_changed_at(
+async def test_a_suspended_community_stays_suspended(
     client: AsyncClient, session: AsyncSession
 ):
+    """A status write never lifts the operator's time out; the caps still
+    land, and the status is recorded for when the suspension lifts."""
     guild = await create_guild(session)
-    assert guild.status_changed_at is None
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id, status="read_only")
-    )
-    assert response.status_code == 200
-    assert response.json()["status"] == "read_only"
-
-    await session.refresh(guild)
-    assert guild.status == "read_only"
-    assert guild.status_changed_at is not None
-
-
-async def test_support_source_may_only_raise_storage(
-    client: AsyncClient, session: AsyncSession
-):
-    # Start from a finite cap: support can only RAISE, and a fresh guild is
-    # NULL = unlimited (nothing to raise — see the cannot-lower test below).
-    guild = await create_guild(session, max_storage_bytes=1024)
-
-    allowed = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="support_manual",
-            actor="support:42",
-            max_storage_bytes=2048,
-        ),
-    )
-    assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["max_storage_bytes"] == 2048
-
-    tier_change = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id, source="support_manual", actor="support:42", tier_name="gold"
-        ),
-    )
-    assert tier_change.status_code == 422
-    assert tier_change.json()["detail"] == "BILLING_SUPPORT_SOURCE_RESTRICTED"
-
-    anonymous = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, source="support_manual", max_storage_bytes=4096),
-    )
-    assert anonymous.status_code == 422
-    assert anonymous.json()["detail"] == "BILLING_ACTOR_REQUIRED"
-
-
-async def test_a_status_billing_decides_is_paddles_and_unattributed(
-    client: AsyncClient, session: AsyncSession
-):
-    """A status billing's sweep decides — a subscription lapsed, or a trial
-    Paddle ended without a payment — comes as ``paddle_webhook``, names nobody,
-    and leaves the caps alone."""
-    guild = await create_guild(session, max_storage_bytes=4096)
-
-    lapsed = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="paddle_webhook",
-            event_id="evt-lapsed",
-            status="read_only",
-        ),
-    )
-    assert lapsed.status_code == 200, lapsed.text
-    assert lapsed.json()["status"] == "read_only"
-    assert lapsed.json()["max_storage_bytes"] == 4096
-
-    row = (
-        await session.exec(
-            select(BillingEventLog).where(BillingEventLog.event_id == "evt-lapsed")
-        )
-    ).one()
-    assert (row.source, row.actor) == ("paddle_webhook", None)
-
-
-async def test_operator_manual_sets_status_and_names_the_actor(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session)
-
-    suspended = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="operator_manual",
-            actor="staff:7",
-            event_id="evt-operator-suspend",
-            status="on_hold",
-        ),
-    )
-    assert suspended.status_code == 200, suspended.text
-    assert suspended.json()["status"] == "on_hold"
-
-    anonymous = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, source="operator_manual", status="active"),
-    )
-    assert anonymous.status_code == 422
-    assert anonymous.json()["detail"] == "BILLING_ACTOR_REQUIRED"
-
-    row = (
-        await session.exec(
-            select(BillingEventLog).where(
-                BillingEventLog.event_id == "evt-operator-suspend"
-            )
-        )
-    ).one()
-    assert (row.source, row.actor) == ("operator_manual", "staff:7")
-
-
-async def test_support_source_cannot_lower_storage(
-    client: AsyncClient, session: AsyncSession
-):
-    """support_manual may only RAISE the storage cap: lowering a finite cap,
-    or capping an unlimited (NULL) guild, is refused — and the refused write
-    consumes neither its event id nor its jti (a corrected retry works)."""
-    guild = await create_guild(session)
-
-    # Guild starts unlimited (NULL): any finite support cap is a lowering.
-    cap_unlimited = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="support_manual",
-            actor="support:42",
-            max_storage_bytes=10_000,
-        ),
-    )
-    assert cap_unlimited.status_code == 422
-    assert cap_unlimited.json()["detail"] == "BILLING_SUPPORT_CANNOT_LOWER"
-
-    # Give the guild a finite cap via the automated path.
-    setup = await _post(
-        client, "community-tier", await _tier_payload(guild.id, max_storage_bytes=4096)
-    )
-    assert setup.status_code == 200
-
-    lowered = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="support_manual",
-            actor="support:42",
-            event_id="evt-support-lower",
-            max_storage_bytes=1024,
-        ),
-    )
-    assert lowered.status_code == 422
-    assert lowered.json()["detail"] == "BILLING_SUPPORT_CANNOT_LOWER"
-
-    administration = await guild_administration(session, guild)
-    await session.refresh(administration)
-    assert administration.max_storage_bytes == 4096  # untouched
-
-    # Equal-to-current is an idempotent re-apply, and the refused event id
-    # above was NOT consumed — reusing it now succeeds.
-    equal = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(
-            guild.id,
-            source="support_manual",
-            actor="support:42",
-            event_id="evt-support-lower",
-            max_storage_bytes=4096,
-        ),
-    )
-    assert equal.status_code == 200, equal.text
-    assert equal.json()["applied"] is True
-
-    # paddle_webhook (the automated recompute path) may lower freely.
-    automated = await _post(
-        client, "community-tier", await _tier_payload(guild.id, max_storage_bytes=512)
-    )
-    assert automated.status_code == 200
-    assert automated.json()["max_storage_bytes"] == 512
-
-
-async def test_unknown_guild_404_does_not_consume_event_id(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session)
-    missing = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(999_999_999, event_id="evt-preserved", tier_name="gold"),
-    )
-    assert missing.status_code == 404
-    assert missing.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
-
-    retry = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, event_id="evt-preserved", tier_name="gold"),
-    )
-    assert retry.status_code == 200, retry.text
-    assert retry.json()["applied"] is True
-
-
-async def test_a_reference_this_deployment_never_minted_is_404(
-    client: AsyncClient, session: AsyncSession
-):
-    """Billing names the guild, and only a reference this deployment issued
-    for billing is a name it answers to."""
-    response = await _post(
-        client,
-        "community-tier",
-        {
-            "community_ref": "gbil_notoneweminted",
-            "event_id": "evt-unknown-ref",
-            "source": "paddle_webhook",
-        },
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
-
-
-async def test_a_reference_minted_for_something_else_is_404(
-    client: AsyncClient, session: AsyncSession
-):
-    """A user's reference resolves, and is still not an answer to which guild
-    this is.
-
-    Minted against an id that IS a guild's, which is the only shape where the
-    question has teeth: entity ids are per-table sequences with no foreign key
-    between them, so the same number names a user and a guild at once. What
-    separates them is what the reference was minted for, and nothing else.
-    """
-    guild = await create_guild(session)
-    # Through the module, not a name bound at import: conftest points the
-    # factory at this worker's database by setting the attribute, and a name
-    # imported before that still refers to the configured one.
-    async with db_session.SystemSessionLocal() as system_session:
-        user_ref = await ensure_ref(
-            system_session,
-            entity_type=IdentityEntity.user,
-            entity_id=guild.id,
-            purpose=IdentityPurpose.billing,
-        )
-        await system_session.commit()
-
-    response = await _post(
-        client,
-        "community-tier",
-        {
-            "community_ref": user_ref,
-            "event_id": "evt-wrong-entity",
-            "source": "paddle_webhook",
-        },
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
-
-
-async def test_malformed_payload_rejected_after_verification(
-    client: AsyncClient, session: AsyncSession
-):
-    path = "/api/v1/billing/community-tier"
-    body = b'{"community_ref": 17}'
-    headers = _signed_headers(path, body)
-    response = await client.post(path, content=body, headers=headers)
-    assert response.status_code == 422
-    assert response.json()["detail"] == "BILLING_INVALID_PAYLOAD"
-
-
-# --- usage (signed storage + membership read) -----------------------------------
-
-
-async def test_a_read_burns_its_jti(client: AsyncClient, session: AsyncSession):
-    """Reads redeem their token too — a captured read request must not be
-    replayable inside the window."""
-    guild = await create_guild(session)
-    token = _mint_token(jti="billing-read-replay")
-    first = await _post(
-        client,
-        "usage",
-        {"community_ref": await billing_guild_ref(guild.id)},
-        token=token,
-    )
-    assert first.status_code == 200
-    second = await _post(
-        client,
-        "usage",
-        {"community_ref": await billing_guild_ref(guild.id)},
-        token=token,
-    )
-    assert second.status_code == 403
-    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
-
-
-async def test_usage_sums_guild_bytes(client: AsyncClient, session: AsyncSession):
-    """The signed pull returns SUM(uploads.size_bytes) for the guild — the same
-    figure enforcement reads — via the guild schema (not the billing role)."""
-    guild = await create_guild(session)
-    uploader = await create_user(session, email="uploader@example.com")
-    await create_upload(session, guild, uploader, size_bytes=1000)
-    await create_upload(session, guild, uploader, size_bytes=234)
-
-    response = await _post(
-        client, "usage", {"community_ref": await billing_guild_ref(guild.id)}
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "community_ref": await billing_guild_ref(guild.id),
-        "usage_bytes": 1234,
-        "member_count": 0,
-        "guest_count": 0,
-    }
-
-
-async def test_usage_zero_for_empty_guild(client: AsyncClient, session: AsyncSession):
-    guild = await create_guild(session)
-    response = await _post(
-        client, "usage", {"community_ref": await billing_guild_ref(guild.id)}
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "community_ref": await billing_guild_ref(guild.id),
-        "usage_bytes": 0,
-        "member_count": 0,
-        "guest_count": 0,
-    }
-
-
-async def test_usage_counts_guild_members(client: AsyncClient, session: AsyncSession):
-    """The read carries the guild's whole membership — the figure the
-    ``max_users`` check compares against — counted on the system session (the
-    billing role can't see ``guild_memberships``). Another guild's members
-    don't leak into it."""
-    owner = await create_user(session, email="owner@example.com")
-    guild = await create_guild(session, creator=owner)
-    for n in range(2):
-        member = await create_user(session, email=f"member{n}@example.com")
-        await create_guild_membership(session, user=member, guild=guild)
-    await create_guest(session, guild)
-    other = await create_guild(session, creator=owner)
-    await create_guild_membership(
-        session,
-        user=await create_user(session, email="elsewhere@example.com"),
-        guild=other,
-    )
-
-    response = await _post(
-        client, "usage", {"community_ref": await billing_guild_ref(guild.id)}
-    )
-    assert response.status_code == 200, response.text
-    # A guest takes no seat, and is counted on its own.
-    assert response.json()["member_count"] == 3
-    assert response.json()["guest_count"] == 1
-
-
-async def test_usage_unknown_guild_404(client: AsyncClient, session: AsyncSession):
-    response = await _post(
-        client, "usage", {"community_ref": await billing_guild_ref(999_999_999)}
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
-
-
-async def test_usage_burns_jti(client: AsyncClient, session: AsyncSession):
-    guild = await create_guild(session)
-    token = _mint_token(jti="billing-usage-replay")
-    first = await _post(
-        client,
-        "usage",
-        {"community_ref": await billing_guild_ref(guild.id)},
-        token=token,
-    )
-    assert first.status_code == 200
-    second = await _post(
-        client,
-        "usage",
-        {"community_ref": await billing_guild_ref(guild.id)},
-        token=token,
-    )
-    assert second.status_code == 403
-    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
-
-
-# --- rotating billing's signing key -----------------------------------------
-
-
-async def test_both_keys_verify_while_billing_rotates(
-    client: AsyncClient, session: AsyncSession, monkeypatch
-):
-    """BILLING_PUBLIC_KEY_PEM holds both blocks during a rotation, so calls
-    signed with either key are accepted and billing can switch on its own
-    schedule rather than in lockstep with a deploy here."""
-    monkeypatch.setattr(
-        config_module.settings,
-        "BILLING_PUBLIC_KEY_PEM",
-        _PUBLIC_PEM + _OTHER_PUBLIC_PEM,
-    )
-    guild = await create_guild(session)
-
-    for private_pem in (_PRIVATE_PEM, _OTHER_PRIVATE_PEM):
-        response = await _post(
-            client,
-            "community-tier",
-            await _tier_payload(guild.id),
-            token=_mint_token(private_pem=private_pem),
-        )
-        assert response.status_code == 200, response.text
-
-
-async def test_dropping_the_old_block_ends_its_access(
-    client: AsyncClient, session: AsyncSession, monkeypatch
-):
-    """Rotation finishes by removing the retired key, which must then stop
-    working — otherwise the bundle only ever grows."""
-    monkeypatch.setattr(
-        config_module.settings, "BILLING_PUBLIC_KEY_PEM", _OTHER_PUBLIC_PEM
-    )
-    guild = await create_guild(session)
-
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id),
-        token=_mint_token(private_pem=_PRIVATE_PEM),
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
-
-
-async def test_an_rs256_token_is_refused(client: AsyncClient, session: AsyncSession):
-    """Billing signs with Ed25519 and nothing else: a token signed RS256 is
-    refused whatever key signed it."""
-    guild = await create_guild(session)
-    rsa_pem = (
-        rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        .private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-        .decode()
-    )
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id),
-        token=_mint_token(private_pem=rsa_pem, algorithm="RS256"),
-    )
-    assert response.status_code == 403
-    assert response.json()["detail"] == "BILLING_INVALID_TOKEN"
-
-
-async def test_unreadable_key_answers_503_not_403(
-    client: AsyncClient, session: AsyncSession, monkeypatch
-):
-    """A key this deployment cannot read is its own misconfiguration, so it
-    fails closed the way an unconfigured billing does — blaming the caller
-    with a 403 would send billing hunting for a fault on its side."""
-    monkeypatch.setattr(
-        config_module.settings,
-        "BILLING_PUBLIC_KEY_PEM",
-        _PUBLIC_PEM + "-----BEGIN PUBLIC KEY-----\nnope\n",
-    )
-    guild = await create_guild(session)
-
-    response = await _post(client, "community-tier", await _tier_payload(guild.id))
-    assert response.status_code == 503
-    assert response.json()["detail"] == "BILLING_KEY_UNREADABLE"
-
-
-# ── what a guild calls itself ────────────────────────────────────────────────
-
-
-async def test_billing_reads_a_guilds_name(client: AsyncClient, session: AsyncSession):
-    """A reference is unreadable on purpose, so a page about somebody's own
-    community would have nothing to title itself with."""
-    guild = await create_guild(session, name="The Tuesday Club")
-    ref = await billing_guild_ref(guild.id)
-
-    response = await _post(client, "community-name", {"community_ref": ref})
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {"community_ref": ref, "name": "The Tuesday Club"}
-
-
-async def test_the_name_read_burns_its_jti(client: AsyncClient, session: AsyncSession):
-    """One-shot like every other verb here — a captured envelope is spent."""
-    guild = await create_guild(session, name="Once Only")
-    ref = await billing_guild_ref(guild.id)
-    body = json.dumps({"community_ref": ref}).encode()
-    headers = _signed_headers("/api/v1/billing/community-name", body)
-
-    first = await client.post(
-        "/api/v1/billing/community-name", content=body, headers=headers
-    )
-    second = await client.post(
-        "/api/v1/billing/community-name", content=body, headers=headers
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 403
-    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
-
-
-async def test_a_reference_naming_no_guild_has_no_name(client: AsyncClient):
-    """404 with the jti unredeemed, so the call stays retryable — the same
-    shape the other reads give a guild that is not there."""
-    response = await _post(
-        client, "community-name", {"community_ref": "gbil_notoneweminted"}
-    )
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "BILLING_COMMUNITY_NOT_FOUND"
-
-
-async def test_billing_reads_many_guilds_names_at_once(
-    client: AsyncClient, session: AsyncSession
-):
-    """The owner directory names every paying community: one signed read for
-    the batch, and a reference that names nothing is left out, not refused."""
-    first = await create_guild(session, name="The Tuesday Club")
-    second = await create_guild(session, name="Harbour Rowers")
-    refs = [await billing_guild_ref(g.id) for g in (first, second)]
-
-    response = await _post(
-        client,
-        "community-names",
-        {"community_refs": [refs[0], "gbil_notoneweminted", refs[1], refs[0]]},
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "names": [
-            {"community_ref": refs[0], "name": "The Tuesday Club"},
-            {"community_ref": refs[1], "name": "Harbour Rowers"},
-        ]
-    }
-
-
-async def test_the_batch_name_read_burns_its_jti(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session, name="Once Only")
-    ref = await billing_guild_ref(guild.id)
-    body = json.dumps({"community_refs": [ref]}).encode()
-    headers = _signed_headers("/api/v1/billing/community-names", body)
-
-    first = await client.post(
-        "/api/v1/billing/community-names", content=body, headers=headers
-    )
-    second = await client.post(
-        "/api/v1/billing/community-names", content=body, headers=headers
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 403
-    assert second.json()["detail"] == "BILLING_REPLAYED_TOKEN"
-
-
-async def test_a_batch_naming_only_purged_guilds_redeems_nothing(
-    client: AsyncClient, session: AsyncSession
-):
-    """A purge removes the guild before its reference, and a failed cleanup can
-    leave the reference behind. A batch that names nothing but such guilds read
-    no name, so its jti stays unredeemed, like the single read's 404."""
-    guild = await create_guild(session, name="Gone Since")
-    ref = await billing_guild_ref(guild.id)
-    await session.exec(delete(Guild).where(Guild.id == guild.id))
-    await session.commit()
-    body = json.dumps({"community_refs": [ref]}).encode()
-    headers = _signed_headers("/api/v1/billing/community-names", body)
-
-    first = await client.post(
-        "/api/v1/billing/community-names", content=body, headers=headers
-    )
-    again = await client.post(
-        "/api/v1/billing/community-names", content=body, headers=headers
-    )
-
-    assert first.status_code == 200, first.text
-    assert first.json() == {"names": []}
-    assert again.status_code == 200, again.text
-
-
-async def test_the_batch_name_read_is_bounded(client: AsyncClient):
-    """At most a page of guilds a call, and at least one."""
-    too_many = [f"gbil_{n:026d}" for n in range(201)]
-
-    for refs in ([], too_many):
-        response = await _post(client, "community-names", {"community_refs": refs})
-        assert response.status_code == 422
-
-
-# ── a deleted guild ──────────────────────────────────────────────────────────
-
-
-async def test_billing_reads_that_a_guild_was_deleted(
-    client: AsyncClient, session: AsyncSession
-):
-    guild = await create_guild(session, status="deleted")
-    ref = await billing_guild_ref(guild.id)
-
-    response = await _post(client, "community-status", {"community_ref": ref})
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {"community_ref": ref, "status": "deleted"}
-
-
-async def test_a_status_write_cannot_bring_a_deleted_guild_back(
-    client: AsyncClient, session: AsyncSession
-):
-    """A status write leaves a deleted guild deleted; the caps still land."""
-    stamped = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    guild = await create_guild(session, status="deleted", status_changed_at=stamped)
-
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, status="read_only", tier_name="Copper"),
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "deleted"
-    assert response.json()["tier_name"] == "Copper"
-    await session.refresh(guild)
-    assert guild.status == "deleted"
-    assert guild.status_changed_at == stamped
-
-
-# --- Which statuses billing may write ----------------------------------------
-
-
-@pytest.mark.parametrize("status", ["suspended", "deleted"])
-async def test_billing_cannot_suspend_or_delete(
-    client: AsyncClient, session: AsyncSession, status: str
-):
-    guild = await create_guild(session)
-    response = await _post(
-        client, "community-tier", await _tier_payload(guild.id, status=status)
-    )
-    assert response.status_code == 422
-    await session.refresh(guild)
-    assert guild.status == "active"
-
-
-async def test_billing_leaves_a_suspended_guild_suspended(
-    client: AsyncClient, session: AsyncSession
-):
-    """A status write never lifts the operator's time out; the caps still land,
-    and the status is recorded for when the suspension lifts."""
-    from app.models.platform.guild_administration import GuildAdministration
-
-    guild = await create_guild(session)
-    guild.status = "suspended"
+    guild.status = CommunityStatus.suspended.value
     session.add(guild)
     await session.commit()
+    guild_id = guild.id
 
-    response = await _post(
-        client,
-        "community-tier",
-        await _tier_payload(guild.id, status="on_hold", max_storage_bytes=2048),
+    response = await _sync(
+        client, (guild_id, 1, _fields(status="on_hold", max_storage_bytes=2048))
     )
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "suspended"
-    assert response.json()["max_storage_bytes"] == 2048
-    guild_id = guild.id
-    session.expire_all()
-    administration = (
-        await session.exec(
-            select(GuildAdministration).where(GuildAdministration.guild_id == guild_id)
-        )
-    ).one()
-    assert administration.billing_status == "on_hold"
+    administration = await _administration(session, guild_id)
+    assert (administration.billing_status, administration.max_storage_bytes) == (
+        "on_hold",
+        2048,
+    )
+    read = await billing_boundary.post(
+        client,
+        "communities/read",
+        {"community_refs": [await billing_guild_ref(guild_id)]},
+    )
+    assert read.json()["communities"][0]["status"] == "suspended"
 
 
 async def _hold_notices(session: AsyncSession, user_id: int) -> int:
@@ -1323,9 +327,6 @@ async def _hold_notices(session: AsyncSession, user_id: int) -> int:
 
 
 async def test_a_hold_tells_the_seat_once(client: AsyncClient, session: AsyncSession):
-    from app.models.platform.guild import CommunityRole
-    from app.testing import create_guild_membership, create_user
-
     guild = await create_guild(session)
     seat = await create_user(session)
     admin = await create_user(session)
@@ -1337,16 +338,48 @@ async def test_a_hold_tells_the_seat_once(client: AsyncClient, session: AsyncSes
     )
     guild_id, seat_id, admin_id = guild.id, seat.id, admin.id
 
-    first = await _post(
-        client, "community-tier", await _tier_payload(guild_id, status="on_hold")
-    )
+    first = await _sync(client, (guild_id, 1, _fields(status="on_hold")))
     assert first.status_code == 200, first.text
-    assert first.json()["status"] == "on_hold"
     assert await _hold_notices(session, seat_id) == 1
     assert await _hold_notices(session, admin_id) == 0
 
-    again = await _post(
-        client, "community-tier", await _tier_payload(guild_id, status="on_hold")
-    )
-    assert again.status_code == 200, again.text
+    await _sync(client, (guild_id, 2, _fields(status="on_hold", max_users=60)))
     assert await _hold_notices(session, seat_id) == 1
+
+
+# --- communities/read ----------------------------------------------------------
+
+
+async def test_billing_reads_what_a_community_holds(
+    client: AsyncClient, session: AsyncSession, monkeypatch
+):
+    guild = await create_guild(session, name="Acme")
+    member = await create_user(session)
+    await create_guild_membership(session, user=member, guild=guild)
+    await create_guest(session, guild=guild)
+    await route_session_to_guild(session, guild.id)
+    await create_upload(session, guild, member, size_bytes=1234)
+    guild_id = guild.id
+    ref = await billing_guild_ref(guild_id)
+    await _sync(client, (guild_id, 7, _fields()))
+    await plugin_entitlements.store_statement(
+        guild_id, LISTING, statement="x.y.z", version=3, values={"active": True}
+    )
+
+    response = await billing_boundary.post(
+        client, "communities/read", {"community_refs": [ref, "gbil_nobody", ref]}
+    )
+
+    assert response.status_code == 200, response.text
+    (read,) = response.json()["communities"]
+    assert read == {
+        "community_ref": ref,
+        "status": "active",
+        "usage_bytes": 1234,
+        "members": read["members"],
+        "guests": 1,
+        "name": "Acme",
+        "version": 7,
+        "statements": {LISTING: 3},
+    }
+    assert read["members"] >= 1

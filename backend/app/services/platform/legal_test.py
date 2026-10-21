@@ -25,6 +25,7 @@ INDEX_BODY = {
             "version": "2.1",
             "effective_date": "2026-09-01",
             "sha256": "a" * 64,
+            "required": True,
         },
         {
             "slug": "privacy",
@@ -32,6 +33,7 @@ INDEX_BODY = {
             "version": "1.4",
             "effective_date": "2026-09-01",
             "sha256": "b" * 64,
+            "required": True,
         },
     ]
 }
@@ -149,22 +151,107 @@ async def test_acceptance_records_the_revision_that_was_current(
     assert await legal_service.acceptance_outstanding(session, user=user) is False
 
 
-async def test_an_unreachable_portal_still_records_the_acceptance(
+async def test_an_unreachable_portal_invents_no_required_document(
     session, hosted, monkeypatch
 ):
-    """What is being written down is that somebody agreed, and when. Which
-    revision they agreed to is recoverable from the portal's own history of
-    the document; refusing the registration over it would not be."""
+    """Registration still goes through, but nothing is recorded as agreed to a
+    document nobody could name: the account is asked once the index can be
+    read again."""
     _serve(monkeypatch, fail=True)
     user = await create_user(session)
 
     await legal_service.record_acceptance(session, user_id=user.id)
     await session.commit()
 
-    rows = await _rows(session, user.id)
-    assert [r.document for r in rows] == ["terms", "privacy"]
-    assert [r.version for r in rows] == [None, None]
+    assert await _rows(session, user.id) == []
     assert await legal_service.acceptance_outstanding(session, user=user) is False
+
+    legal_service.reset_index_cache()
+    _serve(monkeypatch)
+    assert await legal_service.acceptance_outstanding(session, user=user) is True
+
+
+async def test_a_portal_never_read_is_left_alone_for_a_while(hosted, monkeypatch):
+    calls = _serve(monkeypatch, fail=True)
+    for _ in range(3):
+        with pytest.raises(legal_service.LegalPortalUnavailable):
+            await legal_service.get_index()
+    assert len(calls) == 1
+
+
+async def test_a_deployment_that_requires_nothing_asks_nothing(
+    session, hosted, monkeypatch
+):
+    """An enterprise's terms may sit in its own contract, or in an employment
+    one: the portal marks nothing required, or lists nothing at all."""
+    for body in (
+        {"documents": [{**d, "required": False} for d in INDEX_BODY["documents"]]},
+        {"documents": []},
+    ):
+        legal_service.reset_index_cache()
+        _serve(monkeypatch, body)
+        user = await create_user(session)
+
+        await legal_service.record_acceptance(session, user_id=user.id)
+        await session.commit()
+
+        assert await _rows(session, user.id) == []
+        assert await legal_service.acceptance_outstanding(session, user=user) is False
+
+
+async def test_only_the_documents_marked_required_are_recorded(
+    session, hosted, monkeypatch
+):
+    terms, privacy = INDEX_BODY["documents"]
+    _serve(monkeypatch, {"documents": [terms, {**privacy, "required": False}]})
+    user = await create_user(session)
+
+    await legal_service.record_acceptance(session, user_id=user.id)
+    await session.commit()
+
+    assert [r.document for r in await _rows(session, user.id)] == ["terms"]
+    assert await legal_service.acceptance_outstanding(session, user=user) is False
+
+
+async def test_a_document_hosted_elsewhere_is_linked_not_fetched(
+    session, hosted, monkeypatch
+):
+    contract = {
+        "slug": "contract",
+        "title": "Master Services Agreement",
+        "version": "2026-01",
+        "effective_date": None,
+        "sha256": None,
+        "required": True,
+        "url": "https://legal.customer.example/msa.pdf",
+    }
+    _serve(monkeypatch, {"documents": [contract]})
+    (document,) = await legal_service.get_index()
+    assert document.url == contract["url"]
+
+    with pytest.raises(KeyError):
+        await legal_service.get_document("contract")
+
+    user = await create_user(session)
+    await legal_service.record_acceptance(session, user_id=user.id)
+    await session.commit()
+    rows = await _rows(session, user.id)
+    assert [(r.document, r.version, r.document_sha256) for r in rows] == [
+        ("contract", "2026-01", None)
+    ]
+
+
+async def test_a_link_that_is_not_https_is_not_offered(hosted, monkeypatch):
+    _serve(
+        monkeypatch,
+        {
+            "documents": [
+                {"slug": "x", "title": "X", "url": "javascript:alert(1)"},
+                {"slug": "y", "title": "Y", "url": "http://plain.example/y"},
+            ]
+        },
+    )
+    assert await legal_service.get_index() == ()
 
 
 async def test_a_half_finished_record_still_owes_the_rest(session, hosted, monkeypatch):

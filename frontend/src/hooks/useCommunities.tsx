@@ -618,7 +618,7 @@ export const CommunityProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const createCommunity = useCallback(
-    async ({ name, description, plan }: NewCommunity) => {
+    async ({ name, description }: NewCommunity) => {
       if (userId === null) {
         throw new Error("You must be signed in to create a community.");
       }
@@ -634,7 +634,6 @@ export const CommunityProvider = ({ children }: { children: ReactNode }) => {
       const created = await postCommunity({
         name: trimmedName,
         description: description?.trim() || undefined,
-        plan: plan ?? undefined,
       });
 
       await Promise.all([refreshCommunities(), refreshUser()]);

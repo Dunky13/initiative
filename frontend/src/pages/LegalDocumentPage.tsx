@@ -12,14 +12,17 @@ import { useLegalDocument, useLegalIndex } from "@/hooks/useLegalDocuments";
  *
  * Public, because the signup form links here and nobody is signed in yet, and
  * rendered here rather than linked out to for the same reason the landing
- * page renders the price book: the reader stays where they were.
+ * page renders the price book: the reader stays where they were. A document
+ * kept elsewhere (the customer's own contract) has no text here: the page
+ * links to it.
  */
 export const LegalDocumentPage = () => {
   const { t } = useTranslation(["legal", "common"]);
   const { slug } = useParams({ strict: false }) as { slug?: string };
-  const { documents, enabled } = useLegalIndex();
-  const document = useLegalDocument(enabled ? slug : undefined);
+  const { documents, enabled, isLoading } = useLegalIndex();
   const entry = documents.find((candidate) => candidate.slug === slug);
+  const elsewhere = entry?.url ?? null;
+  const document = useLegalDocument(enabled && !isLoading && !elsewhere ? slug : undefined);
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-muted/60 px-4 py-10">
@@ -45,7 +48,17 @@ export const LegalDocumentPage = () => {
           {document.isLoading ? (
             <p className="text-muted-foreground text-sm">{t("common:loading")}</p>
           ) : null}
-          {!document.isLoading && (!enabled || document.isError) ? (
+          {elsewhere ? (
+            <a
+              href={elsewhere}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary text-sm underline-offset-4 hover:underline"
+            >
+              {t("legal:readWhereKept")}
+            </a>
+          ) : null}
+          {!elsewhere && !document.isLoading && (!enabled || document.isError) ? (
             <p className="text-muted-foreground text-sm">{t("legal:unavailable")}</p>
           ) : null}
           {document.data ? <Markdown remoteImages content={document.data} /> : null}

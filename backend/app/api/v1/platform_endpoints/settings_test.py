@@ -238,18 +238,16 @@ async def test_a_real_status_transition_is_stamped(
     assert resp.json()["status_changed_at"] is not None
 
 
-async def test_a_status_change_nudges_billing_and_a_hold_tells_the_seat(
-    client: AsyncClient, session: AsyncSession, operator, monkeypatch
+async def test_a_hold_tells_the_seat(
+    client: AsyncClient, session: AsyncSession, operator
 ) -> None:
-    """Every transition nudges billing to read the status; one into on_hold
-    also tells the community's seat holder, once."""
+    """A transition into on_hold tells the community's seat holder, once.
+    (Where billing manages plans, it reads every transition from its change
+    log: ``billing_changes_test``.)"""
     from app.models.platform.guild import CommunityRole
     from app.models.platform.notification import Notification, NotificationType
-    from app.services.platform import billing_ping
     from app.testing import create_guild_membership, create_user
 
-    nudged: list[int] = []
-    monkeypatch.setattr(billing_ping, "notify_lifecycle_changed", nudged.append)
     guild = await create_guild(session)
     seat = await create_user(session)
     await create_guild_membership(
@@ -265,7 +263,6 @@ async def test_a_status_change_nudges_billing_and_a_hold_tells_the_seat(
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == status.value
-    assert nudged == [guild_id, guild_id]
 
     session.expire_all()
     await drain_notices()
@@ -700,17 +697,14 @@ async def test_storage_backfill_status_reads_shared_row(
 
 # --- Guilds tab: billing portal operator handoff ---
 
-_TEST_HANDOFF_SECRET = "test-billing-support-handoff-secret-0123456789"
 
-
-def _configure_billing(monkeypatch):
+def _configure_billing(monkeypatch) -> str:
+    """A billing portal, and the handoff key; returns the key's public PEM."""
     from app.core.config import settings as app_settings
+    from app.testing.billing_boundary import use_handoff_key
 
     monkeypatch.setattr(app_settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(
-        app_settings, "BILLING_SUPPORT_HANDOFF_SECRET", _TEST_HANDOFF_SECRET
-    )
-    monkeypatch.setattr(app_settings, "BILLING_SUPPORT_HANDOFF_KID", "k1")
+    return use_handoff_key(monkeypatch)
 
 
 def _handoff(guild_id: int) -> str:
@@ -724,7 +718,7 @@ def _handoff(guild_id: int) -> str:
             ["BILLING_URL"], 404, "BILLING_PORTAL_NOT_CONFIGURED", id="no-portal"
         ),
         pytest.param(
-            ["BILLING_SUPPORT_HANDOFF_SECRET", "BILLING_SUPPORT_HANDOFF_KID"],
+            ["HANDOFF_SIGNING_PRIVATE_KEY_PEM"],
             503,
             "BILLING_PORTAL_SIGNING_NOT_CONFIGURED",
             id="no-signing-material",
@@ -778,8 +772,9 @@ async def test_a_guild_that_is_not_there_is_a_404(
 async def test_billing_handoff_self_issues_a_grant_and_names_it(
     client: AsyncClient, session: AsyncSession, owner, monkeypatch
 ):
-    """The token verifies against the shared key and carries the claim set the
-    receiver requires, naming the grant it just self-issued."""
+    """The token verifies against the handoff key's public half (Ed25519, as
+    every handoff into billing) and carries the claim set the receiver
+    requires, naming the grant it just self-issued."""
     import jwt
     from sqlmodel import select as sm_select
 
@@ -789,7 +784,7 @@ async def test_billing_handoff_self_issues_a_grant_and_names_it(
     )
     from app.models.platform.access_grant import AccessGrant
 
-    _configure_billing(monkeypatch)
+    public_pem = _configure_billing(monkeypatch)
     guild = await create_guild(session)  # the owner is deliberately not a member
 
     resp = await client.post(_handoff(guild.id), headers=owner.headers)
@@ -798,11 +793,11 @@ async def test_billing_handoff_self_issues_a_grant_and_names_it(
     assert 0 < body["expires_in_seconds"] <= 300
 
     header = jwt.get_unverified_header(body["handoff_token"])
-    assert header["kid"] == "k1"
+    assert (header["alg"], header["kid"]) == ("EdDSA", "test-handoff-key")
     payload = jwt.decode(
         body["handoff_token"],
-        _TEST_HANDOFF_SECRET,
-        algorithms=[header["alg"]],
+        public_pem,
+        algorithms=["EdDSA"],
         audience=BILLING_SUPPORT_HANDOFF_AUDIENCE,
         issuer=TOKEN_ISSUER,
     )

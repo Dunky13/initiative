@@ -102,7 +102,7 @@ describe("useBillingPortal openPortal", () => {
     await act(() => result.current.openPortal(42, "upgrade"));
 
     expect(Browser.open).toHaveBeenCalledWith({
-      url: `${PORTAL}/upgrade?community=42&lang=en#handoff=TOK`,
+      url: `${PORTAL}/upgrade?lang=en#handoff=TOK`,
     });
     expect(open).not.toHaveBeenCalled();
   });
@@ -115,7 +115,7 @@ describe("useBillingPortal openPortal", () => {
     await act(() => result.current.openPortal(42, "manage"));
 
     expect(open).toHaveBeenCalledWith("about:blank", "_blank");
-    expect(tab.location.href).toBe(`${PORTAL}/manage?community=42&lang=en#handoff=TOK`);
+    expect(tab.location.href).toBe(`${PORTAL}/manage?lang=en#handoff=TOK`);
     expect(Browser.open).not.toHaveBeenCalled();
   });
 

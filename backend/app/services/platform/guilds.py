@@ -54,7 +54,6 @@ from app.services import audit as audit_service
 from app.services.marketplace import community_hooks
 from app.services.auth import addresses
 from app.services.platform import billing as billing_service
-from app.services.platform import billing_ping
 
 from app.services.platform import account_stream, user_stream
 from app.services.platform import api_keys as api_keys_service
@@ -436,7 +435,6 @@ async def ensure_membership(
     account_stream.queue_account_signal(session, user_id, "membership")
     # Nudge billing that this guild's membership changed. No-op unless a
     # hosted deployment configured the outbound billing settings.
-    billing_ping.notify_membership_changed(guild_id)
     if guest_until is None:
         enroll_new_member_in_auto_join_initiatives(
             session, guild_id=guild_id, user_id=user_id, role=role
@@ -673,7 +671,6 @@ async def make_guest_a_member(
         detail={"role": membership.role.value},
     )
     account_stream.queue_account_signal(session, user_id, "membership")
-    billing_ping.notify_membership_changed(guild_id)
     enroll_new_member_in_auto_join_initiatives(
         session, guild_id=guild_id, user_id=user_id, role=membership.role
     )
@@ -1015,28 +1012,6 @@ async def may_create_another_guild(session: AsyncSession, *, user_id: int) -> bo
         .where(Guild.created_by == user_id, Guild.created_at > since)
     )
     return (created or 0) < limit
-
-
-async def holds_a_free_guild(session: AsyncSession, *, user_id: int) -> bool:
-    """Does this account already have the one free community it gets?"""
-    result = await session.exec(
-        select(GuildMembership.guild_id)
-        .join(
-            GuildAdministration,
-            GuildAdministration.guild_id == GuildMembership.guild_id,
-            isouter=True,
-        )
-        .where(
-            GuildMembership.user_id == user_id,
-            GuildMembership.role == CommunityRole.superadmin,
-            or_(
-                GuildAdministration.plan_is_free.is_(None),
-                GuildAdministration.plan_is_free.is_(True),
-            ),
-        )
-        .limit(1)
-    )
-    return result.first() is not None
 
 
 async def create_guild(
@@ -2052,14 +2027,10 @@ async def queue_billing_notice(
     return True
 
 
-async def welcome_new_guild(
-    guild_id: int, *, owner_user_id: int, plan: str | None = None
-) -> None:
-    """Once a new community is committed: claim it for its owner and, where
-    billing sets plans, welcome them to set one up. Never fails the creation."""
-    from app.services.platform import billing_claim
-
-    billing_claim.claim_new_guild(user_id=owner_user_id, guild_id=guild_id, plan=plan)
+async def welcome_new_guild(guild_id: int, *, owner_user_id: int) -> None:
+    """Once a new community is committed: where billing sets plans, welcome
+    its owner to set one up. Never fails the creation. Billing learns of the
+    community, and of its owner, from the change log."""
     if not settings.BILLING_URL:
         return
     try:
@@ -3100,7 +3071,6 @@ async def remove_user_from_guild(
         # Same reason as the insert side: what is asked of this account can
         # change with where it belongs, and leaving is not always their doing.
         account_stream.queue_account_signal(session, user_id, "membership")
-        billing_ping.notify_membership_changed(guild_id)
         # This community was a leg of can_ask for everyone they shared it with,
         # so every open channel that rested on it is re-tested — one survives if
         # the pair connected, which is what a connection is for. Queued rather

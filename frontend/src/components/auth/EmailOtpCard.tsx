@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAuth } from "@/hooks/useAuth";
+import { useLegalIndex } from "@/hooks/useLegalDocuments";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { browserTimezone } from "@/lib/timezones";
 
@@ -70,6 +71,7 @@ export const EmailOtpCard = ({ onCancel, onSignedIn, inviteCode, registration }:
   const [challenge, setChallenge] = useState<string | null>(null);
   const [ticket, setTicket] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const legal = useLegalIndex();
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
   // A token is spent by being checked, so every attempt gets a fresh widget:
@@ -141,6 +143,8 @@ export const EmailOtpCard = ({ onCancel, onSignedIn, inviteCode, registration }:
       const token = await registerWithCode({
         timezone: browserTimezone(),
         ...registration,
+        // What the notice above the button showed: only these are recorded.
+        accepted_documents: legal.shownSlugs,
         registration_ticket: ticket,
         username: username.trim(),
         ...(inviteCode ? { invite_code: inviteCode } : {}),
@@ -265,7 +269,7 @@ export const EmailOtpCard = ({ onCancel, onSignedIn, inviteCode, registration }:
             {/* Pressing the button below is the agreement, so the notice sits
               right above it. */}
             <LegalNotice />
-            <Button type="submit" className="w-full" disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy || legal.pending}>
               {busy ? t("login.submitting") : t("emailOtp.registerAction")}
             </Button>
           </form>

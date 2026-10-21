@@ -56,13 +56,15 @@ async def test_index_names_the_documents_and_which_are_required(
                     version="2.1",
                     effective_date="2026-09-01",
                     sha256="a" * 64,
+                    required=True,
                 ),
                 legal_service.LegalDocument(
                     slug="sla",
                     title="Service Level Agreement",
                     version="1.0",
                     effective_date=None,
-                    sha256="b" * 64,
+                    sha256=None,
+                    url="https://legal.customer.example/sla.pdf",
                 ),
             ]
         ),
@@ -74,9 +76,20 @@ async def test_index_names_the_documents_and_which_are_required(
     body = response.json()
     assert [d["slug"] for d in body["documents"]] == ["terms", "sla"]
     assert body["documents"][0]["version"] == "2.1"
-    # The required set is the app's, not the portal's — an account cannot
-    # exist here without these two, whatever else the portal publishes.
-    assert body["required"] == list(legal_service.REQUIRED_DOCUMENTS)
+    assert body["documents"][1]["url"] == "https://legal.customer.example/sla.pdf"
+    # The portal says which are required; the app adds none of its own.
+    assert body["required"] == ["terms"]
+
+
+async def test_a_deployment_may_publish_no_documents(
+    client: AsyncClient, hosted, monkeypatch
+):
+    monkeypatch.setattr(legal_service, "get_index", _index([]))
+
+    response = await client.get("/api/v1/legal")
+
+    assert response.status_code == 200
+    assert response.json() == {"documents": [], "required": []}
 
 
 async def test_an_unreachable_portal_says_so_rather_than_inventing_terms(

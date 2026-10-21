@@ -77,11 +77,10 @@ async def test_config_reports_no_captcha_unless_it_is_fully_configured(
 
 async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypatch):
     """With a URL configured, the SPA gets the base URL to build its
-    link-out buttons. The operator route reports itself unavailable until its
-    own signing material is configured."""
+    link-out buttons. The operator route reports itself unavailable until the
+    handoff key is configured."""
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_SECRET", None)
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_KID", None)
+    monkeypatch.setattr(settings, "HANDOFF_SIGNING_PRIVATE_KEY_PEM", None)
 
     response = await client.get("/api/v1/config")
 
@@ -98,12 +97,11 @@ async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypa
 
 
 async def test_config_reports_operator_handoff_when_signing_configured(
-    client: AsyncClient, monkeypatch
+    client: AsyncClient, monkeypatch, handoff_signing_key
 ):
-    """Both halves present ⇒ the admin Guilds tab may render its control."""
+    """A portal and the handoff key ⇒ the admin Guilds tab may render its
+    control."""
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_SECRET", "shared-secret")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_KID", "k1")
 
     response = await client.get("/api/v1/config")
 

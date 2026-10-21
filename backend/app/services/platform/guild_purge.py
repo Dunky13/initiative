@@ -85,7 +85,6 @@ async def _delete_expired_hold(session: AsyncSession, guild: Guild, _days: int) 
     whatever its size.
     """
     from app.services import email as email_service
-    from app.services.platform import billing_ping
     from app.services.platform import guilds as guilds_service
 
     guild_id = guild.id
@@ -102,7 +101,6 @@ async def _delete_expired_hold(session: AsyncSession, guild: Guild, _days: int) 
     # the deletion real. What its plug-ins call the community is kept until the
     # purge, which tells them to erase it first.
     await post_commit.settle(guild_session)
-    billing_ping.notify_lifecycle_changed(guild_id)
 
 
 async def delete_expired_holds(session: AsyncSession, *, now: datetime) -> int:

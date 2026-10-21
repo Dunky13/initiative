@@ -11,7 +11,6 @@
  * order, so it offers no reorder action.
  */
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { AxiosError, AxiosHeaders } from "axios";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 import { buildCommunity } from "@/__tests__/factories";
@@ -236,9 +235,7 @@ describe("CommunitySidebar community creation", () => {
 
     await waitFor(() => expect(mintMock).toHaveBeenCalledWith(42));
     await waitFor(() =>
-      expect(tab.location.href).toBe(
-        "https://billing.example.com/upgrade?community=42&lang=en#handoff=TOK"
-      )
+      expect(tab.location.href).toBe("https://billing.example.com/upgrade?lang=en#handoff=TOK")
     );
     openSpy.mockRestore();
   });
@@ -298,25 +295,6 @@ describe("CommunitySidebar community creation", () => {
     expect(mintMock).not.toHaveBeenCalled();
     expect(toast.info).not.toHaveBeenCalled();
     openSpy.mockRestore();
-  });
-
-  it("says only why in the phone app when a free community is already held", async () => {
-    state.billing = { url: "https://billing.example.com" };
-    const refused = new AxiosError("refused");
-    refused.response = {
-      status: 402,
-      statusText: "",
-      data: { detail: "FREE_COMMUNITY_ALREADY_HELD" },
-      headers: new AxiosHeaders(),
-      config: { headers: new AxiosHeaders() },
-    };
-    const createCommunity = vi.fn<CreateCommunity>().mockRejectedValue(refused);
-
-    await createNamedCommunity(createCommunity, { native: true });
-
-    const inApp = "You already have a free community. Another one can't be set up in the app.";
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(inApp));
-    expect(screen.getByText(inApp)).toBeInTheDocument();
   });
 
   it("closes the reserved tab when creation fails", async () => {

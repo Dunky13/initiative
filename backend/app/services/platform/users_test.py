@@ -176,7 +176,8 @@ async def test_deactivate_user(session: AsyncSession, monkeypatch):
     """Deactivation flips status, drops memberships (telling billing),
     bumps token_version, and leaves PII intact so an operator can later
     reactivate."""
-    from app.services.platform import billing_ping
+    from app.testing.billing_boundary import change_rows
+    from app.testing.billing_managed import billing_manages_plans
 
     user = await create_user(session, email="todeactivate@example.com")
     admin = await create_user(session, email="admin@example.com")
@@ -190,13 +191,16 @@ async def test_deactivate_user(session: AsyncSession, monkeypatch):
     )
 
     original_token_version = user.token_version
-    pinged: list[int] = []
-    monkeypatch.setattr(billing_ping, "notify_membership_changed", pinged.append)
+    guild_id, user_id = guild.id, user.id
 
-    await user_service.deactivate_user(session, user.id)
-    assert pinged == [guild.id]
+    async with billing_manages_plans(session):
+        await user_service.deactivate_user(session, user_id)
+        await session.commit()
+        assert await change_rows(session, guild_id, kinds=("community.members",)) == [
+            ("community.members", {"members": 1, "guests": 0})
+        ]
 
-    stmt = select(User).where(User.id == user.id)
+    stmt = select(User).where(User.id == user_id)
     result = await session.exec(stmt)
     deactivated = result.one()
 

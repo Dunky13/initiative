@@ -70,6 +70,10 @@ class ListingUnavailableReason(str, Enum):
     #: The listing installs only in a community holding an active
     #: entitlement for it.
     entitlement_required = "entitlement_required"
+    #: The deployment's term for the listing has no seat left for this
+    #: community: the way on is a request to the deployment's owners, so the
+    #: listing is shown with one, never hidden.
+    term_full = "term_full"
 
 
 class ListingUnavailable(SanitizedBaseModel):

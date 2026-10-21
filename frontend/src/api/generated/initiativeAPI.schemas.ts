@@ -2737,7 +2737,6 @@ export interface CommunityClaimRulesResponse {
 export interface CommunityCreate {
   name: string;
   description?: string | null;
-  plan?: string | null;
   owner_user_id?: number | null;
 }
 
@@ -3298,6 +3297,16 @@ export interface CommunityPluginListingRef {
 }
 
 /**
+ * What the entitlement statement held for an install's listing says, as
+ * the plug-in's page reads it: whether it entitles the community, and why
+ * not when it says (``term_full``: the deployment's term has no seat free).
+ */
+export interface CommunityPluginEntitlementRead {
+  active: boolean;
+  reason: string | null;
+}
+
+/**
  * An install plus its connections, for the settings page.
  *
  * Separate from the list payload because the connection blocks carry the whole
@@ -3342,6 +3351,7 @@ export interface CommunityPluginDetail {
   pending_update: CommunityPluginUpgradeAsks | null;
   plugin_names: CommunityPluginDetailPluginNames;
   listing: CommunityPluginListingRef | null;
+  entitlement: CommunityPluginEntitlementRead | null;
 }
 
 /**
@@ -5265,7 +5275,6 @@ export const EmailCadence = {
 export interface NewCommunity {
   name: string;
   description?: string | null;
-  plan?: string | null;
 }
 
 /**
@@ -5287,6 +5296,8 @@ export interface EmailOtpRegister {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 /**
@@ -6939,6 +6950,7 @@ export interface LegalDocumentRead {
   version?: string | null;
   effective_date?: string | null;
   sha256?: string | null;
+  url?: string | null;
 }
 
 export interface LegalIndexRead {
@@ -7010,6 +7022,7 @@ export type ListingUnavailableReason =
 
 export const ListingUnavailableReason = {
   entitlement_required: "entitlement_required",
+  term_full: "term_full",
 } as const;
 
 /**
@@ -8193,6 +8206,8 @@ export interface PasskeySignUpFinish {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
   credential: PasskeySignUpFinishCredential;
   /**
    * @minLength 1
@@ -8231,6 +8246,8 @@ export interface PasskeySignUpStart {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 export type PasskeyStepUpFinishCredential = { [key: string]: unknown };
@@ -10866,6 +10883,8 @@ export interface UserCreate {
   community?: NewCommunity | null;
   username_offer?: string | null;
   birthdate?: string | null;
+  /** @maxItems 32 */
+  accepted_documents?: string[];
 }
 
 /**

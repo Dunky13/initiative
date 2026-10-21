@@ -18,6 +18,15 @@ vi.mock("@/api/client", () => ({ apiClient: { post: vi.fn() } }));
 vi.mock("@/hooks/useAppConfig", () => ({
   useAppConfig: () => ({ billing: config.billing }),
 }));
+vi.mock("@/hooks/useLegalDocuments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useLegalDocuments")>()),
+  useLegalIndex: () => ({
+    enabled: Boolean(config.billing),
+    documents: config.billing ? [{ slug: "privacy", title: "Privacy Policy" }] : [],
+    requiredDocuments: [],
+    isLoading: false,
+  }),
+}));
 
 import { ConfirmBirthdate } from "@/components/ConfirmBirthdate";
 

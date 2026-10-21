@@ -54,10 +54,11 @@ import {
   useSeedFirstHome,
   useSeedStarter,
 } from "@/hooks/useFinishPendingStart";
+import { useLegalIndex } from "@/hooks/useLegalDocuments";
 import { useServer } from "@/hooks/useServer";
 import { useWizard } from "@/hooks/useWizard";
 import { EMPTY_PLACE, nearOfPlace } from "@/lib/directoryNear";
-import { getErrorCode, getErrorMessage } from "@/lib/errorMessage";
+import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import {
   clearStart,
@@ -326,19 +327,12 @@ const StartSteps = ({
       madeCommunity.current = await createCommunity({
         name: final.communityName.trim(),
         description: final.description.trim() || undefined,
-        plan: pickedPlan,
       });
       commit("finishing");
     } catch (err) {
       dropPlanTab();
       onBusy?.(false);
-      // The server's own line for this sends them to choose a plan, which a
-      // device that may not sell cannot offer; there it only says why.
-      setError(
-        !canSell && getErrorCode(err) === "FREE_COMMUNITY_ALREADY_HELD"
-          ? t("communities:freeCommunityHeldInApp")
-          : getErrorMessage(err, "communities:unableToCreateCommunity")
-      );
+      setError(getErrorMessage(err, "communities:unableToCreateCommunity"));
     } finally {
       setBusy(false);
     }
@@ -390,7 +384,7 @@ const StartSteps = ({
       }
       if (planTab.current) {
         toast.info(t("communities:billingSetup.opening", { community: community.name }));
-        void openPortal(community.id, "upgrade", planTab.current);
+        void openPortal(community.id, "upgrade", planTab.current, { plan: pickedPlan });
         planTab.current = null;
       } else if (wantsPlan) {
         setPlanByButton(true);
@@ -410,6 +404,8 @@ const StartSteps = ({
 
   // The signed number the name check showed, so the account gets it.
   const [handleOffer, setHandleOffer] = useState<string | null>(null);
+  // The documents the form's notice showed, which the registration records.
+  const legal = useLegalIndex();
   const signUpDetails = (captchaToken = "") => {
     const final = withDefaults(answers);
     return {
@@ -417,9 +413,10 @@ const StartSteps = ({
       username: final.username.trim().toLowerCase(),
       timezone: final.timezone,
       captcha_token: captcha ? captchaToken : undefined,
-      community: newCommunity(final, pickedPlan),
+      community: newCommunity(final),
       birthdate: age.birthdate || undefined,
       username_offer: handleOffer ?? undefined,
+      accepted_documents: legal.shownSlugs,
     };
   };
 
@@ -710,7 +707,11 @@ const StartSteps = ({
           <PeopleStep
             communityId={made.id}
             origin={getServerOrigin() ?? window.location.origin}
-            planButton={planByButton ? () => void openPortal(made.id, "upgrade") : undefined}
+            planButton={
+              planByButton
+                ? () => void openPortal(made.id, "upgrade", null, { plan: pickedPlan })
+                : undefined
+            }
             onDone={() => void leave(() => landOn(made.id, null))}
             doneLabel={t("start.people.goToCommunity", { community: made.name })}
           />

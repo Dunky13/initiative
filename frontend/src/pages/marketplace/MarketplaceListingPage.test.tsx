@@ -42,6 +42,17 @@ let communityRole = "superadmin";
 let installedUids: string[] = [];
 let installsState: "ready" | "loading" | "error" = "ready";
 
+const openPortal = vi.fn();
+let portal: { url: string } | null = null;
+vi.mock("@/hooks/useBillingPortal", () => ({
+  useBillingPortal: () => ({
+    billing: portal,
+    canSell: portal !== null,
+    openAddress: vi.fn(),
+    openPortal,
+  }),
+}));
+
 vi.mock("@/hooks/useMarketplace", () => ({
   useMarketplaceListing: () => ({ data: listing, isError: failed }),
 }));
@@ -53,7 +64,7 @@ vi.mock("@/hooks/useCommunities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useCommunities")>()),
   useCommunities: () => ({
     activeCommunityId: 1,
-    activeCommunity: { role: communityRole, can: communityCan(communityRole) },
+    activeCommunity: { id: 1, role: communityRole, can: communityCan(communityRole) },
   }),
 }));
 vi.mock("@/hooks/useCommunityPlugins", async (importOriginal) => ({
@@ -96,6 +107,8 @@ const backHref = () =>
     .find((href) => href?.includes("/marketplace") && !href.includes("core."));
 
 beforeEach(() => {
+  openPortal.mockReset();
+  portal = null;
   listing = pluginListing();
   failed = false;
   communityRole = "superadmin";
@@ -391,5 +404,41 @@ describe("a plug-in this community cannot add yet", () => {
 
     expect(screen.getByRole("button", { name: /Add to community/ })).toBeEnabled();
     expect(screen.queryByText(/has to be set up for your community/)).toBeNull();
+  });
+});
+
+describe("a plug-in the deployment's term has no seat free for", () => {
+  const full = () => ({
+    ...pluginListing(),
+    unavailable: { reason: "term_full" as const, action_url: null },
+  });
+
+  it("offers the seat a request in the billing portal, in place of the button", async () => {
+    listing = full();
+    portal = { url: "https://billing.example.com" };
+    const user = userEvent.setup();
+    renderPage(MarketplaceListingPage);
+    await screen.findByRole("heading", { name: "Community calendar" });
+
+    expect(
+      screen.getByText("This deployment's plan has no seat free for Community calendar.")
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Request" }));
+    expect(openPortal).toHaveBeenCalledWith(1, "manage", null, {
+      request: "plugin",
+      listing: "GLDCAL00000001",
+    });
+  });
+
+  it("tells anyone else to ask the community's admins, with no button", async () => {
+    listing = full();
+    portal = { url: "https://billing.example.com" };
+    communityRole = "member";
+    renderPage(MarketplaceListingPage);
+    await screen.findByRole("heading", { name: "Community calendar" });
+
+    expect(screen.getByText("Ask your community's admins to request it.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request" })).toBeNull();
+    expect(openPortal).not.toHaveBeenCalled();
   });
 });

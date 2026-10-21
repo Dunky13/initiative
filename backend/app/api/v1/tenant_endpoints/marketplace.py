@@ -92,13 +92,17 @@ router = APIRouter()
 MAX_PAGE_SIZE = 100
 
 
-def _unavailable(guild_id: int, uid: str, gated: set[str]) -> ListingUnavailable | None:
+def _unavailable(
+    guild_id: int, uid: str, gated: dict[str, str | None]
+) -> ListingUnavailable | None:
     """Why this community cannot install listing ``uid`` yet, if it cannot."""
     if uid not in gated:
         return None
+    if gated[uid] == plugin_entitlements.REASON_TERM_FULL:
+        return ListingUnavailable(reason=ListingUnavailableReason.term_full)
     return ListingUnavailable(
         reason=ListingUnavailableReason.entitlement_required,
-        action_url=plugin_entitlements.action_url(guild_id, uid),
+        action_url=plugin_entitlements.action_url(uid),
     )
 
 

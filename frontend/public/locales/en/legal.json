@@ -1,11 +1,10 @@
 {
-  "signupNotice": "By creating an account you agree to {{appName}}'s <termsLink>{{terms}}</termsLink> and <privacyLink>{{privacy}}</privacyLink>.",
-  "termsTitle": "Terms of Service",
-  "privacyTitle": "Privacy Policy",
+  "signupNotice": "By creating an account you agree to {{appName}}'s documents:",
   "documentFallbackTitle": "Legal document",
   "effective": "Effective {{date}}",
   "version": "Version {{version}}",
   "unavailable": "This document can't be shown right now. Please try again in a moment.",
+  "readWhereKept": "Read it where it's kept",
   "backToSignIn": "Back to sign in",
   "acceptError": "We couldn't record that. Please try again.",
   "accept": {

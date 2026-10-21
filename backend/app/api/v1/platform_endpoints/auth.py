@@ -228,6 +228,8 @@ class RegistrationDetails:
     community: NewCommunity | None = None
     birthdate: date | None = None
     username_offer: str | None = None
+    #: The documents the form showed, by slug (see ``record_acceptance``).
+    accepted_documents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -272,6 +274,7 @@ async def register_user(
             community=user_in.community,
             birthdate=user_in.birthdate,
             username_offer=user_in.username_offer,
+            accepted_documents=tuple(user_in.accepted_documents),
         ),
         invite_code=invite_code,
         hashed_password=get_password_hash(user_in.password),
@@ -513,9 +516,13 @@ async def _register_account(
                 actor_user_id=user.id,
             )
         # The form said, above the button they just pressed, that creating an
-        # account agrees to this deployment's terms and privacy policy. On a
-        # deployment that has none — every self-hosted one — this does nothing.
-        await legal_service.record_acceptance(session, user_id=user.id)
+        # account agrees to the documents it named. Only those are recorded: a
+        # required one the form didn't show (its index still loading, or
+        # unreachable) is asked for after sign-in. On a deployment that
+        # requires none this records nothing.
+        await legal_service.record_acceptance(
+            session, user_id=user.id, shown=details.accepted_documents
+        )
         # Staged beside the account, before either branch below commits it, so
         # a registration that fails leaves no record of one.
         await audit_service.record(
@@ -569,10 +576,8 @@ async def _register_account(
                     detail=AuthMessages.UNABLE_TO_CREATE_USER,
                 )
             guild_id = guild.id
-            # The account was made with a guild of its own; claim it for them.
-            await guilds_service.welcome_new_guild(
-                guild_id, owner_user_id=user_id, plan=details.community.plan
-            )
+            # The account was made with a guild of its own; welcome them to it.
+            await guilds_service.welcome_new_guild(guild_id, owner_user_id=user_id)
     except IntegrityError as exc:  # pragma: no cover
         await session.rollback()
         logger.exception("Failed to register user due to integrity error")
@@ -704,6 +709,7 @@ async def finish_passkey_sign_up(
             community=payload.community,
             birthdate=payload.birthdate,
             username_offer=payload.username_offer,
+            accepted_documents=tuple(payload.accepted_documents),
         ),
         invite_code=invite_code,
         hashed_password=None,

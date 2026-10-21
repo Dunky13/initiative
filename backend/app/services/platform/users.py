@@ -44,7 +44,6 @@ from app.services.auth import sessions as session_service
 from app.services.auth import challenges as challenge_service
 from app.services.auth import totp as totp_service
 from app.services.platform import api_keys as api_keys_service
-from app.services.platform import billing_ping
 from app.services.platform import identity_refs
 from app.services.platform.retention import ACCOUNT_DELETION
 from app.services.platform import user_avatars as user_avatars_service
@@ -355,7 +354,6 @@ async def _drop_user_memberships(
             detail={"role": membership.role.value, "via": "account_closed"},
         )
         await session.delete(membership)
-        billing_ping.notify_membership_changed(membership.guild_id)
 
     return (await session.exec(select(User).where(User.id == user_id))).one()
 

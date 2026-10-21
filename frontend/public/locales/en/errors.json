@@ -24,7 +24,6 @@
   "COMMUNITY_PERMISSION_REQUIRED": "Community permission required",
   "COMMUNITY_ADMIN_REQUIRED": "Community admin role required",
   "COMMUNITY_CREATION_DISABLED": "Community creation is disabled",
-  "FREE_COMMUNITY_ALREADY_HELD": "You already have a free community. Another one needs a plan — pick one and we'll set it up.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "You've created as many communities as you can in 24 hours. Try again later.",
   "COMMUNITY_CREATION_DEMO_ACCOUNT": "Demo accounts can't create communities",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Only platform staff can create a community owned by someone else",

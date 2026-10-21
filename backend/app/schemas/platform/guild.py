@@ -131,9 +131,6 @@ class NewCommunity(CommunityBase):
     """A community, as somebody names it when they make one."""
 
     name: TitleStr
-    #: A tier from the billing catalog the community starts on, passed to
-    #: billing as given. Ignored where no billing service is configured.
-    plan: Optional[str] = Field(default=None, max_length=64)
 
 
 class CommunityCreate(NewCommunity):

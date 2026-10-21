@@ -558,8 +558,6 @@ async def uninstall_plugin(
             "erase": erase,
         },
     )
-    if listing_uid:
-        plugin_entitlements.after_uninstall(session, guild_id, listing_uid)
 
 
 async def clear_static_connection(

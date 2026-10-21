@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from jwt.algorithms import OKPAlgorithm
 from sqlalchemy import delete as sa_delete
@@ -1493,6 +1494,15 @@ async def create_listing_with_terms(
 #: The key test entitlement statements are signed with. Nothing here verifies
 #: the signature (the plug-in does), so one key serves every test.
 _STATEMENT_KEY = ed25519.Ed25519PrivateKey.generate()
+#: The public half of the key :func:`entitlement_statement` signs with: what
+#: a test sets ``BILLING_STATEMENT_PUBLIC_KEY_PEM`` to.
+STATEMENT_PUBLIC_PEM = (
+    _STATEMENT_KEY.public_key()
+    .public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    .decode()
+)
 
 
 def entitlement_statement(
