@@ -29,7 +29,7 @@ import { TOOL_ICONS, TOOLS, toolCamelPlural, toolNavLabelKey } from "@/lib/tools
 
 import { BitsBetween } from "./BitsBetween";
 import { DarkBand } from "./DarkBand";
-import { FloatingShape } from "./effects";
+import { FloatingShape, Typed } from "./effects";
 import { HangOut } from "./HangOut";
 import { LandingShell } from "./LandingShell";
 import { Together } from "./Together";
@@ -269,17 +269,17 @@ const Hero = () => {
             {/* The second line types itself out, with a caret that keeps
                 blinking after it. With less motion asked for it stands
                 finished. */}
-            <span className="block whitespace-nowrap text-amber-400">
-              <span
-                className="landing-type inline-block max-w-full overflow-hidden align-bottom"
-                style={{ animation: "liveWidth 1.1s steps(15, end) 0.6s both" }}
-              >
-                {t("hero.titleLine2")}
-              </span>
-              <span
-                className="landing-type ml-1.5 inline-block h-[0.85em] w-[0.08em] rounded-sm bg-amber-400 align-baseline"
-                style={{ animation: "liveBlink 1s steps(2) infinite" }}
-                aria-hidden="true"
+            <span className="block text-amber-400">
+              <Typed
+                text={t("hero.titleLine2")}
+                delayMs={600}
+                caret={
+                  <span
+                    className="landing-type ml-1.5 inline-block h-[0.85em] w-[0.08em] rounded-sm bg-amber-400 align-baseline"
+                    style={{ animation: "liveBlink 1s steps(2) infinite" }}
+                    aria-hidden="true"
+                  />
+                }
               />
             </span>
           </h1>

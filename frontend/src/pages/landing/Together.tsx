@@ -1,6 +1,7 @@
 /**
  * Collaboration, drawn: three people on the same plan at once. Maya types a
- * line and her caret follows it, Dev selects a word and his caret sits at
+ * line and her caret follows it (a typewriter, so the line wraps as the
+ * finished text would in any language), Dev selects a word and his caret sits at
  * its end, Priya's comment lands in the margin and picks up a reaction, and
  * a task on the page is handed to a second person. The avatar stack in the
  * header fills as they arrive.
@@ -18,7 +19,7 @@ import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 
-import { reveal, useRevealOnScroll } from "./effects";
+import { reveal, Typed, useRevealOnScroll } from "./effects";
 
 const PEOPLE = {
   MA: { color: "#be185d" },
@@ -154,14 +155,12 @@ const Drawing = ({ playing }: { playing: boolean }) => {
             </li>
           </ul>
           <p>
-            <span
-              className="inline-block max-w-full overflow-hidden whitespace-nowrap align-bottom"
-              style={{ animation: "liveWidth 2.2s steps(30, end) 0.3s both" }}
-              data-live
-            >
-              {t("together.doc.typed")}
-            </span>
-            <Caret who="MA" name={p("maya")} className="ml-px" />
+            <Typed
+              text={t("together.doc.typed")}
+              play={playing}
+              delayMs={300}
+              caret={<Caret who="MA" name={p("maya")} className="ml-px" />}
+            />
           </p>
         </div>
       </div>

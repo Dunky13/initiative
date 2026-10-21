@@ -1,10 +1,10 @@
 /**
  * The landing page's set dressing: a starfield, floating shapes that drift
- * against the scroll, and the observer that lets a section fade in the first
- * time it is scrolled into view.
+ * against the scroll, the observer that lets a section fade in the first
+ * time it is scrolled into view, and text that types itself out.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Reveal-on-scroll
@@ -79,6 +79,73 @@ export function useRevealOnScroll<T extends HTMLElement = HTMLDivElement>(thresh
 /** The transition classes a revealed block swaps between. */
 export const reveal = (visible: boolean, hidden = "translate-y-8 opacity-0") =>
   visible ? "translate-y-0 opacity-100" : hidden;
+
+// ---------------------------------------------------------------------------
+// Typing
+// ---------------------------------------------------------------------------
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Text that types itself out, a character at a time, once `play` is true.
+ * Somebody who has asked for less motion gets the whole text at once.
+ */
+export function useTypewriter(text: string, play: boolean, delayMs: number, charMs: number) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (!play) return;
+    if (prefersReducedMotion()) {
+      setShown(text.length);
+      return;
+    }
+    let count = 0;
+    let timer = window.setTimeout(function tick() {
+      count += 1;
+      setShown(count);
+      if (count < text.length) timer = window.setTimeout(tick, charMs);
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [play, text, delayMs, charMs]);
+
+  return text.slice(0, shown);
+}
+
+/**
+ * A line that types itself out behind a caret. The whole text is laid out
+ * invisibly underneath, so the line takes its finished size from the start
+ * and wraps the same way in every language; the typed part is drawn over
+ * it, with the caret attached to its end.
+ */
+export const Typed = ({
+  text,
+  play = true,
+  delayMs = 0,
+  charMs = 70,
+  caret,
+}: {
+  text: string;
+  play?: boolean;
+  delayMs?: number;
+  charMs?: number;
+  caret: ReactNode;
+}) => {
+  const shown = useTypewriter(text, play, delayMs, charMs);
+  return (
+    <span className="relative block">
+      <span className="invisible" aria-hidden="true">
+        {text}
+      </span>
+      <span className="absolute inset-0">
+        {shown}
+        {caret}
+      </span>
+    </span>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Starfield
