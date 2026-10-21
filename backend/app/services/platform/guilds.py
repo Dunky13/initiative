@@ -879,8 +879,7 @@ async def list_memberships(
         retention = dict(
             await gather_across_guilds(
                 session,
-                user_id,
-                live_administered,
+                {user_id: live_administered},
                 _retention,
                 for_settings=True,
             )

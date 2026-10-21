@@ -992,7 +992,7 @@ async def _apply_backup(client, actor, zip_bytes, monkeypatch, role_session) -> 
 
 
 async def _run_import_worker(monkeypatch, role_session):
-    user_session = await role_session("app_user")
+    user_session = await role_session("app_admin")
     monkeypatch.setattr(
         import_worker, "_open_user_session", lambda _guild_id: user_session
     )
@@ -6189,7 +6189,7 @@ async def _status(client, actor, job_id) -> str:
 
 
 async def _user_sessions(monkeypatch, role_session, count):
-    sessions = iter([await role_session("app_user") for _ in range(count)])
+    sessions = iter([await role_session("app_admin") for _ in range(count)])
     monkeypatch.setattr(
         import_worker, "_open_user_session", lambda _guild_id: next(sessions)
     )

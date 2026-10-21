@@ -665,7 +665,7 @@ async def get_user_stats(
     async def fetch(routed: AsyncSession, gid: int) -> List[UserStatsResponse]:
         return [await _compute_guild_stats(routed, user, gid, days)]
 
-    parts = await gather_across_guilds(session, user.id, target_guilds, fetch)
+    parts = await gather_across_guilds(session, {user.id: target_guilds}, fetch)
 
     if not parts:
         return UserStatsResponse(

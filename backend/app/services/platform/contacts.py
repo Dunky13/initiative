@@ -193,7 +193,7 @@ async def guild_sections(
         return []
 
     guild_ids = [gid for gid, _name, _icon in guilds]
-    await gather_across_guilds(session, user_id, guild_ids, _fetch)
+    await gather_across_guilds(session, {user_id: guild_ids}, _fetch)
 
     # Which of the reader's guilds each listed person is also in, which the
     # paged rows cannot say: a person may be on page 1 of one section and page

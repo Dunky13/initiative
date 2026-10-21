@@ -724,7 +724,7 @@ async def _gather_global_task_reads(
         return [(_guild_id, row) for row in rows]
 
     keys = await gather_across_guilds(
-        session, current_user.id, target_guilds, _order_keys
+        session, {current_user.id: target_guilds}, _order_keys
     )
     # Sort across ALL guilds before slicing — the per-guild queries return rows
     # unordered, so this is where global ordering is established.
@@ -799,7 +799,7 @@ async def _gather_global_task_reads(
         ]
 
     hydrated = await gather_across_guilds(
-        session, current_user.id, sorted(wanted), _hydrate
+        session, {current_user.id: sorted(wanted)}, _hydrate
     )
     hydrated.sort(key=lambda pair: pair[0])
     return [read for _, read in hydrated], total_count, actual_page
@@ -1050,7 +1050,7 @@ async def _load_property_definitions_across_guilds(
         return list(defs.values())
 
     definitions = await gather_across_guilds(
-        session, current_user.id, target_guilds, _fetch
+        session, {current_user.id: target_guilds}, _fetch
     )
     merged: dict[int, PropertyDefinition] = {}
     for defn in definitions:

@@ -11,9 +11,9 @@ with its first rows in the list's order and how many it has, and the page is
 cut from their merge.
 """
 
-from typing import Any, Awaitable, Callable, Optional, Sequence, TypeVar
+from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence, TypeVar
 
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.services.membership import live_membership_clause
 from app.services.platform import guild_entitlements
@@ -31,7 +31,7 @@ from app.models.platform.guild import (
     GuildMembership,
 )
 from app.models.platform.user import User, UserStatus
-from app.db.request_context import Platform
+from app.db.request_context import Platform, Unattributed
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -113,41 +113,47 @@ async def member_guild_ids(
 
 async def gather_across_guilds(
     session: AsyncSession,
-    user_id: int,
-    guild_ids: Sequence[int],
+    readers: Mapping[int, Sequence[int]],
     fetch: Callable[[AsyncSession, int], Awaitable[list[T]]],
     *,
     on_behalf: bool = False,
     for_settings: bool = False,
     writes: bool = False,
 ) -> list[T]:
-    """Route into each guild's schema, call ``fetch(session, guild_id)``, and
-    concatenate the results. Each guild gets a session of its own, since ids
-    are unique only within a schema, not across them.
+    """Enter each community as each of its readers, call
+    ``fetch(session, guild_id)``, and concatenate the results.
 
-    Each community is entered through the **same seam** a ``/c/{community_id}``
+    ``readers`` maps each reader's user id to the communities to read them in.
+    Every community is visited once, on a session of its own from its cohort,
+    and routed as each of its readers in turn; ``fetch`` reads who that is from
+    the routing (``require_guild_context(session).user_id``). Ids are unique only
+    within a schema, so callers keep each item's community beside it.
+
+    Each reader enters through the **same seam** a ``/c/{community_id}``
     request goes through, so what these views show is what that request would
     show: the same lookup, the same refusals, and the same standing computed in
-    the community's own schema. A community this caller cannot reach right now
-    contributes nothing rather than raising.
+    the community's own schema, as the reader, on whichever pool the session
+    came from. A community a reader cannot reach right now contributes nothing
+    for them rather than raising.
 
     The caller's session is the ambient ``auth_context`` — its ``sat`` on a
     request path — so a policy-gated guild contributes exactly when that
-    session satisfies its policy. ``on_behalf`` is a job acting as the person
-    who asked for it (``establish_guild_access``).
+    session satisfies its policy. ``on_behalf`` is a job acting as the people it
+    reads for (``establish_guild_access``).
 
     ``for_settings`` enters each community on its configuration surface, as
     ``/c/{community_id}`` settings routes do (``establish_guild_access``'s
     ``for_settings``), for a read of what its administrator configures.
 
-    ``session`` is a request-path session, or one from
-    ``cohorts.system_session``. It stays where it is: each community gets a
-    session of the same kind from its own cohort (``app.db.cohorts``), which is
-    closed before the next one opens, and ``fetch`` receives that session. It
-    is read-only unless ``writes`` is set, in which case each community's
-    session is committed once its ``fetch`` returns — each community's writes
-    are then a transaction of their own, not the caller's."""
-    if not guild_ids:
+    ``session`` is a request-path session, which reads for its own account
+    alone, or one from ``cohorts.system_session``. It stays where it is: each
+    community gets a session of the same kind from its own cohort
+    (``app.db.cohorts``), which is closed before the next one opens. It is
+    read-only unless ``writes`` is set, in which case each reader's writes are
+    committed once their ``fetch`` returns, a transaction of their own rather
+    than the caller's."""
+    wanted = {user_id: guild_ids for user_id, guild_ids in readers.items() if guild_ids}
+    if not wanted:
         return []
     from app.api.deps import (
         GuildAccessError,
@@ -155,24 +161,41 @@ async def gather_across_guilds(
         establish_guild_access,
     )
 
-    # One shared-table read for the caller's own account, under the user-only
-    # context, before we start routing into schemas.
-    await set_rls_context(session, Platform(user_id=user_id))
-    user = (await session.exec(select(User).where(User.id == user_id))).one_or_none()
+    # One shared-table read for the readers' accounts before routing into any
+    # schema: a request reads its own account under its own context, and a job
+    # reads all of them in one statement.
+    await set_rls_context(
+        session,
+        Platform(user_id=next(iter(wanted))) if len(wanted) == 1 else Unattributed(),
+    )
     # A suspended account reaches no community, so there is nothing across them
     # to gather. Checked here rather than only in ``member_guild_ids`` because a
     # caller may assemble its own guild list and reach this directly.
-    if user is None or user.status == UserStatus.suspended:
-        return []
+    accounts = {
+        user.id: user
+        for user in (
+            await session.exec(
+                select(User).where(
+                    col(User.id).in_(wanted), User.status != UserStatus.suspended
+                )
+            )
+        ).all()
+    }
+    by_guild: dict[int, list[int]] = {}
+    for user_id, guild_ids in wanted.items():
+        if user_id in accounts:
+            for guild_id in guild_ids:
+                by_guild.setdefault(guild_id, []).append(user_id)
 
     contexts: dict[tuple[int, int, bool], GuildContext] = session.info.setdefault(
         _CONTEXT_CACHE_KEY, {}
     )
     satisfied = auth_context.current().satisfied_providers
 
-    async def enter(routed: AsyncSession, account: User, guild_id: int) -> bool:
-        """Route ``routed`` into ``guild_id`` as ``account``; False when this
-        caller cannot reach it right now."""
+    async def enter(routed: AsyncSession, user_id: int, guild_id: int) -> bool:
+        """Route ``routed`` into ``guild_id`` as ``user_id``; False when this
+        reader cannot reach it right now."""
+        account = await routed.merge(accounts[user_id], load=False)
         key = (user_id, guild_id, for_settings)
         cached = contexts.get(key)
         try:
@@ -201,15 +224,18 @@ async def gather_across_guilds(
     results: list[T] = []
     # Each community is read on a session from its own cohort's pool, so the
     # caller's connection never opens another cohort's schema.
-    for guild_id in guild_ids:
+    for guild_id, user_ids in sorted(by_guild.items()):
         async with cohorts.community_session(
             session, guild_id, read_only=not writes
         ) as routed:
-            account = await routed.merge(user, load=False)
-            if await enter(routed, account, guild_id):
-                results.extend(await fetch(routed, guild_id))
-                if writes:
-                    await routed.commit()
+            for user_id in user_ids:
+                # Nothing one reader loaded is handed to the next from the
+                # identity map: each reads afresh, as themselves.
+                routed.expunge_all()
+                if await enter(routed, user_id, guild_id):
+                    results.extend(await fetch(routed, guild_id))
+                    if writes:
+                        await routed.commit()
     return results
 
 
@@ -249,5 +275,5 @@ async def page_across_guilds(
         del merged[limit:]
         return []
 
-    await gather_across_guilds(session, user_id, guild_ids, _fetch)
+    await gather_across_guilds(session, {user_id: guild_ids}, _fetch)
     return paginate_sequence(merged, page, page_size), total

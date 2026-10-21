@@ -154,7 +154,7 @@ async def test_a_read_across_communities_reads_each_from_its_own_cohort(session,
             return [int(count[0])]
 
         results = await gather_across_guilds(
-            parent, user.id, [first.id, second.id], fetch
+            parent, {user.id: [first.id, second.id]}, fetch
         )
 
     assert len(results) == 2
@@ -164,11 +164,12 @@ async def test_a_read_across_communities_reads_each_from_its_own_cohort(session,
     ]
 
 
-async def test_reads_that_may_trail_use_the_request_pool_without_a_replica():
+async def test_reads_that_may_trail_use_the_system_pool_without_a_replica():
     assert settings.DATABASE_URL_QUERY is None
-    assert cohorts.read_sessionmaker(5) is cohorts.request_sessionmaker(5)
+    assert cohorts.read_sessionmaker(5) is cohorts.system_sessionmaker(5)
     async with cohorts.read_session(5) as reading:
         assert reading.info[cohorts.READ_ONLY_INFO_KEY] is True
+        assert not cohorts.is_request_session(reading)
 
 
 @pytest.mark.parametrize(

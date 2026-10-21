@@ -268,12 +268,13 @@ async def exec_as_system(session: AsyncSession, statement: Any) -> None:
 
 
 def read_sessionmaker(guild_id: int) -> async_sessionmaker[AsyncSession]:
-    """The sessionmaker for reads in ``guild_id``'s community that may trail
-    the primary by a moment: on DATABASE_URL_QUERY when it is set, from the
-    community's cohort, and otherwise the request path's."""
+    """The sessionmaker for background reads in ``guild_id``'s community that
+    may trail the primary by a moment: on DATABASE_URL_QUERY when it is set,
+    from the community's cohort, and otherwise the community's system pool, so
+    background work never draws on the request path's."""
     global _read_makers
     if not settings.DATABASE_URL_QUERY:
-        return request_sessionmaker(guild_id)
+        return system_sessionmaker(guild_id)
     if _read_makers is None:
         _read_makers = _build_makers(settings.DATABASE_URL_QUERY, "read")
     return _read_makers[cohort_of(guild_id)]
@@ -283,6 +284,8 @@ def read_sessionmaker(guild_id: int) -> async_sessionmaker[AsyncSession]:
 async def read_session(guild_id: int) -> AsyncIterator[AsyncSession]:
     """A read-only session from :func:`read_sessionmaker`."""
     async with read_sessionmaker(guild_id)() as session:
+        if not settings.DATABASE_URL_QUERY:
+            mark_system_session(session)
         session.info[READ_ONLY_INFO_KEY] = True
         yield session
 

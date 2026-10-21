@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
@@ -72,10 +73,11 @@ STALE_RUNNING = timedelta(minutes=15)
 STALE_FETCHING = timedelta(minutes=15)
 
 
-def _open_user_session(guild_id: int) -> AsyncSession:
-    """A request-path session from ``guild_id``'s cohort. Resolved at call
+def _open_user_session(guild_id: int) -> AbstractAsyncContextManager[AsyncSession]:
+    """A session from ``guild_id``'s system pool, for the creator to be routed
+    on: background work stays off the request path's pool. Resolved at call
     time, so the test harness's pools apply to the worker too."""
-    return cohorts.request_sessionmaker(guild_id)()
+    return cohorts.system_session(guild_id)
 
 
 _FETCH = "fetch"
