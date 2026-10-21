@@ -2,7 +2,7 @@ import { EyeClosed } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { TaskStatusRead } from "@/api/generated/initiativeAPI.schemas";
+import type { TaskStatusRead, TaskTypeRead } from "@/api/generated/initiativeAPI.schemas";
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
 import { TaskStatusOption } from "@/components/tasks/TaskStatusOption";
 import { Button } from "@/components/ui/button";
@@ -204,7 +204,13 @@ const Shipped = ({
 };
 
 /** The project whose layouts are open: whose statuses its preview draws. */
-export type LayoutProject = { id: number; initiativeId: number; statuses: TaskStatusRead[] };
+export type LayoutProject = {
+  id: number;
+  initiativeId: number;
+  statuses: TaskStatusRead[];
+  /** Its task types, each with a page of its own. */
+  types: TaskTypeRead[];
+};
 
 /** The settings of what is selected on a task's detail: the layout's own, or
  *  a part's. */

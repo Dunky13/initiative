@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTag } from "@/__tests__/factories";
+import { buildTag, buildTaskType } from "@/__tests__/factories";
 import { buildTask, buildTaskAssignee } from "@/__tests__/factories/task.factory";
 
 import { buildTaskCalendarEntries, buildTaskOccurrenceEntries } from "./taskCalendarEntries";
@@ -10,6 +10,23 @@ import { buildTaskCalendarEntries, buildTaskOccurrenceEntries } from "./taskCale
 const COLOR = "#3b82f6";
 
 describe("buildTaskCalendarEntries", () => {
+  it("carries the task's type to draw by its title, in a project with several", () => {
+    const type = buildTaskType({ name: "Bug", icon: "bug" });
+    const task = buildTask({
+      start_date: "2026-01-15T00:00:00",
+      due_date: "2026-01-20T00:00:00",
+      task_type_id: type.id,
+      task_type: type,
+    });
+
+    const typed = buildTaskCalendarEntries(task, COLOR, true, { typed: true });
+    expect(typed.map((entry) => entry.taskType)).toEqual([type, type]);
+    expect(buildTaskCalendarEntries(task, COLOR).map((entry) => entry.taskType)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
   it("renders one timed span for same-day start & due with real times", () => {
     const task = buildTask({
       id: 7,

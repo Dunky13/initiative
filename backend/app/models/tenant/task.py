@@ -8,16 +8,20 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     event,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Enum as SQLEnum, Field, Relationship, SQLModel
 
 from app.core import recurrence
+from app.core.task_types import LAYOUT_SHAPES
+from app.db.registry_checks import FROM_REGISTRY
 from app.models.tenant._mixins import (
     ArchiveMixin,
     CreatedByMixin,
@@ -92,6 +96,71 @@ class TaskStatus(CreatedByMixin, table=True):
     tasks: List["Task"] = Relationship(back_populates="task_status")
 
 
+_SHAPE_VALUES = ", ".join(f"'{shape}'" for shape in LAYOUT_SHAPES)
+
+
+class TaskType(CreatedByMixin, table=True):
+    """What kind of thing a task is, in one project, and how its page is laid
+    out (its ``task`` layout, ``tool_layouts.task_type_id``).
+
+    A project always holds at least one, and exactly one is its default: what a
+    new task is unless it says otherwise. Names are unique in their project
+    regardless of case, because a task moved between projects keeps the type of
+    the same name. ``layout_preset`` is the shape its page is drawn as until the
+    page is changed (``app.core.task_types``).
+    """
+
+    __tablename__ = "task_types"
+    __table_args__ = (
+        CheckConstraint(
+            f"layout_preset IN ({_SHAPE_VALUES})",
+            name="ck_task_types_layout_preset",
+            info={FROM_REGISTRY: True},
+        ),
+        Index(
+            "uq_task_types_project_name",
+            "project_id",
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(sa_column=Column(String(length=100), nullable=False))
+    position: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
+    is_default: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    color: str = Field(
+        default="#94A3B8",
+        sa_column=Column(String(length=9), nullable=False, server_default="#94A3B8"),
+    )
+    icon: str = Field(
+        default="square-check",
+        sa_column=Column(
+            String(length=64), nullable=False, server_default="square-check"
+        ),
+    )
+    layout_preset: str = Field(
+        default="plain",
+        sa_column=Column(String(length=32), nullable=False, server_default="plain"),
+    )
+
+    project: Optional["Project"] = Relationship(back_populates="task_types")
+
+
 class TaskAssignee(SQLModel, table=True):
     __tablename__ = "task_assignees"
 
@@ -128,6 +197,14 @@ class Task(
     project_id: int = Field(foreign_key="projects.id", nullable=False)
     task_status_id: int = Field(
         foreign_key="task_statuses.id", ondelete="RESTRICT", nullable=False
+    )
+    task_type_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("task_types.id", ondelete="RESTRICT"),
+            nullable=False,
+            index=True,
+        )
     )
     title: str = Field(nullable=False)
     # TEXT in DDL (unbounded); sa_column keeps autogen quiet vs AutoString
@@ -218,6 +295,7 @@ class Task(
 
     project: Optional["Project"] = Relationship(back_populates="tasks")
     task_status: Optional[TaskStatus] = Relationship(back_populates="tasks")
+    task_type: Optional[TaskType] = Relationship()
     assignees: List["MemberProfile"] = Relationship(
         sa_relationship_kwargs={
             "secondary": "task_assignees",

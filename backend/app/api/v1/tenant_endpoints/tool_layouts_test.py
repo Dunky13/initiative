@@ -20,6 +20,7 @@ from app.models.platform.guild import CommunityRole
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import MAX_DEPTH, MAX_NODES, MAX_PLUGIN_PARTS
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.testing import (
     create_counter_group,
@@ -90,30 +91,53 @@ _TASK: dict[str, Any] = {
 }
 
 
+def _key(layout: dict[str, Any]) -> str:
+    """A layout's kind, with the type of task a project's task page is for."""
+    typed = layout.get("task_type_id")
+    return f"{layout['kind']}:{typed}" if typed else layout["kind"]
+
+
 def _dates(body: dict[str, Any]) -> dict[str, Any]:
-    return {layout["kind"]: layout["updated_at"] for layout in body["layouts"]}
+    return {_key(layout): layout["updated_at"] for layout in body["layouts"]}
+
+
+async def _types(session: AsyncSession, a: Any) -> list[Any]:
+    await route_session_to_guild(session, a.guild.id)
+    return await task_types_service.list_types(session, a.project.id)
+
+
+def _for(payload: dict[str, Any], task_type: Any) -> dict[str, Any]:
+    """A task page's payload, for one type of task."""
+    return {**payload, "task_type_id": task_type.id}
 
 
 async def test_a_project_draws_its_layouts_as_shipped_until_one_changes(
-    client: AsyncClient, acting_user
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
+    types = await _types(session, a)
 
     response = await client.get(a.g("/layouts/"), params=_project(a), headers=a.headers)
 
     assert response.status_code == 200
     body = response.json()
     assert body["can_configure"] is True
+    # A task page for each type of task, in the types' order.
     assert [
-        (layout["kind"], layout.get("is_default"), layout["updated_at"])
+        (
+            layout["kind"],
+            layout.get("is_default"),
+            layout.get("task_type_id"),
+            layout["updated_at"],
+        )
         for layout in body["layouts"]
     ] == [
-        ("table", True, None),
-        ("board", False, None),
-        ("calendar", False, None),
-        ("task", None, None),
+        ("table", True, None, None),
+        ("board", False, None, None),
+        ("calendar", False, None, None),
+        *(("task", None, task_type.id, None) for task_type in types),
     ]
 
 
@@ -124,6 +148,8 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     url, params = a.g("/layouts/"), _project(a)
+    first, second = (await _types(session, a))[:2]
+    page = f"task:{first.id}"
 
     board = await client.put(url, params=params, json=_BOARD, headers=a.headers)
     assert board.status_code == 200, board.text
@@ -133,10 +159,14 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
     board_at = _dates(board.json())["board"]
     assert {kind for kind, at in _dates(board.json()).items() if at} == {"board"}
 
-    task = (await client.put(url, params=params, json=_TASK, headers=a.headers)).json()
-    # Laying out the task leaves the board's date where it was.
+    task = (
+        await client.put(url, params=params, json=_for(_TASK, first), headers=a.headers)
+    ).json()
+    # Laying out one type's page leaves the board's date where it was, and
+    # every other type's page as shipped.
     assert _dates(task)["board"] == board_at
-    (task_layout,) = [layout for layout in task["layouts"] if layout["kind"] == "task"]
+    assert _dates(task)[f"task:{second.id}"] is None
+    (task_layout,) = [layout for layout in task["layouts"] if _key(layout) == page]
     assert task_layout["definition"] == {
         "header": None,
         "side": None,
@@ -152,19 +182,51 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
     assert _dates(table)["table"] is not None
     await route_session_to_guild(session, a.guild.id)
     stored = {
-        row.kind: row.definition
+        (row.kind, row.task_type_id): row.definition
         for row in (await session.exec(select(ToolLayout))).all()
     }
     assert stored == {
-        "board": _BOARD["definition"],
-        "table": _TABLE["definition"],
-        "task": _TASK["definition"],
+        ("board", None): _BOARD["definition"],
+        ("table", None): _TABLE["definition"],
+        ("task", first.id): _TASK["definition"],
     }
 
     reset = await client.delete(f"{url}board", params=params, headers=a.headers)
     assert reset.status_code == 200, reset.text
     assert _dates(reset.json())["board"] is None
-    assert _dates(reset.json())["task"] == _dates(task)["task"]
+    assert _dates(reset.json())[page] == _dates(task)[page]
+
+    # A task page goes back to shipped for its own type.
+    reset = await client.delete(
+        f"{url}task", params={**params, "task_type_id": first.id}, headers=a.headers
+    )
+    assert reset.status_code == 200, reset.text
+    assert _dates(reset.json())[page] is None
+
+
+async def test_a_task_page_names_one_of_its_projects_types(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    elsewhere = await create_project(session, a.initiative, a.user, name="Elsewhere")
+    await route_session_to_guild(session, a.guild.id)
+    foreign = (await task_types_service.list_types(session, elsewhere.id))[0]
+    url, params = a.g("/layouts/"), _project(a)
+
+    untyped = await client.put(url, params=params, json=_TASK, headers=a.headers)
+    stolen = await client.put(
+        url, params=params, json=_for(_TASK, foreign), headers=a.headers
+    )
+    typed_list = await client.put(
+        url, params=params, json=_for(_BOARD, foreign), headers=a.headers
+    )
+
+    assert untyped.status_code == 400
+    assert stolen.status_code == 404
+    assert stolen.json()["detail"] == "TASK_TYPE_NOT_FOUND"
+    assert typed_list.status_code == 422
 
 
 async def test_the_list_a_project_opens_on_is_its_own_change(
@@ -314,11 +376,12 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     await create_resource_grant(
         session, manager.project, user=member.user, level=ResourceAccessLevel.read
     )
+    default_type = (await _types(session, manager))[0]
     assert (
         await client.put(
             manager.g("/layouts/"),
             params=_project(manager),
-            json=_TASK,
+            json=_for(_TASK, default_type),
             headers=manager.headers,
         )
     ).status_code == 200
@@ -333,7 +396,7 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     assert [
         (each["tool_id"], [kind for kind, at in _dates(each).items() if at])
         for each in seen
-    ] == [(manager.project.id, ["task"]), (closed.id, [])]
+    ] == [(manager.project.id, [f"task:{default_type.id}"]), (closed.id, [])]
     assert all(each["can_configure"] for each in seen)
     # A member reads only what they were let into, and changes none of it.
     assert [(each["tool_id"], each["can_configure"]) for each in read] == [

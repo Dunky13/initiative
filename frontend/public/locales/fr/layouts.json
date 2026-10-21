@@ -93,6 +93,7 @@
     "actions": "Ce qu'on peut faire d'autre avec la tâche : déplacer, dupliquer, archiver, supprimer, et les actions des plug-ins."
   },
   "taskLayout": "Détail de la tâche",
+  "typedTaskLayout": "Page « {{name}} »",
   "detailHelp": "La disposition du détail de chaque tâche de ce projet. Ce qu'elle laisse de côté est masqué.",
   "useShipped": "Utiliser la disposition d'origine",
   "shipped": "C'est la disposition d'origine. La modifier en fait celle du projet.",
@@ -156,6 +157,7 @@
       "date_group": "Période",
       "priority": "Priorité",
       "task_status_id": "Statut",
+      "task_type_id": "Type",
       "assignee_ids": "Assignés",
       "created_by": "Créé par",
       "tag_ids": "Étiquettes",

@@ -24,7 +24,13 @@ from app.schemas.recurrence import validate_task_recurrence
 
 from app.core import recurrence
 from app.core.relationships import RelationshipType
-from app.core.tools import DETAIL_LAYOUTS, LAYOUT_DEFAULT, LIST_LAYOUTS, Tool
+from app.core.tools import (
+    DETAIL_LAYOUTS,
+    LAYOUT_DEFAULT,
+    LIST_LAYOUTS,
+    TYPED_DETAILS,
+    Tool,
+)
 from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.tenant.import_envelopes import EnvelopePropertyValue, _EnvelopeBase
@@ -69,6 +75,17 @@ class ProjectExportTaskStatus(SanitizedBaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
     is_default: bool = False
+
+
+class ProjectExportTaskType(SanitizedBaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    position: int = 0
+    is_default: bool = False
+    # Absent from what another tool's export is mapped into: the importer
+    # then gives the type the plain look.
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    layout_preset: Optional[str] = None
 
 
 class ProjectExportPropertyDefinition(SanitizedBaseModel):
@@ -144,8 +161,9 @@ class ProjectExportTask(SanitizedBaseModel):
     #: share in this export; the import gives each series a new one.
     series: Optional[int] = None
     #: What an edit of just this task changed from (``Task.recurrence_carry``),
-    #: its tags as ``{"name", "color"}`` under ``tags`` and its assignees under
-    #: ``assignee_handles``, as the rest of the envelope names them.
+    #: its tags as ``{"name", "color"}`` under ``tags``, its assignees under
+    #: ``assignee_handles`` and its type under ``type_name``, as the rest of the
+    #: envelope names them.
     recurrence_carry: Optional[dict[str, Any]] = None
     position: float = 0.0
     archived_at: Optional[datetime] = None
@@ -153,6 +171,9 @@ class ProjectExportTask(SanitizedBaseModel):
     # importer derives it from the restored status in that case.
     completed_at: Optional[datetime] = None
     status_name: str
+    #: Which of the envelope's ``task_types`` the task is, by name; the
+    #: project's default when absent or unknown.
+    type_name: Optional[str] = None
     # When the work was written down, and when it was last touched. Optional
     # because an export taken before these existed carries neither; the
     # importer falls back to the moment of the import, which is the only
@@ -208,19 +229,25 @@ class ProjectExportLayout(SanitizedBaseModel):
     """One of the project's layouts, as it was changed from the shipped one.
 
     Its rows are named by their place in this envelope, counting from 1: a
-    status id is the status's place in ``task_statuses``, and
-    ``property:<n>`` the n-th of ``property_definitions``. People, tags and
+    status id is the status's place in ``task_statuses``, a task type's its
+    place in ``task_types``, and ``property:<n>`` the n-th of
+    ``property_definitions``. People, tags and
     plug-ins are the community's, so a layout carries none of them; the
     plug-ins placed where it is imported show on it as they arrive.
     """
 
     kind: str
+    #: A task page's type, by its place in ``task_types``; the project's
+    #: default type when absent.
+    task_type: Optional[int] = Field(default=None, ge=1)
     definition: dict[str, Any]
 
     @model_validator(mode="after")
     def _a_layout(self) -> "ProjectExportLayout":
         if self.kind not in _PROJECT_LAYOUTS:
             raise ValueError(f"a project's layouts are {', '.join(_PROJECT_LAYOUTS)}")
+        if self.task_type is not None and self.kind != TYPED_DETAILS[Tool.project]:
+            raise ValueError("only a task page has a type")
         if self.kind == LAYOUT_DEFAULT:
             read = ToolLayoutDefaultWrite.model_validate(self.definition)
         else:
@@ -256,6 +283,9 @@ class ProjectExportEnvelope(_EnvelopeBase):
     # with nothing in it. An empty list is a real "none" and is accepted.
     tags: List[ProjectExportTag]
     task_statuses: List[ProjectExportTaskStatus]
+    #: Absent from an export taken before task types existed, whose project is
+    #: then given the types a new one starts with.
+    task_types: List[ProjectExportTaskType] = Field(default_factory=list)
     property_definitions: List[ProjectExportPropertyDefinition]
     tasks: List[ProjectExportTask]
     # The layouts it changed from the shipped ones; a project drawn as shipped
@@ -267,7 +297,7 @@ class ProjectExportEnvelope(_EnvelopeBase):
     def _one_of_each(
         cls, value: List[ProjectExportLayout]
     ) -> List[ProjectExportLayout]:
-        kinds = [layout.kind for layout in value]
+        kinds = [(layout.kind, layout.task_type) for layout in value]
         if len(set(kinds)) != len(kinds):
-            raise ValueError("a project has one layout of each kind")
+            raise ValueError("a project has one layout of each kind, and type")
         return value

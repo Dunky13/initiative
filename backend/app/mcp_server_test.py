@@ -293,6 +293,9 @@ async def test_the_tool_writes_stop_short_of_these():
     # placed into one by reading them.
     assert "create_task_status" not in writes
     assert "update_task_status" not in writes
+    # So are its task types; a task is given one by reading them.
+    assert "list_task_types" in names
+    assert not [w for w in writes if "task_type" in w]
 
 
 def test_trim_leaves_out_what_a_caller_never_acts_on():

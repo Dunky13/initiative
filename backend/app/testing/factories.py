@@ -108,6 +108,7 @@ from app.schemas.tenant.task import mint_checklist_item_id
 from app.services.tenant.ownership import tool_for_row
 from app.services.tenant.task_completion import sync_completed_at
 from app.services.tenant.task_statuses import ensure_default_statuses
+from app.services.tenant.task_types import ensure_default_types
 from app.services.tenant.names import slugify
 from app.testing.schema_harness import guild_of, route_session_to_guild
 
@@ -707,6 +708,9 @@ async def create_project(
         await create_resource_grant(
             session, project, level=ResourceAccessLevel.owner, user=owner
         )
+        # Every project has its task types from the moment it is made.
+        await ensure_default_types(session, project.id, locale="en")
+        await session.commit()
 
     return project
 
@@ -778,7 +782,7 @@ async def create_task(
     """
     await route_session_to_guild(session, guild_of(project))
 
-    statuses = await ensure_default_statuses(session, project.id)
+    statuses = await ensure_default_statuses(session, project.id, locale="en")
     status = next((s for s in statuses if s.category == status_category), None)
     if status is None:
         status = await create_task_status(
@@ -786,10 +790,12 @@ async def create_task(
         )
         await session.flush()
 
+    types = await ensure_default_types(session, project.id, locale="en")
     defaults: dict[str, Any] = {
         "title": title or f"Test Task {datetime.now(timezone.utc).timestamp()}",
         "project_id": project.id,
         "task_status_id": status.id,
+        "task_type_id": next(t for t in types if t.is_default).id,
         "priority": TaskPriority.medium,
     }
     task = Task(**{**defaults, **overrides})

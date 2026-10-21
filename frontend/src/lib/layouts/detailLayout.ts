@@ -136,14 +136,18 @@ export const detailLayoutSpec = ({
   kind,
   shipped,
   fieldParts,
+  knows = shipped,
 }: {
   kind: DetailLayoutRead["kind"];
   shipped: Record<Region, LayoutNode[]>;
   fieldParts: readonly string[];
+  /** Every part and field the detail has, where `shipped` leaves some out: a
+   *  task page shaped for an idea still has dates to place. */
+  knows?: Record<Region, LayoutNode[]>;
 }): DetailLayoutSpec => {
   const editing = new Set(fieldParts);
   const editsAField = (node: LayoutNode) => editing.has(node.type);
-  const shippedNodes = nodesIn(Object.values(shipped).flat());
+  const knownNodes = nodesIn(Object.values(knows).flat());
   /** Where the shipped detail puts each of its column parts on one column. */
   const shippedOrder = new Map(
     [...shipped.main, ...shipped.side].map((node) => [anchorOf(node), Number(node.props?.order)])
@@ -179,10 +183,10 @@ export const detailLayoutSpec = ({
     kind,
     shipped,
     ownParts: [
-      ...new Set(shippedNodes.map((node) => node.type).filter((type) => !LAYOUT_PARTS.has(type))),
+      ...new Set(knownNodes.map((node) => node.type).filter((type) => !LAYOUT_PARTS.has(type))),
     ],
     detailFields: new Set(
-      shippedNodes.filter((node) => node.type === "field").map((node) => String(node.props?.field))
+      knownNodes.filter((node) => node.type === "field").map((node) => String(node.props?.field))
     ),
     editsAField,
     root: (stored, more) => {

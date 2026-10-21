@@ -304,7 +304,9 @@ async def test_read_only_member_reads_but_writes_denied_at_role_level(
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
-    await task_statuses_service.ensure_default_statuses(session, a.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, a.project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, a.project.id)
     await session.commit()
 
@@ -337,7 +339,9 @@ async def test_read_only_guild_admin_writes_denied_too(
     routed into ``guild_<id>_ro`` regardless of the membership role, so the
     admin RLS leg can read everything but no content write survives."""
     a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
-    await task_statuses_service.ensure_default_statuses(session, a.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, a.project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, a.project.id)
     task = await create_task(session, a.project, title="before")
     await session.commit()

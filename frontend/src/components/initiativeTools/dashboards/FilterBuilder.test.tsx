@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildProject, buildTaskType } from "@/__tests__/factories";
 import { buildPropertyDefinition } from "@/__tests__/factories/properties";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
@@ -128,5 +129,42 @@ describe("FilterBuilder", () => {
     );
     mount([{ field: "property_id", op: "in_", value: [7] } as FilterNode], "property_values");
     expect(await screen.findByText("Points")).toBeInTheDocument();
+  });
+
+  it("picks a type from the initiative's projects, naming whose each is", async () => {
+    const garden = buildProject({ id: 3, name: "Garden", initiative_id: 1 });
+    const kitchen = buildProject({ id: 4, name: "Kitchen", initiative_id: 1 });
+    server.use(
+      http.get("/api/v1/fields/:dataset", () =>
+        HttpResponse.json({
+          dataset: "tasks",
+          fields: [
+            {
+              name: "task_type_id",
+              type: "reference",
+              kind: "task_type",
+              ops: ["in_"],
+              multiple: true,
+              sortable: false,
+              options: [],
+            },
+          ],
+          relations: [],
+          default_filters: [],
+        })
+      ),
+      communityHttp.get("/projects/", () =>
+        HttpResponse.json({ items: [garden, kitchen], total_count: 2, has_next: false })
+      ),
+      communityHttp.get("/projects/:projectId/task-types/", ({ params }) =>
+        HttpResponse.json(
+          params.projectId === "3"
+            ? [buildTaskType({ id: 12, project_id: 3, name: "Bug" })]
+            : [buildTaskType({ id: 13, project_id: 4, name: "Recipe" })]
+        )
+      )
+    );
+    mount([{ field: "task_type_id", op: "in_", value: [12] } as FilterNode]);
+    expect(await screen.findByText("Bug (Garden)")).toBeInTheDocument();
   });
 });

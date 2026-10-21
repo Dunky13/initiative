@@ -170,10 +170,9 @@ def _cascade(value: Any) -> Optional[str]:
 
 #: The built-in fields with a property home, by field id, with the name §6.1
 #: gives each. The rest of Jira's system fields either have a home already
-#: (title, status, tags, assignee, dates, links) or none worth a column.
+#: (title, status, type, tags, assignee, dates, links) or none worth a column.
 _SYSTEM_FIELDS: dict[str, tuple[str, PropertyType, Callable[[Any], Any]]] = {
     "priority": ("Priority", PropertyType.select, _label),
-    "issuetype": ("Issue type", PropertyType.select, _label),
     "resolution": ("Resolution", PropertyType.select, _label),
     "resolutiondate": ("Resolved", PropertyType.datetime, _datetime),
     "reporter": ("Reporter", PropertyType.user_reference, _person),

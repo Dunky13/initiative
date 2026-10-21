@@ -82,7 +82,9 @@ async def test_create_status_respects_explicit_color_icon(
 
 async def test_patch_updates_color_and_icon(client: AsyncClient, session: AsyncSession):
     project, headers = await _setup_project(session)
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     await session.commit()
     todo = next(s for s in statuses if s.category == TaskStatusCategory.todo)
 
@@ -102,7 +104,9 @@ async def test_patch_category_change_keeps_existing_color_icon(
     client: AsyncClient, session: AsyncSession
 ):
     project, headers = await _setup_project(session)
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     await session.commit()
     todo = next(
         s
@@ -158,7 +162,9 @@ async def test_default_seeded_statuses_have_category_colors(
     initiative = await create_initiative(session, guild, user, name="Seed Initiative")
     project = await create_project(session, initiative, user, name="Seed Project")
 
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     by_category = {s.category: s for s in statuses}
 
     assert [(s.name, s.category, s.is_default) for s in statuses] == [
@@ -465,7 +471,7 @@ async def test_delete_moves_tasks_to_the_default_without_a_fallback(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     default_status = next(s for s in statuses if s.is_default)
@@ -502,7 +508,7 @@ async def test_delete_accepts_a_fallback_in_another_category(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     in_progress = next(
@@ -542,7 +548,7 @@ async def test_delete_into_done_completes_the_tasks_it_moves(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     todo = next(s for s in statuses if s.category == TaskStatusCategory.todo)
@@ -578,7 +584,7 @@ async def test_delete_into_done_advances_a_recurring_task(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     default_status = next(status for status in statuses if status.is_default)
     remaining_statuses = [
@@ -636,7 +642,7 @@ async def test_delete_can_remove_the_last_status_of_a_category(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     done = next(s for s in statuses if s.category == TaskStatusCategory.done)
@@ -683,7 +689,7 @@ async def test_deleting_the_default_promotes_the_next_entry_column(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     todo = next(s for s in statuses if s.category == TaskStatusCategory.todo)
@@ -752,7 +758,7 @@ async def test_a_legacy_projects_entry_column_is_its_backlog_not_its_blocked(
 async def _seed_column_with_frozen_tasks(session: AsyncSession, a):
     """A Blocked column holding a live, an archived and a trashed task."""
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     blocked = await create_task_status(
@@ -817,7 +823,7 @@ async def test_delete_retires_a_column_holding_only_trashed_tasks(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     default_status = next(s for s in statuses if s.is_default)
@@ -853,7 +859,7 @@ async def test_delete_into_done_completes_frozen_tasks_without_recurring_them(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     await session.commit()
     done = next(s for s in statuses if s.category == TaskStatusCategory.done)

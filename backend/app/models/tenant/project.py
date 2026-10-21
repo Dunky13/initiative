@@ -18,7 +18,7 @@ from app.models.tenant._mixins import (
 
 
 if TYPE_CHECKING:  # pragma: no cover - imported lazily for type checking only
-    from app.models.tenant.task import Task, TaskStatus
+    from app.models.tenant.task import Task, TaskStatus, TaskType
     from app.models.tenant.initiative import Initiative
     from app.models.tenant.resource_grant import ResourceGrant
 
@@ -75,6 +75,10 @@ class Project(
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     task_statuses: List["TaskStatus"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    task_types: List["TaskType"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )

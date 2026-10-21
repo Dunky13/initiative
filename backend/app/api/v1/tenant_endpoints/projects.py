@@ -45,6 +45,7 @@ from app.services.tenant import tags as tags_service
 from app.services.tenant import archive as archive_service
 from app.services.tenant import tool_listing
 from app.services.tenant import task_statuses as task_statuses_service
+from app.services.tenant import task_types as task_types_service
 from app.core.messages import ProjectMessages
 from app.schemas.tenant.project import (
     project_can,
@@ -340,7 +341,14 @@ async def create_project(
             grants=project_in.grants,
         )
         await session.flush()
-        await task_statuses_service.ensure_default_statuses(session, project.id)
+        # Named in the language of whoever is making the project.
+        locale = current_user.locale if current_user is not None else "en"
+        await task_statuses_service.ensure_default_statuses(
+            session, project.id, locale=locale
+        )
+        await task_types_service.ensure_default_types(
+            session, project.id, locale=locale
+        )
         await attachments_service.claim_uploads(session, project)
     await properties_service.write_on_create(session, project, project_in.properties)
     settled = named_people.Governing.of(Tool.project, project)

@@ -141,8 +141,9 @@ def _require_configure(resolved: _Resolved, context: GuildContext) -> None:
 
 async def _read(session: AsyncSession, resolved: _Resolved) -> ToolLayoutSetRead:
     rows = await tool_layouts_service.list_rows(session, resolved.target)
+    types = await tool_layouts_service.item_types(session, resolved.target)
     return ToolLayoutSetRead(
-        layouts=tool_layouts_service.read_set(resolved.target.tool, rows),
+        layouts=tool_layouts_service.read_set(resolved.target.tool, rows, types),
         can_configure=resolved.can_configure,
     )
 
@@ -209,12 +210,17 @@ async def get_initiative_layouts(
         stored = await tool_layouts_service.rows_by_instance(
             session, initiative_id, tool, [row.id for row in rows]
         )
+        types = await tool_layouts_service.item_types_by_instance(
+            session, tool, [row.id for row in rows]
+        )
         found += [
             InitiativeToolLayoutsRead(
                 tool=tool,
                 tool_id=row.id,
                 name=row.name,
-                layouts=tool_layouts_service.read_set(tool, stored.get(row.id, [])),
+                layouts=tool_layouts_service.read_set(
+                    tool, stored.get(row.id, []), types.get(row.id, [])
+                ),
                 can_configure=_configures(row),
             )
             for row in rows
@@ -269,11 +275,13 @@ async def reset_layout(
     tool: ToolQuery,
     tool_id: InstanceQuery = None,
     initiative_id: InstanceQuery = None,
+    task_type_id: InstanceQuery = None,
 ) -> ToolLayoutSetRead:
-    """Draw one of the target's layouts as shipped again."""
+    """Draw one of the target's layouts as shipped again: a project's task
+    page names the type of task it is for."""
     resolved = await _configured(
         session, guild_context, current_user, tool, tool_id, initiative_id
     )
-    await tool_layouts_service.reset(session, resolved.target, kind)
+    await tool_layouts_service.reset(session, resolved.target, kind, task_type_id)
     await session.commit()
     return await _read(session, resolved)

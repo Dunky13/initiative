@@ -23,12 +23,14 @@ from app.models.tenant.task import (
     TaskAssignee,
     TaskPriority,
     TaskStatus,
+    TaskType,
     TaskStatusCategory,
 )
 from app.schemas.tenant.task import mint_checklist_item_id
 from app.services.tenant.archive import archive_entity
 from app.services.tenant.task_completion import sync_completed_at
 from app.services.tenant.task_statuses import ensure_default_statuses
+from app.services.tenant.task_types import ensure_default_types
 
 from seed.common import NOW, Community, share, tag
 
@@ -1524,11 +1526,17 @@ async def create_project(c: Community, d: dict) -> Project:
     tag(c, project, d.get("tags", ()))
     statuses = {
         status.category: status
-        for status in await ensure_default_statuses(c.session, project.id)
+        for status in await ensure_default_statuses(c.session, project.id, locale="en")
+    }
+    types = {
+        task_type.name: task_type
+        for task_type in await ensure_default_types(c.session, project.id, locale="en")
     }
     for position, td in enumerate(d.get("tasks", ())):
         status = resolve_status(statuses, td["category"])
-        await _create_task(c, project, status, position, td)
+        # A task names its type ("Bug"), or is a Task.
+        task_type = types.get(td.get("type", "Task"), types["Task"])
+        await _create_task(c, project, status, task_type, position, td)
     if d.get("archived_days_ago") is not None:
         c.archives.append((project, NOW - timedelta(days=d["archived_days_ago"])))
     await c.session.flush()
@@ -1536,12 +1544,18 @@ async def create_project(c: Community, d: dict) -> Project:
 
 
 async def _create_task(
-    c: Community, project: Project, status: TaskStatus, position: int, td: dict
+    c: Community,
+    project: Project,
+    status: TaskStatus,
+    task_type: TaskType,
+    position: int,
+    td: dict,
 ) -> None:
     due, start = td.get("due_days"), td.get("start_days")
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=task_type.id,
         title=td["title"],
         description=td.get("description"),
         priority=td["priority"],

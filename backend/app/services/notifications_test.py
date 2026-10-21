@@ -16,6 +16,7 @@ import re
 from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.core import usernames
 from app.db.session import set_rls_context
 from app.models.tenant.calendar_event import (
@@ -477,6 +478,7 @@ async def _overdue_task_in_new_guild(
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title=f"{label} overdue",
         priority=TaskPriority.medium,
         due_date=datetime.now(timezone.utc) - timedelta(days=1),
@@ -782,6 +784,7 @@ async def _assignment_item_in_new_guild(
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title=f"{label} task",
         priority=TaskPriority.medium,
     )

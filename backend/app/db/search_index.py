@@ -574,6 +574,7 @@ NOT_SEARCHABLE: dict[str, str] = {
     "engagement_levels": "how widely an item was engaged with, not content",
     "tool_layouts": "how a tool is laid out, reached from the tool",
     "task_statuses": "column names, reached from the project",
+    "task_types": "type names, reached from the project",
     "file_versions": "history of a file already indexed",
     "gallery_image_versions": "history of a picture already indexed",
     "post_polls": "the question a notice asks, reached from the notice",

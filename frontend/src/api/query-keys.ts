@@ -222,6 +222,10 @@ const projectTaskStatuses = (projectId: number): Spec => ({
   communityExact: [`/api/v1/projects/${projectId}/task-statuses/`],
 });
 
+const projectTaskTypes = (projectId: number): Spec => ({
+  communityExact: [`/api/v1/projects/${projectId}/task-types/`],
+});
+
 // What the reader keeps about items: a community's stars and each item's
 // state, and every community's tabs and stars (`/me/personal-items`).
 // The activity feed, whose order follows what the reader subscribes to.
@@ -729,6 +733,7 @@ export const q = {
   postTimeline,
   project,
   projectTaskStatuses,
+  projectTaskTypes,
   propertyHolder,
   pushSettings,
   recentComments,

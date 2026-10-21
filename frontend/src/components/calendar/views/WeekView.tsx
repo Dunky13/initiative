@@ -10,6 +10,7 @@ import {
   DayColumn,
   DraggableEntryButton,
   dateKey,
+  EntryType,
   HourGutter,
   kindLabelKey,
   laneSpans,
@@ -119,6 +120,7 @@ export function WeekView({
                       {t(`common:${kindLabelKey(span.entry.kind)}`)}
                     </span>
                   )}
+                  <EntryType entry={span.entry} onColor />
                   <span className="truncate">{span.entry.title}</span>
                 </DraggableEntryButton>
               ))}

@@ -1522,3 +1522,63 @@ async def test_duplicating_a_project_copies_its_layouts(
     ).one()
     [preset] = layouts["table"]["definition"]["presets"]
     assert preset["filters"]["status_ids"] == [copied_review.id]
+
+
+async def test_a_project_from_a_template_takes_its_types_and_their_pages(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """The copy's types are the template's, each with its page, and each task
+    is the copy's type of the same name."""
+    from app.models.tenant.tool_layout import ToolLayout
+    from app.services.tenant import task_types as task_types_service
+
+    admin = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    template = await create_project(
+        session, admin.initiative, admin.user, name="Gig", is_template=True
+    )
+    await route_session_to_guild(session, admin.guild.id)
+    types = await task_types_service.list_types(session, template.id)
+    types[3].name = "Show"
+    session.add(types[3])
+    page = {"main": [{"type": "comments"}]}
+    session.add(
+        ToolLayout(
+            initiative_id=admin.initiative.id,
+            tool="project",
+            tool_id=template.id,
+            kind="task",
+            task_type_id=types[3].id,
+            definition=page,
+        )
+    )
+    await session.commit()
+    await create_task(session, template, title="Load in", task_type_id=types[3].id)
+
+    response = await client.post(
+        admin.g("/projects/"),
+        headers=admin.headers,
+        json={
+            "name": "Friday gig",
+            "initiative_id": admin.initiative.id,
+            "template_id": template.id,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    copied = {t["name"]: t["id"] for t in body["task_types"]}
+    assert list(copied) == ["Task", "Bug", "Idea", "Show"]
+    assert set(copied.values()).isdisjoint({t.id for t in types})
+    tasks = await _tasks_by_title(client, admin, body["id"])
+    assert tasks["Load in"]["task_type_id"] == copied["Show"]
+    layouts = await client.get(
+        admin.g("/layouts/"),
+        params={"tool": "project", "tool_id": body["id"]},
+        headers=admin.headers,
+    )
+    changed = [
+        (layout["task_type_id"], layout["definition"]["main"])
+        for layout in layouts.json()["layouts"]
+        if layout["kind"] == "task" and layout["updated_at"]
+    ]
+    assert changed == [(copied["Show"], page["main"])]

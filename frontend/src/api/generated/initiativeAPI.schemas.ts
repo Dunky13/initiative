@@ -1453,6 +1453,21 @@ export interface TaskStatusRead {
 }
 
 /**
+ * One kind of task in a project, and the shape its page is drawn as until
+ * the page is changed.
+ */
+export interface TaskTypeRead {
+  id: number;
+  project_id: number;
+  name: string;
+  position: number;
+  is_default: boolean;
+  color: string;
+  icon: string;
+  layout_preset: string;
+}
+
+/**
  * Minimal assignee data for task lists.
  *
  * A person appears here, so it follows the same two rules every other
@@ -1502,6 +1517,8 @@ export interface TaskListRead {
   project_id: number;
   task_status_id: number;
   task_status: TaskStatusRead;
+  task_type_id: number;
+  task_type: TaskTypeRead;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -1592,6 +1609,7 @@ export interface ProjectRead {
   initiative: InitiativeSummary | null;
   task_summary: ProjectTaskSummary;
   task_statuses: TaskStatusRead[];
+  task_types: TaskTypeRead[];
 }
 
 /**
@@ -2070,6 +2088,7 @@ export type TaskFieldId = (typeof TaskFieldId)[keyof typeof TaskFieldId];
 
 export const TaskFieldId = {
   title: "title",
+  type: "type",
   description: "description",
   assignees: "assignees",
   startDate: "startDate",
@@ -3946,6 +3965,7 @@ export type ControlKind = (typeof ControlKind)[keyof typeof ControlKind];
 export const ControlKind = {
   select: "select",
   task_status: "task_status",
+  task_type: "task_type",
   task: "task",
   member: "member",
   tag: "tag",
@@ -4431,6 +4451,7 @@ export const DatasetName = {
   counter_groups: "counter_groups",
   counters: "counters",
   task_statuses: "task_statuses",
+  task_types: "task_types",
   task_assignees: "task_assignees",
   members: "members",
   property_definitions: "property_definitions",
@@ -4585,6 +4606,7 @@ export type TaskDetailFieldId = (typeof TaskDetailFieldId)[keyof typeof TaskDeta
 
 export const TaskDetailFieldId = {
   title: "title",
+  type: "type",
   description: "description",
   assignees: "assignees",
   recurrence: "recurrence",
@@ -4850,6 +4872,8 @@ export const DetailLayoutReadKind = {
  */
 export interface DetailLayoutRead {
   kind: DetailLayoutReadKind;
+  task_type_id: number | null;
+  task_type_name: string | null;
   definition: DetailLayoutDefinitionOutput;
   updated_at: string | null;
 }
@@ -4868,6 +4892,7 @@ export const DetailLayoutWriteKind = {
 
 export interface DetailLayoutWrite {
   kind: DetailLayoutWriteKind;
+  task_type_id?: number | null;
   definition: DetailLayoutDefinitionInput;
 }
 
@@ -6607,6 +6632,7 @@ export type TaskColumnFieldId = (typeof TaskColumnFieldId)[keyof typeof TaskColu
 
 export const TaskColumnFieldId = {
   title: "title",
+  type: "type",
   assignees: "assignees",
   startDate: "startDate",
   dueDate: "dueDate",
@@ -6641,6 +6667,8 @@ export interface TaskFilterSpec {
   /** @maxItems 50 */
   status_ids?: number[];
   status_categories?: TaskStatusCategory[];
+  /** @maxItems 50 */
+  type_ids?: number[];
   priorities?: TaskPriority[];
   /** @maxItems 50 */
   community_ids?: number[];
@@ -10451,6 +10479,7 @@ export interface TaskCreate {
   tz?: string | null;
   assignee_ids?: number[];
   task_status_id?: number | null;
+  task_type_id?: number | null;
   /** @maxItems 100 */
   tag_ids?: number[];
   checklist?: ChecklistItemInput[];
@@ -10494,6 +10523,8 @@ export interface TaskRead {
   project_id: number;
   task_status_id: number;
   task_status: TaskStatusRead;
+  task_type_id: number;
+  task_type: TaskTypeRead;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -10570,6 +10601,42 @@ export interface TaskStatusUpdate {
   icon?: string | null;
 }
 
+export interface TaskTypeCreate {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  position?: number | null;
+  is_default?: boolean;
+  color?: string | null;
+  icon?: string | null;
+  start_from_type_id?: number | null;
+  layout_preset?: string | null;
+}
+
+export interface TaskTypeDeleteRequest {
+  fallback_type_id?: number | null;
+}
+
+export interface TaskTypeReorderItem {
+  id: number;
+  position: number;
+}
+
+export interface TaskTypeReorderRequest {
+  items: TaskTypeReorderItem[];
+}
+
+export interface TaskTypeUpdate {
+  name?: string | null;
+  position?: number | null;
+  is_default?: boolean | null;
+  color?: string | null;
+  icon?: string | null;
+  layout_preset?: string | null;
+}
+
 export type TaskUpdateScope = (typeof TaskUpdateScope)[keyof typeof TaskUpdateScope] | null;
 
 export const TaskUpdateScope = {
@@ -10584,6 +10651,7 @@ export interface TaskUpdate {
   description?: string | null;
   description_base?: string | null;
   task_status_id?: number | null;
+  task_type_id?: number | null;
   status_category?: TaskStatusCategory | null;
   priority?: TaskPriority | null;
   assignee_ids?: number[] | null;
@@ -12486,6 +12554,7 @@ export type ResetLayoutParams = {
   tool: Tool;
   tool_id?: number | null;
   initiative_id?: number | null;
+  task_type_id?: number | null;
 };
 
 export type ListTasksParams = {

@@ -7,6 +7,7 @@ import type {
   TaskPriority,
   TaskStatusCategory,
   TaskStatusRead,
+  TaskTypeRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
 import {
@@ -57,6 +58,8 @@ export type TaskFiltersScope =
       memberScope: MemberSearchScope;
       /** The project's statuses; with none, the categories alone are offered. */
       statuses: TaskStatusRead[];
+      /** The project's task types; one alone is not offered. */
+      types?: TaskTypeRead[];
       /** Scopes the property filter's definitions. */
       initiativeId?: number;
     }
@@ -229,6 +232,27 @@ export const TaskFilters = ({ scope, value, onChange, stacked = false }: TaskFil
             emptyMessage={t("filters.noStatusesAvailable")}
           />
         </div>
+        {project && (project.types?.length ?? 0) > 1 ? (
+          <div className={field}>
+            <Label
+              htmlFor="type-filter"
+              className="block font-medium text-muted-foreground text-xs"
+            >
+              {t("filters.filterByType")}
+            </Label>
+            <MultiSelect
+              id="type-filter"
+              selectedValues={value.type_ids.map(String)}
+              options={(project.types ?? []).map((type) => ({
+                value: String(type.id),
+                label: type.name,
+              }))}
+              onChange={(values) => patch({ type_ids: values.map(Number).filter(Number.isFinite) })}
+              placeholder={t("filters.allTypes")}
+              emptyMessage={t("filters.allTypes")}
+            />
+          </div>
+        ) : null}
         <div className={field}>
           <Label
             htmlFor="priority-filter"

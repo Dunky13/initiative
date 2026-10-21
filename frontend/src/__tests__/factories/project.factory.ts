@@ -5,6 +5,7 @@ import type {
 } from "@/api/generated/initiativeAPI.schemas";
 
 import { ownerCan } from "./can";
+import { buildDefaultTaskTypes } from "./taskType.factory";
 
 let counter = 0;
 
@@ -65,8 +66,9 @@ export function buildDefaultTaskStatuses(projectId: number = 1): TaskStatusRead[
 
 export function buildProject(overrides: Partial<ProjectRead> = {}): ProjectRead {
   counter++;
+  const id = overrides.id ?? counter;
   return {
-    id: counter,
+    id,
     name: `Project ${counter}`,
     icon: null,
     description: `Description for project ${counter}`,
@@ -88,6 +90,8 @@ export function buildProject(overrides: Partial<ProjectRead> = {}): ProjectRead 
     can: { ...ownerCan(), configure: false },
     task_summary: { total: 0, completed: 0 },
     task_statuses: [],
+    // Every project has at least one type; it starts with these four.
+    task_types: overrides.task_types ?? buildDefaultTaskTypes(id),
     tags: [],
     properties: [],
     comments_enabled: true,

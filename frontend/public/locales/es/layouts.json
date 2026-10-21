@@ -93,6 +93,7 @@
     "actions": "Qué más se puede hacer con la tarea: mover, duplicar, archivar, eliminar y las acciones de plug-ins."
   },
   "taskLayout": "Detalle de la tarea",
+  "typedTaskLayout": "Página de {{name}}",
   "detailHelp": "Cómo se organiza el detalle de cada tarea de este proyecto. Lo que deja fuera queda oculto.",
   "useShipped": "Usar el diseño original",
   "shipped": "Este es el diseño original. Cambiarlo lo convierte en el del proyecto.",
@@ -156,6 +157,7 @@
       "date_group": "Periodo",
       "priority": "Prioridad",
       "task_status_id": "Estado",
+      "task_type_id": "Tipo",
       "assignee_ids": "Asignados",
       "created_by": "Creado por",
       "tag_ids": "Etiquetas",

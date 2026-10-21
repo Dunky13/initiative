@@ -5000,7 +5000,9 @@ async def test_a_property_unticked_on_the_review_is_not_created(
         ).all()
     }
     assert "Priority" not in names
-    assert {"Issue type", "Jira key"} <= names
+    assert "Jira key" in names
+    # The issue type is the task's own type rather than a property.
+    assert "Issue type" not in names
 
     task = (await session.exec(select(Task).where(Task.title == "Fit the frame"))).one()
     values = (
@@ -5015,10 +5017,11 @@ async def test_a_property_unticked_on_the_review_is_not_created(
             )
         )
     ).all()
-    assert {definition.name for _value, definition in values} == {
-        "Issue type",
-        "Jira key",
-    }
+    assert {definition.name for _value, definition in values} == {"Jira key"}
+    from app.models.tenant.task import TaskType
+
+    task_type = await session.get(TaskType, task.task_type_id)
+    assert task_type is not None and task_type.name == "Story"
 
 
 @pytest.mark.parametrize(
