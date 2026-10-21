@@ -617,12 +617,10 @@ def _authored_block() -> str:
 
 _MEMBER_CREDENTIAL_SECTION = """\
 -- ===========================================================================
--- A member's credentials (app.db.tenancy.MEMBER_CREDENTIAL_TABLES): that they
--- gave an AI connection a key, their connection to a plug-in's vendor. Read and
--- written by the member, the community's seat (a lent seat writing beside a
--- read_write grant) and the system engine; not by a plain admin or a settings
--- rung. A key for a platform AI connection is the member's and the platform's
--- alone, so the seat reaches only the community's own.
+-- A member's credentials (app.db.tenancy.MEMBER_CREDENTIAL_TABLES): their
+-- connection to a plug-in's vendor. Read and written by the member, the
+-- community's seat (a lent seat writing beside a read_write grant) and the
+-- system engine; not by a plain admin or a settings rung.
 --
 -- What they hold (app.db.tenancy.MEMBER_SECRET_TABLES) is the member's and the
 -- system engine's alone: member_secret_* admit the member the credential row
@@ -634,13 +632,10 @@ _MEMBER_CREDENTIAL_SECTION = """\
 -- ==========================================================================="""
 
 
-def _member_credential_block(table: str, owner: str, seat_rows: str | None) -> str:
-    def seat(leg: str) -> str:
-        return f"({leg} AND {seat_rows})" if seat_rows else leg
-
+def _member_credential_block(table: str, owner: str) -> str:
     mine = f"{owner} = {gucs.USER_ID.once} OR {IN_POLICY.system}"
-    read = f"({mine} OR {seat(POLICY_SEAT)})"
-    write = f"({mine} OR {seat(_SEAT_WRITES)})"
+    read = f"({mine} OR {POLICY_SEAT})"
+    write = f"({mine} OR {_SEAT_WRITES})"
     return "\n".join(
         [
             f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;",
@@ -1477,8 +1472,8 @@ def render_guild_rls_ddl() -> str:
     out += "\n\n" + _PRIVATE_ROW_SECTION + "\n\n" + "\n\n".join(private)
     out += "\n\n" + _AUTHORED_SECTION + "\n" + _authored_block()
     credentials = [
-        _member_credential_block(t, owner, seat_rows)
-        for t, (owner, seat_rows) in sorted(MEMBER_CREDENTIAL_TABLES.items())
+        _member_credential_block(t, owner)
+        for t, owner in sorted(MEMBER_CREDENTIAL_TABLES.items())
     ]
     credentials += [
         _member_secret_block(t, parent, column)

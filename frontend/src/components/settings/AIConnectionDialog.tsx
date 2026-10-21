@@ -110,21 +110,6 @@ export const AIConnectionDialog = ({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-md border px-4 py-3">
-              <div>
-                <p className="font-medium">{t("aiConnections.allowMemberKeysLabel")}</p>
-                <p className="text-muted-foreground text-sm">
-                  {t("aiConnections.allowMemberKeysDescription")}
-                </p>
-              </div>
-              <Switch
-                checked={form.allowMemberKeys}
-                onCheckedChange={(checked) => setField("allowMemberKeys", Boolean(checked))}
-              />
-            </div>
-          </div>
-
           {showApiKeyField && (
             <div className="space-y-2">
               <Label htmlFor="ai-connection-key">{t("ai.apiKeyLabel")}</Label>

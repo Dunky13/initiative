@@ -2,11 +2,9 @@ import { Link, Outlet, useLocation, useRouter } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { MyAIConnectionRow } from "@/api/generated/initiativeAPI.schemas";
 import { SettingsTabsNav } from "@/components/settings/SettingsTabsNav";
 import { SettingsPaneSkeleton } from "@/components/skeletons/PageSkeletons";
 import { Button } from "@/components/ui/button";
-import { useMyAI } from "@/hooks/useAISettings";
 import { useAuth } from "@/hooks/useAuth";
 import { usePrivacySections } from "@/hooks/usePrivacySections";
 import { matchActiveTab } from "@/lib/tabs";
@@ -18,26 +16,14 @@ const userSettingsTabs = [
   { value: "notifications", labelKey: "layout.tabs.notifications", path: "/profile/notifications" },
   { value: "privacy", labelKey: "layout.tabs.privacy", path: "/profile/privacy" },
   { value: "security", labelKey: "layout.tabs.security", path: "/profile/security" },
-  { value: "ai", labelKey: "layout.tabs.ai", path: "/profile/ai" },
   { value: "trash", labelKey: "layout.tabs.trash", path: "/profile/trash" },
 ] as const;
-
-/**
- * Whether the AI tab has anything for this person to do.
- *
- * A connection they can use as it stands, or one they may put their own key
- * on. Neither means the tab would open on a single line saying there is
- * nothing here, so it is not offered.
- */
-const hasAnythingToConfigure = (rows: MyAIConnectionRow[] | undefined): boolean =>
-  (rows ?? []).some((row) => !row.requires_member_key || row.allow_member_keys);
 
 export const UserSettingsLayout = () => {
   const { t } = useTranslation("settings");
   const { user } = useAuth();
   const location = useLocation();
   const router = useRouter();
-  const { data: aiConnections, isError: aiUnknown } = useMyAI();
   // Privacy is offered while any of its sections has something to set here.
   const privacy = usePrivacySections();
 
@@ -52,13 +38,7 @@ export const UserSettingsLayout = () => {
     );
   }
 
-  // Hidden only when the answer came back and there was nothing in it. A
-  // request that failed is not an answer, and taking a tab away over one would
-  // lose someone their settings until they reloaded; the page itself says so
-  // when it cannot load.
-  const showAI = aiUnknown || hasAnythingToConfigure(aiConnections);
   const tabs = userSettingsTabs
-    .filter((tab) => tab.value !== "ai" || showAI)
     .filter((tab) => tab.value !== "privacy" || privacy.any)
     .map((tab) => ({
       value: tab.value,

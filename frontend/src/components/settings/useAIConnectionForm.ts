@@ -22,7 +22,6 @@ export interface AIConnectionFormState {
   apiKey: string;
   enabled: boolean;
   isDefault: boolean;
-  allowMemberKeys: boolean;
 }
 
 const emptyForm: AIConnectionFormState = {
@@ -33,7 +32,6 @@ const emptyForm: AIConnectionFormState = {
   apiKey: "",
   enabled: true,
   isDefault: false,
-  allowMemberKeys: true,
 };
 
 const toFormState = (connection: AIConnectionResponse): AIConnectionFormState => ({
@@ -44,7 +42,6 @@ const toFormState = (connection: AIConnectionResponse): AIConnectionFormState =>
   apiKey: "",
   enabled: connection.enabled,
   isDefault: connection.is_default,
-  allowMemberKeys: connection.allow_member_keys,
 });
 
 interface UseAIConnectionFormArgs {
@@ -85,9 +82,7 @@ export const useAIConnectionForm = ({
   ) => serverForm.set({ [key]: value } as Partial<AIConnectionFormState>);
 
   const providerConfig = form.provider ? PROVIDER_CONFIGS[form.provider] : null;
-  // A connection's key is EITHER shared (admin-set) OR member-supplied. When
-  // members bring their own key, there is no shared-key field.
-  const showApiKeyField = (providerConfig?.requiresApiKey ?? false) && !form.allowMemberKeys;
+  const showApiKeyField = providerConfig?.requiresApiKey ?? false;
   const showBaseUrlField = providerConfig?.requiresBaseUrl ?? false;
   const modelOptions = getModelsForProvider(form.provider, availableModels);
 
@@ -125,10 +120,8 @@ export const useAIConnectionForm = ({
         model: form.model || null,
         enabled: form.enabled,
         is_default: form.isDefault,
-        allow_member_keys: form.allowMemberKeys,
       };
-      // XOR: never send a shared key when members bring their own.
-      if (form.apiKey && !form.allowMemberKeys) payload.api_key = form.apiKey;
+      if (form.apiKey) payload.api_key = form.apiKey;
       mutations.update.mutate(
         { connectionId: connection.id, data: payload },
         {
@@ -148,11 +141,9 @@ export const useAIConnectionForm = ({
       provider: form.provider,
       base_url: baseUrl,
       model: form.model || null,
-      // XOR: a shared key only when members don't bring their own.
-      api_key: form.allowMemberKeys ? null : form.apiKey || null,
+      api_key: form.apiKey || null,
       enabled: form.enabled,
       is_default: form.isDefault,
-      allow_member_keys: form.allowMemberKeys,
     };
     mutations.create.mutate(payload, {
       onSuccess: () => {

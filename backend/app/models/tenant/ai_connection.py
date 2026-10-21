@@ -1,8 +1,7 @@
 """Guild-owned AI connections (guild config mode).
 
 Used when ``ai_config_mode == "community"``: a guild admin configures the
-guild's AI providers here (guild schema). Members attach their own keys
-referencing these by ``(scope="community", id)``. Guild-level table (guild-wide
+guild's AI providers here (guild schema). Guild-level table (guild-wide
 config, schema-boundary protected). ``base_url`` is validated public-only —
 a guild admin can never persist a private/internal target.
 

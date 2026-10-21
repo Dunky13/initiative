@@ -150,3 +150,25 @@ layout.
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId` from the `oneOf[subschema #1: ListLayoutWrite]/definition/group_by` request property `anyOf` list
 - PUT /api/v1/c/{community_id}/layouts/ removed `#/components/schemas/TaskGroupingId, subschema #2` from the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `anyOf` list
 - PUT /api/v1/c/{community_id}/layouts/ the `oneOf[subschema #1: ListLayoutWrite]/definition/groupings/anyOf[subschema #1]/items/field` request property `type` changed from `any` to `string`
+
+### Members bring no AI key
+
+A connection's key is its owner's, and members configure nothing: the member
+key, preference and test routes, the seat's list and revoke of member keys,
+and `GET /me/ai` are gone, and a connection no longer carries
+`allow_member_keys`.
+
+- GET /api/v1/c/{community_id}/settings/ai/connections removed the required property `items/allow_member_keys` from the response with the `200` status
+- POST /api/v1/c/{community_id}/settings/ai/connections removed the required property `allow_member_keys` from the response with the `200` status
+- PUT /api/v1/c/{community_id}/settings/ai/connections/{connection_id} removed the required property `allow_member_keys` from the response with the `200` status
+- GET /api/v1/c/{community_id}/settings/ai/me api path removed without deprecation
+- PUT /api/v1/c/{community_id}/settings/ai/me/key api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/settings/ai/me/key/{scope}/{connection_id} api path removed without deprecation
+- PUT /api/v1/c/{community_id}/settings/ai/me/pref api path removed without deprecation
+- POST /api/v1/c/{community_id}/settings/ai/me/test api path removed without deprecation
+- GET /api/v1/c/{community_id}/settings/ai/members/keys api path removed without deprecation
+- DELETE /api/v1/c/{community_id}/settings/ai/members/{user_id}/keys/{connection_id} api path removed without deprecation
+- GET /api/v1/me/ai api path removed without deprecation
+- GET /api/v1/settings/ai/platform/connections removed the required property `items/allow_member_keys` from the response with the `200` status
+- POST /api/v1/settings/ai/platform/connections removed the required property `allow_member_keys` from the response with the `200` status
+- PUT /api/v1/settings/ai/platform/connections/{connection_id} removed the required property `allow_member_keys` from the response with the `200` status

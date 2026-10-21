@@ -1,11 +1,11 @@
 """Guild-scoped AI config endpoints, mounted under ``/c/{community_id}/settings``.
 
 Two surfaces:
-- **Guild admin** — CRUD of ``guild_ai_connections`` (used when the global mode
-  is ``guild``). A connection's ``base_url`` is validated public-only, so a
-  guild admin can never persist a private/internal target.
-- **Member** (any authenticated guild member) — attach an own key + pick a
-  connection (``/ai/me``). Members never set a destination.
+- **The seat** — CRUD of ``guild_ai_connections`` (used when the global mode
+  is ``community``). A connection's ``base_url`` is validated public-only, so a
+  community can never persist a private/internal target.
+- **Any member** — whether AI is available to them (``/ai/resolved``). Members
+  configure nothing.
 
 The global mode + operator connections (``platform`` mode) live in
 ``platform_endpoints/ai_settings.py``.
@@ -30,11 +30,6 @@ from app.schemas.ai_settings import (
     AIConnectionTestResponse,
     AIConnectionUpdate,
     AIModelsResponse,
-    CommunityMemberAIKey,
-    ConnectionScope,
-    MemberAIKeyUpdate,
-    MemberAIPrefUpdate,
-    MemberAIView,
     ResolvedAISettingsResponse,
 )
 from app.services import ai_settings as ai_settings_service
@@ -127,101 +122,13 @@ async def fetch_community_connection_models(
     )
 
 
-@router.get("/ai/members/keys", response_model=list[CommunityMemberAIKey])
-async def list_community_member_keys(
-    session: SettingsRLSSessionDep,
-    _ctx: GuildSeatContext,
-) -> list[CommunityMemberAIKey]:
-    """Who gave which of the community's AI connections a key. Never a key."""
-    return await ai_settings_service.list_community_member_keys(session)
-
-
-@router.delete(
-    "/ai/members/{user_id}/keys/{connection_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def revoke_community_member_key(
-    user_id: int,
-    connection_id: int,
-    session: SettingsRLSSessionDep,
-    _ctx: GuildSeatWriteContext,
-    user: CurrentUser,
-) -> None:
-    """Take back the key a member gave one of the community's AI connections."""
-    await ai_settings_service.revoke_community_member_key(
-        session, user_id, connection_id, actor_user_id=user.id
-    )
-
-
-# --- Member surface (any authenticated guild member) -------------------------
-@router.get("/ai/me", response_model=MemberAIView)
-async def get_member_ai(
-    session: RLSSessionDep,
-    ctx: GuildMemberContext,
-    user: CurrentUser,
-) -> MemberAIView:
-    """List the connections available to the member (no keys), whether they've
-    attached their own key to each, and which one is selected."""
-    return await ai_settings_service.get_member_ai_view(session, user, ctx.guild_id)
-
-
-@router.put("/ai/me/key", response_model=MemberAIView)
-async def set_member_key(
-    payload: MemberAIKeyUpdate,
-    session: RLSSessionDep,
-    ctx: GuildMemberContext,
-    user: CurrentUser,
-) -> MemberAIView:
-    """Attach/replace the member's own key for a connection."""
-    return await ai_settings_service.set_member_key(
-        session, user, ctx.guild_id, payload
-    )
-
-
-@router.delete("/ai/me/key/{scope}/{connection_id}", response_model=MemberAIView)
-async def delete_member_key(
-    scope: ConnectionScope,
-    connection_id: int,
-    session: RLSSessionDep,
-    ctx: GuildMemberContext,
-    user: CurrentUser,
-) -> MemberAIView:
-    return await ai_settings_service.delete_member_key(
-        session, user, ctx.guild_id, scope, connection_id
-    )
-
-
-@router.put("/ai/me/pref", response_model=MemberAIView)
-async def set_member_pref(
-    payload: MemberAIPrefUpdate,
-    session: RLSSessionDep,
-    ctx: GuildMemberContext,
-    user: CurrentUser,
-) -> MemberAIView:
-    """Pick the connection the member uses and whether AI is on for them."""
-    return await ai_settings_service.set_member_pref(
-        session, user, ctx.guild_id, payload
-    )
-
-
-@router.post("/ai/me/test", response_model=AIConnectionTestResponse)
-async def test_member_ai(
-    session: RLSSessionDep,
-    ctx: GuildMemberContext,
-    user: CurrentUser,
-) -> AIConnectionTestResponse:
-    """Test the member's currently-selected connection with their effective key."""
-    return await ai_settings_service.test_member_connection(session, user, ctx.guild_id)
-
-
 # --- Resolved settings (any authenticated guild member) ----------------------
 @router.get("/ai/resolved", response_model=ResolvedAISettingsResponse)
 async def get_resolved_ai_settings(
     session: RLSSessionDep,
     ctx: GuildMemberContext,
-    user: CurrentUser,
 ) -> ResolvedAISettingsResponse:
     """Resolved (effective) AI settings for the member, without the API key."""
     return await ai_settings_service.get_resolved_ai_settings_response(
-        session, user, ctx.guild_id
+        session, ctx.guild_id
     )

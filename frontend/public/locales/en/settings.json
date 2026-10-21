@@ -6,7 +6,6 @@
       "account": "Account",
       "interface": "Preferences",
       "notifications": "Notifications",
-      "ai": "AI",
       "security": "Security",
       "trash": "Trash",
       "privacy": "Privacy"
@@ -210,7 +209,7 @@
   },
   "communityAI": {
     "title": "Community AI",
-    "adminOnly": "Only community admins can manage AI connections. To set your own key, open AI in your profile settings.",
+    "adminOnly": "Only community admins can manage AI connections.",
     "connectionsTitle": "Community connections",
     "connectionsDescription": "Define the AI connections members of this community can use.",
     "disabledDescription": "AI features are turned off for the platform.",
@@ -1764,31 +1763,7 @@
     "defaultDescription": "Members use this connection unless they pick another.",
     "save": "Save connection",
     "saving": "Saving…",
-    "cancel": "Cancel",
-    "allowMemberKeysLabel": "Let members use their own API key",
-    "allowMemberKeysDescription": "Members can attach a personal API key to this connection."
-  },
-  "memberAI": {
-    "description": "See every AI connection available to you across your communities. Add your own API key where allowed and pick the one you use.",
-    "noneAvailable": "No AI connections are available to you yet.",
-    "sharedKeyCommunity": "Uses a shared key set by your community's admins.",
-    "sharedKeyPlatform": "Uses a shared key set by whoever runs this server.",
-    "selected": "In use",
-    "requiresKey": "Needs your key",
-    "keySet": "Your key is set",
-    "addKey": "Add your key",
-    "replaceKey": "Replace key",
-    "removeKey": "Remove key",
-    "keyPlaceholder": "Enter your API key",
-    "saveKey": "Save key",
-    "keySaved": "API key saved",
-    "keyRemoved": "API key removed",
-    "keyError": "Unable to save API key",
-    "keyRemoveError": "Unable to remove API key",
-    "prefSaved": "Preference updated",
-    "prefError": "Unable to update preference",
-    "test": "Test",
-    "testSuccess": "Connection successful"
+    "cancel": "Cancel"
   },
   "community": {
     "title": "Community directory",
