@@ -57,7 +57,7 @@ import {
 import { useServer } from "@/hooks/useServer";
 import { useWizard } from "@/hooks/useWizard";
 import { EMPTY_PLACE, nearOfPlace } from "@/lib/directoryNear";
-import { getErrorCode, getErrorMessage } from "@/lib/errorMessage";
+import { getErrorMessage } from "@/lib/errorMessage";
 import { toast } from "@/lib/mascotToast";
 import {
   clearStart,
@@ -331,13 +331,7 @@ const StartSteps = ({
     } catch (err) {
       dropPlanTab();
       onBusy?.(false);
-      // The server's own line for this sends them to choose a plan, which a
-      // device that may not sell cannot offer; there it only says why.
-      setError(
-        !canSell && getErrorCode(err) === "FREE_COMMUNITY_ALREADY_HELD"
-          ? t("communities:freeCommunityHeldInApp")
-          : getErrorMessage(err, "communities:unableToCreateCommunity")
-      );
+      setError(getErrorMessage(err, "communities:unableToCreateCommunity"));
     } finally {
       setBusy(false);
     }

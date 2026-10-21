@@ -48,7 +48,7 @@ import { type CommunityEntry, useCommunities } from "@/hooks/useCommunities";
 import { useMessagesWaiting } from "@/hooks/useMyMessages";
 import { useUnreadTree } from "@/hooks/useUnreadTree";
 import { communityPath } from "@/lib/communityUrl";
-import { getErrorCode, getErrorMessage } from "@/lib/errorMessage";
+import { getErrorMessage } from "@/lib/errorMessage";
 import { getInitials } from "@/lib/initials";
 import { toast } from "@/lib/mascotToast";
 import { resolveHeaderlessApiUrl } from "@/lib/uploadUrl";
@@ -110,12 +110,7 @@ const CreateCommunityButton = ({ expanded = false }: { expanded?: boolean }) => 
     } catch (err) {
       billingTab?.close();
       console.error(err);
-      // The server's own line for this sends them to choose a plan, which a
-      // device that may not sell cannot offer; there it only says why.
-      const message =
-        !canSell && getErrorCode(err) === "FREE_COMMUNITY_ALREADY_HELD"
-          ? t("freeCommunityHeldInApp")
-          : getErrorMessage(err, "communities:unableToCreateCommunity");
+      const message = getErrorMessage(err, "communities:unableToCreateCommunity");
       setError(message);
       toast.error(message);
     } finally {

@@ -61,7 +61,6 @@ def _fields(**over) -> dict:
         "max_users": 50,
         "max_guests": 5,
         "feature_keys": [],
-        "plan_is_free": False,
         "status": "active",
         **over,
     }
@@ -200,7 +199,6 @@ async def test_a_newer_version_lands_and_an_older_one_changes_nothing(
     administration = await _administration(session, guild_id)
     assert (administration.tier_name, administration.billing_version) == ("Gold", 5)
     assert (administration.max_users, administration.max_guests) == (50, 5)
-    assert administration.plan_is_free is False
 
     newer = await _sync(
         client, (guild_id, 9, _fields(tier_name="Silver", max_users=None))

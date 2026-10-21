@@ -233,13 +233,12 @@ async def test_create_guild_requires_name(client: AsyncClient, acting_user):
     assert response.status_code == 422
 
 
-# --- one free community each ------------------------------------------------
+# --- free communities are billing's ------------------------------------------
 
 
 @pytest.fixture
 def billed(monkeypatch):
-    """A deployment with a billing service behind it. The gate below is skipped
-    entirely without one, which is every self-hosted install."""
+    """A deployment with a billing service behind it."""
     from app.core import config as config_module
 
     monkeypatch.setattr(config_module.settings, "BILLING_PUBLIC_KEY_PEM", "a-key")
@@ -248,67 +247,15 @@ def billed(monkeypatch):
     )
 
 
-async def test_a_second_free_community_is_refused_before_it_is_made(
-    client: AsyncClient, session: AsyncSession, acting_user, billed
+async def test_a_billed_deployment_refuses_no_second_community(
+    client: AsyncClient, acting_user, billed
 ):
-    """One free community per account, and the refusal comes first.
-
-    The old shape let the community be created and priced afterwards, which
-    handed somebody who wanted a free notebook a trial they never asked for.
-    Refusing here means nothing exists to undo: no guild, no membership, no
-    clock started on anybody's behalf, and a client that can send them to the
-    plan picker with the answer in hand.
-    """
+    """How many free communities a person may hold is billing's to say, from
+    its catalog, when it hears a community was created: an enterprise contract
+    may have no such limit, and one admin setting up many is normal. Here the
+    only limit is the daily allowance below."""
     a = await acting_user("member")
-    first = await client.post(
-        "/api/v1/communities/", headers=a.headers, json={"name": "My notebook"}
-    )
-    assert first.status_code == 201, first.text
-
-    second = await client.post(
-        "/api/v1/communities/", headers=a.headers, json={"name": "One more"}
-    )
-    assert second.status_code == 402
-    assert second.json()["detail"] == "FREE_COMMUNITY_ALREADY_HELD"
-    # Nothing was made on the way to that answer.
-    made = (await session.exec(select(Guild).where(Guild.name == "One more"))).all()
-    assert made == []
-
-
-async def test_a_paid_community_does_not_use_up_the_free_one(
-    client: AsyncClient, session: AsyncSession, acting_user, billed
-):
-    """The rule counts *free* communities, and billing is what says which are.
-
-    ``plan_is_free`` is the only money fact this app is told, and it is a
-    boolean rather than a tier name for a reason: nothing here has to know what
-    a plan is called, or what it costs, to answer this question.
-    """
-    a = await acting_user("member")
-    paid = await client.post(
-        "/api/v1/communities/", headers=a.headers, json={"name": "Acme"}
-    )
-    assert paid.status_code == 201, paid.text
-
-    guild = await session.get(Guild, paid.json()["id"])
-    administration = await guild_administration(session, guild)
-    administration.plan_is_free = False
-    session.add(administration)
-    await session.commit()
-
-    free = await client.post(
-        "/api/v1/communities/", headers=a.headers, json={"name": "My notebook"}
-    )
-    assert free.status_code == 201, free.text
-
-
-async def test_a_deployment_without_billing_never_counts_communities(
-    client: AsyncClient, acting_user
-):
-    """No billing service, no free-community rule: a self-hosted install is
-    held only to the daily allowance below."""
-    a = await acting_user("member")
-    for name in ("One", "Two", "Three"):
+    for name in ("My notebook", "One more"):
         created = await client.post(
             "/api/v1/communities/", headers=a.headers, json={"name": name}
         )

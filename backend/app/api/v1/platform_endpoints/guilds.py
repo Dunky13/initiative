@@ -112,7 +112,6 @@ from app.core.guild_auth_options import CommunityAuthOption, effective_options
 from app.services.platform import app_settings as app_settings_service
 from app.services.platform import auth_posture
 from app.services.platform import notification_policy
-from app.services.platform import billing as billing_service
 from app.services.platform import billing_ping
 from app.services.platform import guild_images as images_service
 from app.services.tenant.attachments import FileTooLargeError, read_upload_bounded
@@ -658,16 +657,6 @@ async def create_community(
         )
 
     owner = await _resolve_guild_owner(session, guild_in, current_user)
-
-    if (
-        billing_service.billing_inbound_enabled()
-        and not user_has_capability(current_user, Capability.COMMUNITIES_MANAGE)
-        and await guilds_service.holds_a_free_guild(session, user_id=owner.id)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=GuildMessages.FREE_COMMUNITY_ALREADY_HELD,
-        )
 
     try:
         guild = await guilds_service.provision_new_guild(

@@ -31,7 +31,6 @@
   "COMMUNITY_PERMISSION_REQUIRED": "Permission de la communauté requise",
   "COMMUNITY_ADMIN_REQUIRED": "Rôle d'administrateur de la communauté requis",
   "COMMUNITY_CREATION_DISABLED": "La création de communauté est désactivée",
-  "FREE_COMMUNITY_ALREADY_HELD": "Vous avez déjà une communauté gratuite. Une autre nécessite un forfait — choisissez-en un et nous la créerons.",
   "COMMUNITY_CREATION_LIMIT_REACHED": "Vous avez créé autant de communautés que possible en 24 heures. Réessayez plus tard.",
   "COMMUNITY_CREATION_DEMO_ACCOUNT": "Les comptes de démonstration ne peuvent pas créer de communautés",
   "COMMUNITY_OWNER_REQUIRES_CAPABILITY": "Seul le personnel de la plateforme peut créer une communauté pour quelqu'un d'autre",

@@ -170,8 +170,6 @@ _GUILD_TIER_COLUMNS = (
     GuildAdministration.banner_image_enabled,
     GuildAdministration.support_enabled,
     GuildAdministration.auth_options,
-    # Billing's answer to "does this plan charge anybody" — see migration 0325.
-    GuildAdministration.plan_is_free,
     GuildAdministration.billing_version,
     Guild.status,
 )
@@ -287,7 +285,6 @@ async def apply_community_sync(
         "max_storage_bytes": fields.max_storage_bytes,
         "max_users": fields.max_users,
         "max_guests": fields.max_guests,
-        "plan_is_free": fields.plan_is_free,
         "billing_status": fields.status.value,
         "billing_version": version,
         **billing_capabilities.administration_values(fields.feature_keys),

@@ -106,9 +106,6 @@ class GuildAdministration(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
-    plan_is_free: Optional[bool] = Field(
-        default=None, sa_column=Column(Boolean, nullable=True)
-    )
     #: The status billing last wrote, whether or not it landed on the guild.
     #: A suspended guild takes no status from billing; lifting the suspension
     #: on a billing-managed deployment returns it here (``active`` when

@@ -3,6 +3,9 @@
 - ``guild_administration.billing_version``: which version of billing's state
   a community holds. A write at a version no newer is answered with it and
   changes nothing. The billing role reads and writes it beside the caps.
+- ``guild_administration.plan_is_free`` (0325) goes: one free community per
+  person is billing's to decide, from its catalog, when a community is
+  created. Initiative refuses no creation for it.
 - ``billing_changes``: the log billing reads by cursor. It's written only by
   ``public.billing_change_row``, a definer function owned by the NOLOGIN role
   ``app_billing_log``, from the triggers below in the transaction that changed the fact,
@@ -298,6 +301,8 @@ def upgrade() -> None:
         "GRANT SELECT (billing_version), UPDATE (billing_version) "
         f'ON public.guild_administration TO "{_billing_role()}"'
     )
+    # Its column grants go with it.
+    op.execute("ALTER TABLE public.guild_administration DROP COLUMN plan_is_free")
 
     op.create_table(
         "billing_changes",
@@ -402,3 +407,10 @@ def downgrade() -> None:
         f'ON public.guild_administration FROM "{_billing_role()}"'
     )
     op.execute("ALTER TABLE public.guild_administration DROP COLUMN billing_version")
+    op.execute(
+        "ALTER TABLE public.guild_administration ADD COLUMN plan_is_free boolean"
+    )
+    op.execute(
+        "GRANT SELECT (plan_is_free), UPDATE (plan_is_free) "
+        f'ON public.guild_administration TO "{_billing_role()}"'
+    )

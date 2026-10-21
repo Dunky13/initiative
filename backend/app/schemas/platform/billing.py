@@ -73,7 +73,6 @@ class CommunityFields(SanitizedBaseModel):
     max_users: Optional[int] = Field(ge=1)
     max_guests: Optional[int] = Field(ge=0)
     feature_keys: list[str] = Field(max_length=64)
-    plan_is_free: bool
     status: CommunityStatus
 
     @field_validator("status")
