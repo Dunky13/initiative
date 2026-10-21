@@ -59,7 +59,7 @@ from app.services.notifications import (
 from app.services.guild_sweeps import Scan, Scope, each_guild
 from app.services.platform import accounts as accounts_service
 from app.services.tenant import expiry
-from app.models.platform.guild import Guild, CommunityRole
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.testing import (
     guild_of,
     create_calendar,
@@ -973,6 +973,50 @@ async def test_assignment_digest_takes_only_what_its_reader_reaches(
             )
         ).all()
         assert len(pending) == unsent
+
+
+async def test_assignment_digest_leaves_a_community_on_hold_waiting(
+    session: AsyncSession, monkeypatch
+):
+    """Items in a community whose content is on hold wait for the hold to lift;
+    every digest due in the same pass still goes out, its own reader's
+    included."""
+    first, second = await create_user(session), await create_user(session)
+    held = await _assignment_item_in_new_guild(session, second, label="Held")
+    await _assignment_item_in_new_guild(session, second, label="Open")
+    await _assignment_item_in_new_guild(session, first, label="First")
+    await set_rls_context(session, Unattributed())
+    await session.exec(
+        update(Guild)
+        .where(Guild.id == held.id)
+        .values(
+            status=CommunityStatus.read_only.value,
+            status_changed_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.commit()
+
+    sent: dict[int, set[str]] = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        sent[recipient.id] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await _sweep(
+        digest_scan(
+            ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc) + ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+
+    assert "First task" in sent[first.id]
+    assert "Open task" in sent[second.id] and "Held task" not in sent[second.id]
+    await route_session_to_guild(session, held.id)
+    assert len((await session.exec(select(TaskAssignmentDigestItem))).all()) == 1
+    assert (
+        await session.exec(select(TaskAssignmentDigestItem.processed_at))
+    ).one() is None
 
 
 async def test_assignment_digest_takes_an_opted_out_community_unsent(

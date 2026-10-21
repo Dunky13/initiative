@@ -952,7 +952,10 @@ async def clear_digest_queue_across_guilds(
     guild_ids = await cross_guild.member_guild_ids(session, user_id)
 
     async def _clear(routed: AsyncSession, _gid: int) -> list:
-        await clear_digest_queue_for_user(routed, user_id, models)
+        # A community whose content is on hold takes no writes; its items go
+        # with the digest GC.
+        if not require_guild_context(routed).content_read_only:
+            await clear_digest_queue_for_user(routed, user_id, models)
         return []
 
     # Membership-based hygiene, not content access: must reach every guild
@@ -1214,8 +1217,15 @@ async def _send_digests(
             for guild_id in by_guild:
                 later[guild_id] = min(later.get(guild_id, due), due)
 
-    async def _take(routed: AsyncSession, gid: int) -> list[tuple[int, dict]]:
-        user_id = require_guild_context(routed).user_id
+    batches: dict[int, list[dict]] = {}
+
+    async def _take(routed: AsyncSession, gid: int) -> list:
+        reader = require_guild_context(routed)
+        # A community whose content is on hold takes no writes: its items wait
+        # for the hold to lift.
+        if reader.content_read_only:
+            return []
+        user_id = reader.user_id
         taken = (
             sa_update(model)
             .where(model.user_id == user_id, model.processed_at.is_(None))
@@ -1232,59 +1242,64 @@ async def _send_digests(
             (await routed.exec(taken.returning(model))).scalars(),
             key=lambda item: item.created_at,
         )
-        return [(user_id, spec.row(item, gid)) for item in items]
+        if items:
+            batches.setdefault(user_id, []).extend(
+                spec.row(item, gid) for item in items
+            )
+        return []
 
     # Digests act on membership (no live session exists here) — the
     # system sentinel clears the guild auth-policy gate.
-    batches: dict[int, list[dict]] = {}
-    for user_id, row in await gather_across_guilds(
-        session, ready, _take, on_behalf=True, writes=True
-    ):
-        batches.setdefault(user_id, []).append(row)
-    for user_id, batch in batches.items():
-        # Send: re-load the user, fresh, in a shared-table context.
-        session.expunge_all()
-        await set_rls_context(session, Platform(user_id=user_id))
-        user = (
-            await session.exec(select(User).where(User.id == user_id))
-        ).scalar_one_or_none()
-        if user is None:  # deleted since the scan — skip, don't abort the pass
-            continue
-        # Re-read the preferences off the row just reloaded, not the snapshot
-        # taken before the cross-guild gather: a channel switched off while the
-        # gather was running must not still be delivered to.
-        channels = await _channels(session, user, category=spec.category)
-        email_batch, push_batch = await _digest_batch(session, batch)
-        # Each channel is handed to its outbox, which tries a failed send again
-        # itself, so the items never go back to waiting.
-        if channels.email and email_batch:
-            # No community: a digest gathers from every guild the account is
-            # in, so there is no one of them it happened in. Each item carries
-            # its own community's answer instead.
-            queued = await email_outbox.enqueue(
-                session,
-                user,
-                category=spec.category,
-                prefs=channels.prefs,
-                pieces=spec.pieces(user, email_batch),
-            )
-            if not queued:
-                logger.warning(
-                    "SMTP not configured; %s for %s goes without email",
-                    spec.name,
-                    user_id,
+    try:
+        await gather_across_guilds(session, ready, _take, on_behalf=True, writes=True)
+    finally:
+        # What was taken is sent, even when a later reader's take fails: a
+        # taken item is not taken again.
+        for user_id, batch in batches.items():
+            # Send: re-load the user, fresh, in a shared-table context.
+            session.expunge_all()
+            await set_rls_context(session, Platform(user_id=user_id))
+            user = (
+                await session.exec(select(User).where(User.id == user_id))
+            ).scalar_one_or_none()
+            if user is None:  # deleted since the scan — skip, don't abort the pass
+                continue
+            # Re-read the preferences off the row just reloaded, not the snapshot
+            # taken before the cross-guild gather: a channel switched off while the
+            # gather was running must not still be delivered to.
+            channels = await _channels(session, user, category=spec.category)
+            email_batch, push_batch = await _digest_batch(session, batch)
+            # Each channel is handed to its outbox, which tries a failed send again
+            # itself, so the items never go back to waiting.
+            if channels.email and email_batch:
+                # No community: a digest gathers from every guild the account is
+                # in, so there is no one of them it happened in. Each item carries
+                # its own community's answer instead.
+                queued = await email_outbox.enqueue(
+                    session,
+                    user,
+                    category=spec.category,
+                    prefs=channels.prefs,
+                    pieces=spec.pieces(user, email_batch),
                 )
-        if channels.push and push_batch:
-            await notice_outbox.queue_push(
-                session,
-                user,
-                spec.push(user, push_batch),
-                {item.get("community_id") for item in push_batch},
-            )
-        if spec.stamp is not None:
-            setattr(user, spec.stamp, now)
-            session.add(user)
-        await session.commit()
+                if not queued:
+                    logger.warning(
+                        "SMTP not configured; %s for %s goes without email",
+                        spec.name,
+                        user_id,
+                    )
+            if channels.push and push_batch:
+                await notice_outbox.queue_push(
+                    session,
+                    user,
+                    spec.push(user, push_batch),
+                    {item.get("community_id") for item in push_batch},
+                )
+            if spec.stamp is not None:
+                setattr(user, spec.stamp, now)
+                session.add(user)
+            await session.commit()
+
     return later
 
 
@@ -2564,7 +2579,12 @@ async def reminder_scan(*, now: datetime) -> Scan:
         return min(upcoming, default=None)
 
     async def _dispatch(session: AsyncSession, guild_id: int) -> list:
-        user_id = require_guild_context(session).user_id
+        reader = require_guild_context(session)
+        # A community whose content is on hold records nothing, so it reminds
+        # of nothing until the hold lifts.
+        if reader.content_read_only:
+            return []
+        user_id = reader.user_id
         events = (
             (
                 await session.exec(
