@@ -72,9 +72,12 @@ beforeEach(() => {
   patches = [];
   localStorage.clear();
   // The table is virtualized, and jsdom gives every element a zero height,
-  // which windows it down to no rows at all.
+  // which windows it down to no rows at all. The virtualizer sizes its
+  // scroll element by its client box and each row by its offset box.
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
 });
 
 describe("a table's assignees", () => {
