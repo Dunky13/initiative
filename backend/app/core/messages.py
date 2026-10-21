@@ -376,6 +376,8 @@ class ToolLayoutMessages:
     TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
     # More of one plug-in's parts on an item than it may place there.
     TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
+    # A change that would hide every one of a target's lists.
+    ONE_LIST_SHOWN = "TOOL_LAYOUTS_ONE_LIST_SHOWN"
 
 
 class ProjectMessages:
@@ -809,6 +811,9 @@ class AccessGrantMessages:
     GRANTEE_INELIGIBLE = "ACCESS_GRANT_GRANTEE_INELIGIBLE"
     #: A ``moderate`` grant is for those who hold ``content.moderate``.
     MODERATE_NOT_HELD = "ACCESS_GRANT_MODERATE_NOT_HELD"
+    #: Every grant but ``moderate`` is for those who hold
+    #: ``access.request_any``: a moderator asks for ``moderate`` alone.
+    ONLY_MODERATE = "ACCESS_GRANT_ONLY_MODERATE"
     #: A request names the operations case it is for, where the operations
     #: community takes cases a grant may serve.
     CASE_REQUIRED = "ACCESS_GRANT_CASE_REQUIRED"

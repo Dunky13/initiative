@@ -76,11 +76,23 @@ const withTags = (ids: number[]) => {
   );
 };
 
-/** The project's layouts, as shipped but for `overrides`. */
+/** A project made before a new one showed its board alone, as the upgrade
+ *  left it: its table, board and Gantt shown, opening on its table. */
+const EXISTING_LISTS = (["table", "board", "gantt"] as const).map((kind) => ({
+  kind,
+  is_default: kind === "table",
+  hidden: false,
+  definition: {},
+  updated_at: null,
+}));
+const existingProject = (overrides: Parameters<typeof buildToolLayoutSet>[0] = {}) =>
+  buildToolLayoutSet({ ...overrides, layouts: [...(overrides.layouts ?? []), ...EXISTING_LISTS] });
+
+/** Such a project's layouts, but for `overrides`. */
 const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
   server.use(
     communityHttp.get("/layouts/", () =>
-      HttpResponse.json<ToolLayoutSetRead>(buildToolLayoutSet(overrides))
+      HttpResponse.json<ToolLayoutSetRead>(existingProject(overrides))
     )
   );
 };
@@ -169,14 +181,15 @@ const urlPreset = (router: ReturnType<typeof section>["router"]) =>
 
 beforeEach(() => {
   captureTaskRequests();
+  withLayouts({});
 });
 
 describe("ProjectTasksSection layouts", () => {
   it("offers the project's layouts, and opens on the one it opens on", async () => {
     withLayouts({
       layouts: [
-        { kind: "table", is_default: false, definition: {}, updated_at: null },
-        { kind: "board", is_default: true, definition: {}, updated_at: null },
+        { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
+        { kind: "board", is_default: true, hidden: false, definition: {}, updated_at: null },
       ],
     });
     const user = userEvent.setup();
@@ -189,6 +202,27 @@ describe("ProjectTasksSection layouts", () => {
       "Table",
       "Board",
       "Gantt",
+    ]);
+  });
+
+  it("offers a calendar a project shows, and draws its tasks on it", async () => {
+    withLayouts({
+      layouts: [
+        { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
+        { kind: "calendar", is_default: true, hidden: false, definition: {}, updated_at: null },
+      ],
+    });
+    const user = userEvent.setup();
+    section();
+
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Calendar"));
+    expect(await screen.findByRole("button", { name: "Today" })).toBeInTheDocument();
+    await user.click(await layoutSwitcher());
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Table",
+      "Board",
+      "Gantt",
+      "Calendar",
     ]);
   });
 
@@ -224,6 +258,7 @@ describe("ProjectTasksSection layouts", () => {
         {
           kind: "table",
           is_default: true,
+          hidden: false,
           definition: { columns: ["priority", "title", "dueDate"] },
           updated_at: "2026-10-01T12:00:00.000Z",
         },
@@ -246,7 +281,7 @@ describe("ProjectTasksSection layouts", () => {
     let taskRequests = 0;
     server.use(
       communityHttp.get("/layouts/", () =>
-        fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(buildToolLayoutSet())
+        fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(existingProject())
       ),
       communityHttp.get("/tasks/", () => {
         taskRequests += 1;
@@ -349,6 +384,7 @@ describe("ProjectTasksSection presets", () => {
         {
           kind: "table",
           is_default: true,
+          hidden: false,
           definition: {
             presets: [
               {

@@ -57,7 +57,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Request time-bound access to a guild (requires ``access.request``).
+ * Request time-bound access to a guild (requires ``access.request``;
+ * anything but a ``moderate`` grant also takes ``access.request_any``).
  *
  * A body may ask for content, settings, or both; each becomes its own pending
  * grant so an approver decides about them separately and the log keeps them

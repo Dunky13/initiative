@@ -98,12 +98,15 @@
   "shipped": "Este es el diseño original. Cambiarlo lo convierte en el del proyecto.",
   "detailTitleHelp": "El detalle de cada tarea muestra su título.",
   "opensFirst": "Se abre primero",
+  "shownInMenu": "Mostrar en el menú de diseños",
+  "hiddenList": "{{name}} (oculto)",
   "asShipped": "Original",
   "saveError": "No se pudieron guardar los diseños",
   "listHelp": {
     "table": "Cómo se listan las tareas del proyecto en una tabla: qué columnas, en qué orden.",
     "board": "Cómo se muestra cada tarea en el tablero: qué contiene su tarjeta.",
-    "gantt": "Las tareas del proyecto en una línea de tiempo, según sus fechas, unidas a aquello de lo que depende cada una."
+    "gantt": "Las tareas del proyecto en una línea de tiempo, según sus fechas, unidas a aquello de lo que depende cada una.",
+    "calendar": "Las tareas del proyecto en un calendario, según sus fechas."
   },
   "noEvents": "Esta iniciativa no tiene eventos este año. Añade uno para ver su detalle aquí.",
   "eventDetail": {
@@ -283,5 +286,6 @@
       "comments": "Lo que se dice sobre él."
     },
     "noItems": "Escribe un aviso en esta iniciativa para ver aquí su diseño."
-  }
+  },
+  "calendarNote": "Un calendario no tiene tarjeta ni columnas que organizar. Si se muestra, y si el proyecto se abre en él, se ajusta a la derecha."
 }

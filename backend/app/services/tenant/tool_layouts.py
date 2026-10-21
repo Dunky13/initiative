@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -26,6 +26,7 @@ from app.core.errors import CodedError
 from app.core.messages import TaskTypeMessages, ToolLayoutMessages
 from app.core.tools import (
     DETAIL_LAYOUTS,
+    HIDDEN_LISTS,
     LAYOUT_DEFAULT,
     LIST_LAYOUTS,
     TYPED_DETAILS,
@@ -192,6 +193,36 @@ async def item_types_by_instance(
     return found
 
 
+def shown_lists(tool: Tool, stored: Mapping[str, dict[str, Any]]) -> tuple[str, ...]:
+    """The lists a target shows, in order, from the definitions it stores by
+    kind: each that its own definition, or else its tool, does not hide."""
+    shipped_hidden = HIDDEN_LISTS.get(tool, ())
+    return tuple(
+        kind
+        for kind in LIST_LAYOUTS.get(tool, ())
+        if not stored.get(kind, {}).get("hidden", kind in shipped_hidden)
+    )
+
+
+def _stored_lists(rows: Iterable[ToolLayout]) -> dict[str, dict[str, Any]]:
+    return {row.kind: row.definition for row in rows if row.task_type_id is None}
+
+
+def _require_one_shown(
+    target: Target, rows: list[ToolLayout], kind: str, definition: Optional[dict]
+) -> None:
+    """A 400 unless the target still shows a list with ``kind`` stored as
+    ``definition`` (None: drawn as shipped)."""
+    if kind not in LIST_LAYOUTS.get(target.tool, ()):
+        return
+    stored = _stored_lists(rows)
+    stored.pop(kind, None)
+    if definition is not None:
+        stored[kind] = definition
+    if not shown_lists(target.tool, stored):
+        raise _bad_request(ToolLayoutMessages.ONE_LIST_SHOWN)
+
+
 def read_set(
     tool: Tool, rows: list[ToolLayout], types: Sequence[TaskType] = ()
 ) -> list[ToolLayoutRead]:
@@ -202,10 +233,12 @@ def read_set(
     stored = {row.kind: row for row in rows if row.task_type_id is None}
     typed = {row.task_type_id: row for row in rows if row.task_type_id is not None}
     lists = LIST_LAYOUTS.get(tool, ())
+    # A target shows one list at least, whatever was stored.
+    shown = shown_lists(tool, _stored_lists(rows)) or lists[:1]
     chosen = stored.get(LAYOUT_DEFAULT)
     default = chosen.definition.get("kind") if chosen is not None else None
-    if default not in lists:
-        default = lists[0] if lists else None
+    if default not in shown:
+        default = shown[0] if shown else None
 
     def definition(kind: str) -> dict[str, Any]:
         row = stored.get(kind)
@@ -219,6 +252,7 @@ def read_set(
         ListLayoutRead(
             kind=kind,
             is_default=kind == default,
+            hidden=kind not in shown,
             definition=ListLayoutDefinition.model_validate(definition(kind)),
             updated_at=when(kind),
         )
@@ -459,16 +493,20 @@ async def _keep(
 
 
 async def save(session: AsyncSession, target: Target, write: ToolLayoutWrite) -> None:
-    """Change one of the target's layouts."""
+    """Change one of the target's layouts, so long as it still shows a list."""
     definition = check(target, write)
     task_type_id = getattr(write, "task_type_id", None)
     await _require_type(session, target, task_type_id)
+    _require_one_shown(
+        target, await _locked_rows(session, target), write.kind, definition
+    )
     await _keep(session, target, write.kind, definition, task_type_id)
 
 
 async def save_default(session: AsyncSession, target: Target, kind: str) -> None:
-    """Open the target on its ``kind`` list."""
-    _require(kind, LIST_LAYOUTS.get(target.tool, ()))
+    """Open the target on its ``kind`` list, one it shows."""
+    rows = await _locked_rows(session, target)
+    _require(kind, shown_lists(target.tool, _stored_lists(rows)))
     await _keep(session, target, LAYOUT_DEFAULT, {"kind": kind})
 
 
@@ -486,7 +524,9 @@ async def reset(
     if _typed(target, kind) != (task_type_id is not None):
         raise _bad_request(ToolLayoutMessages.KIND_NOT_ALLOWED)
     await _require_type(session, target, task_type_id)
-    for row in await _locked_rows(session, target):
+    rows = await _locked_rows(session, target)
+    _require_one_shown(target, rows, kind, None)
+    for row in rows:
         if row.kind == kind and row.task_type_id == task_type_id:
             await session.delete(row)
     await session.flush()

@@ -22,15 +22,16 @@ export function resetCounter(): void {
 // runtime; this only fills the gap in synthetic fixtures.
 const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
   member: [],
-  support: [
-    "access.request",
-    "billing.support",
-    "communities.read",
-    "users.age_unblock",
-    "users.read",
-  ],
   moderator: [
     "access.request",
+    "communities.read",
+    "communities.suspend",
+    "content.moderate",
+    "users.read",
+  ],
+  support: [
+    "access.request",
+    "access.request_any",
     "billing.support",
     "communities.read",
     "communities.suspend",
@@ -42,6 +43,7 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
   operator: [
     "access.approve",
     "access.request",
+    "access.request_any",
     "announcements.manage",
     "billing.insights",
     "billing.contracts",

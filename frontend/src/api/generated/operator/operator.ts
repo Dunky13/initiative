@@ -1306,7 +1306,7 @@ export const useSetUserUsername = <TError = ErrorType<HTTPValidationError>, TCon
  * still signs in and reaches their own account, which is how they can be told
  * why.
  *
- * Gated on ``users.manage`` (moderator and above). No PAM grant is involved:
+ * Gated on ``content.moderate`` (moderator and above). No PAM grant is involved:
  * this is a platform action about an account, not access to a guild's
  * content.
  * @summary Set User Suspension

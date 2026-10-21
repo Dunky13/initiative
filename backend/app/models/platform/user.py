@@ -33,8 +33,8 @@ class UserRole(str, Enum):
     """
 
     member = "member"
-    support = "support"
     moderator = "moderator"
+    support = "support"
     operator = "operator"
     owner = "owner"
 

@@ -195,9 +195,9 @@ layout.
 
 ### A project draws a Gantt
 
-A project's lists are `table`, `board` and `gantt`; `calendar` is the Calendar
-tool's alone. Migration `20261021_0534` turns every stored project calendar
-layout, and a project that opened on one, into its Gantt.
+A project's lists are `table`, `board`, `gantt` and `calendar`, each shown or
+hidden (`hidden` on its layout), as shipped the board alone. Migration
+`20261021_0534` keeps every existing project showing what it showed.
 
 - GET /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`
 - PUT /api/v1/c/{community_id}/layouts/ added the new `gantt` enum value to the `layouts/items/oneOf[subschema #1: ListLayoutRead]/kind` response property for the response status `200`

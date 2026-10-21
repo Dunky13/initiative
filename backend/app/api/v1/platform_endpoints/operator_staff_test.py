@@ -31,18 +31,26 @@ async def _row(client: AsyncClient, actor: User, target: User) -> dict:
     return row
 
 
-async def test_support_is_offered_nothing_but_the_age_block(client, session):
-    support = await create_user(session, role=UserRole.support)
-    member = await create_user(session)
-    assert (await _row(client, support, member))["allowed_actions"] == []
-
-
-async def test_a_moderator_is_offered_what_their_capabilities_reach(client, session):
+async def test_a_moderator_is_offered_moderation_alone(client, session):
     moderator = await create_user(session, role=UserRole.moderator)
     member = await create_user(
         session, custom_status={"text": "hello"}, profile_decorations={"banner": "x"}
     )
     actions = (await _row(client, moderator, member))["allowed_actions"]
+    assert set(actions) == {
+        "rename",
+        "clear_custom_status",
+        "clear_decorations",
+        "suspend",
+    }
+
+
+async def test_support_is_offered_moderation_and_recovery(client, session):
+    support = await create_user(session, role=UserRole.support)
+    member = await create_user(
+        session, custom_status={"text": "hello"}, profile_decorations={"banner": "x"}
+    )
+    actions = (await _row(client, support, member))["allowed_actions"]
     assert {
         "rename",
         "clear_custom_status",
@@ -107,38 +115,38 @@ async def test_signing_an_account_out_everywhere(client, session, capfd):
     from app.core.audit_events import AuditEventType
     from app.testing.audit import emitted
 
-    moderator = await create_user(session, role=UserRole.moderator)
+    support = await create_user(session, role=UserRole.support)
     member = await create_user(session)
 
     response = await client.delete(
-        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(moderator)
+        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(support)
     )
     assert response.status_code == 200, response.text
     (line,) = emitted(capfd, AuditEventType.USER_SESSIONS_REVOKED)
     assert line["target_user_id"] == member.id
-    assert line["actor_user_id"] == moderator.id
+    assert line["actor_user_id"] == support.id
 
 
 async def test_an_access_token_handed_out_before_signing_out_stops_working(
     client, session
 ):
-    moderator = await create_user(session, role=UserRole.moderator)
+    support = await create_user(session, role=UserRole.support)
     member = await create_user(session)
     before = get_auth_headers(member)
     assert (await client.get("/api/v1/me", headers=before)).status_code == 200
 
     response = await client.delete(
-        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(moderator)
+        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(support)
     )
     assert response.status_code == 200, response.text
     assert (await client.get("/api/v1/me", headers=before)).status_code == 401
 
 
-async def test_support_cannot_sign_anybody_out(client, session):
-    support = await create_user(session, role=UserRole.support)
+async def test_a_moderator_cannot_sign_anybody_out(client, session):
+    moderator = await create_user(session, role=UserRole.moderator)
     member = await create_user(session)
     response = await client.delete(
-        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(support)
+        f"{USERS}/{member.id}/sessions", headers=get_auth_headers(moderator)
     )
     assert response.status_code == 403, response.text
 
