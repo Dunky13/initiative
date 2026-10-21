@@ -86,6 +86,10 @@ describe("initiative route resolution", () => {
       "/c/1/i/5/projects/7/settings/task-statuses",
       `${INITIATIVE}/projects/$projectId/settings/task-statuses`,
     ],
+    [
+      "/c/1/i/5/projects/7/settings/task-types",
+      `${INITIATIVE}/projects/$projectId/settings/task-types`,
+    ],
     ["/c/1/i/5/queues/4/settings", `${INITIATIVE}/queues/$queueId/settings/`],
     ["/c/1/i/5/queues/4/settings/advanced", `${INITIATIVE}/queues/$queueId/settings/advanced`],
     ["/c/1/i/5/files/3/settings/access", `${INITIATIVE}/files/$fileId/settings/access`],

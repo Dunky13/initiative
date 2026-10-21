@@ -21,6 +21,7 @@ import {
   DraggableEntryButton,
   DroppableDiv,
   dateKey,
+  EntryType,
   kindLabelKey,
   parseEntry,
   SPAN_BAR_GAP,
@@ -160,6 +161,7 @@ export function MonthView({
                                 {entry.allDay ? "" : formatTime(parseEntry(entry).start)}
                               </span>
                             )}
+                            <EntryType entry={entry} />
                             <span className="truncate">{entry.title}</span>
                           </DraggableEntryButton>
                         ))}
@@ -200,6 +202,11 @@ export function MonthView({
                         backgroundColor: span.entry.color || "var(--primary)",
                       }}
                     >
+                      <EntryType
+                        entry={span.entry}
+                        onColor
+                        className={cn(!span.showTitle && "opacity-70")}
+                      />
                       <span className={cn("truncate", !span.showTitle && "opacity-70")}>
                         {span.entry.title}
                       </span>

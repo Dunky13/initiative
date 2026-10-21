@@ -62,6 +62,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useColumnLimits } from "@/hooks/useColumnLimits";
 import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useInitiative } from "@/hooks/useInitiatives";
+import { useProjectTaskTypes } from "@/hooks/useProjects";
 import {
   type ProjectViewSearch,
   taskViewSorting,
@@ -398,6 +399,9 @@ export const ProjectTasksSection = ({
     projectDefault && columnLimits.isFull(projectDefault.id)
       ? (sortedTaskStatuses.find((status) => !columnLimits.isFull(status.id)) ?? projectDefault)
       : projectDefault;
+  // And of the project's default type unless another is picked.
+  const taskTypes = useProjectTaskTypes(projectId).data;
+  const defaultType = taskTypes?.find((type) => type.is_default) ?? taskTypes?.[0];
   const leaving = useRef(false);
   const neverAsks = useCallback(async () => null, []);
 
@@ -584,15 +588,18 @@ export const ProjectTasksSection = ({
   // Map tasks to CalendarEntry[] for the generic CalendarView. Shares the
   // helper used by the initiative calendar so start/due markers, same-day
   // spans, tags, and drag-to-reschedule behave identically.
+  const typed = (taskTypes?.length ?? 0) > 1;
   const calendarEntries = useMemo(() => {
     const entries: CalendarEntry[] = [];
     statusFilteredTasks.forEach((task) => {
       entries.push(
-        ...buildTaskCalendarEntries(task, getProjectColor(task.project_id), canEditTaskDetails)
+        ...buildTaskCalendarEntries(task, getProjectColor(task.project_id), canEditTaskDetails, {
+          typed,
+        })
       );
     });
     return entries;
-  }, [statusFilteredTasks, canEditTaskDetails]);
+  }, [statusFilteredTasks, canEditTaskDetails, typed]);
 
   // Drag-to-reschedule on the calendar. Uses the silent date-update mutation
   // (patches the local list so the dropped entry moves immediately, no toast).
@@ -970,6 +977,7 @@ export const ProjectTasksSection = ({
               kind: "project",
               memberScope: { type: "canOpen", tool: Tool.project, id: projectId },
               statuses: sortedTaskStatuses,
+              types: taskTypes,
             }}
             value={appliedSpec}
             onChange={setFilters}
@@ -1110,16 +1118,17 @@ export const ProjectTasksSection = ({
         <>
           {/* Mounted once the columns' counts are in, so a new task starts in
               a column that isn't full. */}
-          {canAddTasks && defaultStatus && columnLimits.ready ? (
+          {canAddTasks && defaultStatus && defaultType && columnLimits.ready ? (
             <AddItemDialog
               open={isComposerOpen}
               onOpenChange={setIsComposerOpen}
               detail={TASK_DETAIL}
-              blank={blankTask(projectId, defaultStatus)}
+              blank={blankTask(projectId, defaultStatus, defaultType)}
               context={{
                 readOnly: false,
                 readOnlyMessage: null,
                 statuses: sortedTaskStatuses,
+                types: taskTypes ?? [],
                 isFull: columnLimits.isFull,
                 initiativeId,
                 currentUserId: user?.id,
@@ -1134,6 +1143,7 @@ export const ProjectTasksSection = ({
                 createTask.mutateAsync({
                   project_id: projectId,
                   task_status_id: item.task_status_id,
+                  task_type_id: item.task_type_id,
                   priority: item.priority,
                   ...fields,
                   properties,

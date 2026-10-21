@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Categoría de estado",
     "task_status_id": "Estado",
+    "task_type_id": "Tipo",
     "priority": "Prioridad",
     "assignee_ids": "Responsable",
     "tag_ids": "Etiqueta",

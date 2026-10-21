@@ -4,6 +4,7 @@ import type {
   TaskListRead,
   TaskListResponse,
   TaskStatusRead,
+  TaskTypeRead,
 } from "@/api/generated/initiativeAPI.schemas";
 
 let counter = 0;
@@ -41,6 +42,18 @@ export function buildTask(overrides: Partial<TaskListRead> = {}): TaskListRead {
     icon: "circle",
   };
 
+  // The project's default type, as every task gets until it is given another.
+  const defaultType: TaskTypeRead = {
+    id: 1,
+    project_id: 1,
+    name: "Task",
+    position: 0,
+    is_default: true,
+    color: "#64748B",
+    icon: "square-check",
+    layout_preset: "plain",
+  };
+
   return {
     id: counter,
     title: `Task ${counter}`,
@@ -48,6 +61,8 @@ export function buildTask(overrides: Partial<TaskListRead> = {}): TaskListRead {
     has_description: false,
     task_status_id: 1,
     task_status: defaultStatus,
+    task_type_id: 1,
+    task_type: defaultType,
     priority: "medium",
     project_id: 1,
     assignees: [],

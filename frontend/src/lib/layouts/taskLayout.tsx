@@ -14,6 +14,7 @@ import {
   type TaskPriority,
   type TaskRead,
   type TaskStatusRead,
+  type TaskTypeRead,
   type TaskUpdate,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -24,6 +25,7 @@ import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
 import { TaskChecklist } from "@/components/tasks/TaskChecklist";
 import { TaskPriorityOption } from "@/components/tasks/TaskPriorityOption";
 import { statusTriggerStyle, TaskStatusOption } from "@/components/tasks/TaskStatusOption";
+import { TaskTypeOption } from "@/components/tasks/TaskTypeOption";
 import { CasePanel } from "@/components/tickets/CasePanel";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -71,7 +73,7 @@ import {
 import { type DetailKind, useItemContext } from "./DetailLayoutView";
 import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
 import { DescriptionField, TagsField, TitleField } from "./fieldEditors";
-import { TASK_LAYOUT, taskFields } from "./tasks";
+import { TASK_LAYOUT, taskFields, taskLayoutFor } from "./tasks";
 
 /** What the task's detail shares with its parts, beside the task itself. */
 export interface TaskLayoutContext {
@@ -81,6 +83,8 @@ export interface TaskLayoutContext {
   readOnlyMessage: string | null;
   /** The project's statuses, which the task's own joins when the project dropped it. */
   statuses: TaskStatusRead[];
+  /** The project's task types. One alone is not shown: it tells nothing apart. */
+  types: TaskTypeRead[];
   /** Whether a column takes one more task; left out where none is limited. */
   isFull?: (taskStatusId: number) => boolean;
   initiativeId: number | null;
@@ -199,6 +203,47 @@ const StatusEditor = ({ task }: { task: TaskRead }) => {
               </SelectItem>
             );
           })}
+        </SelectContent>
+      </Select>
+    </FieldFrame>
+  );
+};
+
+/** Which of the project's types the task is. Changing it redraws the page as
+ *  the new type lays it out; nothing the task holds is lost, only what the new
+ *  page leaves out is not shown. */
+const TypeEditor = ({ item: task, label }: EditorProps) => {
+  const { readOnly, types, askScope } = useTaskLayout();
+  const save = useTaskFieldSave(task, label, askScope);
+  if (types.length < 2) return null;
+  const options = types.some((type) => type.id === task.task_type_id)
+    ? types
+    : [...types, task.task_type];
+  const edit = (type: TaskTypeRead): TaskEdit => ({
+    patch: { task_type_id: type.id },
+    shows: { task_type_id: type.id, task_type: type },
+  });
+  return (
+    <FieldFrame label={label} htmlFor="task-type" save={save}>
+      <Select
+        value={String(task.task_type_id)}
+        onValueChange={(selected) => {
+          const next = options.find((type) => String(type.id) === selected);
+          if (next && next.id !== task.task_type_id) {
+            void save.save(edit(next), edit(task.task_type));
+          }
+        }}
+        disabled={readOnly}
+      >
+        <SelectTrigger id="task-type">
+          <TaskTypeOption type={task.task_type} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((type) => (
+            <SelectItem key={type.id} value={String(type.id)}>
+              <TaskTypeOption type={type} />
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </FieldFrame>
@@ -540,10 +585,16 @@ const Comments = ({ task }: { task: TaskRead }) => {
  *  addressed inside its project, so that is the tool its links refresh. */
 export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = {
   spec: TASK_LAYOUT,
+  // Each type of task has its own page, drawn as its shape until it is changed.
+  typed: {
+    typeOf: (task) => task.task_type_id,
+    spec: (task) => taskLayoutFor(task.task_type?.layout_preset),
+  },
   fields: taskFields,
   namespaces: ["projects"],
   editors: {
     title: TitleEditor,
+    type: TypeEditor,
     description: DescriptionEditor,
     assignees: AssigneesEditor,
     priority: PriorityEditor,
@@ -576,9 +627,13 @@ export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = 
   addingParts: ["status", "dates"],
 };
 
-/** A task not yet added to `projectId`, in `status`, as its detail draws it
- *  while it is. */
-export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead => ({
+/** A task not yet added to `projectId`, in `status` and of `type`, as its
+ *  detail draws it while it is. */
+export const blankTask = (
+  projectId: number,
+  status: TaskStatusRead,
+  type: TaskTypeRead
+): TaskRead => ({
   id: 0,
   project_id: projectId,
   title: "",
@@ -598,6 +653,8 @@ export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead =
   series_size: 0,
   task_status_id: status.id,
   task_status: status,
+  task_type_id: type.id,
+  task_type: type,
   created_at: "",
   updated_at: "",
   completed_at: null,

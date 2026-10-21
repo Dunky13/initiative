@@ -37,6 +37,8 @@ export const ASSIGNEE_NONE = "none";
 export interface TaskFilterSpec {
   status_ids: number[];
   status_categories: TaskStatusCategory[];
+  /** The project's task types, by id. */
+  type_ids: number[];
   priorities: TaskPriority[];
   /** Only a list that holds several communities' tasks (My Tasks) narrows by
    *  them. */
@@ -53,6 +55,7 @@ export interface TaskFilterSpec {
 export const EMPTY_TASK_FILTERS: TaskFilterSpec = {
   status_ids: [],
   status_categories: [],
+  type_ids: [],
   priorities: [],
   community_ids: [],
   assignees: [],
@@ -87,6 +90,7 @@ export function specFromStored(raw: StoredTaskFilters | null | undefined): TaskF
   if (!raw) return EMPTY_TASK_FILTERS;
   return {
     status_ids: numbers(raw.status_ids),
+    type_ids: numbers(raw.type_ids),
     status_categories: Array.isArray(raw.status_categories)
       ? raw.status_categories.filter(
           (v): v is TaskStatusCategory => typeof v === "string" && CATEGORIES.includes(v)
@@ -124,6 +128,7 @@ export function taskFiltersEqual(a: TaskFilterSpec, b: TaskFilterSpec): boolean 
   return (
     sameIds(a.status_ids, b.status_ids) &&
     sameIds(a.status_categories, b.status_categories) &&
+    sameIds(a.type_ids, b.type_ids) &&
     sameIds(a.priorities, b.priorities) &&
     sameIds(a.community_ids, b.community_ids) &&
     sameIds(a.assignees, b.assignees) &&
@@ -141,6 +146,7 @@ export function taskFilterCount(spec: TaskFilterSpec): number {
   return (
     spec.status_ids.length +
     spec.status_categories.length +
+    spec.type_ids.length +
     spec.priorities.length +
     spec.community_ids.length +
     spec.assignees.length +
@@ -253,6 +259,9 @@ function statusConditions(spec: TaskFilterSpec): (FilterCondition | FilterGroup)
 export function taskSpecConditions(spec: TaskFilterSpec): (FilterCondition | FilterGroup)[] {
   return [
     ...statusConditions(spec),
+    ...(spec.type_ids.length > 0
+      ? [{ field: "task_type_id", op: "in_" as const, value: spec.type_ids }]
+      : []),
     ...(spec.priorities.length > 0
       ? [{ field: "priority", op: "in_" as const, value: spec.priorities }]
       : []),

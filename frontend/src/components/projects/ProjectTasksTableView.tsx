@@ -32,6 +32,7 @@ import { DataTable, type DataTableRowWrapperProps } from "@/components/ui/data-t
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TableRow } from "@/components/ui/table";
 import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
+import { useProjectTaskTypes } from "@/hooks/useProjects";
 import type { useProjectTaskTableState } from "@/hooks/useProjectTaskView";
 import { useProperties } from "@/hooks/useProperties";
 import { useTaskGroupings } from "@/hooks/useTaskGroupings";
@@ -309,9 +310,11 @@ const ProjectTasksTableViewComponent = ({
   // Scoped to the project's initiative so the column list stays focused.
   const { data: propertyDefinitions = [] } = useProperties({ initiativeId });
   const plugins = usePluginsOnItems(initiativeId);
+  // A project with one type shows none: it tells no task apart.
+  const typed = (useProjectTaskTypes(projectId).data?.length ?? 0) > 1;
   const fields = useMemo(
-    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
-    [propertyDefinitions, plugins, i18n.language]
+    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language), { typed }),
+    [propertyDefinitions, plugins, i18n.language, typed]
   );
   const { grouping, sorting } = tableState;
   // What the view offers to group by, the groups each leaves out, and the

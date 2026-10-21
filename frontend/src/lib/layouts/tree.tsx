@@ -111,23 +111,31 @@ const UNLOADED_PROPERTY: FieldDef = {
   value: () => null,
 };
 
+/** A saved tree carries a prop it does not set as null, which means the same
+ *  as leaving it out. */
 type StackProps = {
-  direction?: "column" | "row";
-  gap?: "xs" | "sm";
-  wrap?: boolean;
+  direction?: "column" | "row" | null;
+  gap?: "xs" | "sm" | null;
+  wrap?: boolean | null;
   /** In a column, items keep their own width rather than filling it; in a
    *  row, they keep their own height. */
-  align?: "start";
-  tone?: "muted";
+  align?: "start" | null;
+  tone?: "muted" | null;
 };
 
 const GAP = { xs: "gap-1", sm: "gap-2" };
 const SPACE = { xs: "space-y-1", sm: "space-y-2" };
 const TONE = { muted: "wrap-break-word text-muted-foreground text-xs" };
 
-const stackClassName = ({ direction, gap = "xs", wrap, align, tone }: StackProps): string => {
+const stackClassName = ({ direction, gap: given, wrap, align, tone }: StackProps): string => {
+  const gap = given ?? "xs";
   if (direction === "row") {
-    return cn("flex min-w-0", wrap && "flex-wrap", align === "start" && "items-start", GAP[gap]);
+    return cn(
+      "flex w-full min-w-0",
+      wrap && "flex-wrap",
+      align === "start" && "items-start",
+      GAP[gap]
+    );
   }
   // A column whose items fill it is a plain block, spaced line by line.
   return align === "start"

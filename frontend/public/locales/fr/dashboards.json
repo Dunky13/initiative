@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Catégorie de statut",
     "task_status_id": "Statut",
+    "task_type_id": "Type",
     "priority": "Priorité",
     "assignee_ids": "Responsable",
     "tag_ids": "Étiquette",

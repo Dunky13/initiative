@@ -41,7 +41,10 @@ export const ProjectSettingsPage = () => {
       exportOptions={{ content: exportContent }}
       // Two settings too large for a card. Each is served by its own route
       // beside the shared sections, so the value doubles as the URL segment.
-      extraTabs={[{ value: "task-statuses", label: t("settings.tabTaskStatuses") }]}
+      extraTabs={[
+        { value: "task-statuses", label: t("settings.tabTaskStatuses") },
+        { value: "task-types", label: t("settings.tabTaskTypes") },
+      ]}
     />
   );
 };

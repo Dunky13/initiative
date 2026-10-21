@@ -44,12 +44,14 @@ export const rescheduledDates = (
  * `meta.kind` (`"start" | "due" | "span"`) drives reschedule routing; the
  * top-level `kind` drives the start/due visual treatment. `draggable` gates
  * whether the entry can be dragged to reschedule (callers pass the relevant
- * permission; the backend remains authoritative).
+ * permission; the backend remains authoritative). `typed` draws the task's
+ * type by its title, for a project with more than one.
  */
 export function buildTaskCalendarEntries(
   task: TaskListRead,
   color: string,
-  draggable = true
+  draggable = true,
+  { typed = false }: { typed?: boolean } = {}
 ): CalendarEntry[] {
   const attendees = task.assignees.map((a) => ({
     name: getUserDisplayName(a),
@@ -71,6 +73,7 @@ export function buildTaskCalendarEntries(
     attendees,
     properties: task.properties,
     tags: task.tags,
+    taskType: typed ? task.task_type : null,
     draggable,
   };
 

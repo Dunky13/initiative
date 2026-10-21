@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { GroupBySelect } from "@/components/ui/data-table";
 import { MentionText } from "@/components/user/MentionText";
 import { type ColumnLimits, NO_COLUMN_LIMITS } from "@/hooks/useColumnLimits";
+import { useProjectTaskTypes } from "@/hooks/useProjects";
 import { useProperties } from "@/hooks/useProperties";
 import { useTaskGroupings } from "@/hooks/useTaskGroupings";
 import { useMoveTaskToGroup } from "@/hooks/useTasks";
@@ -166,9 +167,11 @@ export const ProjectTasksKanbanView = ({
   };
   const { i18n } = useTranslation();
   const plugins = usePluginsOnItems(initiativeId, !givenDefinitions);
+  // A project with one type shows none: it tells no task apart.
+  const typed = (useProjectTaskTypes(projectId).data?.length ?? 0) > 1;
   const fields = useMemo(
-    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language)),
-    [propertyDefinitions, plugins, i18n.language]
+    () => taskFields(propertyDefinitions, pluginFields(plugins, i18n.language), { typed }),
+    [propertyDefinitions, plugins, i18n.language, typed]
   );
   const card = useMemo(
     () => cardOf({ card: ownCard as CardPartInput | null | undefined }, fields),

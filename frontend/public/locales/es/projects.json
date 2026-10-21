@@ -36,7 +36,9 @@
     "assignedToMe": "Asignadas a mí",
     "unassigned": "Sin asignar",
     "archived": "Archivadas",
-    "statusCategory": "Categoría de estado"
+    "statusCategory": "Categoría de estado",
+    "filterByType": "Filtrar por tipo",
+    "allTypes": "Todos los tipos"
   },
   "layouts": {
     "label": "Diseño",
@@ -147,8 +149,52 @@
     "bulkUpdateError": "No se pudo actualizar “{{name}}”: {{error}}",
     "unknownError": "Error desconocido"
   },
+  "taskTypes": {
+    "description": "Los tipos son las clases de tarea que tiene este proyecto, como un error o una idea. Cada uno tiene su propio icono, color y página. Las tareas nuevas empiezan con el tipo predeterminado.",
+    "noManagePermission": "Solo quienes pueden editar este proyecto pueden cambiar sus tipos.",
+    "existingTypes": "Tipos",
+    "saveChanges": "Guardar cambios",
+    "addType": "Agregar tipo",
+    "limitReached": "Un proyecto puede tener hasta {{max}} tipos.",
+    "iconColumn": "Icono",
+    "colorColumn": "Color",
+    "defaultColumn": "Predeterminado",
+    "iconPlaceholder": "Elegir un icono",
+    "colorPlaceholder": "Elegir un color",
+    "noTypes": "Aún no hay tipos.",
+    "pagesOnWiderScreen": "La página de un tipo se edita en una pantalla más ancha. Abre esta página en una tableta o un ordenador.",
+    "addTitle": "Agregar un tipo",
+    "addDescription": "Ponle un nombre al nuevo tipo y elige un tipo para copiar.",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "Nombre del tipo",
+    "startFromLabel": "Partir de",
+    "startFromHint": "El nuevo tipo empieza con el icono, el color y la página de este tipo. Puedes cambiarlos después.",
+    "add": "Agregar",
+    "deleteTitle": "Eliminar tipo",
+    "deleteType": "Eliminar {{name}}",
+    "deleteDescription": "Al eliminar “{{name}}” también se elimina su página. Sus tareas se conservan y pasan al tipo que elijas.",
+    "fallbackLabel": "Mover sus tareas a",
+    "onlyType": "Este es el único tipo del proyecto, y cada tarea necesita uno.",
+    "reorder": "Reordenar",
+    "makeDefault": "Hacer de {{name}} el predeterminado",
+    "editPage": "Editar página",
+    "editPageFor": "Editar la página de {{name}}",
+    "orderSaved": "Orden de tipos guardado",
+    "reorderError": "No se pudieron reordenar los tipos",
+    "created": "Tipo agregado",
+    "createError": "No se pudo agregar el tipo",
+    "updated": "Tipo actualizado",
+    "updateError": "No se pudo actualizar el tipo",
+    "deleted": "Tipo eliminado",
+    "deleteError": "No se pudo eliminar el tipo",
+    "noChanges": "No hay cambios para guardar",
+    "bulkUpdated_one": "{{count}} tipo actualizado",
+    "bulkUpdated_other": "{{count}} tipos actualizados",
+    "bulkUpdateError": "No se pudo actualizar “{{name}}”: {{error}}"
+  },
   "settings": {
-    "tabTaskStatuses": "Estados de tarea"
+    "tabTaskStatuses": "Estados de tarea",
+    "tabTaskTypes": "Tipos de tarea"
   },
   "files": {
     "newFile": "Nuevo archivo"
@@ -222,7 +268,8 @@
       "priority": "Prioridad",
       "comments": "Comentarios",
       "blockers": "Bloqueos",
-      "tags": "Etiquetas"
+      "tags": "Etiquetas",
+      "type": "Tipo"
     },
     "limitCount": "{{count}} / {{limit}}",
     "limitTitle": "Admite como máximo {{limit}} tareas abiertas",

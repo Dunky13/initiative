@@ -188,6 +188,7 @@ describe("a task detail laid out", () => {
       "byline",
       "notice",
       "description",
+      "type",
       "status",
       "priority",
       "assignees",
@@ -244,7 +245,7 @@ describe("a task detail laid out", () => {
       ["comments", 6],
     ]);
     expect(orders(2)).toEqual([
-      ["status", 2],
+      ["type", 2],
       ["relations", 5],
     ]);
   });

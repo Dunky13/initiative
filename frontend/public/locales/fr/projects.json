@@ -36,7 +36,9 @@
     "assignedToMe": "Qui me sont attribuées",
     "unassigned": "Non attribuées",
     "archived": "Archivées",
-    "statusCategory": "Catégorie de statut"
+    "statusCategory": "Catégorie de statut",
+    "filterByType": "Filtrer par type",
+    "allTypes": "Tous les types"
   },
   "layouts": {
     "label": "Disposition",
@@ -147,8 +149,52 @@
     "bulkUpdateError": "Impossible de mettre à jour « {{name}} » : {{error}}",
     "unknownError": "Erreur inconnue"
   },
+  "taskTypes": {
+    "description": "Les types sont les sortes de tâches de ce projet, comme un bug ou une idée. Chacun a sa propre icône, sa couleur et sa page. Les nouvelles tâches prennent le type par défaut.",
+    "noManagePermission": "Seules les personnes qui peuvent modifier ce projet peuvent changer ses types.",
+    "existingTypes": "Types",
+    "saveChanges": "Enregistrer les modifications",
+    "addType": "Ajouter un type",
+    "limitReached": "Un projet peut avoir jusqu’à {{max}} types.",
+    "iconColumn": "Icône",
+    "colorColumn": "Couleur",
+    "defaultColumn": "Par défaut",
+    "iconPlaceholder": "Choisir une icône",
+    "colorPlaceholder": "Choisir une couleur",
+    "noTypes": "Aucun type pour l’instant.",
+    "pagesOnWiderScreen": "La page d’un type se modifie sur un écran plus large. Ouvrez cette page sur une tablette ou un ordinateur.",
+    "addTitle": "Ajouter un type",
+    "addDescription": "Donnez un nom au nouveau type et choisissez un type à copier.",
+    "nameLabel": "Nom",
+    "namePlaceholder": "Nom du type",
+    "startFromLabel": "Partir de",
+    "startFromHint": "Le nouveau type reprend l’icône, la couleur et la page de ce type. Vous pourrez les changer ensuite.",
+    "add": "Ajouter",
+    "deleteTitle": "Supprimer le type",
+    "deleteType": "Supprimer {{name}}",
+    "deleteDescription": "Supprimer « {{name}} » supprime aussi sa page. Ses tâches sont conservées et prennent le type que vous choisissez.",
+    "fallbackLabel": "Déplacer ses tâches vers",
+    "onlyType": "C’est le seul type du projet, et chaque tâche en a besoin d’un.",
+    "reorder": "Réorganiser",
+    "makeDefault": "Faire de {{name}} le type par défaut",
+    "editPage": "Modifier la page",
+    "editPageFor": "Modifier la page de {{name}}",
+    "orderSaved": "Ordre des types enregistré",
+    "reorderError": "Impossible de réorganiser les types",
+    "created": "Type ajouté",
+    "createError": "Impossible d’ajouter le type",
+    "updated": "Type mis à jour",
+    "updateError": "Impossible de mettre à jour le type",
+    "deleted": "Type supprimé",
+    "deleteError": "Impossible de supprimer le type",
+    "noChanges": "Aucune modification à enregistrer",
+    "bulkUpdated_one": "{{count}} type mis à jour",
+    "bulkUpdated_other": "{{count}} types mis à jour",
+    "bulkUpdateError": "Impossible de mettre à jour « {{name}} » : {{error}}"
+  },
   "settings": {
-    "tabTaskStatuses": "Statuts de tâche"
+    "tabTaskStatuses": "Statuts de tâche",
+    "tabTaskTypes": "Types de tâche"
   },
   "files": {
     "newFile": "Nouveau fichier"
@@ -222,7 +268,8 @@
       "priority": "Priorité",
       "comments": "Commentaires",
       "blockers": "Bloqueurs",
-      "tags": "Étiquettes"
+      "tags": "Étiquettes",
+      "type": "Type"
     },
     "limitCount": "{{count}} / {{limit}}",
     "limitTitle": "Accepte au plus {{limit}} tâches ouvertes",

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Task types.** Every project starts with **Task**, **Bug**, **Idea** and **Milestone**, and each type has its own task page, laid out to suit it: a bug leads with priority and what it blocks, an idea with the conversation, a milestone with its dates. Add your own (a **Gig**, a **Chore**), rename, reorder or delete them in **Project settings → Task types**, and change any page in **Edit layouts**. Changing a task's type keeps everything it holds. Boards, tables and the project calendar show the type's icon by each task's name, and lists filter and group by type. Existing tasks become **Task**, and a task page you had already changed becomes the Task type's.
+- **New projects start in your language.** The starting statuses and task types are named in the language of whoever makes the project.
 - **Projects keep their layouts when they travel.** An exported project imports back in with its board's cards, its table's columns, its task page and the list it opens on, and so does a project installed from the marketplace. The marketplace's ready-made projects arrive laid out: the pipelines open on their board, each card shows its key details, and a task's page keeps them together.
 - **Group by any field.** A table or board groups by any field whose values repeat: status, priority, assignees, tags, who created a task, its project, a select, person or checkbox property, or a date (due, start, created, a date property, and so on) by day, week, month, quarter or year. Pick what each view offers in **Edit layouts**.
 - **Task exports show your table's columns,** properties and plug-in fields included, with the status last as on screen. The detailed PDF lays each task out in the task page's order, and a project's report from its settings shows the same columns as its table.
@@ -19,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Task exports come out the way you see the list.** A PDF, spreadsheet or Markdown export of a grouped table is grouped the same way, with a task under each of its tags and without the groups the layout leaves out (#2911).
+- **Spacing on a layout you changed.** The rows and columns of a board card or a page you had changed in **Edit layouts** keep their spacing, instead of drawing everything in them touching.
 - **Export selected** works again instead of failing with "Invalid filter conditions", and Focus shows your pinned tasks again.
 - **"Starts grouped by" reaches everyone.** A project list opens grouped the way its layout says for anyone who hasn't picked a grouping of their own; until now, most people counted as having picked "not grouped".
 - **Calendars and date entry:** moving all-day events keeps their calendar-day span across clock changes; timed events keep their exact saved times, appear at their wall-clock hour, and retain the hour selected when creating an event. Invalid dates and new ambiguous or nonexistent local times show an error. Long events appear throughout the visible month or year. Oversized calendar windows are rejected consistently across community and personal calendars.

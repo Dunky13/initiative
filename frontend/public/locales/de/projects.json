@@ -36,7 +36,9 @@
     "assignedToMe": "Mir zugewiesen",
     "unassigned": "Nicht zugewiesen",
     "archived": "Archiviert",
-    "statusCategory": "Statuskategorie"
+    "statusCategory": "Statuskategorie",
+    "filterByType": "Nach Typ filtern",
+    "allTypes": "Alle Typen"
   },
   "layouts": {
     "label": "Layout",
@@ -147,8 +149,52 @@
     "bulkUpdateError": "Aktualisierung von „{{name}}“ fehlgeschlagen: {{error}}",
     "unknownError": "Unbekannter Fehler"
   },
+  "taskTypes": {
+    "description": "Typen sind die Arten von Aufgaben in diesem Projekt, etwa ein Fehler oder eine Idee. Jeder Typ hat ein eigenes Symbol, eine eigene Farbe und eine eigene Seite. Neue Aufgaben beginnen als Standardtyp.",
+    "noManagePermission": "Nur wer dieses Projekt bearbeiten darf, kann seine Typen ändern.",
+    "existingTypes": "Typen",
+    "saveChanges": "Änderungen speichern",
+    "addType": "Typ hinzufügen",
+    "limitReached": "Ein Projekt kann bis zu {{max}} Typen haben.",
+    "iconColumn": "Symbol",
+    "colorColumn": "Farbe",
+    "defaultColumn": "Standard",
+    "iconPlaceholder": "Symbol auswählen",
+    "colorPlaceholder": "Farbe auswählen",
+    "noTypes": "Noch keine Typen.",
+    "pagesOnWiderScreen": "Die Seite eines Typs wird auf einem breiteren Bildschirm bearbeitet. Öffne diese Seite auf einem Tablet oder Computer.",
+    "addTitle": "Typ hinzufügen",
+    "addDescription": "Gib dem neuen Typ einen Namen und wähle einen Typ als Vorlage.",
+    "nameLabel": "Name",
+    "namePlaceholder": "Name des Typs",
+    "startFromLabel": "Ausgehend von",
+    "startFromHint": "Der neue Typ übernimmt Symbol, Farbe und Seite dieses Typs. Du kannst sie danach ändern.",
+    "add": "Hinzufügen",
+    "deleteTitle": "Typ löschen",
+    "deleteType": "{{name}} löschen",
+    "deleteDescription": "Beim Löschen von „{{name}}“ wird auch seine Seite gelöscht. Seine Aufgaben bleiben erhalten und bekommen den Typ, den du auswählst.",
+    "fallbackLabel": "Aufgaben verschieben nach",
+    "onlyType": "Das ist der einzige Typ des Projekts, und jede Aufgabe braucht einen.",
+    "reorder": "Neu anordnen",
+    "makeDefault": "{{name}} als Standard festlegen",
+    "editPage": "Seite bearbeiten",
+    "editPageFor": "Seite für {{name}} bearbeiten",
+    "orderSaved": "Reihenfolge der Typen gespeichert",
+    "reorderError": "Typen konnten nicht neu angeordnet werden",
+    "created": "Typ hinzugefügt",
+    "createError": "Typ konnte nicht hinzugefügt werden",
+    "updated": "Typ aktualisiert",
+    "updateError": "Typ konnte nicht aktualisiert werden",
+    "deleted": "Typ gelöscht",
+    "deleteError": "Typ konnte nicht gelöscht werden",
+    "noChanges": "Keine Änderungen zum Speichern",
+    "bulkUpdated_one": "{{count}} Typ aktualisiert",
+    "bulkUpdated_other": "{{count}} Typen aktualisiert",
+    "bulkUpdateError": "Aktualisierung von „{{name}}“ fehlgeschlagen: {{error}}"
+  },
   "settings": {
-    "tabTaskStatuses": "Aufgabenstatus"
+    "tabTaskStatuses": "Aufgabenstatus",
+    "tabTaskTypes": "Aufgabentypen"
   },
   "files": {
     "newFile": "Neue Datei"
@@ -222,7 +268,8 @@
       "priority": "Priorität",
       "comments": "Kommentare",
       "blockers": "Blocker",
-      "tags": "Tags"
+      "tags": "Tags",
+      "type": "Typ"
     },
     "limitCount": "{{count}} / {{limit}}",
     "limitTitle": "Nimmt höchstens {{limit}} offene Aufgaben auf",

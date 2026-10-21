@@ -31,7 +31,11 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { PropertySummary, TagSummary } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  PropertySummary,
+  TagSummary,
+  TaskTypeRead,
+} from "@/api/generated/initiativeAPI.schemas";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -87,6 +91,8 @@ export type CalendarEntry = {
   properties?: PropertySummary[];
   /** Tags attached to the underlying entity. Rendered as badges on the list view. */
   tags?: TagSummary[];
+  /** A task's type, drawn by its icon before the title. */
+  taskType?: Pick<TaskTypeRead, "name" | "icon" | "color"> | null;
   /** Presentational start/due marker (see CalendarEntryKind). */
   kind?: CalendarEntryKind;
   /** When false, the entry cannot be dragged to reschedule (default true). */

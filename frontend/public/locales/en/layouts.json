@@ -93,6 +93,7 @@
     "actions": "What else can be done with the task: move, duplicate, archive, delete, and plug-in actions."
   },
   "taskLayout": "Task detail",
+  "typedTaskLayout": "{{name}} page",
   "detailHelp": "How every task's detail in this project is laid out. What it leaves out is hidden.",
   "useShipped": "Use the shipped layout",
   "shipped": "This is the layout as shipped. Changing it makes it the project's own.",
@@ -156,6 +157,7 @@
       "date_group": "Date window",
       "priority": "Priority",
       "task_status_id": "Status",
+      "task_type_id": "Type",
       "assignee_ids": "Assignees",
       "created_by": "Created by",
       "tag_ids": "Tags",

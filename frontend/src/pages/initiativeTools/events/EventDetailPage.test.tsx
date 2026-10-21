@@ -141,6 +141,8 @@ describe("an event's page", () => {
             layouts: [
               {
                 kind: "calendar_event",
+                task_type_id: null,
+                task_type_name: null,
                 definition: {
                   header: [{ type: "field", props: { field: "title" } }],
                   main: [],
