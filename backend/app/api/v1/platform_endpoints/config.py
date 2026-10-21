@@ -233,8 +233,13 @@ _CAPTCHA_FRAME = Template("""<!doctype html>
     });
   };
   var height = 0;
+  // The lowest edge of what the page holds, so the frame shrinks again once
+  // a challenge closes. A provider hides a closed one above the page.
   var measure = function () {
-    var next = document.documentElement.scrollHeight;
+    var next = 0;
+    Array.prototype.forEach.call(document.body.children, function (element) {
+      next = Math.max(next, Math.ceil(element.getBoundingClientRect().bottom));
+    });
     if (next !== height) {
       height = next;
       send({ height: height });
