@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useInitiativeSettings } from "@/hooks/useInitiativeSettings";
 import {
   INSTANCE_LAYOUT_TOOLS,
+  instanceTarget,
   sharedTarget,
   useInitiativeLayouts,
   useToolLayouts,
@@ -123,7 +124,10 @@ const InstanceLayouts = ({
           </Button>
         ) : null}
       </div>
-      <LayoutList layouts={entry.layouts} />
+      <LayoutList
+        layouts={entry.layouts}
+        target={entry.can_configure ? instanceTarget(entry.tool, entry.tool_id) : undefined}
+      />
     </section>
   );
 };
