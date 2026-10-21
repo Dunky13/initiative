@@ -19,7 +19,6 @@
   "stay": "Continuer",
   "compact": "Les dispositions se modifient sur un écran plus large. Ouvrez cette page sur une tablette ou un ordinateur.",
   "canvas": "Aperçu",
-  "calendarNote": "Un calendrier n’a ni carte ni colonnes à disposer. Le fait que le projet s’ouvre dessus se règle à droite.",
   "outline": "Plan",
   "card": "Carte",
   "row": "Ligne",
@@ -104,7 +103,7 @@
   "listHelp": {
     "table": "Comment les tâches du projet sont listées en tableau : quelles colonnes, dans quel ordre.",
     "board": "Comment chaque tâche apparaît sur le tableau Kanban : ce que contient sa carte.",
-    "calendar": "Les tâches du projet sur un calendrier, selon leurs dates."
+    "gantt": "Les tâches du projet sur une frise chronologique, selon leurs dates, reliées à ce dont chacune dépend."
   },
   "noEvents": "Cette initiative n'a aucun événement cette année. Ajoutez-en un pour voir son détail ici.",
   "eventDetail": {

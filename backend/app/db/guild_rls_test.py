@@ -29,6 +29,7 @@ from app.db.schema_provisioning import (
     guild_schema_name,
     provision_guild_schema,
 )
+from app.db.guild_ddl import _QUERY_TOMBSTONES
 from app.db.soft_delete_filter import SOFT_DELETE_TABLES
 from app.db.tenancy import (
     MANAGED_TABLES,
@@ -571,7 +572,7 @@ _GID_QUERY_TRASH = 990_412
 #: normalises it the same way for every table, which is what makes that stable
 #: to compare.
 _QUERY_TRASH_QUAL = (
-    "((deleted_at IS NULL) OR (( SELECT {schema}.setting_query() AS setting_query)"
+    "(({column} IS NULL) OR (( SELECT {schema}.setting_query() AS setting_query)"
     " IS NOT TRUE))"
 )
 
@@ -579,6 +580,7 @@ _QUERY_TRASH_QUAL = (
 async def test_soft_delete_tables_keep_the_trash_out_of_reader_written_sql(engine):
     """Every soft-delete table carries ``query_excludes_trash`` in a freshly
     provisioned schema — RESTRICTIVE, FOR SELECT, and saying the same thing.
+    So does every table whose rows are tombstoned, of its own column.
 
     Asked of the whole set rather than one table, because the rule is that a
     statement a reader wrote reports on live content — and that is a statement
@@ -603,18 +605,19 @@ async def test_soft_delete_tables_keep_the_trash_out_of_reader_written_sql(engin
             )
             found = {tbl: (perm, cmd, qual) for tbl, perm, cmd, qual in rows}
 
-        missing = sorted(set(SOFT_DELETE_TABLES) - set(found))
+        columns = dict.fromkeys(SOFT_DELETE_TABLES, "deleted_at") | _QUERY_TOMBSTONES
+        missing = sorted(set(columns) - set(found))
         assert not missing, (
-            f"these soft-delete tables have no query_excludes_trash policy: {missing}"
+            f"these tables have no query_excludes_trash policy: {missing}"
         )
 
-        for tbl in sorted(SOFT_DELETE_TABLES):
+        for tbl, column in sorted(columns.items()):
             permissive, cmd, qual = found[tbl]
             assert (permissive, cmd) == ("RESTRICTIVE", "SELECT"), (
                 f"{tbl}.query_excludes_trash must be RESTRICTIVE FOR SELECT, got "
                 f"{permissive} FOR {cmd}."
             )
-            expected = _QUERY_TRASH_QUAL.format(schema=schema)
+            expected = _QUERY_TRASH_QUAL.format(column=column, schema=schema)
             assert qual == expected, (
                 f"{tbl}.query_excludes_trash does not say what it must.\n"
                 f"  expected: {expected}\n"

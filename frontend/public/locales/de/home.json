@@ -132,7 +132,7 @@
     },
     "tasks": {
       "title": "Meine Aufgaben",
-      "description": "Deine Aufgaben aus allen Communitys, als Tabelle oder Kalender.",
+      "description": "Deine Aufgaben aus allen Communitys, als Tabelle.",
       "empty": "Dir ist noch nichts zugewiesen. Wenn dir jemand eine Aufgabe gibt oder du selbst eine anlegst, landet sie hier.",
       "chooseList": "Liste zum Hinzufügen wählen",
       "add": "Hinzufügen",

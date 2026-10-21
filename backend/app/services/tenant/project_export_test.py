@@ -515,6 +515,21 @@ async def test_an_envelope_holds_one_layout_of_each_kind_as_read(
     with pytest.raises(ValidationError):
         ProjectExportEnvelope.model_validate({**body, "layouts": [board, board]})
 
+    # A file from before the Gantt names its calendar, which is the Gantt now.
+    renamed = ProjectExportEnvelope.model_validate(
+        {
+            **body,
+            "layouts": [
+                {"kind": "calendar", "definition": {}},
+                {"kind": "default", "definition": {"kind": "calendar"}},
+            ],
+        }
+    ).layouts
+    assert [(each.kind, each.definition) for each in renamed] == [
+        ("gantt", {}),
+        ("default", {"kind": "gantt"}),
+    ]
+
 
 async def test_an_envelope_holds_a_task_page_for_each_type(session: AsyncSession):
     owner, _assignee, guild, _initiative, project = await _seed_populated_project(

@@ -10,7 +10,6 @@ import type {
   TaskListResponse,
 } from "@/api/generated/initiativeAPI.schemas";
 import { getListMyTasksQueryKey, listMyTasks } from "@/api/generated/tasks/tasks";
-import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useTaskColumnLimits } from "@/hooks/useColumnLimits";
 import { useCommunities } from "@/hooks/useCommunities";
 import { deviceJSON, LIST, type ListViewSpec, useListView, viewKey } from "@/hooks/useListView";
@@ -54,12 +53,11 @@ const sameMembers = <T>(a: T[], b: T[]): boolean =>
   a.length === b.length && new Set(a).size === new Set([...a, ...b]).size;
 
 /**
- * Where one person's view of My Tasks is kept: table or calendar, the
- * calendar's month or week, their filters, and the table's sort, grouping and
- * columns (date window and community hidden, grouped by date window, until
- * they change them). What an older release kept (filters and sort as one
- * preference, grouping and columns on the device, the month or week every
- * calendar shared) is carried over.
+ * Where one person's view of My Tasks is kept: their filters, and the table's
+ * sort, grouping and columns (date window and community hidden, grouped by
+ * date window, until they change them). What an older release kept (filters
+ * and sort as one preference, grouping and columns on the device) is carried
+ * over.
  */
 export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
   key: viewKey("me", "tasks"),
@@ -76,13 +74,11 @@ export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
       | undefined;
     const table = deviceJSON("initiative-my-tasks-table") as { grouping?: unknown } | null;
     const columns = deviceJSON("initiative-my-tasks-columns");
-    const mode = items[CALENDAR_VIEW_MODE_KEY];
-    if (!old && !table && !columns && typeof mode !== "string") return null;
+    if (!old && !table && !columns) return null;
     const sorting = old?.sorting;
     // What was never kept reads as the default, as it did then.
     const filters = old ? { ...FILTER_DEFAULTS, ...fromOldNames(old) } : {};
     return {
-      mode: typeof mode === "string" ? mode : null,
       parts: {
         [LIST]: {
           ...(old ? { filters } : {}),

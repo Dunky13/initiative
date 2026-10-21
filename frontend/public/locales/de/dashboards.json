@@ -307,7 +307,8 @@
     "counter_groups": "Zählergruppen",
     "task_statuses": "Aufgabenstatus",
     "property_values": "Eigenschaftswerte",
-    "property_definitions": "Eigenschaften"
+    "property_definitions": "Eigenschaften",
+    "relationships": "Verknüpfungen"
   },
   "viewMode": {
     "label": "Dashboard ausführen als",

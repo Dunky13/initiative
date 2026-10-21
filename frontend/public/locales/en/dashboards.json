@@ -307,7 +307,8 @@
     "counter_groups": "Counter groups",
     "task_statuses": "Task statuses",
     "property_values": "Property values",
-    "property_definitions": "Properties"
+    "property_definitions": "Properties",
+    "relationships": "Links"
   },
   "viewMode": {
     "label": "Run dashboard as",

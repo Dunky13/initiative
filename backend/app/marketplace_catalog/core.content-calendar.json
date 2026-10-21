@@ -5,7 +5,7 @@
   "name": "Content calendar",
   "publisher": "Initiative",
   "description": "What you are publishing, where, and when. Mostly when.",
-  "long_description": "Every post, newsletter, video or episode is a card that moves from Ideas through Drafting, Editing and Scheduled to Published. Each one says which channels it goes out on and the day it goes out, and that day is its due date, so the calendar view of the project is the content calendar.\n\nThe Ideas column has no due dates on purpose. Ideas are free. Deadlines are for the ones you picked.",
+  "long_description": "Every post, newsletter, video or episode is a card that moves from Ideas through Drafting, Editing and Scheduled to Published. Each one says which channels it goes out on and the day it goes out, and that day is its due date, so the initiative's calendar is the content calendar.\n\nThe Ideas column has no due dates on purpose. Ideas are free. Deadlines are for the ones you picked.",
   "avatar_url": "/marketplace/core-content-calendar.svg",
   "images": [],
   "version": "1.1.0",

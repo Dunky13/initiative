@@ -343,8 +343,8 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
     return stored
 
 
-#: The lists that group their tasks: a project's table and board.
-GROUPED_LISTS = ("table", "board")
+#: The lists that group their tasks: a project's table, board and Gantt.
+GROUPED_LISTS = ("table", "board", "gantt")
 #: What a grouped list lists, as the field registry names it.
 _GROUPED_DATASET = "tasks"
 #: A board's columns are its statuses already, so its bands never are.

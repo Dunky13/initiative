@@ -508,7 +508,7 @@ DetailStackPart.model_rebuild()
 
 #: Every way a layout can list a tool's items; which of them a tool draws is
 #: ``app.core.tools.LIST_LAYOUTS``.
-ListLayoutKind = Literal["table", "board", "calendar"]
+ListLayoutKind = Literal["table", "board", "gantt", "calendar"]
 #: Every kind of thing a detail layout shows one of; which a tool holds is
 #: ``app.core.tools.DETAIL_LAYOUTS``.
 DetailLayoutKind = Literal[

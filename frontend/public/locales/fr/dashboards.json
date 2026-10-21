@@ -307,7 +307,8 @@
     "counter_groups": "Groupes de compteurs",
     "task_statuses": "Statuts de tâche",
     "property_values": "Valeurs des propriétés",
-    "property_definitions": "Propriétés"
+    "property_definitions": "Propriétés",
+    "relationships": "Liens"
   },
   "viewMode": {
     "label": "Exécuter le tableau de bord en tant que",

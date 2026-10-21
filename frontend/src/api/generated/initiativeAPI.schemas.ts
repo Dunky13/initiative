@@ -4483,6 +4483,7 @@ export const DatasetName = {
   members: "members",
   property_definitions: "property_definitions",
   property_values: "property_values",
+  relationships: "relationships",
   files: "files",
   file_versions: "file_versions",
   queues: "queues",
@@ -6653,6 +6654,7 @@ export type ListLayoutReadKind = (typeof ListLayoutReadKind)[keyof typeof ListLa
 export const ListLayoutReadKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -7008,6 +7010,7 @@ export type ListLayoutWriteKind = (typeof ListLayoutWriteKind)[keyof typeof List
 export const ListLayoutWriteKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -10473,6 +10476,16 @@ export interface TaskCreate {
   checklist?: ChecklistItemInput[];
 }
 
+/**
+ * One edge between two tasks of a project, as it is stored: the source
+ * depends on, is part of, or is related to the target.
+ */
+export interface TaskEdgeRead {
+  source_id: number;
+  target_id: number;
+  relationship_type: RelationshipType;
+}
+
 export interface TaskListResponse {
   total_count: number;
   page: number;
@@ -10801,6 +10814,7 @@ export type ToolLayoutDefaultWriteKind =
 export const ToolLayoutDefaultWriteKind = {
   table: "table",
   board: "board",
+  gantt: "gantt",
   calendar: "calendar",
 } as const;
 
@@ -13305,6 +13319,13 @@ export type ReplaceRelationshipSliceParams = {
   entity: string;
   relationship_type: RelationshipType;
   other_type: SearchEntityType;
+};
+
+export type ListTaskEdgesParams = {
+  /**
+   * The project whose tasks' edges to list
+   */
+  project_id: number;
 };
 
 export type GetRelationsNeighbourhoodParams = {
