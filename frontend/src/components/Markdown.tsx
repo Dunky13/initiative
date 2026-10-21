@@ -5,6 +5,7 @@ import type {
   MouseEvent,
   Ref,
 } from "react";
+import { useContext } from "react";
 import ReactMarkdown, { type ExtraProps, type Options } from "react-markdown";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
@@ -12,6 +13,8 @@ import remarkGfm from "remark-gfm";
 import { LinkedMentionSpan, PlainMentionSpan } from "@/components/comments/MentionSpan";
 import { remarkMentions } from "@/components/comments/remarkCommentPlugins";
 import { ImageLightboxScope, InLink, ProseImage } from "@/components/markdown/ProseImage";
+import { ThemeContext } from "@/hooks/useTheme";
+import { releaseImageUrl } from "@/lib/releaseImages";
 import { isStoredUpload, remarkImageLinks, remarkLineBreaks } from "@/lib/remarkProse";
 import { resolveUploadUrl } from "@/lib/uploadUrl";
 import { cn } from "@/lib/utils";
@@ -94,6 +97,20 @@ const pictureWith = (className?: string) =>
     );
   };
 
+/** A screenshot in the release notes, in the theme the app is drawn in. */
+function ReleaseImage({ src, alt, title }: ImageProps) {
+  const dark = useContext(ThemeContext)?.resolvedTheme === "dark";
+  if (typeof src !== "string" || !src) return null;
+  return (
+    <ProseImage
+      src={releaseImageUrl(src, dark)}
+      alt={alt ?? ""}
+      title={title}
+      className="rounded-md border border-border"
+    />
+  );
+}
+
 /** What every surface shares. Anything that can be wider than its container
  *  is wrapped or scrolled, so rendered markdown never stretches its card. */
 const BASE_CLASS =
@@ -117,15 +134,20 @@ interface Surface {
   headingIds: boolean;
 }
 
+/** Descriptions and documents: the long form, in the page's type scale. */
+const DOCUMENT = {
+  prose: `${PAGE_TONE_CLASS} text-muted-foreground text-sm **:leading-relaxed [&_blockquote]:pl-3 [&_code]:font-mono [&_code]:wrap-break-word [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h4]:text-sm [&_h5]:font-medium [&_h5]:text-sm [&_h6]:text-xs [&_img]:h-auto [&_img]:max-w-full [&_li]:mt-1 [&_ol]:pl-6 [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:wrap-break-word [&_pre_code]:text-inherit [&_table]:max-w-full [&_ul]:pl-6`,
+  spacing: "space-y-3 [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-3 [&_h4]:mt-2 [&_h5]:mt-2 [&_h6]:mt-2",
+  picture: pictureWith(),
+  lineBreaks: false,
+  headingIds: true,
+} satisfies Surface;
+
 const SURFACES = {
-  /** Descriptions and documents: the long form, in the page's type scale. */
-  document: {
-    prose: `${PAGE_TONE_CLASS} text-muted-foreground text-sm **:leading-relaxed [&_blockquote]:pl-3 [&_code]:font-mono [&_code]:wrap-break-word [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h4]:text-sm [&_h5]:font-medium [&_h5]:text-sm [&_h6]:text-xs [&_img]:h-auto [&_img]:max-w-full [&_li]:mt-1 [&_ol]:pl-6 [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:wrap-break-word [&_pre_code]:text-inherit [&_table]:max-w-full [&_ul]:pl-6`,
-    spacing: "space-y-3 [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-3 [&_h4]:mt-2 [&_h5]:mt-2 [&_h6]:mt-2",
-    picture: pictureWith(),
-    lineBreaks: false,
-    headingIds: true,
-  },
+  document: DOCUMENT,
+  /** Release notes: a document whose pictures are screenshots that ship with
+   *  the release, drawn in the app's theme. */
+  release: { ...DOCUMENT, picture: ReleaseImage },
   /** A comment: short prose typed in a box, headings kept to body size. */
   comment: {
     prose: `${PAGE_TONE_CLASS} text-sm [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_h1]:text-base [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:font-semibold [&_h5]:text-sm [&_h6]:text-sm [&_li]:mt-0.5 [&_ol]:pl-5 [&_ul]:pl-5`,

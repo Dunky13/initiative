@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import { ThemeContext } from "@/hooks/useTheme";
+
 import { Markdown } from "./Markdown";
 
 /** The wrapper the classes that keep content inside its container live on. */
@@ -107,5 +109,36 @@ describe("Markdown", () => {
     expect(away).toHaveAttribute("target", "_blank");
     expect(away).toHaveAttribute("rel", "noopener noreferrer");
     expect(screen.getByRole("link", { name: "home" })).not.toHaveAttribute("target");
+  });
+
+  it("draws a release's screenshot in the theme the app is in", () => {
+    const content = "![The Gantt view](frontend/public/release-images/gantt.webp)";
+    const theme = (resolvedTheme: "light" | "dark") => ({
+      theme: resolvedTheme,
+      resolvedTheme,
+      setTheme: () => {},
+      toggleTheme: () => {},
+    });
+
+    const { unmount } = render(
+      <ThemeContext value={theme("light")}>
+        <Markdown surface="release" remoteImages content={content} />
+      </ThemeContext>
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "/release-images/gantt.webp"
+    );
+    unmount();
+
+    render(
+      <ThemeContext value={theme("dark")}>
+        <Markdown surface="release" remoteImages content={content} />
+      </ThemeContext>
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "/release-images/gantt.dark.webp"
+    );
   });
 });
