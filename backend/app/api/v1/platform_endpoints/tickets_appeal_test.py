@@ -43,7 +43,9 @@ async def appeals_desk(session, acting_user):
     await session.commit()
 
     await set_rls_context(session, SystemGuild(guild_id))
-    await task_statuses_service.ensure_default_statuses(session, staff.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, staff.project.id, locale="en"
+    )
     for stream in (IntakeStream.moderation, IntakeStream.support):
         session.add(IntakeBinding(stream=stream, project_id=staff.project.id))
     await session.commit()

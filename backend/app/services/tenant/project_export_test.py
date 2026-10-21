@@ -35,6 +35,7 @@ from app.services.tenant.project_grants import get_project_hydrated
 from app.services.tenant import task_statuses as task_statuses_service
 from app.services.tenant import ownership as ownership_service
 from app.services.tenant import tags as tags_service
+from app.services.tenant.task_types import get_default_type
 from app.testing import (
     assign_tag,
     checklist_items,
@@ -74,7 +75,9 @@ async def _seed_populated_project(session: AsyncSession):
     )
 
     # Statuses
-    statuses = await task_statuses_service.ensure_default_statuses(session, project.id)
+    statuses = await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     todo_status = next(s for s in statuses if s.category == TaskStatusCategory.todo)
 
     # Project-level tag
@@ -97,6 +100,7 @@ async def _seed_populated_project(session: AsyncSession):
     task = Task(
         project_id=project.id,
         task_status_id=todo_status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title="Fix the thing",
         description="Important",
         position=1024.0,
@@ -742,3 +746,117 @@ async def test_legacy_envelope_keeps_carried_dates_and_consumed_count(session):
     )
     assert dates is not None
     assert dates[1] == datetime(2026, 10, 14, 9, tzinfo=timezone.utc)
+
+
+async def test_task_types_survive_the_round_trip(session: AsyncSession):
+    """A project's types come back as they were, and each task as its type."""
+    from app.models.tenant.task import TaskType
+    from app.services.tenant import task_types as task_types_service
+
+    owner, _assignee, guild, _initiative, project = await _seed_populated_project(
+        session
+    )
+    types = await task_types_service.list_types(session, project.id)
+    types[2].name = "Notion"
+    types[2].is_default = True
+    types[0].is_default = False
+    session.add_all(types)
+    session.add(
+        TaskType(
+            project_id=project.id,
+            name="Chore",
+            position=4,
+            icon="repeat",
+            color="#22C55E",
+            layout_preset="repeat",
+        )
+    )
+    await session.commit()
+    chore = (await task_types_service.list_types(session, project.id))[-1]
+    task = (
+        await session.exec(select(Task).where(Task.project_id == project.id))
+    ).first()
+    assert task is not None
+    assert chore.id is not None
+    task.task_type_id = chore.id
+    session.add(task)
+    await session.commit()
+
+    hydrated = await get_project_hydrated(session, project.id)
+    assert hydrated is not None
+    envelope = await export_service.build_project_export(session, hydrated)
+    assert [t.name for t in envelope.task_types] == [
+        "Task",
+        "Bug",
+        "Notion",
+        "Milestone",
+        "Chore",
+    ]
+    target = await create_initiative(session, guild, owner, name="Target Initiative")
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target, importer=owner
+    )
+
+    restored = await task_types_service.list_types(session, result.entity_id)
+    assert [
+        (t.name, t.is_default, t.icon, t.color, t.layout_preset) for t in restored
+    ] == [
+        ("Task", False, "square-check", "#94A3B8", "plain"),
+        ("Bug", False, "bug", "#F87171", "fix"),
+        ("Notion", True, "lightbulb", "#FBBF24", "discussion"),
+        ("Milestone", False, "flag", "#A78BFA", "dates"),
+        ("Chore", False, "repeat", "#22C55E", "repeat"),
+    ]
+    copied = (
+        await session.exec(select(Task).where(Task.project_id == result.entity_id))
+    ).first()
+    assert copied is not None
+    assert copied.task_type_id == restored[-1].id
+
+
+async def test_an_envelope_without_types_gets_the_starting_ones_in_the_importers_language(
+    session: AsyncSession,
+):
+    from app.schemas.tenant.project_export import ProjectExportEnvelope
+    from app.services.tenant import task_types as task_types_service
+
+    owner, _assignee, guild, _initiative, _project = await _seed_populated_project(
+        session
+    )
+    owner.locale = "es"
+    session.add(owner)
+    await session.commit()
+    envelope = ProjectExportEnvelope.model_validate(
+        {
+            "app_version": "0.0.0-test",
+            "exported_at": "2026-07-15T00:00:00+00:00",
+            "project": {"name": "Antes de los tipos"},
+            "tags": [],
+            "property_definitions": [],
+            "task_statuses": [{"name": "To Do", "category": "todo"}],
+            "tasks": [
+                {
+                    "title": "Algo",
+                    "status_name": "To Do",
+                    "type_name": "Bug",
+                    "tags": [],
+                    "assignee_handles": [],
+                    "checklist": [],
+                    "properties": [],
+                }
+            ],
+        }
+    )
+    target = await create_initiative(session, guild, owner, name="Target Initiative")
+
+    result = await import_service.import_project(
+        session, envelope=envelope, target_initiative=target, importer=owner
+    )
+
+    restored = await task_types_service.list_types(session, result.entity_id)
+    assert [t.name for t in restored] == ["Tarea", "Error", "Idea", "Hito"]
+    task = (
+        await session.exec(select(Task).where(Task.project_id == result.entity_id))
+    ).one()
+    # A type the project does not have is its default.
+    assert task.task_type_id == restored[0].id

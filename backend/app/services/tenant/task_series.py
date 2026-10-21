@@ -533,6 +533,7 @@ async def _next_task(
         following = Task(
             project_id=task.project_id,
             task_status_id=default_status.id,
+            task_type_id=task.task_type_id,
             title=task.title,
             description=task.description,
             priority=task.priority,

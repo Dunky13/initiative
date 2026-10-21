@@ -41,6 +41,7 @@ from app.services.tenant import task_checklist as checklist_service
 from app.services.tenant import task_completion
 from app.services.tenant import task_description as task_description_service
 from app.services.tenant import task_statuses as task_statuses_service
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant.names import copy_name
 from app.services.tenant.task_completion import sync_completed_at
 
@@ -70,7 +71,9 @@ async def resolve_start_status(
     SELECT-only role and could not — so the first write is where a project that
     somehow arrived without its defaults gets them.
     """
-    await task_statuses_service.ensure_default_statuses(session, project_id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project_id, locale=task_statuses_service.REPAIR_LOCALE
+    )
 
     if task_status_id is not None:
         selected = await task_statuses_service.get_project_status(
@@ -86,11 +89,35 @@ async def resolve_start_status(
     return await task_statuses_service.get_default_status(session, project_id)
 
 
+async def resolve_type(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    task_type_id: Optional[int] = None,
+) -> int:
+    """The type a task is: the one named, which must be this project's, or
+    the project's default."""
+    if task_type_id is None:
+        default = await task_types_service.get_default_type(session, project_id)
+        assert default.id is not None
+        return default.id
+    if (
+        await task_types_service.get_project_type(session, task_type_id, project_id)
+        is None
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=TaskMessages.TYPE_NOT_FOUND,
+        )
+    return task_type_id
+
+
 async def create_task_row(
     session: AsyncSession,
     *,
     project: Project,
     task_status_id: Optional[int] = None,
+    task_type_id: Optional[int] = None,
     now: Optional[datetime] = None,
     **fields: Any,
 ) -> Task:
@@ -112,6 +139,9 @@ async def create_task_row(
         project_id=project.id,
         position=await next_position(session, project.id),
         task_status_id=selected_status.id,
+        task_type_id=await resolve_type(
+            session, project_id=project.id, task_type_id=task_type_id
+        ),
     )
     sync_completed_at(
         task, selected_status.category, now=now or datetime.now(timezone.utc)
@@ -265,10 +295,12 @@ async def copy_project_tasks(
     *,
     status_mapping: dict[int, int],
     fallback_status_ids: dict[TaskStatusCategory, int],
+    type_mapping: dict[int, int],
+    fallback_type_id: int,
 ) -> list[Task]:
     """Copy every task of ``source`` into ``target``, a copy of it whose
-    statuses ``status_mapping`` maps, keeping titles and order; returns the
-    copies. Dates move onto the target's schedule (:func:`_date_shift`), and
+    statuses ``status_mapping`` maps and whose types ``type_mapping`` does,
+    keeping titles and order; returns the copies. Dates move onto the target's schedule (:func:`_date_shift`), and
     checklists keep their ticks only from a template, which is copied as
     written."""
     tasks = (
@@ -297,6 +329,7 @@ async def copy_project_tasks(
         tasks,
         target,
         status_of=status_of,
+        type_of=lambda task: type_mapping.get(task.task_type_id, fallback_type_id),
         date_shift=_date_shift(source, target, list(tasks)),
         keep_done=source.is_template,
     )
@@ -308,6 +341,7 @@ async def copy_tasks(
     target: Project,
     *,
     status_of: Callable[[Task], int | None] | None = None,
+    type_of: Callable[[Task], int] | None = None,
     date_shift: timedelta | None = None,
     keep_done: bool = False,
     assignees: set[int] | None = None,
@@ -319,7 +353,9 @@ async def copy_tasks(
     tags, the links (a link between two of the sources joins
     their copies) and, inside one initiative, the property values.
 
-    ``status_of`` gives each copy its status in another project. Without it
+    ``status_of`` gives each copy its status in another project, and
+    ``type_of`` its type; without them the copies keep their sources'. Without
+    ``status_of``
     the copies go beside their sources: the same status, named
     "<title> (Copy)", at the end of the list. Checklists start unticked unless
     ``keep_done``.
@@ -361,6 +397,7 @@ async def copy_tasks(
             title=copy_name(source.title) if beside else source.title,
             description=source.description,
             task_status_id=status_id,
+            task_type_id=source.task_type_id if type_of is None else type_of(source),
             priority=source.priority,
             start_date=start_date,
             due_date=due_date,

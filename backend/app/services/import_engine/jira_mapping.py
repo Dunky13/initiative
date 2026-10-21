@@ -243,10 +243,18 @@ def map_issue(
         mention=_collect_mention(mentioned),
     )
 
+    issue_type = fields.get("issuetype")
+    type_name = (
+        str(issue_type.get("name") or "").strip()
+        if isinstance(issue_type, dict)
+        else ""
+    )
+
     task: dict[str, Any] = {
         "title": summary,
         "description": rendered.markdown or None,
         "status_name": status_name,
+        **({"type_name": type_name} if type_name else {}),
         "priority": map_priority(fields.get("priority")).value,
         "position": position,
         "tags": [
@@ -563,6 +571,53 @@ def _timestamp(value: Any) -> Optional[str]:
         return None
 
 
+#: How a Jira issue type of a familiar name looks here: its page's shape, its
+#: icon and its colour. Any other is a plain task page. By lowercased name.
+_ISSUE_TYPE_LOOKS: dict[str, tuple[str, str, str]] = {
+    "task": ("plain", "square-check", "#94A3B8"),
+    "sub-task": ("plain", "list-tree", "#94A3B8"),
+    "subtask": ("plain", "list-tree", "#94A3B8"),
+    "story": ("plain", "book-open", "#34D399"),
+    "bug": ("fix", "bug", "#F87171"),
+    "epic": ("dates", "zap", "#A78BFA"),
+    "milestone": ("dates", "flag", "#A78BFA"),
+    "idea": ("discussion", "lightbulb", "#FBBF24"),
+}
+
+
+def issue_task_types(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The project's task types: one per issue type its issues are, in the
+    order they first appear, each named as Jira names it. The default is the
+    one called Task, or the one most issues are. None where no issue names a
+    type, so the project gets the ones a new project starts with."""
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    for task in tasks:
+        name = str(task.get("type_name") or "")
+        if name:
+            counts[name.lower()] = counts.get(name.lower(), 0) + 1
+            names.setdefault(name.lower(), name)
+    if not counts:
+        return []
+    default = "task" if "task" in counts else max(counts, key=lambda key: counts[key])
+    types = []
+    for position, key in enumerate(names):
+        shape, icon, color = _ISSUE_TYPE_LOOKS.get(
+            key, ("plain", "square-check", "#94A3B8")
+        )
+        types.append(
+            {
+                "name": names[key],
+                "position": position,
+                "is_default": key == default,
+                "icon": icon,
+                "color": color,
+                "layout_preset": shape,
+            }
+        )
+    return types
+
+
 class ProjectMapper:
     """:func:`build_project_envelope` a page of issues at a time.
 
@@ -676,6 +731,7 @@ class ProjectMapper:
                 name=str(project_fields.get("name") or "Imported project"),
                 description=description or None,
                 statuses=self._statuses,
+                task_types=issue_task_types(self._tasks),
                 tasks=self._tasks,
                 app_version=self._app_version,
                 source_url=self._site_url,

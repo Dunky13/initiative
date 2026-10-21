@@ -57,6 +57,7 @@ from app.api.v1.tenant_endpoints import (
     storage,
     tags,
     task_statuses,
+    task_types,
     tasks,
     tool_grants,
     tool_layouts,
@@ -279,6 +280,7 @@ guild_router.include_router(tool_lists.router)
 guild_router.include_router(projects.router, **_tool_mount(Tool.project))
 guild_router.include_router(task_statuses.router, tags=["task-statuses"])
 guild_router.include_router(task_statuses.initiative_router, tags=["task-statuses"])
+guild_router.include_router(task_types.router, tags=["task-types"])
 guild_router.include_router(tool_layouts.router, tags=["layouts"])
 guild_router.include_router(query.router, tags=["query"])
 guild_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])

@@ -64,7 +64,9 @@ async def desk(session: AsyncSession, acting_user):
     await session.commit()
 
     await set_rls_context(session, SystemGuild(guild_id))
-    await task_statuses_service.ensure_default_statuses(session, staff.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, staff.project.id, locale="en"
+    )
     statuses = await _statuses(session, staff.project.id)
     for stream in (IntakeStream.support, IntakeStream.feedback):
         session.add(

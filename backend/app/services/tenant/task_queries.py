@@ -468,6 +468,7 @@ _LIST_ROW_OPTIONS = (
     selectinload(Task.project).selectinload(Project.initiative),
     selectinload(Task.assignees),
     selectinload(Task.task_status),
+    joinedload(Task.task_type),
 )
 
 
@@ -506,6 +507,7 @@ async def load_tasks(session: AsyncSession, task_ids: list[int]) -> list[Task]:
         .options(
             joinedload(Task.project).joinedload(Project.initiative),
             joinedload(Task.task_status),
+            joinedload(Task.task_type),
             joinedload(Task.creator),
             selectinload(Task.assignees),
         )
@@ -555,6 +557,7 @@ async def load_for_change(
             .options(
                 with_tool(Task.project),
                 joinedload(Task.task_status),
+                joinedload(Task.task_type),
                 selectinload(Task.assignees),
             )
             .execution_options(populate_existing=populate_existing)
@@ -655,6 +658,7 @@ def _global_task_options():
         joinedload(Task.project).joinedload(Project.initiative),
         selectinload(Task.assignees),
         selectinload(Task.task_status),
+        joinedload(Task.task_type),
     )
 
 

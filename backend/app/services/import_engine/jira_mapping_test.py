@@ -862,3 +862,49 @@ def test_a_project_mapped_a_page_at_a_time_is_the_project_mapped_whole():
         whole.properties,
     )
     assert "Team" in paged.properties
+
+
+# --- issue types -------------------------------------------------------------
+
+
+def test_each_issue_type_becomes_a_task_type_and_each_task_is_its_own():
+    envelope = _envelope(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Story"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Bug"}),
+            _issue("ACME-3", "Three", issuetype={"name": "Task"}),
+            _issue("ACME-4", "Four", issuetype={"name": "Bug"}),
+        ]
+    )
+    assert [
+        (t["name"], t["is_default"], t["layout_preset"], t["icon"])
+        for t in envelope["task_types"]
+    ] == [
+        ("Story", False, "plain", "book-open"),
+        ("Bug", False, "fix", "bug"),
+        ("Task", True, "plain", "square-check"),
+    ]
+    assert [t["type_name"] for t in envelope["tasks"]] == [
+        "Story",
+        "Bug",
+        "Task",
+        "Bug",
+    ]
+
+
+def test_without_a_task_type_the_commonest_is_the_default():
+    envelope = _envelope(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Story"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Spike"}),
+            _issue("ACME-3", "Three", issuetype={"name": "Story"}),
+        ]
+    )
+    assert [(t["name"], t["is_default"]) for t in envelope["task_types"]] == [
+        ("Story", True),
+        ("Spike", False),
+    ]
+
+
+def test_issues_naming_no_type_leave_the_starting_types():
+    assert "task_types" not in _envelope()

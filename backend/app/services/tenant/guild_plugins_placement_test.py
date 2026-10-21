@@ -12,6 +12,7 @@ import pytest
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.models.tenant.plugin_placement import PluginPlacement
 from app.models.tenant.tool_layout import ToolLayout
 from app.services.export.guild_sections import SectionContext, _build_plugins
@@ -310,6 +311,7 @@ class TestShowingOnSavedDetails:
             tool="project",
             tool_id=project.id,
             kind="task",
+            task_type_id=(await get_default_type(session, project.id)).id,
             definition={"header": [], "main": [], "side": [priority]},
         )
         session.add(layout)
