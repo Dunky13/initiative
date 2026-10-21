@@ -428,7 +428,7 @@ async def test_a_moderator_no_longer_moderating_reads_nothing_held(
     )
 
     await set_rls_context(session, Unattributed())
-    moderator.role = "support"
+    moderator.role = "member"
     session.add(moderator)
     await session.commit()
 

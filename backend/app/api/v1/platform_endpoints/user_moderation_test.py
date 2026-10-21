@@ -114,11 +114,10 @@ class TestRenaming:
         assert entry["actor_user_id"] == moderator_id
         assert entry["detail"] == {}
 
-    @pytest.mark.parametrize("role", [UserRole.member, UserRole.support])
     async def test_below_moderator_is_refused(
-        self, client: AsyncClient, session: AsyncSession, role
+        self, client: AsyncClient, session: AsyncSession
     ):
-        actor = await create_user(session, role=role)
+        actor = await create_user(session)
         subject = await create_user(session)
 
         response = await client.patch(
@@ -323,9 +322,8 @@ class TestSuspension:
         assert response.status_code == 403
         assert response.json()["detail"] == "OPERATOR_CANNOT_SUSPEND_HIGHER_ROLE"
 
-    @pytest.mark.parametrize("role", [UserRole.member, UserRole.support])
-    async def test_below_moderator_is_refused(self, client, session, role):
-        actor = await create_user(session, role=role)
+    async def test_below_moderator_is_refused(self, client, session):
+        actor = await create_user(session)
         subject = await create_user(session)
 
         response = await client.post(
@@ -337,10 +335,10 @@ class TestSuspension:
 
 
 class TestLiftingASignInLock:
-    async def test_a_moderator_lifts_a_lock(self, client, session):
+    async def test_support_lifts_a_lock(self, client, session):
         from app.services.auth import sign_in_locks
 
-        moderator = await create_user(session, role=UserRole.moderator)
+        support = await create_user(session, role=UserRole.support)
         subject = await create_user(session)
         for _ in range(sign_in_locks.LOCK_AFTER_FAILURES):
             await sign_in_locks.record_failure(session, subject.id)
@@ -349,7 +347,7 @@ class TestLiftingASignInLock:
 
         lifted = await client.delete(
             f"/api/v1/operator/users/{subject.id}/sign-in-lock",
-            headers=get_auth_headers(moderator),
+            headers=get_auth_headers(support),
         )
         assert lifted.status_code == 200, lifted.text
         assert lifted.json()["sign_in_locked_until"] is None
@@ -357,30 +355,30 @@ class TestLiftingASignInLock:
 
         again = await client.delete(
             f"/api/v1/operator/users/{subject.id}/sign-in-lock",
-            headers=get_auth_headers(moderator),
+            headers=get_auth_headers(support),
         )
         assert again.status_code == 400
         assert again.json()["detail"] == "USER_SIGN_IN_NOT_LOCKED"
 
-    async def test_support_cannot(self, client, session):
-        support = await create_user(session, role=UserRole.support)
+    async def test_a_moderator_cannot(self, client, session):
+        moderator = await create_user(session, role=UserRole.moderator)
         subject = await create_user(session)
         response = await client.delete(
             f"/api/v1/operator/users/{subject.id}/sign-in-lock",
-            headers=get_auth_headers(support),
+            headers=get_auth_headers(moderator),
         )
         assert response.status_code == 403
 
 
 class TestRevokingApiKeys:
-    async def test_a_moderator_switches_off_the_keys_that_still_work(
+    async def test_support_switches_off_the_keys_that_still_work(
         self, client, session, capfd
     ):
         from datetime import datetime, timedelta, timezone
 
         from app.services.platform import api_keys as api_keys_service
 
-        moderator = await create_user(session, role=UserRole.moderator)
+        support = await create_user(session, role=UserRole.support)
         subject = await create_user(session)
         secret, _key = await api_keys_service.create_api_key(
             session, user=subject, name="ci"
@@ -392,7 +390,7 @@ class TestRevokingApiKeys:
             expires_at=datetime.now(timezone.utc) - timedelta(days=1),
         )
         listed = await client.get(
-            "/api/v1/operator/users", headers=get_auth_headers(moderator)
+            "/api/v1/operator/users", headers=get_auth_headers(support)
         )
         row = next(u for u in listed.json()["items"] if u["id"] == subject.id)
         # The expired key no longer works, so it is not one to revoke.
@@ -400,7 +398,7 @@ class TestRevokingApiKeys:
 
         revoked = await client.delete(
             f"/api/v1/operator/users/{subject.id}/api-keys",
-            headers=get_auth_headers(moderator),
+            headers=get_auth_headers(support),
         )
         assert revoked.status_code == 200, revoked.text
         assert revoked.json()["api_key_count"] == 0
@@ -408,21 +406,21 @@ class TestRevokingApiKeys:
         assert [
             (e["actor_user_id"], e["target_user_id"])
             for e in emitted(capfd, AuditEventType.API_KEY_REVOKED)
-        ] == [(moderator.id, subject.id)]
+        ] == [(support.id, subject.id)]
 
         again = await client.delete(
             f"/api/v1/operator/users/{subject.id}/api-keys",
-            headers=get_auth_headers(moderator),
+            headers=get_auth_headers(support),
         )
         assert again.status_code == 400
         assert again.json()["detail"] == "USER_NO_LIVE_API_KEYS"
 
-    async def test_support_cannot(self, client, session):
-        support = await create_user(session, role=UserRole.support)
+    async def test_a_moderator_cannot(self, client, session):
+        moderator = await create_user(session, role=UserRole.moderator)
         subject = await create_user(session)
         response = await client.delete(
             f"/api/v1/operator/users/{subject.id}/api-keys",
-            headers=get_auth_headers(support),
+            headers=get_auth_headers(moderator),
         )
         assert response.status_code == 403
 
@@ -442,19 +440,20 @@ class TestNothingElse:
         }
 
         assert writes == {
-            # Support (users.age_unblock) — the one write the lowest rung
-            # holds, because getting somebody back into their account after a
-            # mistyped birth year is support work, not a moderation decision.
-            ("/api/v1/operator/users/{user_id}/age-block", "DELETE"),
-            # Moderator (content.moderate / users.manage).
+            # Moderator (content.moderate).
             ("/api/v1/operator/users/{user_id}/avatar", "DELETE"),
             ("/api/v1/operator/users/{user_id}/username", "PATCH"),
             # Names in communities, status line, decorations: each cleared,
             # never set, like the picture.
             ("/api/v1/operator/users/{user_id}/profile/{field}", "DELETE"),
+            ("/api/v1/operator/users/{user_id}/suspension", "POST"),
+            # Support (users.age_unblock): getting somebody back into their
+            # account after a mistyped birth year is support work, not a
+            # moderation decision.
+            ("/api/v1/operator/users/{user_id}/age-block", "DELETE"),
+            # Support (users.manage): account recovery.
             # Ends every session; its holder signs in again.
             ("/api/v1/operator/users/{user_id}/sessions", "DELETE"),
-            ("/api/v1/operator/users/{user_id}/suspension", "POST"),
             # Turns password and code sign-in back on after wrong answers.
             ("/api/v1/operator/users/{user_id}/sign-in-lock", "DELETE"),
             # Switches off the account's API keys; its holder can make new ones.
@@ -517,8 +516,8 @@ class TestNothingElse:
     ):
         """A suspension and a pending deletion have their own ways back; the one
         reactivate takes is recorded."""
-        moderator = await create_user(session, role=UserRole.moderator)
-        headers = get_auth_headers(moderator)
+        support = await create_user(session, role=UserRole.support)
+        headers = get_auth_headers(support)
         for held in (UserStatus.suspended, UserStatus.deleted):
             subject = await create_user(session, status=held)
             response = await client.post(

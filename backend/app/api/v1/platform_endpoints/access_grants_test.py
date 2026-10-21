@@ -220,21 +220,26 @@ async def test_a_requester_who_may_no_longer_ask_is_not_approved(
 @pytest.mark.parametrize(
     "tier,minutes,expected",
     [
-        pytest.param("moderator", 480, 201, id="8h-within-a-moderators-cap"),
-        pytest.param("support", 480, 400, id="8h-over-supports-4h-cap"),
+        pytest.param("support", 480, 201, id="8h-within-supports-cap"),
+        pytest.param("moderator", 480, 400, id="8h-over-a-moderators-4h-cap"),
         pytest.param("support", 10_000, 400, id="a-week-over-every-cap"),
     ],
 )
 async def test_the_window_a_role_may_ask_for(
     client: AsyncClient, session: AsyncSession, acting_user, tier, minutes, expected
 ):
-    """Lower-trust roles get shorter windows: support is capped at 4h, a
-    moderator may go to 8h, and the 24h platform ceiling is over both."""
+    """Lower-trust roles get shorter windows: a moderator is capped at 4h,
+    support may go to 8h, and the 24h platform ceiling is over both."""
     requester = await acting_user(tier)
     guild = await create_guild(session)
 
     resp = await _request_access(
-        client, requester, guild, reason="a window", requested_duration_minutes=minutes
+        client,
+        requester,
+        guild,
+        reason="a window",
+        access_level="moderate",
+        requested_duration_minutes=minutes,
     )
 
     assert resp.status_code == expected, resp.text
@@ -577,15 +582,20 @@ async def test_a_revoked_grant_is_not_recorded_as_expiring(
 async def test_a_moderate_grant_is_for_those_who_moderate(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
-    """Reading what the platform holds is moderation work: support may not ask
-    for it, a moderator may, and approving it asks again of the grantee."""
+    """Reading what the platform holds is moderation work, and it is all a
+    moderator may ask for: never a plain read, an edit or the settings."""
     guild = await create_guild(session)
-    support = await acting_user("support")
-    refused = await _request_access(client, support, guild, access_level="moderate")
-    assert refused.status_code == 403
-    assert refused.json()["detail"] == "ACCESS_GRANT_MODERATE_NOT_HELD"
-
     moderator = await acting_user("moderator")
+    for body in (
+        {"access_level": "read"},
+        {"access_level": "read_write"},
+        {"settings_level": "admin"},
+        {"access_level": "moderate", "settings_level": "superadmin"},
+    ):
+        refused = await _request_access(client, moderator, guild, **body)
+        assert refused.status_code == 403, body
+        assert refused.json()["detail"] == "ACCESS_GRANT_ONLY_MODERATE"
+
     asked = await _request_access(client, moderator, guild, access_level="moderate")
     assert asked.status_code in (200, 201), asked.text
     assert asked.json()["access_level"] == "moderate"

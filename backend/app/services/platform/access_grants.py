@@ -229,13 +229,14 @@ async def _tell(
 def _may_hold(role: str, purpose: str, level: str) -> bool:
     """Whether someone at ``role`` may hold a grant at ``level``. A
     ``moderate`` content grant reads what the platform holds, so it is for
-    those who moderate, asked for and approved like any grant."""
+    those who moderate, asked for and approved like any grant. Every other
+    grant is ``access.request_any``'s, which a moderator does not hold."""
     if (
         purpose == AccessGrantPurpose.content.value
         and level == AccessLevel.moderate.value
     ):
         return Capability.CONTENT_MODERATE in capabilities_for(role)
-    return True
+    return Capability.ACCESS_REQUEST_ANY in capabilities_for(role)
 
 
 async def request_grants(
@@ -273,7 +274,10 @@ async def request_grants(
     for purpose, level in asks:
         if not _may_hold(requester.role, purpose, level):
             raise AccessGrantError(
-                AccessGrantMessages.MODERATE_NOT_HELD, status.HTTP_403_FORBIDDEN
+                AccessGrantMessages.MODERATE_NOT_HELD
+                if level == AccessLevel.moderate.value
+                else AccessGrantMessages.ONLY_MODERATE,
+                status.HTTP_403_FORBIDDEN,
             )
         existing = await session.exec(
             select(AccessGrant).where(

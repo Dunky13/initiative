@@ -36,12 +36,15 @@ class Capability(str, Enum):
     USERS_READ = "users.read"
 
     # Trust & safety / user lifecycle.
+    #: Moderation: renaming an account, clearing its picture and profile
+    #: fields, suspending it, and asking for a ``moderate`` grant to read what
+    #: the platform holds in a community.
     CONTENT_MODERATE = "content.moderate"
     #: Lift the block on an account that answered the age question as under
-    #: age. Its own capability rather than part of ``users.manage`` because it
-    #: is the one thing about an account the support tier may put right — a
-    #: mistyped birth year is a support ticket, not a moderation case.
+    #: age. A mistyped birth year is a support ticket, not a moderation case.
     USERS_AGE_UNBLOCK = "users.age_unblock"
+    #: Account recovery: second factor, sessions, password, sign-in lock, API
+    #: keys, reactivating and restoring.
     USERS_MANAGE = "users.manage"
     USERS_DELETE = "users.delete"
 
@@ -109,7 +112,11 @@ class Capability(str, Enum):
     DATA_BYPASS = "data.bypass"
 
     # Privileged Access Management (time-bound, per-guild grants).
+    #: Ask for a grant through request and approval. Which grants is
+    #: ``access.request_any``'s: without it, only a ``moderate`` one.
     ACCESS_REQUEST = "access.request"
+    #: Ask for any grant: read or read-write content, settings, billing.
+    ACCESS_REQUEST_ANY = "access.request_any"
     ACCESS_APPROVE = "access.approve"
 
     # App-wide configuration (OIDC, SMTP, branding, role labels). owner only.
@@ -127,21 +134,25 @@ class Capability(str, Enum):
 # not assume that — membership is explicit so the matrix can diverge later.
 _MEMBER: FrozenSet[Capability] = frozenset()
 
-_SUPPORT: FrozenSet[Capability] = _MEMBER | {
+# Moderation and nothing else: finding the account or community to act on,
+# acting on it, and asking for the ``moderate`` grant that reading held content
+# takes. No other grant — no settings, no billing, no plain read of a community.
+_MODERATOR: FrozenSet[Capability] = _MEMBER | {
     Capability.USERS_READ,
-    Capability.USERS_AGE_UNBLOCK,
-    Capability.ACCESS_REQUEST,
     Capability.COMMUNITIES_READ,
+    Capability.CONTENT_MODERATE,
+    Capability.COMMUNITIES_SUSPEND,
+    Capability.ACCESS_REQUEST,
+}
+
+_SUPPORT: FrozenSet[Capability] = _MODERATOR | {
+    Capability.USERS_AGE_UNBLOCK,
+    Capability.USERS_MANAGE,
+    Capability.ACCESS_REQUEST_ANY,
     Capability.BILLING_SUPPORT,
 }
 
-_MODERATOR: FrozenSet[Capability] = _SUPPORT | {
-    Capability.CONTENT_MODERATE,
-    Capability.USERS_MANAGE,
-    Capability.COMMUNITIES_SUSPEND,
-}
-
-_OPERATOR: FrozenSet[Capability] = _MODERATOR | {
+_OPERATOR: FrozenSet[Capability] = _SUPPORT | {
     Capability.COMMUNITIES_MANAGE,
     Capability.BILLING_INSIGHTS,
     Capability.BILLING_CONTRACTS,
@@ -165,13 +176,14 @@ _OWNER: FrozenSet[Capability] = (
     # flow for themselves — they reach a guild via the self-approved break-glass
     # path (``data.bypass`` + ``access.approve``), so ``access.request`` is dropped.
     Capability.ACCESS_REQUEST,
+    Capability.ACCESS_REQUEST_ANY,
 }
 
 
 ROLE_CAPABILITIES: dict[UserRole, FrozenSet[Capability]] = {
     UserRole.member: _MEMBER,
-    UserRole.support: _SUPPORT,
     UserRole.moderator: _MODERATOR,
+    UserRole.support: _SUPPORT,
     UserRole.operator: _OPERATOR,
     UserRole.owner: _OWNER,
 }
@@ -181,8 +193,8 @@ ROLE_CAPABILITIES: dict[UserRole, FrozenSet[Capability]] = {
 # service clamps each to its absolute ceiling; the request and break-glass forms
 # read the caller's figure from the server.
 ROLE_MAX_GRANT_MINUTES: dict[UserRole, int] = {
-    UserRole.support: 240,  # 4 hours
-    UserRole.moderator: 480,  # 8 hours
+    UserRole.moderator: 240,  # 4 hours
+    UserRole.support: 480,  # 8 hours
     UserRole.operator: 1440,  # 24 hours
     # Owners/operators reach a guild via the self-approved break-glass path
     # (``data.bypass``) rather than the request→approve flow; their cap applies
