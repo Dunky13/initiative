@@ -67,9 +67,6 @@ const DRAG_SLOP = 4;
 /** Where the arrow from a blocker turns before it reaches what waits on it. */
 const ELBOW = 8;
 
-/** The tick each scale draws: a day, a week or a month. */
-const TICK_UNIT = { day: "day", week: "week", month: "month" } as const;
-
 type Dates = Pick<TaskUpdate, "start_date" | "due_date">;
 
 /** A drag in progress: what it holds, where it began, and how many days it
@@ -192,11 +189,8 @@ export const ProjectTasksGanttView = ({
     (at: number) => ((at - range.start) / DAY) * pxPerDay,
     [range.start, pxPerDay]
   );
-  const ticks = useMemo(
-    () => axisTicks(range, TICK_UNIT[scale], 0, Number.POSITIVE_INFINITY),
-    [range, scale]
-  );
-  const major = useMemo(() => majorSegments(range, TICK_UNIT[scale]), [range, scale]);
+  const ticks = useMemo(() => axisTicks(range, scale, 0, Number.POSITIVE_INFINITY), [range, scale]);
+  const major = useMemo(() => majorSegments(range, scale), [range, scale]);
   const weekends = useMemo(() => (scale === "month" ? [] : weekendBands(range)), [range, scale]);
 
   // Opens on today, a third of the way in.
