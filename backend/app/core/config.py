@@ -37,8 +37,8 @@ PLUGIN_SERVER_URL = f"{API_V1_STR}/c/0"
 # Origins used by the Capacitor native apps (iOS, Android and the desktop app).
 # Must always be allowed regardless of CORS_ALLOWED_ORIGINS setting.
 CAPACITOR_NATIVE_ORIGINS = [
-    "https://studio.beyonders.initiative",  # Capacitor custom hostname (Android + iOS with iosScheme=https)
-    "capacitor://studio.beyonders.initiative",  # Capacitor default iOS scheme with custom hostname; the desktop app
+    "https://native.initiativetasks.com",  # Capacitor custom hostname (Android + iOS with iosScheme=https)
+    "capacitor://native.initiativetasks.com",  # Capacitor default iOS scheme with custom hostname; the desktop app
     "capacitor://localhost",  # Capacitor fallback (no custom hostname)
 ]
 
@@ -163,6 +163,29 @@ def _format_csp(directives: dict[str, list[str]]) -> str:
     return "; ".join(
         f"{name} {' '.join(dict.fromkeys(values))}"
         for name, values in directives.items()
+    )
+
+
+def captcha_frame_content_security_policy(provider: str, nonce: str) -> str:
+    """The policy for the captcha page the apps frame (``/config/captcha``).
+
+    The page holds one widget and nothing else, so it may load only the
+    provider and its own script, and only the apps may frame it.
+    """
+    provider_origins = CSP_CAPTCHA_ORIGINS[provider]
+    return _format_csp(
+        {
+            "default-src": ["'none'"],
+            "script-src": [f"'nonce-{nonce}'", *provider_origins],
+            "style-src": ["'unsafe-inline'", *provider_origins],
+            "img-src": ["data:", *provider_origins],
+            "connect-src": provider_origins,
+            "frame-src": provider_origins,
+            "object-src": ["'none'"],
+            "base-uri": ["'none'"],
+            "form-action": ["'none'"],
+            "frame-ancestors": CAPACITOR_NATIVE_ORIGINS,
+        }
     )
 
 
