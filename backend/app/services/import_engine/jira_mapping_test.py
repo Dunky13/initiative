@@ -910,7 +910,7 @@ def test_more_issue_types_than_a_project_holds_keep_the_commonest_and_every_name
     from app.core.task_types import MAX_TASK_TYPES
 
     rare = [f"Kind {n}" for n in range(MAX_TASK_TYPES)]
-    envelope = _envelope(
+    mapped = _mapped(
         issues=[
             _issue("ACME-1", "One", issuetype={"name": "Bug"}),
             _issue("ACME-2", "Two", issuetype={"name": "Bug"}),
@@ -920,6 +920,7 @@ def test_more_issue_types_than_a_project_holds_keep_the_commonest_and_every_name
             ),
         ]
     )
+    envelope = mapped.envelope
 
     names = [t["name"] for t in envelope["task_types"]]
     assert len(names) == MAX_TASK_TYPES
@@ -936,6 +937,8 @@ def test_more_issue_types_than_a_project_holds_keep_the_commonest_and_every_name
         for task in envelope["tasks"]
     }
     assert values[rare[-1]] == rare[-1]
+    # The review counts the tasks it fills, as any other property's.
+    assert mapped.properties["Issue type"] == ("select", 2 + len(rare))
 
 
 def test_issue_types_that_all_fit_need_no_property():

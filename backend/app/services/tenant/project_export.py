@@ -190,7 +190,7 @@ async def build_project_export(
             task.description, mention_handles
         )
         carry, carry_described = await _portable_carry(
-            session, task.recurrence_carry, mention_handles
+            session, task.recurrence_carry, mention_handles, type_names
         )
         tasks.append(
             ProjectExportTask(
@@ -461,17 +461,21 @@ async def _portable_carry(
     session: AsyncSession,
     carry: dict[str, Any] | None,
     mention_handles: Mapping[int, str],
+    type_names: Mapping[int, str],
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """``recurrence_carry`` as the envelope names things: its description's
-    mentions by handle and references by ref, its tags by name and colour and
-    its assignees by handle. Also the handles the description mentions."""
+    mentions by handle and references by ref, its tags by name and colour, its
+    assignees by handle and its type by name. Also the handles the description
+    mentions."""
     if not carry:
         return None, []
     portable = {
         field: value
         for field, value in carry.items()
-        if field not in {"tag_ids", "assignee_ids"}
+        if field not in {"tag_ids", "assignee_ids", "task_type_id"}
     }
+    if carry.get("task_type_id") in type_names:
+        portable["type_name"] = type_names[carry["task_type_id"]]
     described: list[str] = []
     if "description" in carry:
         description, described = detach_markdown_mentions(

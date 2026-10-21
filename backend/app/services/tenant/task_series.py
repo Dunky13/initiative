@@ -560,9 +560,13 @@ async def _next_task(
             created_by=task.created_by,
         )
     following.task_status = default_status
-    for field in ("title", "description", "priority", "task_type_id"):
+    for field in ("title", "description", "priority"):
         if field in values:
             setattr(following, field, values[field])
+    if "task_type_id" in values and await _still_a_type_of(
+        session, values["task_type_id"], task.project_id
+    ):
+        following.task_type_id = values["task_type_id"]
     sync_completed_at(following, default_status.category, now=now)
     following.start_date, following.due_date = dates
     following.recurrence_occurrence_count = task.recurrence_occurrence_count + 1
@@ -595,6 +599,17 @@ async def _next_task(
             session, following, author_id=task.created_by
         )
     return following
+
+
+async def _still_a_type_of(
+    session: AsyncSession, type_id: Any, project_id: int
+) -> bool:
+    """Whether a type a task kept back is still one of its project's: it may
+    have been deleted since, or the task moved to another project."""
+    if not isinstance(type_id, int):
+        return False
+    kept = await session.get(TaskType, type_id)
+    return kept is not None and kept.project_id == project_id
 
 
 async def others(session: AsyncSession, task: Task) -> list[Task]:

@@ -1978,6 +1978,51 @@ async def test_a_task_changes_type_alone_or_with_its_series(
     assert set((await types()).values()) == {idea.id}
 
 
+async def test_a_series_type_deleted_since_leaves_the_task_its_own(
+    client: AsyncClient, session: AsyncSession, recurring_task_env
+):
+    """A type kept back by an edit of just this task that has since been
+    deleted is not one to make the next task with: it keeps the task's own."""
+    from app.services.tenant.task_types import list_types
+    from app.testing.factories import create_task
+
+    a, todo, done = await recurring_task_env()
+    task_type, bug, idea = (await list_types(session, a.project.id))[:3]
+    first = await create_task(
+        session,
+        a.project,
+        task_status_id=todo.id,
+        due_date=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=DAILY",
+    )
+    await session.commit()
+    at = a.g(f"/tasks/{first.id}")
+
+    changed = await client.patch(
+        at, headers=a.headers, json={"task_type_id": bug.id, "scope": "this"}
+    )
+    assert changed.status_code == 200, changed.text
+    # The series' type goes, and its tasks with it into another.
+    gone = await client.request(
+        "DELETE",
+        a.g(f"/projects/{a.project.id}/task-types/{task_type.id}"),
+        headers=a.headers,
+        json={"fallback_type_id": idea.id},
+    )
+    assert gone.status_code == 204, gone.text
+
+    completed = await client.patch(
+        at, headers=a.headers, json={"task_status_id": done.id}
+    )
+    assert completed.status_code == 200, completed.text
+    following = (
+        await session.exec(
+            select(Task).where(Task.project_id == a.project.id, Task.id != first.id)
+        )
+    ).one()
+    assert following.task_type_id == bug.id
+
+
 async def test_filter_tasks_by_date_window_group(
     client: AsyncClient, session: AsyncSession, acting_user
 ):

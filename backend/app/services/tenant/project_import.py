@@ -495,6 +495,13 @@ async def _import_task(
                     # Brought into the initiative with the task's own assignees.
                     named_handle_sink.setdefault(uid, handle)
             carry["assignee_ids"] = sorted(carried)
+        # A type by its name, as the task's own is; an id is another project's.
+        carry.pop("task_type_id", None)
+        carried_type = type_name_to_id.get(
+            str(carry.pop("type_name", "") or "").strip().lower()
+        )
+        if carried_type is not None:
+            carry["task_type_id"] = carried_type
         task.recurrence_carry = carry
 
     if envelope_task.recurrence_anchor is None and task.recurrence:

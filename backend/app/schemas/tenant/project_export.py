@@ -161,8 +161,9 @@ class ProjectExportTask(SanitizedBaseModel):
     #: share in this export; the import gives each series a new one.
     series: Optional[int] = None
     #: What an edit of just this task changed from (``Task.recurrence_carry``),
-    #: its tags as ``{"name", "color"}`` under ``tags`` and its assignees under
-    #: ``assignee_handles``, as the rest of the envelope names them.
+    #: its tags as ``{"name", "color"}`` under ``tags``, its assignees under
+    #: ``assignee_handles`` and its type under ``type_name``, as the rest of the
+    #: envelope names them.
     recurrence_carry: Optional[dict[str, Any]] = None
     position: float = 0.0
     archived_at: Optional[datetime] = None

@@ -635,6 +635,7 @@ def keep_issue_types(
     tasks: list[dict[str, Any]],
     types: list[dict[str, Any]],
     definitions: list[dict[str, Any]],
+    issue_counts: dict[str, int],
 ) -> None:
     """Give every task its issue type as a select property, when some of the
     project's issue types are not among ``types``."""
@@ -653,6 +654,7 @@ def keep_issue_types(
             ],
         }
     )
+    issue_counts[name] = len(names)
     for task in tasks:
         if task.get("type_name"):
             task["properties"].append(
@@ -773,7 +775,9 @@ class ProjectMapper:
             description = str(project_fields["description"]).strip()
 
         task_types = issue_task_types(self._tasks)
-        keep_issue_types(self._tasks, task_types, fields.definitions)
+        keep_issue_types(
+            self._tasks, task_types, fields.definitions, fields.issue_counts
+        )
 
         return MappedProject(
             envelope=build_envelope(

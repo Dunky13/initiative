@@ -113,6 +113,12 @@ async def _seed_populated_project(session: AsyncSession):
             "title": "Fix it once",
             "tag_ids": [tag.id],
             "assignee_ids": [assignee.id],
+            # Kept back from a this-only change of type: the project's own row.
+            "task_type_id": next(
+                t.id
+                for t in await task_types_service.list_types(session, project.id)
+                if t.name == "Bug"
+            ),
         },
         checklist=[
             *checklist_items("step 1"),
@@ -179,6 +185,7 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
         "title": "Fix it once",
         "tags": [{"name": "blocker", "color": "#FF0000"}],
         "assignee_handles": [handle_of(assignee)],
+        "type_name": "Bug",
     }
 
     # Target initiative in the same guild — assignee is a member of both
@@ -237,6 +244,11 @@ async def test_round_trip_into_different_initiative(session: AsyncSession):
         "title": "Fix it once",
         "tag_ids": [tag.id for tag in new_task.tags],
         "assignee_ids": [assignee.id],
+        "task_type_id": next(
+            t.id
+            for t in await task_types_service.list_types(session, new_task.project_id)
+            if t.name == "Bug"
+        ),
     }
     assert {i["text"] for i in new_task.checklist} == {"step 1", "step 2"}
     assert [handle_of(u) for u in new_task.assignees] == [handle_of(assignee)]
