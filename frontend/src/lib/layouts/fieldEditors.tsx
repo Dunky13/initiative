@@ -545,6 +545,11 @@ export const DescriptionField = <I, P>({
   const [draft, setDraftState] = useState(() => readDescriptionDraft(key));
   const [discarding, setDiscarding] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  // The written description, and the draft it replaced, for Undo suggestion.
+  const [suggested, setSuggested] = useState<{
+    text: string;
+    before: DescriptionDraft | null;
+  } | null>(null);
   // Read by the description written for the reader, which lands later.
   const latest = useRef(draft);
 
@@ -589,6 +594,7 @@ export const DescriptionField = <I, P>({
     setSuggesting(true);
     try {
       const text = await suggest.run();
+      setSuggested({ text, before: latest.current });
       setDraft({ text, base: latest.current?.base ?? value });
     } catch {
       // The request says what went wrong.
@@ -704,6 +710,19 @@ export const DescriptionField = <I, P>({
               <Button type="button" size="sm" variant="outline" onClick={cancel}>
                 {t("cancel")}
               </Button>
+              {suggested !== null && open.text === suggested.text ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setDraft(suggested.before);
+                    setSuggested(null);
+                  }}
+                >
+                  {t("descriptionField.undoSuggestion")}
+                </Button>
+              ) : null}
             </div>
           )}
         </div>

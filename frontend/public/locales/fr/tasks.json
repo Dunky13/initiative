@@ -129,6 +129,10 @@
   "tagTasks": {
     "loadError": "Impossible de charger les tâches."
   },
+  "ai": {
+    "fromComments_one": "Rédigé sans le commentaire de la tâche, qui ne tenait pas.",
+    "fromComments_other": "Rédigé à partir des {{read}} commentaires les plus récents sur {{count}}."
+  },
   "checklist": {
     "title": "Checklist",
     "progressLabel": "Progression de la checklist",

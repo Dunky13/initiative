@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboards can read links.** In the SQL tab, `relationships` holds what each thing is linked to, so a Gantt can group subtasks under their parent. A link shows only to someone who can see both ends, and one that was unlinked is left out.
 - **AI per community.** On a platform-managed server, the owner can give an AI connection to particular communities, which then use it on its own key while every other community shares the rest. A community's superadmin can switch AI off for that community alone, so nothing from it goes to any provider. A connection's settings say when its requests are failing and since when, and an AI request that fails says why: out of credit, a spending limit reached, or the provider rate-limiting.
 
+- **Smarter task suggestions.** Suggested checklist steps and descriptions are written from the whole task: its checklist, type, status and fields, its project, the unfinished tasks linked to it, and its most recent comments, with people's names in place of their mentions. Suggestions leave out steps the checklist already has. When a long thread does not all fit, the result says how many comments it read. A written description can be taken back with **Undo suggestion**.
+
 ### Fixed
 
 - **A dashboard Gantt's progress counts finished work.** It counted anything past its end date as done. Give the tile a column saying whether work is finished as **Done**, and each group fills up as its work gets done, with unfinished work past its end in red. Without one, the Gantt counts the work and leaves the bars unfilled.

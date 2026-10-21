@@ -1257,15 +1257,14 @@ async def generate_task_checklist(
         initiative_id=project.initiative_id,
     )
 
-    items = await ai_generation_service.generate_checklist(
-        session,
-        current_user,
-        guild_context.guild_id,
-        task,
-        initiative_name=project.initiative.name if project.initiative else None,
-        project_name=project.name,
+    items, context = await ai_generation_service.generate_checklist(
+        session, current_user, guild_context.guild_id, task
     )
-    return GenerateChecklistResponse(items=items)
+    return GenerateChecklistResponse(
+        items=items,
+        comments_read=context.comments_read,
+        comments_total=context.comments_total,
+    )
 
 
 @router.post("/{task_id}/ai/description", response_model=GenerateDescriptionResponse)
@@ -1288,12 +1287,11 @@ async def generate_task_description(
         initiative_id=project.initiative_id,
     )
 
-    description = await ai_generation_service.generate_description(
-        session,
-        current_user,
-        guild_context.guild_id,
-        task,
-        initiative_name=project.initiative.name if project.initiative else None,
-        project_name=project.name,
+    description, context = await ai_generation_service.generate_description(
+        session, current_user, guild_context.guild_id, task
     )
-    return GenerateDescriptionResponse(description=description)
+    return GenerateDescriptionResponse(
+        description=description,
+        comments_read=context.comments_read,
+        comments_total=context.comments_total,
+    )

@@ -6027,13 +6027,17 @@ export interface GalleryUpdate {
  * Suggested checklist lines, as text — the caller decides which to keep.
  */
 export interface GenerateChecklistResponse {
+  comments_read: number;
+  comments_total: number;
   items: string[];
 }
 
 /**
- * Response schema for description generation.
+ * A description for the reader to start from.
  */
 export interface GenerateDescriptionResponse {
+  comments_read: number;
+  comments_total: number;
   description: string;
 }
 

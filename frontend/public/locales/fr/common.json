@@ -381,7 +381,8 @@
     "unsavedTitle": "Abandonner les modifications non enregistrées ?",
     "unsavedBody": "Vous avez une description non enregistrée. Si vous partez maintenant, elle sera perdue.",
     "leave": "Quitter",
-    "stay": "Rester"
+    "stay": "Rester",
+    "undoSuggestion": "Annuler la suggestion"
   },
   "kinds": {
     "project": {

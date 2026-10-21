@@ -381,7 +381,8 @@
     "unsavedTitle": "Discard unsaved changes?",
     "unsavedBody": "You have an unsaved description. If you leave now, it will be lost.",
     "leave": "Leave",
-    "stay": "Stay"
+    "stay": "Stay",
+    "undoSuggestion": "Undo suggestion"
   },
   "kinds": {
     "project": {

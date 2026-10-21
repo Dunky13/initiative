@@ -129,6 +129,10 @@
   "tagTasks": {
     "loadError": "Aufgaben konnten nicht geladen werden."
   },
+  "ai": {
+    "fromComments_one": "Ohne den Kommentar der Aufgabe geschrieben, er passte nicht hinein.",
+    "fromComments_other": "Aus den {{read}} neuesten von {{count}} Kommentaren geschrieben."
+  },
   "checklist": {
     "title": "Checkliste",
     "progressLabel": "Checklisten-Fortschritt",

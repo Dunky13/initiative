@@ -80,6 +80,7 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
   const { isEnabled: aiEnabled } = useAIEnabled();
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [fromComments, setFromComments] = useState<{ read: number; count: number } | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const [items, setItems] = useState<ChecklistItem[]>(serverItems);
@@ -131,6 +132,11 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
   const generateChecklist = useGenerateChecklist({
     onSuccess: (data) => {
       setSuggestions(data.items);
+      setFromComments(
+        data.comments_read < data.comments_total
+          ? { read: data.comments_read, count: data.comments_total }
+          : null
+      );
       setSelected(new Set(data.items.map((_, index) => index)));
       setAiDialogOpen(true);
     },
@@ -358,6 +364,9 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
             <DialogTitle>{t("checklist.aiDialogTitle")}</DialogTitle>
             <DialogDescription>{t("checklist.aiDialogDescription")}</DialogDescription>
           </DialogHeader>
+          {fromComments ? (
+            <p className="text-muted-foreground text-xs">{t("ai.fromComments", fromComments)}</p>
+          ) : null}
           <div className="space-y-2 py-4">
             {suggestions.map((suggestion, index) => (
               <div key={suggestion} className="flex items-center gap-3 rounded-md border p-3">
