@@ -178,6 +178,35 @@ class TestGating:
         assert response.status_code == 409
         assert response.json()["detail"] == GuildPluginMessages.ENTITLEMENT_REQUIRED
 
+    async def test_a_full_term_shows_a_request_and_never_hides_the_listing(
+        self, client: AsyncClient, acting_user, entitled, billing
+    ):
+        """Billing marks a community the deployment's term has no seat for:
+        the listing is still shown, with a request rather than a purchase, and
+        it still doesn't install."""
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": False, "reason": "term_full"})
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{SERVICE_UID}"), headers=a.headers
+        )
+        browse = await client.get(
+            a.g("/marketplace/listings"), headers=a.headers, params={"kind": "plugin"}
+        )
+        install = await _install(client, a)
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["unavailable"] == {
+            "reason": "term_full",
+            "action_url": None,
+        }
+        assert [
+            item["unavailable"]
+            for item in browse.json()["items"]
+            if item["uid"] == SERVICE_UID
+        ] == [{"reason": "term_full", "action_url": None}]
+        assert install.status_code == 409
+
     async def test_the_catalog_says_it_is_unavailable_and_where_to_go(
         self, client: AsyncClient, acting_user, entitled, billing
     ):

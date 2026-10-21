@@ -69,7 +69,9 @@ __all__ = [
     "listing_terms",
     "read_statement",
     "record_usage",
+    "REASON_TERM_FULL",
     "statement_active",
+    "statement_reason",
     "statements_for",
     "store_statement",
     "terms_for_listings",
@@ -107,6 +109,21 @@ def statement_active(values: Mapping[str, Any]) -> bool:
     is false, it does (see the module docstring)."""
     active = values.get("active")
     return active if isinstance(active, bool) else True
+
+
+#: Why a statement isn't active, as billing says it: the deployment's term
+#: for the listing has no seat left for this community. Not a price: the way
+#: on is a request to the deployment's owners, never a purchase.
+REASON_TERM_FULL = "term_full"
+
+
+def statement_reason(values: Mapping[str, Any]) -> Optional[str]:
+    """Why an inactive statement isn't active, when it says: the ``reason``
+    beside ``active: false``, passed through as billing sent it."""
+    if statement_active(values):
+        return None
+    reason = values.get("reason")
+    return reason if isinstance(reason, str) and reason else None
 
 
 # --- terms --------------------------------------------------------------------------
@@ -215,19 +232,20 @@ async def entitlement_blocks(
 
 async def gated_listings(
     guild_id: int, listings: Collection[MarketplaceListing]
-) -> set[str]:
+) -> dict[str, Optional[str]]:
     """The uids among ``listings`` that ``guild_id`` may not install for want
-    of an active entitlement statement. Two queries for any number."""
+    of an active entitlement statement, each with the statement's reason when
+    it gives one (:func:`statement_reason`). Two queries for any number."""
     entitled = {
         uid: terms
         for uid, terms in terms_for_listings(listings).items()
         if terms.access == ACCESS_ENTITLED
     }
     if not entitled:
-        return set()
+        return {}
     held = await statements_for(guild_id, entitled)
     return {
-        uid
+        uid: (statement_reason(held[uid].values) if uid in held else None)
         for uid, terms in entitled.items()
         if not entitlement_satisfied(terms, held.get(uid))
     }

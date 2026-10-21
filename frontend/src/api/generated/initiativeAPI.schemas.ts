@@ -6980,6 +6980,7 @@ export type ListingUnavailableReason =
 
 export const ListingUnavailableReason = {
   entitlement_required: "entitlement_required",
+  term_full: "term_full",
 } as const;
 
 /**
