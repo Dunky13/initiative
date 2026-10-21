@@ -2,10 +2,12 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  AIConnectionCommunity,
   AIConnectionCreate,
   AIConnectionResponse,
   AIConnectionUpdate,
   AIProvider,
+  ConnectionScope,
 } from "@/api/generated/initiativeAPI.schemas";
 import { useServerForm } from "@/hooks/useServerForm";
 import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
@@ -22,6 +24,7 @@ export interface AIConnectionFormState {
   apiKey: string;
   enabled: boolean;
   isDefault: boolean;
+  communities: AIConnectionCommunity[];
 }
 
 const emptyForm: AIConnectionFormState = {
@@ -32,6 +35,7 @@ const emptyForm: AIConnectionFormState = {
   apiKey: "",
   enabled: true,
   isDefault: false,
+  communities: [],
 };
 
 const toFormState = (connection: AIConnectionResponse): AIConnectionFormState => ({
@@ -42,10 +46,12 @@ const toFormState = (connection: AIConnectionResponse): AIConnectionFormState =>
   apiKey: "",
   enabled: connection.enabled,
   isDefault: connection.is_default,
+  communities: connection.communities,
 });
 
 interface UseAIConnectionFormArgs {
   open: boolean;
+  scope: ConnectionScope;
   connection: AIConnectionResponse | null;
   mutations: ConnectionMutations;
   onClose: () => void;
@@ -59,6 +65,7 @@ interface UseAIConnectionFormArgs {
  */
 export const useAIConnectionForm = ({
   open,
+  scope,
   connection,
   mutations,
   onClose,
@@ -124,6 +131,7 @@ export const useAIConnectionForm = ({
         is_default: form.isDefault,
       };
       if (form.apiKey) payload.api_key = form.apiKey;
+      if (scope === "platform") payload.community_ids = form.communities.map((c) => c.id);
       mutations.update.mutate(
         { connectionId: connection.id, data: payload },
         {
@@ -149,6 +157,7 @@ export const useAIConnectionForm = ({
       api_key: form.apiKey || null,
       enabled: form.enabled,
       is_default: form.isDefault,
+      community_ids: scope === "platform" ? form.communities.map((c) => c.id) : [],
     };
     mutations.create.mutate(payload, {
       onSuccess: (created) => {

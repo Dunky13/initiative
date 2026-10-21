@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **More than one My tasks widget on Home.** Each widget keeps its own filters and columns, so one can show what is due this week and another everything high priority. A widget you haven't changed shows the filters and columns you already had.
 - **More AI providers.** A connection can use Google Gemini, DeepSeek, Groq, xAI, Together AI or OpenRouter, or any OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI, or a gateway). The server's operator can point an OpenAI-compatible server at a machine on their own network, as with Ollama. OpenAI connections can use every OpenAI model, Codex models included.
 - **Dashboards can read links.** In the SQL tab, `relationships` holds what each thing is linked to, so a Gantt can group subtasks under their parent. A link shows only to someone who can see both ends, and one that was unlinked is left out.
+- **AI per community.** On a platform-managed server, the owner can give an AI connection to particular communities, which then use it on its own key while every other community shares the rest. A community's superadmin can switch AI off for that community alone, so nothing from it goes to any provider. A connection's settings say when its requests are failing and since when, and an AI request that fails says why: out of credit, a spending limit reached, or the provider rate-limiting.
 
 ### Fixed
 

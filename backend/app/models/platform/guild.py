@@ -418,6 +418,14 @@ class Guild(SQLModel, table=True):
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
+
+    # Whether AI features may send this community's content to a provider at
+    # all, whatever the deployment offers. Here for the reason the answers
+    # above are: the seat sets it under ``restrictions``, and off wins.
+    allow_ai: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
     # The longest a guest may stay, in days, under the deployment's ceiling
     # (``app_settings.max_guest_days``). NULL leaves the ceiling alone. The
     # seat sets it with the guests' sign-in rule.

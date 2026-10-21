@@ -130,7 +130,11 @@ class _Provider:
             body = json.loads(request.content) if request.content else {}
             self.sent.append((request, body))
             if self.status != 200:
-                return lib.Response(self.status, json=self.error)
+                # A refusal is answered once: the SDK would otherwise wait out
+                # its backoff before retrying it.
+                return lib.Response(
+                    self.status, json=self.error, headers={"x-should-retry": "false"}
+                )
             return lib.Response(200, json=self.reply(body))
 
         return handler
@@ -413,3 +417,78 @@ async def test_a_server_somebody_runs_is_asked_once_and_read_within_a_bound(
     with _resolves_to(PUBLIC_IP), pytest.raises(AIRequestError) as too_long:
         await ai_provider.complete_text(target, JOB, PROMPT, guild_id=None)
     assert too_long.value.code == AIMessages.PROVIDER_ERROR
+
+
+@pytest.mark.parametrize(
+    ("provider", "status", "error", "code"),
+    [
+        # Anthropic: billing, a limit the account set, the tier's monthly cap.
+        (
+            AIProvider.anthropic,
+            402,
+            {"type": "error", "error": {"type": "billing_error", "message": "x"}},
+            AIMessages.OUT_OF_CREDIT,
+        ),
+        (
+            AIProvider.anthropic,
+            400,
+            {
+                "type": "error",
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "You have reached your specified workspace API usage "
+                    "limits. You will regain access on 2026-11-01 at 00:00 UTC.",
+                },
+            },
+            AIMessages.SPEND_LIMIT_REACHED,
+        ),
+        (
+            AIProvider.anthropic,
+            429,
+            {
+                "type": "error",
+                "error": {
+                    "type": "rate_limit_error",
+                    "message": "x",
+                    "details": {"error_code": "enforced_spend_limit_reached"},
+                },
+            },
+            AIMessages.SPEND_LIMIT_REACHED,
+        ),
+        (
+            AIProvider.anthropic,
+            429,
+            {"type": "error", "error": {"type": "rate_limit_error", "message": "x"}},
+            AIMessages.RATE_LIMITED,
+        ),
+        # OpenAI names an exhausted balance.
+        (
+            AIProvider.openai,
+            429,
+            {
+                "error": {
+                    "type": "insufficient_quota",
+                    "code": "credit_balance_exhausted",
+                    "message": "x",
+                }
+            },
+            AIMessages.OUT_OF_CREDIT,
+        ),
+        (
+            AIProvider.groq,
+            400,
+            {"error": {"type": "invalid_request_error", "message": "x"}},
+            AIMessages.PROVIDER_ERROR,
+        ),
+    ],
+)
+async def test_what_the_account_needs_is_named(
+    monkeypatch, provider, status, error, code
+):
+    """A refusal the owner can act on at the provider says which; one that is
+    not documented as such is a provider error."""
+    _Provider(monkeypatch, reply=lambda body: {}, status=status, error=error)
+    with _resolves_to(PUBLIC_IP), pytest.raises(AIRequestError) as refused:
+        await ai_provider.complete_text(_target(provider), JOB, PROMPT, guild_id=None)
+    assert refused.value.code == code
+    assert code in ai_provider.PROVIDER_CODES
