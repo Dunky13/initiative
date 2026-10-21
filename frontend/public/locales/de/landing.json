@@ -12,8 +12,8 @@
   },
   "hero": {
     "titleLine1": "Deine Gruppe hat viel zu tun.",
-    "titleLine2": "Jetzt hat sie ein Zuhause.",
-    "titleAria": "Deine Gruppe hat viel zu tun. Jetzt hat sie ein Zuhause.",
+    "titleLine2": "Zeit, die Initiative zu ergreifen.",
+    "titleAria": "Deine Gruppe hat viel zu tun. Zeit, die Initiative zu ergreifen.",
     "subtitle": "Die Projekte, Aufgaben, Dateien und Pläne deiner Gruppe an einem Ort. Statt verteilt auf einen Gruppenchat, zwei Tabellen, einen E-Mail-Verlauf vom März und den Kopf der Person, die das hier am längsten macht.",
     "freeTitle": "Kostenlos registrieren",
     "freeBody": "Dein Konto und deine erste Community sind kostenlos, und jeder bezahlte Tarif startet mit 14 Tagen kostenlos zum Testen.",
@@ -391,7 +391,7 @@
     "error": "Die Neuigkeiten konnten nicht geladen werden. Warte kurz und versuch es noch mal."
   },
   "meta": {
-    "homeTitle": "Initiative: deine Gruppe hat viel zu tun, und jetzt hat sie ein Zuhause",
+    "homeTitle": "Initiative: deine Gruppe hat viel zu tun, und es ist Zeit, die Initiative zu ergreifen",
     "homeDescription": "Projekte, Aufgaben, Dateien, Termine und Gespräche deiner Gruppe an einem Ort, im Web, auf Android, iPhone und deinem Computer.",
     "downloadTitle": "Initiative herunterladen",
     "downloadDescription": "Hol dir Initiative auf Android, iPhone, iPad oder deinen Computer, oder nutze es einfach weiter im Browser.",
