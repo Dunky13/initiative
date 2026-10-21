@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import AwareDatetime, EmailStr, Field, field_validator
@@ -81,6 +82,30 @@ class DemoPersonasEnsure(SanitizedBaseModel):
 class DemoPersonasEnsured(SanitizedBaseModel):
     #: The handles ensured, as stored.
     handles: list[str]
+
+
+class PitchSeat(str, Enum):
+    """Where an account named for a pitch sits in it."""
+
+    #: A member, in each of its initiatives.
+    member = "member"
+    #: A member, and the project manager of each of its initiatives.
+    manager = "manager"
+    admin = "admin"
+    #: The seat, beside the demo host's.
+    superadmin = "superadmin"
+
+
+class DemoPitchSeat(SanitizedBaseModel):
+    """An account a pitch seats, and where."""
+
+    #: The whole handle, ``name#1234``.
+    handle: str = Field(min_length=1, max_length=40)
+    seat: PitchSeat
+
+
+class DemoPitchSeats(SanitizedBaseModel):
+    seats: list[DemoPitchSeat] = Field(max_length=50)
 
 
 class DemoDirectoryCard(SanitizedBaseModel):

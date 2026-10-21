@@ -67,9 +67,11 @@ from app.schemas.platform.demo import (
     DemoPitchesFind,
     DemoPitchesFound,
     DemoPitchFound,
+    DemoPitchSeats,
     DemoPitchRead,
     DemoRedeem,
     DemoRedemption,
+    PitchSeat,
 )
 from app.services import captcha as captcha_service
 from app.services.import_engine import limits as import_limits
@@ -274,6 +276,16 @@ async def ensure_demo_personas(
     return DemoPersonasEnsured(handles=[persona.handle for persona in payload.personas])
 
 
+def _seats(raw: str | None) -> dict[str, PitchSeat]:
+    if raw is None:
+        return {}
+    try:
+        listed = DemoPitchSeats.model_validate_json(raw)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+    return {seat.handle: seat.seat for seat in listed.seats}
+
+
 def _directory_card(raw: str | None) -> DemoDirectoryCard | None:
     if raw is None:
         return None
@@ -298,21 +310,32 @@ async def make_demo_pitch(
     bundle: Annotated[UploadFile, File()],
     logo: Annotated[Optional[UploadFile], File()] = None,
     editors: Annotated[list[str], Form(max_length=50)] = [],
+    seats: Annotated[Optional[str], Form(max_length=10000)] = None,
     directory: Annotated[Optional[str], Form(max_length=2000)] = None,
 ) -> DemoPitchCreated:
     """Make a pitch from an uploaded ``bundle``, named ``name``, with ``logo``
     as its icon, and publish it. Each ``editors`` field names by handle an
-    account made its admin. ``directory``, a directory card as JSON
-    (``{categories, join_policy}``), lists it in the community directory and
-    gives its initiatives that join policy."""
+    account made its admin. ``seats``, as JSON (``{seats: [{handle, seat}]}``,
+    ``seat`` one of member, manager, admin, superadmin), names accounts and
+    where each sits; members and managers are also put in each of its
+    initiatives. ``directory``, a directory card as JSON (``{categories,
+    join_policy}``), lists it in the community directory and gives its
+    initiatives that join policy. 400 ``DEMO_PITCH_SOURCE_INVALID`` when the
+    bundle can't be imported or a handle names no account."""
     card = _directory_card(directory)
+    placed = _seats(seats)
     icon = await logo.read(_ICON.max_bytes + 1) if logo is not None else None
     try:
         async with spooled_upload(
             bundle.file, max_bytes=import_limits.IMPORT_MAX_BACKUP_UPLOAD_BYTES
         ) as path:
             pitch_id = await pitches.make_pitch(
-                name=name, bundle=path, logo=icon, editors=editors, directory=card
+                name=name,
+                bundle=path,
+                logo=icon,
+                editors=editors,
+                seats=placed,
+                directory=card,
             )
     except ValueError:
         raise HTTPException(

@@ -27,9 +27,14 @@ from app.models.platform.guild import (
 from app.models.platform.user import User
 from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.import_job import ImportJob, ImportJobStatus
-from app.models.tenant.initiative import Initiative, InitiativeMember
+from app.models.tenant.initiative import (
+    Initiative,
+    InitiativeMember,
+    InitiativeRoleModel,
+)
 from app.models.tenant.plugin_event_outbox import PluginEventOutbox
 from app.models.tenant.task import Task
+from app.schemas.platform.demo import PitchSeat
 from app.services.export import worker as export_worker
 from app.services.guild_sweeps import Scope, each_guild
 from app.services.import_engine import engine as import_engine
@@ -362,6 +367,47 @@ async def test_making_a_pitch_imports_and_publishes(pitch, session):
     assert await pitches.newest_export(pitch_id) is not None
     await route_session_to_guild(session, pitch_id)
     assert (await session.exec(select(Task.title))).all() == ["Proof the dough"]
+
+
+async def test_a_pitch_seats_each_named_account_where_it_says(pitch, session):
+    _link, _bea, source = pitch
+    named = {
+        seat: await create_user(session, username=f"pt-{seat.value}", discriminator=1)
+        for seat in PitchSeat
+    }
+    await session.commit()
+    newest = await pitches.newest_export(source)
+    assert newest is not None
+    async with import_engine.open_payload(source, newest[0]) as bundle:
+        assert bundle is not None
+        pitch_id = await pitches.make_pitch(
+            bundle=bundle,
+            name="Seated",
+            seats={f"pt-{seat.value}#0001": seat for seat in PitchSeat},
+        )
+        with pytest.raises(ValueError):
+            await pitches.make_pitch(
+                bundle=bundle, name="Nobody", seats={"nobody#0001": PitchSeat.member}
+            )
+
+    roster = await _roster(session, pitch_id)
+    assert roster[named[PitchSeat.member].id] is CommunityRole.member
+    assert roster[named[PitchSeat.manager].id] is CommunityRole.member
+    assert roster[named[PitchSeat.admin].id] is CommunityRole.admin
+    assert roster[named[PitchSeat.superadmin].id] is CommunityRole.superadmin
+    assert roster[(await accounts.demo_host(session)).id] is CommunityRole.superadmin
+    await route_session_to_guild(session, pitch_id)
+    held = (
+        await session.exec(
+            select(InitiativeMember.user_id, InitiativeRoleModel.name).join(
+                InitiativeRoleModel,
+                InitiativeRoleModel.id == InitiativeMember.role_id,
+            )
+        )
+    ).all()
+    assert (named[PitchSeat.member].id, "member") in held
+    assert (named[PitchSeat.manager].id, "project_manager") in held
+    assert named[PitchSeat.admin].id not in {user_id for user_id, _ in held}
 
 
 async def test_a_pitch_whose_import_fails_is_not_left_behind(

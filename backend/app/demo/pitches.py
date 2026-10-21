@@ -2,7 +2,8 @@
 in demo mode open a copy of it rather than a seat in it.
 
 A pitch is an ordinary community, made from an uploaded bundle and tailored in
-the app by the pitch editors, who are its admins. Publishing it is exporting
+the app by the pitch editors, who are its admins. Other accounts may be named
+to sit in it in any role, which a pitch's every remaking seats again. Publishing it is exporting
 it: a copy imports the pitch's newest finished community export, so edits
 nobody has published never reach a visitor.
 
@@ -13,7 +14,7 @@ nobody signs in as, which holds their seat.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -36,8 +37,12 @@ from app.models.platform.guild_image import IMAGE_SPECS, GuildImageVariant
 from app.models.platform.user import User
 from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.import_job import ImportJob, ImportJobStatus
-from app.models.tenant.initiative import Initiative
-from app.schemas.platform.demo import DemoDirectoryCard
+from app.models.tenant.initiative import (
+    Initiative,
+    InitiativeMember,
+    InitiativeRoleModel,
+)
+from app.schemas.platform.demo import DemoDirectoryCard, PitchSeat
 from app.schemas.tenant.import_job import BackupPlanPerson
 from app.services.import_engine import backup as backup_service
 from app.services.import_engine import worker as import_worker
@@ -55,6 +60,17 @@ COPY_DAYS = 1
 #: How long making a pitch waits for its import, and how often it looks.
 IMPORT_TIMEOUT_SECONDS = 30 * 60
 IMPORT_POLL_SECONDS = 1.0
+
+
+_COMMUNITY_ROLE = {
+    PitchSeat.member: CommunityRole.member,
+    PitchSeat.manager: CommunityRole.member,
+    PitchSeat.admin: CommunityRole.admin,
+    PitchSeat.superadmin: CommunityRole.superadmin,
+}
+#: The built-in initiative role each seat takes in every initiative; the
+#: community's admins reach every initiative without one.
+_INITIATIVE_ROLE = {PitchSeat.member: "member", PitchSeat.manager: "project_manager"}
 
 
 def link_url(token: str) -> str:
@@ -121,14 +137,16 @@ async def make_pitch(
     name: str,
     logo: bytes | None = None,
     editors: Sequence[str] = (),
+    seats: Mapping[str, PitchSeat] | None = None,
     directory: DemoDirectoryCard | None = None,
 ) -> int:
     """Make a pitch named ``name`` from ``bundle``, with ``logo`` as its icon,
     and publish it. Returns its id.
 
-    The accounts ``editors`` names by handle are made its admins, the
-    personas the bundle names are seated in it, and its dates move from the
-    bundle's export to now. With ``directory`` it is listed in the community
+    The accounts ``editors`` names by handle are made its admins, those
+    ``seats`` names sit where it says (:class:`PitchSeat`), the personas the
+    bundle names are seated in it, and its dates move from the bundle's
+    export to now. Raises ``ValueError`` for a handle that names no account. With ``directory`` it is listed in the community
     directory with that card, and its initiatives take the card's join
     policy. The import runs here; the export is queued once it is done."""
     icon = validate_image(IMAGE_SPECS[GuildImageVariant.icon], logo) if logo else None
@@ -138,12 +156,14 @@ async def make_pitch(
     )
     async with cohorts.system_session(None) as session:
         await set_rls_context(session, Unattributed())
-        editor_ids = []
-        for handle in editors:
-            editor = await accounts.by_handle(session, handle)
-            if editor is None:
+        placed: dict[int, PitchSeat] = {}
+        for handle, seat in [(h, PitchSeat.admin) for h in editors] + list(
+            (seats or {}).items()
+        ):
+            named = await accounts.by_handle(session, handle)
+            if named is None:
                 raise ValueError(f"no account is {handle}")
-            editor_ids.append(editor.id)
+            placed[cast(int, named.id)] = seat
         host = await accounts.demo_host(session)
         guild = await guilds_service.provision_new_guild(
             session, name=name, creator=host
@@ -154,12 +174,12 @@ async def make_pitch(
             await guild_images.set_images(
                 session, guild_id=guild_id, renditions={GuildImageVariant.icon: icon}
             )
-        for editor_id in editor_ids:
+        for user_id, seat in placed.items():
             await guilds_service.ensure_membership(
                 session,
                 guild_id=guild_id,
-                user_id=editor_id,
-                role=CommunityRole.admin,
+                user_id=user_id,
+                role=_COMMUNITY_ROLE[seat],
                 force_role=True,
                 actor_user_id=host.id,
             )
@@ -184,6 +204,7 @@ async def make_pitch(
             await session.commit()
             job_id = cast(int, job.id)
         await _wait_for_import(guild_id, job_id)
+        await _seat_in_initiatives(guild_id, placed)
     except Exception:
         # A pitch whose import did not finish is not left behind, so trying
         # again makes one community rather than two.
@@ -209,6 +230,42 @@ async def make_pitch(
             await session.commit()
     await publish(guild_id, host)
     return guild_id
+
+
+async def _seat_in_initiatives(guild_id: int, placed: Mapping[int, PitchSeat]) -> None:
+    """Put each member and manager ``placed`` names in every initiative the
+    import made, on its seat's built-in role."""
+    wanted = {
+        user_id: _INITIATIVE_ROLE[seat]
+        for user_id, seat in placed.items()
+        if seat in _INITIATIVE_ROLE
+    }
+    if not wanted:
+        return
+    async with cohorts.system_session(guild_id) as session:
+        await set_rls_context(session, SystemGuild(guild_id))
+        roles = (await session.exec(select(InitiativeRoleModel))).all()
+        by_initiative: dict[int, dict[str, int]] = {}
+        for role in roles:
+            by_initiative.setdefault(role.initiative_id, {})[role.name] = cast(
+                int, role.id
+            )
+        held = {
+            (member.initiative_id, member.user_id)
+            for member in (await session.exec(select(InitiativeMember))).all()
+        }
+        for initiative_id, named_roles in by_initiative.items():
+            for user_id, role_name in wanted.items():
+                if (initiative_id, user_id) in held or role_name not in named_roles:
+                    continue
+                session.add(
+                    InitiativeMember(
+                        initiative_id=initiative_id,
+                        user_id=user_id,
+                        role_id=named_roles[role_name],
+                    )
+                )
+        await session.commit()
 
 
 async def _list(session: AsyncSession, guild: Guild, card: DemoDirectoryCard) -> None:
