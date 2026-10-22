@@ -20,6 +20,8 @@ function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.C
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
+/** Dims the app; the blur behind it is a filter on #root (styles.css), not a
+ *  backdrop-filter here, so scrolling a dialog doesn't redraw it. */
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
@@ -28,7 +30,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 backdrop-blur duration-200 data-[state=closed]:animate-out data-[state=open]:animate-in supports-backdrop-blur:bg-black/60",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/60 duration-200 data-[state=closed]:animate-out data-[state=open]:animate-in",
       className
     )}
     {...props}
