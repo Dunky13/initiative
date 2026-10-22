@@ -146,8 +146,9 @@ describe("ProjectTasksGanttView", () => {
     fireEvent.pointerMove(fromFirst, { clientX: 40, clientY: 48 });
     fireEvent.pointerUp(fromFirst, { clientX: 40, clientY: 48 });
 
-    expect(await screen.findByRole("menuitem", { name: "Next waits on First" })).toBeVisible();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Next is part of First" }));
+    expect(await screen.findByText("How is “Next” linked to “First”?")).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: /^Blocked by it/ })).toBeVisible();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Part of it/ }));
     await waitFor(() =>
       expect(sent).toHaveBeenCalledWith({
         source: { type: "task", id: next.id },
