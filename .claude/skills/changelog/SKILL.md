@@ -117,8 +117,8 @@ view, dialog or control — can carry a picture, drawn under the bullet in the
 app's theme. Propose which (skip fixes, operator changes, removals, anything
 invisible, and bullets that already have a
 `![…](frontend/public/release-images/…)` line) and confirm the list with the
-user before shooting. One picture per bullet; two only for two distinct
-screens.
+user before shooting. One picture per bullet is the norm; use several, as a strip,
+when the change shows on several screens.
 
 The machinery (read these before the first shot of a session):
 
@@ -235,6 +235,16 @@ GitHub draws it too:
 ```
 
 The alt text says what the picture shows, in one sentence.
+
+Two or more pictures for one bullet go on consecutive lines, with no blank
+line between them. The version dialog and What's new then draw them as a
+strip of tiles that scrolls sideways, with the count in its corner, each
+opening full size in the lightbox:
+
+```markdown
+  ![The task types in settings](frontend/public/release-images/task-types.webp)
+  ![A board showing each task's type](frontend/public/release-images/task-type-icons.webp)
+```
 
 ## 6. Check and hand back
 

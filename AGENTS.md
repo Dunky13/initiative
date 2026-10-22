@@ -183,6 +183,8 @@ in the version dialog and on **What's new**, in light or dark to match the app.
 3. Look them over, then put the picture under its bullet, by its repository path
    so GitHub draws it too:
    `![What it shows](frontend/public/release-images/<name>.webp)`.
+   Several pictures on consecutive lines under one bullet become a strip that
+   scrolls sideways, each opening in the lightbox.
 
 Name a picture for what it shows, not the release; a name already used would
 replace a released picture. `releaseImages.test.ts` fails when a picture the

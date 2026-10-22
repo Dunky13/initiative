@@ -162,4 +162,48 @@ describe("Markdown", () => {
     );
     vi.restoreAllMocks();
   });
+
+  it("scrolls a release's pictures sideways as a strip when there are several", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content={[
+          "- **Task types.** Every project starts with four.",
+          "",
+          "  ![The task types in settings](frontend/public/release-images/task-types.webp)",
+          "  ![A board showing each type](frontend/public/release-images/type-icons.webp)",
+        ].join("\n")}
+      />
+    );
+
+    const settings = screen.getByAltText("The task types in settings");
+    const board = screen.getByAltText("A board showing each type");
+    expect(settings.closest("p")).toBeNull();
+    const strip = settings.closest(".overflow-x-auto");
+    expect(strip).not.toBeNull();
+    expect(strip).toContainElement(board);
+    expect(container).toHaveTextContent("2");
+
+    await user.click(screen.getByRole("button", { name: /A board showing each type/ }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps a lone picture, or one beside text, in its paragraph", () => {
+    render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content={[
+          "![The Gantt view](frontend/public/release-images/gantt.webp)",
+          "",
+          "See ![the board](frontend/public/release-images/board.webp) and ![the table](frontend/public/release-images/table.webp)",
+        ].join("\n")}
+      />
+    );
+    expect(screen.getByAltText("The Gantt view").closest("p")).not.toBeNull();
+    expect(screen.getByAltText("the board").closest("p")).not.toBeNull();
+    expect(screen.getByAltText("the table").closest(".overflow-x-auto")).toBeNull();
+  });
 });

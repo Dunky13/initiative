@@ -163,7 +163,10 @@ export const VersionDialog = ({
                 <Loader2 className="h-6 w-6 animate-spin" />
               </div>
             ) : data?.entries && data.entries.length > 0 ? (
-              <ScrollArea className="flex-1">
+              <ScrollArea className="[&_[data-radix-scroll-area-viewport]>div]:block! flex-1">
+                {/* Radix lays the viewport's content out as a table, which
+                    widens to fit a strip of pictures instead of letting it
+                    scroll; the override above keeps it to the dialog's width. */}
                 <div className="space-y-4 pr-6">
                   {data.entries.map((entry, entryIdx) => (
                     <Release

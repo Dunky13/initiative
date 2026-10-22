@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 // DOM attribute — it is dropped before the rest of the props reach the element.
 type AnchorProps = ComponentPropsWithoutRef<"a"> & { node?: unknown };
 type ImageProps = ComponentProps<"img"> & ExtraProps;
+type ParagraphProps = ComponentPropsWithoutRef<"p"> & ExtraProps;
 
 function handleHashClick(e: MouseEvent<HTMLAnchorElement>) {
   const href = e.currentTarget.getAttribute("href");
@@ -100,17 +101,70 @@ const pictureWith = (className?: string) =>
 /** A screenshot in the release notes, in the theme the app is drawn in. The
  *  notes are the server's, so on native the picture is the server's too: the
  *  app's own bundle may be older than the server it talks to. */
-function ReleaseImage({ src, alt, title }: ImageProps) {
+function ReleasePicture({
+  src,
+  alt,
+  title,
+  fill = false,
+}: {
+  src: string;
+  alt?: string;
+  title?: string;
+  fill?: boolean;
+}) {
   const dark = useContext(ThemeContext)?.resolvedTheme === "dark";
-  if (typeof src !== "string" || !src) return null;
   const path = releaseImageUrl(src, dark);
   return (
     <ProseImage
       src={resolveUploadUrl(path) ?? path}
       alt={alt ?? ""}
       title={title}
-      className="rounded-md border border-border"
+      fill={fill}
+      className={fill ? undefined : "rounded-md border border-border"}
     />
+  );
+}
+
+function ReleaseImage({ src, alt, title }: ImageProps) {
+  if (typeof src !== "string" || !src) return null;
+  return <ReleasePicture src={src} alt={alt} title={title} />;
+}
+
+/** Pictures on lines of their own, two or more, scroll sideways as a strip of
+ *  tiles with their count in its corner, each opening full size. Anything
+ *  else is a paragraph. */
+function ReleaseParagraph({ node, children, ...props }: ParagraphProps) {
+  const parts = node?.children ?? [];
+  const pictures = parts.flatMap((part) =>
+    part.type === "element" && part.tagName === "img" && typeof part.properties.src === "string"
+      ? [{ src: part.properties.src, alt: String(part.properties.alt ?? "") }]
+      : []
+  );
+  const onlyPictures = parts.every(
+    (part) =>
+      (part.type === "element" && part.tagName === "img") ||
+      (part.type === "text" && !part.value.trim())
+  );
+  if (pictures.length < 2 || !onlyPictures) return <p {...props}>{children}</p>;
+  return (
+    <div className="relative">
+      <div className="scrollbar-thin flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+        {pictures.map((picture) => (
+          <div
+            key={picture.src}
+            className="h-40 w-64 shrink-0 snap-start overflow-hidden rounded-lg border bg-muted p-1"
+          >
+            <ReleasePicture {...picture} fill />
+          </div>
+        ))}
+      </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-2 right-2 rounded-full bg-background/90 px-2 py-0.5 font-medium text-foreground text-xs shadow-sm"
+      >
+        {pictures.length}
+      </span>
+    </div>
   );
 }
 
@@ -135,6 +189,8 @@ interface Surface {
   lineBreaks: boolean;
   /** Headings carry ids, so a `#heading` link scrolls to them. */
   headingIds: boolean;
+  /** How a paragraph is drawn, when the surface draws some differently. */
+  paragraph?: ComponentType<ParagraphProps>;
 }
 
 /** Descriptions and documents: the long form, in the page's type scale. */
@@ -150,7 +206,7 @@ const SURFACES = {
   document: DOCUMENT,
   /** Release notes: a document whose pictures are screenshots that ship with
    *  the release, drawn in the app's theme. */
-  release: { ...DOCUMENT, picture: ReleaseImage },
+  release: { ...DOCUMENT, picture: ReleaseImage, paragraph: ReleaseParagraph },
   /** A comment: short prose typed in a box, headings kept to body size. */
   comment: {
     prose: `${PAGE_TONE_CLASS} text-sm [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_h1]:text-base [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:font-semibold [&_h5]:text-sm [&_h6]:text-sm [&_li]:mt-0.5 [&_ol]:pl-5 [&_ul]:pl-5`,
@@ -231,6 +287,7 @@ export const Markdown = ({
     a: disableLinks ? PlainAnchor : MarkdownAnchor,
     img: compact || !preset.picture ? ImageName : preset.picture,
     ...(mentions ? { span: disableLinks ? PlainMentionSpan : LinkedMentionSpan } : {}),
+    ...(preset.paragraph && !compact ? { p: preset.paragraph } : {}),
   };
 
   const rendered = (
