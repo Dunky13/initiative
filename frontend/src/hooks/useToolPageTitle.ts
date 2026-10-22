@@ -24,6 +24,9 @@ export const useToolPageTitle = () => {
   const name = useQuery({
     ...toolDetailQuery(tool, communityId, id),
     enabled: found !== null,
+    // Never the last tool's name while the next one's loads: the app's default
+    // keeps the previous data, and this hook outlives every tool page.
+    placeholderData: undefined,
   }).data?.name;
   const title = found && name ? name : null;
 
