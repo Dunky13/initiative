@@ -6,7 +6,14 @@
 
 import { useBlocker } from "@tanstack/react-router";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { type ReactNode, type RefObject, useContext, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -54,6 +61,28 @@ import { getItem, removeItem, setItem } from "@/lib/storage";
 
 import { FieldFrame, ReadField, sameJson, useFieldDraft } from "./editing";
 
+/** Without `field-sizing`, a textarea stays as many rows high as it was
+ *  given, so it is grown to what it holds, again whenever its width changes. */
+const useFittedHeight = (text: string) => {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const field = box.current;
+    if (!field || CSS.supports("field-sizing", "content")) return;
+    let width = -1;
+    const grow = () => {
+      if (field.clientWidth === width) return;
+      width = field.clientWidth;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight + field.offsetHeight - field.clientHeight}px`;
+    };
+    grow();
+    const observer = new ResizeObserver(grow);
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [text]);
+  return box;
+};
+
 /** An item's title, which is its detail's heading, saved as `field` (a queue
  *  item's is its `label`). It cannot be emptied: leaving it blank puts the
  *  saved one back. A reader who cannot change it sees the heading alone. */
@@ -98,6 +127,7 @@ export const TitleField = <I, P>({
       ? false
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
   });
+  const box = useFittedHeight(draft.value);
   if (readOnly) {
     return besides(
       <h1 className="min-w-0 grow basis-72 break-words font-semibold text-2xl tracking-tight sm:text-3xl">
@@ -120,6 +150,7 @@ export const TitleField = <I, P>({
       <h1 className="sr-only">{value}</h1>
       {/* One line of text that wraps, so a long title shows whole on a phone. */}
       <Textarea
+        ref={box}
         id={id}
         rows={1}
         aria-multiline="false"

@@ -136,7 +136,7 @@ const stackClassName = ({ direction, gap: given, wrap, align, tone }: StackProps
       align === "start" && "items-start",
       // A row holding an item's actions wraps them onto a line above the
       // rest, where reversed wrapping turns its top into the cross end.
-      "has-[>[data-item-actions]]:flex-wrap-reverse has-[>[data-item-actions]]:items-end",
+      "item-actions-row:flex-wrap-reverse item-actions-row:items-end",
       GAP[gap]
     );
   }
