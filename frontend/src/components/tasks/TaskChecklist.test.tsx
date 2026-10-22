@@ -154,6 +154,24 @@ describe("TaskChecklist", () => {
     ]);
   });
 
+  it("says when a suggestion was written from only the newest comments", async () => {
+    server.use(
+      communityHttp.get("/settings/ai/resolved", () =>
+        HttpResponse.json({ enabled: true, source: "platform" })
+      ),
+      communityHttp.post("/tasks/:taskId/ai/checklist", () =>
+        HttpResponse.json({ items: ["Book the hall"], comments_read: 12, comments_total: 40 })
+      )
+    );
+    const user = userEvent.setup();
+    renderChecklist();
+
+    await user.click(await screen.findByRole("button", { name: "AI Generate" }));
+
+    expect(await screen.findByLabelText("Book the hall")).toBeChecked();
+    expect(screen.getByText("Written from the 12 most recent of 40 comments.")).toBeInTheDocument();
+  });
+
   it("offers no edits without write access", async () => {
     stubWrites();
     renderChecklist(false);

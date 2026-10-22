@@ -48,6 +48,7 @@ from app.mcp_descriptions import describe as describe_tool
 from app.models.tenant.task import TaskStatusCategory
 from app.core.tools import Tool
 from app.services import fields as fields_registry
+from app.services.compact import trim
 
 if TYPE_CHECKING:
     import mcp.types as mt
@@ -294,87 +295,19 @@ _ROUTE_MAPS = [
 ]
 
 
-# A tool result is read by a model, and every field it carries is context the
-# caller pays for. The route JSON is shaped for the app, so before it reaches
-# the caller the result is trimmed of what a model never acts on:
-#
-#   * an absent value — a ``null``, an empty list, an empty object. Most of a
-#     task row's fields are unset most of the time; leaving the key out says
-#     the same thing.
-#   * pictures — any ``*_base64`` data URI (a single avatar is often larger
-#     than the rest of a task read combined) and any ``avatar_url``. Neither is
-#     anything a caller can open or act on.
-#   * a property's option list after the first row that carried it. A task list
-#     repeats each property's whole definition — every option, label and colour
-#     — on every row, which was nearly a quarter of a page of tasks. The first
-#     row keeps it, so the caller still learns what the property accepts. A
-#     repeat is the same id *and* the same options: ids are numbered per
-#     community, and a cross-community list can hold two properties that share
-#     one.
-#
-# Colours, icons and positions stay: the write tools set them, so a caller can
-# be asked about them.
-#
-# A free-form field — a file's content, a dashboard's config, a property's
-# value — passes through verbatim: what is inside it is the document's own,
-# and a ``null`` there can mean something. Which fields are free-form is read
-# off each tool's response schema when the server is built (see
-# ``_free_form_keys``), so a new one is left alone by construction.
-#
-# Removing keys is possible because the tools publish no output schema (see
-# ``_drop_output_schema``); against one, a missing key fails the client's
-# validation.
-_BASE64_SUFFIX = "_base64"
-_UNREAD_KEYS = frozenset({"avatar_url"})
-
-
-def _is_absent(value: Any) -> bool:
-    return value is None or value == [] or value == {}
-
-
-def _trim(
-    value: Any,
-    free_form: frozenset[str] = frozenset(),
-    seen_properties: set[Any] | None = None,
-) -> Any:
-    """Return ``value`` without the fields a caller never acts on.
-
-    Returns a new structure; the input is left untouched. ``free_form`` names
-    the keys whose values pass through as they are; ``seen_properties`` carries
-    the (property id, options) pairs a row earlier in the same result has
-    already shown.
-    """
-    if seen_properties is None:
-        seen_properties = set()
-    if isinstance(value, list):
-        return [_trim(v, free_form, seen_properties) for v in value]
-    if not isinstance(value, dict):
-        return value
-
-    trimmed: dict[str, Any] = {}
-    repeats_options = False
-    if "options" in value and value.get("property_id") is not None:
-        shown = (value["property_id"], json.dumps(value["options"], sort_keys=True))
-        repeats_options = shown in seen_properties
-        seen_properties.add(shown)
-    for key, v in value.items():
-        if key in _UNREAD_KEYS or key.endswith(_BASE64_SUFFIX):
-            continue
-        if key == "options" and repeats_options:
-            continue
-        if key not in free_form:
-            v = _trim(v, free_form, seen_properties)
-        if not _is_absent(v):
-            trimmed[key] = v
-    return trimmed
-
-
 class TrimResultMiddleware(Middleware):
-    """Trim every tool result to what a caller acts on (see ``_trim``).
+    """Trim every tool result to what a caller acts on (see
+    :func:`app.services.compact.trim`).
 
     Route-backed tools return the raw route JSON. Trimming here — after the
     route (and its RLS gates) have run — only removes fields from the payload;
-    it never adds, changes or reorders anything.
+    it never adds, changes or reorders anything. Which fields are free-form is
+    read off each tool's response schema when the server is built (see
+    ``_free_form_keys``), so a new one is left alone by construction.
+
+    Removing keys is possible because the tools publish no output schema (see
+    ``_drop_output_schema``); against one, a missing key fails the client's
+    validation.
     """
 
     def __init__(self, free_form_keys: dict[str, frozenset[str]] | None = None):
@@ -395,7 +328,7 @@ class TrimResultMiddleware(Middleware):
         # The text block is serialized from the trimmed structure, so the two
         # always say the same thing.
         return ToolResult(
-            structured_content=_trim(result.structured_content, free_form),
+            structured_content=trim(result.structured_content, free_form),
             meta=result.meta,
             is_error=result.is_error,
         )
@@ -614,7 +547,7 @@ def _free_form_keys(schema: dict[str, Any] | None) -> frozenset[str]:
 
     A free-form value is one the schema gives no shape to — no type, or an
     object with no properties: a document's content, a dashboard's config, a
-    property's value. ``_trim`` passes these through verbatim.
+    property's value. ``trim`` passes these through verbatim.
     """
     if not schema:
         return frozenset()
@@ -670,7 +603,7 @@ def _drop_output_schema(component: object) -> None:
     A route's response schema is most of what ``tools/list`` sends — four
     fifths of it, in one measurement — and is there for a client to validate
     the structured result against, not for a model to read. Without it the
-    result is still structured, and ``_trim`` may leave out keys the schema
+    result is still structured, and ``trim`` may leave out keys the schema
     would have required.
     """
     if getattr(component, "output_schema", None) is not None:

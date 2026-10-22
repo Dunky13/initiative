@@ -18,6 +18,10 @@ When AI is switched on, you'll see **Generate** options in a few places:
 
 You ask each time. Nothing writes itself while you're making tea.
 
+A task's description and checklist are written from the whole task, not just its title. That means its existing checklist (so you aren't offered "Book the hall" twice), the project it's in, the unfinished tasks linked to it, and its comments, newest first. A thread that has run to forty comments may not all fit. When that happens you're told how many were read, so the suggestion that ignores what Priya said on Tuesday comes with a reason.
+
+Nothing is saved until you say so. Checklist suggestions arrive ticked, and you untick what you don't want. A written description lands in your draft, and **Undo suggestion** puts back whatever you had before.
+
 ## Who sets it up
 
 Whoever runs the server decides who's in charge of AI, under **Settings → Platform → Integrations**. One of three, for the whole server:
@@ -54,7 +58,7 @@ Nothing. There's no key to find, no form to fill in and no setting to get wrong.
 
 ## The privacy bit, which is genuinely worth reading
 
-AI features work by sending the relevant text — a task's details, a file's contents — to whichever provider is configured. That content **leaves your server** and goes to that company, under *their* terms.
+AI features work by sending the relevant text — a task with its comments and linked tasks, a file's contents — to whichever provider is configured. Only what you can open yourself is ever sent. That content **leaves your server** and goes to that company, under *their* terms.
 
 This is the one place in Initiative where your work deliberately goes somewhere else, so we'd rather be precise about it than reassuring:
 
