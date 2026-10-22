@@ -306,6 +306,19 @@ describe("TaskEditPage", () => {
     expect(sent[1]).toMatchObject({ title: "Wire the doorbell now please" });
   });
 
+  it("wraps the title rather than cutting it off, and keeps it to one line", async () => {
+    const { sent } = renderTaskPage();
+    const title = await screen.findByDisplayValue("Wire the doorbell");
+    expect(title.tagName).toBe("TEXTAREA");
+
+    await userEvent.click(title);
+    await userEvent.paste("\nand the\r\nchime");
+    expect(title).toHaveValue("Wire the doorbell and the chime");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ title: "Wire the doorbell and the chime" });
+  });
+
   it("opens the description on its preview, keeps what is typed, and saves it over what it read", async () => {
     const first = renderTaskPage({ description: "Old words", userId: 41 });
     const description = await fieldNamed(/^description$/i);
