@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **AI connections name their model.** After saving a connection, pick a model from its provider's list; a connection without one, including any that relied on a default, is not used until somebody picks one. Changing a connection's provider or address clears its key unless you enter it again.
 - **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, and **What's new** shows what changed.
+- **The browser tab names the tool you are in.** Every tool's page, settings and what it holds (a task, a wiki page) show its name in the tab, as projects already did.
 - **Release notes show what changed.** The version window opens the newest release, with pictures of what is new, and folds older releases away until you open them.
 - **Moderators moderate only.** The platform ladder runs member → moderator → support → operator → owner: a moderator finds, renames and suspends accounts, clears their profiles, and asks for **Moderate** grants on a community, and nothing more. **Server operators:** account recovery moved to support, so give that role to anyone who does it.
 
